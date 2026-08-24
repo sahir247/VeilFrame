@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+"""
+VeilFrame — Video Sanitization & Verification Test Runner.
+
+Usage:
+    python test_user_video.py <path_to_video>
+"""
 import sys
 import os
 from pathlib import Path
@@ -6,13 +13,20 @@ from pathlib import Path
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
-from privacy_cleaner.core.analyzer import analyze_video
-from privacy_cleaner.core.pipeline import run_pipeline
-from privacy_cleaner.presets.manager import PresetManager
+from veilframe.core.analyzer import analyze_video
+from veilframe.core.pipeline import run_pipeline
+from veilframe.presets.manager import PresetManager
 
-src_path = Path(r"C:\Users\parve\Documents\O+ Connect\二娃📷_7667807976921837942_不要被琐事困住 去看这辽阔的世界吧_风和自由_川西秘境_趁热跳进14度毕棚沟 _解锁毕棚沟n种打开方式___2160x3840_0.mp4")
+if len(sys.argv) > 1:
+    src_path = Path(sys.argv[1])
+else:
+    print("Usage: python test_user_video.py <path_to_video>")
+    sys.exit(0)
 
 if not src_path.exists():
     print(f"Error: File not found at: {src_path}")
@@ -52,13 +66,13 @@ settings.quantization.forced_gop = True
 settings.quantization.normalize_timestamps = True
 settings.quantization.epoch_zero = True
 
-dst_path = src_path.with_name(src_path.stem + "_cleaned_auto.mp4")
+dst_path = src_path.with_name(src_path.stem + "_veilframe_sanitized" + src_path.suffix)
 print(f"\nTarget Output: {dst_path}")
 
 def log_progress(pct, msg):
     print(f"[{pct:5.1f}%] {msg}")
 
-print("\nStarting Two-Pass Privacy Cleaning Pipeline...")
+print("\nStarting VeilFrame Sanitization Pipeline...")
 report = run_pipeline(src_path, dst_path, settings, progress_callback=log_progress)
 print("\n" + "=" * 50)
 print(report.format_text())

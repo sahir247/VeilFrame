@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Independent Audit Manifest Verifier.
+VeilFrame — Independent Audit Manifest Verifier.
 
-A standalone, read-only verification utility for Privacy Video Cleaner audit manifests.
+A standalone, read-only verification utility for VeilFrame audit manifests.
 Requires only standard Python and 'cryptography' (no GUI, no engine imports).
 
 Usage:
@@ -39,7 +39,7 @@ def compute_sha256(file_path: Path) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Independently verify an Ed25519 digitally signed Privacy Video Cleaner Audit Manifest."
+        description="Independently verify an Ed25519 digitally signed VeilFrame Audit Manifest."
     )
     parser.add_argument("manifest", type=Path, help="Path to manifest.json")
     parser.add_argument("signature", type=Path, help="Path to manifest.sig")
@@ -66,7 +66,7 @@ def main():
             sys.exit(1)
 
     print("============================================================")
-    print("      INDEPENDENT AUDIT MANIFEST VERIFICATION TOOL         ")
+    print("      VEILFRAME INDEPENDENT AUDIT MANIFEST VERIFIER         ")
     print("============================================================\n")
 
     manifest_bytes = args.manifest.read_bytes()

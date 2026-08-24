@@ -29,8 +29,8 @@ def main():
     )
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Video Privacy Cleaner")
-    app.setOrganizationName("PrivacyEngine")
+    app.setApplicationName("VeilFrame")
+    app.setOrganizationName("VeilFrame")
     app.setStyleSheet(DARK_THEME_QSS)
 
     # Check for FFmpeg / FFprobe binaries

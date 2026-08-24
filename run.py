@@ -1,5 +1,5 @@
 """
-Launcher entry point for Video Privacy Cleaner.
+VeilFrame — GUI & Launcher Entry Point.
 """
 import os
 import sys
@@ -19,7 +19,7 @@ if hasattr(sys.stderr, "reconfigure"):
     except Exception:
         pass
 
-from privacy_cleaner.app import main
+from veilframe.app import main
 
 if __name__ == "__main__":
     main()

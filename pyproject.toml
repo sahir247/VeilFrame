@@ -34,7 +34,7 @@ veilframe = "veilframe.cli:main"
 veilframe-gui = "veilframe.app:main"
 
 [tool.setuptools.packages.find]
-include = ["veilframe*", "privacy_cleaner*"]
+include = ["veilframe*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.png", "*.svg", "*.ico"]

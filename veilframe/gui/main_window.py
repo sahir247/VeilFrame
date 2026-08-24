@@ -152,7 +152,7 @@ class DropZoneWidget(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Video Privacy Cleaner v1")
+        self.setWindowTitle("VeilFrame v1.0 — Privacy-Focused Media Sanitization")
         self.resize(920, 920)
         self.setMinimumSize(800, 700)
 
@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
 
         # Header Title
         hdr_lay = QHBoxLayout()
-        title_lbl = QLabel("VIDEO PRIVACY & PROCESSING ENGINE v1")
+        title_lbl = QLabel("VEILFRAME — PRIVACY-FOCUSED MEDIA SANITIZATION v1.0")
         title_lbl.setStyleSheet("font-size: 16px; font-weight: 800; color: #38bdf8; letter-spacing: 0.5px;")
         hdr_lay.addWidget(title_lbl)
         hdr_lay.addStretch()
@@ -360,19 +360,14 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         QMessageBox.about(
             self,
-            "About Video Privacy Cleaner v1",
-            "<h3>Video Privacy & Processing Engine v1</h3>"
-            "<p><b>Two-Pass Privacy Sanitization Architecture:</b></p>"
+            "About VeilFrame v1.0",
+            "<h3>VeilFrame — Privacy-Focused Media Sanitization v1.0</h3>"
+            "<p><b>System Architecture & Defense-in-Depth:</b></p>"
             "<ul>"
-            "<li><b>Pass 1 (Pre-Sanitize):</b> Strips existing container metadata, tags, chapters, and attachments.</li>"
-            "<li><b>Pass 2 (Encode):</b> Applies visual/temporal transformations with clean audio and bitexact flags.</li>"
-            "<li><b>Pass 3 (Post-Sanitize):</b> Removes encoder tags and writes clean container headers.</li>"
-            "<li><b>Verification:</b> Fresh inspection generating a formal Privacy Report.</li>"
+            "<li><b>VeilFrame Sanitizer:</b> Zeroes container metadata, drops SEI NALs, and applies bounded signal perturbations across spatial, temporal, frequency (PRNU dither), and audio ENF domains.</li>"
+            "<li><b>VeilFrame Quality Gate:</b> Independent read-only visual fidelity gate enforcing SSIM &ge; 0.95 and PSNR &ge; 30.0 dB.</li>"
+            "<li><b>VeilFrame Audit Engine:</b> Signs canonical RFC 8785 JSON manifests with Ed25519 asymmetric cryptography.</li>"
+            "<li><b>VeilFrame Manifest Verifier:</b> Standalone tool for third-party proof verification.</li>"
             "</ul>"
-            "<p><b>Noise Control Behavior:</b></p>"
-            "<ul>"
-            "<li><b>OFF:</b> No noise filter added.</li>"
-            "<li><b>ON + Minimum:</b> Low-amplitude temporal noise intended to be visually subtle under normal viewing.</li>"
-            "</ul>"
-            "<p><i>Note: The application performs file sanitization and video processing locally on your machine without network access. It does not claim to make media untraceable.</i></p>",
+            "<p><i>All processing occurs 100% locally on your machine without network transmission.</i></p>",
         )

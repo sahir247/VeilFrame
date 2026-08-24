@@ -14,9 +14,9 @@ import unittest
 import subprocess
 from pathlib import Path
 
-from privacy_cleaner.core.resources import get_ffmpeg_path
-from privacy_cleaner.core.analyzer import analyze_video
-from privacy_cleaner.core.validator import (
+from veilframe.core.resources import get_ffmpeg_path
+from veilframe.core.analyzer import analyze_video
+from veilframe.core.validator import (
     compute_sha256,
     compute_stats,
     audit_native_domain,
@@ -28,7 +28,7 @@ from privacy_cleaner.core.validator import (
     generate_ed25519_signed_manifest,
     verify_audit_manifest,
 )
-from privacy_cleaner.models.settings import VisualBudgetPolicy
+from veilframe.models.settings import VisualBudgetPolicy
 
 
 class TestProductionQualityGate(unittest.TestCase):
@@ -416,8 +416,8 @@ class TestProductionQualityGate(unittest.TestCase):
         Test that when enforce_strict=True and quality constraints are violated,
         pipeline immediately unlinks/deletes the invalid output and raises RuntimeError.
         """
-        from privacy_cleaner.core.pipeline import run_pipeline
-        from privacy_cleaner.models.settings import ProcessingSettings
+        from veilframe.core.pipeline import run_pipeline
+        from veilframe.models.settings import ProcessingSettings
 
         settings = ProcessingSettings()
         # Introduce massive 50% spatial crop that will fail the quality gate

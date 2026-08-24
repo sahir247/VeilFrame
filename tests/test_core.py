@@ -1,5 +1,5 @@
 """
-Automated unit and integration test suite for Video Privacy & Processing Engine v1.
+Automated unit and integration test suite for VeilFrame v1.0.
 """
 import sys
 import unittest
@@ -10,8 +10,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from privacy_cleaner.models.video_info import VideoInfo, VideoStreamInfo, AudioStreamInfo, MetadataInfo
-from privacy_cleaner.models.settings import (
+from veilframe.models.video_info import VideoInfo, VideoStreamInfo, AudioStreamInfo, MetadataInfo
+from veilframe.models.settings import (
     ProcessingSettings,
     CropSettings,
     ResizeSettings,
@@ -25,18 +25,18 @@ from privacy_cleaner.models.settings import (
     QualitySettings,
     PrivacySettings,
 )
-from privacy_cleaner.core.crop import calculate_crop, build_crop_filter
-from privacy_cleaner.core.resize import calculate_resize, build_resize_filter
-from privacy_cleaner.core.fps import calculate_fps, build_fps_arg
-from privacy_cleaner.core.trim import calculate_trim, build_trim_args, parse_timestamp
-from privacy_cleaner.core.noise import calculate_noise_strength, build_noise_filter, get_noise_level_label
-from privacy_cleaner.core.color import build_color_filter
-from privacy_cleaner.core.audio_pipeline import build_audio_filtergraph
-from privacy_cleaner.core.analyzer import analyze_video
-from privacy_cleaner.core.verifier import verify_output
-from privacy_cleaner.core.pipeline import run_pipeline
-from privacy_cleaner.presets.manager import PresetManager
-from privacy_cleaner.core.resources import get_ffmpeg_path, get_ffprobe_path
+from veilframe.core.crop import calculate_crop, build_crop_filter
+from veilframe.core.resize import calculate_resize, build_resize_filter
+from veilframe.core.fps import calculate_fps, build_fps_arg
+from veilframe.core.trim import calculate_trim, build_trim_args, parse_timestamp
+from veilframe.core.noise import calculate_noise_strength, build_noise_filter, get_noise_level_label
+from veilframe.core.color import build_color_filter
+from veilframe.core.audio_pipeline import build_audio_filtergraph
+from veilframe.core.analyzer import analyze_video
+from veilframe.core.verifier import verify_output
+from veilframe.core.pipeline import run_pipeline
+from veilframe.presets.manager import PresetManager
+from veilframe.core.resources import get_ffmpeg_path, get_ffprobe_path
 
 
 class TestModelsAndTransformations(unittest.TestCase):
