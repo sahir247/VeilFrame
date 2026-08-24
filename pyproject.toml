@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veilframe"
+version = "1.0.0"
+description = "Privacy-focused media sanitization with independent visual-fidelity verification and cryptographically signed audit manifests."
+readme = "README.md"
+authors = [{ name = "VeilFrame Contributors" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Multimedia :: Video",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.7.0,<7.0.0",
+    "cryptography>=42.0.0,<51.0.0",
+    "numpy>=1.26.0,<3.0.0",
+]
+
+[project.scripts]
+veilframe = "veilframe.cli:main"
+veilframe-gui = "veilframe.app:main"
+
+[tool.setuptools.packages.find]
+include = ["veilframe*", "privacy_cleaner*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.png", "*.svg", "*.ico"]
