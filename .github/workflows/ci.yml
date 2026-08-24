@@ -36,9 +36,11 @@ jobs:
             ffmpeg \
             libegl1 \
             libgl1 \
-            libgl1-mesa-glx \
+            libopengl0 \
+            libglx-mesa0 \
             libglu1-mesa \
             libxrender1 \
+            libxkbcommon0 \
             libxkbcommon-x11-0 \
             libfontconfig1 \
             libdbus-1-3 \
