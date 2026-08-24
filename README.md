@@ -154,11 +154,14 @@ The transformation engine **cannot declare itself successful**. The independent 
 
 Every processed export generates a tamper-evident audit manifest bundle:
 
-- `manifest.json`: Canonical JSON payload containing all input/output cryptographic hashes, native stream dimensions, decoded energy shifts, and statistical tail distributions.
+- `manifest.json`: Canonical RFC 8785 JSON payload containing input/output cryptographic hashes, exact stream dimensions, uniform timeline sampling indices, and statistical percentiles.
 - `manifest.sha256`: SHA-256 digest of the canonical JSON bytes.
 - `manifest.sig`: Ed25519 digital signature of the canonical JSON payload.
 - `public_key.pem`: Ed25519 public key.
-- **Root-of-Trust Pinning:** Includes the public key's raw 32-byte SHA-256 fingerprint (`public_key_fingerprint_raw`) allowing independent third-party verification against pinned keys.
+- **Dual-Mode Trust Architecture:**
+  - **Ephemeral Mode:** Generates a fresh keypair per audit for individual export verification.
+  - **Persistent Signer Mode:** Uses long-term signer identity keys with persistent key IDs and fingerprint pinning.
+- **Root-of-Trust Pinning:** Includes the public key's raw 32-byte SHA-256 fingerprint (`public_key_fingerprint_raw`) and SubjectPublicKeyInfo hash (`public_key_fingerprint_pem`).
 
 ---
 
@@ -195,13 +198,13 @@ veilframe gui
 ```
 
 ### Standalone Manifest Verification (Independent Auditor)
-Anyone can verify an exported video and its Ed25519 signed manifest using the zero-dependency standalone script without running the GUI or importing engine components:
+Anyone can verify an exported video and its Ed25519 signed manifest using the standalone application-independent script (requiring only standard Python and `cryptography`) without running the GUI or importing engine components:
 
 ```powershell
-python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> --expected-fingerprint SHA256:... --video-file <output.mp4>
+python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> --expected-fingerprint SHA256:... --expected-key-id veilframe-signer-01 --video-file <output.mp4>
 ```
 
-### Run Test Suite
+### Run Test Suite (26 Unit, Integration, Adversarial & Boundary Tests)
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover tests
 ```

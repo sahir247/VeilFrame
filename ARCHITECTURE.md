@@ -157,16 +157,25 @@ To prevent the transformation engine from declaring false success, the **VeilFra
 - **Native-Domain Metrics:** Inspects raw stream dimensions, duration, FPS, and pixel formats directly from elementary bitstreams without downscaling or normalizing away geometric modifications.
 - **Canonical-Domain Metrics:** Applies controlled spatial normalization (`scale={w}:{h}:flags=lanczos,setsar=1,format=yuv420p,split`) purely for evaluating structural similarity (SSIM) and pixel fidelity (PSNR).
 
-### 2. Decoded YUV Plane Energy Metrics
+### 2. Decoded YUV Plane Energy Metrics & Deterministic Timeline Sampling
+- **Uniform Timeline Sampling:** Decoded frames are sampled deterministically across the entire video timeline at uniform percentiles:
+  $$\text{sample\_positions} = \text{linspace}(0.02, 0.98, N)$$
+  Sample indices and exact timestamps are recorded in the canonical manifest under `"sampling"`.
 - **Luma Distribution Drift ($D_{TV}$):** Total Variation normalized histogram distance ($0 \le D_{TV} \le 1$):
   $$D_{TV} = \frac{1}{2}\sum_{i=0}^{255} |p_{r, i} - p_{t, i}|$$
 - **Luma RMS Error:** $\text{RMS}_Y = \frac{\sqrt{\frac{1}{N}\sum (Y_t - Y_r)^2}}{255.0}$
 - **Spectral High-Frequency Laplacian Energy:**
   $$\text{abs\_delta\_hf} = |E_t - E_r|, \quad \text{rel\_delta\_hf} = \frac{|E_t - E_r|}{E_r + 1.0}$$
 
+### 3. Frame-Level Pre-Resampling Temporal Integrity Audit
+- **Packet Presentation Timestamps (PTS):** Extracted via `ffprobe` to verify strict timestamp monotonicity ($t_{i+1} \ge t_i$) and detect reordered packet sequences.
+- **Inter-Frame Cadence Variance:** Evaluates standard deviation of frame deltas $\sigma(\Delta t_i)$ to detect cadence stutter.
+- **Timestamp Correspondence & Drift:** Computes exact maximum timestamp drift $\max_i |t_{\text{trans}, i} - t_{\text{ref}, \text{nearest}}|$ across the entire temporal correspondence mapping.
+- **Missing Frame Gap Detection:** Identifies missing frame sequences where $\Delta t_i > 1.8 \times \Delta t_{\text{nominal}}$.
+
 ---
 
-## 🔏 Cryptographic Audit Provenance & Verification
+## 🔏 Cryptographic Audit Provenance & Dual-Mode Trust Architecture
 
 ```
      ┌──────────────────┐
@@ -187,12 +196,14 @@ To prevent the transformation engine from declaring false success, the **VeilFra
                                         └──────────────────┘
 ```
 
-Every sanitization run creates an independently verifiable audit package:
-1. `manifest.json`: Canonical RFC 8785 JSON recording input/output SHA-256 hashes, exact stream dimensions, decoded energy metrics, statistical distribution percentiles, and environment metadata.
-2. `manifest.sha256`: SHA-256 hash of the canonical JSON bytes.
-3. `manifest.sig`: Ed25519 digital signature of the canonical JSON bytes.
-4. `public_key.pem`: Public key distributed alongside the export.
-5. **Pinned Public Key Fingerprint:** The raw 32-byte Ed25519 public key hash (`SHA256:...`) is pinned in the manifest and report to prevent public key replacement attacks.
+Every sanitization run creates an independently verifiable audit package with explicit trust modeling:
+
+1. **Dual Signing Modes:**
+   - **Ephemeral Mode (`mode: "ephemeral"`):** Generates a unique Ed25519 keypair in RAM per audit. Proves that the exported video matches the audit manifest signed by the accompanying public key.
+   - **Persistent Signer Mode (`mode: "persistent"`):** Signs using a persistent, long-term Ed25519 signing key identity (e.g. `key_id: "veilframe-production-01"`). Proves authenticity from a known organization or hardware enclave.
+2. **Self-Describing Policy Calibration:** Records `frequency_weight`, `luma_weight`, `chroma_weight`, and all individual component ceilings in `manifest.json` under `"policy_calibration"`.
+3. **Deterministic Sampling Ledger:** Records exact frame indices and timestamps for both reference and transformed streams.
+4. **Independent Standalone Verifier (`verify_manifest.py`):** Standalone, application-independent verifier requiring only standard Python and `cryptography` (independent of Qt/GUI and VeilFrame transformation engine).
 
 ---
 

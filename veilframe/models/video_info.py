@@ -2,7 +2,7 @@
 Data models for video, audio, and metadata information parsed from media containers.
 """
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
 @dataclass
@@ -185,6 +185,13 @@ class DecodedEnergyMetrics:
     hf_energy_trans: float = 0.0        # Laplacian variance of transformed frames
     abs_delta_hf: float = 0.0           # |Et - Er|
     rel_delta_hf: float = 0.0           # |Et - Er| / (Er + 1.0)
+    # Sampling metadata
+    sampling_strategy: str = "uniform_timeline"
+    sampling_range: Tuple[float, float] = (0.02, 0.98)
+    sampled_indices_ref: List[int] = field(default_factory=list)
+    sampled_timestamps_ref: List[float] = field(default_factory=list)
+    sampled_indices_trans: List[int] = field(default_factory=list)
+    sampled_timestamps_trans: List[float] = field(default_factory=list)
 
 
 @dataclass
@@ -194,8 +201,10 @@ class TemporalIntegrityMetrics:
     frame_count_trans: int = 0
     frame_count_diff: int = 0
     missing_frames: int = 0
-    duplicate_frames: int = 0
-    reordered_frames: int = 0
+    duplicate_frames: int = 0            # Frame-level visual/timestamp duplication
+    duplicate_timestamps: int = 0        # Container packet timestamp duplication
+    duplicate_decoded_frames: int = 0    # Identical decoded luma matrix duplication
+    reordered_frames: int = 0            # Non-monotonic PTS sequences
     timestamp_drift_max_sec: float = 0.0
     timestamp_drift_mean_sec: float = 0.0
     cadence_deviation_pct: float = 0.0
@@ -248,9 +257,12 @@ class VisualQualityReport:
     three_tier_verdict: ThreeTierQualityVerdict = field(default_factory=ThreeTierQualityVerdict)
     passed: bool = True
     policy_violations: List[str] = field(default_factory=list)
+    signing_mode: str = "ephemeral"
+    signing_key_id: Optional[str] = None
     manifest_signature: str = ""
     public_key_pem: str = ""
     public_key_fingerprint: str = ""
+    public_key_fingerprint_pem: str = ""
     raw_details: Dict[str, Any] = field(default_factory=dict)
 
     @property

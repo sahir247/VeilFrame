@@ -10,7 +10,7 @@ from .analyzer import analyze_video
 from .sanitizer import pre_sanitize, post_sanitize
 from .encoder import run_encode_pass
 from .verifier import verify_output, VerificationReport
-from .validator import evaluate_visual_quality
+from .validator import evaluate_visual_quality, generate_ed25519_signed_manifest
 from ..models.settings import ProcessingSettings
 from ..models.video_info import VideoInfo, VisualQualityReport
 
@@ -124,12 +124,18 @@ def run_pipeline(
         )
 
         # Generate Ed25519 signed audit manifest
+        clean_stem = "".join(c for c in dst_path.stem if c.isalnum() or c in ("-", "_", " "))[:40].strip()
+        audit_dir = dst_path.parent / (f"{clean_stem}_audit" if clean_stem else "audit_manifest")
         try:
-            clean_stem = "".join(c for c in dst_path.stem if c.isalnum() or c in ("-", "_", " "))[:40].strip()
-            audit_dir = dst_path.parent / (f"{clean_stem}_audit" if clean_stem else "audit_manifest")
-            generate_ed25519_signed_manifest(quality_report, audit_dir)
-        except Exception:
-            pass
+            generate_ed25519_signed_manifest(quality_report, audit_dir, policy=q_policy)
+        except Exception as e:
+            if q_policy.enforce_strict:
+                if dst_path.exists():
+                    dst_path.unlink()
+                raise RuntimeError(f"Quality gate audit manifest generation failed in strict mode: {e}")
+            else:
+                import sys
+                print(f"[!] WARNING: Audit manifest generation failed: {e}", file=sys.stderr)
 
         if not quality_report.passed and q_policy.enforce_strict:
             if dst_path.exists():

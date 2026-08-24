@@ -115,7 +115,20 @@ class VisualBudgetPolicy:
     """Multi-dimensional visual quality gate and fidelity constraint policy."""
     enabled: bool = True
     enforce_strict: bool = False  # If True, rejects/fails export when constraints are violated
-    policy_budget: float = 0.05   # Target 5% bounded perturbation budget
+    policy_budget: float = 0.05   # Target 5% bounded perturbation budget (5.0%)
+
+    # Calibration weights
+    frequency_weight: float = 2.0
+    luma_weight: float = 100.0
+    chroma_weight: float = 100.0
+
+    # Policy component ceilings (%)
+    spatial_ceiling_pct: float = 2.0
+    temporal_ceiling_pct: float = 1.0
+    luma_ceiling_pct: float = 1.0
+    chroma_ceiling_pct: float = 1.0
+    frequency_ceiling_pct: float = 1.0
+    aggregate_ceiling_pct: float = 5.0
 
     # Structural similarity constraints
     ssim_mean_min: float = 0.95
@@ -126,8 +139,16 @@ class VisualBudgetPolicy:
     psnr_mean_min_db: float = 30.0
     psnr_worst_min_db: float = 25.0
 
-    # Evaluation controls
+    # Sampling controls
+    sample_count: int = 15
+    sample_range_start: float = 0.02
+    sample_range_end: float = 0.98
     max_eval_frames: int = 800
+
+    # Cryptographic signing controls
+    signing_mode: str = "ephemeral"  # "ephemeral" or "persistent"
+    signing_key_path: Optional[str] = None
+    key_id: Optional[str] = None
 
 
 @dataclass

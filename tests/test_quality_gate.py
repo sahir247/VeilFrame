@@ -237,7 +237,7 @@ class TestProductionQualityGate(unittest.TestCase):
         trans_info = analyze_video(scaled_video)
         native = audit_native_domain(ref_info, trans_info)
 
-        expected_spatial_delta = max((320 - 300) / 320.0, (240 - 220) / 240.0) * 100.0
+        expected_spatial_delta = (abs(300 * 220 - 320 * 240) / float(320 * 240)) * 100.0
         self.assertAlmostEqual(native.spatial_delta_pct, expected_spatial_delta, places=2)
         self.assertGreater(native.spatial_delta_pct, 2.0)
 
@@ -443,6 +443,118 @@ class TestProductionQualityGate(unittest.TestCase):
         # Ensure the output file was deleted and NOT left in place
         self.assertFalse(dst_output.exists())
 
+    def test_uniform_timeline_sampling_distribution(self):
+        """Test that decoded energy sampling is deterministically distributed across the full timeline."""
+        report = evaluate_visual_quality(
+            ref_path=self.ref_video,
+            trans_path=self.ref_video,
+            policy=VisualBudgetPolicy(sample_count=10, sample_range_start=0.05, sample_range_end=0.95),
+            canonical_w=320,
+            canonical_h=240,
+        )
+        indices = report.energy_metrics.sampled_indices_ref
+        self.assertEqual(len(indices), 10)
+        self.assertEqual(indices, sorted(indices))
+        # First index should be near start (5%) and last index near end (95%)
+        self.assertTrue(indices[0] < indices[-1])
+        timestamps = report.energy_metrics.sampled_timestamps_ref
+        self.assertEqual(len(timestamps), 10)
+        self.assertTrue(0.0 <= timestamps[0] < timestamps[-1] <= 2.05)
+
+    def test_persistent_signer_mode_with_key_identity(self):
+        """Test dual-mode Ed25519 signing with persistent signer key identity."""
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from cryptography.hazmat.primitives import serialization
+
+        # Generate a dedicated persistent key
+        priv_key = ed25519.Ed25519PrivateKey.generate()
+        key_pem = priv_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        key_file = self.temp_dir / "persistent_signer.pem"
+        key_file.write_bytes(key_pem)
+
+        policy = VisualBudgetPolicy(
+            signing_mode="persistent",
+            signing_key_path=str(key_file),
+            key_id="veilframe-prod-signer-01",
+        )
+
+        report = evaluate_visual_quality(
+            ref_path=self.ref_video,
+            trans_path=self.ref_video,
+            policy=policy,
+            canonical_w=320,
+            canonical_h=240,
+        )
+
+        audit_dir = self.temp_dir / "audit_persistent"
+        paths = generate_ed25519_signed_manifest(report, audit_dir, policy=policy)
+
+        # Verify with expected persistent key identity
+        valid = verify_audit_manifest(
+            manifest_path=paths[0],
+            sig_path=paths[2],
+            pub_key_path=paths[3],
+            expected_key_id="veilframe-prod-signer-01",
+        )
+        self.assertTrue(valid)
+
+        # Verification with incorrect key ID must fail
+        wrong_id_valid = verify_audit_manifest(
+            manifest_path=paths[0],
+            sig_path=paths[2],
+            pub_key_path=paths[3],
+            expected_key_id="attacker-impersonated-id",
+        )
+        self.assertFalse(wrong_id_valid)
+
+    def test_manifest_self_consistency_and_tamper_defense(self):
+        """
+        Verify that a generated PASS manifest is 100% self-consistent with ground truth
+        and that modifying any individual metric or hash field immediately invalidates the signature.
+        """
+        import json
+
+        policy = VisualBudgetPolicy()
+        report = evaluate_visual_quality(
+            ref_path=self.ref_video,
+            trans_path=self.ref_video,
+            policy=policy,
+            canonical_w=320,
+            canonical_h=240,
+        )
+
+        audit_dir = self.temp_dir / "audit_consistency"
+        paths = generate_ed25519_signed_manifest(report, audit_dir, policy=policy)
+        manifest_file, sha_file, sig_file, pub_file = paths
+
+        # 1. Check hashes against actual file contents
+        actual_input_sha = compute_sha256(self.ref_video)
+        manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        self.assertEqual(manifest_data["input_sha256"], actual_input_sha)
+        self.assertEqual(manifest_data["output_sha256"], actual_input_sha)
+
+        # 2. Check recorded policy against calibration calculation
+        calib = manifest_data["policy_calibration"]
+        luma_val = manifest_data["energy_metrics"]["mean_luma_delta"] * calib["luma_weight"]
+        chroma_val = manifest_data["energy_metrics"]["chroma_delta_composite"] * calib["chroma_weight"]
+        self.assertAlmostEqual(manifest_data["policy_score"]["luminance_score_pct"], luma_val, places=4)
+        self.assertAlmostEqual(manifest_data["policy_score"]["chroma_score_pct"], chroma_val, places=4)
+
+        # 3. Verify valid signature
+        self.assertTrue(verify_audit_manifest(manifest_file, sig_file, pub_file))
+
+        # 4. Tamper with ssim_mean and assert signature verification fails
+        tampered_data = dict(manifest_data)
+        tampered_data["rendered_fidelity"]["ssim_mean"] = 0.999999
+        tampered_file = self.temp_dir / "tampered_manifest.json"
+        tampered_file.write_text(json.dumps(tampered_data), encoding="utf-8")
+        self.assertFalse(verify_audit_manifest(tampered_file, sig_file, pub_file))
+
 
 if __name__ == "__main__":
     unittest.main()
+

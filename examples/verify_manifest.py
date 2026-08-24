@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-VeilFrame — Independent Audit Manifest Verifier.
+VeilFrame — Standalone Application-Independent Audit Manifest Verifier.
 
 A standalone, read-only verification utility for VeilFrame audit manifests.
-Requires only standard Python and 'cryptography' (no GUI, no engine imports).
+Requires only standard Python and 'cryptography' (independent of Qt/GUI and VeilFrame engine).
 
 Usage:
-    python verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> [--expected-fingerprint SHA256:...] [--video-file output.mp4]
+    python verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> [--expected-fingerprint SHA256:...] [--expected-key-id KEY_ID] [--video-file output.mp4]
 """
 import os
 import sys
@@ -18,7 +18,10 @@ from pathlib import Path
 # Safe terminal encoding
 os.environ["PYTHONIOENCODING"] = "utf-8"
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -51,6 +54,12 @@ def main():
         help="Optional pinned SHA-256 public key fingerprint (e.g. SHA256:...)",
     )
     parser.add_argument(
+        "--expected-key-id",
+        type=str,
+        default=None,
+        help="Optional expected persistent signer key identity (e.g. veilframe-production-01)",
+    )
+    parser.add_argument(
         "--video-file",
         type=Path,
         default=None,
@@ -66,7 +75,7 @@ def main():
             sys.exit(1)
 
     print("============================================================")
-    print("      VEILFRAME INDEPENDENT AUDIT MANIFEST VERIFIER         ")
+    print("      VEILFRAME STANDALONE AUDIT MANIFEST VERIFIER          ")
     print("============================================================\n")
 
     manifest_bytes = args.manifest.read_bytes()
@@ -102,7 +111,23 @@ def main():
     actual_fingerprint_pem = f"SHA256:{hashlib.sha256(pub_pem_bytes).hexdigest()}"
     print(f"[*] Raw Public Key Fingerprint:  {actual_fingerprint_raw}")
 
-    # 4. Check against pinned fingerprint if specified
+    # Inspect signing metadata
+    signing_info = manifest_data.get("signing", {})
+    sign_mode = signing_info.get("mode", "ephemeral")
+    sign_key_id = signing_info.get("key_id")
+    print(f"[*] Signing Mode:               {sign_mode} ({'Key ID: ' + sign_key_id if sign_key_id else 'No persistent ID'})")
+
+    # 4. Check against expected key ID if specified
+    if args.expected_key_id:
+        if sign_key_id != args.expected_key_id:
+            print(f"\n[!] SECURITY VIOLATION: Signer Key ID mismatch!")
+            print(f"    Expected: {args.expected_key_id}")
+            print(f"    Recorded: {sign_key_id}")
+            sys.exit(1)
+        else:
+            print(f"[+] Signer Key ID:               MATCHED ({sign_key_id})")
+
+    # 5. Check against pinned fingerprint if specified
     if args.expected_fingerprint:
         if args.expected_fingerprint not in (actual_fingerprint_raw, actual_fingerprint_pem):
             print(f"\n[!] SECURITY VIOLATION: Public key fingerprint mismatch!")
@@ -112,7 +137,7 @@ def main():
         else:
             print("[+] Pinned Public Key Fingerprint: MATCHED (Valid Root)")
 
-    # 5. Verify Ed25519 Digital Signature
+    # 6. Verify Ed25519 Digital Signature
     try:
         public_key.verify(sig_bytes, canonical_bytes)
         print("[+] Ed25519 Digital Signature:     VALID (Manifest is authentic & untampered)")
@@ -120,7 +145,7 @@ def main():
         print(f"[-] SIGNATURE VERIFICATION FAILED: Manifest has been tampered with or signature invalid!")
         sys.exit(1)
 
-    # 6. Verify target video hash if provided
+    # 7. Verify target video hash if provided
     if args.video_file:
         if not args.video_file.exists():
             print(f"[-] Video file not found: {args.video_file}")
@@ -135,7 +160,7 @@ def main():
             print("[-] VIDEO INTEGRITY FAILED: Video bitstream does not match recorded manifest hash!")
             sys.exit(1)
 
-    # 7. Print recorded audit findings
+    # 8. Print recorded audit findings
     print("\n------------------------------------------------------------")
     print("               RECORDED AUDIT FINDINGS                      ")
     print("------------------------------------------------------------")
@@ -159,6 +184,12 @@ def main():
     print(f"  Resolution:            {native.get('resolution_ref', '')} -> {native.get('resolution_trans', '')} (Delta={native.get('spatial_delta_pct', 0.0):.2f}%)")
     print(f"  FPS:                   {native.get('fps_ref', 0.0):.2f} -> {native.get('fps_trans', 0.0):.2f}")
     print(f"  Duration:              {native.get('duration_ref', 0.0):.2f}s -> {native.get('duration_trans', 0.0):.2f}s (Delta={native.get('duration_delta_sec', 0.0):+.3f}s)")
+
+    samp = manifest_data.get("sampling", {})
+    if samp:
+        print(f"\nTimeline Sampling:")
+        print(f"  Strategy:              {samp.get('strategy', '')} (Evaluated samples: {samp.get('count', 0)})")
+        print(f"  Range:                 {samp.get('range', [])}")
 
     print("\n============================================================")
     print("             AUDIT VERIFICATION RESULT: PASSED              ")
