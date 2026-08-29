@@ -1,8 +1,8 @@
 """
 QualityGate — VeilFrame's verdict engine.
 
-Consumes QualityResult objects from any number of QualityProvider instances.
-Has no knowledge of which backend produced a result.
+Consumes generic QualityResult objects from any number of QualityProvider instances.
+The gate does not make verdict decisions based on provider identity (operates purely on metric values).
 
 Gate predicate (v1.1 → v1.2 promotion path):
 
@@ -22,8 +22,7 @@ When vmaf_gate_enabled=False (default):
     - Zero gate-semantic regression.
 
 When vmaf_gate_enabled=True (after calibration):
-    - A VMAF result absence is treated as "gate skipped, not failed"
-      (provider unavailable path must not silently PASS a REJECT case).
+    - A VMAF result absence is treated as a gate failure (missing required evidence).
     - A VMAF result presence is evaluated against vmaf_mean_min / vmaf_p5_min.
 
 Architectural invariant: Providers measure. VeilFrame decides.
@@ -91,6 +90,7 @@ class QualityGate:
         psnr_stats = self._extract_stats(results, "psnr")
         vmaf_stats = self._extract_stats(results, "vmaf")
         vmaf_available = self._has_metric(results, "vmaf")
+        vmaf_result = next((r for r in results if r.metric_name == "vmaf"), None)
 
         all_violations: List[str] = []
 
@@ -135,7 +135,12 @@ class QualityGate:
                         f"Mean VMAF ({vmaf_stats.mean:.2f}) below gate threshold"
                         f" (>= {policy.vmaf_mean_min:.1f}) — calibrated Tier 2b"
                     )
-                if vmaf_stats.p5 < policy.vmaf_p5_min:
+                if vmaf_result and vmaf_result.p5 is None:
+                    t2_violations.append(
+                        f"VMAF P5 percentile unavailable (full per-frame JSON evidence required for P5 >= {policy.vmaf_p5_min:.1f})"
+                        f" — calibrated Tier 2b"
+                    )
+                elif vmaf_stats.p5 < policy.vmaf_p5_min:
                     t2_violations.append(
                         f"P5 VMAF ({vmaf_stats.p5:.2f}) below gate threshold"
                         f" (>= {policy.vmaf_p5_min:.1f}) — calibrated Tier 2b"

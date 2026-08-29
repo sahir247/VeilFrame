@@ -63,7 +63,7 @@ class _ManifestTab(QWidget):
         self._raw_text: str = ""
 
     def set_manifest(self, quality_report: Optional[VisualQualityReport]):
-        """Populate from VisualQualityReport.raw_details which holds the provider_infos."""
+        """Populate manifest tab from the actual signed manifest on disk or report metadata."""
         # Clear summary grid
         while self._summary_lay.count():
             item = self._summary_lay.takeAt(0)
@@ -78,29 +78,46 @@ class _ManifestTab(QWidget):
             return
 
         r = quality_report
+        manifest_data: Optional[dict] = None
 
-        # Structured summary
+        # 1. Read the EXACT signed canonical manifest file from disk if available
+        if r.manifest_path and Path(r.manifest_path).exists():
+            try:
+                self._raw_text = Path(r.manifest_path).read_text(encoding="utf-8")
+                manifest_data = json.loads(self._raw_text)
+            except Exception:
+                manifest_data = None
+
+        # 2. Populate structured summary
+        signing_info = manifest_data.get("signing", {}) if manifest_data else {}
+        engine_info = manifest_data.get("quality_engine", {}) if manifest_data else {}
+
         rows = [
-            ("Manifest version", "1.1.0"),
-            ("Algorithm", "quality-gate-v4.0"),
-            ("Policy", "5pct-v1.0"),
-            ("Signing mode", r.signing_mode),
-            ("Ed25519 key", r.signing_key_id or "ephemeral"),
-            ("Input SHA-256", r.input_sha256[:20] + "…" if r.input_sha256 else "—"),
-            ("Output SHA-256", r.output_sha256[:20] + "…" if r.output_sha256 else "—"),
+            ("Manifest version", manifest_data.get("manifest_version", "1.1.0") if manifest_data else "1.1.0"),
+            ("Algorithm", engine_info.get("algorithm_version", "quality-gate-v4.0")),
+            ("Policy", engine_info.get("policy_version", "5pct-v1.0")),
+            ("Signing mode", signing_info.get("mode", r.signing_mode)),
+            ("Ed25519 key", signing_info.get("key_id") or r.signing_key_id or "ephemeral"),
+            ("Input SHA-256", (manifest_data.get("input_sha256") or r.input_sha256)[:20] + "…" if (manifest_data.get("input_sha256") or r.input_sha256) else "—"),
+            ("Output SHA-256", (manifest_data.get("output_sha256") or r.output_sha256)[:20] + "…" if (manifest_data.get("output_sha256") or r.output_sha256) else "—"),
             ("Signature", r.manifest_signature[:20] + "…" if r.manifest_signature else "—"),
-            ("Public key fingerprint", r.public_key_fingerprint[:28] + "…" if r.public_key_fingerprint else "—"),
+            ("Public key fingerprint", (signing_info.get("public_key_fingerprint_raw") or r.public_key_fingerprint)[:28] + "…" if (signing_info.get("public_key_fingerprint_raw") or r.public_key_fingerprint) else "—"),
         ]
-        # Provider infos
-        infos = r.raw_details.get("provider_infos", [])
-        for info in infos:
-            caps = info.get("capabilities") or []
-            primary_cap = caps[0].upper() if caps else "provider"
-            ver = info.get("runtime_version") or "—"
-            rows.append((f"Provider  ({primary_cap})", f"ffmpeg {ver}"))
-            libvmaf = info.get("libvmaf_version")
-            if libvmaf:
-                rows.append(("libvmaf version", libvmaf))
+
+        # Provider infos from manifest or report details
+        providers_dict = manifest_data.get("providers", {}) if manifest_data else {}
+        if providers_dict:
+            for p_name, p_val in providers_dict.items():
+                p_status = p_val.get("status", "unknown")
+                p_ver = p_val.get("runtime_version", "")
+                rows.append((f"Provider ({p_name})", f"{p_status.upper()} (ffmpeg {p_ver})"))
+        else:
+            infos = r.raw_details.get("provider_infos", [])
+            for info in infos:
+                p_name = info.get("provider", "ffmpeg")
+                p_status = info.get("status", "success")
+                ver = info.get("runtime_version") or "—"
+                rows.append((f"Provider ({p_name})", f"{p_status.upper()} (ffmpeg {ver})"))
 
         for i, (key, val) in enumerate(rows):
             key_lbl = QLabel(key + ":")
@@ -111,49 +128,41 @@ class _ManifestTab(QWidget):
             self._summary_lay.addWidget(key_lbl, i, 0)
             self._summary_lay.addWidget(val_lbl, i, 1)
 
-        # Build representative JSON from the report's known fields
-        manifest_preview = {
-            "manifest_version": "1.1.0",
-            "quality_engine": {
-                "engine_version": "1.1.0",
-                "algorithm_version": "quality-gate-v4.0",
-                "policy_version": "5pct-v1.0",
-            },
-            "signing": {
-                "mode": r.signing_mode,
-                "algorithm": "Ed25519",
-                "key_id": r.signing_key_id,
-                "public_key_fingerprint_raw": r.public_key_fingerprint,
-            },
-            "input_sha256": r.input_sha256,
-            "output_sha256": r.output_sha256,
-            "rendered_fidelity": {
-                "ssim_mean": r.ssim.mean,
-                "ssim_p5": r.ssim.p5,
-                "ssim_worst": r.ssim.min_val,
-                "psnr_mean_db": r.psnr.mean,
-                "psnr_worst_db": r.psnr.min_val,
-            },
-            "quality_providers": {
-                entry["metric"]: {
-                    "mean": entry.get("mean"),
-                    "minimum": entry.get("minimum"),
-                    "evidence_sha256": entry.get("evidence_sha256"),
-                    "note": entry.get("note"),
-                }
-                for entry in (r.provider_results or [])
-            },
-            "verdict": {
-                "tier1_policy_passed": r.three_tier_verdict.tier1_policy_passed,
-                "tier2_fidelity_passed": r.three_tier_verdict.tier2_fidelity_passed,
-                "tier3_temporal_passed": r.three_tier_verdict.tier3_temporal_passed,
-                "overall_verdict": r.three_tier_verdict.overall_verdict,
-                "all_passed": r.three_tier_verdict.all_passed,
-            },
-            "signature": r.manifest_signature,
-        }
+        # 3. Fallback: if manifest was not yet written to disk, build preview from report fields
+        if not self._raw_text:
+            manifest_preview = {
+                "manifest_version": "1.1.0",
+                "quality_engine": {
+                    "engine_version": "1.1.0",
+                    "algorithm_version": "quality-gate-v4.0",
+                    "policy_version": "5pct-v1.0",
+                },
+                "signing": {
+                    "mode": r.signing_mode,
+                    "algorithm": "Ed25519",
+                    "key_id": r.signing_key_id,
+                    "public_key_fingerprint_raw": r.public_key_fingerprint,
+                },
+                "input_sha256": r.input_sha256,
+                "output_sha256": r.output_sha256,
+                "rendered_fidelity": {
+                    "ssim_mean": r.ssim.mean,
+                    "ssim_p5": r.ssim.p5,
+                    "ssim_worst": r.ssim.min_val,
+                    "psnr_mean_db": r.psnr.mean,
+                    "psnr_worst_db": r.psnr.min_val,
+                },
+                "verdict": {
+                    "tier1_policy_passed": r.three_tier_verdict.tier1_policy_passed,
+                    "tier2_fidelity_passed": r.three_tier_verdict.tier2_fidelity_passed,
+                    "tier3_temporal_passed": r.three_tier_verdict.tier3_temporal_passed,
+                    "overall_verdict": r.three_tier_verdict.overall_verdict,
+                    "all_passed": r.three_tier_verdict.all_passed,
+                },
+                "signature": r.manifest_signature,
+            }
+            self._raw_text = json.dumps(manifest_preview, indent=2, default=str)
 
-        self._raw_text = json.dumps(manifest_preview, indent=2, default=str)
         self.txt_json.setPlainText(self._raw_text)
         self.btn_copy_json.setEnabled(True)
 

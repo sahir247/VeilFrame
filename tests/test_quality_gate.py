@@ -697,23 +697,35 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         shutil.rmtree(cls.temp_dir, ignore_errors=True)
 
     def test_rfc8785_canonicalization_vectors(self):
-        """Test genuine RFC 8785 JSON Canonicalization Scheme compliance."""
+        """Test genuine RFC 8785 JSON Canonicalization Scheme compliance against official vectors."""
         from veilframe.core.crypto import canonicalize_rfc8785
 
-        # Vector 1: Key ordering by UTF-16 code units
-        data1 = {"b": 1, "a": 2, "z": 3, "A": 4}
+        # Vector 1: Key ordering by UTF-16 code units (RFC 8785 Section 3.2.2)
+        data1 = {"b": 1, "a": 2, "z": 3, "A": 4, "\u00e9": 5, "\u0100": 6}
         b1 = canonicalize_rfc8785(data1)
-        self.assertEqual(b1.decode("utf-8"), '{"A":4,"a":2,"b":1,"z":3}')
+        self.assertEqual(b1, b'{"A":4,"a":2,"b":1,"z":3,"\xc3\xa9":5,"\xc4\x80":6}')
 
-        # Vector 2: String escaping (only ", \\, and control characters 0x00-0x1F)
-        data2 = {"msg": "Hello\nWorld\t\"Test\" \u2705"}
+        # Vector 2: String escaping (only ", \\, and control characters 0x00-0x1F; all other UTF-8 literal)
+        data2 = {"msg": "Hello\nWorld\t\"Test\" \u2705 \u20ac\x00\x1f"}
         b2 = canonicalize_rfc8785(data2)
-        self.assertEqual(b2.decode("utf-8"), '{"msg":"Hello\\u000aWorld\\u0009\\"Test\\" \u2705"}')
+        self.assertEqual(
+            b2,
+            b'{"msg":"Hello\\u000aWorld\\u0009\\"Test\\" \xe2\x9c\x85 \xe2\x82\xac\\u0000\\u001f"}',
+        )
 
-        # Vector 3: Floating point integer canonicalization
-        data3 = {"int_float": 100.0, "real_float": 3.14159, "zero": 0.0, "neg_zero": -0.0}
-        b3 = canonicalize_rfc8785(data3)
-        self.assertEqual(b3.decode("utf-8"), '{"int_float":100,"neg_zero":0,"real_float":3.14159,"zero":0}')
+        # Vector 3: Number canonicalization per ECMAScript 7.1.12.1 ToString
+        vectors = [
+            ({"v": 0.0}, b'{"v":0}'),
+            ({"v": -0.0}, b'{"v":0}'),
+            ({"v": 100.0}, b'{"v":100}'),
+            ({"v": 1e-6}, b'{"v":0.000001}'),
+            ({"v": 1e-7}, b'{"v":1e-7}'),
+            ({"v": 1e20}, b'{"v":100000000000000000000}'),
+            ({"v": 1e21}, b'{"v":1e+21}'),
+            ({"v": -12.34}, b'{"v":-12.34}'),
+        ]
+        for data_in, expected_bytes in vectors:
+            self.assertEqual(canonicalize_rfc8785(data_in), expected_bytes)
 
     def test_persistent_signer_missing_key_strictly_fails(self):
         """Persistent signing mode must fail with ValueError if key path / env is missing."""
@@ -766,6 +778,18 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         manifest_data = json.loads(paths[0].read_bytes().decode("utf-8"))
         self.assertIn("timestamp_audit_mode", manifest_data["temporal_metrics"])
 
+    def test_mandatory_provider_execution_failure_fails_audit(self):
+        """When mandatory provider ffmpeg-native fails during execution, evaluate_visual_quality must raise."""
+        from unittest.mock import patch
+        from veilframe.core.validator import evaluate_visual_quality
+        from veilframe.quality.adapters.ffmpeg import FFmpegNativeProvider
+
+        with patch.object(FFmpegNativeProvider, "is_available", return_value=True):
+            with patch.object(FFmpegNativeProvider, "evaluate", side_effect=RuntimeError("FFmpeg lavfi filter crash")):
+                with self.assertRaises(RuntimeError) as ctx:
+                    evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
+                self.assertIn("Mandatory quality provider 'ffmpeg-native' failed during execution", str(ctx.exception))
+
     def test_quality_gate_rejects_invalid_configuration(self):
         """QualityGate must validate policy configuration on instantiation."""
         from veilframe.quality.gate import QualityGate
@@ -780,6 +804,25 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         bad_policy2 = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=70.0, vmaf_p5_min=85.0)
         with self.assertRaises(ValueError):
             QualityGate(bad_policy2)
+
+    def test_manifest_tab_reads_exact_signed_file_on_disk(self):
+        """_ManifestTab must load the exact signed canonical JSON bytes from manifest_path."""
+        import os
+        from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
+        from veilframe.gui.report_view import _ManifestTab
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+
+        report = evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
+        out_dir = self.temp_dir / "ui_manifest_test"
+        paths = generate_ed25519_signed_manifest(report, out_dir)
+
+        tab = _ManifestTab()
+        tab.set_manifest(report)
+
+        exact_bytes = paths[0].read_text(encoding="utf-8")
+        self.assertEqual(tab.txt_json.toPlainText(), exact_bytes)
 
 
 if __name__ == "__main__":

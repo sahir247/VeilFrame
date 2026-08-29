@@ -822,16 +822,11 @@ def generate_ed25519_signed_manifest(
             "vmaf": {
                 "strategy": "full_sequence",
                 "metric": "vmaf",
-                "frame_count": report.evaluated_frames,
+                "comparison_alignment": {
+                    "mode": "frame_sequence",
+                    "temporal_audit": report.temporal_metrics.timestamp_audit_mode,
+                },
             },
-            # Top-level aliases for backward compatibility with external verifiers
-            "strategy": report.energy_metrics.sampling_strategy,
-            "count": len(report.energy_metrics.sampled_indices_ref),
-            "range": [report.energy_metrics.sampling_range[0], report.energy_metrics.sampling_range[1]],
-            "indices_ref": report.energy_metrics.sampled_indices_ref,
-            "timestamps_ref_sec": report.energy_metrics.sampled_timestamps_ref,
-            "indices_trans": report.energy_metrics.sampled_indices_trans,
-            "timestamps_trans_sec": report.energy_metrics.sampled_timestamps_trans,
         },
         "environment": {
             "python_version": sys.version.split()[0],
@@ -932,6 +927,8 @@ def generate_ed25519_signed_manifest(
     signature = private_key.sign(canonical_bytes)
     manifest_sig_path.write_bytes(signature)
     report.manifest_signature = signature.hex()
+    report.manifest_path = str(manifest_json_path)
+    report.evidence_dir = str(dst_dir)
 
     return manifest_json_path, manifest_sha_path, manifest_sig_path, pub_key_path
 
@@ -1129,18 +1126,27 @@ def evaluate_visual_quality(
         audit_mode=policy.vmaf_audit_mode,
     )
 
+    # Mandatory provider execution integrity check:
+    # If the native provider is available on the system but failed during execution,
+    # do NOT silently fall back — fail the audit with an explicit error.
+    native_info = next((info for info in provider_infos if info.get("provider") == "ffmpeg-native"), None)
+    if native_info and native_info.get("status") == "error":
+        raise RuntimeError(
+            f"Mandatory quality provider 'ffmpeg-native' failed during execution: {native_info.get('error')}"
+        )
+
     # Extract SSIM/PSNR for backward-compat report fields
     ssim_result = next((r for r in provider_results if r.metric_name == "ssim"), None)
     psnr_result = next((r for r in provider_results if r.metric_name == "psnr"), None)
 
     if ssim_result:
         ssim_stats = QualityMetricStats(
-            mean=ssim_result.mean, min_val=ssim_result.minimum,
-            p1=ssim_result.p1, p5=ssim_result.p5, p95=ssim_result.p95,
+            mean=ssim_result.mean, min_val=ssim_result.minimum or 0.0,
+            p1=ssim_result.p1 or 0.0, p5=ssim_result.p5 or 0.0, p95=ssim_result.p95 or 0.0,
         )
         ssim_scores = [f.value for f in ssim_result.per_frame]
     else:
-        # Fallback: run canonical fidelity directly (provider unavailable)
+        # Fallback: run canonical fidelity directly ONLY when provider is unavailable on the host
         ssim_stats_raw, psnr_stats_raw, ssim_scores, psnr_scores = evaluate_canonical_fidelity(
             ref_path, trans_path, canonical_w, canonical_h
         )

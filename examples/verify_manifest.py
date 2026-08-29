@@ -61,14 +61,54 @@ def canonicalize_rfc8785(data: Any) -> bytes:
             raise ValueError("NaN and Infinity forbidden in RFC 8785")
         if n == 0.0:
             return "0"
-        if n.is_integer() and -9007199254740991 <= n <= 9007199254740991:
-            return str(int(n))
-        s = repr(n)
+
+        sign = "-" if math.copysign(1.0, n) < 0 else ""
+        abs_n = abs(n)
+
+        if abs_n.is_integer() and abs_n <= 9007199254740991:
+            if abs_n < 1e21:
+                return sign + str(int(abs_n))
+
+        s = repr(abs_n)
         if "e" in s or "E" in s:
-            s = s.lower()
-            parts = s.split("e")
-            s = f"{parts[0]}e{int(parts[1])}"
-        return s
+            parts = s.lower().split("e")
+            mantissa_str = parts[0].replace(".", "")
+            exp = int(parts[1])
+            if "." in parts[0]:
+                dot_pos = parts[0].index(".")
+                k = len(mantissa_str)
+                n_exp = exp + dot_pos
+            else:
+                k = len(mantissa_str)
+                n_exp = exp + k
+            m = mantissa_str
+        else:
+            parts = s.split(".")
+            m = parts[0] + (parts[1] if len(parts) > 1 else "")
+            m = m.lstrip("0")
+            if not m:
+                return "0"
+            k = len(m)
+            if parts[0] == "0":
+                leading_zeros = len(parts[1]) - len(parts[1].lstrip("0"))
+                n_exp = -leading_zeros
+            else:
+                n_exp = len(parts[0])
+
+        if k <= n_exp <= 21:
+            res = m + "0" * (n_exp - k)
+        elif 0 < n_exp <= 21:
+            res = m[:n_exp] + "." + m[n_exp:]
+        elif -6 < n_exp <= 0:
+            res = "0." + ("0" * (-n_exp)) + m
+        elif k == 1:
+            exp_val = n_exp - 1
+            res = m + ("e+" if exp_val > 0 else "e") + str(exp_val)
+        else:
+            exp_val = n_exp - 1
+            res = m[0] + "." + m[1:] + ("e+" if exp_val > 0 else "e") + str(exp_val)
+
+        return sign + res
 
     def _encode(val: Any) -> str:
         if val is None:
@@ -248,9 +288,13 @@ def main():
 
     samp = manifest_data.get("sampling", {})
     if samp:
+        energy_samp = samp.get("energy_metrics", {})
+        strategy = energy_samp.get("strategy") or samp.get("strategy", "")
+        count = energy_samp.get("count", 0) if "count" in energy_samp else samp.get("count", 0)
+        rng = energy_samp.get("range", []) if "range" in energy_samp else samp.get("range", [])
         print(f"\nTimeline Sampling:")
-        print(f"  Strategy:              {samp.get('strategy', '')} (Evaluated samples: {samp.get('count', 0)})")
-        print(f"  Range:                 {samp.get('range', [])}")
+        print(f"  Strategy:              {strategy} (Evaluated samples: {count})")
+        print(f"  Range:                 {rng}")
 
     print("\n============================================================")
     print("             AUDIT VERIFICATION RESULT: PASSED              ")

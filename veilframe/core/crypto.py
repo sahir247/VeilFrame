@@ -57,20 +57,56 @@ def _serialize_rfc8785_number(n: float | int) -> str:
     if n == 0.0:
         return "0"
 
-    # If it is an exact integer within safe precision range
-    if n.is_integer() and -9007199254740991 <= n <= 9007199254740991:
-        return str(int(n))
+    sign = "-" if math.copysign(1.0, n) < 0 else ""
+    abs_n = abs(n)
 
-    # Shortest round-tripping float representation in ECMAScript / Python
-    # Python 3 repr(float) uses the David Gay algorithm (same as V8/ECMAScript ToString)
-    s = repr(n)
-    # Ensure exponent format is lowercase 'e' without '+' sign (e.g. 1e20 not 1e+20, 1e-05 not 1e-05)
+    # Exact integer check within safe precision range
+    if abs_n.is_integer() and abs_n <= 9007199254740991:
+        if abs_n < 1e21:
+            return sign + str(int(abs_n))
+
+    # Parse Python float repr to extract significant digits and exponent
+    s = repr(abs_n)
     if "e" in s or "E" in s:
-        s = s.lower()
-        parts = s.split("e")
+        parts = s.lower().split("e")
+        mantissa_str = parts[0].replace(".", "")
         exp = int(parts[1])
-        s = f"{parts[0]}e{exp}"
-    return s
+        if "." in parts[0]:
+            dot_pos = parts[0].index(".")
+            k = len(mantissa_str)
+            n_exp = exp + dot_pos
+        else:
+            k = len(mantissa_str)
+            n_exp = exp + k
+        m = mantissa_str
+    else:
+        parts = s.split(".")
+        m = parts[0] + (parts[1] if len(parts) > 1 else "")
+        m = m.lstrip("0")
+        if not m:
+            return "0"
+        k = len(m)
+        if parts[0] == "0":
+            leading_zeros = len(parts[1]) - len(parts[1].lstrip("0"))
+            n_exp = -leading_zeros
+        else:
+            n_exp = len(parts[0])
+
+    # Standard ECMAScript 7.1.12.1 ToString formatting
+    if k <= n_exp <= 21:
+        res = m + "0" * (n_exp - k)
+    elif 0 < n_exp <= 21:
+        res = m[:n_exp] + "." + m[n_exp:]
+    elif -6 < n_exp <= 0:
+        res = "0." + ("0" * (-n_exp)) + m
+    elif k == 1:
+        exp_val = n_exp - 1
+        res = m + ("e+" if exp_val > 0 else "e") + str(exp_val)
+    else:
+        exp_val = n_exp - 1
+        res = m[0] + "." + m[1:] + ("e+" if exp_val > 0 else "e") + str(exp_val)
+
+    return sign + res
 
 
 def canonicalize_rfc8785(data: Any) -> bytes:

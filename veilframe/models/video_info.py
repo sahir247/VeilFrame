@@ -269,6 +269,8 @@ class VisualQualityReport:
     # Each entry is a serializable dict produced by QualityResult (for non-SSIM/PSNR providers).
     # SSIM and PSNR remain in the legacy ssim/psnr fields for backwards compatibility.
     provider_results: List[Dict[str, Any]] = field(default_factory=list)
+    manifest_path: Optional[str] = None
+    evidence_dir: Optional[str] = None
 
 
     @property

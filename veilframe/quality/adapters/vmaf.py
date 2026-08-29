@@ -152,6 +152,10 @@ class LibvmafFFmpegProvider:
         # audit_mode + no model_path → model_identity stays None (should not reach here
         # if is_available() is checked first, but defensive)
 
+        model_provenance = "explicit" if (self._model_path or self._audit_mode) else "implicit"
+        if model_identity:
+            model_identity["provenance"] = model_provenance
+
         return {
             "provider": self.name,
             "adapter_version": self.version,
@@ -159,6 +163,7 @@ class LibvmafFFmpegProvider:
             "libvmaf_version": libvmaf_ver,
             "libvmaf_version_source": libvmaf_source,
             "model_identity": model_identity,
+            "model_provenance": model_provenance,
             "capabilities": list(self.capabilities),
         }
 
@@ -190,10 +195,10 @@ class LibvmafFFmpegProvider:
             provider_name=self.name,
             metric_name="vmaf",
             mean=raw["mean"],
-            minimum=raw["min"],
-            p1=raw["p1"],
-            p5=raw["p5"],
-            p95=raw["p95"],
+            minimum=raw.get("min"),
+            p1=raw.get("p1"),
+            p5=raw.get("p5"),
+            p95=raw.get("p95"),
             model_name=model_id.get("name"),
             model_sha256=model_id.get("sha256"),
             evidence_file=evidence_file,
@@ -337,7 +342,7 @@ class LibvmafFFmpegProvider:
         return base
 
     @staticmethod
-    def _parse_stderr_summary(stderr: str) -> Dict[str, float]:
+    def _parse_stderr_summary(stderr: str) -> Dict[str, Any]:
         """
         Fallback: parse the VMAF summary line from FFmpeg stderr when no
         JSON evidence file was written.
@@ -346,7 +351,11 @@ class LibvmafFFmpegProvider:
         match = re.search(r"VMAF score\s*[:=]\s*([\d.]+)", stderr)
         mean = float(match.group(1)) if match else 0.0
         return {
-            "mean": mean, "min": mean, "p1": mean, "p5": mean, "p95": mean,
+            "mean": mean,
+            "min": None,
+            "p1": None,
+            "p5": None,
+            "p95": None,
         }
 
 

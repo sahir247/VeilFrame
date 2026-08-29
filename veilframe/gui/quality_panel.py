@@ -318,22 +318,34 @@ class QualityPanel(QGroupBox):
 
             # Evidence file row
             evidence_sha = vmaf.get("evidence_sha256")
-            if evidence_sha and self._vmaf_evidence_path:
+            ev_path: Optional[Path] = self._vmaf_evidence_path
+            if (not ev_path or not ev_path.exists()) and r.evidence_dir:
+                candidate = Path(r.evidence_dir) / "vmaf.json"
+                if candidate.exists():
+                    ev_path = candidate
+            if (not ev_path or not ev_path.exists()) and r.manifest_path:
+                candidate = Path(r.manifest_path).parent / "vmaf.json"
+                if candidate.exists():
+                    ev_path = candidate
+
+            if evidence_sha:
                 ev_row = QHBoxLayout()
                 ev_row.addWidget(_meta_label("Evidence:"))
                 sha_short = evidence_sha[:16] + "…"
                 ev_row.addWidget(_value_label(f"vmaf.json  SHA-256: {sha_short}", "#707070"))
 
-                btn_open = QPushButton("Open")
-                btn_open.setObjectName("iconBtn")
-                btn_open.setFixedWidth(46)
-                ev_path = self._vmaf_evidence_path
+                if ev_path and ev_path.exists():
+                    btn_open = QPushButton("Open")
+                    btn_open.setObjectName("iconBtn")
+                    btn_open.setFixedWidth(46)
+                    target_file = str(ev_path)
 
-                def _open_evidence():
-                    QDesktopServices.openUrl(QUrl.fromLocalFile(str(ev_path)))
+                    def _open_evidence(checked=False, f=target_file):
+                        QDesktopServices.openUrl(QUrl.fromLocalFile(f))
 
-                btn_open.clicked.connect(_open_evidence)
-                ev_row.addWidget(btn_open)
+                    btn_open.clicked.connect(_open_evidence)
+                    ev_row.addWidget(btn_open)
+
                 ev_row.addStretch()
                 vmaf_inner.addLayout(ev_row)
 

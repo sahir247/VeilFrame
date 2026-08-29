@@ -46,10 +46,10 @@ class QualityResult:
     provider_name: str          # e.g. "libvmaf", "ffmpeg-native"
     metric_name: str            # e.g. "vmaf", "ssim", "psnr"
     mean: float
-    minimum: float
-    p1: float
-    p5: float
-    p95: float
+    minimum: Optional[float] = None
+    p1: Optional[float] = None
+    p5: Optional[float] = None
+    p95: Optional[float] = None
     per_frame: List[PerFrameMetric] = field(default_factory=list)
     evidence_file: Optional[Path] = None        # path to detailed log (vmaf.json)
     evidence_sha256: Optional[str] = None       # SHA-256 of evidence_file

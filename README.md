@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
 [![Audit](https://img.shields.io/badge/Audit%20Signatures-Ed25519-purple.svg)](https://ed25519.cr.yp.to/)
 
-**VeilFrame** is an advanced local media sanitization and forensic anti-fingerprinting system. Unlike generic "metadata strippers" that only edit container tags, **VeilFrame** disrupts deep forensic tracking vectors (sensor PRNU noise patterns, perceptual hash trees, motion vectors, cadence signatures, and mains electrical network hums) within a bounded **5% transformation policy budget**, guarded by an **independent read-only visual fidelity gate** and sealed with **Ed25519 asymmetric cryptographic audit manifests**.
+**VeilFrame** is an advanced local media sanitization and bounded signal transformation system with independent visual-fidelity verification and cryptographic provenance. Unlike generic "metadata strippers" that only edit container tags, **VeilFrame** applies bounded signal perturbations across multiple domains (spatial trimming, micro-temporal shifts, sensor PRNU dither, chrominance drift, and acoustic ENF notch filtration) within a **5% transformation policy budget**, guarded by an **independent read-only visual fidelity gate** and sealed with **Ed25519 asymmetric cryptographic audit manifests**.
 
 ---
 
@@ -24,17 +24,17 @@ VeilFrame is built around four decoupled, defensible engineering components:
 
 ## 🆚 Why Traditional "EXIF Erasers" Fail on Video
 
-Most commercial "EXIF removers" (e.g. ExifTool, generic metadata cleaners) only delete top-level container tags. Modern forensic platforms and platform algorithms do not rely on EXIF tags to track and identify video files—they analyze deep structural and physical sensor signatures.
+Most commercial "EXIF removers" (e.g. ExifTool, generic metadata cleaners) only delete top-level container tags. Modern forensic platforms and platform algorithms do not rely solely on EXIF tags to track and identify video files—they analyze deep structural and physical sensor signatures.
 
 | Forensic Vector / Threat | Traditional "EXIF Erasers" | VeilFrame Engine |
 |---|:---:|:---:|
 | **Top-Level Metadata (GPS, Camera Model, Creation Time)** | ✅ Stripped | ✅ Completely zeroed & sanitized |
 | **Bitstream Encoder Leaks (SEI NALs, FFmpeg / x264 banners)** | ❌ Preserved | ✅ Re-muxed & scrubbed with bitexact headers |
-| **Sensor PRNU Fingerprints (Photo-Response Non-Uniformity)** | ❌ Intact (Unique device hardware ID) | ✅ Mitigated via temporal Gaussian dither ($\sigma \approx 2.5$) |
-| **Spatial Perceptual Hashes (pHash / DCT Grid Signatures)** | ❌ Identical match | ✅ Perturbed via asymmetric edge cropping & 99.8% Lanczos rescale |
-| **Temporal Motion Hashes & Frame Delta Trees** | ❌ Identical match | ✅ Disrupted via micro-speed modulation & decimal FPS time-warp |
-| **Electrical Network Frequency (ENF) Power-Grid Acoustic Hum** | ❌ Leaks geographic location & recording date | ✅ Attenuated via 50Hz, 60Hz, 100Hz, and 120Hz IIR notch filters |
-| **ISP Color & Sensor Profile Fingerprints** | ❌ Identical ISP curve match | ✅ Shifted via subtle non-linear gamma & chrominance drift |
+| **Sensor PRNU Fingerprints (Photo-Response Non-Uniformity)** | ❌ Intact (Unique device hardware ID) | ⚠️ Experimental mitigation via bounded temporal Gaussian dither ($\sigma \approx 2.5$) |
+| **Spatial Perceptual Hashes (pHash / DCT Grid Signatures)** | ❌ Identical match | ⚠️ Bounded perturbation via asymmetric edge cropping & 99.8% Lanczos rescale |
+| **Temporal Motion Hashes & Frame Delta Trees** | ❌ Identical match | ⚠️ Bounded perturbation via micro-speed modulation & decimal FPS time-warp |
+| **Electrical Network Frequency (ENF) Power-Grid Acoustic Hum** | ❌ Leaks geographic location & recording date | ⚠️ Attenuated via 50Hz, 60Hz, 100Hz, and 120Hz IIR notch filters |
+| **ISP Color & Sensor Profile Fingerprints** | ❌ Identical ISP curve match | ⚠️ Bounded drift via subtle non-linear gamma & chrominance drift |
 | **Bitstream GOP / Timestamp Cadence Fingerprints** | ❌ Matches recording software cadence | ✅ Standardized to deterministic IDR/GOP cadence & Epoch 0 timestamps |
 | **Quality Verification** | ❌ None (Blind export) | ✅ **VeilFrame Independent Read-Only Three-Tier Quality Gate** |
 | **Audit Provenance & Tamper Evidence** | ❌ None | ✅ **VeilFrame Asymmetric Ed25519 Signed Audit Manifests** |
@@ -204,7 +204,7 @@ Anyone can verify an exported video and its Ed25519 signed manifest using the st
 python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> --expected-fingerprint SHA256:... --expected-key-id veilframe-signer-01 --video-file <output.mp4>
 ```
 
-### Run Test Suite (26 Unit, Integration, Adversarial & Boundary Tests)
+### Run Test Suite
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover tests
 ```
