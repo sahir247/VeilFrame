@@ -132,7 +132,7 @@ def build_fixture(name: str, ref: Path, out: Path, w: int, h: int):
     base_scale = f"scale={w}:{h}"
 
     if name == "IDENTICAL":
-        shutil.copy2(str(ref), str(out))
+        _encode(ref, out, base_scale, crf=0)
         return
 
     vf = {
@@ -140,9 +140,9 @@ def build_fixture(name: str, ref: Path, out: Path, w: int, h: int):
         "LOW_PERTURBATION":    f"scale={int(w*0.998)}:{int(h*0.998)},scale={w}:{h},noise=alls=2:allf=t",
         "MODERATE":            f"{base_scale},noise=alls=8:allf=t,gblur=sigma=0.8",
         "MODERATE_EXCEEDANCE": f"crop={int(w*0.90)}:{int(h*0.90)},scale={w}:{h},gblur=sigma=1.5",
-        "HIGH":                f"{base_scale},noise=alls=18:allf=t+g",
-        "SEVERE":              f"{base_scale},gblur=sigma=4,hue=s=0.3,curves=master='0/0 0.3/0.15 1/0.7'",
-        "EXTREME":             f"{base_scale},gblur=sigma=8,posterize=2,hue=s=0.1,curves=master='0/0 1/0.4'",
+        "HIGH":                f"{base_scale},noise=alls=12:allf=t,noise=alls=12:allf=u",
+        "SEVERE":              f"{base_scale},gblur=sigma=4,hue=s=0.3,curves=master=0/0 0.3/0.15 1/0.7",
+        "EXTREME":             f"{base_scale},gblur=sigma=8,hue=s=0.1,curves=master=0/0 1/0.4",
     }.get(name)
 
     if not vf:

@@ -42,6 +42,7 @@ env.bak/
 # Scratch & temporary artifacts
 scratch/
 venv.bak/
+calibration_corpus/
 
 # Unit test / coverage
 .tox/

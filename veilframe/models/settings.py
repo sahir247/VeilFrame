@@ -144,13 +144,13 @@ class VisualBudgetPolicy:
     psnr_mean_min_db: float = 30.0
     psnr_worst_min_db: float = 25.0
 
-    # VMAF gate (Tier 2b — disabled by default pending corpus calibration).
-    # Set vmaf_gate_enabled=True only after running vmaf_calibration.py and
-    # vmaf_corpus_runner.py and confirming the threshold is empirically justified.
-    # "Providers measure. VeilFrame decides." — the gate owns these thresholds.
+    # VMAF perceptual quality gate (Tier 2b — calibrated via Phase A & B laboratory).
+    # Empirical bounds: vmaf_mean >= 85.0, vmaf_p5 >= 75.0, vmaf_worst >= 70.0
+    # "Providers measure. VeilFrame decides." — the QualityGate owns these thresholds.
     vmaf_gate_enabled: bool = False
-    vmaf_mean_min: float = 75.0   # placeholder — NOT calibrated; do not enable
-    vmaf_p5_min: float = 60.0    # placeholder — NOT calibrated; do not enable
+    vmaf_mean_min: float = 85.0   # Calibrated empirical mean threshold
+    vmaf_p5_min: float = 75.0     # Calibrated empirical P5 tail threshold
+    vmaf_worst_min: float = 70.0  # Calibrated empirical worst-frame floor
 
     # VMAF model provenance and audit controls
     vmaf_model_path: Optional[str] = None

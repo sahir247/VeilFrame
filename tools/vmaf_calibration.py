@@ -77,6 +77,10 @@ FIXTURE_SEVERITY_AXIS = [
     "EXTREME",
 ]
 
+ACCEPTABLE   = ["IDENTICAL", "VERY_LOW", "LOW_PERTURBATION"]
+BOUNDARY     = ["MODERATE", "MODERATE_EXCEEDANCE"]
+UNACCEPTABLE = ["HIGH", "SEVERE", "EXTREME"]
+
 FIXTURE_DESCRIPTIONS = {
     "IDENTICAL":            "Ref vs exact copy — absolute upper bound (expect ~100)",
     "VERY_LOW":             "σ=0.5 noise — theoretically imperceptible",
@@ -748,10 +752,24 @@ def main():
                     shutil.copy2(str(src), str(fix_dir / src.name))
             print(f"  Fixtures saved → {fix_dir}")
 
+        # Candidate threshold
+        vmaf_by = {r.fixture: r.vmaf.vmaf for r in results if r.vmaf_available and r.vmaf}
+        accept_means  = [vmaf_by[n].mean  for n in ACCEPTABLE  if n in vmaf_by]
+        accept_p5s    = [vmaf_by[n].p5    for n in ACCEPTABLE  if n in vmaf_by]
+        accept_worsts = [vmaf_by[n].worst for n in ACCEPTABLE  if n in vmaf_by]
+        cand_threshold = None
+        if accept_means:
+            cand_threshold = {
+                "vmaf_mean_min": round(min(accept_means) * 0.95, 1),
+                "vmaf_p5_min": round(min(accept_p5s) * 0.95, 1),
+                "vmaf_worst_min": round(min(accept_worsts) * 0.95, 1),
+            }
+
         out_data = {
             "schema": "veilframe-vmaf-calibration-v1",
             "metadata": asdict(meta),
             "gate_reference": {"ssim_min": GATE_SSIM, "psnr_db_min": GATE_PSNR},
+            "candidate_threshold": cand_threshold,
             "fixtures": FIXTURE_SEVERITY_AXIS,
             "results": [asdict(r) for r in results],
         }

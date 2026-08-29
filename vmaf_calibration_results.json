@@ -2,7 +2,7 @@
   "schema": "veilframe-vmaf-calibration-v1",
   "metadata": {
     "tool_version": "1.0.0",
-    "timestamp_utc": "2026-08-29T08:36:23.559926Z",
+    "timestamp_utc": "2026-08-29T21:18:18.006179Z",
     "ffmpeg_version": "9.0-full_build-www.gyan.dev",
     "libvmaf_version": "unknown",
     "vmaf_model_name": "default",
@@ -15,6 +15,11 @@
   "gate_reference": {
     "ssim_min": 0.95,
     "psnr_db_min": 30.0
+  },
+  "candidate_threshold": {
+    "vmaf_mean_min": 91.4,
+    "vmaf_p5_min": 90.8,
+    "vmaf_worst_min": 89.3
   },
   "fixtures": [
     "IDENTICAL",
