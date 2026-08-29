@@ -33,6 +33,11 @@ def main():
     app.setOrganizationName("VeilFrame")
     app.setStyleSheet(DARK_THEME_QSS)
 
+    # Global UX filter: Dropdowns only controlled via click/keys, Spinboxes require focus for wheel
+    from .gui.controls import UXWheelEventFilter
+    wheel_filter = UXWheelEventFilter(app)
+    app.installEventFilter(wheel_filter)
+
     # Check for FFmpeg / FFprobe binaries
     try:
         get_ffmpeg_path()

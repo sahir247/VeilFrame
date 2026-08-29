@@ -204,6 +204,29 @@ QPushButton#iconBtn:hover {
     color: #4880f5;
 }
 
+QPushButton#sectionResetBtn {
+    background-color: transparent;
+    color: #808080;
+    border: 1px solid #383838;
+    border-radius: 3px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 500;
+    min-height: 18px;
+    max-height: 22px;
+}
+
+QPushButton#sectionResetBtn:hover {
+    background-color: #282828;
+    color: #e0e0e0;
+    border-color: #555555;
+}
+
+QPushButton#sectionResetBtn:pressed {
+    background-color: #333333;
+    color: #ffffff;
+}
+
 /* ── Inputs ──────────────────────────────────────────────────────── */
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     background-color: #2a2a2a;

@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QRadioButton,
     QButtonGroup,
-    QSlider,
     QPushButton,
     QGroupBox,
     QFrame,
@@ -18,6 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from ..models.settings import NoiseSettings
 from ..core.noise import get_noise_level_label, calculate_noise_strength
+from .controls import FocusWheelSlider, create_section_reset_button
 
 
 class NoiseControlWidget(QGroupBox):
@@ -32,7 +32,7 @@ class NoiseControlWidget(QGroupBox):
         main_lay = QVBoxLayout(self)
         main_lay.setSpacing(10)
 
-        # Header row: Enable Checkbox + Auto/Manual Radio buttons
+        # Header row: Enable Checkbox + Auto/Manual Radio buttons + Preview + Reset
         top_lay = QHBoxLayout()
         self.cb_enable = QCheckBox("Enable Noise")
         self.cb_enable.setChecked(False)
@@ -58,6 +58,9 @@ class NoiseControlWidget(QGroupBox):
         self.btn_preview.clicked.connect(self.previewRequested.emit)
         top_lay.addWidget(self.btn_preview)
 
+        self.btn_reset = create_section_reset_button(self._reset_section)
+        top_lay.addWidget(self.btn_reset)
+
         main_lay.addLayout(top_lay)
 
         # Slider and Intensity Badge Row
@@ -66,7 +69,7 @@ class NoiseControlWidget(QGroupBox):
         lbl_strength.setStyleSheet("color: #606060; font-size: 11px;")
         slider_lay.addWidget(lbl_strength)
 
-        self.slider = QSlider(Qt.Horizontal)
+        self.slider = FocusWheelSlider(Qt.Horizontal)
         self.slider.setRange(0, 100)
         self.slider.setValue(1)
         self.slider.setTickInterval(10)
@@ -188,3 +191,11 @@ class NoiseControlWidget(QGroupBox):
             self.rb_manual.setChecked(True)
         self.slider.setValue(settings.strength if settings.strength > 0 else 1)
         self._update_controls_state()
+
+    def _reset_section(self):
+        """Reset noise engine controls to subtle default state."""
+        self.cb_enable.setChecked(False)
+        self.rb_auto.setChecked(True)
+        self.slider.setValue(1)
+        self._update_controls_state()
+        self.settingsChanged.emit()

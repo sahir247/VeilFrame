@@ -1,19 +1,16 @@
 """
 Processing panel with Auto/Manual controls for Crop, Resize, FPS, Trim, Color Drift, Audio Privacy, Codec, Quality, and Privacy.
 """
-from typing import Optional
+from typing import Optional, Callable
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QGridLayout,
     QLabel,
-    QComboBox,
     QCheckBox,
     QRadioButton,
     QButtonGroup,
-    QSpinBox,
-    QDoubleSpinBox,
     QGroupBox,
     QFrame,
 )
@@ -36,6 +33,12 @@ from ..models.settings import (
 from ..models.video_info import VideoInfo
 from ..presets.manager import PresetManager
 from .noise_control import NoiseControlWidget
+from .controls import (
+    NoWheelComboBox,
+    FocusWheelSpinBox,
+    FocusWheelDoubleSpinBox,
+    create_section_reset_button,
+)
 
 
 class ProcessingPanel(QWidget):
@@ -59,11 +62,17 @@ class ProcessingPanel(QWidget):
         p_lay = QVBoxLayout(preset_box)
         p_row = QHBoxLayout()
         p_row.addWidget(QLabel("Profile:"))
-        self.combo_presets = QComboBox()
+        self.combo_presets = NoWheelComboBox()
         for name in self.preset_mgr.get_preset_names():
             self.combo_presets.addItem(name)
         self.combo_presets.currentTextChanged.connect(self._on_preset_selected)
         p_row.addWidget(self.combo_presets, 1)
+
+        self.btn_reset_preset = create_section_reset_button(
+            self._reset_preset_section,
+            tooltip="Reset preset profile to Default (Subtle)",
+        )
+        p_row.addWidget(self.btn_reset_preset)
         p_lay.addLayout(p_row)
 
         self.lbl_preset_desc = QLabel(self.preset_mgr.get_preset_description(self.combo_presets.currentText()))
@@ -78,7 +87,12 @@ class ProcessingPanel(QWidget):
         proc_lay.setSpacing(14)
 
         # --- Section Helper ---
-        def create_toggle_header(title: str, default_auto_text: str = "● Auto (Subtle)"):
+        def create_toggle_header(
+            title: str,
+            on_reset: Optional[Callable[[], None]] = None,
+            default_auto_text: str = "● Auto (Subtle)",
+            reset_tooltip: str = "Reset this section to default values",
+        ):
             row = QHBoxLayout()
             cb_enable = QCheckBox(title)
             cb_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
@@ -95,18 +109,27 @@ class ProcessingPanel(QWidget):
             row.addWidget(rb_auto)
             row.addWidget(rb_manual)
             row.addStretch()
+
+            if on_reset:
+                btn_reset = create_section_reset_button(on_reset, tooltip=reset_tooltip)
+                row.addWidget(btn_reset)
+
             return cb_enable, rb_auto, rb_manual, row
 
         # --- CROP ---
-        self.crop_enable, self.crop_auto, self.crop_manual, crop_hdr = create_toggle_header("Crop (Asymmetric pHash Disruption)")
+        self.crop_enable, self.crop_auto, self.crop_manual, crop_hdr = create_toggle_header(
+            "Crop (Asymmetric pHash Disruption)",
+            on_reset=self._reset_crop_section,
+            reset_tooltip="Reset crop parameters to defaults",
+        )
         proc_lay.addLayout(crop_hdr)
 
         crop_inputs_lay = QHBoxLayout()
         crop_inputs_lay.setContentsMargins(20, 0, 0, 0)
-        self.crop_left = QSpinBox(); self.crop_left.setRange(0, 5000); self.crop_left.setPrefix("L: ")
-        self.crop_right = QSpinBox(); self.crop_right.setRange(0, 5000); self.crop_right.setPrefix("R: ")
-        self.crop_top = QSpinBox(); self.crop_top.setRange(0, 5000); self.crop_top.setPrefix("T: ")
-        self.crop_bottom = QSpinBox(); self.crop_bottom.setRange(0, 5000); self.crop_bottom.setPrefix("B: ")
+        self.crop_left = FocusWheelSpinBox(); self.crop_left.setRange(0, 5000); self.crop_left.setPrefix("L: ")
+        self.crop_right = FocusWheelSpinBox(); self.crop_right.setRange(0, 5000); self.crop_right.setPrefix("R: ")
+        self.crop_top = FocusWheelSpinBox(); self.crop_top.setRange(0, 5000); self.crop_top.setPrefix("T: ")
+        self.crop_bottom = FocusWheelSpinBox(); self.crop_bottom.setRange(0, 5000); self.crop_bottom.setPrefix("B: ")
         for sp in (self.crop_left, self.crop_right, self.crop_top, self.crop_bottom):
             crop_inputs_lay.addWidget(sp)
             sp.valueChanged.connect(self._on_control_changed)
@@ -120,13 +143,17 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- RESIZE ---
-        self.resize_enable, self.resize_auto, self.resize_manual, resize_hdr = create_toggle_header("Resize (Lanczos Grid Resample)")
+        self.resize_enable, self.resize_auto, self.resize_manual, resize_hdr = create_toggle_header(
+            "Resize (Lanczos Grid Resample)",
+            on_reset=self._reset_resize_section,
+            reset_tooltip="Reset resolution to source video dimensions",
+        )
         proc_lay.addLayout(resize_hdr)
 
         resize_inputs_lay = QHBoxLayout()
         resize_inputs_lay.setContentsMargins(20, 0, 0, 0)
-        self.resize_w = QSpinBox(); self.resize_w.setRange(16, 16384); self.resize_w.setValue(1920); self.resize_w.setPrefix("W: ")
-        self.resize_h = QSpinBox(); self.resize_h.setRange(16, 16384); self.resize_h.setValue(1080); self.resize_h.setPrefix("H: ")
+        self.resize_w = FocusWheelSpinBox(); self.resize_w.setRange(16, 16384); self.resize_w.setValue(1920); self.resize_w.setPrefix("W: ")
+        self.resize_h = FocusWheelSpinBox(); self.resize_h.setRange(16, 16384); self.resize_h.setValue(1080); self.resize_h.setPrefix("H: ")
         self.resize_aspect = QCheckBox("Maintain Aspect Ratio")
         self.resize_aspect.setChecked(True)
         resize_inputs_lay.addWidget(self.resize_w)
@@ -142,12 +169,16 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- FPS ---
-        self.fps_enable, self.fps_auto, self.fps_manual, fps_hdr = create_toggle_header("Frame Rate (FPS)")
+        self.fps_enable, self.fps_auto, self.fps_manual, fps_hdr = create_toggle_header(
+            "Frame Rate (FPS)",
+            on_reset=self._reset_fps_section,
+            reset_tooltip="Reset FPS to source video frame rate",
+        )
         proc_lay.addLayout(fps_hdr)
 
         fps_inputs_lay = QHBoxLayout()
         fps_inputs_lay.setContentsMargins(20, 0, 0, 0)
-        self.fps_val = QDoubleSpinBox()
+        self.fps_val = FocusWheelDoubleSpinBox()
         self.fps_val.setRange(1.0, 240.0)
         self.fps_val.setDecimals(3)
         self.fps_val.setValue(30.0)
@@ -160,17 +191,21 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- TRIM / DURATION ---
-        self.trim_enable, self.trim_auto, self.trim_manual, trim_hdr = create_toggle_header("Duration / Micro-Time Warp")
+        self.trim_enable, self.trim_auto, self.trim_manual, trim_hdr = create_toggle_header(
+            "Duration / Micro-Time Warp",
+            on_reset=self._reset_trim_section,
+            reset_tooltip="Reset timeline trim to full duration",
+        )
         proc_lay.addLayout(trim_hdr)
 
         trim_inputs_lay = QHBoxLayout()
         trim_inputs_lay.setContentsMargins(20, 0, 0, 0)
         trim_inputs_lay.addWidget(QLabel("Start:"))
-        self.trim_start = QDoubleSpinBox(); self.trim_start.setRange(0.0, 999999.0); self.trim_start.setDecimals(3); self.trim_start.setSuffix("s")
+        self.trim_start = FocusWheelDoubleSpinBox(); self.trim_start.setRange(0.0, 999999.0); self.trim_start.setDecimals(3); self.trim_start.setSuffix("s")
         trim_inputs_lay.addWidget(self.trim_start)
 
         trim_inputs_lay.addWidget(QLabel("Duration:"))
-        self.trim_dur = QDoubleSpinBox(); self.trim_dur.setRange(0.1, 999999.0); self.trim_dur.setDecimals(3); self.trim_dur.setValue(60.0); self.trim_dur.setSuffix("s")
+        self.trim_dur = FocusWheelDoubleSpinBox(); self.trim_dur.setRange(0.1, 999999.0); self.trim_dur.setDecimals(3); self.trim_dur.setValue(60.0); self.trim_dur.setSuffix("s")
         trim_inputs_lay.addWidget(self.trim_dur)
 
         self.lbl_trim_summary = QLabel("Timeline: 0.00s → 60.00s")
@@ -188,15 +223,19 @@ class ProcessingPanel(QWidget):
         color_box = QGroupBox("COLOR & LUMINANCE DRIFT (~1% BUDGET)")
         color_lay = QVBoxLayout(color_box)
 
-        self.color_enable, self.color_auto, self.color_manual, color_hdr = create_toggle_header("Low-Frequency Color Drift")
+        self.color_enable, self.color_auto, self.color_manual, color_hdr = create_toggle_header(
+            "Low-Frequency Color Drift",
+            on_reset=self._reset_color_section,
+            reset_tooltip="Reset color drift parameters to defaults",
+        )
         color_lay.addLayout(color_hdr)
 
         color_inputs_lay = QHBoxLayout()
         color_inputs_lay.setContentsMargins(20, 0, 0, 0)
-        self.col_contrast = QDoubleSpinBox(); self.col_contrast.setRange(0.5, 2.0); self.col_contrast.setDecimals(3); self.col_contrast.setValue(1.015); self.col_contrast.setPrefix("Contrast: ")
-        self.col_bright = QDoubleSpinBox(); self.col_bright.setRange(-0.5, 0.5); self.col_bright.setDecimals(3); self.col_bright.setValue(0.005); self.col_bright.setPrefix("Bright: ")
-        self.col_gamma = QDoubleSpinBox(); self.col_gamma.setRange(0.5, 2.0); self.col_gamma.setDecimals(3); self.col_gamma.setValue(0.985); self.col_gamma.setPrefix("Gamma: ")
-        self.col_sat = QDoubleSpinBox(); self.col_sat.setRange(0.5, 2.0); self.col_sat.setDecimals(3); self.col_sat.setValue(1.02); self.col_sat.setPrefix("Sat: ")
+        self.col_contrast = FocusWheelDoubleSpinBox(); self.col_contrast.setRange(0.5, 2.0); self.col_contrast.setDecimals(3); self.col_contrast.setValue(1.015); self.col_contrast.setPrefix("Contrast: ")
+        self.col_bright = FocusWheelDoubleSpinBox(); self.col_bright.setRange(-0.5, 0.5); self.col_bright.setDecimals(3); self.col_bright.setValue(0.005); self.col_bright.setPrefix("Bright: ")
+        self.col_gamma = FocusWheelDoubleSpinBox(); self.col_gamma.setRange(0.5, 2.0); self.col_gamma.setDecimals(3); self.col_gamma.setValue(0.985); self.col_gamma.setPrefix("Gamma: ")
+        self.col_sat = FocusWheelDoubleSpinBox(); self.col_sat.setRange(0.5, 2.0); self.col_sat.setDecimals(3); self.col_sat.setValue(1.02); self.col_sat.setPrefix("Sat: ")
 
         for sp in (self.col_contrast, self.col_bright, self.col_gamma, self.col_sat):
             color_inputs_lay.addWidget(sp)
@@ -214,10 +253,14 @@ class ProcessingPanel(QWidget):
         audio_box = QGroupBox("AUDIO DOMAIN PRIVACY & ENF NOTCH FILTERING")
         audio_lay = QVBoxLayout(audio_box)
 
+        audio_hdr = QHBoxLayout()
         self.audio_enable = QCheckBox("Enable Audio Privacy Pipeline")
         self.audio_enable.setChecked(True)
         self.audio_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
-        audio_lay.addWidget(self.audio_enable)
+        audio_hdr.addWidget(self.audio_enable)
+        audio_hdr.addStretch()
+        audio_hdr.addWidget(create_section_reset_button(self._reset_audio_section, "Reset audio privacy settings to defaults"))
+        audio_lay.addLayout(audio_hdr)
 
         audio_opts_lay = QHBoxLayout()
         audio_opts_lay.setContentsMargins(20, 0, 0, 0)
@@ -250,26 +293,27 @@ class ProcessingPanel(QWidget):
         quant_opts_lay.addWidget(self.cb_forced_gop)
         quant_opts_lay.addWidget(self.cb_epoch_zero)
         quant_opts_lay.addStretch()
+        quant_opts_lay.addWidget(create_section_reset_button(self._reset_quant_section, "Reset codec & quantization to defaults"))
         quant_lay.addLayout(quant_opts_lay)
 
         codec_row = QHBoxLayout()
         codec_row.addWidget(QLabel("Codec:"))
-        self.combo_codec_mode = QComboBox()
+        self.combo_codec_mode = NoWheelComboBox()
         self.combo_codec_mode.addItems(["Auto (H.264 / Best)", "Manual"])
         codec_row.addWidget(self.combo_codec_mode)
 
-        self.combo_codec = QComboBox()
+        self.combo_codec = NoWheelComboBox()
         self.combo_codec.addItems(["H.264 (libx264)", "H.265 / HEVC (libx265)", "AV1 (libsvtav1)"])
         codec_row.addWidget(self.combo_codec)
 
         codec_row.addSpacing(16)
         codec_row.addWidget(QLabel("Quality:"))
-        self.combo_q_mode = QComboBox()
+        self.combo_q_mode = NoWheelComboBox()
         self.combo_q_mode.addItems(["Auto (CRF 18-21)", "CRF", "Bitrate"])
         codec_row.addWidget(self.combo_q_mode)
 
-        self.spin_crf = QSpinBox(); self.spin_crf.setRange(0, 51); self.spin_crf.setValue(21); self.spin_crf.setPrefix("CRF: ")
-        self.spin_bitrate = QSpinBox(); self.spin_bitrate.setRange(100, 100000); self.spin_bitrate.setValue(12000); self.spin_bitrate.setSuffix(" kbps")
+        self.spin_crf = FocusWheelSpinBox(); self.spin_crf.setRange(0, 51); self.spin_crf.setValue(21); self.spin_crf.setPrefix("CRF: ")
+        self.spin_bitrate = FocusWheelSpinBox(); self.spin_bitrate.setRange(100, 100000); self.spin_bitrate.setValue(12000); self.spin_bitrate.setSuffix(" kbps")
         codec_row.addWidget(self.spin_crf)
         codec_row.addWidget(self.spin_bitrate)
         codec_row.addStretch()
@@ -287,7 +331,17 @@ class ProcessingPanel(QWidget):
 
         # 7. Privacy Sanitization Checklist
         priv_box = QGroupBox("PRIVACY SANITIZATION")
-        priv_lay = QGridLayout(priv_box)
+        priv_main_lay = QVBoxLayout(priv_box)
+
+        priv_hdr = QHBoxLayout()
+        lbl_priv_title = QLabel("Forensic Metadata Scrubbing")
+        lbl_priv_title.setStyleSheet("color: #707070; font-size: 11px; font-weight: 500;")
+        priv_hdr.addWidget(lbl_priv_title)
+        priv_hdr.addStretch()
+        priv_hdr.addWidget(create_section_reset_button(self._reset_privacy_section, "Reset privacy sanitization checklist to defaults"))
+        priv_main_lay.addLayout(priv_hdr)
+
+        priv_lay = QGridLayout()
         priv_lay.setHorizontalSpacing(20)
         priv_lay.setVerticalSpacing(8)
 
@@ -311,17 +365,22 @@ class ProcessingPanel(QWidget):
         for cb in (self.cb_priv_meta, self.cb_priv_comm, self.cb_priv_chap, self.cb_priv_scrub, self.cb_priv_verify):
             cb.stateChanged.connect(self._on_control_changed)
 
+        priv_main_lay.addLayout(priv_lay)
         main_lay.addWidget(priv_box)
 
-        # 6. Quality & Fidelity Gate
+        # 8. Quality & Fidelity Gate
         qg_box = QGroupBox("INDEPENDENT VISUAL QUALITY & FIDELITY GATE")
         qg_lay = QVBoxLayout(qg_box)
         qg_lay.setSpacing(8)
 
+        qg_hdr = QHBoxLayout()
         self.cb_qg_enable = QCheckBox("Enable Visual Quality Gate (Audit rendered frames against SSIM & PSNR constraints)")
         self.cb_qg_enable.setChecked(True)
         self.cb_qg_enable.stateChanged.connect(self._on_control_changed)
-        qg_lay.addWidget(self.cb_qg_enable)
+        qg_hdr.addWidget(self.cb_qg_enable)
+        qg_hdr.addStretch()
+        qg_hdr.addWidget(create_section_reset_button(self._reset_quality_gate_section, "Reset quality gate settings to defaults"))
+        qg_lay.addLayout(qg_hdr)
 
         self.cb_qg_strict = QCheckBox("Strict Enforcement (Reject export if fidelity constraints are violated)")
         self.cb_qg_strict.setChecked(False)
@@ -330,7 +389,7 @@ class ProcessingPanel(QWidget):
 
         qg_params_lay = QHBoxLayout()
         qg_params_lay.addWidget(QLabel("Min Mean SSIM:"))
-        self.spin_qg_ssim = QDoubleSpinBox()
+        self.spin_qg_ssim = FocusWheelDoubleSpinBox()
         self.spin_qg_ssim.setRange(0.50, 1.00)
         self.spin_qg_ssim.setSingleStep(0.01)
         self.spin_qg_ssim.setValue(0.95)
@@ -338,7 +397,7 @@ class ProcessingPanel(QWidget):
         qg_params_lay.addWidget(self.spin_qg_ssim)
 
         qg_params_lay.addWidget(QLabel("Min Mean PSNR (dB):"))
-        self.spin_qg_psnr = QDoubleSpinBox()
+        self.spin_qg_psnr = FocusWheelDoubleSpinBox()
         self.spin_qg_psnr.setRange(10.0, 60.0)
         self.spin_qg_psnr.setSingleStep(1.0)
         self.spin_qg_psnr.setValue(30.0)
@@ -648,3 +707,107 @@ class ProcessingPanel(QWidget):
         finally:
             self._updating_ui = False
             self._update_all_states()
+
+    # ── Section Reset Methods ───────────────────────────────────────────── #
+
+    def _reset_preset_section(self):
+        """Reset profile to Default (Subtle)."""
+        default_name = "Default (Subtle)"
+        items = [self.combo_presets.itemText(i) for i in range(self.combo_presets.count())]
+        if default_name in items:
+            self.combo_presets.setCurrentText(default_name)
+        elif self.combo_presets.count() > 0:
+            self.combo_presets.setCurrentIndex(0)
+
+    def _reset_crop_section(self):
+        """Reset Crop section to subtle auto defaults."""
+        self.crop_enable.setChecked(True)
+        self.crop_auto.setChecked(True)
+        self.crop_left.setValue(0)
+        self.crop_right.setValue(0)
+        self.crop_top.setValue(0)
+        self.crop_bottom.setValue(0)
+        self._on_control_changed()
+
+    def _reset_resize_section(self):
+        """Reset Resize section to match source dimensions or 1080p."""
+        self.resize_enable.setChecked(True)
+        self.resize_auto.setChecked(True)
+        w = 1920
+        h = 1080
+        if self.video_info and self.video_info.video:
+            if self.video_info.video.width > 0:
+                w = self.video_info.video.width
+            if self.video_info.video.height > 0:
+                h = self.video_info.video.height
+        self.resize_w.setValue(w)
+        self.resize_h.setValue(h)
+        self.resize_aspect.setChecked(True)
+        self._on_control_changed()
+
+    def _reset_fps_section(self):
+        """Reset FPS section to match source frame rate or 30.0."""
+        self.fps_enable.setChecked(True)
+        self.fps_auto.setChecked(True)
+        fps = 30.0
+        if self.video_info and self.video_info.video and self.video_info.video.fps > 0:
+            fps = self.video_info.video.fps
+        self.fps_val.setValue(fps)
+        self._on_control_changed()
+
+    def _reset_trim_section(self):
+        """Reset Duration / Trim section to full source duration."""
+        self.trim_enable.setChecked(False)
+        self.trim_auto.setChecked(True)
+        self.trim_start.setValue(0.0)
+        dur = 60.0
+        if self.video_info and self.video_info.duration > 0:
+            dur = self.video_info.duration
+            self.lbl_trim_summary.setText(f"Timeline: 0.00s → {dur:.2f}s")
+        self.trim_dur.setValue(dur)
+        self._on_control_changed()
+
+    def _reset_color_section(self):
+        """Reset Color & Luminance Drift to ~1% default perturbation budget."""
+        self.color_enable.setChecked(True)
+        self.color_auto.setChecked(True)
+        self.col_contrast.setValue(1.015)
+        self.col_bright.setValue(0.005)
+        self.col_gamma.setValue(0.985)
+        self.col_sat.setValue(1.02)
+        self._on_control_changed()
+
+    def _reset_audio_section(self):
+        """Reset Audio Domain Privacy settings to default enabled filters."""
+        self.audio_enable.setChecked(True)
+        self.cb_enf_notch.setChecked(True)
+        self.cb_micro_pitch.setChecked(True)
+        self._on_control_changed()
+
+    def _reset_quant_section(self):
+        """Reset Deterministic Quantization & Codec to defaults."""
+        self.cb_forced_gop.setChecked(True)
+        self.cb_epoch_zero.setChecked(True)
+        self.combo_codec_mode.setCurrentIndex(0)
+        self.combo_codec.setCurrentIndex(0)
+        self.combo_q_mode.setCurrentIndex(0)
+        self.spin_crf.setValue(21)
+        self.spin_bitrate.setValue(12000)
+        self._on_control_changed()
+
+    def _reset_privacy_section(self):
+        """Reset Privacy Sanitization checklist to full forensic scrub."""
+        self.cb_priv_meta.setChecked(True)
+        self.cb_priv_comm.setChecked(True)
+        self.cb_priv_chap.setChecked(True)
+        self.cb_priv_scrub.setChecked(True)
+        self.cb_priv_verify.setChecked(True)
+        self._on_control_changed()
+
+    def _reset_quality_gate_section(self):
+        """Reset Independent Visual Quality Gate parameters to defaults."""
+        self.cb_qg_enable.setChecked(True)
+        self.cb_qg_strict.setChecked(False)
+        self.spin_qg_ssim.setValue(0.95)
+        self.spin_qg_psnr.setValue(30.0)
+        self._on_control_changed()
