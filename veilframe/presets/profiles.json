@@ -30,6 +30,43 @@
       "psnr_worst_min_db": 25.0
     }
   },
+  "10% Bounded Forensic Disruption": {
+    "description": "Allocates a bounded 10% perceptual modification budget across Spatial Geometry (4%), Temporal (2%), High Frequency Noise (2%), Color/Gamma Drift (2%), plus deep Audio ENF notch & micro-pitch filtration to maximally disrupt PRNU, pHash, motion, and forensic attribution within SSIM >= 0.90 / PSNR >= 28 dB.",
+    "crop": { "enabled": true, "mode": "auto", "asymmetric": true },
+    "resize": { "enabled": true, "mode": "auto" },
+    "fps": { "enabled": true, "mode": "auto" },
+    "trim": { "enabled": true, "mode": "auto" },
+    "noise": { "enabled": true, "mode": "manual", "strength": 16, "prnu_mode": "cfa_mosaic", "cfa_pattern": "RGGB", "cfa_gamma": 0.6, "hash_perturbation_enabled": true, "hash_perturbation_budget": 0.02 },
+    "color": { "enabled": true, "mode": "auto", "contrast": 1.025, "brightness": 0.008, "gamma": 0.975, "saturation": 1.03 },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": true, "enf_frequencies": [50, 60, 100, 120], "micro_pitch": true, "pitch_ratio": 0.985 },
+    "quantization": { "forced_gop": true, "gop_size": 48, "scene_change_threshold": 0, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "crf", "crf": 22, "bitrate_kbps": 10000 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": true,
+      "enforce_strict": false,
+      "policy_budget": 0.10,
+      "spatial_ceiling_pct": 4.0,
+      "temporal_ceiling_pct": 2.0,
+      "luma_ceiling_pct": 2.0,
+      "chroma_ceiling_pct": 2.0,
+      "frequency_ceiling_pct": 2.0,
+      "aggregate_ceiling_pct": 10.0,
+      "ssim_mean_min": 0.90,
+      "ssim_p5_min": 0.85,
+      "ssim_worst_min": 0.80,
+      "psnr_mean_min_db": 28.0,
+      "psnr_worst_min_db": 22.0
+    }
+  },
   "Privacy Clean": {
     "description": "Maximum metadata and tracking artifact removal with original video parameters preserved.",
     "crop": { "enabled": false, "mode": "auto" },

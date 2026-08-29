@@ -43,8 +43,44 @@ class PresetManager:
     def get_preset_description(self, name: str) -> str:
         return self._profiles.get(name, {}).get("description", "")
 
+    def get_preset(self, name: str) -> Optional[Dict[str, Any]]:
+        if name in self._profiles:
+            return self._profiles[name]
+        for k, v in self._profiles.items():
+            if name.lower() in k.lower():
+                return v
+        if "10%" in name or name.strip() == "10":
+            return self._profiles.get("10% Bounded Forensic Disruption")
+        if "5%" in name or name.strip() == "5":
+            return self._profiles.get("5% Bounded Forensic Disruption")
+        return None
+
+    def to_processing_settings(self, data: Dict[str, Any], current_settings: Optional[ProcessingSettings] = None) -> ProcessingSettings:
+        # Find preset name matching data if any
+        matched_name = "Custom"
+        for k, v in self._profiles.items():
+            if v == data:
+                matched_name = k
+                break
+        return self._apply_data(matched_name, data, current_settings)
+
     def apply_preset(self, name: str, current_settings: Optional[ProcessingSettings] = None) -> ProcessingSettings:
-        data = self._profiles.get(name, {})
+        target_name = name
+        if name not in self._profiles:
+            if "10%" in name or name.strip() == "10":
+                target_name = "10% Bounded Forensic Disruption"
+            elif "5%" in name or name.strip() == "5":
+                target_name = "5% Bounded Forensic Disruption"
+            else:
+                for k in self._profiles:
+                    if name.lower() in k.lower():
+                        target_name = k
+                        break
+
+        data = self._profiles.get(target_name, {})
+        return self._apply_data(target_name, data, current_settings)
+
+    def _apply_data(self, name: str, data: Dict[str, Any], current_settings: Optional[ProcessingSettings] = None) -> ProcessingSettings:
         settings = current_settings or ProcessingSettings()
         settings.preset_name = name
 
@@ -98,6 +134,11 @@ class PresetManager:
                 enabled=n.get("enabled", False),
                 mode=n.get("mode", "auto"),
                 strength=int(n.get("strength", 1)),
+                prnu_mode=n.get("prnu_mode", "gaussian"),
+                cfa_pattern=n.get("cfa_pattern", "RGGB"),
+                cfa_gamma=float(n.get("cfa_gamma", 0.6)),
+                hash_perturbation_enabled=n.get("hash_perturbation_enabled", False),
+                hash_perturbation_budget=float(n.get("hash_perturbation_budget", 0.02)),
             )
 
         if "color" in data:
@@ -165,6 +206,12 @@ class PresetManager:
                 enabled=qg.get("enabled", True),
                 enforce_strict=qg.get("enforce_strict", False),
                 policy_budget=float(qg.get("policy_budget", 0.05)),
+                spatial_ceiling_pct=float(qg.get("spatial_ceiling_pct", 2.0)),
+                temporal_ceiling_pct=float(qg.get("temporal_ceiling_pct", 1.0)),
+                luma_ceiling_pct=float(qg.get("luma_ceiling_pct", 1.0)),
+                chroma_ceiling_pct=float(qg.get("chroma_ceiling_pct", 1.0)),
+                frequency_ceiling_pct=float(qg.get("frequency_ceiling_pct", 1.0)),
+                aggregate_ceiling_pct=float(qg.get("aggregate_ceiling_pct", 5.0)),
                 ssim_mean_min=float(qg.get("ssim_mean_min", 0.95)),
                 ssim_p5_min=float(qg.get("ssim_p5_min", 0.90)),
                 ssim_worst_min=float(qg.get("ssim_worst_min", 0.85)),

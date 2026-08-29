@@ -181,9 +181,23 @@ class NoiseControlWidget(QGroupBox):
         enabled = self.cb_enable.isChecked()
         mode = "auto" if self.rb_auto.isChecked() else "manual"
         strength = self.slider.value() if mode == "manual" else 2
-        return NoiseSettings(enabled=enabled, mode=mode, strength=strength)
+        return NoiseSettings(
+            enabled=enabled,
+            mode=mode,
+            strength=strength,
+            prnu_mode=getattr(self, "_prnu_mode", "gaussian"),
+            cfa_pattern=getattr(self, "_cfa_pattern", "RGGB"),
+            cfa_gamma=getattr(self, "_cfa_gamma", 0.6),
+            hash_perturbation_enabled=getattr(self, "_hash_perturbation_enabled", False),
+            hash_perturbation_budget=getattr(self, "_hash_perturbation_budget", 0.02),
+        )
 
     def set_settings(self, settings: NoiseSettings):
+        self._prnu_mode = getattr(settings, "prnu_mode", "gaussian")
+        self._cfa_pattern = getattr(settings, "cfa_pattern", "RGGB")
+        self._cfa_gamma = getattr(settings, "cfa_gamma", 0.6)
+        self._hash_perturbation_enabled = getattr(settings, "hash_perturbation_enabled", False)
+        self._hash_perturbation_budget = getattr(settings, "hash_perturbation_budget", 0.02)
         self.cb_enable.setChecked(settings.enabled)
         if settings.mode == "auto":
             self.rb_auto.setChecked(True)

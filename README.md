@@ -227,7 +227,8 @@ For detailed scientific methodology, detector math, and 3-layer metric schemas, 
 
 | Preset Name | Description |
 |---|---|
-| **5% Bounded Forensic Disruption** | Flagship preset. Full multi-pass metadata zeroing, 99.8% spatial scaling, 0.2% time-warp, PRNU Gaussian dither, 1% color drift, ENF audio notch filtration, and strict quality gate enforcement. |
+| **5% Bounded Forensic Disruption** | Flagship subtle preset. Full multi-pass metadata zeroing, 99.8% spatial scaling, 0.2% time-warp, PRNU Gaussian dither, 1% color drift, ENF audio notch filtration, and strict quality gate enforcement ($\text{SSIM} \ge 0.95$, $\text{PSNR} \ge 30\text{ dB}$, $\text{Budget} \le 5.0\%$). |
+| **10% Bounded Forensic Disruption** | Deep forensic perturbation preset. Allocates a 10% bounded modification budget across Spatial Geometry (4%), Temporal Cadence (2%), High Frequency Noise / Bayer CFA Mosaic PRNU Dither (2%), Color/Gamma Drift (2%), DCT Hash Perturbation, and deep multi-harmonic Audio ENF notch filtration ($\text{SSIM} \ge 0.90$, $\text{PSNR} \ge 28\text{ dB}$, $\text{Budget} \le 10.0\%$). |
 | **Privacy Clean** | Pure metadata and container header sanitization without altering video frames or audio streams. |
 | **Privacy Clean (Subtle Perturbation)** | Metadata zeroing with subtle micro-perturbations on auto mode. |
 | **Custom** | Complete manual control over every filter, slider, coordinate, and quality gate constraint. |

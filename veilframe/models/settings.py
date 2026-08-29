@@ -50,7 +50,12 @@ class TrimSettings:
 class NoiseSettings:
     enabled: bool = False
     mode: str = "auto"  # "auto" or "manual"
-    strength: int = 1  # 0 to 100 (0=disabled, 1=minimum subtle, 8=5% budget PRNU dither)
+    strength: int = 1  # 0 to 100 (0=disabled, 1=minimum subtle, 8=5% budget, 16=10% budget)
+    prnu_mode: str = "gaussian"  # "gaussian" or "cfa_mosaic"
+    cfa_pattern: str = "RGGB"  # "RGGB", "BGGR", "GRBG", "GBRG"
+    cfa_gamma: float = 0.6  # saturation clamping exponent
+    hash_perturbation_enabled: bool = False
+    hash_perturbation_budget: float = 0.02
 
 
 @dataclass
