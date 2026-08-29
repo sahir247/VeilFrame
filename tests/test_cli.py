@@ -122,6 +122,43 @@ class TestVeilFrameCLI(unittest.TestCase):
         self.assertEqual(data["status"], "success")
         self.assertTrue(out_vid.exists())
 
+    def test_prompt_choice_interactive_mock(self):
+        from unittest.mock import patch
+        from veilframe.cli_ui import prompt_choice
+
+        choices = ["Tool 1", "Tool 2", "Tool 3", "Exit"]
+
+        # Simulate Down arrow key navigation followed by Enter
+        with patch("sys.stdin.isatty", return_value=True), \
+             patch("veilframe.cli_ui._read_single_key", side_effect=["DOWN", "DOWN", "ENTER"]):
+            idx = prompt_choice("Select Operation", choices, default_idx=0)
+            self.assertEqual(idx, 2)
+
+        # Simulate Up arrow key navigation wrapping around
+        with patch("sys.stdin.isatty", return_value=True), \
+             patch("veilframe.cli_ui._read_single_key", side_effect=["UP", "ENTER"]):
+            idx = prompt_choice("Select Operation", choices, default_idx=0)
+            self.assertEqual(idx, 3)
+
+        # Simulate numeric key fast pick '2'
+        with patch("sys.stdin.isatty", return_value=True), \
+             patch("veilframe.cli_ui._read_single_key", return_value="2"):
+            idx = prompt_choice("Select Operation", choices, default_idx=0)
+            self.assertEqual(idx, 1)
+
+    def test_prompt_text_and_confirm(self):
+        from unittest.mock import patch
+        from veilframe.cli_ui import prompt_text, prompt_confirm
+
+        with patch("builtins.input", return_value="test_path.mp4"):
+            self.assertEqual(prompt_text("Enter file path"), "test_path.mp4")
+
+        with patch("builtins.input", return_value="y"):
+            self.assertTrue(prompt_confirm("Confirm operation"))
+
+        with patch("builtins.input", return_value="n"):
+            self.assertFalse(prompt_confirm("Confirm operation"))
+
 
 if __name__ == "__main__":
     unittest.main()

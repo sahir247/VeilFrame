@@ -11,6 +11,18 @@ import shutil
 import time
 from typing import List, Tuple, Optional, Dict, Any
 
+# Ensure UTF-8 output streams safely cross-platform
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 # --------------------------------------------------------------------------- #
 # Terminal Color & Styling Constants                                          #
@@ -19,9 +31,14 @@ def _supports_color() -> bool:
     """Detect if stdout supports ANSI color output."""
     if os.environ.get("NO_COLOR") or os.environ.get("TERM") == "dumb":
         return False
-    if not hasattr(sys.stdout, "isatty"):
-        return False
-    return sys.stdout.isatty()
+    if os.environ.get("FORCE_COLOR") or os.environ.get("CLICOLOR_FORCE"):
+        return True
+    # Modern terminal / Windows Terminal / VSCode
+    if hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+        return True
+    if os.name == "nt" and ("WT_SESSION" in os.environ or "VSCODE_INJECTION" in os.environ or "TERM_PROGRAM" in os.environ):
+        return True
+    return True
 
 
 USE_COLOR = _supports_color()
@@ -55,9 +72,9 @@ class Style:
     BRIGHT_CYAN = "\033[96m" if USE_COLOR else ""
     BRIGHT_WHITE = "\033[97m" if USE_COLOR else ""
 
-    # Backgrounds
-    BG_GREEN = "\033[42m" if USE_COLOR else ""
+    # Background Colors
     BG_RED = "\033[41m" if USE_COLOR else ""
+    BG_GREEN = "\033[42m" if USE_COLOR else ""
     BG_YELLOW = "\033[43m" if USE_COLOR else ""
     BG_BLUE = "\033[44m" if USE_COLOR else ""
     BG_MAGENTA = "\033[45m" if USE_COLOR else ""
@@ -65,17 +82,20 @@ class Style:
     BG_DARK = "\033[48;5;236m" if USE_COLOR else ""
 
 
+# --------------------------------------------------------------------------- #
+# Terminal Dimensions Helper                                                  #
+# --------------------------------------------------------------------------- #
 def get_terminal_width(default: int = 80) -> int:
-    """Get the current terminal column width safely."""
+    """Return terminal column width safely."""
     try:
-        cols, _ = shutil.get_terminal_size((default, 24))
-        return max(40, min(cols, 120))
+        w = shutil.get_terminal_size((default, 24)).columns
+        return max(60, min(w, 120))
     except Exception:
         return default
 
 
 # --------------------------------------------------------------------------- #
-# Badges & Status Formatters                                                  #
+# Badges & Status Tags                                                        #
 # --------------------------------------------------------------------------- #
 def badge(text: str, bg_color: str = Style.BG_BLUE, fg_color: str = Style.BRIGHT_WHITE) -> str:
     """Format a solid badge e.g. [ PASS ] or [ FAIL ]."""
@@ -85,40 +105,72 @@ def badge(text: str, bg_color: str = Style.BG_BLUE, fg_color: str = Style.BRIGHT
 
 
 def badge_pass(text: str = "PASS") -> str:
-    return f"{Style.BRIGHT_GREEN}{Style.BOLD}✔ {text}{Style.RESET}"
+    return f"{Style.BRIGHT_GREEN}{Style.BOLD}[ {text} ]{Style.RESET}"
 
 
 def badge_fail(text: str = "FAIL") -> str:
-    return f"{Style.BRIGHT_RED}{Style.BOLD}✖ {text}{Style.RESET}"
+    return f"{Style.BRIGHT_RED}{Style.BOLD}[ {text} ]{Style.RESET}"
 
 
 def badge_warn(text: str = "WARN") -> str:
-    return f"{Style.BRIGHT_YELLOW}{Style.BOLD}▲ {text}{Style.RESET}"
+    return f"{Style.BRIGHT_YELLOW}{Style.BOLD}[ {text} ]{Style.RESET}"
 
 
 def badge_info(text: str = "INFO") -> str:
-    return f"{Style.BRIGHT_CYAN}{Style.BOLD}ℹ {text}{Style.RESET}"
+    return f"{Style.BRIGHT_CYAN}{Style.BOLD}[ {text} ]{Style.RESET}"
 
 
 def badge_secure(text: str = "SEALED") -> str:
-    return f"{Style.BRIGHT_MAGENTA}{Style.BOLD}🔒 {text}{Style.RESET}"
+    return f"{Style.BRIGHT_MAGENTA}{Style.BOLD}[ {text} ]{Style.RESET}"
 
 
 # --------------------------------------------------------------------------- #
 # Banner & Branding Header                                                    #
 # --------------------------------------------------------------------------- #
-def print_banner(version: str = "1.1.0", subtitle: str = "Privacy-Preserving Media Sanitization & Cryptographic Audit"):
-    """Print the signature VeilFrame Claude Code/OpenClaw-style terminal header."""
+def print_banner(version: str = "1.1.0", subtitle: str = "PRIVACY-PRESERVING MEDIA SANITIZATION & FORENSIC DISRUPTION"):
+    """Print the signature VeilFrame big ASCII terminal banner in #CE9178 warm terracotta theme."""
     w = get_terminal_width()
-    border = "─" * (w - 2)
+
+    # #CE9178 Palette (RGB: 206, 145, 120)
+    c_ce9178 = "\033[38;2;206;145;120m" if USE_COLOR else ""  # Primary #CE9178
+    c_light  = "\033[38;2;228;175;153m" if USE_COLOR else ""  # Highlight Tone
+    c_cream  = "\033[38;2;220;220;170m" if USE_COLOR else ""  # Warm Sand #DCDCAA
+    c_teal   = "\033[38;2;78;201;176m" if USE_COLOR else ""   # Subtle Mint #4EC9B0
+    c_blue   = "\033[38;2;86;156;214m" if USE_COLOR else ""   # Soft Blue #569CD6
+
+    r = Style.RESET
+    b = Style.BOLD
+    d = Style.DIM
+
+    ascii_art = [
+        "██╗   ██╗███████╗██╗██╗     ███████╗██████╗  █████╗ ███╗   ███╗███████╗",
+        "██║   ██║██╔════╝██║██║     ██╔════╝██╔══██╗██╔══██╗████╗ ████║██╔════╝",
+        "██║   ██║█████╗  ██║██║     █████╗  ██████╔╝███████║██╔████╔██║█████╗  ",
+        "╚██╗ ██╔╝██╔══╝  ██║██║     ██╔══╝  ██╔══██╗██╔══██║██║╚██╔╝██║██╔══╝  ",
+        " ╚████╔╝ ███████╗██║███████╗██║     ██║  ██║██║  ██║██║ ╚═╝ ██║███████╗",
+        "  ╚═══╝  ╚══════╝╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝",
+    ]
 
     print()
-    print(f"{Style.BRIGHT_CYAN}╭{border}╮{Style.RESET}")
-    title_line = f"  {Style.BOLD}{Style.BRIGHT_CYAN}◈ VEILFRAME{Style.RESET} {Style.DIM}v{version}{Style.RESET} {Style.BRIGHT_BLACK}│{Style.RESET} {Style.BRIGHT_MAGENTA}3-Tier QualityGate{Style.RESET} {Style.BRIGHT_BLACK}│{Style.RESET} {Style.BRIGHT_GREEN}Ed25519 Signed{Style.RESET}"
-    print(title_line)
-    if subtitle:
-        print(f"  {Style.DIM}{subtitle}{Style.RESET}")
-    print(f"{Style.BRIGHT_CYAN}╰{border}╯{Style.RESET}")
+    if w >= 76:
+        for line in ascii_art:
+            print(f"  {b}{c_ce9178}{line}{r}")
+        print()
+        # Stylized Large-Look Subtitle Line in #CE9178
+        sub_bar = f"  {b}{c_ce9178}◈  P R I V A C Y - P R E S E R V I N G   M E D I A   S A N I T I Z A T I O N  ◈{r}"
+        print(sub_bar)
+        chips = f"  {d}v{version}{r} {Style.BRIGHT_BLACK}│{r} {c_cream}[ 3-Tier QualityGate ]{r} {Style.BRIGHT_BLACK}│{r} {c_teal}[ Ed25519 Cryptographic Audit ]{r} {Style.BRIGHT_BLACK}│{r} {c_blue}[ Bounded PRNU ]{r}"
+        print(chips)
+        if subtitle and subtitle != "PRIVACY-PRESERVING MEDIA SANITIZATION & FORENSIC DISRUPTION":
+            print(f"  {c_light}{b}▸ {subtitle.upper()}{r}")
+        print(f"  {d}{'─' * min(w - 4, 76)}{r}")
+    else:
+        border = "─" * (w - 2)
+        print(f"{c_ce9178}╭{border}╮{r}")
+        print(f"  {b}{c_ce9178}◈ VEILFRAME{r} {d}v{version}{r} {Style.BRIGHT_BLACK}│{r} {c_cream}[ 3-Tier QualityGate ]{r} {Style.BRIGHT_BLACK}│{r} {c_teal}[ Ed25519 Signed ]{r}")
+        if subtitle:
+            print(f"  {Style.BRIGHT_WHITE}{b}{subtitle.upper()}{r}")
+        print(f"{c_ce9178}╰{border}╯{r}")
     print()
 
 
@@ -278,6 +330,49 @@ class ProgressBar:
         sys.stdout.flush()
 
 
+class LoadingAnimation:
+    """
+    Context manager for displaying an animated terminal spinner during quick operations.
+    """
+    FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, message: str = "Processing"):
+        self.message = message
+        self._stop = False
+        self._thread = None
+
+    def __enter__(self):
+        import threading
+        self._stop = False
+
+        def _spin():
+            idx = 0
+            while not self._stop:
+                frame = self.FRAMES[idx % len(self.FRAMES)]
+                sys.stdout.write(f"\r{Style.BRIGHT_MAGENTA}{frame}{Style.RESET} {Style.BOLD}{self.message}...{Style.RESET}")
+                sys.stdout.flush()
+                idx += 1
+                time.sleep(0.08)
+
+        if USE_COLOR and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+            self._thread = threading.Thread(target=_spin, daemon=True)
+            self._thread.start()
+        else:
+            sys.stdout.write(f">> {self.message}...\n")
+            sys.stdout.flush()
+        return self
+
+    def update(self, new_message: str):
+        self.message = new_message
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._stop = True
+        if self._thread:
+            self._thread.join(timeout=0.2)
+        sys.stdout.write(f"\r{' ' * (len(self.message) + 20)}\r")
+        sys.stdout.flush()
+
+
 # --------------------------------------------------------------------------- #
 # Tree & Key-Value Details Printer                                            #
 # --------------------------------------------------------------------------- #
@@ -343,38 +438,149 @@ def pause_for_user(prompt: str = "Press Enter to return to main menu..."):
 
 
 # --------------------------------------------------------------------------- #
-# Interactive Prompts & Helpers                                               #
+# Interactive Keyboard-Traversable Prompts & Helpers                          #
 # --------------------------------------------------------------------------- #
-def prompt_choice(prompt: str, choices: List[str], default_idx: int = 0) -> int:
-    """Prompt user to select from a list of choices."""
-    print(f"\n{Style.BOLD}{Style.BRIGHT_CYAN}? {prompt}{Style.RESET}")
-    for idx, c in enumerate(choices):
-        prefix = f"{Style.BRIGHT_GREEN}▸{Style.RESET}" if idx == default_idx else " "
-        num = f"{idx + 1}"
-        print(f"  {prefix} {Style.BOLD}[{num}]{Style.RESET} {c}")
-
-    while True:
+def _read_single_key() -> str:
+    """Read a single keypress or arrow key cross-platform."""
+    if os.name == "nt":
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ("\x00", "\xe0"):
+            ch2 = msvcrt.getwch()
+            if ch2 in ("H", "K"):
+                return "UP"
+            elif ch2 in ("P", "M"):
+                return "DOWN"
+            elif ch2 == "G":
+                return "HOME"
+            elif ch2 == "O":
+                return "END"
+            return "OTHER"
+        elif ch in ("\r", "\n"):
+            return "ENTER"
+        elif ch == "\x1b":
+            return "ESC"
+        elif ch == "\x03":
+            raise KeyboardInterrupt()
+        return ch
+    else:
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
         try:
-            val = input(f"\n{Style.DIM}Select option (1-{len(choices)}, default: {default_idx + 1}): {Style.RESET}").strip()
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    if ch3 in ("A", "D"):
+                        return "UP"
+                    elif ch3 in ("B", "C"):
+                        return "DOWN"
+                    elif ch3 == "H":
+                        return "HOME"
+                    elif ch3 == "F":
+                        return "END"
+                return "ESC"
+            elif ch in ("\r", "\n"):
+                return "ENTER"
+            elif ch == "\x03":
+                raise KeyboardInterrupt()
+            return ch
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def prompt_choice(prompt: str, choices: List[str], default_idx: int = 0) -> int:
+    """
+    Interactive keyboard arrow traversable selection menu.
+    Allows navigating smoothly with Up/Down arrows, j/k, numbers (1-9), Home/End, and Enter.
+    """
+    c_brand = "\033[38;2;206;145;120m" if USE_COLOR else ""  # #CE9178
+    is_interactive = hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
+
+    # Non-interactive / piped fallback
+    if not is_interactive:
+        print(f"\n  {Style.BOLD}{c_brand}◈ {prompt}{Style.RESET}")
+        for idx, c in enumerate(choices):
+            print(f"    [{idx + 1}] {c}")
+        try:
+            val = input(f"  {Style.DIM}Enter choice (1-{len(choices)}): {Style.RESET}").strip()
             if not val:
                 return default_idx
             if val.lower() in ("q", "quit", "exit"):
-                return len(choices) - 1  # Assume last option is Exit
-            selected = int(val) - 1
-            if 0 <= selected < len(choices):
-                return selected
-            print(f"{Style.BRIGHT_RED}Invalid choice. Enter 1 to {len(choices)}.{Style.RESET}")
-        except (ValueError, EOFError, KeyboardInterrupt):
-            print(f"\n{Style.YELLOW}Operation cancelled.{Style.RESET}")
-            sys.exit(0)
+                return len(choices) - 1
+            return max(0, min(len(choices) - 1, int(val) - 1))
+        except Exception:
+            return default_idx
+
+    current_idx = max(0, min(len(choices) - 1, default_idx))
+
+    # Clean Techy Header (No '?')
+    print(f"  {Style.BOLD}{c_brand}◈ {prompt}{Style.RESET}  {Style.DIM}[↑/↓ to traverse • Enter to select • 1-{len(choices)} fast pick]{Style.RESET}\n")
+
+    # Hide cursor during interactive traversal
+    if USE_COLOR:
+        sys.stdout.write("\033[?25l")
+        sys.stdout.flush()
+
+    try:
+        first_render = True
+        while True:
+            if not first_render:
+                sys.stdout.write(f"\033[{len(choices)}A\r")
+
+            for idx, c in enumerate(choices):
+                num = f"[{idx + 1}]"
+                if idx == current_idx:
+                    # Highlighted active selection with glowing pointer
+                    line = f"  {Style.BOLD}{c_brand}▸ {num} {c}{Style.RESET}\033[K"
+                else:
+                    # Inactive item in dim text
+                    line = f"    {Style.DIM}{num}{Style.RESET} {Style.DIM}{c}{Style.RESET}\033[K"
+                print(line)
+
+            first_render = False
+
+            key = _read_single_key()
+            if key in ("UP", "k", "K"):
+                current_idx = (current_idx - 1) % len(choices)
+            elif key in ("DOWN", "j", "J"):
+                current_idx = (current_idx + 1) % len(choices)
+            elif key == "HOME":
+                current_idx = 0
+            elif key == "END":
+                current_idx = len(choices) - 1
+            elif key in ("ENTER", " "):
+                break
+            elif key in ("q", "Q", "ESC"):
+                current_idx = len(choices) - 1
+                break
+            elif key.isdigit():
+                val = int(key) - 1
+                if 0 <= val < len(choices):
+                    current_idx = val
+                    break
+    except (KeyboardInterrupt, EOFError):
+        current_idx = len(choices) - 1
+    finally:
+        # Restore cursor
+        if USE_COLOR:
+            sys.stdout.write("\033[?25h")
+            sys.stdout.flush()
+
+    print()
+    return current_idx
 
 
 def prompt_text(prompt: str, default: str = "") -> str:
-    """Prompt user for a text input or drag-and-drop file path."""
+    """Prompt user for text input or drag-and-drop file path without '?'."""
+    c_brand = "\033[38;2;206;145;120m" if USE_COLOR else ""
     def_str = f" {Style.DIM}[{default}]{Style.RESET}" if default else ""
     try:
-        val = input(f"{Style.BOLD}{Style.BRIGHT_CYAN}? {prompt}{def_str}:{Style.RESET} ").strip()
-        # Handle drag-and-dropped paths that might contain surrounding quotes
+        val = input(f"  {Style.BOLD}{c_brand}▸ {prompt}{def_str}:{Style.RESET} ").strip()
         if val.startswith(('"', "'")) and val.endswith(('"', "'")):
             val = val[1:-1]
         return val if val else default
@@ -384,10 +590,11 @@ def prompt_text(prompt: str, default: str = "") -> str:
 
 
 def prompt_confirm(prompt: str, default: bool = True) -> bool:
-    """Prompt user for yes/no confirmation."""
+    """Prompt user for yes/no confirmation without '?'."""
+    c_brand = "\033[38;2;206;145;120m" if USE_COLOR else ""
     def_str = "[Y/n]" if default else "[y/N]"
     try:
-        val = input(f"{Style.BOLD}{Style.BRIGHT_CYAN}? {prompt} {Style.DIM}{def_str}:{Style.RESET} ").strip().lower()
+        val = input(f"  {Style.BOLD}{c_brand}▸ {prompt} {Style.DIM}{def_str}:{Style.RESET} ").strip().lower()
         if not val:
             return default
         return val in ("y", "yes", "true", "1")
