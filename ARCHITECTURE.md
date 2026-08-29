@@ -141,7 +141,7 @@ Physical digital cameras place a Color Filter Array (CFA) over the silicon photo
 3. **Non-Linear Saturation Clamping:**  
    Suppresses noise in deep shadows ($I \to 0$) and saturated highlights ($I \to 255$):
    $$M(I) = \sin\left(\pi \cdot \frac{I}{255}\right)^\gamma$$
-   $$I_{\text{injected}} = \text{clip}\left(I_{\text{bayer}} + \beta \cdot I_{\text{bayer}} \cdot K \cdot M(I_{\text{bayer}}), 0, 255\right)$$
+   $$I_{\text{injected}} = \operatorname{clip}\left(I_{\text{bayer}} + \beta \cdot I_{\text{bayer}} \cdot K \cdot M(I_{\text{bayer}}), 0, 255\right)$$
 
 4. **Reconstructive Demosaicing:**  
    Demosaicing the modified Bayer plane naturally interpolates the synthetic PRNU across adjacent color channels, mimicking in-camera ISP processing:
@@ -205,8 +205,9 @@ Pass/fail decisions are governed by a three-tier audit architecture:
 ### 2. Decoded YUV Plane Energy Metrics
 - **Luma Distribution Drift ($D_{TV}$):** Total Variation normalized histogram distance ($0 \le D_{TV} \le 1$):
   $$D_{TV} = \frac{1}{2}\sum_{i=0}^{255} |p_{r, i} - p_{t, i}|$$
-- **High-Frequency Spectral Laplacian Energy:**
-  $$\text{abs\_delta\_hf} = |E_t - E_r|, \quad \text{rel\_delta\_hf} = \frac{|E_t - E_r|}{E_r + 1.0}$$
+- **High-Frequency Spectral Energy (2D Laplacian Variance):**
+  $$E = \operatorname{Var}\left(\nabla^2 I\right) = \frac{1}{N}\sum_{x,y} \left(\nabla^2 I(x, y) - \mu_{\nabla^2 I}\right)^2$$
+  $$\Delta E_{\text{abs}} = |E_t - E_r|, \quad \Delta E_{\text{rel}} = \frac{|E_t - E_r|}{E_r + 1.0}$$
 
 ### 3. Pre-Resampling Packet Presentation Timestamp (PTS) Monotonicity
 - Verifies packet presentation timestamps for strict monotonicity ($t_{i+1} \ge t_i$).

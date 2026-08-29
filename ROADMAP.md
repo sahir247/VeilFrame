@@ -24,7 +24,7 @@ exclusively by `QualityGate`. This invariant must not be violated at any phase.
 - VMAF evidence file + SHA-256 in signed manifest
 - Calibration laboratory (tools/vmaf_calibration.py)
 - UI 2.0 (provider status bar, sparkbars, 3-tab report, pill badges)
-- 35 tests passing
+- 104+ comprehensive tests passing across cross-platform matrix
 
 ---
 

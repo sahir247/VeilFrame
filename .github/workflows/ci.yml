@@ -118,14 +118,14 @@ jobs:
           "
 
   # ------------------------------------------------------------------ #
-  # Release gate: runs only on tagged releases.                          #
+  # VMAF Release & Integration Gate: runs on main pushes & releases.     #
   # VMAF must be present and all VMAF tests must PASS (not skip).        #
   # SKIPPED != PASSED — this job makes that distinction explicit.        #
   # ------------------------------------------------------------------ #
   vmaf-release-gate:
     name: VMAF Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
     env:
       QT_QPA_PLATFORM: offscreen
     strategy:
@@ -143,16 +143,18 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install FFmpeg with libvmaf (Linux)
+      - name: Install Graphics Libraries (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libegl1 libgl1
-          # Verify libvmaf is present — fail fast if not
-          ffmpeg -filters 2>&1 | grep libvmaf || {
-            echo "ERROR: libvmaf is required for release gate but not found in FFmpeg build"
-            exit 1
-          }
+          sudo apt-get install -y libegl1 libgl1 libglx-mesa0
+
+      - name: Setup FFmpeg with libvmaf (Linux)
+        if: runner.os == 'Linux'
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
+          architecture: x64
 
       - name: Install FFmpeg with libvmaf (Windows)
         if: runner.os == 'Windows'
@@ -182,7 +184,7 @@ jobs:
         run: |
           python -m unittest discover tests -v
 
-      # On release runners, VMAF tests must PASS — not skip
+      # On release/main runners, VMAF tests must PASS — not skip
       - name: Run VMAF Tests (must PASS for release — SKIPPED is a failure here)
         run: |
           python -m unittest tests.test_vmaf -v
