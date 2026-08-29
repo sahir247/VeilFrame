@@ -1,100 +1,48 @@
 # VeilFrame Public Roadmap
 
-## Architectural Invariant (permanent)
+## Architectural Invariant (Permanent)
 
 > **Providers measure. VeilFrame decides.**
-
-No provider ever decides whether a video passes. The gate predicate is owned
-exclusively by `QualityGate`. This invariant must not be violated at any phase.
-
----
-
-## Release Baseline
-
-### v1.0 COMPLETE
-- Privacy sanitization (metadata, SEI NALs, PRNU, ENF, motion vectors)
-- Independent quality gate (SSIM >= 0.95, PSNR >= 30 dB, 3-tier)
-- Temporal audit (frame-level fingerprinting, decoded luma)
-- Ed25519 signed audit manifest
-
-### v1.1 CURRENT
-- QualityProvider protocol + QualityGate separation
-- FFmpegNativeProvider (SSIM + PSNR via lavfi)
-- LibvmafFFmpegProvider (VMAF measurement-only, evidence only)
-- VMAF evidence file + SHA-256 in signed manifest
-- Calibration laboratory (tools/vmaf_calibration.py)
-- UI 2.0 (provider status bar, sparkbars, 3-tab report, pill badges)
-- 104+ comprehensive tests passing across cross-platform matrix
+>
+> No transformation engine or metric measurement provider ever decides whether a video passes. Pass/fail verdicts are owned strictly and exclusively by the independent, read-only `QualityGate`.
 
 ---
 
-## v1.2 -- Calibrated Perceptual Quality Gating
+## Release Milestones & Architecture Status
 
-### Phase A -- VMAF Calibration Laboratory
-
-8-level severity axis: IDENTICAL / VERY_LOW / LOW_PERTURBATION / MODERATE /
-MODERATE_EXCEEDANCE / HIGH / SEVERE / EXTREME
-
-Per fixture: VMAF mean/median/P1/P5/P95/worst/stddev + ADM2 + VIF(0-3) + SSIM + PSNR
-Also record: FFmpeg ver, libvmaf ver, VMAF model, model SHA-256, fixture generator version
-
-### Phase B -- Real-Content Calibration Corpus
-
-20-40 representative clips across: natural/low_motion, high_motion, texture,
-dark, animation, screen_content, high_detail. Validate threshold consistency
-across content types.
-
-### Phase C -- Candidate Threshold Generation
-
-perceptual_pass = (vmaf_mean >= MEAN_MIN and vmaf_p5 >= P5_MIN and vmaf_worst >= WORST_MIN)
-Values from calibration -- not pre-filled.
-
-### Phase D -- VMAF Gate Promotion (after Phase C passes)
-
-v1.1: policy AND temporal AND (SSIM + PSNR)
-v1.2: policy AND temporal AND (SSIM + PSNR) AND vmaf_perceptual
-
-QualityGate still owns. Provider still only measures.
-
-### Phase E -- Manifest Schema v1.2
-manifest_version 1.2.0 / quality-gate-v5.0
-Adds: quality.vmaf block, policy.vmaf thresholds (auditable via signature)
-verdict: { policy, temporal, structural, perceptual, overall }
-
-### Phase F -- VMAF Release Gate + Calibration Regression
-
-### Phase G -- Cross-Provider Validation (ffmpeg-quality-metrics)
+### v1.1 CURRENT (Production Release Candidate)
+- **Multi-Pass Sanitization Pipeline**: Container atom stripping, SEI removal, Bayer CFA PRNU dither, 2D DCT perturbation, ENF mains filtering.
+- **Provider / Gate Separation**: `QualityProvider` protocol with `FFmpegNativeProvider` (SSIM, PSNR) and `LibvmafFFmpegProvider` (VMAF, ADM2, VIF).
+- **Independent 3-Tier QualityGate**:
+  - Tier 1: Multi-dimensional mathematical budget ceilings (Spatial, Temporal, Luma, Chroma, Frequency, Aggregate).
+  - Tier 2a: Structural & pixel fidelity (`SSIM >= 0.95`, `PSNR >= 30 dB`, $D_{TV}$ luma distribution drift).
+  - Tier 3: Temporal integrity & pre-resampling presentation timestamp (PTS) monotonicity audit.
+- **Production Audit Bundle**: Dedicated `<video>_audit/` bundle co-locating `manifest.json` (RFC 8785 canonical JCS), `manifest.sig` (Ed25519), `manifest.sha256`, `public_key.pem`, and `vmaf.json` evidence.
+- **Cryptographic Provenance**: Dual-mode Ed25519 signing (ephemeral & persistent) with pinned public key fingerprints and standalone zero-dependency verifier (`examples/verify_manifest.py`).
+- **Interactive Developer TUI / CLI**: Keyboard-arrow traversable navigation, `#CE9178` brand styling, physical GPU detection, and hardware encoder diagnostics.
+- **Test Matrix & CI**: 106+ comprehensive unit and integration tests passing across Ubuntu and Windows matrices.
 
 ---
 
-## v1.3 -- Forensic Audit Layer
+### v1.2 IN-PROGRESS: Calibrated VMAF Perceptual Gate Promotion
 
-### Phase H -- Provider Consensus (MATCH / REVIEW / DISAGREE)
-### Phase I -- Media Parser Consensus (ffprobe + MediaInfo)
-### Phase J -- ExifTool Forensic Metadata (opt-in)
-### Phase K -- Adversarial Laboratory (tests/adversarial/)
-### Phase L -- Reproducibility Framework (veilframe audit-reproduce)
+The Tier 2b VMAF gate logic is implemented behind `VisualBudgetPolicy.vmaf_gate_enabled = False`. To promote it to active production status:
+
+#### Phase A: Calibration Laboratory Execution (`tools/vmaf_calibration.py`)
+- Evaluates 8-level perturbation severity ladder: `IDENTICAL`, `VERY_LOW`, `LOW_PERTURBATION`, `MODERATE`, `MODERATE_EXCEEDANCE`, `HIGH`, `SEVERE`, `EXTREME`.
+- Records VMAF mean, median, P1, P5, P95, worst, stddev, ADM2, and VIF across fixture matrices.
+
+#### Phase B: Real-Content Calibration Corpus (`tools/vmaf_corpus_runner.py`)
+- Runs multi-clip evaluation across natural, high-motion, textured, low-light, screen-content, and high-detail video categories.
+
+#### Phase C: Threshold Freeze & Gate Promotion
+- Replace initial development placeholders (`vmaf_mean_min = 75.0`, `vmaf_p5_min = 60.0`) with frozen empirical bounds (false-accept rate $< 2\%$, false-reject rate $< 5\%$).
+- Promote `vmaf_gate_enabled = True` in default production profiles.
 
 ---
 
-## v2.0 -- Audit Ecosystem
-
-### Phase M -- Audit Bundle Standard (output.mp4 + manifest + sig + vmaf.json)
-### Phase N -- UI 3.0 (provider consensus panel)
-### Phase O -- Release Engineering (Windows / Linux / APK)
-
----
-
-## Release Timeline
-
-v1.0  COMPLETE  Privacy sanitization, quality gate, Ed25519 manifest
-v1.1  CURRENT   QualityProvider, VMAF evidence, calibration lab, UI 2.0
-                 |
-         VMAF CALIBRATION (Phases A-C)
-         Synthetic fixtures + real corpus + candidate threshold
-                 |
-v1.2             Calibrated VMAF gate, provider consensus, MediaInfo
-                 |
-v1.3             ExifTool, reproducibility, audit bundle, adversarial suite
-                 |
-v2.0             Multi-provider architecture, cross-platform, audit ecosystem
+### v1.3 UPCOMING: Advanced Forensic Consensus Layer
+- **Multi-Parser Consensus**: Cross-validation of container syntax using both `ffprobe` and `MediaInfo`.
+- **ExifTool Deep Forensic Audit**: Optional deep-inspection pass for non-standard vendor atoms.
+- **Adversarial Regression Lab**: Automated test fixtures designed to stress-test adversarial bitstream tampering and clock-skew vectors.
+- **Audit Reproducibility CLI**: `veilframe audit-reproduce <audit_bundle_dir>` for 1-click deterministic re-verification.
