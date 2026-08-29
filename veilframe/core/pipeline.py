@@ -115,17 +115,21 @@ def run_pipeline(
                 can_w = 720
                 can_h = 1280
 
+        # Pre-create audit directory so provider evidence (e.g. vmaf.json) lands directly in the bundle
+        clean_stem = "".join(c for c in dst_path.stem if c.isalnum() or c in ("-", "_", " "))[:40].strip()
+        audit_dir = dst_path.parent / (f"{clean_stem}_audit" if clean_stem else "audit_manifest")
+        audit_dir.mkdir(parents=True, exist_ok=True)
+
         quality_report = evaluate_visual_quality(
             ref_path=src_path,
             trans_path=dst_path,
             policy=q_policy,
             canonical_w=can_w,
             canonical_h=can_h,
+            evidence_dir=audit_dir,
         )
 
         # Generate Ed25519 signed audit manifest
-        clean_stem = "".join(c for c in dst_path.stem if c.isalnum() or c in ("-", "_", " "))[:40].strip()
-        audit_dir = dst_path.parent / (f"{clean_stem}_audit" if clean_stem else "audit_manifest")
         try:
             generate_ed25519_signed_manifest(quality_report, audit_dir, policy=q_policy)
         except Exception as e:

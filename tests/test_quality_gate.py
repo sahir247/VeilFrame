@@ -824,6 +824,56 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         exact_bytes = paths[0].read_text(encoding="utf-8")
         self.assertEqual(tab.txt_json.toPlainText(), exact_bytes)
 
+    def test_temporal_integrity_b_frame_stream_monotonicity(self):
+        """Streams with B-frames (non-trivial decode-vs-presentation order) must maintain presentation monotonicity."""
+        from veilframe.core.validator import audit_temporal_integrity, analyze_video
+        from veilframe.core.resources import get_ffmpeg_path
+        import subprocess
+
+        # Re-encode ref_video with B-frames (-bf 2 -b_strategy 1)
+        b_frame_video = self.temp_dir / "b_frame_stream.mp4"
+        ffmpeg = get_ffmpeg_path()
+        cmd = [
+            str(ffmpeg), "-y",
+            "-i", str(self.ref_video),
+            "-c:v", "libx264", "-bf", "2", "-b_strategy", "1", "-g", "30",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            str(b_frame_video),
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+        info_ref = analyze_video(self.ref_video)
+        info_b = analyze_video(b_frame_video)
+
+        metrics = audit_temporal_integrity(
+            ref_info=info_ref,
+            trans_info=info_b,
+            ref_path=self.ref_video,
+            trans_path=b_frame_video,
+        )
+
+        self.assertEqual(metrics.reordered_frames, 0)
+        self.assertEqual(metrics.duplicate_timestamps, 0)
+        self.assertEqual(metrics.missing_frames, 0)
+        self.assertTrue(metrics.passed)
+
+    def test_vmaf_evidence_propagation_in_pipeline(self):
+        """evaluate_visual_quality with evidence_dir must record evidence_dir in the report."""
+        from veilframe.core.validator import evaluate_visual_quality
+
+        out_dir = self.temp_dir / "evidence_prop_test"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        report = evaluate_visual_quality(
+            self.ref_video,
+            self.ref_video,
+            canonical_w=160,
+            canonical_h=120,
+            evidence_dir=out_dir,
+        )
+        self.assertIsNotNone(report)
+
 
 if __name__ == "__main__":
     unittest.main()
