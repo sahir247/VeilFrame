@@ -86,6 +86,7 @@ class FFmpegNativeProvider:
         libvmaf fields are always None/unavailable for this provider.
         """
         return {
+            "provider": self.name,
             "adapter_version": self.version,
             "runtime_version": _get_ffmpeg_version(),
             "libvmaf_version": None,

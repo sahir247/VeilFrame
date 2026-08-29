@@ -51,6 +51,19 @@ class QualityGate:
 
     def __init__(self, policy: VisualBudgetPolicy):
         self._policy = policy
+        self._validate_policy(policy)
+
+    def _validate_policy(self, policy: VisualBudgetPolicy) -> None:
+        """Validates that policy constraints and thresholds are well-formed."""
+        if policy.vmaf_gate_enabled:
+            if policy.vmaf_mean_min < 0.0 or policy.vmaf_mean_min > 100.0:
+                raise ValueError(f"Invalid vmaf_mean_min: {policy.vmaf_mean_min}. Must be in [0, 100].")
+            if policy.vmaf_p5_min < 0.0 or policy.vmaf_p5_min > 100.0:
+                raise ValueError(f"Invalid vmaf_p5_min: {policy.vmaf_p5_min}. Must be in [0, 100].")
+            if policy.vmaf_p5_min > policy.vmaf_mean_min:
+                raise ValueError(
+                    f"vmaf_p5_min ({policy.vmaf_p5_min}) cannot exceed vmaf_mean_min ({policy.vmaf_mean_min})."
+                )
 
     def evaluate(
         self,
@@ -128,12 +141,11 @@ class QualityGate:
                         f" (>= {policy.vmaf_p5_min:.1f}) — calibrated Tier 2b"
                     )
             else:
-                # Provider unavailable with gate armed: conservative signal.
-                # Not a hard REJECT (provider may be missing from build) but
-                # the violation is surfaced so the operator is aware.
+                # Provider unavailable with gate armed: fails Tier 2b.
+                # When vmaf_gate_enabled=True, VMAF evaluation is mandatory.
                 t2_violations.append(
-                    "VMAF gate is enabled but libvmaf provider returned no results"
-                    " — verify FFmpeg build or disable vmaf_gate_enabled"
+                    "VMAF gate is enabled (calibrated Tier 2b) but libvmaf provider produced no results"
+                    " — verification cannot pass without required VMAF evidence"
                 )
 
         t2_passed = len(t2_violations) == 0

@@ -208,6 +208,7 @@ class TemporalIntegrityMetrics:
     timestamp_drift_max_sec: float = 0.0
     timestamp_drift_mean_sec: float = 0.0
     cadence_deviation_pct: float = 0.0
+    timestamp_audit_mode: str = "FRAME_ACCURATE"  # "FRAME_ACCURATE" or "CONTAINER_DURATION_FALLBACK"
     passed: bool = True
     violations: List[str] = field(default_factory=list)
 

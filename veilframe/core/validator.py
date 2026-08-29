@@ -50,7 +50,7 @@ QUALITY_GATE_ALGORITHM_VERSION: str = "quality-gate-v4.0"
 QUALITY_GATE_POLICY_VERSION: str = "5pct-v1.0"
 
 
-from .crypto import compute_sha256  # noqa: F401 — re-exported for backward compat
+from .crypto import compute_sha256, canonicalize_rfc8785  # noqa: F401
 
 
 def calc_percentile(sorted_data: List[float], p: float) -> float:
@@ -235,6 +235,7 @@ def audit_temporal_integrity(
 
     # 3. Timestamp Correspondence & Drift
     if pts_ref and pts_trans:
+        metrics.timestamp_audit_mode = "FRAME_ACCURATE"
         drifts = []
         pts_ref_sorted = sorted(pts_ref)
         for t_t in pts_trans:
@@ -253,6 +254,7 @@ def audit_temporal_integrity(
             metrics.timestamp_drift_max_sec = float(max(drifts))
             metrics.timestamp_drift_mean_sec = float(np.mean(drifts))
     else:
+        metrics.timestamp_audit_mode = "CONTAINER_DURATION_FALLBACK"
         dur_delta = abs(trans_info.duration - ref_info.duration)
         metrics.timestamp_drift_max_sec = dur_delta
         metrics.timestamp_drift_mean_sec = dur_delta / 2.0 if n_trans > 0 else 0.0
@@ -296,8 +298,10 @@ def extract_decoded_frame_energy(
     Deterministically samples frames evenly distributed across the entire video timeline
     [sample_range[0] * T, sample_range[1] * T] to measure luminance drift, chroma drift,
     Total Variation histogram distance (D_TV), and 2D Laplacian high-frequency energy.
+    Streams frames through FFmpeg rawvideo stdout, discarding unselected frames to keep memory strictly O(1).
     """
     ffmpeg = get_ffmpeg_path()
+    ffprobe = get_ffprobe_path()
     metrics = DecodedEnergyMetrics()
     metrics.sampling_strategy = "uniform_timeline"
     metrics.sampling_range = sample_range
@@ -305,7 +309,37 @@ def extract_decoded_frame_energy(
     w, h = 640, 360
     frame_size = w * h * 3 // 2  # YUV420p
 
-    def read_all_sampled_planes(video_file: Path) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    def probe_total_frames(video_file: Path, fallback_dur: float) -> int:
+        cmd = [
+            str(ffprobe),
+            "-hide_banner",
+            "-nostats",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=nb_frames,r_frame_rate,duration",
+            "-of", "json",
+            str(video_file),
+        ]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True)
+            data = json.loads(res.stdout)
+            streams = data.get("streams", [])
+            if streams:
+                st = streams[0]
+                if st.get("nb_frames") and str(st["nb_frames"]).isdigit() and int(st["nb_frames"]) > 0:
+                    return int(st["nb_frames"])
+                if st.get("r_frame_rate"):
+                    parts = st["r_frame_rate"].split("/")
+                    fps = float(parts[0]) / float(parts[1]) if len(parts) == 2 and float(parts[1]) > 0 else 30.0
+                    dur = float(st.get("duration", fallback_dur))
+                    if dur > 0:
+                        return max(1, int(round(dur * fps)))
+        except Exception:
+            pass
+        return max(1, int(round(fallback_dur * 30.0))) if fallback_dur > 0 else 30
+
+    def stream_sampled_planes(video_file: Path, target_indices: List[int]) -> Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        target_set = set(target_indices)
+        max_target = max(target_indices) if target_indices else -1
         cmd = [
             str(ffmpeg),
             "-hide_banner",
@@ -318,30 +352,37 @@ def extract_decoded_frame_energy(
             "-",
         ]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        frames = []
+        sampled = {}
+        frame_idx = 0
         try:
             while True:
                 data = proc.stdout.read(frame_size)
                 if len(data) < frame_size:
                     break
-                y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w))
-                u_plane = np.frombuffer(data[w * h:w * h + (w // 2 * h // 2)], dtype=np.uint8).reshape((h // 2, w // 2))
-                v_plane = np.frombuffer(data[w * h + (w // 2 * h // 2):], dtype=np.uint8).reshape((h // 2, w // 2))
-                frames.append((y_plane, u_plane, v_plane))
+                if frame_idx in target_set:
+                    y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w)).copy()
+                    u_plane = np.frombuffer(data[w * h:w * h + (w // 2 * h // 2)], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                    v_plane = np.frombuffer(data[w * h + (w // 2 * h // 2):], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                    sampled[frame_idx] = (y_plane, u_plane, v_plane)
+                    if len(sampled) == len(target_set) and frame_idx >= max_target:
+                        break
+                frame_idx += 1
         finally:
-            proc.stdout.close()
+            if proc.stdout:
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+            try:
+                proc.kill()
+            except Exception:
+                pass
             proc.wait()
-        return frames
+        return sampled
 
     try:
-        ref_all = read_all_sampled_planes(ref_path)
-        trans_all = read_all_sampled_planes(trans_path)
-
-        if not ref_all or not trans_all:
-            return metrics
-
-        n_ref = len(ref_all)
-        n_trans = len(trans_all)
+        n_ref = probe_total_frames(ref_path, ref_duration)
+        n_trans = probe_total_frames(trans_path, trans_duration)
 
         # Generate deterministic uniform timeline percentiles
         percentiles = np.linspace(sample_range[0], sample_range[1], sample_count)
@@ -357,6 +398,15 @@ def extract_decoded_frame_energy(
         if trans_duration > 0 and n_trans > 0:
             metrics.sampled_timestamps_trans = [round((idx / float(n_trans)) * trans_duration, 4) for idx in trans_indices]
 
+        ref_sampled = stream_sampled_planes(ref_path, ref_indices)
+        trans_sampled = stream_sampled_planes(trans_path, trans_indices)
+
+        if not ref_sampled or not trans_sampled:
+            return metrics
+
+        ref_avail = sorted(ref_sampled.keys())
+        trans_avail = sorted(trans_sampled.keys())
+
         luma_mean_deltas = []
         luma_rms_deltas = []
         hist_divs = []
@@ -369,8 +419,11 @@ def extract_decoded_frame_energy(
             idx_r = ref_indices[k]
             idx_t = trans_indices[k]
 
-            y_r, u_r, v_r = ref_all[idx_r]
-            y_t, u_t, v_t = trans_all[idx_t]
+            actual_r = idx_r if idx_r in ref_sampled else min(ref_avail, key=lambda x: abs(x - idx_r))
+            actual_t = idx_t if idx_t in trans_sampled else min(trans_avail, key=lambda x: abs(x - idx_t))
+
+            y_r, u_r, v_r = ref_sampled[actual_r]
+            y_t, u_t, v_t = trans_sampled[actual_t]
 
             # 1. Luminance Drift
             mean_r = float(np.mean(y_r))
@@ -590,51 +643,38 @@ def evaluate_three_tier_verdict(
     policy: VisualBudgetPolicy,
 ) -> Tuple[ThreeTierQualityVerdict, List[str]]:
     """
-    Evaluates all three independent validation tiers and determines final gate verdict.
+    Backward-compatible verdict facade. Delegates directly to QualityGate,
+    the canonical sole owner of verdict logic in VeilFrame.
     """
-    all_violations = []
-
-    # Tier 1: Transformation Policy Score
-    t1_violations = list(policy_score.violations)
-    t1_passed = len(t1_violations) == 0
-    all_violations.extend(t1_violations)
-
-    # Tier 2: Rendered Visual Fidelity
-    t2_violations = []
-    if ssim_stats.mean < policy.ssim_mean_min:
-        t2_violations.append(f"Mean SSIM ({ssim_stats.mean:.4f}) below constraint (>= {policy.ssim_mean_min:.4f})")
-    if ssim_stats.p5 < policy.ssim_p5_min:
-        t2_violations.append(f"P5 Tail SSIM ({ssim_stats.p5:.4f}) below constraint (>= {policy.ssim_p5_min:.4f})")
-    if ssim_stats.min_val < policy.ssim_worst_min:
-        t2_violations.append(f"Worst-Frame SSIM ({ssim_stats.min_val:.4f}) below constraint (>= {policy.ssim_worst_min:.4f})")
-    if psnr_stats.mean < policy.psnr_mean_min_db:
-        t2_violations.append(f"Mean PSNR ({psnr_stats.mean:.2f} dB) below constraint (>= {policy.psnr_mean_min_db:.1f} dB)")
-    if psnr_stats.min_val < policy.psnr_worst_min_db:
-        t2_violations.append(f"Worst-Frame PSNR ({psnr_stats.min_val:.2f} dB) below constraint (>= {policy.psnr_worst_min_db:.1f} dB)")
-
-    t2_passed = len(t2_violations) == 0
-    all_violations.extend(t2_violations)
-
-    # Tier 3: Temporal Integrity
-    t3_violations = list(temporal.violations)
-    t3_passed = len(t3_violations) == 0
-    all_violations.extend(t3_violations)
-
-    all_passed = t1_passed and t2_passed and t3_passed
-    overall_verdict = "PASS" if all_passed else "REJECT"
-
-    verdict = ThreeTierQualityVerdict(
-        tier1_policy_passed=t1_passed,
-        tier1_violations=t1_violations,
-        tier2_fidelity_passed=t2_passed,
-        tier2_violations=t2_violations,
-        tier3_temporal_passed=t3_passed,
-        tier3_violations=t3_violations,
-        overall_verdict=overall_verdict,
-        all_passed=all_passed,
+    results = [
+        QualityResult(
+            provider_name="ffmpeg-native",
+            metric_name="ssim",
+            mean=ssim_stats.mean,
+            minimum=ssim_stats.min_val,
+            p1=ssim_stats.p1,
+            p5=ssim_stats.p5,
+            p95=ssim_stats.p95,
+        ),
+        QualityResult(
+            provider_name="ffmpeg-native",
+            metric_name="psnr",
+            mean=psnr_stats.mean,
+            minimum=psnr_stats.min_val,
+            p1=psnr_stats.p1,
+            p5=psnr_stats.p5,
+            p95=psnr_stats.p95,
+        ),
+    ]
+    gate = QualityGate(policy)
+    verdict = gate.evaluate(
+        results=results,
+        native_metrics=NativeDomainMetrics(),
+        temporal_metrics=temporal,
+        policy_score=policy_score,
     )
-
-    return verdict, all_violations
+    violations = list(verdict.tier1_violations) + list(verdict.tier2_violations) + list(verdict.tier3_violations)
+    return verdict, violations
 
 
 def generate_ed25519_signed_manifest(
@@ -673,15 +713,17 @@ def generate_ed25519_signed_manifest(
         elif os.environ.get("VEILFRAME_SIGNING_KEY"):
             priv_key_bytes = os.environ["VEILFRAME_SIGNING_KEY"].encode("utf-8")
 
-        if priv_key_bytes:
-            private_key = serialization.load_pem_private_key(priv_key_bytes, password=None)
-            if not isinstance(private_key, ed25519.Ed25519PrivateKey):
-                raise ValueError("Persistent key must be an Ed25519 private key.")
-        else:
-            # If persistent requested but no key provided, generate one with persistent identifier
-            private_key = ed25519.Ed25519PrivateKey.generate()
-            if not key_id:
-                key_id = "veilframe-signer-primary"
+        if not priv_key_bytes:
+            raise ValueError(
+                f"Persistent signing mode requested (key_id='{key_id}'), but no valid private key was found "
+                f"at signing_key_path ('{policy.signing_key_path}') or in VEILFRAME_SIGNING_KEY environment variable. "
+                f"Persistent mode forbids ephemeral key fallback."
+            )
+        private_key = serialization.load_pem_private_key(priv_key_bytes, password=None)
+        if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+            raise ValueError("Persistent key must be an Ed25519 private key.")
+        if not key_id:
+            key_id = "veilframe-signer-primary"
     else:
         # Ephemeral mode
         signing_mode = "ephemeral"
@@ -731,8 +773,13 @@ def generate_ed25519_signed_manifest(
             "policy_version": QUALITY_GATE_POLICY_VERSION,
         },
         "providers": {
-            info["capabilities"][0] if info.get("capabilities") else "unknown": {
-                k: v for k, v in info.items() if k != "capabilities"
+            info.get("provider", "unknown"): {
+                "status": info.get("status", "unknown"),
+                "error": info.get("error"),
+                "adapter_version": info.get("adapter_version"),
+                "runtime_version": info.get("runtime_version"),
+                "capabilities": info.get("capabilities", []),
+                **{k: v for k, v in info.items() if k not in ("provider", "status", "error", "adapter_version", "runtime_version", "capabilities")},
             }
             for info in (report.raw_details.get("provider_infos") or [])
         },
@@ -758,6 +805,26 @@ def generate_ed25519_signed_manifest(
             "max_temporal_budget_pct": policy.temporal_ceiling_pct,
         },
         "sampling": {
+            "energy_metrics": {
+                "strategy": report.energy_metrics.sampling_strategy,
+                "count": len(report.energy_metrics.sampled_indices_ref),
+                "range": [report.energy_metrics.sampling_range[0], report.energy_metrics.sampling_range[1]],
+                "indices_ref": report.energy_metrics.sampled_indices_ref,
+                "timestamps_ref_sec": report.energy_metrics.sampled_timestamps_ref,
+                "indices_trans": report.energy_metrics.sampled_indices_trans,
+                "timestamps_trans_sec": report.energy_metrics.sampled_timestamps_trans,
+            },
+            "canonical_fidelity": {
+                "strategy": "full_sequence",
+                "metrics": ["ssim", "psnr"],
+                "frame_count": report.evaluated_frames,
+            },
+            "vmaf": {
+                "strategy": "full_sequence",
+                "metric": "vmaf",
+                "frame_count": report.evaluated_frames,
+            },
+            # Top-level aliases for backward compatibility with external verifiers
             "strategy": report.energy_metrics.sampling_strategy,
             "count": len(report.energy_metrics.sampled_indices_ref),
             "range": [report.energy_metrics.sampling_range[0], report.energy_metrics.sampling_range[1]],
@@ -800,6 +867,7 @@ def generate_ed25519_signed_manifest(
             },
         },
         "temporal_metrics": {
+            "timestamp_audit_mode": report.temporal_metrics.timestamp_audit_mode,
             "frame_count_ref": report.temporal_metrics.frame_count_ref,
             "frame_count_trans": report.temporal_metrics.frame_count_trans,
             "frame_count_diff": report.temporal_metrics.frame_count_diff,
@@ -853,7 +921,7 @@ def generate_ed25519_signed_manifest(
         },
     }
 
-    canonical_bytes = json.dumps(manifest_dict, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    canonical_bytes = canonicalize_rfc8785(manifest_dict)
     manifest_json_path.write_bytes(canonical_bytes)
 
     # Compute SHA-256 of canonical bytes
@@ -910,7 +978,7 @@ def verify_audit_manifest(
             if signing_info.get("key_id") != expected_key_id:
                 return False
 
-        canonical_bytes = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        canonical_bytes = canonicalize_rfc8785(data)
 
         public_key.verify(signature_bytes, canonical_bytes)
         return True
@@ -924,15 +992,16 @@ def _run_providers(
     canonical_w: int,
     canonical_h: int,
     evidence_dir: Optional[Path] = None,
+    model_path: Optional[Path] = None,
+    audit_mode: bool = False,
 ) -> Tuple[List[QualityResult], List[Dict[str, Any]]]:
     """
     Dispatches measurement to all available quality providers.
 
     Returns:
         results:         List of QualityResult from all active providers.
-        provider_infos:  List of runtime_info() dicts for manifest embedding.
+        provider_infos:  List of runtime_info() dicts with observable status ('success' | 'error' | 'unavailable').
 
-    Providers are tried in order. Unavailable providers are skipped silently.
     The gate never sees provider identity — only QualityResult objects.
     """
     results: List[QualityResult] = []
@@ -946,25 +1015,43 @@ def _run_providers(
         evidence_dir=evidence_dir,
     )
 
-    # FFmpeg native (SSIM + PSNR) — always attempted first
+    # 1. FFmpeg native (SSIM + PSNR) — mandatory provider
     native_provider = FFmpegNativeProvider()
     if native_provider.is_available():
+        info = native_provider.runtime_info()
         try:
             native_results = native_provider.evaluate(cfg)
             results.extend(native_results)
-            provider_infos.append(native_provider.runtime_info())
-        except Exception:
-            pass
+            info["status"] = "success"
+            info["error"] = None
+        except Exception as exc:
+            info["status"] = "error"
+            info["error"] = str(exc)
+        provider_infos.append(info)
+    else:
+        info = native_provider.runtime_info()
+        info["status"] = "unavailable"
+        info["error"] = "FFmpeg binary or ssim/psnr filters missing"
+        provider_infos.append(info)
 
-    # libvmaf via FFmpeg — measurement only in v1.1
-    vmaf_provider = LibvmafFFmpegProvider()
+    # 2. libvmaf via FFmpeg — measurement only in v1.1
+    vmaf_provider = LibvmafFFmpegProvider(model_path=model_path, audit_mode=audit_mode)
     if vmaf_provider.is_available():
+        info = vmaf_provider.runtime_info()
         try:
             vmaf_results = vmaf_provider.evaluate(cfg)
             results.extend(vmaf_results)
-            provider_infos.append(vmaf_provider.runtime_info())
-        except Exception:
-            pass
+            info["status"] = "success"
+            info["error"] = None
+        except Exception as exc:
+            info["status"] = "error"
+            info["error"] = str(exc)
+        provider_infos.append(info)
+    else:
+        info = vmaf_provider.runtime_info()
+        info["status"] = "unavailable"
+        info["error"] = "libvmaf filter not available in FFmpeg build or required audit model missing"
+        provider_infos.append(info)
 
     return results, provider_infos
 
@@ -1031,12 +1118,15 @@ def evaluate_visual_quality(
 
     # 5. Multi-provider quality measurement (SSIM, PSNR via FFmpegNativeProvider;
     #    VMAF via LibvmafFFmpegProvider when available)
+    vmaf_model = Path(policy.vmaf_model_path) if policy.vmaf_model_path else None
     provider_results, provider_infos = _run_providers(
         ref_path=ref_path,
         trans_path=trans_path,
         canonical_w=canonical_w,
         canonical_h=canonical_h,
         evidence_dir=evidence_dir,
+        model_path=vmaf_model,
+        audit_mode=policy.vmaf_audit_mode,
     )
 
     # Extract SSIM/PSNR for backward-compat report fields

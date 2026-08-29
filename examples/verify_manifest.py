@@ -23,12 +23,73 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+from typing import Any
+
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
 except ImportError:
     print("Error: 'cryptography' package is required. Install via: pip install cryptography")
     sys.exit(1)
+
+
+def canonicalize_rfc8785(data: Any) -> bytes:
+    """
+    Standalone RFC 8785 (JSON Canonicalization Scheme - JCS) serializer.
+    """
+    import math
+
+    def _serialize_string(s: str) -> str:
+        out = ['"']
+        for char in s:
+            code = ord(char)
+            if char == '"':
+                out.append('\\"')
+            elif char == '\\':
+                out.append('\\\\')
+            elif code < 0x20:
+                out.append(f"\\u{code:04x}")
+            else:
+                out.append(char)
+        out.append('"')
+        return "".join(out)
+
+    def _serialize_number(n: float | int) -> str:
+        if isinstance(n, int):
+            return str(n)
+        if math.isnan(n) or math.isinf(n):
+            raise ValueError("NaN and Infinity forbidden in RFC 8785")
+        if n == 0.0:
+            return "0"
+        if n.is_integer() and -9007199254740991 <= n <= 9007199254740991:
+            return str(int(n))
+        s = repr(n)
+        if "e" in s or "E" in s:
+            s = s.lower()
+            parts = s.split("e")
+            s = f"{parts[0]}e{int(parts[1])}"
+        return s
+
+    def _encode(val: Any) -> str:
+        if val is None:
+            return "null"
+        elif isinstance(val, bool):
+            return "true" if val else "false"
+        elif isinstance(val, (int, float)):
+            return _serialize_number(val)
+        elif isinstance(val, str):
+            return _serialize_string(val)
+        elif isinstance(val, (list, tuple)):
+            return "[" + ",".join(_encode(item) for item in val) + "]"
+        elif isinstance(val, dict):
+            sorted_keys = sorted(val.keys(), key=lambda k: k.encode("utf-16be"))
+            return "{" + ",".join(
+                f"{_serialize_string(k)}:{_encode(val[k])}" for k in sorted_keys
+            ) + "}"
+        else:
+            raise TypeError(f"Unsupported type {type(val)}")
+
+    return _encode(data).encode("utf-8")
 
 
 def compute_sha256(file_path: Path) -> str:
@@ -85,7 +146,7 @@ def main():
     # 2. Parse canonical manifest JSON
     try:
         manifest_data = json.loads(manifest_bytes.decode("utf-8"))
-        canonical_bytes = json.dumps(manifest_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        canonical_bytes = canonicalize_rfc8785(manifest_data)
     except Exception as e:
         print(f"[-] FAILED: Manifest is not valid JSON: {e}")
         sys.exit(1)

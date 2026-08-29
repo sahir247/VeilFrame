@@ -153,6 +153,7 @@ class LibvmafFFmpegProvider:
         # if is_available() is checked first, but defensive)
 
         return {
+            "provider": self.name,
             "adapter_version": self.version,
             "runtime_version": _get_ffmpeg_version(),
             "libvmaf_version": libvmaf_ver,

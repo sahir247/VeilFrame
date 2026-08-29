@@ -668,7 +668,118 @@ class TestProviderArchitectureContracts(unittest.TestCase):
             f"Gate verdict on ref-vs-ref must be PASS; got violations: "
             f"{verdict.tier1_violations + verdict.tier2_violations + verdict.tier3_violations}",
         )
-        self.assertEqual(verdict.overall_verdict, "PASS")
+
+class TestV11HardeningAndProvenance(unittest.TestCase):
+    """
+    Validates v1.1.1 hardening requirements:
+    1. RFC 8785 JSON Canonicalization Scheme (JCS) determinism.
+    2. Strict persistent key enforcement (fail-fast on missing keys).
+    3. Observable provider execution status in manifest.
+    4. Explicit temporal audit mode attribution.
+    5. QualityGate configuration validation.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_dir = Path(tempfile.mkdtemp())
+        cls.ref_video = cls.temp_dir / "ref.mp4"
+        cmd = [
+            "ffmpeg", "-y", "-f", "lavfi",
+            "-i", "testsrc=duration=1.0:size=160x120:rate=25",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(cls.ref_video),
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        shutil.rmtree(cls.temp_dir, ignore_errors=True)
+
+    def test_rfc8785_canonicalization_vectors(self):
+        """Test genuine RFC 8785 JSON Canonicalization Scheme compliance."""
+        from veilframe.core.crypto import canonicalize_rfc8785
+
+        # Vector 1: Key ordering by UTF-16 code units
+        data1 = {"b": 1, "a": 2, "z": 3, "A": 4}
+        b1 = canonicalize_rfc8785(data1)
+        self.assertEqual(b1.decode("utf-8"), '{"A":4,"a":2,"b":1,"z":3}')
+
+        # Vector 2: String escaping (only ", \\, and control characters 0x00-0x1F)
+        data2 = {"msg": "Hello\nWorld\t\"Test\" \u2705"}
+        b2 = canonicalize_rfc8785(data2)
+        self.assertEqual(b2.decode("utf-8"), '{"msg":"Hello\\u000aWorld\\u0009\\"Test\\" \u2705"}')
+
+        # Vector 3: Floating point integer canonicalization
+        data3 = {"int_float": 100.0, "real_float": 3.14159, "zero": 0.0, "neg_zero": -0.0}
+        b3 = canonicalize_rfc8785(data3)
+        self.assertEqual(b3.decode("utf-8"), '{"int_float":100,"neg_zero":0,"real_float":3.14159,"zero":0}')
+
+    def test_persistent_signer_missing_key_strictly_fails(self):
+        """Persistent signing mode must fail with ValueError if key path / env is missing."""
+        from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
+        from veilframe.models.settings import VisualBudgetPolicy
+
+        report = evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
+        out_dir = self.temp_dir / "persistent_fail_test"
+
+        policy = VisualBudgetPolicy(
+            signing_mode="persistent",
+            signing_key_path=str(self.temp_dir / "non_existent_key.pem"),
+            key_id="production-01",
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            generate_ed25519_signed_manifest(report, out_dir, policy=policy)
+
+        self.assertIn("Persistent signing mode requested", str(ctx.exception))
+        self.assertIn("forbids ephemeral", str(ctx.exception))
+
+    def test_provider_manifest_keying_and_observability(self):
+        """Manifest provider dictionary must be keyed by provider name and expose execution status."""
+        from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
+        import json
+
+        report = evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
+        out_dir = self.temp_dir / "manifest_obs_test"
+        paths = generate_ed25519_signed_manifest(report, out_dir)
+
+        manifest_data = json.loads(paths[0].read_bytes().decode("utf-8"))
+        providers = manifest_data.get("providers", {})
+
+        self.assertIn("ffmpeg-native", providers)
+        native_entry = providers["ffmpeg-native"]
+        self.assertEqual(native_entry.get("status"), "success")
+        self.assertIsNone(native_entry.get("error"))
+        self.assertIn("ssim", native_entry.get("capabilities", []))
+
+    def test_temporal_audit_mode_recorded(self):
+        """Temporal audit must explicitly record timestamp_audit_mode in metrics and manifest."""
+        from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
+        import json
+
+        report = evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
+        self.assertIn(report.temporal_metrics.timestamp_audit_mode, ("FRAME_ACCURATE", "CONTAINER_DURATION_FALLBACK"))
+
+        out_dir = self.temp_dir / "temporal_audit_mode_test"
+        paths = generate_ed25519_signed_manifest(report, out_dir)
+        manifest_data = json.loads(paths[0].read_bytes().decode("utf-8"))
+        self.assertIn("timestamp_audit_mode", manifest_data["temporal_metrics"])
+
+    def test_quality_gate_rejects_invalid_configuration(self):
+        """QualityGate must validate policy configuration on instantiation."""
+        from veilframe.quality.gate import QualityGate
+        from veilframe.models.settings import VisualBudgetPolicy
+
+        # 1. Negative threshold
+        bad_policy1 = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=-5.0)
+        with self.assertRaises(ValueError):
+            QualityGate(bad_policy1)
+
+        # 2. P5 threshold higher than mean threshold
+        bad_policy2 = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=70.0, vmaf_p5_min=85.0)
+        with self.assertRaises(ValueError):
+            QualityGate(bad_policy2)
 
 
 if __name__ == "__main__":

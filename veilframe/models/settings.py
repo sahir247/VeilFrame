@@ -147,6 +147,10 @@ class VisualBudgetPolicy:
     vmaf_mean_min: float = 75.0   # placeholder — NOT calibrated; do not enable
     vmaf_p5_min: float = 60.0    # placeholder — NOT calibrated; do not enable
 
+    # VMAF model provenance and audit controls
+    vmaf_model_path: Optional[str] = None
+    vmaf_audit_mode: bool = False
+
     # Sampling controls
     sample_count: int = 15
     sample_range_start: float = 0.02

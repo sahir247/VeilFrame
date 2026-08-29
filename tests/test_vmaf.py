@@ -172,13 +172,13 @@ class TestVmafMeasurement(unittest.TestCase):
     def test_vmaf_gate_enabled_with_absurd_threshold_rejects(self):
         """
         Integration-level gate test (requires libvmaf).
-        vmaf_gate_enabled=True with vmaf_mean_min=999.0 (impossible) must REJECT.
+        vmaf_gate_enabled=True with vmaf_mean_min=100.0 and vmaf_p5_min=100.0 (impossible on compressed stream) must REJECT.
         Verifies the gate wiring is end-to-end, not just unit-tested in isolation.
         """
 
         from veilframe.core.validator import evaluate_visual_quality
 
-        policy = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=999.0, vmaf_p5_min=999.0)
+        policy = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=100.0, vmaf_p5_min=100.0)
         evidence_dir = self.temp_dir / "evidence_absurd"
         evidence_dir.mkdir(exist_ok=True)
 
@@ -191,13 +191,13 @@ class TestVmafMeasurement(unittest.TestCase):
             evidence_dir=evidence_dir,
         )
 
-        # With threshold=999, VMAF (max ~100) must fail → overall REJECT
+        # With threshold=100.0, VMAF mean/p5 on encoded stream (< 100.0) must fail → overall REJECT
         # But only if VMAF was actually available and measured
         vmaf_entries = [r for r in report.provider_results if r.get("metric") == "vmaf"]
         if vmaf_entries:
             self.assertFalse(
                 report.passed,
-                "Gate must REJECT when vmaf_mean_min=999 (impossible threshold)"
+                "Gate must REJECT when vmaf_mean_min=100.0 (impossible threshold for compressed stream)",
             )
             t2_viols = report.three_tier_verdict.tier2_violations
             vmaf_viols = [v for v in t2_viols if "VMAF" in v]
