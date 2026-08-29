@@ -16,7 +16,7 @@ Outputs 3-layer metrics:
 - DetectorMetrics: Peak detection score, threshold, match status (HUM_DETECTED / HUM_SUPPRESSED).
 - AttributionMetrics: ENF presence classification and grid attribution feasibility.
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from ..common.models import (
