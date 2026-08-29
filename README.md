@@ -151,7 +151,7 @@ Physical sensor saturation prevents PRNU variance in clipped deep shadows ($I=0$
 
 $$M(I) = \left[\max\left(0, \sin\left(\pi \cdot \frac{I}{255}\right)\right)\right]^\gamma \quad (\gamma \approx 0.6)$$
 
-$$I_{\text{injected}} = \operatorname{clip}\left(I_{\text{raw}} + \beta \cdot I_{\text{raw}} \cdot K \cdot M(I_{\text{raw}}),\, 0,\, 255\right)$$
+$$I_{\text{injected}} = \text{clip}\left(I_{\text{raw}} + \beta \cdot I_{\text{raw}} \cdot K \cdot M(I_{\text{raw}}),\, 0,\, 255\right)$$
 
 #### D. Demosaicing Reconstruction
 The perturbed mosaic plane is demosaiced via bilinear and edge-directed gradient interpolation, naturally propagating PRNU noise cross-covariance through color channels without tripping forensic sub-grid variance detectors.
@@ -231,7 +231,7 @@ $$D_{TV}(P_{\text{ref}}, P_{\text{trans}}) = \frac{1}{2} \sum_{i=0}^{255} |P_{\t
 
 - **High-Frequency Spectral Energy (2D Laplacian Variance):**
 
-$$\sigma_{\text{Lap}}^2 = \operatorname{Var}\left( \nabla^2 I(x, y) \right) = \operatorname{Var}\left( I(x+1,y) + I(x-1,y) + I(x,y+1) + I(x,y-1) - 4I(x,y) \right)$$
+$$\sigma_{\text{Lap}}^2 = \text{Var}\left( \nabla^2 I(x, y) \right) = \text{Var}\left( I(x+1,y) + I(x-1,y) + I(x,y+1) + I(x,y-1) - 4I(x,y) \right)$$
 
 ---
 
@@ -241,13 +241,13 @@ Rendered fidelity is computed over canonical representations ($1280 \times 720$ 
 
 #### Structural Similarity Index Metric (SSIM)
 
-$$\operatorname{SSIM}(x, y) = \frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}$$
+$$\text{SSIM}(x, y) = \frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}$$
 
 where $\mu$ is local mean, $\sigma^2$ is local variance, $\sigma_{xy}$ is cross-covariance, $C_1 = (0.01 \cdot 255)^2$, and $C_2 = (0.03 \cdot 255)^2$.
 
 #### Peak Signal-to-Noise Ratio (PSNR)
 
-$$\operatorname{PSNR} = 10 \cdot \log_{10}\left(\frac{255^2}{\operatorname{MSE}}\right) = 20 \cdot \log_{10}\left(\frac{255}{\sqrt{\frac{1}{M N} \sum_{i=0}^{M-1} \sum_{j=0}^{N-1} [I_{\text{ref}}(i, j) - I_{\text{trans}}(i, j)]^2}}\right)$$
+$$\text{PSNR} = 10 \cdot \log_{10}\left(\frac{255^2}{\text{MSE}}\right) = 20 \cdot \log_{10}\left(\frac{255}{\sqrt{\frac{1}{M N} \sum_{i=0}^{M-1} \sum_{j=0}^{N-1} [I_{\text{ref}}(i, j) - I_{\text{trans}}(i, j)]^2}}\right)$$
 
 #### Tail Distribution Metrics
 To prevent severe single-frame anomalies from being masked by aggregate means, the Quality Gate evaluates complete percentile distributions:
@@ -320,9 +320,9 @@ The decoupled `research/attribution_benchmarks/` framework evaluates transformat
 
 #### 1. Peak-to-Correlation Energy (PCE) & 2D Normalized Cross-Correlation (NCC)
 
-$$\operatorname{NCC}(r, c) = \frac{\sum_{x, y} (W_1(x, y) - \bar{W}_1)(W_2(x+r, y+c) - \bar{W}_2)}{\sqrt{\sum_{x, y} (W_1(x, y) - \bar{W}_1)^2 \sum_{x, y} (W_2(x+r, y+c) - \bar{W}_2)^2}}$$
+$$\text{NCC}(r, c) = \frac{\sum_{x, y} (W_1(x, y) - \bar{W}_1)(W_2(x+r, y+c) - \bar{W}_2)}{\sqrt{\sum_{x, y} (W_1(x, y) - \bar{W}_1)^2 \sum_{x, y} (W_2(x+r, y+c) - \bar{W}_2)^2}}$$
 
-$$\operatorname{PCE} = \frac{\operatorname{NCC}(r_{\text{peak}}, c_{\text{peak}})^2}{\frac{1}{|U|} \sum_{(r, c) \in U} \operatorname{NCC}(r, c)^2}$$
+$$\text{PCE} = \frac{\text{NCC}(r_{\text{peak}}, c_{\text{peak}})^2}{\frac{1}{|U|} \sum_{(r, c) \in U} \text{NCC}(r, c)^2}$$
 
 where $U$ represents cross-correlation plane coordinates excluding an $11 \times 11$ window around the peak.
 
@@ -330,7 +330,7 @@ where $U$ represents cross-correlation plane coordinates excluding an $11 \times
 
 Receiver Operating Characteristic (ROC) curves are evaluated over sorted candidate scores:
 
-$$\operatorname{AUC} = \int_0^1 \operatorname{TPR}(\operatorname{FPR}) \, d(\operatorname{FPR}) = \sum_{i=1}^N \frac{\operatorname{TPR}_i + \operatorname{TPR}_{i-1}}{2} \cdot (\operatorname{FPR}_i - \operatorname{FPR}_{i-1})$$
+$$\text{AUC} = \int_0^1 \text{TPR}(\text{FPR}) \, d(\text{FPR}) = \sum_{i=1}^N \frac{\text{TPR}_i + \text{TPR}_{i-1}}{2} \cdot (\text{FPR}_i - \text{FPR}_{i-1})$$
 
 #### 3. Welch Power Spectral Density (PSD) with Blackman-Harris Windowing
 
