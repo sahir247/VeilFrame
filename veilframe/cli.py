@@ -31,6 +31,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from veilframe.cli_ui import (
     Style,
+    badge,
     badge_pass,
     badge_fail,
     badge_warn,
@@ -42,6 +43,10 @@ from veilframe.cli_ui import (
     print_table,
     print_tree,
     ProgressBar,
+    clear_screen,
+    print_status_bar,
+    render_metric_gauge,
+    pause_for_user,
     prompt_choice,
     prompt_text,
     prompt_confirm,
@@ -631,111 +636,247 @@ def cmd_benchmark(args):
 # --------------------------------------------------------------------------- #
 # Interactive TUI Wizard                                                      #
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Interactive TUI Dashboard & Application Loop                                #
+# --------------------------------------------------------------------------- #
 def run_interactive_wizard():
-    """Interactive developer console dashboard."""
-    print_banner(subtitle="Interactive Media Privacy & Quality Console")
+    """Persistent, rich CLI-based GUI / TUI application dashboard."""
+    from veilframe.core.resources import get_ffmpeg_path
+    from veilframe.quality.adapters.vmaf import LibvmafFFmpegProvider
 
-    choices = [
-        "Sanitize a Video (Strip metadata, apply bounded disruption, sign audit)",
-        "Inspect Video Metadata & Streams (Forensic container & stream probe)",
-        "Audit Fidelity (Run independent 3-tier QualityGate on reference vs transformed)",
-        "Verify Signed Audit Manifest (Ed25519 & SHA-256 cryptographic proof)",
-        "Explore Presets & Budget Ceilings",
-        "Run System Health Check (Doctor)",
-        "Launch Desktop GUI (PySide6)",
-        "Exit",
-    ]
+    ffmpeg_ok = get_ffmpeg_path().exists()
+    vmaf_ok = LibvmafFFmpegProvider().is_available()
 
-    idx = prompt_choice("What would you like to do?", choices, default_idx=0)
+    cv_ok = False
+    try:
+        import cv2
+        cv_ok = True
+    except ImportError:
+        cv_ok = False
 
-    if idx == 0:
-        # Sanitize
-        in_path = prompt_text("Enter input video file path")
-        if not in_path or not Path(in_path).exists():
-            print(f"{badge_fail()} File does not exist: {in_path}")
-            return
-        preset_idx = prompt_choice(
-            "Select transformation preset profile",
-            ["5% Bounded Forensic Disruption (Standard)", "10% Bounded Forensic Disruption (Deep)", "Privacy Clean (Lossless container scrub)"],
-            default_idx=0,
-        )
-        p_name = "5% Bounded Forensic Disruption" if preset_idx == 0 else ("10% Bounded Forensic Disruption" if preset_idx == 1 else "Privacy Clean")
-        strict = prompt_confirm("Enforce Strict QualityGate (Reject & delete output if fidelity fails)?", default=True)
+    while True:
+        clear_screen()
 
-        class Args:
-            input = in_path
-            output = None
-            preset = p_name
-            strict = strict
-            json = False
-            budget = None
+        # Status Bar
+        status_chips = [
+            ("Core", "v1.1.0", Style.BRIGHT_GREEN),
+            ("FFmpeg", "Ready" if ffmpeg_ok else "Missing", Style.BRIGHT_GREEN if ffmpeg_ok else Style.BRIGHT_RED),
+            ("libvmaf", "Enabled" if vmaf_ok else "Disabled", Style.BRIGHT_GREEN if vmaf_ok else Style.BRIGHT_YELLOW),
+            ("OpenCV", "Accelerated" if cv_ok else "NumPy Fallback", Style.BRIGHT_GREEN if cv_ok else Style.BRIGHT_CYAN),
+            ("Signer", "Ed25519", Style.BRIGHT_MAGENTA),
+        ]
+        print_status_bar(status_chips)
 
-        cmd_sanitize(Args())
+        print_banner(subtitle="Interactive Media Privacy, Forensic Disruption & QualityGate TUI")
 
-    elif idx == 1:
-        # Inspect
-        in_path = prompt_text("Enter video file path to inspect")
-        if not in_path or not Path(in_path).exists():
-            print(f"{badge_fail()} File does not exist: {in_path}")
-            return
+        choices = [
+            "⚡ Video Sanitizer Studio       (Strip metadata, inject Bayer PRNU, sign audit manifest)",
+            "🔍 Forensic Media Inspector       (Deep probe of container atoms, streams, tags & GPS)",
+            "⚖️ QualityGate Audit Center      (Independent 3-tier visual fidelity comparative audit)",
+            "🔐 Cryptographic Verifier        (Validate Ed25519 signature & bitstream SHA-256)",
+            "🎛️ Presets & Transformation Budgets (Explore 5%, 10% & Lossless profile ceilings)",
+            "🩺 System Doctor & Diagnostics   (Comprehensive hardware & encoder health check)",
+            "🔬 Attribution Benchmark Suite   (Run PRNU PCE/NCC, pHash/dHash & ENF detectors)",
+            "🖥️ Launch Desktop GUI            (Start native PySide6 graphical window)",
+            "✖️ Exit VeilFrame Console",
+        ]
 
-        class Args:
-            video = in_path
-            json = False
+        idx = prompt_choice("Select an operation or tool", choices, default_idx=0)
 
-        cmd_inspect(Args())
+        if idx == 0:
+            # 1. Sanitize Studio
+            clear_screen()
+            print_banner(subtitle="VeilFrame > Video Sanitizer Studio")
+            in_path = prompt_text("Enter input video file path (drag-and-drop supported)")
+            if not in_path:
+                continue
+            src_p = Path(in_path)
+            if not src_p.exists():
+                print(f"\n{badge_fail()} File does not exist: {in_path}")
+                pause_for_user()
+                continue
 
-    elif idx == 2:
-        # Audit
-        ref_path = prompt_text("Enter ground-truth reference video path")
-        trans_path = prompt_text("Enter sanitized/transformed video path")
-        if not Path(ref_path).exists() or not Path(trans_path).exists():
-            print(f"{badge_fail()} One or both files not found.")
-            return
+            preset_idx = prompt_choice(
+                "Select transformation preset profile",
+                [
+                    "5% Bounded Forensic Disruption (Standard — SSIM >= 0.95, PSNR >= 30 dB)",
+                    "10% Bounded Forensic Disruption (Deep — Bayer CFA PRNU + 2D DCT Dither)",
+                    "Privacy Clean (Lossless container/atom stripping, 0% budget)",
+                ],
+                default_idx=0,
+            )
+            p_name = (
+                "5% Bounded Forensic Disruption" if preset_idx == 0
+                else ("10% Bounded Forensic Disruption" if preset_idx == 1
+                else "Privacy Clean")
+            )
 
-        class Args:
-            reference = ref_path
-            transformed = trans_path
-            preset = None
-            export_manifest = None
-            json = False
+            out_default = str(src_p.parent / f"{src_p.stem}_sanitized.mp4")
+            out_path = prompt_text("Enter output video path", default=out_default)
+            strict = prompt_confirm("Enforce Strict QualityGate (Reject & delete output if fidelity fails)?", default=True)
 
-        cmd_audit(Args())
+            print()
+            class Args:
+                input = in_path
+                output = out_path
+                preset = p_name
+                strict = strict
+                json = False
+                budget = None
 
-    elif idx == 3:
-        # Verify
-        m_path = prompt_text("Enter manifest.json file path")
-        if not Path(m_path).exists():
-            print(f"{badge_fail()} Manifest not found.")
-            return
+            try:
+                cmd_sanitize(Args())
+            except Exception as e:
+                print(f"\n{badge_fail('ERROR')} Execution error: {e}")
 
-        class Args:
-            manifest = m_path
-            signature = None
-            public_key = None
-            expected_fingerprint = None
-            video_file = None
+            pause_for_user()
 
-        cmd_verify(Args())
+        elif idx == 1:
+            # 2. Inspect Media
+            clear_screen()
+            print_banner(subtitle="VeilFrame > Forensic Media Inspector")
+            in_path = prompt_text("Enter video file path to inspect (drag-and-drop supported)")
+            if not in_path:
+                continue
+            src_p = Path(in_path)
+            if not src_p.exists():
+                print(f"\n{badge_fail()} File does not exist: {in_path}")
+                pause_for_user()
+                continue
 
-    elif idx == 4:
-        class Args:
-            json = False
-        cmd_presets(Args())
+            print()
+            class Args:
+                video = in_path
+                json = False
 
-    elif idx == 5:
-        class Args:
-            json = False
-        cmd_doctor(Args())
+            try:
+                cmd_inspect(Args())
+            except Exception as e:
+                print(f"\n{badge_fail('ERROR')} Inspection error: {e}")
 
-    elif idx == 6:
-        class Args:
-            pass
-        cmd_gui(Args())
+            pause_for_user()
 
-    elif idx == 7:
-        print(f"\n{Style.BRIGHT_CYAN}Goodbye!{Style.RESET}")
-        sys.exit(0)
+        elif idx == 2:
+            # 3. Audit Quality
+            clear_screen()
+            print_banner(subtitle="VeilFrame > QualityGate Visual Fidelity Audit")
+            ref_path = prompt_text("Enter ground-truth reference video path")
+            if not ref_path or not Path(ref_path).exists():
+                print(f"\n{badge_fail()} Reference file does not exist.")
+                pause_for_user()
+                continue
+
+            trans_path = prompt_text("Enter sanitized / transformed video path")
+            if not trans_path or not Path(trans_path).exists():
+                print(f"\n{badge_fail()} Transformed file does not exist.")
+                pause_for_user()
+                continue
+
+            print()
+            class Args:
+                reference = ref_path
+                transformed = trans_path
+                preset = None
+                export_manifest = None
+                json = False
+
+            try:
+                cmd_audit(Args())
+            except Exception as e:
+                print(f"\n{badge_fail('ERROR')} Audit error: {e}")
+
+            pause_for_user()
+
+        elif idx == 3:
+            # 4. Verify Manifest
+            clear_screen()
+            print_banner(subtitle="VeilFrame > Cryptographic Manifest & Signature Verifier")
+            m_path = prompt_text("Enter manifest.json file path")
+            if not m_path or not Path(m_path).exists():
+                print(f"\n{badge_fail()} Manifest file does not exist.")
+                pause_for_user()
+                continue
+
+            v_path = prompt_text("Enter accompanied sanitized video path for SHA-256 check (optional)", default="")
+
+            print()
+            class Args:
+                manifest = m_path
+                signature = None
+                public_key = None
+                expected_fingerprint = None
+                video_file = v_path if v_path else None
+
+            try:
+                cmd_verify(Args())
+            except Exception as e:
+                print(f"\n{badge_fail('ERROR')} Verification error: {e}")
+
+            pause_for_user()
+
+        elif idx == 4:
+            # 5. Presets
+            clear_screen()
+            print_banner(subtitle="VeilFrame > Transformation Profiles & Policy Ceilings")
+            class Args:
+                json = False
+            cmd_presets(Args())
+            pause_for_user()
+
+        elif idx == 5:
+            # 6. Doctor
+            clear_screen()
+            class Args:
+                json = False
+            cmd_doctor(Args())
+            pause_for_user()
+
+        elif idx == 6:
+            # 7. Benchmark
+            clear_screen()
+            print_banner(subtitle="VeilFrame > Research Attribution Benchmark Suite")
+            b_mode = prompt_choice(
+                "Select benchmark execution mode",
+                [
+                    "Synthetic Multi-Camera Corpus Evaluation (Fully offline, multi-camera ROC)",
+                    "Single Reference vs. Transformed Video Pair Benchmark",
+                ],
+                default_idx=0,
+            )
+            if b_mode == 0:
+                out_j = prompt_text("Output JSON report path", default="synthetic_benchmark_results.json")
+                class Args:
+                    ref = None
+                    trans = None
+                    synthetic = True
+                    output_json = out_j
+                cmd_benchmark(Args())
+            else:
+                r_p = prompt_text("Enter reference video path")
+                t_p = prompt_text("Enter transformed video path")
+                out_j = prompt_text("Output JSON report path", default="benchmark_results.json")
+                class Args:
+                    ref = r_p
+                    trans = t_p
+                    synthetic = False
+                    output_json = out_j
+                cmd_benchmark(Args())
+
+            pause_for_user()
+
+        elif idx == 7:
+            # 8. Launch GUI
+            print(f"\n{badge_info()} Launching PySide6 desktop interface...")
+            class Args:
+                pass
+            cmd_gui(Args())
+            pause_for_user("PySide6 GUI closed. Press Enter to return to TUI console...")
+
+        elif idx == 8:
+            # 9. Exit
+            clear_screen()
+            print(f"\n{Style.BOLD}{Style.BRIGHT_CYAN}◈ Thank you for using VeilFrame.{Style.RESET}\n")
+            break
 
 
 # --------------------------------------------------------------------------- #
@@ -832,9 +973,12 @@ Examples:
     p_gui = subparsers.add_parser("gui", help="Launch VeilFrame desktop GUI")
     p_gui.set_defaults(func=cmd_gui)
 
-    # 9. Interactive
+    # 9. Interactive / TUI
     p_itr = subparsers.add_parser("interactive", help="Launch interactive terminal console")
     p_itr.set_defaults(func=lambda args: run_interactive_wizard())
+
+    p_tui = subparsers.add_parser("tui", help="Launch interactive full-screen CLI dashboard / TUI")
+    p_tui.set_defaults(func=lambda args: run_interactive_wizard())
 
     args = parser.parse_args()
 

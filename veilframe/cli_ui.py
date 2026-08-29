@@ -298,6 +298,50 @@ def print_tree(root_name: str, nodes: List[Tuple[str, str]]):
     print()
 
 
+def clear_screen():
+    """Clear terminal screen if running in an interactive terminal."""
+    if USE_COLOR and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+        # ANSI clear screen and reset cursor to top left
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+    else:
+        print("\n" + "═" * get_terminal_width() + "\n")
+
+
+def print_status_bar(items: List[Tuple[str, str, str]]):
+    """
+    Print a horizontal top status bar with color-coded chips.
+    items: List of (label, value, color)
+    """
+    w = get_terminal_width()
+    parts = []
+    for lbl, val, col in items:
+        parts.append(f"{Style.DIM}{lbl}:{Style.RESET}{col}{val}{Style.RESET}")
+    bar_content = "  │  ".join(parts)
+    print(f"{Style.DIM}┌─{Style.RESET} {bar_content}")
+
+
+def render_metric_gauge(name: str, val: float, target: float, unit: str = "", higher_is_better: bool = True, width: int = 16) -> str:
+    """Render a visual terminal mini-gauge with pass/fail badge."""
+    passed = (val >= target) if higher_is_better else (val <= target)
+    pct = min(1.0, max(0.0, val / (target * 1.1 if target > 0 else 1.0)))
+    filled = int(round(width * pct))
+    empty = width - filled
+    col = Style.BRIGHT_GREEN if passed else Style.BRIGHT_RED
+    bar = f"{col}{'█' * filled}{Style.DIM}{'░' * empty}{Style.RESET}"
+    badge_str = badge_pass() if passed else badge_fail()
+    return f"{Style.BOLD}{name:<16}{Style.RESET} [{bar}] {col}{val:.4f}{unit}{Style.RESET} (Target: {target}{unit}) {badge_str}"
+
+
+def pause_for_user(prompt: str = "Press Enter to return to main menu..."):
+    """Pause until user hits Enter, with graceful Ctrl+C handling."""
+    print(f"\n{Style.DIM}{prompt}{Style.RESET}", end="", flush=True)
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        print()
+
+
 # --------------------------------------------------------------------------- #
 # Interactive Prompts & Helpers                                               #
 # --------------------------------------------------------------------------- #
@@ -314,6 +358,8 @@ def prompt_choice(prompt: str, choices: List[str], default_idx: int = 0) -> int:
             val = input(f"\n{Style.DIM}Select option (1-{len(choices)}, default: {default_idx + 1}): {Style.RESET}").strip()
             if not val:
                 return default_idx
+            if val.lower() in ("q", "quit", "exit"):
+                return len(choices) - 1  # Assume last option is Exit
             selected = int(val) - 1
             if 0 <= selected < len(choices):
                 return selected

@@ -432,8 +432,9 @@ veilframe presets
 # 7. Run system environment diagnostic & hardware acceleration health check
 veilframe doctor
 
-# 8. Launch interactive developer console dashboard
-veilframe interactive
+# 8. Launch full-screen interactive CLI GUI / TUI dashboard
+veilframe tui
+# or simply run: veilframe
 
 # 9. Launch PySide6 desktop GUI
 veilframe gui
