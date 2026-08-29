@@ -6,8 +6,8 @@ Runs empirical detector benchmarks (Perceptual Hash, ENF, Motion, PRNU)
 across reference and transformed video streams or synthetic evaluation corpora.
 
 Usage:
-  uv run python tools/run_attribution_benchmarks.py --ref original.mp4 --trans transformed.mp4
-  uv run python tools/run_attribution_benchmarks.py --synthetic --output-json results.json
+  python tools/run_attribution_benchmarks.py --ref original.mp4 --trans transformed.mp4
+  python tools/run_attribution_benchmarks.py --synthetic --output-json results.json
 """
 import argparse
 import json

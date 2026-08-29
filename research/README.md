@@ -92,7 +92,7 @@ Every benchmark detector implements a 3-layer output schema:
 
 ### Benchmark a Single Video Pair
 ```bash
-uv run python tools/run_attribution_benchmarks.py \
+python tools/run_attribution_benchmarks.py \
   --ref original.mp4 \
   --trans sanitized.mp4 \
   --output-json results.json
@@ -100,7 +100,7 @@ uv run python tools/run_attribution_benchmarks.py \
 
 ### Run Self-Contained Multi-Camera Synthetic Corpus Evaluation
 ```bash
-uv run python tools/run_attribution_benchmarks.py \
+python tools/run_attribution_benchmarks.py \
   --synthetic \
   --output-json synthetic_results.json
 ```

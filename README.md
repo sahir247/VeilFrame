@@ -340,60 +340,177 @@ where $w[n]$ is a 4-term Blackman-Harris window ($a_0=0.35875, a_1=0.48829, a_2=
 
 ---
 
-## 🚀 Quickstart & Installation
+## 🚀 Universal Quickstart & Installation
 
-### Requirements
-- **OS:** Windows 10 / 11, Linux, or macOS (64-bit)
-- **Python:** 3.10 or higher
-- **FFmpeg & FFprobe:** Available on system `PATH` or bundled in `veilframe/resources/ffmpeg/`.
+### 1. System Requirements & Prerequisites
+- **Python:** 3.10, 3.11, or 3.12 (64-bit)
+- **FFmpeg & FFprobe:** Installed and accessible on system `PATH` (or placed in `veilframe/resources/ffmpeg/`).
 
-### Setup
-```powershell
-# 1. Clone or navigate to the repository
+#### Installing FFmpeg by Operating System:
+
+```bash
+# Linux (Ubuntu / Debian)
+sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1
+
+# Linux (Fedora / RHEL)
+sudo dnf install ffmpeg
+
+# Linux (Arch Linux)
+sudo pacman -S ffmpeg
+
+# macOS (Homebrew)
+brew install ffmpeg
+
+# Windows (Winget)
+winget install Gyan.FFmpeg
+
+# Windows (Chocolatey)
+choco install ffmpeg
+```
+
+---
+
+### 2. Environment Setup
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/sahir247/VeilFrame.git
 cd VeilFrame
 
 # 2. Create and activate a virtual environment
+# Linux / macOS:
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Windows (PowerShell):
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 3. Install dependencies
+# Windows (Command Prompt):
+python -m venv .venv
+.\.venv\Scripts\activate.bat
+
+# 3. Install VeilFrame in editable mode
+pip install --upgrade pip
 pip install -e .
 ```
 
-### Command Line Interface (CLI)
-```powershell
-# Sanitize a video using the standard 5% bounded disruption preset
+---
+
+### 3. Command Line Interface (CLI)
+
+VeilFrame includes a comprehensive developer CLI with ANSI cards, live progress spinners, forensic inspection, diagnostics, and independent cryptographic verification.
+
+```
+╭──────────────────────────────────────────────────────────────────────────────╮
+  ◈ VEILFRAME v1.1.0 │ 3-Tier QualityGate │ Ed25519 Signed
+  Privacy-Preserving Media Sanitization & Cryptographic Audit
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+#### Common Commands:
+
+```bash
+# 1. Sanitize video with the standard 5% bounded disruption preset & strict quality gate
 veilframe sanitize input.mp4 -o output.mp4 --preset "5% Bounded Forensic Disruption" --strict
 
-# Sanitize a video using the deep 10% bounded forensic disruption preset
+# 2. Sanitize video with deep 10% forensic disruption (Bayer CFA PRNU + 2D DCT perturbation)
 veilframe sanitize input.mp4 -o output.mp4 --preset "10% Bounded Forensic Disruption" --strict
 
-# Run an independent read-only quality gate audit comparing reference vs transformed
-veilframe audit reference.mp4 transformed.mp4
+# 3. Inspect container atoms, elementary video/audio streams, tracking tags, and GPS
+veilframe inspect video.mp4
 
-# Launch the PySide6 desktop GUI
+# 4. Run independent read-only 3-tier QualityGate visual fidelity audit
+veilframe audit reference.mp4 sanitized.mp4
+
+# 5. Cryptographically verify an Ed25519 signed audit manifest & video bitstream hash
+veilframe verify path/to/manifest.json
+
+# 6. Explore built-in transformation presets and mathematical budget ceilings
+veilframe presets
+
+# 7. Run system environment diagnostic & hardware acceleration health check
+veilframe doctor
+
+# 8. Launch interactive developer console dashboard
+veilframe interactive
+
+# 9. Launch PySide6 desktop GUI
 veilframe gui
 ```
 
-### Standalone Manifest Verification (Independent Auditor)
-Recipients can independently verify an exported video and its Ed25519 signed manifest using the standalone script (requiring only standard Python and `cryptography`) without running the GUI or importing engine components:
-
-```powershell
-python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> --expected-fingerprint SHA256:... --expected-key-id veilframe-signer-01 --video-file <output.mp4>
+#### JSON Pipeline Mode:
+All CLI commands support `--json` for direct integration into automated CI/CD and forensic evaluation workflows:
+```bash
+veilframe inspect video.mp4 --json
+veilframe sanitize input.mp4 -o output.mp4 --json
+veilframe audit ref.mp4 trans.mp4 --json
+veilframe doctor --json
 ```
 
-### Run Attribution Benchmark Suite
-```powershell
-# Run reference vs. transformed benchmark
+---
+
+### 4. Programmatic Python SDK Usage
+
+VeilFrame can be embedded directly into Python applications and automated pipelines:
+
+```python
+from pathlib import Path
+from veilframe.core.pipeline import run_pipeline
+from veilframe.presets.manager import PresetManager
+
+# 1. Load preset profile (e.g. 5% or 10% Bounded Forensic Disruption)
+pm = PresetManager()
+preset = pm.get_preset("5% Bounded Forensic Disruption")
+settings = pm.to_processing_settings(preset)
+settings.quality_gate.enforce_strict = True
+
+# 2. Execute multi-pass sanitization with independent fidelity audit
+report = run_pipeline(
+    src_path=Path("input.mp4"),
+    dst_path=Path("output.mp4"),
+    settings=settings,
+    progress_callback=lambda pct, msg: print(f"[{pct:3.0f}%] {msg}"),
+)
+
+print(f"Sanitization Passed: {report.all_passed}")
+if report.quality_report:
+    print(f"QualityGate Verdict: {report.quality_report.three_tier_verdict.overall_verdict}")
+    print(f"Ed25519 Fingerprint: {report.quality_report.public_key_fingerprint}")
+```
+
+---
+
+### 5. Standalone Manifest Verification (Zero-Dependency Auditor)
+
+Recipients and third-party auditors can independently verify an exported video and its Ed25519 signed manifest using the standalone script (requiring only Python standard library and `cryptography`) without running the GUI or importing internal transformation components:
+
+```bash
+python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> \
+  --expected-fingerprint SHA256:... \
+  --video-file <output.mp4>
+```
+
+---
+
+### 6. Research Attribution Benchmark Suite
+
+Evaluate PRNU cross-correlation (PCE/NCC), perceptual hash Hamming distances (pHash/dHash), and ENF spectral attenuation:
+
+```bash
+# Run reference vs. transformed empirical benchmark
 python tools/run_attribution_benchmarks.py --ref original.mp4 --trans sanitized.mp4 --output-json benchmark_results.json
 
 # Run reproducible multi-camera synthetic corpus benchmark
 python tools/run_attribution_benchmarks.py --synthetic --output-json synthetic_corpus.json
 ```
 
-### Run Unit Test Suite
-```powershell
-uv run python -m unittest discover tests -v
+---
+
+### 7. Run Test Suite
+
+```bash
+python -m unittest discover tests -v
 ```
 
 ---
