@@ -537,6 +537,15 @@ def cmd_doctor(args):
     except ImportError:
         crypto_ok = False
 
+    # OpenCV check
+    cv_ok = True
+    cv_ver = "Unknown"
+    try:
+        import cv2
+        cv_ver = cv2.__version__
+    except ImportError:
+        cv_ok = False
+
     # Hardware acceleration check
     hw_encoders = []
     if ffmpeg_ok:
@@ -563,6 +572,7 @@ def cmd_doctor(args):
         "pyside6": {"available": pyside_ok, "version": pyside_ver},
         "cryptography": {"available": crypto_ok, "version": crypto_ver},
         "numpy": {"version": np.__version__},
+        "opencv": {"available": cv_ok, "version": cv_ver},
         "hardware_encoders": hw_encoders,
     }
 
@@ -580,6 +590,7 @@ def cmd_doctor(args):
         ["libvmaf Filter", "FFmpeg libvmaf filter", badge_pass("ENABLED") if vmaf_ok else badge_warn("UNAVAILABLE (Skipped in local)")],
         ["Cryptography (Ed25519)", f"v{crypto_ver}", badge_pass("ACCELERATED") if crypto_ok else badge_fail("MISSING")],
         ["NumPy Engine", f"v{np.__version__}", badge_pass("ACCELERATED")],
+        ["OpenCV Demosaic Engine", f"v{cv_ver}" if cv_ok else "Pure NumPy Fallback", badge_pass("ACCELERATED") if cv_ok else badge_info("NUMPY FALLBACK")],
         ["PySide6 (Qt GUI)", f"v{pyside_ver}", badge_pass("READY") if pyside_ok else badge_warn("HEADLESS ONLY")],
         ["Hardware Codecs", ", ".join(hw_encoders) if hw_encoders else "Software (CPU fallback)", badge_info("DETECTED")],
     ]

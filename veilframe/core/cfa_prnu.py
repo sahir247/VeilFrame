@@ -11,11 +11,15 @@ Simulates the physical optical camera imaging pipeline:
 from typing import Optional, Tuple
 import numpy as np
 
-# Try importing OpenCV for accelerated demosaicing if available, otherwise pure NumPy fallback
+import importlib
+
+# Try importing OpenCV for optional compiled C++ demosaicing fast path; pure NumPy fallback is always available
+_HAS_CV2 = False
+_cv2_module = None
 try:
-    import cv2
+    _cv2_module = importlib.import_module("cv2")
     _HAS_CV2 = True
-except ImportError:
+except (ImportError, Exception):
     _HAS_CV2 = False
 
 
@@ -244,16 +248,16 @@ def demosaic_reconstruction(raw_bayer: np.ndarray, pattern: str = "RGGB") -> np.
     raw_u8 = np.clip(raw_bayer, 0.0, 255.0).astype(np.uint8)
     p = pattern.upper()
 
-    if _HAS_CV2:
+    if _HAS_CV2 and _cv2_module is not None:
         flag_map = {
-            "RGGB": cv2.COLOR_BAYER_BG2RGB,
-            "BGGR": cv2.COLOR_BAYER_RG2RGB,
-            "GRBG": cv2.COLOR_BAYER_GB2RGB,
-            "GBRG": cv2.COLOR_BAYER_GR2RGB,
+            "RGGB": _cv2_module.COLOR_BAYER_BG2RGB,
+            "BGGR": _cv2_module.COLOR_BAYER_RG2RGB,
+            "GRBG": _cv2_module.COLOR_BAYER_GB2RGB,
+            "GBRG": _cv2_module.COLOR_BAYER_GR2RGB,
         }
-        flag = flag_map.get(p, cv2.COLOR_BAYER_BG2RGB)
+        flag = flag_map.get(p, _cv2_module.COLOR_BAYER_BG2RGB)
         try:
-            return cv2.cvtColor(raw_u8, flag).astype(np.float32)
+            return _cv2_module.cvtColor(raw_u8, flag).astype(np.float32)
         except Exception:
             pass
 
