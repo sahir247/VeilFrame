@@ -204,6 +204,18 @@ Anyone can verify an exported video and its Ed25519 signed manifest using the st
 python examples/verify_manifest.py <manifest.json> <manifest.sig> <public_key.pem> --expected-fingerprint SHA256:... --expected-key-id veilframe-signer-01 --video-file <output.mp4>
 ```
 
+### 🔬 Empirical Forensic Attribution Benchmarks (Research Suite)
+Evaluate how VeilFrame transformations impact established forensic detectors (Perceptual Hashers, ENF power-grid hum analyzers, temporal motion gradient trackers, and PRNU sensor noise residue correlation):
+
+```powershell
+# Evaluate empirical attribution degradation on a reference/transformed video pair
+python tools/run_attribution_benchmarks.py --ref original.mp4 --trans sanitized.mp4 --output-json benchmark_results.json
+
+# Run reproducible multi-camera synthetic corpus benchmark
+python tools/run_attribution_benchmarks.py --synthetic --output-json synthetic_benchmark.json
+```
+For detailed scientific methodology, detector math, and 3-layer metric schemas, see the [Research Suite Documentation](research/README.md).
+
 ### Run Test Suite
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover tests

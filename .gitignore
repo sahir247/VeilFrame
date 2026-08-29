@@ -38,6 +38,9 @@ venv/
 ENV/
 env/
 env.bak/
+
+# Scratch & temporary artifacts
+scratch/
 venv.bak/
 
 # Unit test / coverage
