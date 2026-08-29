@@ -133,7 +133,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="VeilFrame 1.0.0 (Quality Gate v2.1, Policy 5pct-v1.0)",
+        version="VeilFrame 1.1.0 (Quality Gate v4.0, Policy 5pct-v1.0)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="VeilFrame commands")

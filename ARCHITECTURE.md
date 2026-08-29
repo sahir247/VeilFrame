@@ -230,3 +230,90 @@ In particular:
 - **Perceptual Hashes:** Spatial perceptual hashes (pHash/dHash) are statistical heuristic matchers, not cryptographic identifiers.
 - **Application Policy Scope:** The 5% policy score ($S_{\text{policy}}$) is an application-defined engineering budget ceiling, not a universal measurement of percentage visual modification.
 - **Cryptographic Scope:** Ed25519 digital signatures prove cryptographic integrity and provenance relative to the trusted public key; they do not prove that the underlying measurement suite is scientifically exhaustive.
+
+---
+
+## 🏗️ v1.1 Quality Engine Architecture
+
+### Core Invariant
+
+> **Providers measure. VeilFrame decides.**
+
+No quality provider has access to gate thresholds. No gate logic depends on
+provider identity. The verdict predicate is owned exclusively by `QualityGate`.
+
+### Provider Layer
+
+```
+veilframe/quality/
+├── __init__.py          # Re-exports: QualityConfig, QualityResult, PerFrameMetric
+├── models.py            # QualityConfig, QualityResult, PerFrameMetric (generic — no subclasses)
+├── provider.py          # QualityProvider Protocol (structural — no base class)
+├── gate.py              # QualityGate — sole owner of pass/fail verdict logic
+└── adapters/
+    ├── __init__.py
+    ├── ffmpeg.py        # FFmpegNativeProvider: SSIM + PSNR via lavfi
+    └── vmaf.py          # LibvmafFFmpegProvider: VMAF measurement only (v1.1)
+```
+
+### Data Flow
+
+```
+  ┌─────────────┐    ┌──────────────────────┐    ┌─────────────────────┐
+  │ ref.mp4     │───▶│ FFmpegNativeProvider  │───▶│ QualityResult(ssim) │
+  │ output.mp4  │    │ (lavfi SSIM + PSNR)  │    │ QualityResult(psnr) │
+  └─────────────┘    └──────────────────────┘    └──────────┬──────────┘
+                     ┌──────────────────────┐               │
+                     │ LibvmafFFmpegProvider │───▶ QualityResult(vmaf) ─┐
+                     │ (VMAF — if available) │    [measurement only]    │
+                     └──────────────────────┘                          │
+                                                                        ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                         QualityGate.evaluate()                         │
+  │                                                                        │
+  │  Tier 1: TransformationPolicyScore.passed                              │
+  │  Tier 2: SSIM mean/P5/worst + PSNR mean/worst vs VisualBudgetPolicy   │
+  │  Tier 3: TemporalIntegrityMetrics.passed                               │
+  │                                                                        │
+  │  Note: VMAF QualityResult is present in the results list but the gate  │
+  │  predicate never reads it. VMAF is evidence only in v1.1.              │
+  └────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+                          ThreeTierQualityVerdict
+                          overall_verdict: "PASS" | "REJECT"
+```
+
+### Manifest v1.1 Schema Changes
+
+The signed manifest schema version has been updated to `1.1.0`. Changes:
+
+| Field | v1.0 | v1.1 |
+|---|---|---|
+| `manifest_version` | `"1.0.0"` | `"1.1.0"` |
+| `quality_engine` | absent | `{engine_version, algorithm_version, policy_version}` |
+| `providers` | absent | Provider runtime info keyed by primary capability |
+| `quality_providers` | absent | VMAF & other evidence results (measurement only) |
+| `validator` | present | kept (backward compat with verify scripts) |
+
+The `validator` key is kept for backward compatibility with existing manifest
+verifiers (`examples/verify_manifest.py`) that only check the `rendered_fidelity`
+and signature fields.
+
+### Version History
+
+| Algorithm Version | Gate Predicate | Providers Added |
+|---|---|---|
+| `quality-gate-v1.0` through `v3.0` | SSIM + PSNR + policy + temporal | (legacy monolithic) |
+| `quality-gate-v4.0` (v1.1) | SSIM + PSNR + policy + temporal (unchanged) | FFmpegNativeProvider, LibvmafFFmpegProvider |
+
+### VMAF in v1.1
+
+VMAF is **measurement-only** in v1.1. It is recorded in the signed manifest
+under `quality_providers.vmaf` as calibration evidence, but it does not affect
+the gate verdict. The VMAF evidence file (`vmaf.json`) is written to
+`evidence_dir` by default and its SHA-256 is recorded in the manifest.
+
+This design allows the v1.2 quality policy team to analyse VMAF score
+distributions across a real workload corpus before deciding what gate
+predicate (if any) VMAF should satisfy.

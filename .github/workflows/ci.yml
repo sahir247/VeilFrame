@@ -5,6 +5,8 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  release:
+    types: [ published ]
 
 jobs:
   test:
@@ -71,9 +73,28 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Run Test Suite (23 Unit, Integration, Adversarial & Boundary Tests)
+      # Core test suite — no hardcoded count in the name
+      # Exit criterion: 26 legacy + 3 architecture contract = 29 tests green
+      - name: Run Core Test Suite
         run: |
-          python -m unittest discover tests
+          python -m unittest discover tests -v
+
+      # VMAF tests skip gracefully when libvmaf is not in FFmpeg build.
+      # SKIPPED != PASSED: the release gate job enforces PASS explicitly.
+      - name: Check VMAF Availability
+        shell: bash
+        run: |
+          if ffmpeg -filters 2>&1 | grep -q libvmaf; then
+            echo "VMAF_AVAILABLE=true" >> $GITHUB_ENV
+            echo "libvmaf detected in FFmpeg build"
+          else
+            echo "VMAF_AVAILABLE=false" >> $GITHUB_ENV
+            echo "libvmaf NOT detected — VMAF tests will be skipped"
+          fi
+
+      - name: Run VMAF Tests (skip if libvmaf unavailable)
+        run: |
+          python -m unittest tests.test_vmaf -v
 
       - name: Test Independent Manifest Verifier Example
         run: |
@@ -91,3 +112,73 @@ jobs:
           cmd = ['python', 'examples/verify_manifest.py', str(paths[0]), str(paths[2]), str(paths[3]), '--expected-fingerprint', report.public_key_fingerprint, '--video-file', str(t.ref_video)]
           subprocess.run(cmd, check=True)
           "
+
+  # ------------------------------------------------------------------ #
+  # Release gate: runs only on tagged releases.                          #
+  # VMAF must be present and all VMAF tests must PASS (not skip).        #
+  # SKIPPED != PASSED — this job makes that distinction explicit.        #
+  # ------------------------------------------------------------------ #
+  vmaf-release-gate:
+    name: VMAF Release Gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'release'
+    env:
+      QT_QPA_PLATFORM: offscreen
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install FFmpeg with libvmaf (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1 libgl1
+          # Verify libvmaf is present — fail fast if not
+          ffmpeg -filters 2>&1 | grep libvmaf || {
+            echo "ERROR: libvmaf is required for release gate but not found in FFmpeg build"
+            exit 1
+          }
+
+      - name: Install FFmpeg with libvmaf (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg-full --no-progress
+          ffmpeg -filters | Select-String libvmaf
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "ERROR: libvmaf is required for release gate but not found in FFmpeg build"
+            exit 1
+          }
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Assert libvmaf present (fail gate if absent)
+        shell: bash
+        run: |
+          ffmpeg -filters 2>&1 | grep libvmaf || {
+            echo "RELEASE GATE FAILED: libvmaf must be present for a VeilFrame release"
+            exit 1
+          }
+
+      - name: Run Core Test Suite (must pass before VMAF gate)
+        run: |
+          python -m unittest discover tests -v
+
+      # On release runners, VMAF tests must PASS — not skip
+      - name: Run VMAF Tests (must PASS for release — SKIPPED is a failure here)
+        run: |
+          python -m unittest tests.test_vmaf -v

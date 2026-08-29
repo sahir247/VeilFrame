@@ -40,19 +40,17 @@ from ..models.video_info import (
     VisualQualityReport,
 )
 from ..models.settings import VisualBudgetPolicy
+from ..quality.models import QualityConfig, QualityResult
+from ..quality.gate import QualityGate
+from ..quality.adapters.ffmpeg import FFmpegNativeProvider
+from ..quality.adapters.vmaf import LibvmafFFmpegProvider
 
-QUALITY_GATE_ENGINE_VERSION: str = "1.0.0"
-QUALITY_GATE_ALGORITHM_VERSION: str = "quality-gate-v3.0"
+QUALITY_GATE_ENGINE_VERSION: str = "1.1.0"
+QUALITY_GATE_ALGORITHM_VERSION: str = "quality-gate-v4.0"
 QUALITY_GATE_POLICY_VERSION: str = "5pct-v1.0"
 
 
-def compute_sha256(file_path: Path) -> str:
-    """Computes SHA-256 cryptographic hash of the specified file."""
-    h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
+from .crypto import compute_sha256  # noqa: F401 — re-exported for backward compat
 
 
 def calc_percentile(sorted_data: List[float], p: float) -> float:
@@ -712,7 +710,7 @@ def generate_ed25519_signed_manifest(
     report.signing_key_id = key_id
 
     manifest_dict = {
-        "manifest_version": "1.0.0",
+        "manifest_version": "1.1.0",
         "signing": {
             "mode": signing_mode,
             "algorithm": "Ed25519",
@@ -721,10 +719,22 @@ def generate_ed25519_signed_manifest(
             "public_key_fingerprint_pem": pub_fingerprint_pem,
         },
         "canonicalization": "JSON-RFC8785",
+        "quality_engine": {
+            "engine_version": QUALITY_GATE_ENGINE_VERSION,
+            "algorithm_version": QUALITY_GATE_ALGORITHM_VERSION,
+            "policy_version": QUALITY_GATE_POLICY_VERSION,
+        },
+        # Keep legacy "validator" key for backward compat with existing verify scripts
         "validator": {
             "version": QUALITY_GATE_ENGINE_VERSION,
             "algorithm_version": QUALITY_GATE_ALGORITHM_VERSION,
             "policy_version": QUALITY_GATE_POLICY_VERSION,
+        },
+        "providers": {
+            info["capabilities"][0] if info.get("capabilities") else "unknown": {
+                k: v for k, v in info.items() if k != "capabilities"
+            }
+            for info in (report.raw_details.get("provider_infos") or [])
         },
         "policy_calibration": {
             "frequency_weight": policy.frequency_weight,
@@ -818,6 +828,23 @@ def generate_ed25519_signed_manifest(
             "psnr_mean_db": report.psnr.mean,
             "psnr_worst_db": report.psnr.min_val,
         },
+        # v1.1: Non-SSIM/PSNR provider results (VMAF etc) — measurement only
+        "quality_providers": {
+            r["metric"]: {
+                "provider": r["provider"],
+                "mean": r["mean"],
+                "minimum": r["minimum"],
+                "p1": r["p1"],
+                "p5": r["p5"],
+                "p95": r["p95"],
+                "model_name": r.get("model_name"),
+                "model_sha256": r.get("model_sha256"),
+                "evidence_sha256": r.get("evidence_sha256"),
+                "feature_metrics": r.get("feature_metrics", {}),
+                "note": r.get("note", ""),
+            }
+            for r in (report.provider_results or [])
+        },
         "verdict": {
             "tier1_policy_passed": report.three_tier_verdict.tier1_policy_passed,
             "tier2_fidelity_passed": report.three_tier_verdict.tier2_fidelity_passed,
@@ -891,18 +918,76 @@ def verify_audit_manifest(
         return False
 
 
+def _run_providers(
+    ref_path: Path,
+    trans_path: Path,
+    canonical_w: int,
+    canonical_h: int,
+    evidence_dir: Optional[Path] = None,
+) -> Tuple[List[QualityResult], List[Dict[str, Any]]]:
+    """
+    Dispatches measurement to all available quality providers.
+
+    Returns:
+        results:         List of QualityResult from all active providers.
+        provider_infos:  List of runtime_info() dicts for manifest embedding.
+
+    Providers are tried in order. Unavailable providers are skipped silently.
+    The gate never sees provider identity — only QualityResult objects.
+    """
+    results: List[QualityResult] = []
+    provider_infos: List[Dict[str, Any]] = []
+
+    cfg = QualityConfig(
+        reference=ref_path,
+        distorted=trans_path,
+        canonical_w=canonical_w,
+        canonical_h=canonical_h,
+        evidence_dir=evidence_dir,
+    )
+
+    # FFmpeg native (SSIM + PSNR) — always attempted first
+    native_provider = FFmpegNativeProvider()
+    if native_provider.is_available():
+        try:
+            native_results = native_provider.evaluate(cfg)
+            results.extend(native_results)
+            provider_infos.append(native_provider.runtime_info())
+        except Exception:
+            pass
+
+    # libvmaf via FFmpeg — measurement only in v1.1
+    vmaf_provider = LibvmafFFmpegProvider()
+    if vmaf_provider.is_available():
+        try:
+            vmaf_results = vmaf_provider.evaluate(cfg)
+            results.extend(vmaf_results)
+            provider_infos.append(vmaf_provider.runtime_info())
+        except Exception:
+            pass
+
+    return results, provider_infos
+
+
 def evaluate_visual_quality(
     ref_path: Path,
     trans_path: Path,
     policy: Optional[VisualBudgetPolicy] = None,
     canonical_w: int = 1280,
     canonical_h: int = 720,
+    evidence_dir: Optional[Path] = None,
 ) -> VisualQualityReport:
     """
-    Production Quality Gate & Independent Audit Engine.
-    
+    Production Quality Gate & Independent Audit Engine — v1.1.
+
     Operates strictly in READ-ONLY mode with respect to the output file.
     Does not modify, repair, or recompress the output video.
+
+    v1.1 changes:
+      - Quality measurement dispatched to QualityProvider adapters.
+      - libvmaf VMAF scores collected when available (measurement only).
+      - VMAF evidence written to evidence_dir/vmaf.json (default: dst_dir).
+      - Gate predicate unchanged: policy AND temporal AND SSIM/PSNR.
     """
     if policy is None:
         policy = VisualBudgetPolicy()
@@ -944,22 +1029,86 @@ def evaluate_visual_quality(
         policy_ceiling_pct=policy.policy_budget * 100.0,
     )
 
-    # 5. Canonical-Domain Rendered Fidelity (SSIM & PSNR)
-    ssim_stats, psnr_stats, ssim_scores, psnr_scores = evaluate_canonical_fidelity(
+    # 5. Multi-provider quality measurement (SSIM, PSNR via FFmpegNativeProvider;
+    #    VMAF via LibvmafFFmpegProvider when available)
+    provider_results, provider_infos = _run_providers(
         ref_path=ref_path,
         trans_path=trans_path,
         canonical_w=canonical_w,
         canonical_h=canonical_h,
+        evidence_dir=evidence_dir,
     )
 
-    # 6. Three-Tier Evaluation & Final Verdict
-    verdict, violations = evaluate_three_tier_verdict(
+    # Extract SSIM/PSNR for backward-compat report fields
+    ssim_result = next((r for r in provider_results if r.metric_name == "ssim"), None)
+    psnr_result = next((r for r in provider_results if r.metric_name == "psnr"), None)
+
+    if ssim_result:
+        ssim_stats = QualityMetricStats(
+            mean=ssim_result.mean, min_val=ssim_result.minimum,
+            p1=ssim_result.p1, p5=ssim_result.p5, p95=ssim_result.p95,
+        )
+        ssim_scores = [f.value for f in ssim_result.per_frame]
+    else:
+        # Fallback: run canonical fidelity directly (provider unavailable)
+        ssim_stats_raw, psnr_stats_raw, ssim_scores, psnr_scores = evaluate_canonical_fidelity(
+            ref_path, trans_path, canonical_w, canonical_h
+        )
+        ssim_stats = ssim_stats_raw
+
+    if psnr_result:
+        psnr_stats = QualityMetricStats(
+            mean=psnr_result.mean, min_val=psnr_result.minimum,
+            p1=psnr_result.p1, p5=psnr_result.p5, p95=psnr_result.p95,
+        )
+        psnr_scores = [f.value for f in psnr_result.per_frame]
+    elif not ssim_result:
+        # Already ran fallback above
+        psnr_stats = psnr_stats_raw
+    else:
+        psnr_stats = QualityMetricStats()
+        psnr_scores = []
+
+    # 6. QualityGate verdict (Providers measure; VeilFrame decides)
+    gate = QualityGate(policy)
+    verdict = gate.evaluate(
+        results=provider_results,
+        native_metrics=native_metrics,
+        temporal_metrics=temporal_metrics,
         policy_score=policy_score,
-        ssim_stats=ssim_stats,
-        psnr_stats=psnr_stats,
-        temporal=temporal_metrics,
-        policy=policy,
     )
+    violations = (
+        list(verdict.tier1_violations)
+        + list(verdict.tier2_violations)
+        + list(verdict.tier3_violations)
+    )
+
+    # Serialize provider results for manifest (VMAF + others; SSIM/PSNR kept in legacy fields)
+    serialized_provider_results = []
+    for r in provider_results:
+        if r.metric_name in ("ssim", "psnr"):
+            continue  # covered by legacy rendered_fidelity block
+        vmaf_note = (
+            "gate input — Tier 2b calibrated threshold"
+            if (r.metric_name == "vmaf" and policy.vmaf_gate_enabled)
+            else "measurement only — not a gate input in v1.1"
+        )
+        entry: Dict[str, Any] = {
+            "provider": r.provider_name,
+            "metric": r.metric_name,
+            "mean": r.mean,
+            "minimum": r.minimum,
+            "p1": r.p1,
+            "p5": r.p5,
+            "p95": r.p95,
+            "model_name": r.model_name,
+            "model_sha256": r.model_sha256,
+            "evidence_sha256": r.evidence_sha256,
+            "feature_metrics": r.feature_metrics,
+            "note": vmaf_note,
+        }
+        serialized_provider_results.append(entry)
+
 
     report = VisualQualityReport(
         evaluated_frames=max(len(ssim_scores), len(psnr_scores)),
@@ -976,11 +1125,13 @@ def evaluate_visual_quality(
         policy_violations=violations,
         signing_mode=policy.signing_mode,
         signing_key_id=policy.key_id,
+        provider_results=serialized_provider_results,
         raw_details={
             "canonical_canvas": f"{canonical_w}x{canonical_h}",
             "policy_budget": policy.policy_budget,
             "ssim_count": len(ssim_scores),
             "psnr_count": len(psnr_scores),
+            "provider_infos": provider_infos,
         },
     )
 

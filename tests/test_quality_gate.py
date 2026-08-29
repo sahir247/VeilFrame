@@ -555,6 +555,123 @@ class TestProductionQualityGate(unittest.TestCase):
         self.assertFalse(verify_audit_manifest(tampered_file, sig_file, pub_file))
 
 
+class TestProviderArchitectureContracts(unittest.TestCase):
+    """
+    Phase 0 architecture contract tests.
+
+    These three tests verify that the QualityProvider abstraction is correctly
+    wired. They are intentionally separate from the 26 legacy regression tests
+    so the two sets can be tracked independently.
+
+    Exit criterion: 26 legacy + 3 contract = 29 total must be green before
+    Phase 1 (VMAF) can be started.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ffmpeg = get_ffmpeg_path()
+        cls.temp_dir = Path(tempfile.mkdtemp(prefix="contract_test_"))
+        cls.ref_video = cls.temp_dir / "contract_ref.mp4"
+        cmd = [
+            str(cls.ffmpeg), "-hide_banner", "-nostats", "-y",
+            "-f", "lavfi", "-i", "testsrc=duration=1.0:size=320x240:rate=24",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1.0",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", str(cls.ref_video),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Failed to create contract test fixture: {proc.stderr}")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.temp_dir, ignore_errors=True)
+
+    def test_provider_exposes_capabilities(self):
+        """FFmpegNativeProvider must expose a non-empty capabilities list."""
+        from veilframe.quality.adapters.ffmpeg import FFmpegNativeProvider
+        provider = FFmpegNativeProvider()
+        self.assertIsInstance(provider.capabilities, list,
+                              "capabilities must be a list")
+        self.assertGreater(len(provider.capabilities), 0,
+                           "capabilities must not be empty")
+        for cap in provider.capabilities:
+            self.assertIsInstance(cap, str,
+                                  "Each capability entry must be a string")
+
+    def test_provider_availability_never_raises(self):
+        """is_available() must return a bool and never raise on any provider."""
+        from veilframe.quality.adapters.ffmpeg import FFmpegNativeProvider
+        from veilframe.quality.adapters.vmaf import LibvmafFFmpegProvider
+        for provider in [FFmpegNativeProvider(), LibvmafFFmpegProvider()]:
+            with self.subTest(provider=provider.name):
+                try:
+                    result = provider.is_available()
+                    self.assertIsInstance(result, bool,
+                                          f"{provider.name}.is_available() must return bool")
+                except Exception as exc:
+                    self.fail(
+                        f"{provider.name}.is_available() raised unexpectedly: {exc}"
+                    )
+
+    def test_quality_gate_owns_verdict(self):
+        """
+        QualityGate must be the owner of the verdict: evaluating ref vs. ref
+        must always return overall_pass=True via the gate path.
+        """
+        from veilframe.quality.gate import QualityGate
+        from veilframe.quality.adapters.ffmpeg import FFmpegNativeProvider
+        from veilframe.quality.models import QualityConfig
+        from veilframe.models.settings import VisualBudgetPolicy
+        from veilframe.core.validator import (
+            audit_native_domain,
+            audit_temporal_integrity,
+            calculate_policy_score,
+            extract_decoded_frame_energy,
+        )
+        from veilframe.core.analyzer import analyze_video
+
+        policy = VisualBudgetPolicy()
+        provider = FFmpegNativeProvider()
+
+        self.assertTrue(
+            provider.is_available(),
+            "FFmpegNativeProvider must be available for the contract test to run",
+        )
+
+        cfg = QualityConfig(
+            reference=self.ref_video,
+            distorted=self.ref_video,
+            canonical_w=320,
+            canonical_h=240,
+        )
+        results = provider.evaluate(cfg)
+        self.assertGreater(len(results), 0, "Provider must return at least one QualityResult")
+
+        ref_info = analyze_video(self.ref_video)
+        native = audit_native_domain(ref_info, ref_info)
+        temporal = audit_temporal_integrity(ref_info, ref_info, self.ref_video, self.ref_video)
+        energy = extract_decoded_frame_energy(
+            self.ref_video, self.ref_video,
+            sample_count=5,
+            sample_range=(0.1, 0.9),
+            ref_duration=ref_info.duration,
+            trans_duration=ref_info.duration,
+        )
+        policy_score = calculate_policy_score(native, energy, policy)
+
+        gate = QualityGate(policy)
+        verdict = gate.evaluate(results, native, temporal, policy_score)
+
+        self.assertTrue(
+            verdict.all_passed,
+            f"Gate verdict on ref-vs-ref must be PASS; got violations: "
+            f"{verdict.tier1_violations + verdict.tier2_violations + verdict.tier3_violations}",
+        )
+        self.assertEqual(verdict.overall_verdict, "PASS")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

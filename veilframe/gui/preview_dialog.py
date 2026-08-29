@@ -101,7 +101,7 @@ class PreviewDialog(QDialog):
         # Header info
         hdr_lay = QHBoxLayout()
         lbl_info = QLabel("Compare visual effects (Noise, Crop, Resize) between Original and Processed frame:")
-        lbl_info.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 13px;")
+        lbl_info.setStyleSheet("color: #6090e0; font-weight: 600; font-size: 12px;")
         hdr_lay.addWidget(lbl_info)
         hdr_lay.addStretch()
         lay.addLayout(hdr_lay)
@@ -114,7 +114,7 @@ class PreviewDialog(QDialog):
         v_left.addWidget(QLabel("ORIGINAL FRAME", alignment=Qt.AlignCenter))
         self.scroll_orig = QScrollArea()
         self.lbl_img_orig = QLabel("Loading original frame...", alignment=Qt.AlignCenter)
-        self.lbl_img_orig.setStyleSheet("color: #64748b; background: #090d16;")
+        self.lbl_img_orig.setStyleSheet("color: #555555; background: #1a1a1a;")
         self.scroll_orig.setWidget(self.lbl_img_orig)
         self.scroll_orig.setWidgetResizable(True)
         v_left.addWidget(self.scroll_orig)
@@ -125,7 +125,7 @@ class PreviewDialog(QDialog):
         v_right.addWidget(QLabel("PROCESSED FRAME", alignment=Qt.AlignCenter))
         self.scroll_proc = QScrollArea()
         self.lbl_img_proc = QLabel("Rendering filter chain...", alignment=Qt.AlignCenter)
-        self.lbl_img_proc.setStyleSheet("color: #64748b; background: #090d16;")
+        self.lbl_img_proc.setStyleSheet("color: #555555; background: #1a1a1a;")
         self.scroll_proc.setWidget(self.lbl_img_proc)
         self.scroll_proc.setWidgetResizable(True)
         v_right.addWidget(self.scroll_proc)
@@ -142,7 +142,7 @@ class PreviewDialog(QDialog):
         self.lbl_disclaimer = QLabel(
             "Note: Minimum noise mode is designed to be visually subtle under normal viewing."
         )
-        self.lbl_disclaimer.setStyleSheet("color: #64748b; font-size: 11px; font-style: italic;")
+        self.lbl_disclaimer.setStyleSheet("color: #555555; font-size: 10px; font-style: italic;")
         btm_lay.addWidget(self.lbl_disclaimer)
         btm_lay.addStretch()
 

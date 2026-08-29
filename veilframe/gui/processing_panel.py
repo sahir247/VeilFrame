@@ -67,7 +67,7 @@ class ProcessingPanel(QWidget):
         p_lay.addLayout(p_row)
 
         self.lbl_preset_desc = QLabel(self.preset_mgr.get_preset_description(self.combo_presets.currentText()))
-        self.lbl_preset_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.lbl_preset_desc.setStyleSheet("color: #606060; font-size: 11px;")
         self.lbl_preset_desc.setWordWrap(True)
         p_lay.addWidget(self.lbl_preset_desc)
         main_lay.addWidget(preset_box)
@@ -81,7 +81,7 @@ class ProcessingPanel(QWidget):
         def create_toggle_header(title: str, default_auto_text: str = "● Auto (Subtle)"):
             row = QHBoxLayout()
             cb_enable = QCheckBox(title)
-            cb_enable.setStyleSheet("font-weight: 600; color: #f8fafc;")
+            cb_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
 
             bg = QButtonGroup(self)
             rb_auto = QRadioButton(default_auto_text)
@@ -112,7 +112,7 @@ class ProcessingPanel(QWidget):
             sp.valueChanged.connect(self._on_control_changed)
 
         self.lbl_crop_preview = QLabel("Auto: Asymmetric edge crop (1.5% L, 1.0% R, 1.8% T, 0.7% B)")
-        self.lbl_crop_preview.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_crop_preview.setStyleSheet("color: #606060; font-size: 11px;")
         crop_inputs_lay.addWidget(self.lbl_crop_preview)
         crop_inputs_lay.addStretch()
         proc_lay.addLayout(crop_inputs_lay)
@@ -174,7 +174,7 @@ class ProcessingPanel(QWidget):
         trim_inputs_lay.addWidget(self.trim_dur)
 
         self.lbl_trim_summary = QLabel("Timeline: 0.00s → 60.00s")
-        self.lbl_trim_summary.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_trim_summary.setStyleSheet("color: #606060; font-size: 11px;")
         trim_inputs_lay.addWidget(self.lbl_trim_summary)
         trim_inputs_lay.addStretch()
 
@@ -216,7 +216,7 @@ class ProcessingPanel(QWidget):
 
         self.audio_enable = QCheckBox("Enable Audio Privacy Pipeline")
         self.audio_enable.setChecked(True)
-        self.audio_enable.setStyleSheet("font-weight: 600; color: #f8fafc;")
+        self.audio_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         audio_lay.addWidget(self.audio_enable)
 
         audio_opts_lay = QHBoxLayout()
@@ -366,7 +366,7 @@ class ProcessingPanel(QWidget):
     def _create_divider(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("background-color: #334155;")
+        line.setStyleSheet("background-color: #2e2e2e;")
         return line
 
     def _on_preset_selected(self, name: str):

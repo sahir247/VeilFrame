@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veilframe"
-version = "1.0.0"
+version = "1.1.0"
 description = "Privacy-focused media sanitization with independent visual-fidelity verification and cryptographically signed audit manifests."
 readme = "README.md"
 authors = [{ name = "VeilFrame Contributors" }]
@@ -38,3 +38,8 @@ include = ["veilframe*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.png", "*.svg", "*.ico"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

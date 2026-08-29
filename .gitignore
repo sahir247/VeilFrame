@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Byte-compiled / optimized / DLL / Executable files
 __pycache__/
 *.py[cod]
@@ -7,16 +6,6 @@ __pycache__/
 *.pyd
 *.exe
 *.dll
-=======
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-*.pyd
->>>>>>> 589b940 (feat: initial commit for VeilFrame v1.0.0)
 
 # Distribution / packaging
 .Python
@@ -75,15 +64,11 @@ temp_test_videos/
 *_veilframe*
 *_sanitized*
 
-<<<<<<< HEAD
 # Bundled binaries
 resources/ffmpeg/
 **/resources/ffmpeg/*.exe
 
-# Audit manifests in scratch dirs
-=======
 # Audit manifests in scratch dirs (preserve examples/ fixtures if any)
->>>>>>> 589b940 (feat: initial commit for VeilFrame v1.0.0)
 audit_manifests/
 
 # Operating System Files

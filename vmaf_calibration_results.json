@@ -1,0 +1,291 @@
+{
+  "schema": "veilframe-vmaf-calibration-v1",
+  "metadata": {
+    "tool_version": "1.0.0",
+    "timestamp_utc": "2026-08-29T08:36:23.559926Z",
+    "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+    "libvmaf_version": "unknown",
+    "vmaf_model_name": "default",
+    "vmaf_model_sha256": "",
+    "reference_clip": "synthetic (testsrc2)",
+    "duration_sec": 2,
+    "resolution": "640x480",
+    "fps": 30
+  },
+  "gate_reference": {
+    "ssim_min": 0.95,
+    "psnr_db_min": 30.0
+  },
+  "fixtures": [
+    "IDENTICAL",
+    "VERY_LOW",
+    "LOW_PERTURBATION",
+    "MODERATE",
+    "MODERATE_EXCEEDANCE",
+    "HIGH",
+    "SEVERE",
+    "EXTREME"
+  ],
+  "results": [
+    {
+      "fixture": "IDENTICAL",
+      "description": "Ref vs exact copy \u2014 absolute upper bound (expect ~100)",
+      "params": {},
+      "vmaf": {
+        "vmaf": {
+          "mean": 99.81364993333334,
+          "median": 99.875516,
+          "p1": 97.428379,
+          "p5": 99.638097,
+          "p25": 99.724356,
+          "p75": 99.957928,
+          "p95": 100.0,
+          "worst": 97.428379,
+          "std_dev": 0.33526431706234866,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 1.0,
+        "psnr_mean": 100.0
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "VERY_LOW",
+      "description": "\u03c3=0.5 noise \u2014 theoretically imperceptible",
+      "params": {
+        "noise_sigma": 0.5
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 98.50111458333333,
+          "median": 98.5519275,
+          "p1": 96.810388,
+          "p5": 97.848272,
+          "p25": 98.322284,
+          "p75": 98.712106,
+          "p95": 98.926874,
+          "worst": 96.810388,
+          "std_dev": 0.3751120712925214,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.998547,
+        "psnr_mean": 49.81149
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "LOW_PERTURBATION",
+      "description": "\u03c3=2 + 99.8% scale \u2014 VeilFrame privacy typical",
+      "params": {
+        "noise_sigma": 2,
+        "scale_factor": 0.998
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 96.2320004,
+          "median": 96.23150100000001,
+          "p1": 94.006254,
+          "p5": 95.628731,
+          "p25": 95.925947,
+          "p75": 96.527938,
+          "p95": 96.992221,
+          "worst": 94.006254,
+          "std_dev": 0.48342242866326085,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.985334,
+        "psnr_mean": 39.255675
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "MODERATE",
+      "description": "\u03c3=8 + slight blur (\u03c3=0.8) \u2014 near policy budget edge",
+      "params": {
+        "noise_sigma": 8,
+        "blur_sigma": 0.8
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 81.98931523333333,
+          "median": 82.02064200000001,
+          "p1": 79.542961,
+          "p5": 81.312013,
+          "p25": 81.797663,
+          "p75": 82.263705,
+          "p95": 82.512687,
+          "worst": 79.542961,
+          "std_dev": 0.45373325652979285,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.952897,
+        "psnr_mean": 34.379028
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "MODERATE_EXCEEDANCE",
+      "description": "10% crop + moderate blur (\u03c3=1.5) \u2014 exceeds policy",
+      "params": {
+        "crop_pct": 0.1,
+        "blur_sigma": 1.5
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 0.9800087666666666,
+          "median": 0.0,
+          "p1": 0.0,
+          "p5": 0.0,
+          "p25": 0.0,
+          "p75": 0.0,
+          "p95": 6.675914,
+          "worst": 0.0,
+          "std_dev": 2.3408402989445243,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.761843,
+        "psnr_mean": 17.552605
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "HIGH",
+      "description": "\u03c3=18 HF noise + CRF=40 recompression artefacts",
+      "params": {
+        "noise_sigma": 18,
+        "crf": 40
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 58.94919685,
+          "median": 57.569351499999996,
+          "p1": 50.217173,
+          "p5": 52.909799,
+          "p25": 56.15066,
+          "p75": 61.175581,
+          "p95": 66.389839,
+          "worst": 50.217173,
+          "std_dev": 4.39491046082294,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.927776,
+        "psnr_mean": 31.540251
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "SEVERE",
+      "description": "Heavy blur (\u03c3=4) + colour degradation (sat=0.3)",
+      "params": {
+        "blur_sigma": 4.0,
+        "saturation": 0.3
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p1": 0.0,
+          "p5": 0.0,
+          "p25": 0.0,
+          "p75": 0.0,
+          "p95": 0.0,
+          "worst": 0.0,
+          "std_dev": 0.0,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.761065,
+        "psnr_mean": 13.428066
+      },
+      "vmaf_available": true,
+      "error": null
+    },
+    {
+      "fixture": "EXTREME",
+      "description": "Near-total distortion: severe blur + posterisation",
+      "params": {
+        "blur_sigma": 8.0,
+        "posterize_bits": 3
+      },
+      "vmaf": {
+        "vmaf": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p1": 0.0,
+          "p5": 0.0,
+          "p25": 0.0,
+          "p75": 0.0,
+          "p95": 0.0,
+          "worst": 0.0,
+          "std_dev": 0.0,
+          "frame_count": 60
+        },
+        "adm2_mean": 0.0,
+        "vif_scale0": 0.0,
+        "vif_scale1": 0.0,
+        "vif_scale2": 0.0,
+        "vif_scale3": 0.0
+      },
+      "fidelity": {
+        "ssim_mean": 0.630365,
+        "psnr_mean": 9.79732
+      },
+      "vmaf_available": true,
+      "error": null
+    }
+  ]
+}

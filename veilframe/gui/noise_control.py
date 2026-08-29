@@ -63,7 +63,7 @@ class NoiseControlWidget(QGroupBox):
         # Slider and Intensity Badge Row
         slider_lay = QHBoxLayout()
         lbl_strength = QLabel("Strength:")
-        lbl_strength.setStyleSheet("color: #94a3b8; font-weight: 500;")
+        lbl_strength.setStyleSheet("color: #606060; font-size: 11px;")
         slider_lay.addWidget(lbl_strength)
 
         self.slider = QSlider(Qt.Horizontal)
@@ -74,15 +74,15 @@ class NoiseControlWidget(QGroupBox):
         slider_lay.addWidget(self.slider, 1)
 
         self.lbl_value = QLabel("1 / 100")
-        self.lbl_value.setStyleSheet("color: #f8fafc; font-weight: 600; min-width: 50px;")
+        self.lbl_value.setStyleSheet("color: #d0d0d0; font-weight: 500; min-width: 50px;")
         slider_lay.addWidget(self.lbl_value)
 
         # Dynamic Badge: Subtle / Visible / Strong
         self.lbl_badge = QLabel("Extremely Subtle")
         self.lbl_badge.setAlignment(Qt.AlignCenter)
         self.lbl_badge.setStyleSheet(
-            "background-color: #064e3b; color: #6ee7b7; border: 1px solid #059669; "
-            "border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px;"
+            "background-color: #162a1e; color: #3fb768; border: 1px solid #1e4a2e; "
+            "border-radius: 3px; padding: 2px 8px; font-weight: 600; font-size: 10px;"
         )
         slider_lay.addWidget(self.lbl_badge)
 
@@ -92,11 +92,11 @@ class NoiseControlWidget(QGroupBox):
         scale_lay = QHBoxLayout()
         scale_lay.setContentsMargins(70, 0, 150, 0)
         lbl_min = QLabel("Minimum (Low amplitude)")
-        lbl_min.setStyleSheet("color: #64748b; font-size: 11px;")
-        lbl_mid = QLabel("Subtle → Visible")
-        lbl_mid.setStyleSheet("color: #64748b; font-size: 11px;")
-        lbl_max = QLabel("Maximum (Strong)")
-        lbl_max.setStyleSheet("color: #64748b; font-size: 11px;")
+        lbl_min.setStyleSheet("color: #555555; font-size: 10px;")
+        lbl_mid = QLabel("Subtle  →  Visible")
+        lbl_mid.setStyleSheet("color: #555555; font-size: 10px;")
+        lbl_max = QLabel("Maximum")
+        lbl_max.setStyleSheet("color: #555555; font-size: 10px;")
         scale_lay.addWidget(lbl_min)
         scale_lay.addStretch()
         scale_lay.addWidget(lbl_mid)
@@ -110,7 +110,7 @@ class NoiseControlWidget(QGroupBox):
             "Perceptibility may vary based on source material and display contrast."
         )
         self.lbl_note.setWordWrap(True)
-        self.lbl_note.setStyleSheet("color: #64748b; font-size: 11px; font-style: italic;")
+        self.lbl_note.setStyleSheet("color: #505050; font-size: 10px; font-style: italic;")
         main_lay.addWidget(self.lbl_note)
 
         self._update_controls_state()
@@ -132,8 +132,8 @@ class NoiseControlWidget(QGroupBox):
         if not self.cb_enable.isChecked() or val == 0:
             self.lbl_badge.setText("OFF")
             self.lbl_badge.setStyleSheet(
-                "background-color: #334155; color: #94a3b8; border: 1px solid #475569; "
-                "border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px;"
+                "background-color: #202020; color: #505050; border: 1px solid #303030; "
+                "border-radius: 3px; padding: 2px 8px; font-weight: 600; font-size: 10px;"
             )
             return
 
@@ -141,18 +141,18 @@ class NoiseControlWidget(QGroupBox):
         self.lbl_badge.setText(label)
         if cat == "subtle":
             self.lbl_badge.setStyleSheet(
-                "background-color: #064e3b; color: #6ee7b7; border: 1px solid #059669; "
-                "border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px;"
+                "background-color: #162a1e; color: #3fb768; border: 1px solid #1e4a2e; "
+                "border-radius: 3px; padding: 2px 8px; font-weight: 600; font-size: 10px;"
             )
         elif cat == "visible":
             self.lbl_badge.setStyleSheet(
-                "background-color: #78350f; color: #fcd34d; border: 1px solid #d97706; "
-                "border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px;"
+                "background-color: #2a1f0e; color: #c97f1a; border: 1px solid #4a3010; "
+                "border-radius: 3px; padding: 2px 8px; font-weight: 600; font-size: 10px;"
             )
         else:  # strong
             self.lbl_badge.setStyleSheet(
-                "background-color: #881337; color: #fda4af; border: 1px solid #e11d48; "
-                "border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px;"
+                "background-color: #2e1414; color: #d84040; border: 1px solid #4a1818; "
+                "border-radius: 3px; padding: 2px 8px; font-weight: 600; font-size: 10px;"
             )
 
     def _update_controls_state(self):
