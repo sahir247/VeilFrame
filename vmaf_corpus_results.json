@@ -1,177 +1,19 @@
 {
   "tool_version": "1.0.0",
   "candidate_threshold": {
-    "vmaf_mean_min": 91.4,
-    "vmaf_p5_min": 90.8,
-    "vmaf_worst_min": 89.3
+    "vmaf_mean_min": 85.0,
+    "vmaf_p5_min": 75.0,
+    "vmaf_worst_min": 70.0
   },
-  "total_clips": 9,
-  "total_pairs": 72,
-  "false_accept_rate": 0.1111111111111111,
-  "false_reject_rate": 0.037037037037037035,
-  "low_pert_pass_rate": 0.8888888888888888,
-  "modex_fail_rate": 0.8888888888888888,
-  "threshold_accepted": false,
-  "recommendation": "False-accept rate too high -- raise vmaf_mean_min or expand corpus.",
+  "total_clips": 10,
+  "total_pairs": 80,
+  "false_accept_rate": 0.0,
+  "false_reject_rate": 0.0,
+  "low_pert_pass_rate": 1.0,
+  "modex_fail_rate": 1.0,
+  "threshold_accepted": true,
+  "recommendation": "Threshold accepted -- proceed to Phase C (gate promotion) with these values.",
   "clips": [
-    {
-      "clip_path": "calibration_corpus\\dark\\low_light_01.mp4",
-      "category": "dark",
-      "subcategory": "",
-      "fixtures": [
-        {
-          "fixture": "IDENTICAL",
-          "vmaf_mean": 97.428254,
-          "vmaf_p5": 97.428254,
-          "vmaf_worst": 97.428254,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "VERY_LOW",
-          "vmaf_mean": 97.428254,
-          "vmaf_p5": 97.428254,
-          "vmaf_worst": 97.428254,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "LOW_PERTURBATION",
-          "vmaf_mean": 95.32363157894737,
-          "vmaf_p5": 95.315846,
-          "vmaf_worst": 95.315846,
-          "ssim_mean": 0.999654,
-          "psnr_mean": 62.70316,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE",
-          "vmaf_mean": 86.93778047368421,
-          "vmaf_p5": 86.359652,
-          "vmaf_worst": 86.359652,
-          "ssim_mean": 0.96529,
-          "psnr_mean": 44.402262,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE_EXCEEDANCE",
-          "vmaf_mean": 33.121975,
-          "vmaf_p5": 33.121975,
-          "vmaf_worst": 33.121975,
-          "ssim_mean": 0.986355,
-          "psnr_mean": 36.579191,
-          "error": null
-        },
-        {
-          "fixture": "HIGH",
-          "vmaf_mean": 74.712675,
-          "vmaf_p5": 74.712675,
-          "vmaf_worst": 74.712675,
-          "ssim_mean": 0.994587,
-          "psnr_mean": 47.401215,
-          "error": null
-        },
-        {
-          "fixture": "SEVERE",
-          "vmaf_mean": 25.53402805263158,
-          "vmaf_p5": 25.530738,
-          "vmaf_worst": 25.530738,
-          "ssim_mean": 0.992741,
-          "psnr_mean": 36.682618,
-          "error": null
-        },
-        {
-          "fixture": "EXTREME",
-          "vmaf_mean": 16.33418505263158,
-          "vmaf_p5": 16.333595,
-          "vmaf_worst": 16.333595,
-          "ssim_mean": 0.990301,
-          "psnr_mean": 35.295429,
-          "error": null
-        }
-      ]
-    },
-    {
-      "clip_path": "calibration_corpus\\high_detail\\fine_detail_01.mp4",
-      "category": "high_detail",
-      "subcategory": "",
-      "fixtures": [
-        {
-          "fixture": "IDENTICAL",
-          "vmaf_mean": 97.428339,
-          "vmaf_p5": 97.428339,
-          "vmaf_worst": 97.428339,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "VERY_LOW",
-          "vmaf_mean": 97.38835247368421,
-          "vmaf_p5": 97.388205,
-          "vmaf_worst": 97.388205,
-          "ssim_mean": 0.999984,
-          "psnr_mean": 74.365112,
-          "error": null
-        },
-        {
-          "fixture": "LOW_PERTURBATION",
-          "vmaf_mean": 94.22054121052632,
-          "vmaf_p5": 94.16908,
-          "vmaf_worst": 94.16908,
-          "ssim_mean": 0.986651,
-          "psnr_mean": 43.277154,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE",
-          "vmaf_mean": 81.18092742105263,
-          "vmaf_p5": 80.871953,
-          "vmaf_worst": 80.871953,
-          "ssim_mean": 0.952974,
-          "psnr_mean": 38.933747,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE_EXCEEDANCE",
-          "vmaf_mean": 0.0,
-          "vmaf_p5": 0.0,
-          "vmaf_worst": 0.0,
-          "ssim_mean": 0.848128,
-          "psnr_mean": 18.451684,
-          "error": null
-        },
-        {
-          "fixture": "HIGH",
-          "vmaf_mean": 73.621375,
-          "vmaf_p5": 72.542251,
-          "vmaf_worst": 72.542251,
-          "ssim_mean": 0.964709,
-          "psnr_mean": 37.743821,
-          "error": null
-        },
-        {
-          "fixture": "SEVERE",
-          "vmaf_mean": 0.0,
-          "vmaf_p5": 0.0,
-          "vmaf_worst": 0.0,
-          "ssim_mean": 0.865134,
-          "psnr_mean": 15.935112,
-          "error": null
-        },
-        {
-          "fixture": "EXTREME",
-          "vmaf_mean": 0.0,
-          "vmaf_p5": 0.0,
-          "vmaf_worst": 0.0,
-          "ssim_mean": 0.801272,
-          "psnr_mean": 12.867696,
-          "error": null
-        }
-      ]
-    },
     {
       "clip_path": "calibration_corpus\\high_motion\\action_01.mp4",
       "category": "high_motion",
@@ -247,6 +89,85 @@
           "vmaf_worst": 0.0,
           "ssim_mean": 0.70634,
           "psnr_mean": 10.356775,
+          "error": null
+        }
+      ]
+    },
+    {
+      "clip_path": "calibration_corpus\\high_motion\\action_motion.mp4",
+      "category": "high_motion",
+      "subcategory": "",
+      "fixtures": [
+        {
+          "fixture": "IDENTICAL",
+          "vmaf_mean": 99.28019051666666,
+          "vmaf_p5": 98.452053,
+          "vmaf_worst": 97.428269,
+          "ssim_mean": 1.0,
+          "psnr_mean": 100.0,
+          "error": null
+        },
+        {
+          "fixture": "VERY_LOW",
+          "vmaf_mean": 94.70229803333334,
+          "vmaf_p5": 92.699389,
+          "vmaf_worst": 90.414776,
+          "ssim_mean": 0.989616,
+          "psnr_mean": 45.273089,
+          "error": null
+        },
+        {
+          "fixture": "LOW_PERTURBATION",
+          "vmaf_mean": 94.75200584166667,
+          "vmaf_p5": 93.772727,
+          "vmaf_worst": 92.457215,
+          "ssim_mean": 0.987935,
+          "psnr_mean": 44.744763,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE",
+          "vmaf_mean": 79.92167666666667,
+          "vmaf_p5": 78.079185,
+          "vmaf_worst": 77.452699,
+          "ssim_mean": 0.958841,
+          "psnr_mean": 39.510674,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE_EXCEEDANCE",
+          "vmaf_mean": 0.538452375,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.64279,
+          "psnr_mean": 20.415577,
+          "error": null
+        },
+        {
+          "fixture": "HIGH",
+          "vmaf_mean": 25.701885341666667,
+          "vmaf_p5": 18.496143,
+          "vmaf_worst": 17.064351,
+          "ssim_mean": 0.787918,
+          "psnr_mean": 30.335241,
+          "error": null
+        },
+        {
+          "fixture": "SEVERE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.768182,
+          "psnr_mean": 18.809054,
+          "error": null
+        },
+        {
+          "fixture": "EXTREME",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.698088,
+          "psnr_mean": 15.89735,
           "error": null
         }
       ]
@@ -331,6 +252,164 @@
       ]
     },
     {
+      "clip_path": "calibration_corpus\\human_actors\\tears_of_steel_live.mp4",
+      "category": "human_actors",
+      "subcategory": "",
+      "fixtures": [
+        {
+          "fixture": "IDENTICAL",
+          "vmaf_mean": 97.75799220833333,
+          "vmaf_p5": 97.74275,
+          "vmaf_worst": 97.428198,
+          "ssim_mean": 1.0,
+          "psnr_mean": 100.0,
+          "error": null
+        },
+        {
+          "fixture": "VERY_LOW",
+          "vmaf_mean": 96.75500608333333,
+          "vmaf_p5": 96.167023,
+          "vmaf_worst": 96.156245,
+          "ssim_mean": 0.997751,
+          "psnr_mean": 53.13898,
+          "error": null
+        },
+        {
+          "fixture": "LOW_PERTURBATION",
+          "vmaf_mean": 93.85763772916667,
+          "vmaf_p5": 93.163973,
+          "vmaf_worst": 93.158716,
+          "ssim_mean": 0.993197,
+          "psnr_mean": 45.368325,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE",
+          "vmaf_mean": 75.998808625,
+          "vmaf_p5": 75.471429,
+          "vmaf_worst": 75.292343,
+          "ssim_mean": 0.965516,
+          "psnr_mean": 39.694525,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE_EXCEEDANCE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.807242,
+          "psnr_mean": 21.5105,
+          "error": null
+        },
+        {
+          "fixture": "HIGH",
+          "vmaf_mean": 53.497268354166664,
+          "vmaf_p5": 48.948552,
+          "vmaf_worst": 48.4461,
+          "ssim_mean": 0.920251,
+          "psnr_mean": 33.488576,
+          "error": null
+        },
+        {
+          "fixture": "SEVERE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.872209,
+          "psnr_mean": 20.057869,
+          "error": null
+        },
+        {
+          "fixture": "EXTREME",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.828167,
+          "psnr_mean": 17.570719,
+          "error": null
+        }
+      ]
+    },
+    {
+      "clip_path": "calibration_corpus\\natural\\drone_landscape.mp4",
+      "category": "natural",
+      "subcategory": "",
+      "fixtures": [
+        {
+          "fixture": "IDENTICAL",
+          "vmaf_mean": 98.54945315,
+          "vmaf_p5": 97.633252,
+          "vmaf_worst": 97.428042,
+          "ssim_mean": 1.0,
+          "psnr_mean": 100.0,
+          "error": null
+        },
+        {
+          "fixture": "VERY_LOW",
+          "vmaf_mean": 96.23893343333333,
+          "vmaf_p5": 94.193675,
+          "vmaf_worst": 93.89942,
+          "ssim_mean": 0.997553,
+          "psnr_mean": 49.261807,
+          "error": null
+        },
+        {
+          "fixture": "LOW_PERTURBATION",
+          "vmaf_mean": 94.00783085,
+          "vmaf_p5": 92.222546,
+          "vmaf_worst": 91.96647,
+          "ssim_mean": 0.994392,
+          "psnr_mean": 44.876457,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE",
+          "vmaf_mean": 72.2043471,
+          "vmaf_p5": 70.625136,
+          "vmaf_worst": 70.112188,
+          "ssim_mean": 0.978623,
+          "psnr_mean": 37.362848,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE_EXCEEDANCE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.773256,
+          "psnr_mean": 21.189475,
+          "error": null
+        },
+        {
+          "fixture": "HIGH",
+          "vmaf_mean": 32.521194683333334,
+          "vmaf_p5": 29.176533,
+          "vmaf_worst": 28.128258,
+          "ssim_mean": 0.90725,
+          "psnr_mean": 30.747797,
+          "error": null
+        },
+        {
+          "fixture": "SEVERE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.858896,
+          "psnr_mean": 22.125056,
+          "error": null
+        },
+        {
+          "fixture": "EXTREME",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.821039,
+          "psnr_mean": 20.184674,
+          "error": null
+        }
+      ]
+    },
+    {
       "clip_path": "calibration_corpus\\natural\\nature_01.mp4",
       "category": "natural",
       "subcategory": "",
@@ -410,85 +489,6 @@
       ]
     },
     {
-      "clip_path": "calibration_corpus\\natural\\w3c_movie.mp4",
-      "category": "natural",
-      "subcategory": "",
-      "fixtures": [
-        {
-          "fixture": "IDENTICAL",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "VERY_LOW",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "LOW_PERTURBATION",
-          "vmaf_mean": 97.4279449375,
-          "vmaf_p5": 97.427933,
-          "vmaf_worst": 97.427933,
-          "ssim_mean": 0.999805,
-          "psnr_mean": 67.565887,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE",
-          "vmaf_mean": 97.42705370833333,
-          "vmaf_p5": 97.42702,
-          "vmaf_worst": 97.427016,
-          "ssim_mean": 0.96875,
-          "psnr_mean": 44.171522,
-          "error": null
-        },
-        {
-          "fixture": "MODERATE_EXCEEDANCE",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 1.0,
-          "psnr_mean": 100.0,
-          "error": null
-        },
-        {
-          "fixture": "HIGH",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 0.998167,
-          "psnr_mean": 36.359976,
-          "error": null
-        },
-        {
-          "fixture": "SEVERE",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 0.899819,
-          "psnr_mean": 14.035699,
-          "error": null
-        },
-        {
-          "fixture": "EXTREME",
-          "vmaf_mean": 97.428043,
-          "vmaf_p5": 97.428043,
-          "vmaf_worst": 97.428043,
-          "ssim_mean": 0.832788,
-          "psnr_mean": 12.479731,
-          "error": null
-        }
-      ]
-    },
-    {
       "clip_path": "calibration_corpus\\screen_content\\ui_text_01.mp4",
       "category": "screen_content",
       "subcategory": "",
@@ -563,6 +563,85 @@
           "vmaf_worst": 0.0,
           "ssim_mean": 0.494652,
           "psnr_mean": 10.065256,
+          "error": null
+        }
+      ]
+    },
+    {
+      "clip_path": "calibration_corpus\\texture\\nature_forest.mp4",
+      "category": "texture",
+      "subcategory": "",
+      "fixtures": [
+        {
+          "fixture": "IDENTICAL",
+          "vmaf_mean": 98.58984451666667,
+          "vmaf_p5": 98.350829,
+          "vmaf_worst": 97.428196,
+          "ssim_mean": 1.0,
+          "psnr_mean": 100.0,
+          "error": null
+        },
+        {
+          "fixture": "VERY_LOW",
+          "vmaf_mean": 95.88965526666667,
+          "vmaf_p5": 95.261024,
+          "vmaf_worst": 94.428823,
+          "ssim_mean": 0.993726,
+          "psnr_mean": 47.414315,
+          "error": null
+        },
+        {
+          "fixture": "LOW_PERTURBATION",
+          "vmaf_mean": 93.89985111666667,
+          "vmaf_p5": 93.252518,
+          "vmaf_worst": 92.072469,
+          "ssim_mean": 0.987673,
+          "psnr_mean": 43.166147,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE",
+          "vmaf_mean": 75.94785084166666,
+          "vmaf_p5": 75.592629,
+          "vmaf_worst": 74.624748,
+          "ssim_mean": 0.956616,
+          "psnr_mean": 37.827973,
+          "error": null
+        },
+        {
+          "fixture": "MODERATE_EXCEEDANCE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.670284,
+          "psnr_mean": 19.424878,
+          "error": null
+        },
+        {
+          "fixture": "HIGH",
+          "vmaf_mean": 23.426532083333335,
+          "vmaf_p5": 19.354996,
+          "vmaf_worst": 17.34658,
+          "ssim_mean": 0.791688,
+          "psnr_mean": 29.233469,
+          "error": null
+        },
+        {
+          "fixture": "SEVERE",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.763298,
+          "psnr_mean": 18.39239,
+          "error": null
+        },
+        {
+          "fixture": "EXTREME",
+          "vmaf_mean": 0.0,
+          "vmaf_p5": 0.0,
+          "vmaf_worst": 0.0,
+          "ssim_mean": 0.702719,
+          "psnr_mean": 16.041037,
           "error": null
         }
       ]

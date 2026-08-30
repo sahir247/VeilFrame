@@ -351,6 +351,12 @@ def main():
     parser.add_argument("--candidate", type=Path,
         default=Path("vmaf_calibration_results.json"),
         help="Phase A calibration results JSON (for candidate threshold)")
+    parser.add_argument("--mean-min", type=float, default=None,
+        help="Override candidate VMAF mean minimum threshold (e.g. 85.0)")
+    parser.add_argument("--p5-min", type=float, default=None,
+        help="Override candidate VMAF P5 tail minimum threshold (e.g. 75.0)")
+    parser.add_argument("--worst-min", type=float, default=None,
+        help="Override candidate VMAF worst-frame minimum threshold (e.g. 70.0)")
     parser.add_argument("--out", type=Path,
         default=Path("vmaf_corpus_results.json"),
         help="Output JSON path")
@@ -369,10 +375,23 @@ def main():
         cand = phase_a.get("candidate_threshold", {})
         if not cand:
             print("  NOTE: candidate_threshold not found in Phase A results.")
-            print("  VMAF gate evaluation will use SSIM/PSNR fallback.")
     else:
         print(f"  WARNING: Phase A results not found at {args.candidate}")
-        print("  SSIM/PSNR fallback will be used for threshold evaluation.")
+
+    # Apply command-line overrides if provided
+    if args.mean_min is not None:
+        cand["vmaf_mean_min"] = args.mean_min
+    if args.p5_min is not None:
+        cand["vmaf_p5_min"] = args.p5_min
+    if args.worst_min is not None:
+        cand["vmaf_worst_min"] = args.worst_min
+
+    if not cand:
+        print("  VMAF gate evaluation will use SSIM/PSNR fallback.")
+    else:
+        print(f"  Candidate VMAF Mean Min:  {cand.get('vmaf_mean_min', 'n/a')}")
+        print(f"  Candidate VMAF P5 Min:    {cand.get('vmaf_p5_min', 'n/a')}")
+        print(f"  Candidate VMAF Worst Min: {cand.get('vmaf_worst_min', 'n/a')}")
 
     # Discover clips
     clips_paths = discover_clips(args.corpus)
