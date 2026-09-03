@@ -25,24 +25,18 @@ Each sub-category should contain 3–6 representative clips.
 
 ## Clip Requirements
 
-- **Format:** Any container FFmpeg can decode (MP4, MOV, MKV, WebM)
+- **Format:** Any container FFmpeg can decode (`.mp4`, `.mov`, `.mkv`, `.webm`, `.y4m`, `.avi`, `.m4v`, `.ts`)
 - **Duration:** 5–30 seconds (longer clips improve statistical stability)
-- **Resolution:** Any (script normalises to 640×480 for comparison)
+- **Resolution:** Native resolution (1080p and 4K domains supported with orientation-safety; no forced downscaling)
+- **Dynamic Range:** SDR clips are evaluated against official VMAF v1.0.16 models; HDR clips (BT.2020/PQ/HLG) are automatically detected and segregated (`not_applicable_hdr`) while measuring SSIM/PSNR
 - **Licensing:** Must be freely distributable or self-recorded
 - **Privacy:** No identifiable persons without consent
 
-## File Naming Convention
+## Environment Configuration
 
-```
-<category>_<subcategory>_<id>.mp4
-```
-
-Examples:
-```
-natural_low_motion_01.mp4
-natural_high_motion_02.mp4
-animation_01.mp4
-screen_content_03.mp4
+Configure the official VMAF model root if models are outside `%USERPROFILE%\vmaf\model`:
+```powershell
+$env:VMAF_MODEL_ROOT = "C:\path\to\vmaf\model"
 ```
 
 ## Running the Corpus Validation
@@ -50,8 +44,9 @@ screen_content_03.mp4
 Once clips are placed in the correct sub-directories, run:
 
 ```bash
-python tools/vmaf_corpus_runner.py \
+uv run python tools/vmaf_corpus_runner.py \
     --corpus calibration_corpus/ \
+    --candidate vmaf_calibration_results.json \
     --out vmaf_corpus_results.json
 ```
 

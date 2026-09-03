@@ -14,6 +14,7 @@ Key design rules:
   - compute_sha256() from validator.py is used for all file hashing (centralized).
 """
 import json
+import logging
 import re
 import subprocess
 import tempfile
@@ -21,8 +22,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..models import QualityConfig, QualityResult, PerFrameMetric
+from veilframe.quality.vmaf_models import (
+    VMAF_MODEL_VERSION,
+    format_ffmpeg_filter_path,
+    format_vmaf_model_filter_arg,
+)
 from ...core.resources import get_ffmpeg_path
 from ...core.crypto import compute_sha256
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_ffmpeg_version() -> Optional[str]:
@@ -134,11 +143,11 @@ class LibvmafFFmpegProvider:
         model_identity is None in dev mode (model_path=None).
         """
         libvmaf_ver, libvmaf_source = _get_libvmaf_version()
-
         model_identity: Optional[Dict[str, Any]] = None
         if self._model_path and self._model_path.exists():
             model_identity = {
                 "name": self._model_path.name,
+                "version": VMAF_MODEL_VERSION if "1.0.16" in self._model_path.name else None,
                 "sha256": compute_sha256(self._model_path),
                 "source": str(self._model_path),
             }
@@ -172,10 +181,9 @@ class LibvmafFFmpegProvider:
         Runs VMAF measurement via FFmpeg libvmaf filter.
 
         Writes vmaf.json to config.evidence_dir by default (suppressed only
-        when evidence_dir is None). The manifest records evidence_sha256.
-
-        Returns a list with a single QualityResult for metric_name="vmaf".
-        VMAF sub-metrics (ADM2, VIF scales) are stored in feature_metrics.
+        when evidence_dir is None, which is not the default path).
+        Returns QualityResult with aggregate stats, model provenance, and
+        evidence_sha256 pointing to the retained JSON file.
         """
         evidence_file: Optional[Path] = None
         if config.evidence_dir:
@@ -188,8 +196,7 @@ class LibvmafFFmpegProvider:
         if evidence_file and evidence_file.exists():
             evidence_sha256 = compute_sha256(evidence_file)
 
-        info = self.runtime_info()
-        model_id = info.get("model_identity") or {}
+        model_info = self.runtime_info().get("model_identity") or {}
 
         return [QualityResult(
             provider_name=self.name,
@@ -199,8 +206,8 @@ class LibvmafFFmpegProvider:
             p1=raw.get("p1"),
             p5=raw.get("p5"),
             p95=raw.get("p95"),
-            model_name=model_id.get("name"),
-            model_sha256=model_id.get("sha256"),
+            model_name=model_info.get("name"),
+            model_sha256=model_info.get("sha256"),
             evidence_file=evidence_file,
             evidence_sha256=evidence_sha256,
             # VMAF sub-metrics stored flat in feature_metrics — no VmafResult subclass
@@ -223,13 +230,11 @@ class LibvmafFFmpegProvider:
         """Constructs the libvmaf lavfi filter string."""
         parts = ["log_fmt=json"]
         if evidence_file:
-            # Use forward slashes and escape colon on Windows for FFmpeg filter parser
-            log_path = str(evidence_file).replace("\\", "/").replace(":", "\\\\:")
-            parts.append(f"log_path={log_path}")
+            log_path = format_ffmpeg_filter_path(evidence_file)
+            parts.append(f"log_path='{log_path}'")
         if self._model_path and self._model_path.exists():
-            model_path = str(self._model_path).replace("\\", "/").replace(":", "\\\\:")
-            parts.append(f"model=path={model_path}")
-        parts.append("feature=name\\=psnr")       # also collect sub-metrics
+            parts.append(format_vmaf_model_filter_arg(self._model_path))
+        parts.append("feature='name=psnr'")       # also collect sub-metrics
         return "libvmaf=" + ":".join(parts)
 
     def _run_vmaf(
@@ -244,13 +249,14 @@ class LibvmafFFmpegProvider:
         ffmpeg = get_ffmpeg_path()
         filter_str = self._build_filter(evidence_file)
 
-        # FFmpeg libvmaf: ref is input 0, distorted is input 1
-        # [0:v] = reference, [1:v] = distorted (note: libvmaf expects this order)
+        # FFmpeg libvmaf filter takes two inputs:
+        # pad 0 = distorted, pad 1 = reference.
+        # Stream 0:v (input 0) is distorted, stream 1:v (input 1) is reference.
         cmd = [
             str(ffmpeg),
             "-hide_banner", "-nostats", "-y",
-            "-i", str(config.distorted),    # input 0 = distorted
-            "-i", str(config.reference),    # input 1 = reference
+            "-i", str(config.distorted),    # input 0 = distorted (mapped to pad 0)
+            "-i", str(config.reference),    # input 1 = reference (mapped to pad 1)
             "-lavfi", filter_str,
             "-f", "null", "-",
         ]

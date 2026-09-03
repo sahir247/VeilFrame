@@ -60,9 +60,20 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from veilframe.quality.vmaf_models import (
+    VMAF_MODEL_VERSION,
+    VmafModelSpec,
+    VmafModelError,
+    select_vmaf_model,
+    resolve_and_verify_model,
+    format_ffmpeg_filter_path,
+    format_vmaf_model_filter_arg,
+)
+from veilframe.core.crypto import compute_sha256
+
 # ── Version ────────────────────────────────────────────────────────────── #
 
-CALIBRATION_TOOL_VERSION = "1.0.0"
+CALIBRATION_TOOL_VERSION = "1.1.0"
 
 # ── Fixture definitions ────────────────────────────────────────────────── #
 
@@ -103,9 +114,9 @@ FIXTURE_PARAMS = {
     "EXTREME":              {"blur_sigma": 8.0, "posterize_bits": 3},
 }
 
-# ── Reference clip parameters ──────────────────────────────────────────── #
+# ── Default reference clip parameters (1080p SDR 30fps) ─────────────────── #
 
-REF_W, REF_H, REF_FPS = 640, 480, 30
+DEFAULT_REF_W, DEFAULT_REF_H, DEFAULT_REF_FPS = 1920, 1080, 30
 
 # ── Existing VeilFrame gate thresholds (for cross-reference) ───────────── #
 
@@ -186,12 +197,14 @@ class CalibrationMetadata:
     timestamp_utc:      str = ""
     ffmpeg_version:     str = ""
     libvmaf_version:    str = ""
+    vmaf_model_version: str = VMAF_MODEL_VERSION
     vmaf_model_name:    str = ""
     vmaf_model_sha256:  str = ""
     reference_clip:     str = ""
+    reference_sha256:   str = ""
     duration_sec:       int = 0
     resolution:         str = ""
-    fps:                int = REF_FPS
+    fps:                float = DEFAULT_REF_FPS
 
 
 # ── FFmpeg helpers ─────────────────────────────────────────────────────── #
@@ -241,58 +254,60 @@ def get_libvmaf_version() -> str:
     return "unknown"
 
 
-def locate_vmaf_model() -> Tuple[str, str]:
+def check_monotonicity_diagnostics(results: List[FixtureResult]) -> List[str]:
     """
-    Return (model_name, model_sha256) for the VMAF model FFmpeg would use
-    by default. Searches common install locations.
-    Returns ("unknown", "") if not found.
+    Performs diagnostic monotonicity validation across fixture severity axis.
+    Reports ordering and any non-monotonic inversions without brittle failure.
+    Enforces gross sanity check between extremes (IDENTICAL vs EXTREME).
     """
-    search_dirs = [
-        "/usr/share/model",
-        "/usr/local/share/model",
-        "/opt/homebrew/share/libvmaf/model",
-        "C:/Program Files/ffmpeg/model",
-    ]
-    model_names = [
-        "vmaf_v0.6.1.json",
-        "vmaf_4k_v0.6.1.json",
-        "vmaf_b_v0.6.3.json",
-    ]
-    for d in search_dirs:
-        for name in model_names:
-            path = Path(d) / name
-            if path.exists():
-                sha = _sha256_file(path)
-                return name, sha
-    return "default", ""
+    diagnostics = []
+    vmaf_scores = {r.fixture: r.vmaf.vmaf.mean for r in results if r.vmaf_available and r.vmaf.vmaf.frame_count > 0}
+    if len(vmaf_scores) < 2:
+        return ["Diagnostic check skipped: insufficient VMAF fixture scores."]
 
+    prev_name = None
+    prev_score = None
+    for name in FIXTURE_SEVERITY_AXIS:
+        if name not in vmaf_scores:
+            continue
+        score = vmaf_scores[name]
+        if prev_score is not None:
+            if score > prev_score:
+                diagnostics.append(f"Inversion noted: {name} ({score:.2f}) > {prev_name} ({prev_score:.2f})")
+            else:
+                diagnostics.append(f"Monotonic decrease: {prev_name} ({prev_score:.2f}) >= {name} ({score:.2f})")
+        prev_name = name
+        prev_score = score
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    try:
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(65536), b""):
-                h.update(chunk)
-        return h.hexdigest()
-    except Exception:
-        return ""
+    # Gross sanity check
+    if "IDENTICAL" in vmaf_scores and "EXTREME" in vmaf_scores:
+        ident = vmaf_scores["IDENTICAL"]
+        extreme = vmaf_scores["EXTREME"]
+        if ident < 90.0:
+            diagnostics.append(f"WARNING: IDENTICAL VMAF ({ident:.2f}) is unusually low (< 90.0).")
+        if extreme > 60.0:
+            diagnostics.append(f"WARNING: EXTREME VMAF ({extreme:.2f}) is unusually high (> 60.0).")
+        if ident <= extreme:
+            raise RuntimeError(f"FATAL: Metric inversion between extremes: IDENTICAL ({ident:.2f}) <= EXTREME ({extreme:.2f})")
+
+    return diagnostics
 
 
 # ── Reference clip generation ──────────────────────────────────────────── #
 
-def generate_reference(out: Path, duration: int):
+def generate_reference(out: Path, duration: int, width: int = DEFAULT_REF_W, height: int = DEFAULT_REF_H, fps: int = DEFAULT_REF_FPS):
     """Generate a varied synthetic reference clip using testsrc2."""
     cmd = [
         "ffmpeg", "-y",
         "-f", "lavfi", "-i",
-        f"testsrc2=size={REF_W}x{REF_H}:rate={REF_FPS}:duration={duration}",
+        f"testsrc2=size={width}x{height}:rate={fps}:duration={duration}",
         "-f", "lavfi", "-i",
         f"sine=frequency=440:sample_rate=48000:duration={duration}",
         "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "aac", "-b:a", "128k",
         "-pix_fmt", "yuv420p", str(out),
     ]
-    r = _run(cmd, timeout=60)
+    r = _run(cmd, timeout=90)
     if r.returncode != 0:
         raise RuntimeError(f"Reference clip generation failed:\n{r.stderr[-600:]}")
 
@@ -309,49 +324,49 @@ def _encode(ref: Path, out: Path, vf: str, crf: int = 18, extra: List[str] = Non
     if extra:
         cmd += extra
     cmd.append(str(out))
-    r = _run(cmd, timeout=90)
+    r = _run(cmd, timeout=120)
     if r.returncode != 0:
         raise RuntimeError(f"Fixture encode failed [{out.name}]:\n{r.stderr[-600:]}")
 
 
-def build_fixture(name: str, ref: Path, out: Path):
+def build_fixture(name: str, ref: Path, out: Path, width: int = DEFAULT_REF_W, height: int = DEFAULT_REF_H):
     if name == "IDENTICAL":
         # Re-encode at lossless-ish quality so the SSIM/PSNR filter runs correctly
         # (direct copy bypasses lavfi comparison in some FFmpeg builds)
-        _encode(ref, out, f"scale={REF_W}:{REF_H}", crf=0)
+        _encode(ref, out, f"scale={width}:{height}", crf=0)
 
     elif name == "VERY_LOW":
-        _encode(ref, out, f"scale={REF_W}:{REF_H},noise=alls=0.5:allf=t")
+        _encode(ref, out, f"scale={width}:{height},noise=alls=0.5:allf=t")
 
     elif name == "LOW_PERTURBATION":
-        sw = int(REF_W * 0.998)
-        sh = int(REF_H * 0.998)
-        _encode(ref, out, f"scale={sw}:{sh},scale={REF_W}:{REF_H},noise=alls=2:allf=t")
+        sw = int(width * 0.998)
+        sh = int(height * 0.998)
+        _encode(ref, out, f"scale={sw}:{sh},scale={width}:{height},noise=alls=2:allf=t")
 
     elif name == "MODERATE":
-        _encode(ref, out, f"scale={REF_W}:{REF_H},noise=alls=8:allf=t,gblur=sigma=0.8")
+        _encode(ref, out, f"scale={width}:{height},noise=alls=8:allf=t,gblur=sigma=0.8")
 
     elif name == "MODERATE_EXCEEDANCE":
-        cw = int(REF_W * 0.90)
-        ch = int(REF_H * 0.90)
-        _encode(ref, out, f"crop={cw}:{ch},scale={REF_W}:{REF_H},gblur=sigma=1.5")
+        cw = int(width * 0.90)
+        ch = int(height * 0.90)
+        _encode(ref, out, f"crop={cw}:{ch},scale={width}:{height},gblur=sigma=1.5")
 
     elif name == "HIGH":
         # Two noise passes: temporal then uniform -- allf=t+g is not portable
         _encode(ref, out,
-            f"scale={REF_W}:{REF_H},noise=alls=12:allf=t,noise=alls=12:allf=u",
+            f"scale={width}:{height},noise=alls=12:allf=t,noise=alls=12:allf=u",
             crf=40)
 
     elif name == "SEVERE":
         _encode(ref, out,
-            f"scale={REF_W}:{REF_H},gblur=sigma=4,hue=s=0.3,"
+            f"scale={width}:{height},gblur=sigma=4,hue=s=0.3,"
             "curves=master='0/0 0.3/0.15 1/0.7'")
 
     elif name == "EXTREME":
         # Near-total distortion: max blur + colour crush + heavy recompression
         # (geq not portable to older FFmpeg builds)
         _encode(ref, out,
-            f"scale={REF_W}:{REF_H},gblur=sigma=8,"
+            f"scale={width}:{height},gblur=sigma=8,"
             "hue=s=0.05,curves=master='0/0 1/0.35'",
             crf=51)
 
@@ -370,18 +385,20 @@ def _percentile_from_list(values: List[float], p: float) -> float:
     return s[idx]
 
 
-def measure_vmaf(ref: Path, dist: Path, vmaf_json: Path) -> VmafDistribution:
-    """Run FFmpeg libvmaf filter (with ADM2 + VIF features) and parse results."""
-    escaped_json = str(vmaf_json).replace("\\", "/").replace(":", "\\\\:")
+def measure_vmaf(ref: Path, dist: Path, vmaf_json: Path, model_path: Path) -> VmafDistribution:
+    """Run FFmpeg libvmaf filter with explicit verified model path and parse results."""
+    escaped_json = format_ffmpeg_filter_path(vmaf_json)
+    model_arg = format_vmaf_model_filter_arg(model_path)
     filt = (
-        f"[0:v]setpts=PTS-STARTPTS[ref];"
-        f"[1:v]setpts=PTS-STARTPTS[dist];"
+        f"[0:v]setpts=PTS-STARTPTS[dist];"
+        f"[1:v]setpts=PTS-STARTPTS[ref];"
         f"[dist][ref]libvmaf="
-        f"log_fmt=json:log_path={escaped_json}"
-        f":feature=name\\=adm\\|name\\=vif"
+        f"{model_arg}:"
+        f"log_fmt=json:log_path='{escaped_json}':"
+        f"feature='name=adm|name=vif'"
     )
     r = _run(
-        ["ffmpeg", "-y", "-i", str(ref), "-i", str(dist),
+        ["ffmpeg", "-y", "-i", str(dist), "-i", str(ref),
          "-filter_complex", filt, "-f", "null", "-"],
         timeout=300,
     )
@@ -466,6 +483,9 @@ def run_calibration(
     ref: Path,
     tmp: Path,
     vmaf_ok: bool,
+    model_path: Optional[Path] = None,
+    width: int = DEFAULT_REF_W,
+    height: int = DEFAULT_REF_H,
 ) -> List[FixtureResult]:
     results = []
     for name in FIXTURE_SEVERITY_AXIS:
@@ -476,10 +496,10 @@ def run_calibration(
             fixture=name,
             description=FIXTURE_DESCRIPTIONS[name],
             params=FIXTURE_PARAMS[name],
-            vmaf_available=vmaf_ok,
+            vmaf_available=vmaf_ok and bool(model_path),
         )
         try:
-            build_fixture(name, ref, dist)
+            build_fixture(name, ref, dist, width=width, height=height)
         except Exception as e:
             res.error = f"Fixture build: {e}"
             results.append(res)
@@ -491,10 +511,10 @@ def run_calibration(
         except Exception as e:
             res.error = (res.error or "") + f" | SSIM/PSNR: {e}"
 
-        if vmaf_ok:
+        if vmaf_ok and model_path:
             try:
                 print(f"  [{name}] Measuring VMAF + ADM2 + VIF…", flush=True)
-                res.vmaf = measure_vmaf(ref, dist, vmaf_json)
+                res.vmaf = measure_vmaf(ref, dist, vmaf_json, model_path=model_path)
             except Exception as e:
                 res.error = (res.error or "") + f" | VMAF: {e}"
                 print(f"    ✗ VMAF: {e}", flush=True)
@@ -681,12 +701,20 @@ def print_threshold_analysis(results: List[FixtureResult]):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VeilFrame VMAF Calibration Laboratory — Phase A"
+        description="VeilFrame VMAF Calibration Laboratory — Phase A (VMAF v1.0.16)"
     )
     parser.add_argument("--ref",      type=Path, default=None,
         help="Existing reference video. If omitted, synthetic clip is generated.")
     parser.add_argument("--duration", type=int,  default=5,
         help="Duration (sec) of synthetic reference clip (default: 5)")
+    parser.add_argument("--width",    type=int,  default=DEFAULT_REF_W,
+        help=f"Width of reference clip (default: {DEFAULT_REF_W})")
+    parser.add_argument("--height",   type=int,  default=DEFAULT_REF_H,
+        help=f"Height of reference clip (default: {DEFAULT_REF_H})")
+    parser.add_argument("--fps",      type=float,default=float(DEFAULT_REF_FPS),
+        help=f"Frame rate of reference clip (default: {DEFAULT_REF_FPS})")
+    parser.add_argument("--model-root", type=Path, default=None,
+        help="Custom VMAF model root directory (overrides $env:VMAF_MODEL_ROOT)")
     parser.add_argument("--out",      type=Path,
         default=Path("vmaf_calibration_results.json"),
         help="Output JSON path")
@@ -696,7 +724,7 @@ def main():
 
     print()
     print("VeilFrame VMAF Calibration Laboratory  v" + CALIBRATION_TOOL_VERSION)
-    print("=" * 55)
+    print("=" * 65)
 
     if not ffmpeg_ok():
         print("ERROR: ffmpeg not found on PATH.", file=sys.stderr)
@@ -705,24 +733,41 @@ def main():
     ffmpeg_ver  = get_ffmpeg_version()
     vmaf_ok     = libvmaf_available()
     libvmaf_ver = get_libvmaf_version() if vmaf_ok else "n/a"
-    model_name, model_sha = locate_vmaf_model()
+
+    resolved_model_path: Optional[Path] = None
+    model_name = "n/a"
+    model_sha = "n/a"
+    model_spec = None
+
+    if vmaf_ok:
+        try:
+            model_spec = select_vmaf_model(args.width, args.height, args.fps, is_hdr=False)
+            resolved_model_path = resolve_and_verify_model(model_spec, model_root=args.model_root)
+            model_name = model_spec.filename
+            model_sha = model_spec.expected_sha256
+        except VmafModelError as exc:
+            print(f"ERROR: VMAF model setup failed: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     print(f"  FFmpeg:           {ffmpeg_ver}")
     print(f"  libvmaf:          {'[OK] ' + libvmaf_ver if vmaf_ok else '[--] not in this build'}")
-    if vmaf_ok:
+    if vmaf_ok and model_spec:
+        print(f"  VMAF model ver:   {model_spec.version}")
         print(f"  VMAF model:       {model_name}")
-        print(f"  Model SHA-256:    {model_sha[:32]}..." if model_sha else "  Model SHA-256:    (not located)")
+        print(f"  Model SHA-256:    {model_sha}")
+        print(f"  Model path:       {resolved_model_path}")
     print()
 
     meta = CalibrationMetadata(
         timestamp_utc    = datetime.datetime.utcnow().isoformat() + "Z",
         ffmpeg_version   = ffmpeg_ver,
         libvmaf_version  = libvmaf_ver,
+        vmaf_model_version = VMAF_MODEL_VERSION,
         vmaf_model_name  = model_name,
         vmaf_model_sha256= model_sha,
         duration_sec     = args.duration,
-        resolution       = f"{REF_W}x{REF_H}",
-        fps              = REF_FPS,
+        resolution       = f"{args.width}x{args.height}",
+        fps              = args.fps,
     )
 
     with tempfile.TemporaryDirectory(prefix="vf_calib_") as tmp_str:
@@ -731,17 +776,24 @@ def main():
         if args.ref and args.ref.exists():
             ref = args.ref
             meta.reference_clip = str(ref)
+            meta.reference_sha256 = compute_sha256(ref)
             print(f"  Reference: {ref.name}  ({ref.stat().st_size // 1024} KB)")
         else:
             ref = tmp / "reference.mp4"
-            print(f"  Generating {args.duration}s synthetic reference…")
-            generate_reference(ref, args.duration)
-            meta.reference_clip = "synthetic (testsrc2)"
+            print(f"  Generating {args.duration}s synthetic reference ({args.width}x{args.height} @ {args.fps}fps)…")
+            generate_reference(ref, args.duration, width=args.width, height=args.height, fps=int(args.fps))
+            meta.reference_clip = f"synthetic (testsrc2 {args.width}x{args.height})"
+            meta.reference_sha256 = compute_sha256(ref)
             print(f"  Reference: {ref.name}  ({ref.stat().st_size // 1024} KB)")
 
         print()
         print("  Running fixtures…")
-        results = run_calibration(ref, tmp, vmaf_ok)
+        results = run_calibration(
+            ref, tmp, vmaf_ok,
+            model_path=resolved_model_path,
+            width=args.width,
+            height=args.height,
+        )
 
         if args.keep_fixtures:
             fix_dir = args.out.parent / "vmaf_fixtures"
@@ -765,11 +817,14 @@ def main():
                 "vmaf_worst_min": round(min(accept_worsts) * 0.95, 1),
             }
 
+        diag_msgs = check_monotonicity_diagnostics(results) if vmaf_ok else []
+
         out_data = {
             "schema": "veilframe-vmaf-calibration-v1",
             "metadata": asdict(meta),
             "gate_reference": {"ssim_min": GATE_SSIM, "psnr_db_min": GATE_PSNR},
             "candidate_threshold": cand_threshold,
+            "monotonicity_diagnostics": diag_msgs,
             "fixtures": FIXTURE_SEVERITY_AXIS,
             "results": [asdict(r) for r in results],
         }
@@ -781,6 +836,11 @@ def main():
     print_ascii_table(results, vmaf_ok)
     if vmaf_ok:
         print_threshold_analysis(results)
+        if diag_msgs:
+            print("  Monotonicity Diagnostics:")
+            for msg in diag_msgs:
+                print(f"    • {msg}")
+            print()
     else:
         print("  Run on a machine with libvmaf FFmpeg to obtain VMAF calibration data.")
 

@@ -42,8 +42,6 @@ from ..models.video_info import (
 from ..models.settings import VisualBudgetPolicy
 from ..quality.models import QualityConfig, QualityResult
 from ..quality.gate import QualityGate
-from ..quality.adapters.ffmpeg import FFmpegNativeProvider
-from ..quality.adapters.vmaf import LibvmafFFmpegProvider
 
 QUALITY_GATE_ENGINE_VERSION: str = "1.1.0"
 QUALITY_GATE_ALGORITHM_VERSION: str = "quality-gate-v4.0"
@@ -1011,6 +1009,9 @@ def _run_providers(
         canonical_h=canonical_h,
         evidence_dir=evidence_dir,
     )
+
+    from ..quality.adapters.ffmpeg import FFmpegNativeProvider
+    from ..quality.adapters.vmaf import LibvmafFFmpegProvider
 
     # 1. FFmpeg native (SSIM + PSNR) — mandatory provider
     native_provider = FFmpegNativeProvider()
