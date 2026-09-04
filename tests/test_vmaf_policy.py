@@ -315,6 +315,50 @@ class TestVmafPolicyModesInQualityGate(unittest.TestCase):
         self.assertEqual(verdict.policy_provenance["policy_version"], "1.0.0")
         self.assertEqual(verdict.policy_provenance["dataset_version"], "1.2.0")
 
+    def test_worst_min_threshold_validation_and_enforcement(self):
+        # 1. QualityGate validation: worst_min cannot exceed p5_min or mean_min
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(
+                vmaf_gate_mode="validated_global",
+                vmaf_mean_min=90.0,
+                vmaf_p5_min=80.0,
+                vmaf_worst_min=85.0,  # 85 > 80 (p5_min) -> invalid
+            ))
+
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(
+                vmaf_gate_mode="validated_global",
+                vmaf_mean_min=80.0,
+                vmaf_p5_min=80.0,
+                vmaf_worst_min=90.0,  # 90 > 80 (mean_min) -> invalid
+            ))
+
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(
+                vmaf_gate_mode="validated_global",
+                vmaf_worst_min=-5.0,  # < 0 -> invalid
+            ))
+
+        # 2. register_qualified_domain validation: worst_min cannot exceed p5_min
+        with self.assertRaises(ValueError):
+            register_qualified_domain("test_domain", "p-test", "1.0", mean_min=90.0, p5_min=85.0, worst_min=88.0)
+
+        # 3. Enforcement when properly registered and worst-frame score fails
+        domain = "1080p_sdr"
+        orig = OFFICIAL_DOMAIN_POLICIES[domain]
+        try:
+            register_qualified_domain(domain, "p-worst", "1.0", mean_min=90.0, p5_min=85.0, worst_min=80.0)
+            gate = QualityGate(VisualBudgetPolicy(vmaf_gate_mode="validated_model"))
+            # Passing mean (92) and p5 (86), but failing worst frame (75 < 80)
+            res = _clean_results(vmaf_mean=92.0, vmaf_p5=86.0)
+            res[2].minimum = 75.0
+            verdict = gate.evaluate(res, _native_metrics_1080p(), _zero_temporal(), _zero_policy_score())
+            self.assertFalse(verdict.all_passed)
+            self.assertEqual(verdict.vmaf_verdict["decision"], "REJECT")
+            self.assertTrue(any("Worst-Frame VMAF" in v for v in verdict.tier2_violations))
+        finally:
+            OFFICIAL_DOMAIN_POLICIES[domain] = orig
+
 
 if __name__ == "__main__":
     unittest.main()

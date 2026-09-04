@@ -1,6 +1,6 @@
 {
   "schema": "veilframe-data-quality-v1",
-  "timestamp_utc": "2026-09-04T05:42:43.631092Z",
+  "timestamp_utc": "2026-09-04T19:12:17.081221Z",
   "data_sufficiency_passed": true,
   "failure_reasons": [],
   "sample_accounting": {
@@ -23,10 +23,10 @@
       ],
       "clips_count": 10,
       "total_pairs": 80,
-      "binary_evaluation_samples": 70,
-      "acceptable_samples": 18,
-      "unacceptable_samples": 52,
-      "boundary_moderate_excluded": 10
+      "binary_evaluation_samples": 80,
+      "acceptable_samples": 21,
+      "unacceptable_samples": 59,
+      "boundary_moderate_excluded": 0
     },
     "heldout_split": {
       "sequence_groups_count": 4,
@@ -38,16 +38,16 @@
       ],
       "clips_count": 4,
       "total_pairs": 32,
-      "binary_evaluation_samples": 28,
-      "acceptable_samples": 8,
-      "unacceptable_samples": 20,
-      "boundary_moderate_excluded": 4
+      "binary_evaluation_samples": 32,
+      "acceptable_samples": 9,
+      "unacceptable_samples": 23,
+      "boundary_moderate_excluded": 0
     },
-    "total_binary_evaluation_samples": 98,
-    "total_boundary_moderate_excluded": 14,
+    "total_binary_evaluation_samples": 112,
+    "total_boundary_moderate_excluded": 0,
     "arithmetic_verification": {
       "domain1_pairs_check": "80 dev + 32 heldout = 112 Domain 1 pairs",
-      "binary_plus_boundary_check": "98 binary + 14 boundary = 112 Domain 1 pairs"
+      "binary_plus_boundary_check": "112 binary + 0 boundary = 112 Domain 1 pairs"
     },
     "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
   },

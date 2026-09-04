@@ -1,6 +1,6 @@
 {
   "schema": "veilframe-sequence-group-report-v1",
-  "timestamp_utc": "2026-09-04T05:42:43.634608Z",
+  "timestamp_utc": "2026-09-04T19:12:17.082236Z",
   "total_groups_in_corpus": 15,
   "domain_1_primary_groups_count": 13,
   "domain_2_secondary_groups_count": 1,
@@ -17,8 +17,8 @@
       "fps": 50.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "old_town_cross_1080p50_hfr.mp4"
       ],
@@ -35,8 +35,8 @@
       "fps": 25.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 16,
-      "binary_pairs": 14,
-      "boundary_pairs": 2,
+      "binary_pairs": 16,
+      "boundary_pairs": 0,
       "clips": [
         "park_joy_2160p25_sdr.mp4",
         "park_joy_2160p50_hfr.mp4"
@@ -54,8 +54,8 @@
       "fps": 29.97002997002997,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "rush_field_cuts_1080p_sdr.mp4"
       ],
@@ -72,8 +72,8 @@
       "fps": 29.97002997002997,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "speed_bag_1080p_sdr.mp4"
       ],
@@ -90,8 +90,8 @@
       "fps": 29.97002997002997,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "snow_mnt_1080p_sdr.mp4"
       ],
@@ -108,8 +108,8 @@
       "fps": 25.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "tractor_1080p25_sdr.mp4"
       ],
@@ -126,8 +126,8 @@
       "fps": 29.97002997002997,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "aspen_1080p_sdr.mp4"
       ],
@@ -144,8 +144,8 @@
       "fps": 25.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "night_drive_1080p25_sdr.mp4"
       ],
@@ -162,8 +162,8 @@
       "fps": 60.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "browsing_1080p60_hfr.mp4"
       ],
@@ -180,8 +180,8 @@
       "fps": 60.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "ide_editing_1080p_sdr.mp4"
       ],
@@ -198,8 +198,8 @@
       "fps": 60.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "pdf_reading_1080p_sdr.mp4"
       ],
@@ -216,8 +216,8 @@
       "fps": 50.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "ducks_take_off_1080p50_raw.y4m"
       ],
@@ -234,8 +234,8 @@
       "fps": 29.97002997002997,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "red_kayak_1080p_sdr.mp4"
       ],
@@ -252,8 +252,8 @@
       "fps": 60.0,
       "pix_fmt": "yuv420p",
       "total_pairs": 8,
-      "binary_pairs": 7,
-      "boundary_pairs": 1,
+      "binary_pairs": 8,
+      "boundary_pairs": 0,
       "clips": [
         "four_people_720p60_hfr.mp4"
       ],

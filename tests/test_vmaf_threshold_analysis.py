@@ -273,5 +273,77 @@ class TestMinimumDataRequirements(unittest.TestCase):
         self.assertEqual(len(reasons), 0)
 
 
+class TestMissingMetricIntegrity(unittest.TestCase):
+    """Verifies that missing percentiles are never silently substituted with mean."""
+
+    def test_missing_percentiles_not_substituted_with_mean(self):
+        from tools.vmaf_threshold_analysis import load_corpus_samples
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            dummy_data = {
+                "clips": [
+                    {
+                        "clip_filename": "clip_test.mp4",
+                        "width": 1920, "height": 1080, "fps": 30.0, "pix_fmt": "yuv420p",
+                        "sequence_group": "group_1", "domain": "Domain 1: Primary SDR",
+                        "fixtures": [
+                            {
+                                "fixture": "IDENTICAL",
+                                "status": "success",
+                                "vmaf_mean": 95.0,
+                                "vmaf_p5": None,       # Missing P5
+                                "vmaf_worst": None,    # Missing worst
+                                "ssim_mean": 0.99,
+                                "psnr_mean": 45.0,
+                            }
+                        ]
+                    }
+                ]
+            }
+            json.dump(dummy_data, f)
+            temp_path = Path(f.name)
+
+        try:
+            samples, exclusions, _, _ = load_corpus_samples(temp_path)
+            self.assertEqual(len(samples), 1)
+            s = samples[0]
+            self.assertIsNone(s.vmaf_p5, "vmaf_p5 must remain None and not be silently substituted with vmaf_mean")
+            self.assertIsNone(s.vmaf_worst, "vmaf_worst must remain None and not be silently substituted with vmaf_mean")
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def test_missing_p5_fails_closed_in_threshold_evaluation(self):
+        # Sample with vmaf_mean=99.0 but vmaf_p5=None
+        sample = CorpusSample(
+            clip_filename="test.mp4", sequence_group="g1", sequence_group_source="manifest",
+            category="test", subcategory="", width=1920, height=1080, fps=30.0,
+            pix_fmt="yuv420p", fixture="IDENTICAL", vmaf_mean=99.0, vmaf_p5=None,
+            vmaf_worst=None, vmaf_stddev=0.0, ssim_mean=1.0, psnr_mean=50.0,
+            independent_policy_label="acceptable",
+        )
+        # Combined policy (mean >= T and p5 >= T) must reject because p5 is missing
+        m_comb = evaluate_policy_operating_point([sample], threshold=80.0, policy_name="combined")
+        self.assertEqual(m_comb.false_rejects, 1, "Missing P5 must fail closed under combined policy")
+        self.assertEqual(m_comb.true_accepts, 0)
+
+        # P5 policy must reject because p5 is missing
+        m_p5 = evaluate_policy_operating_point([sample], threshold=80.0, policy_name="p5")
+        self.assertEqual(m_p5.false_rejects, 1, "Missing P5 must fail closed under p5 policy")
+
+        # Mean policy succeeds because mean is available
+        m_mean = evaluate_policy_operating_point([sample], threshold=80.0, policy_name="mean")
+        self.assertEqual(m_mean.true_accepts, 1)
+
+    def test_missing_worst_fails_closed_in_threshold_evaluation(self):
+        sample = CorpusSample(
+            clip_filename="test.mp4", sequence_group="g1", sequence_group_source="manifest",
+            category="test", subcategory="", width=1920, height=1080, fps=30.0,
+            pix_fmt="yuv420p", fixture="IDENTICAL", vmaf_mean=99.0, vmaf_p5=95.0,
+            vmaf_worst=None, vmaf_stddev=0.0, ssim_mean=1.0, psnr_mean=50.0,
+            independent_policy_label="acceptable",
+        )
+        m_worst = evaluate_policy_operating_point([sample], threshold=80.0, policy_name="worst")
+        self.assertEqual(m_worst.false_rejects, 1, "Missing worst frame must fail closed under worst policy")
+
+
 if __name__ == "__main__":
     unittest.main()

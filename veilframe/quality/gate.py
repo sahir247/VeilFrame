@@ -63,6 +63,17 @@ class QualityGate:
                 raise ValueError(
                     f"vmaf_p5_min ({policy.vmaf_p5_min}) cannot exceed vmaf_mean_min ({policy.vmaf_mean_min})."
                 )
+            if getattr(policy, "vmaf_worst_min", None) is not None:
+                if policy.vmaf_worst_min < 0.0 or policy.vmaf_worst_min > 100.0:
+                    raise ValueError(f"Invalid vmaf_worst_min: {policy.vmaf_worst_min}. Must be in [0, 100].")
+                if policy.vmaf_worst_min > policy.vmaf_p5_min:
+                    raise ValueError(
+                        f"vmaf_worst_min ({policy.vmaf_worst_min}) cannot exceed vmaf_p5_min ({policy.vmaf_p5_min})."
+                    )
+                if policy.vmaf_worst_min > policy.vmaf_mean_min:
+                    raise ValueError(
+                        f"vmaf_worst_min ({policy.vmaf_worst_min}) cannot exceed vmaf_mean_min ({policy.vmaf_mean_min})."
+                    )
 
     def evaluate(
         self,

@@ -69,8 +69,8 @@ class CorpusSample:
     pix_fmt:                str = "yuv420p"
     fixture:                str = "IDENTICAL"
     vmaf_mean:              float = 100.0
-    vmaf_p5:                float = 100.0
-    vmaf_worst:             float = 100.0
+    vmaf_p5:                Optional[float] = None
+    vmaf_worst:             Optional[float] = None
     vmaf_stddev:            float = 0.0
     ssim_mean:              float = 1.0
     psnr_mean:              float = 100.0
@@ -232,8 +232,8 @@ def load_corpus_samples(
                 exclusion_counts["missing_vmaf"] += 1
                 continue
 
-            v_p5 = fx.get("vmaf_p5") if fx.get("vmaf_p5") is not None else v_mean
-            v_worst = fx.get("vmaf_worst") if fx.get("vmaf_worst") is not None else v_mean
+            v_p5 = fx.get("vmaf_p5")
+            v_worst = fx.get("vmaf_worst")
             v_std = fx.get("vmaf_stddev") or 0.0
             v_med = fx.get("vmaf_median")
             v_p1 = fx.get("vmaf_p1")
@@ -260,9 +260,9 @@ def load_corpus_samples(
                 vmaf_mean=float(v_mean),
                 vmaf_median=float(v_med) if v_med is not None else None,
                 vmaf_p1=float(v_p1) if v_p1 is not None else None,
-                vmaf_p5=float(v_p5),
+                vmaf_p5=float(v_p5) if v_p5 is not None else None,
                 vmaf_p95=float(v_p95) if v_p95 is not None else None,
-                vmaf_worst=float(v_worst),
+                vmaf_worst=float(v_worst) if v_worst is not None else None,
                 vmaf_stddev=float(v_std),
                 ssim_mean=float(s_mean) if s_mean is not None else 0.0,
                 psnr_mean=float(p_mean) if p_mean is not None else 0.0,
@@ -467,11 +467,11 @@ def evaluate_policy_operating_point(
         if policy_name == "mean":
             pred = (s.vmaf_mean >= threshold)
         elif policy_name == "p5":
-            pred = (s.vmaf_p5 >= threshold)
+            pred = (s.vmaf_p5 is not None and s.vmaf_p5 >= threshold)
         elif policy_name == "worst":
-            pred = (s.vmaf_worst >= threshold)
+            pred = (s.vmaf_worst is not None and s.vmaf_worst >= threshold)
         elif policy_name == "combined":
-            pred = (s.vmaf_mean >= threshold and s.vmaf_p5 >= threshold)
+            pred = (s.vmaf_mean >= threshold and s.vmaf_p5 is not None and s.vmaf_p5 >= threshold)
         else:
             raise ValueError(f"Unknown policy rule: {policy_name}")
 
@@ -588,12 +588,18 @@ def evaluate_exhaustive_threshold_boundaries(
 
     def get_v_dec(s: CorpusSample) -> float:
         if policy_name == "combined":
+            if s.vmaf_p5 is None:
+                return float("-inf")
             return min(s.vmaf_mean, s.vmaf_p5)
         elif policy_name == "mean":
             return s.vmaf_mean
         elif policy_name == "p5":
+            if s.vmaf_p5 is None:
+                return float("-inf")
             return s.vmaf_p5
         elif policy_name == "worst":
+            if s.vmaf_worst is None:
+                return float("-inf")
             return s.vmaf_worst
         else:
             raise ValueError(f"Unknown policy rule: {policy_name}")
@@ -602,7 +608,7 @@ def evaluate_exhaustive_threshold_boundaries(
     total_unacc = sum(1 for s in eval_samples if s.independent_policy_label == "unacceptable")
     total_n = len(eval_samples)
 
-    observed_scores = sorted(list(set(get_v_dec(s) for s in eval_samples)))
+    observed_scores = sorted(list(set(get_v_dec(s) for s in eval_samples if get_v_dec(s) != float("-inf"))))
     in_domain_scores = [v for v in observed_scores if domain_start <= v <= domain_stop]
 
     evaluations: List[Dict[str, Any]] = []

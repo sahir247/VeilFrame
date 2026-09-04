@@ -163,7 +163,7 @@ class VisualBudgetPolicy:
     vmaf_gate_enabled: bool = False
     vmaf_mean_min: float = 85.0   # Uncalibrated baseline mean placeholder (gate disabled)
     vmaf_p5_min: float = 75.0     # Uncalibrated baseline P5 tail placeholder (gate disabled)
-    vmaf_worst_min: float = 70.0  # Uncalibrated baseline worst-frame placeholder (gate disabled)
+    vmaf_worst_min: Optional[float] = None  # Optional worst-frame threshold (validated when set)
 
     # VMAF model provenance and audit controls
     vmaf_model_path: Optional[str] = None

@@ -122,7 +122,7 @@ def run_domain_qualification(
         print(f"  Held-Out:    {len(ho_binary)} samples ({ho_acc} acc, {ho_unacc} unacc) across groups: {ho_g}")
 
         # 3. Exhaustive search across unique decision boundaries on development set
-        scores = sorted(set(min(s.vmaf_mean, s.vmaf_p5) for s in dev_binary))
+        scores = sorted(set(min(s.vmaf_mean, s.vmaf_p5) for s in dev_binary if s.vmaf_p5 is not None))
         feasible_points: List[Tuple[float, Any]] = []
 
         for sc in scores:

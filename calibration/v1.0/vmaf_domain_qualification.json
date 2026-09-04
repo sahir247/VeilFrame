@@ -1,0 +1,83 @@
+{
+  "study_id": "VF-CAL-VMAF-DOMAIN-2026-09",
+  "dataset_version": "1.2.0",
+  "analysis_version": "1.2.0",
+  "dev_fraction": 0.7,
+  "seed": 42,
+  "domains": {
+    "1080p_hfr": {
+      "domain": "1080p_hfr",
+      "total_samples": 40,
+      "unique_groups": [
+        "browsing",
+        "ducks_take_off",
+        "ide_editing",
+        "old_town_cross",
+        "pdf_reading"
+      ],
+      "group_count": 5,
+      "status": "not_qualified",
+      "reason": "No feasible threshold on development set (min FAR=0.00%, min FRR=0.00%)",
+      "dev_results": null,
+      "heldout_results": null,
+      "recommended_mean_min": null,
+      "recommended_p5_min": null
+    },
+    "1080p_sdr": {
+      "domain": "1080p_sdr",
+      "total_samples": 56,
+      "unique_groups": [
+        "aspen",
+        "night_drive",
+        "red_kayak",
+        "rush_field_cuts",
+        "snow_mnt",
+        "speed_bag",
+        "tractor"
+      ],
+      "group_count": 7,
+      "status": "not_qualified",
+      "reason": "Failed held-out generalization (held-out FRR=33.33% >= 5.0% or FAR=0.00% >= 2.0%)",
+      "dev_results": {
+        "threshold": 90.09,
+        "far_pct": 0.0,
+        "frr_pct": 0.0
+      },
+      "heldout_results": {
+        "threshold": 90.09,
+        "far_pct": 0.0,
+        "frr_pct": 33.33
+      },
+      "recommended_mean_min": null,
+      "recommended_p5_min": null
+    },
+    "2160p_hfr": {
+      "domain": "2160p_hfr",
+      "total_samples": 8,
+      "unique_groups": [
+        "park_joy"
+      ],
+      "group_count": 1,
+      "status": "not_qualified",
+      "reason": "Insufficient independent sequence groups (1 < 3 required for grouped validation)",
+      "dev_results": null,
+      "heldout_results": null,
+      "recommended_mean_min": null,
+      "recommended_p5_min": null
+    },
+    "2160p_sdr": {
+      "domain": "2160p_sdr",
+      "total_samples": 8,
+      "unique_groups": [
+        "park_joy"
+      ],
+      "group_count": 1,
+      "status": "not_qualified",
+      "reason": "Insufficient independent sequence groups (1 < 3 required for grouped validation)",
+      "dev_results": null,
+      "heldout_results": null,
+      "recommended_mean_min": null,
+      "recommended_p5_min": null
+    }
+  }
+}

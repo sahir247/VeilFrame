@@ -199,6 +199,20 @@ def register_qualified_domain(
     Registers an empirically qualified domain policy once it passes independent
     FAR < 2.0%, FRR < 5.0%, and untouched held-out validation.
     """
+    if mean_min < 0.0 or mean_min > 100.0:
+        raise ValueError(f"Invalid mean_min: {mean_min}. Must be in [0, 100].")
+    if p5_min < 0.0 or p5_min > 100.0:
+        raise ValueError(f"Invalid p5_min: {p5_min}. Must be in [0, 100].")
+    if p5_min > mean_min:
+        raise ValueError(f"p5_min ({p5_min}) cannot exceed mean_min ({mean_min}).")
+    if worst_min is not None:
+        if worst_min < 0.0 or worst_min > 100.0:
+            raise ValueError(f"Invalid worst_min: {worst_min}. Must be in [0, 100].")
+        if worst_min > p5_min:
+            raise ValueError(f"worst_min ({worst_min}) cannot exceed p5_min ({p5_min}).")
+        if worst_min > mean_min:
+            raise ValueError(f"worst_min ({worst_min}) cannot exceed mean_min ({mean_min}).")
+
     OFFICIAL_DOMAIN_POLICIES[domain] = VmafPolicyProfile(
         domain=domain,
         policy_id=policy_id,
