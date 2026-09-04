@@ -229,17 +229,17 @@ class TestAdversarialQualityGateAndAdapters(unittest.TestCase):
 
     def test_15_tampered_model_hash(self):
         """15. Tampered model JSON triggers VmafModelHashMismatchError."""
-        spec = OFFICIAL_VMAF_V1_0_16_MODELS["1080p_sdr"]
-        tampered_spec = VmafModelSpec(
-            model_id=spec.model_id,
-            filename=spec.filename,
-            relative_path=spec.relative_path,
-            expected_sha256="0000000000000000000000000000000000000000000000000000000000000000",
-            resolution_tier=spec.resolution_tier,
-            is_hfr=spec.is_hfr,
-        )
-        with self.assertRaises(VmafModelHashMismatchError):
-            resolve_and_verify_model(tampered_spec)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir)
+            spec = OFFICIAL_VMAF_V1_0_16_MODELS["1080p_sdr"]
+            model_file = temp_root / spec.relative_path
+            model_file.parent.mkdir(parents=True, exist_ok=True)
+            model_file.write_text('{"tampered": true}', encoding="utf-8")
+
+            with self.assertRaises(VmafModelHashMismatchError) as ctx:
+                resolve_and_verify_model(spec, model_root=temp_root)
+            self.assertIn("integrity check failed", str(ctx.exception))
+            self.assertIn(spec.expected_sha256, str(ctx.exception))
 
     def test_16_missing_model_file(self):
         """16. Non-existent model file raises VmafModelMissingError."""
