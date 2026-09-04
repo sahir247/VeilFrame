@@ -170,6 +170,8 @@ class NativeDomainMetrics:
     pix_fmt_trans: str = ""
     colorspace_ref: str = ""
     colorspace_trans: str = ""
+    is_hdr: bool = False
+    hdr_reason: Optional[str] = None
 
 
 @dataclass

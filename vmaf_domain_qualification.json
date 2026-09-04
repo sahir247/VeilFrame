@@ -21,7 +21,25 @@
       "dev_results": null,
       "heldout_results": null,
       "recommended_mean_min": null,
-      "recommended_p5_min": null
+      "recommended_p5_min": null,
+      "partition_meta": {
+        "algorithm": "algorithmic_deterministic_search",
+        "seed_used": 42,
+        "constraints_satisfied": true,
+        "failure_reasons": [],
+        "dev_groups_count": 4,
+        "heldout_groups_count": 1,
+        "dev_groups": [
+          "ducks_take_off",
+          "ide_editing",
+          "old_town_cross",
+          "pdf_reading"
+        ],
+        "heldout_groups": [
+          "browsing"
+        ],
+        "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+      }
     },
     "1080p_sdr": {
       "domain": "1080p_sdr",
@@ -49,7 +67,27 @@
         "frr_pct": 33.33
       },
       "recommended_mean_min": null,
-      "recommended_p5_min": null
+      "recommended_p5_min": null,
+      "partition_meta": {
+        "algorithm": "algorithmic_deterministic_search",
+        "seed_used": 42,
+        "constraints_satisfied": true,
+        "failure_reasons": [],
+        "dev_groups_count": 5,
+        "heldout_groups_count": 2,
+        "dev_groups": [
+          "night_drive",
+          "red_kayak",
+          "rush_field_cuts",
+          "snow_mnt",
+          "tractor"
+        ],
+        "heldout_groups": [
+          "aspen",
+          "speed_bag"
+        ],
+        "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+      }
     },
     "2160p_hfr": {
       "domain": "2160p_hfr",
@@ -59,11 +97,27 @@
       ],
       "group_count": 1,
       "status": "not_qualified",
-      "reason": "Insufficient independent sequence groups (1 < 3 required for grouped validation)",
+      "reason": "Safeguards breached: Total sequence groups (1) < minimum (3); Development sequence groups (1) < minimum (2); Held-out sequence groups (0) < minimum (1); Held-out binary samples (0) < minimum (2); Held-out set has zero acceptable samples; Held-out set has zero unacceptable samples",
       "dev_results": null,
       "heldout_results": null,
       "recommended_mean_min": null,
-      "recommended_p5_min": null
+      "recommended_p5_min": null,
+      "partition_meta": {
+        "algorithm": "algorithmic_deterministic_search",
+        "seed_used": 42,
+        "constraints_satisfied": false,
+        "failure_reasons": [
+          "Total sequence groups (1) < minimum (3)",
+          "Development sequence groups (1) < minimum (2)",
+          "Held-out sequence groups (0) < minimum (1)",
+          "Held-out binary samples (0) < minimum (2)",
+          "Held-out set has zero acceptable samples",
+          "Held-out set has zero unacceptable samples"
+        ],
+        "dev_groups_count": 1,
+        "heldout_groups_count": 0,
+        "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+      }
     },
     "2160p_sdr": {
       "domain": "2160p_sdr",
@@ -73,11 +127,27 @@
       ],
       "group_count": 1,
       "status": "not_qualified",
-      "reason": "Insufficient independent sequence groups (1 < 3 required for grouped validation)",
+      "reason": "Safeguards breached: Total sequence groups (1) < minimum (3); Development sequence groups (1) < minimum (2); Held-out sequence groups (0) < minimum (1); Held-out binary samples (0) < minimum (2); Held-out set has zero acceptable samples; Held-out set has zero unacceptable samples",
       "dev_results": null,
       "heldout_results": null,
       "recommended_mean_min": null,
-      "recommended_p5_min": null
+      "recommended_p5_min": null,
+      "partition_meta": {
+        "algorithm": "algorithmic_deterministic_search",
+        "seed_used": 42,
+        "constraints_satisfied": false,
+        "failure_reasons": [
+          "Total sequence groups (1) < minimum (3)",
+          "Development sequence groups (1) < minimum (2)",
+          "Held-out sequence groups (0) < minimum (1)",
+          "Held-out binary samples (0) < minimum (2)",
+          "Held-out set has zero acceptable samples",
+          "Held-out set has zero unacceptable samples"
+        ],
+        "dev_groups_count": 1,
+        "heldout_groups_count": 0,
+        "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+      }
     }
   }
 }

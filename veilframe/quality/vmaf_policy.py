@@ -12,10 +12,17 @@ Architectural Principles:
 4. No Manufactured Thresholds: Unqualified domains remain status="not_qualified" with audit fallback.
 5. Strict Provenance: Every evaluation records model_id, model_sha256, policy_id, study_id, and dataset version.
 """
+import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
-from .vmaf_models import classify_resolution, is_hfr
+from ..core.crypto import compute_sha256
+from .vmaf_models import (
+    classify_resolution,
+    is_hfr,
+    OFFICIAL_VMAF_V1_0_16_MODELS,
+)
 
 VMAF_CALIBRATION_STUDY_ID = "VF-CAL-VMAF-2026-09"
 VMAF_CALIBRATION_DATASET_VERSION = "1.2.0"
@@ -31,10 +38,13 @@ class VmafPolicyProfile:
     domain: str                         # e.g. "1080p_sdr", "1080p_hfr", "2160p_sdr", "2160p_hfr"
     policy_id: str                      # e.g. "vmaf-policy-0" (audit baseline) or "vmaf-1080p-sdr-v1"
     policy_version: str                 # policy version string
-    status: str                         # "not_qualified" | "audit_only" | "validated" | "disabled" | "not_applicable"
+    status: str                         # "not_qualified" | "audit_only" | "validated" | "disabled" | "not_applicable" | "unsupported_domain"
     mean_min: Optional[float] = None    # Calibrated threshold minimum for VMAF mean
     p5_min: Optional[float] = None      # Calibrated threshold minimum for VMAF P5 tail
     worst_min: Optional[float] = None   # Calibrated threshold minimum for worst frame
+    model_id: Optional[str] = None      # Bound official VMAF model ID
+    model_sha256: Optional[str] = None  # Bound official VMAF model SHA-256
+    qualification_artifact_sha256: Optional[str] = None # SHA-256 of qualification report
     calibration_study_id: str = VMAF_CALIBRATION_STUDY_ID
     dataset_version: str = VMAF_CALIBRATION_DATASET_VERSION
     analysis_version: str = VMAF_CALIBRATION_ANALYSIS_VERSION
@@ -53,6 +63,8 @@ OFFICIAL_DOMAIN_POLICIES: Dict[str, VmafPolicyProfile] = {
         policy_id=VMAF_AUDIT_POLICY_ID,
         policy_version="0.1.0",
         status="not_qualified",
+        model_id=OFFICIAL_VMAF_V1_0_16_MODELS["1080p_sdr"].model_id,
+        model_sha256=OFFICIAL_VMAF_V1_0_16_MODELS["1080p_sdr"].expected_sha256,
         mean_min=None,
         p5_min=None,
         worst_min=None,
@@ -62,6 +74,8 @@ OFFICIAL_DOMAIN_POLICIES: Dict[str, VmafPolicyProfile] = {
         policy_id=VMAF_AUDIT_POLICY_ID,
         policy_version="0.1.0",
         status="not_qualified",
+        model_id=OFFICIAL_VMAF_V1_0_16_MODELS["1080p_hfr"].model_id,
+        model_sha256=OFFICIAL_VMAF_V1_0_16_MODELS["1080p_hfr"].expected_sha256,
         mean_min=None,
         p5_min=None,
         worst_min=None,
@@ -71,6 +85,8 @@ OFFICIAL_DOMAIN_POLICIES: Dict[str, VmafPolicyProfile] = {
         policy_id=VMAF_AUDIT_POLICY_ID,
         policy_version="0.1.0",
         status="not_qualified",
+        model_id=OFFICIAL_VMAF_V1_0_16_MODELS["2160p_sdr"].model_id,
+        model_sha256=OFFICIAL_VMAF_V1_0_16_MODELS["2160p_sdr"].expected_sha256,
         mean_min=None,
         p5_min=None,
         worst_min=None,
@@ -80,6 +96,8 @@ OFFICIAL_DOMAIN_POLICIES: Dict[str, VmafPolicyProfile] = {
         policy_id=VMAF_AUDIT_POLICY_ID,
         policy_version="0.1.0",
         status="not_qualified",
+        model_id=OFFICIAL_VMAF_V1_0_16_MODELS["2160p_hfr"].model_id,
+        model_sha256=OFFICIAL_VMAF_V1_0_16_MODELS["2160p_hfr"].expected_sha256,
         mean_min=None,
         p5_min=None,
         worst_min=None,
@@ -191,14 +209,124 @@ def register_qualified_domain(
     domain: str,
     policy_id: str,
     policy_version: str,
-    mean_min: float,
-    p5_min: float,
+    mean_min: Optional[float] = None,
+    p5_min: Optional[float] = None,
     worst_min: Optional[float] = None,
-) -> None:
+    qualification_report_path: Optional[Union[str, Path]] = None,
+) -> VmafPolicyProfile:
     """
-    Registers an empirically qualified domain policy once it passes independent
-    FAR < 2.0%, FRR < 5.0%, and untouched held-out validation.
+    Registers an empirically qualified domain policy from a verified qualification artifact.
+
+    Production Hardening Rules:
+      1. Domain Validation: domain must be one of the four supported production domains
+         ("1080p_sdr", "1080p_hfr", "2160p_sdr", "2160p_hfr").
+      2. Artifact Verification: qualification artifact must exist and be cryptographically verified.
+      3. Provenance Check: study_id, dataset_version, and analysis_version must be valid and verified.
+      4. Qualification Status: artifact must explicitly document domain status == "validated".
+         Unqualified domains cannot be registered as qualified under any circumstances.
+      5. Threshold Integrity: recommended thresholds from the artifact must match or populate
+         mean_min and p5_min, and satisfy worst_min <= p5_min <= mean_min in [0, 100].
+      6. Model Binding: Binds the official VMAF v1.0.16 model ID and SHA-256 to the profile,
+         along with the qualification artifact SHA-256.
     """
+    if domain not in OFFICIAL_DOMAIN_POLICIES:
+        raise ValueError(
+            f"Domain '{domain}' is not a supported production domain. "
+            f"Supported domains: {list(OFFICIAL_DOMAIN_POLICIES.keys())}"
+        )
+
+    # 1. Resolve qualification artifact path
+    if qualification_report_path is None:
+        cands = [
+            Path("calibration/v1.0/vmaf_domain_qualification.json"),
+            Path("vmaf_domain_qualification.json"),
+        ]
+        chosen = None
+        for c in cands:
+            if c.exists():
+                chosen = c
+                break
+        if chosen is None:
+            raise FileNotFoundError(
+                "Qualification artifact not found. A valid qualification artifact "
+                "(vmaf_domain_qualification.json) is required to register a qualified domain."
+            )
+        artifact_path = chosen
+    else:
+        artifact_path = Path(qualification_report_path)
+        if not artifact_path.exists():
+            raise FileNotFoundError(f"Qualification artifact not found at '{artifact_path}'.")
+
+    # 2. Read artifact and compute digest
+    try:
+        artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"Failed to parse qualification artifact '{artifact_path}': {e}") from e
+
+    artifact_sha256 = compute_sha256(artifact_path)
+
+    # 3. Verify study provenance fields
+    study_id = artifact_data.get("study_id")
+    if not study_id or not str(study_id).startswith("VF-CAL-VMAF"):
+        raise ValueError(
+            f"Qualification artifact '{artifact_path.name}' has invalid study_id '{study_id}'. "
+            f"Expected study starting with 'VF-CAL-VMAF'."
+        )
+
+    dataset_ver = artifact_data.get("dataset_version")
+    if dataset_ver != VMAF_CALIBRATION_DATASET_VERSION:
+        raise ValueError(
+            f"Qualification artifact dataset_version '{dataset_ver}' does not match "
+            f"expected calibration dataset version '{VMAF_CALIBRATION_DATASET_VERSION}'."
+        )
+
+    analysis_ver = artifact_data.get("analysis_version")
+    if analysis_ver != VMAF_CALIBRATION_ANALYSIS_VERSION:
+        raise ValueError(
+            f"Qualification artifact analysis_version '{analysis_ver}' does not match "
+            f"expected calibration analysis version '{VMAF_CALIBRATION_ANALYSIS_VERSION}'."
+        )
+
+    domains_dict = artifact_data.get("domains", {})
+    if domain not in domains_dict:
+        raise ValueError(
+            f"Qualification artifact '{artifact_path.name}' does not contain entry for domain '{domain}'."
+        )
+
+    domain_data = domains_dict[domain]
+    domain_status = domain_data.get("status")
+    if domain_status != "validated":
+        reason = domain_data.get("reason", "unspecified")
+        raise ValueError(
+            f"Cannot register domain '{domain}': status is '{domain_status}' in qualification artifact "
+            f"'{artifact_path.name}' (reason: {reason}). Only status='validated' domains can be promoted."
+        )
+
+    # 4. Resolve and verify thresholds
+    rec_mean = domain_data.get("recommended_mean_min")
+    rec_p5 = domain_data.get("recommended_p5_min")
+
+    if mean_min is None:
+        if rec_mean is None:
+            raise ValueError(f"No recommended_mean_min found in artifact for domain '{domain}'.")
+        mean_min = float(rec_mean)
+    else:
+        if rec_mean is not None and abs(mean_min - rec_mean) > 1e-3:
+            raise ValueError(
+                f"Specified mean_min ({mean_min}) does not match artifact recommended threshold ({rec_mean})."
+            )
+
+    if p5_min is None:
+        if rec_p5 is None:
+            raise ValueError(f"No recommended_p5_min found in artifact for domain '{domain}'.")
+        p5_min = float(rec_p5)
+    else:
+        if rec_p5 is not None and abs(p5_min - rec_p5) > 1e-3:
+            raise ValueError(
+                f"Specified p5_min ({p5_min}) does not match artifact recommended threshold ({rec_p5})."
+            )
+
+    # Validate threshold ranges and ordering
     if mean_min < 0.0 or mean_min > 100.0:
         raise ValueError(f"Invalid mean_min: {mean_min}. Must be in [0, 100].")
     if p5_min < 0.0 or p5_min > 100.0:
@@ -213,7 +341,10 @@ def register_qualified_domain(
         if worst_min > mean_min:
             raise ValueError(f"worst_min ({worst_min}) cannot exceed mean_min ({mean_min}).")
 
-    OFFICIAL_DOMAIN_POLICIES[domain] = VmafPolicyProfile(
+    # 5. Cryptographically bind official model spec
+    model_spec = OFFICIAL_VMAF_V1_0_16_MODELS[domain]
+
+    profile = VmafPolicyProfile(
         domain=domain,
         policy_id=policy_id,
         policy_version=policy_version,
@@ -221,4 +352,13 @@ def register_qualified_domain(
         mean_min=mean_min,
         p5_min=p5_min,
         worst_min=worst_min,
+        model_id=model_spec.model_id,
+        model_sha256=model_spec.expected_sha256,
+        qualification_artifact_sha256=artifact_sha256,
+        calibration_study_id=study_id,
+        dataset_version=dataset_ver,
+        analysis_version=analysis_ver,
     )
+    OFFICIAL_DOMAIN_POLICIES[domain] = profile
+    return profile
+

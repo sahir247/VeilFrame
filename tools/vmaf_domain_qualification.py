@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.vmaf_threshold_analysis import (
     load_corpus_samples,
-    partition_by_sequence_group,
+    partition_by_sequence_group_algorithmic,
     evaluate_policy_operating_point,
     CorpusSample,
 )
@@ -99,17 +99,34 @@ def run_domain_qualification(
         print(f"\nEvaluating Domain: {domain_key}")
         print(f"  Samples: {n_samples} | Sequence Groups ({n_groups}): {unique_groups}")
 
-        # 1. Minimum sequence group safeguard
-        if n_groups < 3:
-            reason = f"Insufficient independent sequence groups ({n_groups} < 3 required for grouped validation)"
+        # 1. Deterministic constrained algorithmic partition & minimum data safeguards
+        min_tot_g = 3
+        min_d_g = 2
+        min_h_g = 1
+        min_tot_b = 6
+        min_d_b = 4
+        min_h_b = 2
+
+        dev_s, ho_s, dev_g, ho_g, partition_meta = partition_by_sequence_group_algorithmic(
+            samples,
+            target_dev_fraction=dev_fraction,
+            seed=seed,
+            min_total_groups=min_tot_g,
+            min_dev_groups=min_d_g,
+            min_heldout_groups=min_h_g,
+            min_total_binary=min_tot_b,
+            min_dev_binary=min_d_b,
+            min_heldout_binary=min_h_b,
+        )
+        domain_summary["partition_meta"] = partition_meta
+
+        if not partition_meta.get("constraints_satisfied", False):
+            reason = f"Safeguards breached: {'; '.join(partition_meta.get('failure_reasons', []))}"
             domain_summary["status"] = "not_qualified"
             domain_summary["reason"] = reason
             print(f"  VERDICT: NOT_QUALIFIED — {reason}")
             report["domains"][domain_key] = domain_summary
             continue
-
-        # 2. Deterministic grouped partition
-        dev_s, ho_s, dev_g, ho_g = partition_by_sequence_group(samples, dev_fraction=dev_fraction, seed=seed)
         dev_binary = [s for s in dev_s if s.independent_policy_label in ("acceptable", "unacceptable")]
         ho_binary = [s for s in ho_s if s.independent_policy_label in ("acceptable", "unacceptable")]
 

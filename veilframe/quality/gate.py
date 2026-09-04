@@ -147,11 +147,23 @@ class QualityGate:
                     except Exception:
                         pass
         fps = 30.0
+        is_hdr = False
         if native_metrics:
             fps = native_metrics.fps_trans or native_metrics.fps_ref or 30.0
+            is_hdr = bool(getattr(native_metrics, "is_hdr", False))
+            if not is_hdr:
+                for cs in (
+                    getattr(native_metrics, "colorspace_ref", ""),
+                    getattr(native_metrics, "colorspace_trans", ""),
+                    getattr(native_metrics, "pix_fmt_ref", ""),
+                    getattr(native_metrics, "pix_fmt_trans", ""),
+                ):
+                    if cs and any(c in str(cs).lower() for c in ("bt2020", "smpte2084", "arib", "hlg", "pq")):
+                        is_hdr = True
+                        break
 
         from .vmaf_policy import classify_technical_domain, resolve_vmaf_policy
-        tech_domain = classify_technical_domain(w, h, fps, is_hdr=False)
+        tech_domain = classify_technical_domain(w, h, fps, is_hdr=is_hdr)
         gate_mode = getattr(policy, "vmaf_gate_mode", "validated_global" if policy.vmaf_gate_enabled else "audit")
         vmaf_profile = resolve_vmaf_policy(tech_domain, gate_mode=gate_mode)
 
@@ -173,7 +185,16 @@ class QualityGate:
             }
         elif gate_mode == "audit":
             # Production v1 baseline: Measurement only. NEVER rejects production output.
-            if vmaf_available and vmaf_result:
+            if tech_domain == "hdr" or vmaf_profile.status == "not_applicable":
+                vmaf_verdict_data = {
+                    "status": "not_applicable",
+                    "gate_mode": "audit",
+                    "domain": "hdr",
+                    "policy_id": vmaf_profile.policy_id,
+                    "decision": "NOT_APPLICABLE_HDR",
+                    "note": "HDR content detected; SDR VMAF model is not applicable",
+                }
+            elif vmaf_available and vmaf_result:
                 is_p5_missing = (vmaf_result.p5 is None)
                 decision = "AUDIT_INCOMPLETE" if is_p5_missing else "AUDIT"
                 note = "VMAF P5 percentile missing; audit incomplete" if is_p5_missing else "Audit measurement recorded"
@@ -236,11 +257,36 @@ class QualityGate:
                             vmaf_v.append(
                                 f"Worst-Frame VMAF ({vmaf_stats.min_val:.2f}) below domain threshold (>= {vmaf_profile.worst_min:.1f})"
                             )
+                    if vmaf_profile.model_sha256 and vmaf_result and vmaf_result.model_sha256:
+                        if vmaf_result.model_sha256.lower() != vmaf_profile.model_sha256.lower():
+                            vmaf_v.append(
+                                f"VMAF model SHA-256 ({vmaf_result.model_sha256[:16]}...) does not match "
+                                f"qualified policy binding ({vmaf_profile.model_sha256[:16]}...)"
+                            )
                     t2_violations.extend(vmaf_v)
                     vmaf_decision = "PASS" if len(vmaf_v) == 0 else "REJECT"
 
                 vmaf_verdict_data = {
                     "status": "validated",
+                    "gate_mode": "validated_model",
+                    "domain": tech_domain,
+                    "model_id": vmaf_result.model_name if vmaf_result else vmaf_profile.model_id or "unknown",
+                    "model_sha256": vmaf_result.model_sha256 if vmaf_result else vmaf_profile.model_sha256,
+                    "evidence_sha256": vmaf_result.evidence_sha256 if vmaf_result else None,
+                    "mean": vmaf_stats.mean if vmaf_available else None,
+                    "p5": vmaf_stats.p5 if vmaf_available else None,
+                    "worst": vmaf_stats.min_val if vmaf_available else None,
+                    "policy_id": vmaf_profile.policy_id,
+                    "mean_min": vmaf_profile.mean_min,
+                    "p5_min": vmaf_profile.p5_min,
+                    "worst_min": vmaf_profile.worst_min,
+                    "qualification_artifact_sha256": vmaf_profile.qualification_artifact_sha256,
+                    "decision": vmaf_decision,
+                }
+            elif vmaf_profile.status == "not_applicable" or tech_domain == "hdr":
+                vmaf_decision = "NOT_APPLICABLE_HDR"
+                vmaf_verdict_data = {
+                    "status": "not_applicable",
                     "gate_mode": "validated_model",
                     "domain": tech_domain,
                     "model_id": vmaf_result.model_name if vmaf_result else "unknown",
@@ -250,9 +296,10 @@ class QualityGate:
                     "p5": vmaf_stats.p5 if vmaf_available else None,
                     "worst": vmaf_stats.min_val if vmaf_available else None,
                     "policy_id": vmaf_profile.policy_id,
-                    "mean_min": vmaf_profile.mean_min,
-                    "p5_min": vmaf_profile.p5_min,
+                    "mean_min": None,
+                    "p5_min": None,
                     "decision": vmaf_decision,
+                    "note": "HDR stream detected; SDR VMAF model is not applicable",
                 }
             else:
                 # Unqualified domain: falls back to audit mode with SSIM/PSNR authority

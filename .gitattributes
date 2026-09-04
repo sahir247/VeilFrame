@@ -1,0 +1,2 @@
+# Ensure frozen calibration artifacts keep LF line endings across all platforms
+calibration/** text eol=lf

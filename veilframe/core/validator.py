@@ -135,6 +135,25 @@ def audit_native_domain(ref_info: VideoInfo, trans_info: VideoInfo) -> NativeDom
         metrics.colorspace_ref = v_ref.color_space
         metrics.colorspace_trans = v_trans.color_space
 
+        # Detect HDR characteristics on reference or transformed stream
+        from ..quality.vmaf_models import detect_hdr
+        ref_meta = {
+            "color_transfer": getattr(v_ref, "color_transfer", "") or v_ref.tags.get("color_transfer", ""),
+            "color_primaries": getattr(v_ref, "color_primaries", "") or v_ref.tags.get("color_primaries", ""),
+            "color_space": v_ref.color_space or v_ref.tags.get("color_space", ""),
+        }
+        is_hdr_ref, reason_ref = detect_hdr(ref_meta, path=ref_info.file_path)
+
+        trans_meta = {
+            "color_transfer": getattr(v_trans, "color_transfer", "") or v_trans.tags.get("color_transfer", ""),
+            "color_primaries": getattr(v_trans, "color_primaries", "") or v_trans.tags.get("color_primaries", ""),
+            "color_space": v_trans.color_space or v_trans.tags.get("color_space", ""),
+        }
+        is_hdr_trans, reason_trans = detect_hdr(trans_meta, path=trans_info.file_path)
+
+        metrics.is_hdr = is_hdr_ref or is_hdr_trans
+        metrics.hdr_reason = reason_ref if is_hdr_ref else (reason_trans if is_hdr_trans else None)
+
     metrics.duration_ref = ref_info.duration
     metrics.duration_trans = trans_info.duration
     metrics.duration_delta_sec = trans_info.duration - ref_info.duration
