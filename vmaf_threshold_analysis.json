@@ -2,7 +2,7 @@
   "schema": "veilframe-vmaf-analysis-v1",
   "analysis_version": "1.2.0",
   "vmaf_model_version": "1.0.16",
-  "timestamp_utc": "2026-09-04T02:31:11.383402Z",
+  "timestamp_utc": "2026-09-04T02:37:57.557049Z",
   "calibration_status": "no_feasible_threshold",
   "policy_evaluated": "mean",
   "random_seed": 42,
@@ -11,7 +11,12 @@
     "fr_max": 0.05
   },
   "sequence_groups": {
-    "total_groups": 14,
+    "total_named_groups_in_manifest": 15,
+    "usable_sdr_groups_count": 14,
+    "hdr_segregated_groups_count": 1,
+    "hdr_segregated_groups": [
+      "chimera"
+    ],
     "dev_groups": [
       "ducks_take_off",
       "four_people",
@@ -31,18 +36,41 @@
       "rush_field_cuts"
     ]
   },
-  "sample_counts": {
-    "total_valid": 120,
-    "dev_samples": 88,
-    "heldout_samples": 32,
-    "excluded_samples": {
-      "not_applicable_hdr": 8,
-      "metadata_error": 0,
-      "measurement_error": 0,
-      "unsupported_resolution": 0,
-      "missing_vmaf": 0
+  "sample_accounting": {
+    "total_fixture_pairs_measured": 128,
+    "hdr_segregated_pairs": 8,
+    "usable_sdr_pairs": 120,
+    "total_clips": 16,
+    "usable_sdr_clips_count": 15,
+    "development_split": {
+      "sequence_groups_count": 10,
+      "clips_count": 11,
+      "total_pairs": 88,
+      "binary_evaluation_samples": 85,
+      "acceptable_samples": 20,
+      "unacceptable_samples": 65,
+      "boundary_moderate_excluded": 3,
+      "note": "10 dev groups contain 11 clips (park_joy has 25fps and 50fps variants) yielding 88 pairs (85 binary + 3 boundary)"
+    },
+    "heldout_split": {
+      "sequence_groups_count": 4,
+      "clips_count": 4,
+      "total_pairs": 32,
+      "binary_evaluation_samples": 30,
+      "acceptable_samples": 8,
+      "unacceptable_samples": 22,
+      "boundary_moderate_excluded": 2,
+      "note": "4 held-out groups contain 4 clips yielding 32 pairs (30 binary + 2 boundary)"
+    },
+    "total_binary_evaluation_samples": 115,
+    "total_boundary_moderate_excluded": 5,
+    "arithmetic_verification": {
+      "sdr_pairs_check": "88 dev + 32 heldout = 120 usable SDR pairs",
+      "binary_plus_boundary_check": "115 binary + 5 boundary = 120 usable SDR pairs",
+      "total_measured_check": "120 SDR + 8 HDR = 128 total pairs"
     }
   },
+  "scientific_conclusion": "Within this corpus, no scalar global VMAF threshold satisfied both predefined development constraints of FAR < 2.0% and FRR < 5.0%. This indicates that further calibration and/or evaluation of multi-tier operating points is warranted.",
   "selected_operating_point": null,
   "heldout_validation": null,
   "category_breakdown": {

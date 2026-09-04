@@ -39,35 +39,47 @@ Configure the official VMAF model root if models are outside `%USERPROFILE%\vmaf
 $env:VMAF_MODEL_ROOT = "C:\path\to\vmaf\model"
 ```
 
-## Running the Corpus Validation
+## Running the Corpus Evaluation Pipeline
 
-Once clips are placed in the correct sub-directories, run:
+The evaluation pipeline is strictly decoupled into two stages:
+
+### Stage 1: Measurement Runner (`tools/vmaf_corpus_runner.py`)
+Applies all 8 fixture distortions to each clip in the corpus manifest and records raw metric measurements (VMAF v1.0.16, SSIM, PSNR). The runner is measurement-only and makes no threshold or gating decisions.
 
 ```bash
 uv run python tools/vmaf_corpus_runner.py \
     --corpus calibration_corpus/ \
-    --candidate vmaf_calibration_results.json \
     --out vmaf_corpus_results.json
 ```
 
-The corpus runner:
-1. Applies all 8 fixture distortions to each clip
-2. Measures VMAF + SSIM + PSNR for each fixture × clip combination
-3. Checks whether the Phase A candidate threshold holds across all content types
-4. Reports false-accept / false-reject rates per content category
-5. Recommends a final threshold with confidence rating
+### Stage 2: Scientific Threshold Analysis Engine (`tools/vmaf_threshold_analysis.py`)
+Partitions the measured results by independent sequence group into development (~70%) and untouched held-out (~30%) sets with zero content leakage. It evaluates policy operating points against predefined scientific constraints:
+- False-Accept Rate (FAR) < 2.0%
+- False-Reject Rate (FRR) < 5.0%
 
-## Decision Criterion
+```bash
+uv run python tools/vmaf_threshold_analysis.py \
+    --corpus-results vmaf_corpus_results.json \
+    --out vmaf_threshold_analysis.json
+```
 
-The candidate threshold from Phase A is **accepted** when:
+## Corpus Structure and Sample Accounting
 
-- `LOW_PERTURBATION` passes on ≥ 95% of corpus clips
-- `MODERATE_EXCEEDANCE` fails on ≥ 90% of corpus clips
-- False-accept rate (unacceptable clips passing gate) < 2%
-- False-reject rate (acceptable clips failing gate) < 5%
+- **Reference Clips:** 16 clips total (15 SDR across 14 sequence groups; 1 HDR clip `chimera` segregated from SDR calibration).
+- **Sequence Groups:** 14 usable SDR sequence groups; 1 additional HDR group segregated from calibration (15 named sequence groups in `manifest.json`).
+- **Fixture Pairs:** 128 total fixture pairs (16 clips × 8 fixtures).
+  - 8 HDR pairs segregated.
+  - 120 usable SDR pairs (88 development pairs across 10 groups + 32 held-out pairs across 4 groups).
+  - *Note on development sample count:* The `park_joy` sequence group contains both 25fps and 50fps variants (2 clips × 8 = 16 pairs), so 10 development groups comprise 11 clips (88 fixture pairs).
+  - *Binary evaluation samples:* 115 binary samples (85 dev + 30 held-out) evaluated; 5 boundary `MODERATE` pairs with acceptable metrics are excluded from binary threshold tuning.
 
-If criterion is not met, the threshold must be adjusted or the fixture
-definitions must be revised before promoting VMAF to a gate predicate.
+## Production Gate Invariant
+
+VMAF remains strictly diagnostic and measurement-only in VeilFrame v1.1/v1.2:
+```python
+VisualBudgetPolicy.vmaf_gate_enabled = False
+```
+The production gate predicate depends strictly on existing SSIM, PSNR, and multi-scale temporal metrics. VMAF cannot be promoted to a production gate without separate human review and explicit code promotion.
 
 ## Sourcing Clips
 

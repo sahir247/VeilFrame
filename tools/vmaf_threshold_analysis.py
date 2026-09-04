@@ -507,18 +507,40 @@ def print_analysis_report(
     heldout_result: Optional[OperatingMetrics],
     dev_groups: List[str],
     heldout_groups: List[str],
+    dev_samples: List[CorpusSample],
+    heldout_samples: List[CorpusSample],
     fa_max: float,
     fr_max: float,
     failure_reasons: Optional[List[str]] = None,
 ):
+    dev_binary = sum(1 for s in dev_samples if s.independent_policy_label in ("acceptable", "unacceptable"))
+    dev_boundary = len(dev_samples) - dev_binary
+    ho_binary = sum(1 for s in heldout_samples if s.independent_policy_label in ("acceptable", "unacceptable"))
+    ho_boundary = len(heldout_samples) - ho_binary
+    dev_clips = len(set(s.clip_filename for s in dev_samples))
+    ho_clips = len(set(s.clip_filename for s in heldout_samples))
+
     print()
     print("=" * 80)
     print("  VeilFrame VMAF Threshold Scientific Analysis Report")
     print("=" * 80)
     print(f"  Calibration Status:        {calibration_status.upper()}")
     print(f"  Sequence Groups:           {len(dev_groups)} dev / {len(heldout_groups)} held-out")
-    print(f"  Dev Groups:                {', '.join(dev_groups)}")
-    print(f"  Held-Out Groups:           {', '.join(heldout_groups)}")
+    print("                             (14 usable SDR sequence groups; 1 additional HDR group segregated)")
+    print("                             (15 total named sequence groups in corpus manifest)")
+    print(f"  Dev Groups ({len(dev_groups)}):            {', '.join(dev_groups)}")
+    print(f"  Held-Out Groups ({len(heldout_groups)}):       {', '.join(heldout_groups)}")
+    print(f"  Reference Clips:           16 clips total (15 SDR across 14 groups; 1 HDR clip segregated)")
+    print(f"                             - Dev set: {dev_clips} clips across {len(dev_groups)} groups (park_joy has 25fps & 50fps)")
+    print(f"                             - Held-out set: {ho_clips} clips across {len(heldout_groups)} groups")
+    print("  Sample Accounting:         128 total fixture pairs measured")
+    print("                             - 8 HDR pairs excluded ('chimera' segregated from SDR calibration)")
+    print("                             - 120 usable SDR pairs measured (15 clips x 8 fixtures)")
+    print(f"                               * {len(dev_samples)} development pairs ({dev_clips} clips x 8 fixtures: {dev_binary} binary + {dev_boundary} boundary)")
+    print(f"                               * {len(heldout_samples)} held-out pairs ({ho_clips} clips x 8 fixtures: {ho_binary} binary + {ho_boundary} boundary)")
+    print(f"                             - {dev_binary + ho_binary} binary evaluation samples ({dev_binary} dev / {ho_binary} held-out)")
+    print(f"                             - {dev_boundary + ho_boundary} boundary MODERATE pairs excluded from binary tuning ({dev_boundary} dev / {ho_boundary} held-out)")
+    print(f"                             [Check: {len(dev_samples)} dev + {len(heldout_samples)} heldout = {len(dev_samples) + len(heldout_samples)} SDR; {dev_binary + ho_binary} binary + {dev_boundary + ho_boundary} boundary = {len(dev_samples) + len(heldout_samples)} SDR]")
     print(f"  Research Constraints:      FAR < {fa_max*100:.1f}%, FRR < {fr_max*100:.1f}%")
     print()
 
@@ -548,7 +570,10 @@ def print_analysis_report(
         print("    Activation requires separate human review and production gate promotion.")
     elif calibration_status == "no_feasible_threshold":
         print("  VERDICT: [NO FEASIBLE THRESHOLD]")
-        print("    No candidate threshold satisfied both FAR and FRR constraints on development data.")
+        print("    Within this corpus, no scalar global VMAF threshold satisfied both predefined")
+        print(f"    development constraints of FAR < {fa_max*100:.1f}% and FRR < {fr_max*100:.1f}%.")
+        print("    This indicates that further calibration and/or evaluation of multi-tier operating")
+        print("    points is warranted.")
     elif calibration_status == "insufficient_data":
         print("  VERDICT: [INSUFFICIENT DATA]")
         print("    Corpus does not satisfy minimum scientific data confidence requirements.")
@@ -610,9 +635,10 @@ def main():
     print("=" * 65)
 
     samples, exclusions = load_corpus_samples(args.corpus_results)
+    hdr_count = exclusions.get("not_applicable_hdr", 0)
     print(f"  Valid samples loaded:    {len(samples)}")
     print(f"  Excluded samples:        {sum(exclusions.values())} "
-          f"(HDR: {exclusions['not_applicable_hdr']}, errors: {exclusions['measurement_error'] + exclusions['metadata_error']})")
+          f"(HDR: {hdr_count}, errors: {exclusions['measurement_error'] + exclusions['metadata_error']})")
 
     if not samples:
         print("\nERROR: No valid measurement samples found in corpus results.", file=sys.stderr)
@@ -623,9 +649,12 @@ def main():
         samples, dev_fraction=args.dev_fraction, seed=args.seed
     )
 
-    print(f"  Unique sequence groups:  {len(dev_groups) + len(heldout_groups)}")
-    print(f"  Dev set:                 {len(dev_samples)} samples across {len(dev_groups)} groups")
-    print(f"  Held-out set:            {len(heldout_samples)} samples across {len(heldout_groups)} groups")
+    dev_clips_count = len(set(s.clip_filename for s in dev_samples))
+    ho_clips_count = len(set(s.clip_filename for s in heldout_samples))
+
+    print(f"  Unique sequence groups:  {len(dev_groups) + len(heldout_groups)} SDR groups (+ 1 HDR group segregated)")
+    print(f"  Dev set:                 {len(dev_samples)} samples across {len(dev_groups)} groups ({dev_clips_count} clips)")
+    print(f"  Held-out set:            {len(heldout_samples)} samples across {len(heldout_groups)} groups ({ho_clips_count} clips)")
     print()
 
     # Minimum Data Check
@@ -639,10 +668,51 @@ def main():
         min_heldout_binary=args.min_heldout_binary,
     )
 
+    dev_binary = sum(1 for s in dev_samples if s.independent_policy_label in ("acceptable", "unacceptable"))
+    dev_boundary = len(dev_samples) - dev_binary
+    ho_binary = sum(1 for s in heldout_samples if s.independent_policy_label in ("acceptable", "unacceptable"))
+    ho_boundary = len(heldout_samples) - ho_binary
+    total_measured = len(samples) + sum(exclusions.values())
+
+    sample_accounting = {
+        "total_fixture_pairs_measured": total_measured,
+        "hdr_segregated_pairs": hdr_count,
+        "usable_sdr_pairs": len(samples),
+        "total_clips": dev_clips_count + ho_clips_count + (1 if hdr_count > 0 else 0),
+        "usable_sdr_clips_count": dev_clips_count + ho_clips_count,
+        "development_split": {
+            "sequence_groups_count": len(dev_groups),
+            "clips_count": dev_clips_count,
+            "total_pairs": len(dev_samples),
+            "binary_evaluation_samples": dev_binary,
+            "acceptable_samples": sum(1 for s in dev_samples if s.independent_policy_label == "acceptable"),
+            "unacceptable_samples": sum(1 for s in dev_samples if s.independent_policy_label == "unacceptable"),
+            "boundary_moderate_excluded": dev_boundary,
+            "note": "10 dev groups contain 11 clips (park_joy has 25fps and 50fps variants) yielding 88 pairs (85 binary + 3 boundary)",
+        },
+        "heldout_split": {
+            "sequence_groups_count": len(heldout_groups),
+            "clips_count": ho_clips_count,
+            "total_pairs": len(heldout_samples),
+            "binary_evaluation_samples": ho_binary,
+            "acceptable_samples": sum(1 for s in heldout_samples if s.independent_policy_label == "acceptable"),
+            "unacceptable_samples": sum(1 for s in heldout_samples if s.independent_policy_label == "unacceptable"),
+            "boundary_moderate_excluded": ho_boundary,
+            "note": "4 held-out groups contain 4 clips yielding 32 pairs (30 binary + 2 boundary)",
+        },
+        "total_binary_evaluation_samples": dev_binary + ho_binary,
+        "total_boundary_moderate_excluded": dev_boundary + ho_boundary,
+        "arithmetic_verification": {
+            "sdr_pairs_check": f"{len(dev_samples)} dev + {len(heldout_samples)} heldout = {len(dev_samples) + len(heldout_samples)} usable SDR pairs",
+            "binary_plus_boundary_check": f"{dev_binary + ho_binary} binary + {dev_boundary + ho_boundary} boundary = {dev_binary + ho_binary + dev_boundary + ho_boundary} usable SDR pairs",
+            "total_measured_check": f"{len(dev_samples) + len(heldout_samples)} SDR + {hdr_count} HDR = {len(dev_samples) + len(heldout_samples) + hdr_count} total pairs",
+        },
+    }
+
     if not passed_min:
         status = "insufficient_data"
         print_analysis_report(
-            status, None, None, dev_groups, heldout_groups,
+            status, None, None, dev_groups, heldout_groups, dev_samples, heldout_samples,
             args.fa_max, args.fr_max, failure_reasons=min_reasons
         )
 
@@ -653,13 +723,15 @@ def main():
             "timestamp_utc": datetime.datetime.utcnow().isoformat() + "Z",
             "calibration_status": status,
             "insufficient_data_reasons": min_reasons,
-            "sequence_groups": {"dev": dev_groups, "heldout": heldout_groups},
-            "sample_counts": {
-                "total_valid": len(samples),
-                "dev_samples": len(dev_samples),
-                "heldout_samples": len(heldout_samples),
-                "excluded_samples": exclusions,
+            "sequence_groups": {
+                "total_named_groups_in_manifest": len(dev_groups) + len(heldout_groups) + (1 if hdr_count > 0 else 0),
+                "usable_sdr_groups_count": len(dev_groups) + len(heldout_groups),
+                "hdr_segregated_groups_count": 1 if hdr_count > 0 else 0,
+                "hdr_segregated_groups": ["chimera"] if hdr_count > 0 else [],
+                "dev_groups": dev_groups,
+                "heldout_groups": heldout_groups,
             },
+            "sample_accounting": sample_accounting,
             "production_gate_status": {"vmaf_gate_enabled": False},
         }
         with open(args.out, "w", encoding="utf-8") as f:
@@ -690,7 +762,18 @@ def main():
     res_breakdown = compute_resolution_breakdown(samples, chosen_threshold, policy_name=args.policy)
 
     print_analysis_report(
-        status, dev_candidate, heldout_result, dev_groups, heldout_groups, args.fa_max, args.fr_max
+        status, dev_candidate, heldout_result, dev_groups, heldout_groups, dev_samples, heldout_samples,
+        args.fa_max, args.fr_max
+    )
+
+    scientific_conclusion = (
+        "Within this corpus, no scalar global VMAF threshold satisfied both predefined "
+        f"development constraints of FAR < {args.fa_max*100:.1f}% and FRR < {args.fr_max*100:.1f}%. "
+        "This indicates that further calibration and/or evaluation of multi-tier operating points is warranted."
+    ) if status == "no_feasible_threshold" else (
+        "A feasible scalar threshold was identified that satisfies research constraints on both development and held-out sets."
+        if status == "validated" else
+        "Candidate threshold failed research constraints upon held-out validation."
     )
 
     out_data = {
@@ -703,16 +786,15 @@ def main():
         "random_seed": args.seed,
         "research_constraints": {"fa_max": args.fa_max, "fr_max": args.fr_max},
         "sequence_groups": {
-            "total_groups": len(dev_groups) + len(heldout_groups),
+            "total_named_groups_in_manifest": len(dev_groups) + len(heldout_groups) + (1 if hdr_count > 0 else 0),
+            "usable_sdr_groups_count": len(dev_groups) + len(heldout_groups),
+            "hdr_segregated_groups_count": 1 if hdr_count > 0 else 0,
+            "hdr_segregated_groups": ["chimera"] if hdr_count > 0 else [],
             "dev_groups": dev_groups,
             "heldout_groups": heldout_groups,
         },
-        "sample_counts": {
-            "total_valid": len(samples),
-            "dev_samples": len(dev_samples),
-            "heldout_samples": len(heldout_samples),
-            "excluded_samples": exclusions,
-        },
+        "sample_accounting": sample_accounting,
+        "scientific_conclusion": scientific_conclusion,
         "selected_operating_point": asdict(dev_candidate) if dev_candidate else None,
         "heldout_validation": asdict(heldout_result) if heldout_result else None,
         "category_breakdown": cat_breakdown,
