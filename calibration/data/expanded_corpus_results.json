@@ -26,159 +26,68 @@
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "DEEP_PASS_SSIM_995",
+          "fixture": "SSIM_BND_PASS_01",
           "status": "success",
-          "target_type": "crf",
-          "target_category": "deep_pass",
-          "measurement_status": "empirical",
-          "is_simulated": false,
-          "configuration": {
-            "crf": 10,
-            "filter_expr": null,
-            "preset": "ultrafast",
-            "codec": "libx264"
-          },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 10 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_DEEP_PASS_SSIM_995.mp4",
-          "distorted_filename": "pedestrian_area_DEEP_PASS_SSIM_995.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_DEEP_PASS_SSIM_995.mp4",
-          "distorted_sha256": "d9578852f83562ecfcd6de699292721c2f05ab426e6f9eba7193ddf450ecce88",
-          "ssim": {
-            "mean": 0.991798
-          },
-          "psnr": {
-            "mean": 49.397033
-          },
-          "vmaf": {
-            "mean": 100.0,
-            "p5": 100.0,
-            "min": 100.0
-          },
-          "ssim_mean": 0.991798,
-          "psnr_mean": 49.397033,
-          "vmaf_mean": 100.0,
-          "vmaf_p5": 100.0,
-          "vmaf_worst": 100.0,
-          "independent_policy_label": "acceptable",
-          "policy_label": "acceptable",
-          "model_id": "vmaf_v1.0.16_3d0h",
-          "model_name": "vmaf_v1.0.16_3d0h.json",
-          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
-          "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_DEEP_PASS_SSIM_995_vmaf_evidence.json",
-          "evidence_sha256": "21735e1562651079bb6f594d325c337f268c2c2a4c430cb6c856ceb73cefabd8"
-        },
-        {
-          "sequence_group": "pedestrian_area",
-          "clip_filename": "pedestrian_area_1080p25.y4m",
-          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "DEEP_PASS_SSIM_980",
-          "status": "success",
-          "target_type": "crf",
-          "target_category": "deep_pass",
-          "measurement_status": "empirical",
-          "is_simulated": false,
-          "configuration": {
-            "crf": 16,
-            "filter_expr": null,
-            "preset": "ultrafast",
-            "codec": "libx264"
-          },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_DEEP_PASS_SSIM_980.mp4",
-          "distorted_filename": "pedestrian_area_DEEP_PASS_SSIM_980.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_DEEP_PASS_SSIM_980.mp4",
-          "distorted_sha256": "2ac8730ea8e5d3d454a5274d246a843327a00299a42ed0d306a34a2528157b26",
-          "ssim": {
-            "mean": 0.978246
-          },
-          "psnr": {
-            "mean": 44.866743
-          },
-          "vmaf": {
-            "mean": 99.4,
-            "p5": 97.31,
-            "min": 96.81
-          },
-          "ssim_mean": 0.978246,
-          "psnr_mean": 44.866743,
-          "vmaf_mean": 99.4,
-          "vmaf_p5": 97.31,
-          "vmaf_worst": 96.81,
-          "independent_policy_label": "acceptable",
-          "policy_label": "acceptable",
-          "model_id": "vmaf_v1.0.16_3d0h",
-          "model_name": "vmaf_v1.0.16_3d0h.json",
-          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
-          "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_DEEP_PASS_SSIM_980_vmaf_evidence.json",
-          "evidence_sha256": "40c98e3fe4c3b71ee7d040311b2a87aa1fe7b50e6c28f47962369e21075d80de"
-        },
-        {
-          "sequence_group": "pedestrian_area",
-          "clip_filename": "pedestrian_area_1080p25.y4m",
-          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_PASS_SSIM_960",
-          "status": "success",
-          "target_type": "crf",
+          "target_type": "quantization",
           "target_category": "near_boundary_pass",
-          "measurement_status": "empirical",
-          "is_simulated": false,
-          "configuration": {
-            "crf": 21,
-            "filter_expr": null,
-            "preset": "ultrafast",
-            "codec": "libx264"
-          },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 21 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_PASS_SSIM_960.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_PASS_SSIM_960.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_PASS_SSIM_960.mp4",
-          "distorted_sha256": "562f4c5754ac89cb21c4822971709b1d04d0b9f1f8592e23e899efd03856581f",
-          "ssim": {
-            "mean": 0.962401
-          },
-          "psnr": {
-            "mean": 42.049585
-          },
-          "vmaf": {
-            "mean": 95.85,
-            "p5": 93.83,
-            "min": 93.14
-          },
-          "ssim_mean": 0.962401,
-          "psnr_mean": 42.049585,
-          "vmaf_mean": 95.85,
-          "vmaf_p5": 93.83,
-          "vmaf_worst": 93.14,
-          "independent_policy_label": "acceptable",
-          "policy_label": "acceptable",
-          "model_id": "vmaf_v1.0.16_3d0h",
-          "model_name": "vmaf_v1.0.16_3d0h.json",
-          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
-          "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_PASS_SSIM_960_vmaf_evidence.json",
-          "evidence_sha256": "e864b776bfe8081c4c97f7795cd2cb7816a68ac6da5cfe9e598904f127f4f267"
-        },
-        {
-          "sequence_group": "pedestrian_area",
-          "clip_filename": "pedestrian_area_1080p25.y4m",
-          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_PASS_SSIM_952",
-          "status": "success",
-          "target_type": "crf",
-          "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
             "crf": 23,
             "filter_expr": null,
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.955473,
+                "measured_psnr": 41.070527,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 23 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_PASS_SSIM_952.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_PASS_SSIM_952.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_PASS_SSIM_952.mp4",
+          "parameters": {
+            "crf": 23,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.955473,
+                "measured_psnr": 41.070527,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.953,
+            "desired_ssim_max": 0.958,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 23 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_PASS_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_PASS_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_PASS_01.mp4",
           "distorted_sha256": "4c9b92cf2a3975b9b1fddf021775a929ca7d23d2f663da416c7463160c716447",
           "ssim": {
             "mean": 0.955473
@@ -203,45 +112,92 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_PASS_SSIM_952_vmaf_evidence.json",
-          "evidence_sha256": "e7cd5a1c9270fcbb3280366d8c8a22ee1daf225eb62e17f97ffded58166d0f28"
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_01_vmaf_evidence.json",
+          "evidence_sha256": "9e812104daa9824d37a161d37d7f1ac40bfc326ce75ea9647605abcb83fdd916"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_PASS_PSNR_305",
+          "fixture": "SSIM_BND_PASS_02",
           "status": "success",
-          "target_type": "noise",
+          "target_type": "quantization_blur",
           "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
-            "crf": 20,
-            "filter_expr": "noise=alls=1:allf=t",
+            "crf": 22,
+            "filter_expr": "gblur=sigma=0.80",
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.8,
+                "filter_expr": "gblur=sigma=0.80",
+                "measured_ssim": 0.954019,
+                "measured_psnr": 40.629797,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf noise=alls=1:allf=t -c:v libx264 -crf 20 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_PASS_PSNR_305.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_PASS_PSNR_305.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_PASS_PSNR_305.mp4",
-          "distorted_sha256": "7f8fa5026fe95ca52be9612ff22fac9ba4abdb02f8c812f953dde5e1ae57045f",
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=0.80",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.8,
+                "filter_expr": "gblur=sigma=0.80",
+                "measured_ssim": 0.954019,
+                "measured_psnr": 40.629797,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.9505,
+            "desired_ssim_max": 0.9545,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf gblur=sigma=0.80 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_PASS_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_PASS_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_PASS_02.mp4",
+          "distorted_sha256": "c0a1774f23b8066c2b10545798cf9c3732f0732a986190329756c9dc626b3a29",
           "ssim": {
-            "mean": 0.965578
+            "mean": 0.954019
           },
           "psnr": {
-            "mean": 42.55594
+            "mean": 40.629797
           },
           "vmaf": {
-            "mean": 96.93,
-            "p5": 94.58,
-            "min": 93.82
+            "mean": 87.63,
+            "p5": 85.11,
+            "min": 83.72
           },
-          "ssim_mean": 0.965578,
-          "psnr_mean": 42.55594,
-          "vmaf_mean": 96.93,
-          "vmaf_p5": 94.58,
-          "vmaf_worst": 93.82,
+          "ssim_mean": 0.954019,
+          "psnr_mean": 40.629797,
+          "vmaf_mean": 87.63,
+          "vmaf_p5": 85.11,
+          "vmaf_worst": 83.72,
           "independent_policy_label": "acceptable",
           "policy_label": "acceptable",
           "model_id": "vmaf_v1.0.16_3d0h",
@@ -249,28 +205,188 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_PASS_PSNR_305_vmaf_evidence.json",
-          "evidence_sha256": "a9dd1139b8bc77381f38ca5df643ec8556ed85bd6a4c0c75391fd8158733dc3f"
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_02_vmaf_evidence.json",
+          "evidence_sha256": "889c5aa4da5ca4a673116eb0992aebe27bc070f4a8e28b8fdf50c1e5a7ec1ab7"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "CRITICAL_BOUNDARY_950",
+          "fixture": "SSIM_BND_PASS_03",
           "status": "success",
-          "target_type": "crf",
+          "target_type": "quantization",
           "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 21,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.962401,
+                "measured_psnr": 42.049585,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 21,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.962401,
+                "measured_psnr": 42.049585,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.958,
+            "desired_ssim_max": 0.966,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 21 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_PASS_03_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_PASS_03.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_PASS_03.mp4",
+          "distorted_sha256": "562f4c5754ac89cb21c4822971709b1d04d0b9f1f8592e23e899efd03856581f",
+          "ssim": {
+            "mean": 0.962401
+          },
+          "psnr": {
+            "mean": 42.049585
+          },
+          "vmaf": {
+            "mean": 95.85,
+            "p5": 93.83,
+            "min": 93.14
+          },
+          "ssim_mean": 0.962401,
+          "psnr_mean": 42.049585,
+          "vmaf_mean": 95.85,
+          "vmaf_p5": 93.83,
+          "vmaf_worst": 93.14,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_03_vmaf_evidence.json",
+          "evidence_sha256": "a944158743a599ddcd5181759976c084640a75d0835be64a7e69108fd121f245"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "SSIM_BND_FAIL_01",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
             "crf": 24,
             "filter_expr": null,
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.952035,
+                "measured_psnr": 40.619655,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.947615,
+                "measured_psnr": 40.088527,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_CRITICAL_BOUNDARY_950.mp4",
-          "distorted_filename": "pedestrian_area_CRITICAL_BOUNDARY_950.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_CRITICAL_BOUNDARY_950.mp4",
+          "parameters": {
+            "crf": 24,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.952035,
+                "measured_psnr": 40.619655,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.947615,
+                "measured_psnr": 40.088527,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 2,
+          "target_bounds": {
+            "desired_ssim_min": 0.9465,
+            "desired_ssim_max": 0.9499,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_FAIL_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_FAIL_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_FAIL_01.mp4",
           "distorted_sha256": "eed766d8207a26e7c5d9854ebedb112808aaff9a355be9822ca9c19d05b552f6",
           "ssim": {
             "mean": 0.952035
@@ -295,28 +411,95 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_CRITICAL_BOUNDARY_950_vmaf_evidence.json",
-          "evidence_sha256": "8e268b2824160b223ea700ea98236c25b0f98ca450974d922dd6772b0023e2da"
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_01_vmaf_evidence.json",
+          "evidence_sha256": "5e108f3181165f651d0c273a4ec2b5fd913216ce92234cc04109ee224b20d8f7"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_FAIL_SSIM_945",
+          "fixture": "SSIM_BND_FAIL_02",
           "status": "success",
-          "target_type": "crf",
+          "target_type": "quantization",
           "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
             "crf": 25,
             "filter_expr": null,
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.947615,
+                "measured_psnr": 40.088527,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 26,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.943874,
+                "measured_psnr": 39.657925,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 25 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_FAIL_SSIM_945.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_FAIL_SSIM_945.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_FAIL_SSIM_945.mp4",
+          "parameters": {
+            "crf": 25,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.947615,
+                "measured_psnr": 40.088527,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 26,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.943874,
+                "measured_psnr": 39.657925,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 2,
+          "target_bounds": {
+            "desired_ssim_min": 0.942,
+            "desired_ssim_max": 0.946,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 25 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_FAIL_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_FAIL_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_FAIL_02.mp4",
           "distorted_sha256": "e7160f4072e342ac35a72f0306aea1af286dc65f8332f49f59629afea5242925",
           "ssim": {
             "mean": 0.947615
@@ -341,28 +524,75 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_FAIL_SSIM_945_vmaf_evidence.json",
-          "evidence_sha256": "6dfb0652845b966477f5cd0d3a1f1b85f83f255b5dc3fa99361098f4bb800741"
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_02_vmaf_evidence.json",
+          "evidence_sha256": "0db1900cf11e7c2f296fe4262fbc15eb940fa48a41848a22dbbbe0c65ee58d5d"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_FAIL_SSIM_935",
+          "fixture": "SSIM_BND_FAIL_03_BLUR",
           "status": "success",
           "target_type": "blur",
           "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
             "crf": 22,
-            "filter_expr": "gblur=sigma=1.6",
+            "filter_expr": "gblur=sigma=1.60",
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 1.6,
+                "filter_expr": "gblur=sigma=1.60",
+                "measured_ssim": 0.937527,
+                "measured_psnr": 38.105059,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf gblur=sigma=1.6 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_FAIL_SSIM_935.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_FAIL_SSIM_935.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_FAIL_SSIM_935.mp4",
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=1.60",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 1.6,
+                "filter_expr": "gblur=sigma=1.60",
+                "measured_ssim": 0.937527,
+                "measured_psnr": 38.105059,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.934,
+            "desired_ssim_max": 0.941,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf gblur=sigma=1.60 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_SSIM_BND_FAIL_03_BLUR_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_SSIM_BND_FAIL_03_BLUR.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_SSIM_BND_FAIL_03_BLUR.mp4",
           "distorted_sha256": "a817b462956170526d4de2f7a05eca3f59a9ca404f4fe1baff58967c2a1e199b",
           "ssim": {
             "mean": 0.937527
@@ -387,45 +617,371 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_FAIL_SSIM_935_vmaf_evidence.json",
-          "evidence_sha256": "8c50ddb561d94215fc8a54e6de5ee55c7b71d3ed882c8e479e62326b363a0b85"
+          "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_03_BLUR_vmaf_evidence.json",
+          "evidence_sha256": "e27199bc22415a107d7a0a3cc57148fea3a4e64f2b7d843c72868a69152e80f1"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "BOUNDARY_FAIL_PSNR_295",
+          "fixture": "PSNR_BND_PASS_01_GAMMA",
           "status": "success",
-          "target_type": "crf",
+          "target_type": "gamma",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.972035,
+                "measured_psnr": 31.388413,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.972035,
+                "measured_psnr": 31.388413,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 32.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.910 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_PASS_01_GAMMA_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_PASS_01_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_PASS_01_GAMMA.mp4",
+          "distorted_sha256": "55ede92d0bc75ceb70add3a65122b7bc518e39a50476e7c93212d4bdecbd74bc",
+          "ssim": {
+            "mean": 0.972035
+          },
+          "psnr": {
+            "mean": 31.388413
+          },
+          "vmaf": {
+            "mean": 97.91,
+            "p5": 95.04,
+            "min": 94.49
+          },
+          "ssim_mean": 0.972035,
+          "psnr_mean": 31.388413,
+          "vmaf_mean": 97.91,
+          "vmaf_p5": 95.04,
+          "vmaf_worst": 94.49,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_01_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "d7a52daf0579e609276ea30a83b0052a5d8e6b319b041e135d1c9660f8c4331b"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "PSNR_BND_PASS_02_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.970356,
+                "measured_psnr": 30.471872,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.970356,
+                "measured_psnr": 30.471872,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.1,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.900 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_PASS_02_GAMMA_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_PASS_02_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_PASS_02_GAMMA.mp4",
+          "distorted_sha256": "fb36be924b222d618a0826b435588cc7373bcc369d27689435fd7c46f599f1b2",
+          "ssim": {
+            "mean": 0.970356
+          },
+          "psnr": {
+            "mean": 30.471872
+          },
+          "vmaf": {
+            "mean": 97.68,
+            "p5": 94.7,
+            "min": 94.21
+          },
+          "ssim_mean": 0.970356,
+          "psnr_mean": 30.471872,
+          "vmaf_mean": 97.68,
+          "vmaf_p5": 94.7,
+          "vmaf_worst": 94.21,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_02_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "041c28720619fcc297da104bb32ec9aa7818e38d4b11139bf72f491ddc53ea3e"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "PSNR_BND_PASS_03_BRIGHT",
+          "status": "success",
+          "target_type": "brightness",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=brightness=0.0450",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "brightness",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.045,
+                "filter_expr": "eq=brightness=0.0450",
+                "measured_ssim": 0.971976,
+                "measured_psnr": 30.626151,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=brightness=0.0450",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "brightness",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.045,
+                "filter_expr": "eq=brightness=0.0450",
+                "measured_ssim": 0.971976,
+                "measured_psnr": 30.626151,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.1,
+            "desired_psnr_max": 31.2
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=brightness=0.0450 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_PASS_03_BRIGHT_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_PASS_03_BRIGHT.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_PASS_03_BRIGHT.mp4",
+          "distorted_sha256": "432d3388c909687d7ae0422b2c4d8de7b0178f51fd748ff5c95f6af85d7070a9",
+          "ssim": {
+            "mean": 0.971976
+          },
+          "psnr": {
+            "mean": 30.626151
+          },
+          "vmaf": {
+            "mean": 99.4,
+            "p5": 97.32,
+            "min": 96.83
+          },
+          "ssim_mean": 0.971976,
+          "psnr_mean": 30.626151,
+          "vmaf_mean": 99.4,
+          "vmaf_p5": 97.32,
+          "vmaf_worst": 96.83,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_03_BRIGHT_vmaf_evidence.json",
+          "evidence_sha256": "42d9fd18a95aa572281404b0ff28a2178313756df3668483d32aaaf37256f485"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "PSNR_BND_FAIL_01_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
           "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
-            "crf": 44,
-            "filter_expr": null,
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.890",
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.969023,
+                "measured_psnr": 29.702632,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 44 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_BOUNDARY_FAIL_PSNR_295.mp4",
-          "distorted_filename": "pedestrian_area_BOUNDARY_FAIL_PSNR_295.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_BOUNDARY_FAIL_PSNR_295.mp4",
-          "distorted_sha256": "b8d8b320451afd7b262d54a63dbe0d5551dcd94a067c0bea4cf7cca640964b9c",
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.890",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.969023,
+                "measured_psnr": 29.702632,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 29.4,
+            "desired_psnr_max": 29.99
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.890 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_FAIL_01_GAMMA_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_FAIL_01_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_FAIL_01_GAMMA.mp4",
+          "distorted_sha256": "69b70b2d1301b6c96af4148edbd837ce1d458ef3a06c70266340f41a6efb0854",
           "ssim": {
-            "mean": 0.792856
+            "mean": 0.969023
           },
           "psnr": {
-            "mean": 29.776562
+            "mean": 29.702632
           },
           "vmaf": {
-            "mean": 29.29,
-            "p5": 23.82,
-            "min": 21.46
+            "mean": 97.44,
+            "p5": 94.49,
+            "min": 93.82
           },
-          "ssim_mean": 0.792856,
-          "psnr_mean": 29.776562,
-          "vmaf_mean": 29.29,
-          "vmaf_p5": 23.82,
-          "vmaf_worst": 21.46,
+          "ssim_mean": 0.969023,
+          "psnr_mean": 29.702632,
+          "vmaf_mean": 97.44,
+          "vmaf_p5": 94.49,
+          "vmaf_worst": 93.82,
           "independent_policy_label": "unacceptable",
           "policy_label": "unacceptable",
           "model_id": "vmaf_v1.0.16_3d0h",
@@ -433,45 +989,92 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_BOUNDARY_FAIL_PSNR_295_vmaf_evidence.json",
-          "evidence_sha256": "7ea1f6ac200afddd9d5de1d5816a495ab5a3afa41b7f59548ad6b9098a1c0e31"
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_01_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "d753bb78ab4c2cbd14ebf1c25a503dcdf71f15b2d88a06cd3cadc2b5331a3d24"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "DEEP_FAIL_SSIM_900",
+          "fixture": "PSNR_BND_FAIL_02_GAMMA",
           "status": "success",
-          "target_type": "crf",
-          "target_category": "deep_fail",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
-            "crf": 32,
-            "filter_expr": null,
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.880",
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.966923,
+                "measured_psnr": 28.941877,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 32 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_DEEP_FAIL_SSIM_900.mp4",
-          "distorted_filename": "pedestrian_area_DEEP_FAIL_SSIM_900.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_DEEP_FAIL_SSIM_900.mp4",
-          "distorted_sha256": "67815c059d51fa428bb83ecb732f5f80bf6fbd6c92e79f4cb10216bacceae423",
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.966923,
+                "measured_psnr": 28.941877,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 28.6,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.880 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_FAIL_02_GAMMA_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_FAIL_02_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_FAIL_02_GAMMA.mp4",
+          "distorted_sha256": "9303d5a53834ff59bdcbff5f779149429f5edc296346372b87de5f994e168836",
           "ssim": {
-            "mean": 0.913014
+            "mean": 0.966923
           },
           "psnr": {
-            "mean": 36.734924
+            "mean": 28.941877
           },
           "vmaf": {
-            "mean": 77.7,
-            "p5": 75.64,
-            "min": 74.66
+            "mean": 97.01,
+            "p5": 93.88,
+            "min": 93.3
           },
-          "ssim_mean": 0.913014,
-          "psnr_mean": 36.734924,
-          "vmaf_mean": 77.7,
-          "vmaf_p5": 75.64,
-          "vmaf_worst": 74.66,
+          "ssim_mean": 0.966923,
+          "psnr_mean": 28.941877,
+          "vmaf_mean": 97.01,
+          "vmaf_p5": 93.88,
+          "vmaf_worst": 93.3,
           "independent_policy_label": "unacceptable",
           "policy_label": "unacceptable",
           "model_id": "vmaf_v1.0.16_3d0h",
@@ -479,28 +1082,1005 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_DEEP_FAIL_SSIM_900_vmaf_evidence.json",
-          "evidence_sha256": "a11c334360ccecfe082aa45a97d5c8053e13cbfd764f6b138c0e1507e19470b4"
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_02_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "dee46c1757f823917f42f28fa31cfdd4a718d8c760e87ad1f1eeab3afe5a283d"
         },
         {
           "sequence_group": "pedestrian_area",
           "clip_filename": "pedestrian_area_1080p25.y4m",
           "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
-          "fixture": "DEEP_FAIL_SSIM_850",
+          "fixture": "PSNR_BND_FAIL_03_CONTRAST",
           "status": "success",
-          "target_type": "blur",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.870",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.87,
+                "filter_expr": "eq=gamma=0.870",
+                "measured_ssim": 0.964493,
+                "measured_psnr": 28.229419,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.870",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.87,
+                "filter_expr": "eq=gamma=0.870",
+                "measured_ssim": 0.964493,
+                "measured_psnr": 28.229419,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 27.5,
+            "desired_psnr_max": 28.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.870 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_PSNR_BND_FAIL_03_CONTRAST_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_PSNR_BND_FAIL_03_CONTRAST.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_PSNR_BND_FAIL_03_CONTRAST.mp4",
+          "distorted_sha256": "cda685e128165c305e74333ebca3933eeb778054deefd39d37dea87be7596e1c",
+          "ssim": {
+            "mean": 0.964493
+          },
+          "psnr": {
+            "mean": 28.229419
+          },
+          "vmaf": {
+            "mean": 96.69,
+            "p5": 93.55,
+            "min": 92.95
+          },
+          "ssim_mean": 0.964493,
+          "psnr_mean": 28.229419,
+          "vmaf_mean": 96.69,
+          "vmaf_p5": 93.55,
+          "vmaf_worst": 92.95,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_03_CONTRAST_vmaf_evidence.json",
+          "evidence_sha256": "ac4b3e3ff050fd29ac9eb8228267bcf9ba21594079c0e4b0d78333805ef8d7e4"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q1_PASS_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_pass",
+          "region": "joint_boundary",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.95112,
+                "measured_psnr": 30.297508,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.95112,
+                "measured_psnr": 30.297508,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.95,
+            "desired_ssim_max": 0.954,
+            "desired_psnr_min": 30.05,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.900 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q1_PASS_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q1_PASS_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q1_PASS_01.mp4",
+          "distorted_sha256": "ea4215c52159203da40b99cb498fa7400b43acccc4512f53c8af4439fff99e24",
+          "ssim": {
+            "mean": 0.95112
+          },
+          "psnr": {
+            "mean": 30.297508
+          },
+          "vmaf": {
+            "mean": 93.05,
+            "p5": 90.37,
+            "min": 89.7
+          },
+          "ssim_mean": 0.95112,
+          "psnr_mean": 30.297508,
+          "vmaf_mean": 93.05,
+          "vmaf_p5": 90.37,
+          "vmaf_worst": 89.7,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q1_PASS_01_vmaf_evidence.json",
+          "evidence_sha256": "92dc7576a228033042356305ee84bd41b9fa0f24217b8633c352af9b619cdcad"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q1_PASS_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_pass",
+          "region": "joint_boundary",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.952831,
+                "measured_psnr": 31.173585,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.952831,
+                "measured_psnr": 31.173585,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.951,
+            "desired_ssim_max": 0.956,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 31.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.910 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q1_PASS_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q1_PASS_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q1_PASS_02.mp4",
+          "distorted_sha256": "acebece9b964f976ed12583df72d54c07aea37255913e195269465eecda38a4d",
+          "ssim": {
+            "mean": 0.952831
+          },
+          "psnr": {
+            "mean": 31.173585
+          },
+          "vmaf": {
+            "mean": 93.25,
+            "p5": 90.46,
+            "min": 89.66
+          },
+          "ssim_mean": 0.952831,
+          "psnr_mean": 31.173585,
+          "vmaf_mean": 93.25,
+          "vmaf_p5": 90.46,
+          "vmaf_worst": 89.66,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q1_PASS_02_vmaf_evidence.json",
+          "evidence_sha256": "eb21b3ce9b006a3540d304aaa5bfb476870a5161b0970ddfeddeed5ad36958f9"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q2_FAIL_SSIM_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 23,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.948068,
+                "measured_psnr": 30.277568,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 23,
+            "filter_expr": "eq=gamma=0.900",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.948068,
+                "measured_psnr": 30.277568,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.946,
+            "desired_ssim_max": 0.9499,
+            "desired_psnr_min": 30.05,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.900 -c:v libx264 -crf 23 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q2_FAIL_SSIM_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q2_FAIL_SSIM_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q2_FAIL_SSIM_01.mp4",
+          "distorted_sha256": "bbf8e77aa7c78a5c7e9836d8a3859d1bf714a254f5499c4df82775e296524c68",
+          "ssim": {
+            "mean": 0.948068
+          },
+          "psnr": {
+            "mean": 30.277568
+          },
+          "vmaf": {
+            "mean": 92.15,
+            "p5": 89.24,
+            "min": 88.37
+          },
+          "ssim_mean": 0.948068,
+          "psnr_mean": 30.277568,
+          "vmaf_mean": 92.15,
+          "vmaf_p5": 89.24,
+          "vmaf_worst": 88.37,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q2_FAIL_SSIM_01_vmaf_evidence.json",
+          "evidence_sha256": "1dd9f3da4c939ec613b786417d66f3ef330f8d265b4a3d8cfad61a1d3eec0f9a"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q2_FAIL_SSIM_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.946346,
+                "measured_psnr": 31.071748,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.910",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.946346,
+                "measured_psnr": 31.071748,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.943,
+            "desired_ssim_max": 0.949,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 31.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.910 -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q2_FAIL_SSIM_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q2_FAIL_SSIM_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q2_FAIL_SSIM_02.mp4",
+          "distorted_sha256": "a8f646a4a67b3a1be86cff301e9171b542743eaea1dfbbd5d7d601cb80dc49a3",
+          "ssim": {
+            "mean": 0.946346
+          },
+          "psnr": {
+            "mean": 31.071748
+          },
+          "vmaf": {
+            "mean": 91.42,
+            "p5": 88.76,
+            "min": 87.71
+          },
+          "ssim_mean": 0.946346,
+          "psnr_mean": 31.071748,
+          "vmaf_mean": 91.42,
+          "vmaf_p5": 88.76,
+          "vmaf_worst": 87.71,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q2_FAIL_SSIM_02_vmaf_evidence.json",
+          "evidence_sha256": "44cc72475e73a4a645d3c16dbaf85f8eba586265f8b11c58d02ae96dadc66035"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q3_FAIL_PSNR_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 21,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.951617,
+                "measured_psnr": 28.872954,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 21,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.951617,
+                "measured_psnr": 28.872954,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.95,
+            "desired_ssim_max": 0.954,
+            "desired_psnr_min": 28.5,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.880 -c:v libx264 -crf 21 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q3_FAIL_PSNR_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q3_FAIL_PSNR_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q3_FAIL_PSNR_01.mp4",
+          "distorted_sha256": "43cf01248d3d3eac9d011144742269d96dd3bfd1519781fd64d50c990f7d0701",
+          "ssim": {
+            "mean": 0.951617
+          },
+          "psnr": {
+            "mean": 28.872954
+          },
+          "vmaf": {
+            "mean": 93.63,
+            "p5": 90.86,
+            "min": 89.98
+          },
+          "ssim_mean": 0.951617,
+          "psnr_mean": 28.872954,
+          "vmaf_mean": 93.63,
+          "vmaf_p5": 90.86,
+          "vmaf_worst": 89.98,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
+          "evidence_sha256": "0a194d793c250f916ca2cab349dfc601076a7004e8814632d7a23eb4473f9b28"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q3_FAIL_PSNR_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 20,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 20,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.954636,
+                "measured_psnr": 28.891156,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 20,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 20,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.954636,
+                "measured_psnr": 28.891156,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.953,
+            "desired_ssim_max": 0.958,
+            "desired_psnr_min": 28.5,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.880 -c:v libx264 -crf 20 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q3_FAIL_PSNR_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q3_FAIL_PSNR_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q3_FAIL_PSNR_02.mp4",
+          "distorted_sha256": "77cefa0453ce7b542faaf9d134deac5290d86b6f2e67cdbc420a17243ac8482f",
+          "ssim": {
+            "mean": 0.954636
+          },
+          "psnr": {
+            "mean": 28.891156
+          },
+          "vmaf": {
+            "mean": 94.6,
+            "p5": 91.6,
+            "min": 90.87
+          },
+          "ssim_mean": 0.954636,
+          "psnr_mean": 28.891156,
+          "vmaf_mean": 94.6,
+          "vmaf_p5": 91.6,
+          "vmaf_worst": 90.87,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q3_FAIL_PSNR_02_vmaf_evidence.json",
+          "evidence_sha256": "ac05e6876f200b83362df88134d9e5cd176c68608f7293512ce702c069415a09"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q4_FAIL_BOTH_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.890",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.943454,
+                "measured_psnr": 29.485438,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.890",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.943454,
+                "measured_psnr": 29.485438,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.941,
+            "desired_ssim_max": 0.947,
+            "desired_psnr_min": 29.1,
+            "desired_psnr_max": 29.8
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.890 -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q4_FAIL_BOTH_01_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q4_FAIL_BOTH_01.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q4_FAIL_BOTH_01.mp4",
+          "distorted_sha256": "8d1056f034f14ceac81174978ff395da77ad8a258d393313e782518f2d79b6e4",
+          "ssim": {
+            "mean": 0.943454
+          },
+          "psnr": {
+            "mean": 29.485438
+          },
+          "vmaf": {
+            "mean": 91.09,
+            "p5": 88.34,
+            "min": 87.32
+          },
+          "ssim_mean": 0.943454,
+          "psnr_mean": 29.485438,
+          "vmaf_mean": 91.09,
+          "vmaf_p5": 88.34,
+          "vmaf_worst": 87.32,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q4_FAIL_BOTH_01_vmaf_evidence.json",
+          "evidence_sha256": "67e93307eb8d6a1593ea178e7f6e7fa006192eba9928882068cf8c3b4a0e950a"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "JOINT_Q4_FAIL_BOTH_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.941496,
+                "measured_psnr": 28.759228,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.880",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.941496,
+                "measured_psnr": 28.759228,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.938,
+            "desired_ssim_max": 0.945,
+            "desired_psnr_min": 28.4,
+            "desired_psnr_max": 29.1
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -vf eq=gamma=0.880 -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_JOINT_Q4_FAIL_BOTH_02_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_JOINT_Q4_FAIL_BOTH_02.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_JOINT_Q4_FAIL_BOTH_02.mp4",
+          "distorted_sha256": "781042119e214c801f4d97fd7ee2f8d355a128690cefa8727bccc553c936e2d0",
+          "ssim": {
+            "mean": 0.941496
+          },
+          "psnr": {
+            "mean": 28.759228
+          },
+          "vmaf": {
+            "mean": 90.68,
+            "p5": 87.83,
+            "min": 87.06
+          },
+          "ssim_mean": 0.941496,
+          "psnr_mean": 28.759228,
+          "vmaf_mean": 90.68,
+          "vmaf_p5": 87.83,
+          "vmaf_worst": 87.06,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_JOINT_Q4_FAIL_BOTH_02_vmaf_evidence.json",
+          "evidence_sha256": "81029ae74e2548d2d9afda86eb3647369391628ebbadcd8d45051754be290630"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "ANCHOR_DEEP_PASS",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "deep_pass",
+          "region": "anchor",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 10,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 10,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.991798,
+                "measured_psnr": 49.397033,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 10,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 10,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.991798,
+                "measured_psnr": 49.397033,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.985,
+            "desired_ssim_max": 1.0,
+            "desired_psnr_min": 45.0,
+            "desired_psnr_max": 60.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 10 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_ANCHOR_DEEP_PASS_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_ANCHOR_DEEP_PASS.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_ANCHOR_DEEP_PASS.mp4",
+          "distorted_sha256": "d9578852f83562ecfcd6de699292721c2f05ab426e6f9eba7193ddf450ecce88",
+          "ssim": {
+            "mean": 0.991798
+          },
+          "psnr": {
+            "mean": 49.397033
+          },
+          "vmaf": {
+            "mean": 100.0,
+            "p5": 100.0,
+            "min": 100.0
+          },
+          "ssim_mean": 0.991798,
+          "psnr_mean": 49.397033,
+          "vmaf_mean": 100.0,
+          "vmaf_p5": 100.0,
+          "vmaf_worst": 100.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/pedestrian_area_ANCHOR_DEEP_PASS_vmaf_evidence.json",
+          "evidence_sha256": "906b6adbc8f6f7dac4409a6c463082d7b2666117bb80a367a8b0163742b778b6"
+        },
+        {
+          "sequence_group": "pedestrian_area",
+          "clip_filename": "pedestrian_area_1080p25.y4m",
+          "clip_sha256": "1c18cd50fec7dcfa6087564ed56343a99ff955ecfca70de91a5dbedae329353a",
+          "fixture": "ANCHOR_DEEP_FAIL",
+          "status": "success",
+          "target_type": "quantization",
           "target_category": "deep_fail",
+          "region": "anchor",
+          "quadrant": "q2_fail_ssim",
           "measurement_status": "empirical",
           "is_simulated": false,
           "configuration": {
             "crf": 38,
             "filter_expr": null,
             "preset": "ultrafast",
-            "codec": "libx264"
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 38,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.864857,
+                "measured_psnr": 33.553188,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
           },
-          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 38 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_DEEP_FAIL_SSIM_850.mp4",
-          "distorted_filename": "pedestrian_area_DEEP_FAIL_SSIM_850.mp4",
-          "distorted_path": "calibration/data/distorted/pedestrian_area_DEEP_FAIL_SSIM_850.mp4",
+          "parameters": {
+            "crf": 38,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 38,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.864857,
+                "measured_psnr": 33.553188,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.8,
+            "desired_ssim_max": 0.89,
+            "desired_psnr_min": 25.0,
+            "desired_psnr_max": 36.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\pedestrian_area_1080p25.y4m -c:v libx264 -crf 38 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\pedestrian_area_ANCHOR_DEEP_FAIL_iter_1.mp4",
+          "distorted_filename": "pedestrian_area_ANCHOR_DEEP_FAIL.mp4",
+          "distorted_path": "calibration/data/distorted/pedestrian_area_ANCHOR_DEEP_FAIL.mp4",
           "distorted_sha256": "50cfe20c2f56b3e2d0b318f79060c99ae8d931377635753522c6570e1795418c",
           "ssim": {
             "mean": 0.864857
@@ -525,8 +2105,8 @@
           "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
-          "evidence_path": "evidence/pedestrian_area_DEEP_FAIL_SSIM_850_vmaf_evidence.json",
-          "evidence_sha256": "e6360fedfca61e18358c8398ae346b150054128e456aecfd97dd57c63a63ec78"
+          "evidence_path": "evidence/pedestrian_area_ANCHOR_DEEP_FAIL_vmaf_evidence.json",
+          "evidence_sha256": "6a00fa663bc7fd3e4cc735f924c9d4e67a3fade6369d6233f082c9bb0039a4d0"
         }
       ]
     }
