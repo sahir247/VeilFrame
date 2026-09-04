@@ -2,7 +2,7 @@
   "schema": "veilframe-vmaf-analysis-v1",
   "analysis_version": "1.2.0",
   "vmaf_model_version": "1.0.16",
-  "timestamp_utc": "2026-09-04T01:53:48.089602Z",
+  "timestamp_utc": "2026-09-04T02:06:37.841190Z",
   "calibration_status": "validated",
   "policy_evaluated": "mean",
   "random_seed": 42,

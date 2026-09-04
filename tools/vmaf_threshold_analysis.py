@@ -355,12 +355,12 @@ def select_lowest_feasible_threshold(
     fr_max: float = 0.05,
 ) -> Optional[OperatingMetrics]:
     """
-    Selects the lowest threshold on development data satisfying both:
-      FAR <= fa_max AND FRR <= fr_max.
+    Selects the lowest threshold on development data strictly satisfying both:
+      FAR < fa_max AND FRR < fr_max.
     Selecting the lowest threshold avoids unnecessary rejection of acceptable outputs.
     Returns None if no candidate satisfies both constraints.
     """
-    feasible = [p for p in sweep_points if p.false_accept_rate <= fa_max and p.false_reject_rate <= fr_max]
+    feasible = [p for p in sweep_points if p.false_accept_rate < fa_max and p.false_reject_rate < fr_max]
     if not feasible:
         return None
     # Lowest threshold among feasible points
@@ -453,8 +453,8 @@ def print_analysis_report(
         print()
 
     if heldout_result:
-        ho_far_ok = (heldout_result.false_accept_rate <= fa_max)
-        ho_frr_ok = (heldout_result.false_reject_rate <= fr_max)
+        ho_far_ok = (heldout_result.false_accept_rate < fa_max)
+        ho_frr_ok = (heldout_result.false_reject_rate < fr_max)
         print("  Untouched Held-Out Validation Result:")
         print(f"    Held-Out FAR:            {heldout_result.false_accept_rate*100:.2f}% "
               f"[{'PASS' if ho_far_ok else 'FAIL'}]")
@@ -580,7 +580,7 @@ def main():
         heldout_result = evaluate_policy_operating_point(
             heldout_samples, dev_candidate.threshold, policy_name=args.policy
         )
-        if heldout_result.false_accept_rate <= args.fa_max and heldout_result.false_reject_rate <= args.fr_max:
+        if heldout_result.false_accept_rate < args.fa_max and heldout_result.false_reject_rate < args.fr_max:
             status = "validated"
         else:
             status = "failed"

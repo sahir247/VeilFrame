@@ -135,6 +135,30 @@ class TestThresholdSweepAndSelection(unittest.TestCase):
         self.assertEqual(best.threshold, 80.0,
                          "Should select lowest feasible threshold to avoid rejecting acceptable content")
 
+    def test_strict_inequality_at_exact_constraint_boundary(self):
+        from tools.vmaf_threshold_analysis import OperatingMetrics
+        # Points exactly at 2.0% FAR or 5.0% FRR must be rejected under strict < semantics
+        point_exact_fa = OperatingMetrics(
+            threshold=85.0, policy_name="mean", total_samples=100,
+            acceptable_samples=50, unacceptable_samples=50,
+            true_accepts=49, true_rejects=49, false_accepts=1, false_rejects=1,
+            false_accept_rate=0.02,  # Exactly 2.0% -> rejected by FAR < 0.02
+            false_reject_rate=0.02,
+            acceptance_rate=0.5, rejection_rate=0.5, precision=0.98, recall=0.98, balanced_accuracy=0.98
+        )
+        point_exact_fr = OperatingMetrics(
+            threshold=86.0, policy_name="mean", total_samples=100,
+            acceptable_samples=50, unacceptable_samples=50,
+            true_accepts=47, true_rejects=50, false_accepts=0, false_rejects=3,
+            false_accept_rate=0.01,
+            false_reject_rate=0.05,  # Exactly 5.0% -> rejected by FRR < 0.05
+            acceptance_rate=0.47, rejection_rate=0.53, precision=1.0, recall=0.94, balanced_accuracy=0.97
+        )
+        self.assertIsNone(select_lowest_feasible_threshold([point_exact_fa], fa_max=0.02, fr_max=0.05),
+                          "Point with FAR == 2.0% must be rejected under strict FAR < 2.0%")
+        self.assertIsNone(select_lowest_feasible_threshold([point_exact_fr], fa_max=0.02, fr_max=0.05),
+                          "Point with FRR == 5.0% must be rejected under strict FRR < 5.0%")
+
 
 class TestProductionGateSafety(unittest.TestCase):
     """Ensures threshold analysis never modifies production gate settings."""
