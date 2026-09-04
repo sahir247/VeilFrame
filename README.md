@@ -264,6 +264,13 @@ Evaluates raw container packet presentation timestamps ($\text{PTS}$) before fra
 2. **Missing & Duplicate Frames:** Verification that packet count matches continuous presentation timestamps ($\text{Missing} = 0$, $\text{Duplicates} = 0$).
 3. **Cadence Jitter:** Standard deviation of inter-packet duration delta ($\Delta \text{cadence} \le 1.0\%$).
 
+### 4. Perceptual Fidelity Metric Integration & Calibration Status (VMAF v1.0.16)
+
+VeilFrame includes native support for **Netflix VMAF v1.0.16** (`veilframe/quality/adapters/vmaf_adapter.py`):
+- **Provider Architecture:** Adheres strictly to the architectural invariant: *"Providers measure; QualityGate decides."*
+- **Empirical Calibration Study (`VF-CAL-VMAF-2026-09`):** A rigorous empirical evaluation across 144 multimedia items and 112 Domain-1 fixture pairs using an exact decision-boundary search proved that no single global scalar operating point $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$.
+- **Operational Gate Policy:** `VisualBudgetPolicy.vmaf_gate_enabled = False` is strictly maintained. VMAF serves strictly as informational evidence recorded in audit manifests, while primary release gating is governed by SSIM, PSNR, and decoded plane energy metrics.
+
 ---
 
 ## 🔐 Cryptographically Sealed Ed25519 Audit Manifest

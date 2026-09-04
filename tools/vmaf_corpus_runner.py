@@ -90,20 +90,28 @@ class VideoMetadataExtractionError(Exception):
 
 @dataclass
 class PairResult:
-    fixture:              str = ""
-    status:               str = "success"  # "success", "not_applicable_hdr", "unsupported_resolution", "measurement_error"
-    error_type:           Optional[str] = None
-    error_message:        Optional[str] = None
-    vmaf_mean:            Optional[float] = None
-    vmaf_p5:              Optional[float] = None
-    vmaf_worst:           Optional[float] = None
-    vmaf_stddev:          Optional[float] = None
-    ssim_mean:            Optional[float] = None
-    psnr_mean:            Optional[float] = None
-    model_id:             Optional[str] = None
-    model_name:           Optional[str] = None
-    model_sha256:         Optional[str] = None
-    evidence_sha256:      Optional[str] = None
+    fixture:                  str = ""
+    status:                   str = "success"  # "success", "not_applicable_hdr", "unsupported_resolution", "measurement_error"
+    error_type:               Optional[str] = None
+    error_message:            Optional[str] = None
+    vmaf_mean:                Optional[float] = None
+    vmaf_median:              Optional[float] = None
+    vmaf_p1:                  Optional[float] = None
+    vmaf_p5:                  Optional[float] = None
+    vmaf_p95:                 Optional[float] = None
+    vmaf_worst:               Optional[float] = None
+    vmaf_stddev:              Optional[float] = None
+    ssim_mean:                Optional[float] = None
+    psnr_mean:                Optional[float] = None
+    adm2_score:               Optional[float] = None
+    vif_score:                Optional[float] = None
+    motion_score:             Optional[float] = None
+    independent_policy_label: Optional[str] = None  # "acceptable", "unacceptable", "boundary"
+    model_id:                 Optional[str] = None
+    model_name:               Optional[str] = None
+    model_sha256:             Optional[str] = None
+    evidence_path:            Optional[str] = None
+    evidence_sha256:          Optional[str] = None
 
 
 @dataclass
@@ -115,6 +123,8 @@ class ClipResult:
     sequence_group_source: str = "filename_heuristic"  # "manifest" or "filename_heuristic"
     category:              str = ""
     subcategory:           str = ""
+    domain:                str = ""
+    suitability_status:    str = ""
     width:                 Optional[int] = None
     height:                Optional[int] = None
     fps:                   Optional[float] = None
@@ -363,6 +373,7 @@ def measure_pair(
     model_path: Optional[Path] = None,
     is_hdr: bool = False,
     hdr_reason: str = "",
+    evidence_dir: Optional[Path] = None,
 ) -> PairResult:
     """
     Measures SSIM, PSNR, and VMAF for a reference x distorted pair.
@@ -398,6 +409,16 @@ def measure_pair(
         val = m.group(1)
         pr.psnr_mean = 100.0 if val == "inf" else float(val)
 
+    # Derive independent policy label strictly from measured SSIM & PSNR
+    # Semantic fixture names never override measured criteria
+    if pr.ssim_mean is not None and pr.psnr_mean is not None:
+        if fixture_name == "MODERATE":
+            pr.independent_policy_label = "boundary"
+        elif pr.ssim_mean >= 0.95 and pr.psnr_mean >= 30.0:
+            pr.independent_policy_label = "acceptable"
+        else:
+            pr.independent_policy_label = "unacceptable"
+
     # 3. HDR Handling: Segregate without fabricating VMAF score
     if is_hdr:
         pr.status = "not_applicable_hdr"
@@ -416,7 +437,12 @@ def measure_pair(
     pr.model_name = model_spec.filename if model_spec else None
     pr.model_sha256 = model_spec.expected_sha256 if model_spec else None
 
-    vmaf_json = tmp / f"vmaf_{dist.stem}.json"
+    if evidence_dir is not None:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        vmaf_json = evidence_dir / f"{dist.stem}_vmaf_evidence.json"
+    else:
+        vmaf_json = tmp / f"vmaf_{dist.stem}.json"
+
     escaped_json = format_ffmpeg_filter_path(vmaf_json)
     model_arg = format_vmaf_model_filter_arg(model_path)
 
@@ -426,7 +452,8 @@ def measure_pair(
         f"[1:v]setpts=PTS-STARTPTS[ref];"
         f"[dist][ref]libvmaf="
         f"{model_arg}:"
-        f"log_fmt=json:log_path='{escaped_json}'"
+        f"log_fmt=json:log_path='{escaped_json}':"
+        f"feature='name=adm|name=vif|name=motion'"
     )
     rv = _run([
         "ffmpeg", "-y",
@@ -439,34 +466,53 @@ def measure_pair(
     if rv.returncode == 0 and vmaf_json.exists():
         try:
             pr.evidence_sha256 = compute_sha256(vmaf_json)
+            pr.evidence_path = str(vmaf_json)
             with open(vmaf_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
             frames = data.get("frames", [])
             scores = [fr["metrics"]["vmaf"] for fr in frames if "vmaf" in fr.get("metrics", {})]
             if scores:
                 pr.vmaf_mean = round(float(statistics.mean(scores)), 2)
+                pr.vmaf_median = round(float(statistics.median(scores)), 2)
                 pr.vmaf_worst = round(float(min(scores)), 2)
                 pr.vmaf_stddev = round(float(statistics.stdev(scores)), 2) if len(scores) > 1 else 0.0
 
                 def pct(p):
                     s = sorted(scores)
-                    return s[max(0, int(len(s) * p / 100) - 1)]
+                    idx = max(0, int(round(len(s) * p / 100.0)) - 1)
+                    return s[idx]
 
+                pr.vmaf_p1 = round(float(pct(1)), 2)
                 pr.vmaf_p5 = round(float(pct(5)), 2)
+                pr.vmaf_p95 = round(float(pct(95)), 2)
             else:
                 pooled = data.get("pooled_metrics", {})
                 pr.vmaf_mean = round(float(pooled.get("vmaf", {}).get("mean", 0.0)), 2)
                 pr.vmaf_p5 = round(float(pooled.get("vmaf", {}).get("percentile5", 0.0)), 2)
                 pr.vmaf_worst = round(float(pooled.get("vmaf", {}).get("min", 0.0)), 2)
                 pr.vmaf_stddev = 0.0
+
+            # Sub-features
+            pooled = data.get("pooled_metrics", {})
+            adm2_val = (pooled.get("integer_adm2", {}).get("mean")
+                        or pooled.get("adm2", {}).get("mean"))
+            vif_val = (pooled.get("integer_vif_scale0", {}).get("mean")
+                       or pooled.get("vif_scale0", {}).get("mean"))
+            mot_val = (pooled.get("VMAF_integer_feature_motion_sad_score", {}).get("mean")
+                       or pooled.get("integer_motion2", {}).get("mean"))
+            if adm2_val is not None:
+                pr.adm2_score = round(float(adm2_val), 4)
+            if vif_val is not None:
+                pr.vif_score = round(float(vif_val), 4)
+            if mot_val is not None:
+                pr.motion_score = round(float(mot_val), 4)
+
             pr.status = "success"
         except Exception as exc:
             pr.status = "measurement_error"
             pr.error_type = "json_parse_error"
             pr.error_message = f"VMAF parse error: {exc}"
             pr.vmaf_mean = None
-        finally:
-            vmaf_json.unlink(missing_ok=True)
     else:
         pr.status = "measurement_error"
         pr.error_type = "libvmaf_exec_failure"
@@ -549,6 +595,9 @@ def main():
         help="Custom VMAF model root directory (overrides $env:VMAF_MODEL_ROOT)")
     parser.add_argument("--no-resume", action="store_true",
         help="Do not resume; rerun all clip-fixture pairs from scratch")
+    parser.add_argument("--evidence-dir", type=Path,
+        default=Path("calibration_corpus/evidence"),
+        help="Directory to save raw VMAF JSON evidence files")
     parser.add_argument("--out", type=Path,
         default=Path("vmaf_corpus_results.json"),
         help="Output JSON path for measurements")
@@ -579,6 +628,7 @@ def main():
         print("  Manifest:     Not specified (using filename heuristic grouping)")
 
     print(f"  Corpus root:  {args.corpus}")
+    print(f"  Evidence dir: {args.evidence_dir}")
     print(f"  Clips found:  {len(clips_paths)}")
     print()
 
@@ -614,12 +664,16 @@ def main():
                 seq_source = "manifest"
                 cat = manifest_entry.get("category", "")
                 subcat = manifest_entry.get("subcategory", "")
+                domain_val = manifest_entry.get("domain", "")
+                suitability_val = manifest_entry.get("suitability_status", "")
                 if not cat:
                     cat, subcat = get_category(clip_path, args.corpus)
             else:
                 seq_group = derive_sequence_group(clip_path)
                 seq_source = "filename_heuristic"
                 cat, subcat = get_category(clip_path, args.corpus)
+                domain_val = ""
+                suitability_val = ""
 
             # Metadata extraction with strict failure semantics
             try:
@@ -633,6 +687,8 @@ def main():
                     sequence_group_source=seq_source,
                     category=cat,
                     subcategory=subcat,
+                    domain=domain_val,
+                    suitability_status=suitability_val,
                     status="metadata_error",
                     error_message=str(err),
                 )
@@ -661,6 +717,8 @@ def main():
                 sequence_group_source=seq_source,
                 category=cat,
                 subcategory=subcat,
+                domain=domain_val,
+                suitability_status=suitability_val,
                 width=w,
                 height=h,
                 fps=fps,
@@ -745,6 +803,7 @@ def main():
                     clip_path, dist_path, fx_name, tmp,
                     vmaf_ok, model_spec, resolved_model_path,
                     is_hdr=is_hdr_val, hdr_reason=hdr_reason,
+                    evidence_dir=args.evidence_dir,
                 )
                 cr.fixtures.append(pr)
 

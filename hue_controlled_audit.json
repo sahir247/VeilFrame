@@ -1,0 +1,614 @@
+[
+  {
+    "condition_id": "zebra_L10_G48",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L10_G48",
+    "png_frame_count": 214,
+    "lux_statistics": {
+      "sample_count": 214,
+      "mean_lux": -0.15,
+      "min_lux": -1.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L10_G48.mp4",
+      "sha256": "497313022f8b773cb21a11a85b20ff9e4256c732e0d5d10cfe69b466839ef24e",
+      "specs": {
+        "duration": 7.133333,
+        "size_bytes": 20464686,
+        "bitrate_kbps": 22951.0,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 214
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L1_G10",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L1_G10",
+    "png_frame_count": 180,
+    "lux_statistics": {
+      "sample_count": 180,
+      "mean_lux": 1.67,
+      "min_lux": 1.0,
+      "max_lux": 2.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L1_G10.mp4",
+      "sha256": "fbdc3c33db47ad491c4aacfe481f4c3af2eea7483841f16bf838f017e99d3881",
+      "specs": {
+        "duration": 6.0,
+        "size_bytes": 602505,
+        "bitrate_kbps": 803.3,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 180
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L1_G6",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L1_G6",
+    "png_frame_count": 267,
+    "lux_statistics": {
+      "sample_count": 267,
+      "mean_lux": 1.65,
+      "min_lux": 1.0,
+      "max_lux": 2.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L1_G6.mp4",
+      "sha256": "dce8b1b615dfece12188eca0663a1c494dff000a1c32a36de7cc27eb883f472a",
+      "specs": {
+        "duration": 8.9,
+        "size_bytes": 648932,
+        "bitrate_kbps": 583.3,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 267
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L2_G12",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L2_G12",
+    "png_frame_count": 177,
+    "lux_statistics": {
+      "sample_count": 177,
+      "mean_lux": 1.0,
+      "min_lux": 1.0,
+      "max_lux": 1.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L2_G12.mp4",
+      "sha256": "53b1be3e331bcb32e57125173ebc5b126e2aebdb4ba79cb1c1a5da7e3ece5131",
+      "specs": {
+        "duration": 5.9,
+        "size_bytes": 459178,
+        "bitrate_kbps": 622.6,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 177
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L2_G16",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L2_G16",
+    "png_frame_count": 257,
+    "lux_statistics": {
+      "sample_count": 257,
+      "mean_lux": 1.0,
+      "min_lux": 1.0,
+      "max_lux": 1.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L2_G16.mp4",
+      "sha256": "467825ffa0d705d09188f94eb4470e2e8c84768663ba6b952fd24fb3df1dc09b",
+      "specs": {
+        "duration": 8.566667,
+        "size_bytes": 1154739,
+        "bitrate_kbps": 1078.4,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 257
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L3_G19",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L3_G19",
+    "png_frame_count": 149,
+    "lux_statistics": {
+      "sample_count": 149,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L3_G19.mp4",
+      "sha256": "9c783b7d23329e1c37d31ceeec804ce5ad77e40d99106fb90cb264513a486a5f",
+      "specs": {
+        "duration": 4.966667,
+        "size_bytes": 692510,
+        "bitrate_kbps": 1115.5,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 149
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L3_G23",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L3_G23",
+    "png_frame_count": 192,
+    "lux_statistics": {
+      "sample_count": 192,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L3_G23.mp4",
+      "sha256": "7d44f91cd84f905af2129c2db5d45471c59c1b4e2ae29ee146089b95d2169e7c",
+      "specs": {
+        "duration": 6.4,
+        "size_bytes": 2497574,
+        "bitrate_kbps": 3122.0,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 192
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L4_G22",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L4_G22",
+    "png_frame_count": 180,
+    "lux_statistics": {
+      "sample_count": 180,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L4_G22.mp4",
+      "sha256": "5e7e7f2eada2f5766787973f601f62e251717dddeb333555e174dd18232af14a",
+      "specs": {
+        "duration": 6.0,
+        "size_bytes": 772097,
+        "bitrate_kbps": 1029.5,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 180
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L4_G27",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L4_G27",
+    "png_frame_count": 186,
+    "lux_statistics": {
+      "sample_count": 186,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L4_G27.mp4",
+      "sha256": "77477b91d99ae782fee7c11265bc447701f59665c2a85a512f9ccdfd100ed118",
+      "specs": {
+        "duration": 6.2,
+        "size_bytes": 5171299,
+        "bitrate_kbps": 6672.6,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 186
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L5_G29",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L5_G29",
+    "png_frame_count": 171,
+    "lux_statistics": {
+      "sample_count": 171,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L5_G29.mp4",
+      "sha256": "da6fa11e8f6bdc959d1210015067ed30add1421584e8517bdbcaf235285bf2e7",
+      "specs": {
+        "duration": 5.7,
+        "size_bytes": 3064457,
+        "bitrate_kbps": 4301.0,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 171
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L5_G34",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L5_G34",
+    "png_frame_count": 194,
+    "lux_statistics": {
+      "sample_count": 194,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L5_G34.mp4",
+      "sha256": "e688bf530beea155a1517e065a87dd7b493d1c88efab752c9f70fb29e8002cf1",
+      "specs": {
+        "duration": 6.466667,
+        "size_bytes": 16014619,
+        "bitrate_kbps": 19811.9,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 194
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L6_G35",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L6_G35",
+    "png_frame_count": 146,
+    "lux_statistics": {
+      "sample_count": 146,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L6_G35.mp4",
+      "sha256": "1226a0e1a2e98e9f5713e574410a1582fcdd010a73b81172f4cfcc5755729097",
+      "specs": {
+        "duration": 4.866667,
+        "size_bytes": 8721588,
+        "bitrate_kbps": 14336.9,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 146
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L6_G39",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L6_G39",
+    "png_frame_count": 222,
+    "lux_statistics": {
+      "sample_count": 222,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L6_G39.mp4",
+      "sha256": "5ac8f9dd6511b510472b61e002b075b92a61900276cab96a2cc4db42be8d438f",
+      "specs": {
+        "duration": 7.4,
+        "size_bytes": 29627713,
+        "bitrate_kbps": 32030.0,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 222
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L7_G42",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L7_G42",
+    "png_frame_count": 184,
+    "lux_statistics": {
+      "sample_count": 184,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L7_G42.mp4",
+      "sha256": "ab8224ea8969f644e6c633ad8df0655f7bfb6b8dbd40245f7014786acc90bdc4",
+      "specs": {
+        "duration": 6.133333,
+        "size_bytes": 22629556,
+        "bitrate_kbps": 29516.8,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 184
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L7_G46",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L7_G46",
+    "png_frame_count": 172,
+    "lux_statistics": {
+      "sample_count": 172,
+      "mean_lux": 0.0,
+      "min_lux": 0.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L7_G46.mp4",
+      "sha256": "faae15fc448fe39e935f3d6ac79dc045f1eb95160bfe34ed9d1111bd99c93a46",
+      "specs": {
+        "duration": 5.733333,
+        "size_bytes": 43190548,
+        "bitrate_kbps": 60265.9,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 172
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L8_G48",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L8_G48",
+    "png_frame_count": 164,
+    "lux_statistics": {
+      "sample_count": 164,
+      "mean_lux": -0.17,
+      "min_lux": -1.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L8_G48.mp4",
+      "sha256": "b767c658cc5a09aeec11520678926da7691b2425316b681d93a867524260dc42",
+      "specs": {
+        "duration": 5.466667,
+        "size_bytes": 29389327,
+        "bitrate_kbps": 43008.8,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 164
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  },
+  {
+    "condition_id": "zebra_L9_G48",
+    "folder_path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\zebra_L9_G48",
+    "png_frame_count": 164,
+    "lux_statistics": {
+      "sample_count": 164,
+      "mean_lux": -0.21,
+      "min_lux": -1.0,
+      "max_lux": 0.0
+    },
+    "event_camera": {
+      "sensor": "IMX636",
+      "device": "CCam5 Imx636 Event-Based Camera",
+      "sensor_width": 1280,
+      "sensor_height": 720
+    },
+    "converted_video": {
+      "present": true,
+      "path": "C:\\Users\\parve\\Downloads\\PrivacyVideoCleaner_v1_source\\resource_videos\\HUE_Controlled\\videos\\zebra_L9_G48.mp4",
+      "sha256": "c979c6aee42a7ea9ad8edbf86e84be8ff2e37cf6885775df12d93cc117eb4e95",
+      "specs": {
+        "duration": 5.466667,
+        "size_bytes": 21847488,
+        "bitrate_kbps": 31971.9,
+        "codec": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1456,
+        "height": 1088,
+        "fps": "30/1",
+        "nb_frames": 164
+      }
+    },
+    "domain": "Domain 4: Non-Video Sensor / Illumination Domain",
+    "suitability_status": "sensor_domain",
+    "exclusion_reason": "Controlled illumination event-camera sensor dataset; segregated from primary SDR video calibration"
+  }
+]

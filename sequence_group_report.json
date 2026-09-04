@@ -1,0 +1,281 @@
+{
+  "schema": "veilframe-sequence-group-report-v1",
+  "timestamp_utc": "2026-09-04T05:42:43.634608Z",
+  "total_groups_in_corpus": 15,
+  "domain_1_primary_groups_count": 13,
+  "domain_2_secondary_groups_count": 1,
+  "domain_3_hdr_groups_count": 1,
+  "groups": {
+    "old_town_cross": {
+      "sequence_group": "old_town_cross",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "high_detail/architecture",
+      "subcategory": "cityscape",
+      "width": 1920,
+      "height": 1080,
+      "fps": 50.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "old_town_cross_1080p50_hfr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "park_joy": {
+      "sequence_group": "park_joy",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "high_detail/landscape",
+      "subcategory": "nature",
+      "width": 3840,
+      "height": 2160,
+      "fps": 25.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 16,
+      "binary_pairs": 14,
+      "boundary_pairs": 2,
+      "clips": [
+        "park_joy_2160p25_sdr.mp4",
+        "park_joy_2160p50_hfr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "rush_field_cuts": {
+      "sequence_group": "rush_field_cuts",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "high_motion/running",
+      "subcategory": "sports",
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997002997,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "rush_field_cuts_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "speed_bag": {
+      "sequence_group": "speed_bag",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "high_motion/boxing",
+      "subcategory": "indoor",
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997002997,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "speed_bag_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "snow_mnt": {
+      "sequence_group": "snow_mnt",
+      "domain": "Domain 1: Primary SDR",
+      "split": "held_out",
+      "category": "landscape/snow",
+      "subcategory": "mountains",
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997002997,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "snow_mnt_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "tractor": {
+      "sequence_group": "tractor",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "machinery/agriculture",
+      "subcategory": "dust",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "tractor_1080p25_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "aspen": {
+      "sequence_group": "aspen",
+      "domain": "Domain 1: Primary SDR",
+      "split": "held_out",
+      "category": "natural/foliage",
+      "subcategory": "trees",
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997002997,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "aspen_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "night_drive": {
+      "sequence_group": "night_drive",
+      "domain": "Domain 1: Primary SDR",
+      "split": "held_out",
+      "category": "natural/urban_night",
+      "subcategory": "low_light",
+      "width": 1920,
+      "height": 1080,
+      "fps": 25.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "night_drive_1080p25_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "browsing": {
+      "sequence_group": "browsing",
+      "domain": "Domain 1: Primary SDR",
+      "split": "held_out",
+      "category": "screen_content/browser_ui",
+      "subcategory": "text",
+      "width": 1920,
+      "height": 1080,
+      "fps": 60.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "browsing_1080p60_hfr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "ide_editing": {
+      "sequence_group": "ide_editing",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "screen_content/editor_ui",
+      "subcategory": "code",
+      "width": 1808,
+      "height": 1080,
+      "fps": 60.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "ide_editing_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "pdf_reading": {
+      "sequence_group": "pdf_reading",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "screen_content/document",
+      "subcategory": "document",
+      "width": 1920,
+      "height": 1080,
+      "fps": 60.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "pdf_reading_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "ducks_take_off": {
+      "sequence_group": "ducks_take_off",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "texture/water_wildlife",
+      "subcategory": "water",
+      "width": 1920,
+      "height": 1080,
+      "fps": 50.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "ducks_take_off_1080p50_raw.y4m"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "red_kayak": {
+      "sequence_group": "red_kayak",
+      "domain": "Domain 1: Primary SDR",
+      "split": "development",
+      "category": "water/sports",
+      "subcategory": "kayak",
+      "width": 1920,
+      "height": 1080,
+      "fps": 29.97002997002997,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "red_kayak_1080p_sdr.mp4"
+      ],
+      "eligibility_rationale": "SDR 1080p/2160p modern representative content satisfying VMAF v1.0.16 model criteria"
+    },
+    "four_people": {
+      "sequence_group": "four_people",
+      "domain": "Domain 2: Secondary / Legacy",
+      "split": "secondary_diagnostic",
+      "category": "conferencing/faces",
+      "subcategory": "talking_heads",
+      "width": 1280,
+      "height": 720,
+      "fps": 60.0,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 7,
+      "boundary_pairs": 1,
+      "clips": [
+        "four_people_720p60_hfr.mp4"
+      ],
+      "eligibility_rationale": "720p or classic SD legacy sequence excluded from primary calibration threshold fitting; diagnostic robustness only"
+    },
+    "chimera": {
+      "sequence_group": "chimera",
+      "domain": "Domain 3: HDR / WCG",
+      "split": "hdr_segregated",
+      "category": "hdr",
+      "subcategory": "hdr",
+      "width": 4096,
+      "height": 2160,
+      "fps": 59.94,
+      "pix_fmt": "yuv420p",
+      "total_pairs": 8,
+      "binary_pairs": 0,
+      "boundary_pairs": 0,
+      "clips": [
+        "chimera_4k5994p_hdr.mp4"
+      ],
+      "eligibility_rationale": "HDR / WCG material outside SDR VMAF v1.0.16 model domain; segregated without fabricating scores"
+    }
+  }
+}

@@ -1,102 +1,168 @@
 {
-  "schema_version": 1,
-  "description": "VeilFrame VMAF Calibration Corpus Manifest v1.2 with 15 distinct sequence groups",
+  "schema_version": 2,
+  "description": "VeilFrame VMAF Calibration Corpus Manifest v2.0 with Full Provenance and Domain Separation",
   "clips": [
     {
       "filename": "chimera_4k5994p_hdr.mp4",
       "sequence_group": "chimera",
       "category": "dark/hdr_p3pq",
-      "subcategory": "hdr"
+      "subcategory": "hdr",
+      "sha256": "f669c3041f6a5006bec25de6533c2d52ffd8422bb4b542c489aa1692c6e47682",
+      "relative_path": "dark\\chimera_4k5994p_hdr.mp4",
+      "domain": "Domain 3: HDR / WCG",
+      "suitability_status": "not_applicable_hdr"
     },
     {
       "filename": "park_joy_2160p25_sdr.mp4",
       "sequence_group": "park_joy",
       "category": "high_detail/landscape",
-      "subcategory": "nature"
+      "subcategory": "nature",
+      "sha256": "c0c58613006e037b3fa7190c960cc3baadc4f3f89e6a7694c27c74ce8faccc1a",
+      "relative_path": "high_detail\\park_joy_2160p25_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "park_joy_2160p50_hfr.mp4",
       "sequence_group": "park_joy",
       "category": "high_motion/landscape_motion",
-      "subcategory": "motion"
+      "subcategory": "motion",
+      "sha256": "ac6f056ca678bae43b791a6f8e3b80295b8fcf473631555334625a1a39061ac7",
+      "relative_path": "high_motion\\park_joy_2160p50_hfr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "night_drive_1080p25_sdr.mp4",
       "sequence_group": "night_drive",
       "category": "natural/urban_night",
-      "subcategory": "low_light"
+      "subcategory": "low_light",
+      "sha256": "109121e7fcd5c65d343b5f8f4ce14a72021635928cf7d1606c0c46f647f3032e",
+      "relative_path": "natural\\night_drive_1080p25_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "browsing_1080p60_hfr.mp4",
       "sequence_group": "browsing",
       "category": "screen_content/browser_ui",
-      "subcategory": "text"
+      "subcategory": "text",
+      "sha256": "c97b6781508195611c1e2c47a812eed8f2da67541f044954ec465a0d7ba4e6a1",
+      "relative_path": "screen_content\\browsing_1080p60_hfr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "ducks_take_off_1080p50_raw.y4m",
       "sequence_group": "ducks_take_off",
       "category": "texture/water_wildlife",
-      "subcategory": "water"
+      "subcategory": "water",
+      "sha256": "a03bb73d2ccb69098a6194cf13801463ecd401625ba83a483dd48b189f528d7c",
+      "relative_path": "texture\\ducks_take_off_1080p50_raw.y4m",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "aspen_1080p_sdr.mp4",
       "sequence_group": "aspen",
       "category": "natural/foliage",
-      "subcategory": "trees"
+      "subcategory": "trees",
+      "sha256": "75742b06763889004854804f9ed6e6fef9527dd69e5a57b555eabebfbd48268e",
+      "relative_path": "natural\\aspen_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "old_town_cross_1080p50_hfr.mp4",
       "sequence_group": "old_town_cross",
       "category": "high_detail/architecture",
-      "subcategory": "cityscape"
+      "subcategory": "cityscape",
+      "sha256": "9f23511cd72345351e70c1201461e420ce35264395d70b4c4a140fcc112f28d1",
+      "relative_path": "high_detail\\old_town_cross_1080p50_hfr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "red_kayak_1080p_sdr.mp4",
       "sequence_group": "red_kayak",
       "category": "water/sports",
-      "subcategory": "kayak"
+      "subcategory": "kayak",
+      "sha256": "124fe539f2eaa7515f5548316693ce2d0db2d5ed5a0e95b64d00da1a96db63e2",
+      "relative_path": "water\\red_kayak_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "rush_field_cuts_1080p_sdr.mp4",
       "sequence_group": "rush_field_cuts",
       "category": "high_motion/running",
-      "subcategory": "sports"
+      "subcategory": "sports",
+      "sha256": "6c7966186dd7954b349e2b7ce14af7e077ed068c89c2497726e5b5741746f44d",
+      "relative_path": "high_motion\\rush_field_cuts_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "snow_mnt_1080p_sdr.mp4",
       "sequence_group": "snow_mnt",
       "category": "landscape/snow",
-      "subcategory": "mountains"
+      "subcategory": "mountains",
+      "sha256": "3e3d27b569e579a5c7afd1b90923f72e3d6768c7fb507a84a89c16c13f3fa410",
+      "relative_path": "landscape\\snow_mnt_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "speed_bag_1080p_sdr.mp4",
       "sequence_group": "speed_bag",
       "category": "high_motion/boxing",
-      "subcategory": "indoor"
+      "subcategory": "indoor",
+      "sha256": "d37465c508f878338f0d5f6453edc96df4d22dfe20532226ff55be33eab6dd19",
+      "relative_path": "high_motion\\speed_bag_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "tractor_1080p25_sdr.mp4",
       "sequence_group": "tractor",
       "category": "machinery/agriculture",
-      "subcategory": "dust"
+      "subcategory": "dust",
+      "sha256": "18a530b04e9ea936b90572d0cf56833b22e864adf81cad167d81ee81b148138c",
+      "relative_path": "machinery\\tractor_1080p25_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "ide_editing_1080p_sdr.mp4",
       "sequence_group": "ide_editing",
       "category": "screen_content/editor_ui",
-      "subcategory": "code"
+      "subcategory": "code",
+      "sha256": "8535e8b01fd6d04183b0f2bb662f41fbbf8cc29995818cef3b0c43c80c6857de",
+      "relative_path": "screen_content\\ide_editing_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "pdf_reading_1080p_sdr.mp4",
       "sequence_group": "pdf_reading",
       "category": "screen_content/document",
-      "subcategory": "document"
+      "subcategory": "document",
+      "sha256": "a1ec3bfbcb3fb57b219f68debb290418ea6a6e4979db02f0854df894775ebea2",
+      "relative_path": "screen_content\\pdf_reading_1080p_sdr.mp4",
+      "domain": "Domain 1: Primary SDR",
+      "suitability_status": "eligible_sdr_primary"
     },
     {
       "filename": "four_people_720p60_hfr.mp4",
       "sequence_group": "four_people",
       "category": "conferencing/faces",
-      "subcategory": "talking_heads"
+      "subcategory": "talking_heads",
+      "sha256": "8e8168c904d14543bb07b60779ebadef896dbb11713dd608af79aaec616cc639",
+      "relative_path": "conferencing\\four_people_720p60_hfr.mp4",
+      "domain": "Domain 2: Secondary / Legacy",
+      "suitability_status": "secondary_domain"
     }
-  ]
+  ],
+  "cardinal_independence_rule": "No implementation decision may increase the apparent calibration sample size by treating derivatives, alternate encodings, resolutions, frame rates, episode segments, or fixture variants from the same underlying content as independent sequence groups. When uncertain about sequence identity, conservatively group the material together and document the decision.",
+  "dependent_fixture_rule": "Fixture variants generated from the same reference sequence are dependent observations. They may increase the number of measured pairs, but they do not increase the number of independent sequence groups. Statistical interpretation must distinguish pair-level sample counts from independent content-group counts."
 }

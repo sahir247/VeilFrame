@@ -84,8 +84,14 @@ class TestIndependentPolicyLabeling(unittest.TestCase):
         self.assertEqual(lbl, "unacceptable")
 
     def test_unacceptable_fixture_labeled_unacceptable(self):
-        lbl = assign_independent_policy_label("HIGH", ssim_mean=0.96, psnr_mean=35.0)
+        # Degraded fixture with failing metrics receives unacceptable label
+        lbl = assign_independent_policy_label("HIGH", ssim_mean=0.91, psnr_mean=28.0)
         self.assertEqual(lbl, "unacceptable")
+
+    def test_high_fixture_with_high_measured_fidelity_follows_measured_policy(self):
+        # Fixture names are semantic identifiers only: measured policy wins
+        lbl = assign_independent_policy_label("HIGH", ssim_mean=0.956, psnr_mean=31.2)
+        self.assertEqual(lbl, "acceptable")
 
     def test_moderate_boundary_labeled_boundary(self):
         lbl = assign_independent_policy_label("MODERATE", ssim_mean=0.96, psnr_mean=35.0)

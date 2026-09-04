@@ -1,0 +1,1679 @@
+{
+  "title": "VeilFrame Corpus Provenance and License Ledger",
+  "version": "2.0.0",
+  "cardinal_independence_rule": "No implementation decision may increase the apparent calibration sample size by treating derivatives, alternate encodings, resolutions, frame rates, episode segments, or fixture variants from the same underlying content as independent sequence groups. When uncertain about sequence identity, conservatively group the material together and document the decision.",
+  "source_families": {
+    "Netflix Open Content / Sparks": {
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_source": "Netflix Open Content License (CC BY 4.0)",
+      "provenance_source": "Netflix Open Content HDR / Dolby Vision audio essence",
+      "access_restrictions": "Attribution required",
+      "assets": [
+        {
+          "filename": "20161101_1048_SPARKS_DOVI_TEST_Scratch_Audio.mxf",
+          "sha256": "6e3957dd78e727f9e1a95f6ee54941b19259275e281989e7367afff52bced5c3",
+          "sequence_identity": "sparks",
+          "variant_identity": "sparks_scratch_audio_mxf",
+          "parent_sequence_identity": "sparks",
+          "derivation_type": "imf_audio_essence",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/20161101_1048_SPARKS_DOVI_TEST_Scratch_Audio.mxf"
+        },
+        {
+          "filename": "20161103_1023_SPARKS_4K_P3_PQ_4000nits_DoVi.mxf",
+          "sha256": "6d413dc18a778b5b7d216a2c4d0ca237513ace95d0bbac504f11ab052e87fcd5",
+          "sequence_identity": "sparks",
+          "variant_identity": "sparks_4k_p3_pq_4000nits_dovi_mxf",
+          "parent_sequence_identity": "sparks",
+          "derivation_type": "imf_video_essence",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/20161103_1023_SPARKS_4K_P3_PQ_4000nits_DoVi.mxf"
+        }
+      ]
+    },
+    "Local / Project-Supplied (Unverified)": {
+      "license": "Proprietary / Internal",
+      "license_source": "Unverified Local Asset",
+      "provenance_source": "Locally supplied project file",
+      "access_restrictions": "Internal use only",
+      "assets": [
+        {
+          "filename": "ASSETMAP.xml",
+          "sha256": "fea7d883825bdc597fdaada2e31e41f1f6f6d05f5d7bba1938fec376cf04a7ac",
+          "sequence_identity": "ASSETMAP",
+          "variant_identity": "ASSETMAP",
+          "parent_sequence_identity": "ASSETMAP",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/ASSETMAP.xml"
+        },
+        {
+          "filename": "CPL_fb7e0add-cffb-4888-8d31-e45a12f6a8e4.xml",
+          "sha256": "0e025e4da0ba23a258ce70fa06c017badc9f65c7404ea6603d9cb4750c158aea",
+          "sequence_identity": "CPL_fb7e0add-cffb-4888-8d31-e45a12f6a8e4",
+          "variant_identity": "CPL_fb7e0add-cffb-4888-8d31-e45a12f6a8e4",
+          "parent_sequence_identity": "CPL_fb7e0add-cffb-4888-8d31-e45a12f6a8e4",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/CPL_fb7e0add-cffb-4888-8d31-e45a12f6a8e4.xml"
+        },
+        {
+          "filename": "OPL_75a08557-071c-4419-90d7-f30df4ae849a.xml",
+          "sha256": "d0870952f9addffce400ea11d21f79f6d7cd80c87a3ede46d9e6818163db95ab",
+          "sequence_identity": "OPL_75a08557-071c-4419-90d7-f30df4ae849a",
+          "variant_identity": "OPL_75a08557-071c-4419-90d7-f30df4ae849a",
+          "parent_sequence_identity": "OPL_75a08557-071c-4419-90d7-f30df4ae849a",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/OPL_75a08557-071c-4419-90d7-f30df4ae849a.xml"
+        },
+        {
+          "filename": "PKL_e9c1d8e3-efdc-4779-9c59-5fb9dec9c107.xml",
+          "sha256": "c06938cef9eea804b280ce9920505e9e8d7aff9a6f86d858f14661a27ea0deac",
+          "sequence_identity": "PKL_e9c1d8e3-efdc-4779-9c59-5fb9dec9c107",
+          "variant_identity": "PKL_e9c1d8e3-efdc-4779-9c59-5fb9dec9c107",
+          "parent_sequence_identity": "PKL_e9c1d8e3-efdc-4779-9c59-5fb9dec9c107",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/PKL_e9c1d8e3-efdc-4779-9c59-5fb9dec9c107.xml"
+        },
+        {
+          "filename": "VOLINDEX.xml",
+          "sha256": "96905c59f61ecfdf1493f26b8e5779e27e296457f510073171933439746d7e34",
+          "sequence_identity": "VOLINDEX",
+          "variant_identity": "VOLINDEX",
+          "parent_sequence_identity": "VOLINDEX",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/20170215_1430_SPARKS_4K_P3_PQ_4000nits_DoVi_LtRt_IMF/VOLINDEX.xml"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L10_G48/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "8db33e0a904595f967a7a2fa233bef84b20c812e519ac21d54e0f414ff8bfa27",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L10_G48/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "505b351e172e939b7d0c4ed72ecb80b71d628e3694c1cf0050d1dfbfddff45d4",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L10_G48/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L10_G48/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G10/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "d4f33116e57bdd12482b1546ac6e1e0e907ac4fec5918a216502c31693488de7",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G10/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "de048bf8d727a045bd8fa0ad2f71e0d784e0147ecd75c7dc6b12440eca6b5c4c",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G10/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G10/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G6/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "33252cffc985def1079fe0a1701ae81a9c576403b3c3f8c81701e92c43ce4e61",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G6/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "7932b8a1c837b39db1bcb41995abb734c8b9ccc2418dc561223adb398e855766",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G6/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G6/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G12/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "1b604d58ade3df18b130be530cbf25439edc62e64224894034d3ce787c025148",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G12/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "b21d4253bf28ae906e76b6e0f08a98a42e257d18f27909c62c33150c49b80fdb",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G12/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G12/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G16/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "3ba3d5c695a1effcd3eb9273255a5c5300eef1a7ab85459f15742716e4b2e875",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G16/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "c22e3427a04c05579f14ddbe4d19c2124d291d94cb560a903e4ea045cc3e92e5",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G16/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G16/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G19/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "48c4aa8993f89e648c9d33abe377c432955b5c06bb57398cd990b9e7148d4e38",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G19/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "4ab69c1dccde1347bc1a6cfd3dc73ae86e6e81f1dea8e41867002f6382c1f841",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G19/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G19/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G23/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "f4ce3f4bedde53ec3ecdb521df4980abcdbdb719766592051dac2806aa3e41c5",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G23/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "eaa5bc65d0efb5b4f1580c051a198b772ab41548be9fd4c3307794ad2e533ada",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G23/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G23/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G22/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "e678fe98a2de0ca1e78e199d66ed184860c5aa781be4fcf7a5ae4d62e6bd5568",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G22/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "16a60f2888d22d692c1a6ab7aab07b5c45e063c2add94be68e31f3a5efc579aa",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G22/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G22/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G27/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "d3979bb0a9bdb2feddd8da6d4666eb55ff462eeeb34d7733af2f8db1887ff61c",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G27/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "f19e5f2cf877725ab7599292c649c3e5077d5b4cb574c431af7e49f8b3699df1",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G27/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G27/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G29/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "d2531f8285548a61694192f49f9875096cc5e36ed46cc91c04fe7b7389a8a548",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G29/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "34dc6e2bbac932fd63d012416e82cb02ac3af3de435f81fdc74f50a5968a7302",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G29/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G29/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G34/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "2eff2150302aa95c491c67a0d2bacb45017335d7badb401ba7925fe0da978b68",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G34/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "8e368695c3101068504a4c06e6e94429e53bffe2e526ae1958c66e27b1225a02",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G34/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G34/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G35/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "f1e13e40ad9e78d63328d00bc8f7530ccebe0bce6c47852d4ee0204f9cd176d9",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G35/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "110ea0833bd4ba4c12fc121e99df2a9823a57372569af0a545ebb2b495338bcb",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G35/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G35/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G39/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "9f8519ac2efe12b6a3f6d903ece85f22e2bbd95eee06d9c107090471c9c0bca8",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G39/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "f490ff069690be3e668e942ffc479139fe754c64ebac66bd424c178503ab1258",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G39/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G39/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G42/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "a89339c0ce463eec501317013d091a3be0e5483323768de3ce2da2fe3b5f13c2",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G42/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "2b91c25841bfb0f361e06afa4e440f81f604161c2ed6d7576bf3041aa3541a10",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G42/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G42/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G46/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "f43e7c994f3e2b9bee3dff8094a0209f1c1a09fba2d8074c1327ce1d16206a1b",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G46/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "17198a95a0662d67549527d9afdcdd75129e874c66798197bcd0d2fff9507f44",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G46/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G46/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L8_G48/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "8db33e0a904595f967a7a2fa233bef84b20c812e519ac21d54e0f414ff8bfa27",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L8_G48/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "136718406b63a8affbcba629452b8dc7f88d45c06c2a6371eb85f999bd3e3901",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L8_G48/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L8_G48/metadata.json"
+        },
+        {
+          "filename": "event_camera_params.json",
+          "sha256": "627d502a32815bf77e03e35cb900b310b41a611397df918a892d29a73fd16dd0",
+          "sequence_identity": "event_camera_params",
+          "variant_identity": "event_camera_params",
+          "parent_sequence_identity": "event_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L9_G48/event_camera_params.json"
+        },
+        {
+          "filename": "frame_camera_params.xml",
+          "sha256": "d0f3d5ec9f95cb27ff509f6a3b41745f6f6060f467ba5c88f33661172284c62e",
+          "sequence_identity": "frame_camera_params",
+          "variant_identity": "frame_camera_params",
+          "parent_sequence_identity": "frame_camera_params",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L9_G48/frame_camera_params.xml"
+        },
+        {
+          "filename": "lux_values.txt",
+          "sha256": "ecb4438fc810bc729f85790554d22d5c0ffb751e713cbd4dc864b49a942542a3",
+          "sequence_identity": "lux_values",
+          "variant_identity": "lux_values",
+          "parent_sequence_identity": "lux_values",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L9_G48/lux_values.txt"
+        },
+        {
+          "filename": "metadata.json",
+          "sha256": "686d706762c1efc51c4456bb7a081cedf2ed8dad262ad94de3ed4ca5f6ea79c0",
+          "sequence_identity": "metadata",
+          "variant_identity": "metadata",
+          "parent_sequence_identity": "metadata",
+          "derivation_type": "unknown_file",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L9_G48/metadata.json"
+        },
+        {
+          "filename": "netflix_chimera_4096x2160_download_instructions.pdf",
+          "sha256": "de4f755745503008fecf45ff447e586f547e0403323169a3ee0dac1cf9c95b68",
+          "sequence_identity": "netflix_chimera_4096x2160_download_instructions",
+          "variant_identity": "netflix_chimera_4096x2160_download_instructions",
+          "parent_sequence_identity": "netflix_chimera_4096x2160_download_instructions",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/netflix_chimera_4096x2160_download_instructions.pdf"
+        },
+        {
+          "filename": "ASSETMAP.xml",
+          "sha256": "c46480a6c0ebbb7ca65431be057cf69ae5060e7c52e19c6b7337f88b4017e724",
+          "sequence_identity": "ASSETMAP",
+          "variant_identity": "ASSETMAP",
+          "parent_sequence_identity": "ASSETMAP",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/ASSETMAP.xml"
+        },
+        {
+          "filename": "CPL_0a207596-a0f5-458a-811e-a97a4286d00c.xml",
+          "sha256": "c3092f9de00858e93894025328aa39d48683cbadbc85f58ea85ae2d63ef9e0f2",
+          "sequence_identity": "CPL_0a207596-a0f5-458a-811e-a97a4286d00c",
+          "variant_identity": "CPL_0a207596-a0f5-458a-811e-a97a4286d00c",
+          "parent_sequence_identity": "CPL_0a207596-a0f5-458a-811e-a97a4286d00c",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/CPL_0a207596-a0f5-458a-811e-a97a4286d00c.xml"
+        },
+        {
+          "filename": "OPL_0a39a10c-d1da-4e53-b32c-1ceab7d94cf0.xml",
+          "sha256": "13c2fe8538379603223af9deea0527f13e0b90ac5420472f64052c7377699392",
+          "sequence_identity": "OPL_0a39a10c-d1da-4e53-b32c-1ceab7d94cf0",
+          "variant_identity": "OPL_0a39a10c-d1da-4e53-b32c-1ceab7d94cf0",
+          "parent_sequence_identity": "OPL_0a39a10c-d1da-4e53-b32c-1ceab7d94cf0",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/OPL_0a39a10c-d1da-4e53-b32c-1ceab7d94cf0.xml"
+        },
+        {
+          "filename": "PKL_51e5f3c5-44b3-4001-9c90-9a19087982d3.xml",
+          "sha256": "e4b79de6db8af0de09926afc4d2744930f775f11b6586e3dc0deffdbff7fbcb8",
+          "sequence_identity": "PKL_51e5f3c5-44b3-4001-9c90-9a19087982d3",
+          "variant_identity": "PKL_51e5f3c5-44b3-4001-9c90-9a19087982d3",
+          "parent_sequence_identity": "PKL_51e5f3c5-44b3-4001-9c90-9a19087982d3",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/PKL_51e5f3c5-44b3-4001-9c90-9a19087982d3.xml"
+        },
+        {
+          "filename": "VOLINDEX.xml",
+          "sha256": "e249925bdc27b5b31d791f27c258326cb66e54ea88c0ad5be72587a1d4f3ac33",
+          "sequence_identity": "VOLINDEX",
+          "variant_identity": "VOLINDEX",
+          "parent_sequence_identity": "VOLINDEX",
+          "derivation_type": "unknown_file",
+          "domain": "excluded",
+          "suitability_status": "excluded_documentation",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/VOLINDEX.xml"
+        }
+      ]
+    },
+    "Xiph/DERF Classic SD": {
+      "license": "Public Domain / Research Evaluation",
+      "license_source": "ITU-T Legacy Test Sequence Collection",
+      "provenance_source": "Xiph.org / ITU-T Legacy Video Sequence",
+      "access_restrictions": "Research evaluation",
+      "assets": [
+        {
+          "filename": "akiyo_cif.y4m",
+          "sha256": "0f7a1f997930217d601ab324b1428859fdb599dde8d33772a24bfe2803a9b067",
+          "sequence_identity": "akiyo",
+          "variant_identity": "akiyo_cif",
+          "parent_sequence_identity": "akiyo",
+          "derivation_type": "classic_sd_benchmark",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/akiyo_cif.y4m"
+        },
+        {
+          "filename": "bowing_cif.y4m",
+          "sha256": "bfd282c4dfbe6b5ac93a014e97e7bd5104ed357a744879b75b414adb9e8069ec",
+          "sequence_identity": "bowing",
+          "variant_identity": "bowing_cif",
+          "parent_sequence_identity": "bowing",
+          "derivation_type": "classic_sd_benchmark",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/bowing_cif.y4m"
+        },
+        {
+          "filename": "carphone_qcif.y4m",
+          "sha256": "bd176aee36dd839dcec88671acc811c61f72ea45ee458afb82b35e8b92328aa9",
+          "sequence_identity": "carphone",
+          "variant_identity": "carphone_qcif",
+          "parent_sequence_identity": "carphone",
+          "derivation_type": "classic_sd_benchmark",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/carphone_qcif.y4m"
+        },
+        {
+          "filename": "deadline_cif.y4m",
+          "sha256": "4498852bf8f18d0c56957a4eff9611e3a851bfa9087e6ac8efffdadf2d02b964",
+          "sequence_identity": "deadline",
+          "variant_identity": "deadline_cif",
+          "parent_sequence_identity": "deadline",
+          "derivation_type": "classic_sd_benchmark",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/deadline_cif.y4m"
+        },
+        {
+          "filename": "flower_cif.y4m",
+          "sha256": "26c7934b77186836a39db113e8011e841bd593e37295efb98a38915b24aa2b8e",
+          "sequence_identity": "flower",
+          "variant_identity": "flower_cif",
+          "parent_sequence_identity": "flower",
+          "derivation_type": "classic_sd_benchmark",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/flower_cif.y4m"
+        }
+      ]
+    },
+    "NTIA/ITS HDTV": {
+      "license": "Public Domain (US Gov) / Research Use Only",
+      "license_source": "NTIA/ITS Public Domain Media Terms",
+      "provenance_source": "NTIA/ITS Video Quality Research Benchmark",
+      "access_restrictions": "Non-commercial research use only",
+      "assets": [
+        {
+          "filename": "aspen_1080p.y4m",
+          "sha256": "735fced2e320f82735f82762eaa5f6c50c667873d95ca95c94275abd5e970738",
+          "sequence_identity": "aspen",
+          "variant_identity": "aspen_1080p",
+          "parent_sequence_identity": "aspen",
+          "derivation_type": "source_master_1080p",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/aspen_1080p.y4m"
+        },
+        {
+          "filename": "red_kayak_1080p.y4m",
+          "sha256": "55d597f2951063f80c85f0900c91f36cd84f394c101a4ff03737adf50fd9349d",
+          "sequence_identity": "red_kayak",
+          "variant_identity": "red_kayak_1080p",
+          "parent_sequence_identity": "red_kayak",
+          "derivation_type": "source_master_1080p",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/red_kayak_1080p.y4m"
+        },
+        {
+          "filename": "rush_field_cuts_1080p.y4m",
+          "sha256": "c289e7a3fc598a499b6332884c4a7e94e54ac59ca8371152144e38b7bd7f8aeb",
+          "sequence_identity": "rush_field_cuts",
+          "variant_identity": "rush_field_cuts_1080p",
+          "parent_sequence_identity": "rush_field_cuts",
+          "derivation_type": "source_master_1080p",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/rush_field_cuts_1080p.y4m"
+        },
+        {
+          "filename": "snow_mnt_1080p.y4m",
+          "sha256": "946b1c94df39a4a3dc08a45b464e80b07a9db1f398bdebe7d9308072a22584f8",
+          "sequence_identity": "snow_mnt",
+          "variant_identity": "snow_mnt_1080p",
+          "parent_sequence_identity": "snow_mnt",
+          "derivation_type": "source_master_1080p",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/snow_mnt_1080p.y4m"
+        },
+        {
+          "filename": "speed_bag_1080p.y4m",
+          "sha256": "1a5258de75910f5392867b1b681d8f23c00a22361c98b3cc8ebfb896e341d253",
+          "sequence_identity": "speed_bag",
+          "variant_identity": "speed_bag_1080p",
+          "parent_sequence_identity": "speed_bag",
+          "derivation_type": "source_master_1080p",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/speed_bag_1080p.y4m"
+        }
+      ]
+    },
+    "Local / Project-Supplied": {
+      "license": "Proprietary / Internal Research Use Only",
+      "license_source": "VeilFrame Project Local Source",
+      "provenance_source": "Locally recorded web browsing session (Chrome/Windows)",
+      "access_restrictions": "Internal project evaluation only",
+      "assets": [
+        {
+          "filename": "browsing.mp4",
+          "sha256": "f46473a3cbfc3abd3fb2c9069ea7c3092c1d62b0fca2bdd8a328933767ffc12d",
+          "sequence_identity": "browsing",
+          "variant_identity": "browsing_1080p60",
+          "parent_sequence_identity": "browsing",
+          "derivation_type": "local_screen_capture",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/browsing.mp4"
+        },
+        {
+          "filename": "IDE.mp4",
+          "sha256": "dcfe9909503dac737c45daf8e39326b6eb4530414902f4f2109a1ee89dd610fc",
+          "sequence_identity": "ide_editing",
+          "variant_identity": "ide_1808x1080_60",
+          "parent_sequence_identity": "ide_editing",
+          "derivation_type": "local_screen_capture",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/IDE.mp4"
+        },
+        {
+          "filename": "night_drive01.mp4",
+          "sha256": "9faa5a6221613ec5e59288621bac4043d00782d24a11d6a6933f4e17b84355e2",
+          "sequence_identity": "night_drive",
+          "variant_identity": "night_drive01_1080p25",
+          "parent_sequence_identity": "night_drive",
+          "derivation_type": "local_dashcam_capture",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/night_drive01.mp4"
+        },
+        {
+          "filename": "pdf_reading.mp4",
+          "sha256": "cc32bab14f11bdd93f4f0cb8fec5c09e1235e3745b6e0f51969fe32158f51456",
+          "sequence_identity": "pdf_reading",
+          "variant_identity": "pdf_reading_1080p60",
+          "parent_sequence_identity": "pdf_reading",
+          "derivation_type": "local_screen_capture",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/pdf_reading.mp4"
+        }
+      ]
+    },
+    "Netflix Open Content": {
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_source": "Netflix Open Content License (CC BY 4.0)",
+      "provenance_source": "Netflix Open Content filmed on RED Epic Dragon in Los Angeles, Mar 2014",
+      "access_restrictions": "Attribution required",
+      "assets": [
+        {
+          "filename": "Chimera_DCI4k5994p_HDR_P3PQ.mp4",
+          "sha256": "34bd0f5936c93fe236e6bc382cc1e4898da2118a73f6d892b370ef76434005b9",
+          "sequence_identity": "chimera",
+          "variant_identity": "chimera_monolith_dci4k5994p_hdr_p3pq",
+          "parent_sequence_identity": "chimera",
+          "derivation_type": "monolith_master",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/Chimera_DCI4k5994p_HDR_P3PQ.mp4"
+        },
+        {
+          "filename": "chimera_ep01_bar_scene.mp4",
+          "sha256": "7aa6a40ab7dc32708f87607c07c74d7d1bcf20bd26e11b4059bbafc4da1fdad5",
+          "sequence_identity": "chimera",
+          "variant_identity": "chimera_ep01_bar_scene",
+          "parent_sequence_identity": "chimera",
+          "derivation_type": "episode_clip",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/chimera_episodes/chimera_ep01_bar_scene.mp4"
+        },
+        {
+          "filename": "chimera_ep06_rollercoaster_sequence.mp4",
+          "sha256": "0b748f2ff0ca5797ba0c118c801f4cf9fcf46c4cf8ed200319b87f9f939d66fc",
+          "sequence_identity": "chimera",
+          "variant_identity": "chimera_ep06_rollercoaster_sequence",
+          "parent_sequence_identity": "chimera",
+          "derivation_type": "episode_clip",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/chimera_episodes/chimera_ep06_rollercoaster_sequence.mp4"
+        },
+        {
+          "filename": "chimera_ep10_netflix_card_twirl.mp4",
+          "sha256": "2eb0f817a92b7f1de60f2beec40f07e7cef04d3c8d3d715ee83fc5da86ae296d",
+          "sequence_identity": "chimera",
+          "variant_identity": "chimera_ep10_netflix_card_twirl",
+          "parent_sequence_identity": "chimera",
+          "derivation_type": "episode_clip",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/chimera_episodes/chimera_ep10_netflix_card_twirl.mp4"
+        },
+        {
+          "filename": "chimera_ep22_basketball_free_throws.mp4",
+          "sha256": "45e15bef84c43f4c7a8390c5f754f10f22feede71ab60fc5e12202cce792e641",
+          "sequence_identity": "chimera",
+          "variant_identity": "chimera_ep22_basketball_free_throws",
+          "parent_sequence_identity": "chimera",
+          "derivation_type": "episode_clip",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/chimera_episodes/chimera_ep22_basketball_free_throws.mp4"
+        }
+      ]
+    },
+    "SVT High Definition Multi Format Test Set": {
+      "license": "SVT Research Test Set License",
+      "license_source": "SVT Open Test Set Terms",
+      "provenance_source": "Sveriges Television (SVT) Research Test Set",
+      "access_restrictions": "Non-commercial research use only",
+      "assets": [
+        {
+          "filename": "ducks_take_off_1080p50.y4m",
+          "sha256": "029122d1749339df5eb72e465befe264ad782dd4ce1b4cfde283219283ed5a0f",
+          "sequence_identity": "ducks_take_off",
+          "variant_identity": "ducks_take_off_1080p50",
+          "parent_sequence_identity": "ducks_take_off",
+          "derivation_type": "source_master_1080p50",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/ducks_take_off_1080p50.y4m"
+        },
+        {
+          "filename": "old_town_cross_1080p50.y4m",
+          "sha256": "6ffe76b98ba0d7a46dd66259591848fd96202f3f95a2659019a5e6be71d8ea89",
+          "sequence_identity": "old_town_cross",
+          "variant_identity": "old_town_cross_1080p50",
+          "parent_sequence_identity": "old_town_cross",
+          "derivation_type": "source_master_1080p50",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/old_town_cross_1080p50.y4m"
+        },
+        {
+          "filename": "park_joy_1080p50.y4m",
+          "sha256": "fff79a02056bf94ef032394895ffb6354df961e6609693bf98ed77ef00a14886",
+          "sequence_identity": "park_joy",
+          "variant_identity": "park_joy_1080p50",
+          "parent_sequence_identity": "park_joy",
+          "derivation_type": "downscaled_variant_1080p50",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/park_joy_1080p50.y4m"
+        },
+        {
+          "filename": "park_joy_2160p50.y4m",
+          "sha256": "9dfd89b24f6e8d4c0bb6b24b59b9ea91ba127aaa9bf7d5ae4f583534a137eee6",
+          "sequence_identity": "park_joy",
+          "variant_identity": "park_joy_2160p50",
+          "parent_sequence_identity": "park_joy",
+          "derivation_type": "source_master_2160p50",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/park_joy_2160p50.y4m"
+        },
+        {
+          "filename": "park_joy_444_720p50.y4m",
+          "sha256": "eb0be5aa213bdaba6088f4eed0499b3d1800f563bb700d2bb187b67474fbcdd6",
+          "sequence_identity": "park_joy",
+          "variant_identity": "park_joy_444_720p50",
+          "parent_sequence_identity": "park_joy",
+          "derivation_type": "downscaled_variant_720p444",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/park_joy_444_720p50.y4m"
+        }
+      ]
+    },
+    "Vidyo / FourPeople": {
+      "license": "Public Domain / Research Evaluation",
+      "license_source": "ITU-T Recommendation Test Collection",
+      "provenance_source": "Vidyo / ITU-T Test Set",
+      "access_restrictions": "Research evaluation",
+      "assets": [
+        {
+          "filename": "FourPeople_1280x720_60.y4m",
+          "sha256": "c8877dab4220847942eba4ab57ac36b4a0509694d25c42fe67a641ddbfa5cfe8",
+          "sequence_identity": "four_people",
+          "variant_identity": "four_people_720p60",
+          "parent_sequence_identity": "four_people",
+          "derivation_type": "source_master_720p60",
+          "domain": "Domain 2: Secondary / Legacy",
+          "suitability_status": "secondary_domain",
+          "relative_path": "resource_videos/FourPeople_1280x720_60.y4m"
+        }
+      ]
+    },
+    "HUE_Controlled Sensor Dataset": {
+      "license": "Research Dataset License",
+      "license_source": "Event Camera Research Terms",
+      "provenance_source": "Rendered 30fps H.264 video from condition zebra_L10_G48 (Prophesee CCam5 IMX636)",
+      "access_restrictions": "Research evaluation only",
+      "assets": [
+        {
+          "filename": "zebra_L10_G48.mp4",
+          "sha256": "497313022f8b773cb21a11a85b20ff9e4256c732e0d5d10cfe69b466839ef24e",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L10_G48_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L10_G48.mp4"
+        },
+        {
+          "filename": "zebra_L1_G10.mp4",
+          "sha256": "fbdc3c33db47ad491c4aacfe481f4c3af2eea7483841f16bf838f017e99d3881",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L1_G10_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L1_G10.mp4"
+        },
+        {
+          "filename": "zebra_L1_G6.mp4",
+          "sha256": "dce8b1b615dfece12188eca0663a1c494dff000a1c32a36de7cc27eb883f472a",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L1_G6_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L1_G6.mp4"
+        },
+        {
+          "filename": "zebra_L2_G12.mp4",
+          "sha256": "53b1be3e331bcb32e57125173ebc5b126e2aebdb4ba79cb1c1a5da7e3ece5131",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L2_G12_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L2_G12.mp4"
+        },
+        {
+          "filename": "zebra_L2_G16.mp4",
+          "sha256": "467825ffa0d705d09188f94eb4470e2e8c84768663ba6b952fd24fb3df1dc09b",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L2_G16_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L2_G16.mp4"
+        },
+        {
+          "filename": "zebra_L3_G19.mp4",
+          "sha256": "9c783b7d23329e1c37d31ceeec804ce5ad77e40d99106fb90cb264513a486a5f",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L3_G19_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L3_G19.mp4"
+        },
+        {
+          "filename": "zebra_L3_G23.mp4",
+          "sha256": "7d44f91cd84f905af2129c2db5d45471c59c1b4e2ae29ee146089b95d2169e7c",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L3_G23_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L3_G23.mp4"
+        },
+        {
+          "filename": "zebra_L4_G22.mp4",
+          "sha256": "5e7e7f2eada2f5766787973f601f62e251717dddeb333555e174dd18232af14a",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L4_G22_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L4_G22.mp4"
+        },
+        {
+          "filename": "zebra_L4_G27.mp4",
+          "sha256": "77477b91d99ae782fee7c11265bc447701f59665c2a85a512f9ccdfd100ed118",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L4_G27_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L4_G27.mp4"
+        },
+        {
+          "filename": "zebra_L5_G29.mp4",
+          "sha256": "da6fa11e8f6bdc959d1210015067ed30add1421584e8517bdbcaf235285bf2e7",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L5_G29_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L5_G29.mp4"
+        },
+        {
+          "filename": "zebra_L5_G34.mp4",
+          "sha256": "e688bf530beea155a1517e065a87dd7b493d1c88efab752c9f70fb29e8002cf1",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L5_G34_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L5_G34.mp4"
+        },
+        {
+          "filename": "zebra_L6_G35.mp4",
+          "sha256": "1226a0e1a2e98e9f5713e574410a1582fcdd010a73b81172f4cfcc5755729097",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L6_G35_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L6_G35.mp4"
+        },
+        {
+          "filename": "zebra_L6_G39.mp4",
+          "sha256": "5ac8f9dd6511b510472b61e002b075b92a61900276cab96a2cc4db42be8d438f",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L6_G39_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L6_G39.mp4"
+        },
+        {
+          "filename": "zebra_L7_G42.mp4",
+          "sha256": "ab8224ea8969f644e6c633ad8df0655f7bfb6b8dbd40245f7014786acc90bdc4",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L7_G42_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L7_G42.mp4"
+        },
+        {
+          "filename": "zebra_L7_G46.mp4",
+          "sha256": "faae15fc448fe39e935f3d6ac79dc045f1eb95160bfe34ed9d1111bd99c93a46",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L7_G46_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L7_G46.mp4"
+        },
+        {
+          "filename": "zebra_L8_G48.mp4",
+          "sha256": "b767c658cc5a09aeec11520678926da7691b2425316b681d93a867524260dc42",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L8_G48_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L8_G48.mp4"
+        },
+        {
+          "filename": "zebra_L9_G48.mp4",
+          "sha256": "c979c6aee42a7ea9ad8edbf86e84be8ff2e37cf6885775df12d93cc117eb4e95",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "hue_zebra_L9_G48_30fps",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_video_render",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/videos/zebra_L9_G48.mp4"
+        },
+        {
+          "filename": "zebra_L10_G48 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L10_G48",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L10_G48"
+        },
+        {
+          "filename": "zebra_L1_G10 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L1_G10",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G10"
+        },
+        {
+          "filename": "zebra_L1_G6 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L1_G6",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L1_G6"
+        },
+        {
+          "filename": "zebra_L2_G12 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L2_G12",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G12"
+        },
+        {
+          "filename": "zebra_L2_G16 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L2_G16",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L2_G16"
+        },
+        {
+          "filename": "zebra_L3_G19 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L3_G19",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G19"
+        },
+        {
+          "filename": "zebra_L3_G23 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L3_G23",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L3_G23"
+        },
+        {
+          "filename": "zebra_L4_G22 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L4_G22",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G22"
+        },
+        {
+          "filename": "zebra_L4_G27 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L4_G27",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L4_G27"
+        },
+        {
+          "filename": "zebra_L5_G29 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L5_G29",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G29"
+        },
+        {
+          "filename": "zebra_L5_G34 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L5_G34",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L5_G34"
+        },
+        {
+          "filename": "zebra_L6_G35 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L6_G35",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G35"
+        },
+        {
+          "filename": "zebra_L6_G39 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L6_G39",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L6_G39"
+        },
+        {
+          "filename": "zebra_L7_G42 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L7_G42",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G42"
+        },
+        {
+          "filename": "zebra_L7_G46 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L7_G46",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L7_G46"
+        },
+        {
+          "filename": "zebra_L8_G48 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L8_G48",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L8_G48"
+        },
+        {
+          "filename": "zebra_L9_G48 [PNG Image Sequence]",
+          "sha256": "N/A (Multi-file image sequence directory)",
+          "sequence_identity": "hue_controlled",
+          "variant_identity": "zebra_L9_G48",
+          "parent_sequence_identity": "hue_controlled",
+          "derivation_type": "sensor_image_sequence",
+          "domain": "Domain 4: Sensor / Illumination",
+          "suitability_status": "sensor_domain",
+          "relative_path": "resource_videos/HUE_Controlled/zebra_L9_G48"
+        }
+      ]
+    },
+    "Netflix Open Content / Sol Levante": {
+      "license": "CC BY-NC-ND 4.0",
+      "license_source": "Netflix Sol Levante License Agreement",
+      "provenance_source": "Netflix Open Content 4K HDR Anime IMF Audio (5.1 Surround)",
+      "access_restrictions": "Non-commercial use, no derivatives allowed",
+      "assets": [
+        {
+          "filename": "AUDIO_4467fc2f-2536-44ba-b1f9-010e0ae3f6b1.mxf",
+          "sha256": "de68897892b53833803b3568e0482158d3c81152811657d934556e1b06f9de6d",
+          "sequence_identity": "sol_levante",
+          "variant_identity": "sol_levante_audio_51_mxf",
+          "parent_sequence_identity": "sol_levante",
+          "derivation_type": "imf_audio_essence",
+          "domain": "excluded",
+          "suitability_status": "unsupported_format",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/AUDIO_4467fc2f-2536-44ba-b1f9-010e0ae3f6b1.mxf"
+        },
+        {
+          "filename": "AUDIO_c2d618d0-b775-47c2-ac45-8eccb9afc40a.mxf",
+          "sha256": "b31a72a0d5ed5e6979bf03dc1518126599c4c095710eef9e31a1bc834a2d943c",
+          "sequence_identity": "sol_levante",
+          "variant_identity": "sol_levante_audio_atmos_mxf",
+          "parent_sequence_identity": "sol_levante",
+          "derivation_type": "imf_audio_essence",
+          "domain": "excluded",
+          "suitability_status": "unsupported_format",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/AUDIO_c2d618d0-b775-47c2-ac45-8eccb9afc40a.mxf"
+        },
+        {
+          "filename": "VIDEO_e4da5fcd-5ffc-4713-bcdd-95ea579d790b.mxf",
+          "sha256": "52a4cd1dc7c3080c634897be9191561ffed3b9447e9a878f30d355ed19381637",
+          "sequence_identity": "sol_levante",
+          "variant_identity": "sol_levante_uhd_24fps_p3_pq_dovi_mxf",
+          "parent_sequence_identity": "sol_levante",
+          "derivation_type": "imf_video_essence",
+          "domain": "Domain 3: HDR / WCG",
+          "suitability_status": "not_applicable_hdr",
+          "relative_path": "resource_videos/SolLevante_IMF_DolbyVision_PQP3D65_UHD_24fps/VIDEO_e4da5fcd-5ffc-4713-bcdd-95ea579d790b.mxf"
+        }
+      ]
+    },
+    "Xiph/DERF Classic": {
+      "license": "Creative Commons / Public Domain",
+      "license_source": "Xiph.org Media Repository",
+      "provenance_source": "Xiph.org / DERF Test Media Collection",
+      "access_restrictions": "Public research use",
+      "assets": [
+        {
+          "filename": "tractor_1080p25.y4m",
+          "sha256": "13ff3baa08f11d407a36bc90894c6fcb4668dcc11d16b3924ca94d6330ac201f",
+          "sequence_identity": "tractor",
+          "variant_identity": "tractor_1080p25",
+          "parent_sequence_identity": "tractor",
+          "derivation_type": "source_master_1080p25",
+          "domain": "Domain 1: Primary SDR",
+          "suitability_status": "eligible_sdr_primary",
+          "relative_path": "resource_videos/tractor_1080p25.y4m"
+        }
+      ]
+    }
+  }
+}

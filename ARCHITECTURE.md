@@ -213,6 +213,11 @@ Pass/fail decisions are governed by a three-tier audit architecture:
 - Verifies packet presentation timestamps for strict monotonicity ($t_{i+1} \ge t_i$).
 - Detects dropped frames, packet cadence stutter, and reordered frame sequences in streams with non-trivial decode-vs-presentation order (B-frames).
 
+### 4. VMAF Evaluation Status & Provider Contract
+- **Adapter Integration:** Integrated Netflix VMAF v1.0.16 via `veilframe/quality/adapters/vmaf_adapter.py`.
+- **Empirical Calibration Verdict (`VF-CAL-VMAF-2026-09`):** `NO_FEASIBLE_THRESHOLD`. An exhaustive decision-boundary search across Domain-1 calibration assets proved that no single global scalar threshold $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$.
+- **Operational Status:** `VisualBudgetPolicy.vmaf_gate_enabled = False` strictly preserved. VMAF serves as measurement/audit evidence only; primary fidelity enforcement is governed by SSIM, PSNR, and plane energy metrics.
+
 ---
 
 ## 🔏 Cryptographic Audit Provenance & Dual-Mode Trust Architecture
