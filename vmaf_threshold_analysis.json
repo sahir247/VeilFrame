@@ -1,0 +1,142 @@
+{
+  "schema": "veilframe-vmaf-analysis-v1",
+  "analysis_version": "1.2.0",
+  "vmaf_model_version": "1.0.16",
+  "timestamp_utc": "2026-09-04T01:53:48.089602Z",
+  "calibration_status": "validated",
+  "policy_evaluated": "mean",
+  "random_seed": 42,
+  "research_constraints": {
+    "fa_max": 0.02,
+    "fr_max": 0.05
+  },
+  "sequence_groups": {
+    "total_groups": 4,
+    "dev_groups": [
+      "ducks_take_off",
+      "night_drive",
+      "park_joy"
+    ],
+    "heldout_groups": [
+      "browsing"
+    ]
+  },
+  "sample_counts": {
+    "total_valid": 25,
+    "dev_samples": 20,
+    "heldout_samples": 5,
+    "excluded_samples": {
+      "not_applicable_hdr": 8,
+      "metadata_error": 0,
+      "measurement_error": 0,
+      "unsupported_resolution": 0,
+      "missing_vmaf": 15
+    }
+  },
+  "selected_operating_point": {
+    "threshold": 93.5,
+    "policy_name": "mean",
+    "total_samples": 20,
+    "acceptable_samples": 7,
+    "unacceptable_samples": 13,
+    "true_accepts": 7,
+    "true_rejects": 13,
+    "false_accepts": 0,
+    "false_rejects": 0,
+    "false_accept_rate": 0.0,
+    "false_reject_rate": 0.0,
+    "acceptance_rate": 0.35,
+    "rejection_rate": 0.65,
+    "precision": 1.0,
+    "recall": 1.0,
+    "balanced_accuracy": 1.0
+  },
+  "heldout_validation": {
+    "threshold": 93.5,
+    "policy_name": "mean",
+    "total_samples": 5,
+    "acceptable_samples": 2,
+    "unacceptable_samples": 3,
+    "true_accepts": 2,
+    "true_rejects": 3,
+    "false_accepts": 0,
+    "false_rejects": 0,
+    "false_accept_rate": 0.0,
+    "false_reject_rate": 0.0,
+    "acceptance_rate": 0.4,
+    "rejection_rate": 0.6,
+    "precision": 1.0,
+    "recall": 1.0,
+    "balanced_accuracy": 1.0
+  },
+  "category_breakdown": {
+    "high_detail": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "high_motion": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "natural": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "texture": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    }
+  },
+  "resolution_breakdown": {
+    "1080p_HFR": {
+      "samples": 10,
+      "sequence_groups": 2,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "1080p_SDR": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "2160p_HFR": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "2160p_SDR": {
+      "samples": 5,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    }
+  },
+  "production_gate_status": {
+    "vmaf_gate_enabled": false
+  }
+}

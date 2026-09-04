@@ -42,7 +42,12 @@ env.bak/
 # Scratch & temporary artifacts
 scratch/
 venv.bak/
-calibration_corpus/
+calibration_corpus/**/*.mp4
+calibration_corpus/**/*.y4m
+calibration_corpus/**/*.mkv
+calibration_corpus/**/*.avi
+!calibration_corpus/manifest.json
+!calibration_corpus/README.md
 
 # Unit test / coverage
 .tox/

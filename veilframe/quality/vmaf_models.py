@@ -187,10 +187,13 @@ def classify_resolution(width: int, height: int) -> str:
     return "unsupported"
 
 
-def detect_hdr(stream_meta: Dict[str, Any]) -> Tuple[bool, str]:
+def detect_hdr(
+    stream_meta: Dict[str, Any],
+    path: Optional[Union[str, Path]] = None,
+) -> Tuple[bool, str]:
     """
-    Detects HDR characteristics from FFprobe stream metadata.
-    Recognizes common HDR transfer characteristics and color spaces.
+    Detects HDR characteristics from FFprobe stream metadata and filename cues.
+    Recognizes common HDR transfer characteristics, color spaces, and filename cues.
 
     Returns:
         (is_hdr, reason_description)
@@ -205,6 +208,12 @@ def detect_hdr(stream_meta: Dict[str, Any]) -> Tuple[bool, str]:
         return True, f"HDR BT.2020 color primaries with transfer: {color_transfer}"
     if color_transfer.startswith("arib") or "hlg" in color_transfer or "pq" in color_transfer:
         return True, f"HDR characteristic: {color_transfer}"
+
+    # Filename cue fallback if container tags are stripped or non-standard
+    if path:
+        name = Path(path).name.lower()
+        if "_hdr" in name or "hdr10" in name or "p3pq" in name or "_dovi" in name:
+            return True, f"HDR metadata in filename: {Path(path).name}"
 
     return False, ""
 

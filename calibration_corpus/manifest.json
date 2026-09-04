@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "clips": [
+    {
+      "filename": "night_drive_1080p25_sdr.mp4",
+      "sequence_group": "night_drive",
+      "category": "natural",
+      "subcategory": "urban_night"
+    },
+    {
+      "filename": "browsing_1080p60_hfr.mp4",
+      "sequence_group": "browsing",
+      "category": "screen_content",
+      "subcategory": "browser_ui"
+    },
+    {
+      "filename": "park_joy_2160p25_sdr.mp4",
+      "sequence_group": "park_joy",
+      "category": "high_detail",
+      "subcategory": "landscape"
+    },
+    {
+      "filename": "park_joy_2160p50_hfr.mp4",
+      "sequence_group": "park_joy",
+      "category": "high_motion",
+      "subcategory": "landscape_motion"
+    },
+    {
+      "filename": "ducks_take_off_1080p50_raw.y4m",
+      "sequence_group": "ducks_take_off",
+      "category": "texture",
+      "subcategory": "water_wildlife"
+    },
+    {
+      "filename": "chimera_4k5994p_hdr.mp4",
+      "sequence_group": "chimera",
+      "category": "dark",
+      "subcategory": "hdr_p3pq"
+    }
+  ]
+}

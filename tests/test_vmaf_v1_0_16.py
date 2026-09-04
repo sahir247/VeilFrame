@@ -222,10 +222,18 @@ class TestFfmpegPathEscaping(unittest.TestCase):
         arg = format_vmaf_model_filter_arg(path)
         self.assertEqual(arg, r"model='path=C\\\:/models/vmaf/model.json'")
 
-    def test_relative_path_escaping(self):
-        path = Path("models/vmaf/model.json")
+    def test_spaces_in_path_escaping(self):
+        from veilframe.quality.vmaf_models import format_vmaf_model_filter_arg
+        path = Path("C:/Program Files/vmaf models/model 1.0.16.json")
         escaped = format_ffmpeg_filter_path(path)
-        self.assertEqual(escaped, "models/vmaf/model.json")
+        self.assertEqual(escaped, r"C\:/Program Files/vmaf models/model 1.0.16.json")
+        arg = format_vmaf_model_filter_arg(path)
+        self.assertEqual(arg, r"model='path=C\\\:/Program Files/vmaf models/model 1.0.16.json'")
+
+    def test_windows_backslash_path_escaping(self):
+        path = Path(r"C:\Users\test\vmaf\model.json")
+        escaped = format_ffmpeg_filter_path(path)
+        self.assertEqual(escaped, r"C\:/Users/test/vmaf/model.json")
 
 
 class TestVmafAdapterAuditContract(unittest.TestCase):
@@ -243,6 +251,81 @@ class TestVmafAdapterAuditContract(unittest.TestCase):
         )
         self.assertFalse(provider.is_available(),
                          "audit_mode=True with nonexistent model_path must return False for is_available()")
+
+
+class TestLibvmafLiveInputOrdering(unittest.TestCase):
+    """
+    Live integration test verifying FFmpeg libvmaf input ordering with actual execution:
+    pad 0 = distorted, pad 1 = reference.
+    Runs only when FFmpeg with libvmaf is present; skips cleanly otherwise.
+    """
+
+    def setUp(self):
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="vmaf_ordering_test_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_live_input_ordering_identical_vs_degraded(self):
+        import subprocess
+        from veilframe.quality.models import QualityConfig
+
+        provider = LibvmafFFmpegProvider(audit_mode=False)
+        if not provider.is_available():
+            raise unittest.SkipTest("libvmaf not available on this system")
+
+        ref_path = self.temp_dir / "clean_ref.mp4"
+        dist_path = self.temp_dir / "heavy_dist.mp4"
+
+        # Generate 1-second 320x240 testsrc reference
+        r1 = subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25",
+            "-t", "1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(ref_path),
+        ], capture_output=True, text=True)
+        if r1.returncode != 0:
+            raise unittest.SkipTest("FFmpeg synthetic video generation failed")
+
+        # Generate heavily degraded distorted version (boxblur 15 + high noise)
+        r2 = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", str(ref_path),
+            "-vf", "boxblur=15:15,noise=alls=30:allf=t",
+            "-c:v", "libx264", "-crf", "35", "-pix_fmt", "yuv420p",
+            str(dist_path),
+        ], capture_output=True, text=True)
+        if r2.returncode != 0:
+            raise unittest.SkipTest("FFmpeg distortion video generation failed")
+
+        # 1. Identical pair (ref vs ref) -> VMAF near 100
+        cfg_ident = QualityConfig(
+            reference=ref_path,
+            distorted=ref_path,
+            canonical_w=320,
+            canonical_h=240,
+            evidence_dir=self.temp_dir / "ident_evidence",
+        )
+        res_ident = provider.evaluate(cfg_ident)
+        self.assertEqual(len(res_ident), 1)
+        self.assertGreaterEqual(res_ident[0].mean, 90.0,
+                                "Identical reference vs reference must achieve high VMAF (>= 90)")
+
+        # 2. Heavily degraded pair (distorted vs ref) -> VMAF substantially lower
+        cfg_degraded = QualityConfig(
+            reference=ref_path,
+            distorted=dist_path,
+            canonical_w=320,
+            canonical_h=240,
+            evidence_dir=self.temp_dir / "degraded_evidence",
+        )
+        res_degraded = provider.evaluate(cfg_degraded)
+        self.assertEqual(len(res_degraded), 1)
+        self.assertLess(res_degraded[0].mean, 50.0,
+                        "Heavily blurred/noised clip must score significantly lower (< 50) than clean reference")
+        self.assertGreater(res_ident[0].mean - res_degraded[0].mean, 40.0,
+                           "Separation between identical and degraded pair must exceed 40 points")
 
 
 if __name__ == "__main__":

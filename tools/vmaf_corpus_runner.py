@@ -1,31 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VeilFrame VMAF Corpus Runner  (Phase B) — VMAF v1.0.16 Upgrade
-==============================================================
+VeilFrame VMAF Corpus Runner (Phase B) — Measurement Tool
+=========================================================
 Applies all 8 calibration fixtures to every clip in calibration_corpus/,
 measures VMAF + SSIM + PSNR for each fixture x clip pair at native resolution,
-and evaluates whether the Phase A candidate threshold generalises across content types.
+and writes comprehensive, machine-readable measurement results.
 
-Key enhancements for VMAF v1.0.16:
-  - Supports .y4m containers alongside standard container formats.
-  - Native resolution evaluation (removed forced 640x480 normalization).
-  - FFprobe stream metadata extraction (dimensions, fps, pix_fmt, color space).
-  - HDR detection and segregation (vmaf_status="not_applicable_hdr", preserves SSIM/PSNR).
-  - Deterministic VMAF v1.0.16 model selection and SHA-256 verification.
-  - Resumable execution: existing valid results in output JSON are preserved.
-  - Sequence variant grouping metadata.
+Pure Measurement Architecture:
+  - This tool is strictly for measurement and evidence collection.
+  - Contains ZERO threshold-decision or gate-promotion logic.
+  - Threshold analysis is decoupled into tools/vmaf_threshold_analysis.py.
 
-Usage:
-    uv run python tools/vmaf_corpus_runner.py \
-        --corpus calibration_corpus/ \
-        --candidate vmaf_calibration_results.json \
-        --out vmaf_corpus_results.json
+Key Features:
+  - Supports container formats (.mp4, .mov, .mkv, .webm, .avi, .m4v, .ts) and raw .y4m.
+  - Evaluates at native resolution and native frame rate (no forced downscaling).
+  - Strict ffprobe metadata extraction (no silent fallback to 1080p).
+  - Authoritative corpus manifest support (manifest.json) for sequence grouping.
+  - Automatic HDR segregation (status="not_applicable_hdr") without fabricating scores.
+  - Explicit sample states: "success", "not_applicable_hdr", "unsupported_resolution",
+    "metadata_error", "measurement_error". Failures are NEVER represented as VMAF=0.0.
+  - Deterministic model selection (v1.0.16) and SHA-256 verification.
+  - Resumable execution: existing successful results in output JSON are preserved.
 """
 
 import argparse
+import datetime
 import fractions
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -34,10 +37,10 @@ import tempfile
 import io
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 from veilframe.quality.vmaf_models import (
     VMAF_MODEL_VERSION,
@@ -56,81 +59,93 @@ from veilframe.core.crypto import compute_sha256
 
 # ── Constants ──────────────────────────────────────────────────────────── #
 
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 
-# Acceptable fixtures — should PASS gate
+FIXTURE_SEVERITY_AXIS = [
+    "IDENTICAL",
+    "VERY_LOW",
+    "LOW_PERTURBATION",
+    "MODERATE",
+    "MODERATE_EXCEEDANCE",
+    "HIGH",
+    "SEVERE",
+    "EXTREME",
+]
+
 ACCEPTABLE_FIXTURES   = ["IDENTICAL", "VERY_LOW", "LOW_PERTURBATION"]
-# Boundary fixtures — inform gap but don't anchor threshold
 BOUNDARY_FIXTURES     = ["MODERATE", "MODERATE_EXCEEDANCE"]
-# Unacceptable fixtures — should FAIL gate
 UNACCEPTABLE_FIXTURES = ["HIGH", "SEVERE", "EXTREME"]
 
-# Decision thresholds
-FA_RATE_MAX = 0.02   # Max false-accept rate (unacceptable clips passing)
-FR_RATE_MAX = 0.05   # Max false-reject rate (acceptable clips failing)
-PASS_RATE_LOW_MIN   = 0.95   # LOW_PERTURBATION must pass on >= 95% of clips
-FAIL_RATE_MODEX_MIN = 0.90   # MODERATE_EXCEEDANCE must fail on >= 90% of clips
-
-FIXTURE_DESCRIPTIONS = {
-    "IDENTICAL":            "Exact copy",
-    "VERY_LOW":             "sigma=0.5 noise",
-    "LOW_PERTURBATION":     "sigma=2 + 99.8% scale (VeilFrame typical)",
-    "MODERATE":             "sigma=8 + slight blur",
-    "MODERATE_EXCEEDANCE":  "10% crop + moderate blur",
-    "HIGH":                 "sigma=18 noise + CRF=40",
-    "SEVERE":               "Heavy blur + colour degradation",
-    "EXTREME":              "Near-total distortion",
-}
-
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".ts", ".y4m"}
+
+
+# ── Exceptions ─────────────────────────────────────────────────────────── #
+
+class VideoMetadataExtractionError(Exception):
+    """Raised when ffprobe fails to extract required stream metadata."""
+    pass
 
 
 # ── Data models ────────────────────────────────────────────────────────── #
 
 @dataclass
 class PairResult:
-    fixture:           str = ""
-    vmaf_status:       str = "ok"  # "ok", "not_applicable_hdr", "unsupported_resolution", "error", "skipped"
-    vmaf_model_name:   Optional[str] = None
-    vmaf_model_sha256: Optional[str] = None
-    vmaf_mean:         float = 0.0
-    vmaf_p5:           float = 0.0
-    vmaf_worst:        float = 0.0
-    ssim_mean:         float = 0.0
-    psnr_mean:         float = 0.0
-    error:             Optional[str] = None
+    fixture:              str = ""
+    status:               str = "success"  # "success", "not_applicable_hdr", "unsupported_resolution", "measurement_error"
+    error_type:           Optional[str] = None
+    error_message:        Optional[str] = None
+    vmaf_mean:            Optional[float] = None
+    vmaf_p5:              Optional[float] = None
+    vmaf_worst:           Optional[float] = None
+    vmaf_stddev:          Optional[float] = None
+    ssim_mean:            Optional[float] = None
+    psnr_mean:            Optional[float] = None
+    model_id:             Optional[str] = None
+    model_name:           Optional[str] = None
+    model_sha256:         Optional[str] = None
+    evidence_sha256:      Optional[str] = None
 
 
 @dataclass
 class ClipResult:
-    clip_path:        str = ""
-    clip_sha256:      str = ""
-    sequence_group:   str = ""
-    category:         str = ""
-    subcategory:      str = ""
-    width:            int = 0
-    height:           int = 0
-    fps:              float = 0.0
-    pix_fmt:          str = ""
-    is_hdr:           bool = False
-    hdr_reason:       str = ""
-    fixtures:         List[PairResult] = field(default_factory=list)
+    clip_path:             str = ""
+    clip_filename:         str = ""
+    clip_sha256:           str = ""
+    sequence_group:        str = ""
+    sequence_group_source: str = "filename_heuristic"  # "manifest" or "filename_heuristic"
+    category:              str = ""
+    subcategory:           str = ""
+    width:                 Optional[int] = None
+    height:                Optional[int] = None
+    fps:                   Optional[float] = None
+    pix_fmt:               Optional[str] = None
+    color_transfer:        Optional[str] = None
+    color_primaries:       Optional[str] = None
+    color_space:           Optional[str] = None
+    is_hdr:                bool = False
+    hdr_reason:            str = ""
+    status:                str = "success"  # "success", "metadata_error"
+    error_message:         Optional[str] = None
+    fixtures:              List[PairResult] = field(default_factory=list)
 
 
 @dataclass
 class CorpusReport:
-    tool_version:         str = TOOL_VERSION
-    vmaf_model_version:   str = VMAF_MODEL_VERSION
-    candidate_threshold:  Dict = field(default_factory=dict)
-    total_clips:          int = 0
-    total_pairs:          int = 0
-    false_accept_rate:    float = 0.0
-    false_reject_rate:    float = 0.0
-    low_pert_pass_rate:   float = 0.0
-    modex_fail_rate:      float = 0.0
-    threshold_accepted:   bool = False
-    recommendation:       str = ""
-    clips:                List[ClipResult] = field(default_factory=list)
+    schema:                str = "veilframe-vmaf-corpus-v1"
+    tool_version:          str = TOOL_VERSION
+    vmaf_model_version:    str = VMAF_MODEL_VERSION
+    timestamp_utc:         str = ""
+    ffmpeg_version:        Optional[str] = None
+    libvmaf_version:       Optional[str] = None
+    libvmaf_version_source:str = "unavailable"
+    corpus_root:           str = ""
+    manifest_path:         Optional[str] = None
+    total_clips:           int = 0
+    total_pairs:           int = 0
+    successful_pairs:      int = 0
+    hdr_segregated_pairs:  int = 0
+    error_pairs:           int = 0
+    clips:                 List[ClipResult] = field(default_factory=list)
 
 
 # ── FFmpeg & FFprobe helpers ───────────────────────────────────────────── #
@@ -139,9 +154,31 @@ def _run(cmd: List[str], timeout: int = 300) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
+def _get_ffmpeg_version() -> Optional[str]:
+    try:
+        r = _run(["ffmpeg", "-version"], timeout=10)
+        m = re.search(r"ffmpeg version\s+([^\s]+)", r.stdout)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _get_libvmaf_version() -> Tuple[Optional[str], str]:
+    try:
+        r = _run(["ffmpeg", "-version"], timeout=10)
+        combined = r.stdout + r.stderr
+        m = re.search(r"libvmaf\s+([\d.]+)", combined)
+        if m:
+            return m.group(1), "ffmpeg-version-output"
+    except Exception:
+        pass
+    return None, "unavailable"
+
+
 def get_video_stream_meta(path: Path) -> Dict[str, Any]:
     """
     Extracts stream metadata (width, height, fps, pix_fmt, color space) via ffprobe.
+    Raises VideoMetadataExtractionError on failure. No silent fallback.
     """
     cmd = [
         "ffprobe", "-v", "error",
@@ -152,109 +189,174 @@ def get_video_stream_meta(path: Path) -> Dict[str, Any]:
         str(path),
     ]
     r = _run(cmd, timeout=30)
-    meta: Dict[str, Any] = {
-        "width": 1920,
-        "height": 1080,
-        "fps": 30.0,
-        "pix_fmt": "yuv420p",
-        "color_transfer": "",
-        "color_primaries": "",
-        "color_space": "",
-    }
-    if r.returncode == 0 and r.stdout:
+    if r.returncode != 0:
+        raise VideoMetadataExtractionError(f"ffprobe failed for '{path.name}': {r.stderr.strip()[:300]}")
+
+    try:
+        data = json.loads(r.stdout)
+        streams = data.get("streams", [])
+        if not streams:
+            raise VideoMetadataExtractionError(f"No video streams found in '{path.name}'")
+        s = streams[0]
+        w = s.get("width")
+        h = s.get("height")
+        if not w or not h:
+            raise VideoMetadataExtractionError(f"Missing width/height in video stream for '{path.name}'")
+
+        fps_str = s.get("avg_frame_rate") or s.get("r_frame_rate") or "0/0"
         try:
-            data = json.loads(r.stdout)
-            streams = data.get("streams", [])
-            if streams:
-                st = streams[0]
-                meta["width"] = int(st.get("width", 1920))
-                meta["height"] = int(st.get("height", 1080))
-                meta["pix_fmt"] = str(st.get("pix_fmt", "yuv420p"))
-                meta["color_transfer"] = str(st.get("color_transfer", ""))
-                meta["color_primaries"] = str(st.get("color_primaries", ""))
-                meta["color_space"] = str(st.get("color_space", ""))
+            fps_frac = fractions.Fraction(fps_str)
+            fps = float(fps_frac) if fps_frac.denominator != 0 else 0.0
+        except (ValueError, ZeroDivisionError):
+            fps = 0.0
 
-                # Parse frame rate
-                rate_str = st.get("r_frame_rate") or st.get("avg_frame_rate") or "30/1"
-                try:
-                    meta["fps"] = float(fractions.Fraction(rate_str))
-                except Exception:
-                    meta["fps"] = 30.0
-        except Exception:
-            pass
+        if fps <= 0.0:
+            raise VideoMetadataExtractionError(f"Invalid frame rate '{fps_str}' for '{path.name}'")
 
-    return meta
+        return {
+            "width": int(w),
+            "height": int(h),
+            "fps": fps,
+            "pix_fmt": s.get("pix_fmt", "unknown"),
+            "color_transfer": s.get("color_transfer", ""),
+            "color_primaries": s.get("color_primaries", ""),
+            "color_space": s.get("color_space", ""),
+        }
+    except json.JSONDecodeError as exc:
+        raise VideoMetadataExtractionError(f"ffprobe produced invalid JSON for '{path.name}': {exc}")
 
 
-def derive_sequence_group(path: Path) -> str:
+# ── Manifest & Grouping ────────────────────────────────────────────────── #
+
+def load_corpus_manifest(manifest_path: Optional[Path]) -> Dict[str, Dict[str, Any]]:
     """
-    Groups sequence variants by extracting the common prefix from the filename.
-    e.g. 'crowd_run_1080p.y4m' -> 'crowd_run'.
+    Loads authoritative corpus manifest if available.
+    Returns: {clip_filename: {"sequence_group": ..., "category": ..., "subcategory": ...}}
     """
-    stem = path.stem
-    # Match alphanumeric token before resolution or variant suffix
-    m = re.match(r"^([a-zA-Z0-9\-]+?)(?:_\d+p|_sdr|_hdr|_q\d+|_v\d+|$)", stem, re.IGNORECASE)
-    if m:
-        return m.group(1)
+    if not manifest_path or not manifest_path.exists():
+        return {}
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        clips = data.get("clips", [])
+        result = {}
+        for c in clips:
+            fn = c.get("filename")
+            if fn:
+                result[fn] = c
+        return result
+    except Exception as exc:
+        print(f"  [WARN] Failed to load corpus manifest '{manifest_path}': {exc}")
+        return {}
+
+
+def derive_sequence_group(clip_path: Path) -> str:
+    """
+    Fallback heuristic for deriving sequence_group when absent from manifest.
+    Strips resolution/fps/variant suffixes to prevent sequence leakage across splits.
+    """
+    stem = clip_path.stem.lower()
+    patterns = [
+        r"^(park_joy)",
+        r"^(ducks_take_off)",
+        r"^(night_drive)",
+        r"^(browsing)",
+        r"^(chimera)",
+        r"^(aspen)",
+        r"^(tractor)",
+        r"^(old_town_cross)",
+        r"^(rush_field_cuts)",
+        r"^(snow_mnt)",
+        r"^(speed_bag)",
+        r"^(red_kayak)",
+        r"^(fourpeople)",
+        r"^([a-z]+_[a-z]+)_[0-9]+",
+        r"^([a-z0-9]+)_[0-9]+p",
+        r"^([a-z0-9]+)_[0-9]+x[0-9]+",
+    ]
+    for pat in patterns:
+        m = re.match(pat, stem)
+        if m:
+            return m.group(1)
     parts = stem.split("_")
     return parts[0] if parts else stem
 
 
-def get_category(clip: Path, corpus_root: Path) -> Tuple[str, str]:
-    """Derive (category, subcategory) from path relative to corpus root."""
+def get_category(clip_path: Path, corpus_root: Path) -> Tuple[str, str]:
     try:
-        rel = clip.relative_to(corpus_root)
+        rel = clip_path.relative_to(corpus_root)
         parts = rel.parts
-        cat    = parts[0] if len(parts) > 1 else "root"
-        subcat = parts[1] if len(parts) > 2 else ""
-        return cat, subcat
+        if len(parts) >= 3:
+            return parts[0], parts[1]
+        elif len(parts) == 2:
+            return parts[0], ""
+        return "general", ""
     except ValueError:
-        return "external", ""
+        return "general", ""
 
 
-# ── Fixture builders ───────────────────────────────────────────────────── #
+# ── Fixture Builders ───────────────────────────────────────────────────── #
 
-def _encode(ref: Path, out: Path, vf: str, crf: int = 18):
-    cmd = [
-        "ffmpeg", "-y", "-i", str(ref), "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
-        "-c:a", "copy", "-pix_fmt", "yuv420p", str(out),
-    ]
-    r = _run(cmd, timeout=180)
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr[-500:])
+def build_fixture(
+    fixture_name: str,
+    ref: Path,
+    out: Path,
+    width: int,
+    height: int,
+) -> bool:
+    """Builds a single fixture distortion from the reference at native resolution."""
+    c_w, c_h = width, height
 
+    if fixture_name == "IDENTICAL":
+        if ref.suffix.lower() == ".y4m":
+            # Raw Y4M into MP4 container requires lossless encoding
+            r = _run(["ffmpeg", "-y", "-i", str(ref), "-c:v", "libx264", "-crf", "0", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(out)], timeout=60)
+        else:
+            r = _run(["ffmpeg", "-y", "-i", str(ref), "-c", "copy", str(out)], timeout=60)
+        return r.returncode == 0
 
-def build_fixture(name: str, ref: Path, out: Path, w: int, h: int):
-    """Build distorted fixture at native w x h dimensions."""
-    base_scale = f"scale={w}:{h}"
+    filters = {
+        "VERY_LOW": "noise=alls=1:allf=t",
+        "LOW_PERTURBATION": (
+            f"scale=trunc({c_w}*0.998/2)*2:trunc({c_h}*0.998/2)*2:flags=lanczos,"
+            f"pad={c_w}:{c_h}:(ow-iw)/2:(oh-ih)/2:black,"
+            "noise=alls=2:allf=t"
+        ),
+        "MODERATE": "noise=alls=8:allf=t,boxblur=1:1",
+        "MODERATE_EXCEEDANCE": (
+            f"crop=trunc(in_w*0.9/2)*2:trunc(in_h*0.9/2)*2,"
+            f"scale={c_w}:{c_h}:flags=lanczos,boxblur=1.5:1"
+        ),
+        "HIGH": "noise=alls=18:allf=t",
+        "SEVERE": "boxblur=4:2,eq=saturation=0.4",
+        "EXTREME": "boxblur=8:4,eq=contrast=0.5:brightness=-0.2:saturation=0.1",
+    }
 
-    if name == "IDENTICAL":
-        _encode(ref, out, base_scale, crf=0)
-        return
-
-    vf = {
-        "VERY_LOW":            f"{base_scale},noise=alls=0.5:allf=t",
-        "LOW_PERTURBATION":    f"scale={int(w*0.998)}:{int(h*0.998)},scale={w}:{h},noise=alls=2:allf=t",
-        "MODERATE":            f"{base_scale},noise=alls=8:allf=t,gblur=sigma=0.8",
-        "MODERATE_EXCEEDANCE": f"crop={int(w*0.90)}:{int(h*0.90)},scale={w}:{h},gblur=sigma=1.5",
-        "HIGH":                f"{base_scale},noise=alls=12:allf=t,noise=alls=12:allf=u",
-        "SEVERE":              f"{base_scale},gblur=sigma=4,hue=s=0.3,curves=master='0/0 0.3/0.15 1/0.7'",
-        "EXTREME":             f"{base_scale},gblur=sigma=8,hue=s=0.05,curves=master='0/0 1/0.35'",
-    }.get(name)
-
+    vf = filters.get(fixture_name)
     if not vf:
-        raise ValueError(f"Unknown fixture: {name}")
+        return False
 
-    crf = 40 if name == "HIGH" else (51 if name == "EXTREME" else 18)
-    _encode(ref, out, vf, crf)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(ref),
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-crf", "40" if fixture_name == "HIGH" else "18",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        str(out),
+    ]
+    r = _run(cmd, timeout=120)
+    return r.returncode == 0 and out.exists()
 
 
-# ── Pair measurement ───────────────────────────────────────────────────── #
+# ── Per-Pair Measurement ───────────────────────────────────────────────── #
 
 def measure_pair(
     ref: Path,
     dist: Path,
+    fixture_name: str,
     tmp: Path,
     vmaf_ok: bool,
     model_spec: Optional[VmafModelSpec] = None,
@@ -262,22 +364,31 @@ def measure_pair(
     is_hdr: bool = False,
     hdr_reason: str = "",
 ) -> PairResult:
-    pr = PairResult()
+    """
+    Measures SSIM, PSNR, and VMAF for a reference x distorted pair.
+    libvmaf pad mapping: pad 0 = distorted, pad 1 = reference.
+    Command: -i dist -i ref maps stream 0:v (dist) to pad 0 and 1:v (ref) to pad 1.
+    """
+    pr = PairResult(fixture=fixture_name)
 
-    # SSIM measurement
+    # 1. SSIM measurement
     r_ssim = _run([
-        "ffmpeg", "-y", "-i", str(ref), "-i", str(dist),
+        "ffmpeg", "-y",
+        "-i", str(ref),
+        "-i", str(dist),
         "-filter_complex",
         "[0:v]setpts=PTS-STARTPTS[r];[1:v]setpts=PTS-STARTPTS[d];[d][r]ssim",
         "-f", "null", "-",
     ], timeout=120)
-    m = re.search(r"All:(\d+\.\d+)", r_ssim.stdout + r_ssim.stderr)
+    m = re.search(r"All:([\d.]+)", r_ssim.stdout + r_ssim.stderr)
     if m:
         pr.ssim_mean = float(m.group(1))
 
-    # PSNR measurement
+    # 2. PSNR measurement
     r_psnr = _run([
-        "ffmpeg", "-y", "-i", str(ref), "-i", str(dist),
+        "ffmpeg", "-y",
+        "-i", str(ref),
+        "-i", str(dist),
         "-filter_complex",
         "[0:v]setpts=PTS-STARTPTS[r];[1:v]setpts=PTS-STARTPTS[d];[d][r]psnr",
         "-f", "null", "-",
@@ -287,25 +398,29 @@ def measure_pair(
         val = m.group(1)
         pr.psnr_mean = 100.0 if val == "inf" else float(val)
 
-    # VMAF handling
+    # 3. HDR Handling: Segregate without fabricating VMAF score
     if is_hdr:
-        pr.vmaf_status = "not_applicable_hdr"
-        pr.error = hdr_reason
+        pr.status = "not_applicable_hdr"
+        pr.error_type = "hdr_detected"
+        pr.error_message = hdr_reason
         return pr
 
+    # 4. Check VMAF setup
     if not vmaf_ok or not model_path:
-        pr.vmaf_status = "skipped"
+        pr.status = "measurement_error"
+        pr.error_type = "vmaf_unavailable"
+        pr.error_message = "libvmaf not detected or model_path not resolved"
         return pr
 
-    pr.vmaf_status = "ok"
-    if model_spec:
-        pr.vmaf_model_name = model_spec.filename
-        pr.vmaf_model_sha256 = model_spec.expected_sha256
+    pr.model_id = model_spec.model_id if model_spec else None
+    pr.model_name = model_spec.filename if model_spec else None
+    pr.model_sha256 = model_spec.expected_sha256 if model_spec else None
 
     vmaf_json = tmp / f"vmaf_{dist.stem}.json"
     escaped_json = format_ffmpeg_filter_path(vmaf_json)
     model_arg = format_vmaf_model_filter_arg(model_path)
 
+    # Pad 0 = distorted (0:v), Pad 1 = reference (1:v)
     filt_v = (
         f"[0:v]setpts=PTS-STARTPTS[dist];"
         f"[1:v]setpts=PTS-STARTPTS[ref];"
@@ -323,37 +438,45 @@ def measure_pair(
 
     if rv.returncode == 0 and vmaf_json.exists():
         try:
-            with open(vmaf_json) as f:
+            pr.evidence_sha256 = compute_sha256(vmaf_json)
+            with open(vmaf_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
             frames = data.get("frames", [])
             scores = [fr["metrics"]["vmaf"] for fr in frames if "vmaf" in fr.get("metrics", {})]
             if scores:
-                pr.vmaf_mean = statistics.mean(scores)
-                pr.vmaf_worst = min(scores)
+                pr.vmaf_mean = round(float(statistics.mean(scores)), 2)
+                pr.vmaf_worst = round(float(min(scores)), 2)
+                pr.vmaf_stddev = round(float(statistics.stdev(scores)), 2) if len(scores) > 1 else 0.0
 
                 def pct(p):
                     s = sorted(scores)
                     return s[max(0, int(len(s) * p / 100) - 1)]
 
-                pr.vmaf_p5 = pct(5)
+                pr.vmaf_p5 = round(float(pct(5)), 2)
             else:
                 pooled = data.get("pooled_metrics", {})
-                pr.vmaf_mean = pooled.get("vmaf", {}).get("mean", 0.0)
-                pr.vmaf_p5 = pooled.get("vmaf", {}).get("percentile5", 0.0)
-                pr.vmaf_worst = pooled.get("vmaf", {}).get("min", 0.0)
-        except Exception as e:
-            pr.vmaf_status = "error"
-            pr.error = f"VMAF parse: {e}"
+                pr.vmaf_mean = round(float(pooled.get("vmaf", {}).get("mean", 0.0)), 2)
+                pr.vmaf_p5 = round(float(pooled.get("vmaf", {}).get("percentile5", 0.0)), 2)
+                pr.vmaf_worst = round(float(pooled.get("vmaf", {}).get("min", 0.0)), 2)
+                pr.vmaf_stddev = 0.0
+            pr.status = "success"
+        except Exception as exc:
+            pr.status = "measurement_error"
+            pr.error_type = "json_parse_error"
+            pr.error_message = f"VMAF parse error: {exc}"
+            pr.vmaf_mean = None
         finally:
             vmaf_json.unlink(missing_ok=True)
     else:
-        pr.vmaf_status = "error"
-        pr.error = f"libvmaf execution failed:\n{rv.stderr[-400:]}"
+        pr.status = "measurement_error"
+        pr.error_type = "libvmaf_exec_failure"
+        pr.error_message = f"libvmaf execution failed: {rv.stderr[-300:].strip()}"
+        pr.vmaf_mean = None
 
     return pr
 
 
-# ── Corpus discovery ───────────────────────────────────────────────────── #
+# ── Corpus Discovery & Resumability ────────────────────────────────────── #
 
 def discover_clips(corpus_root: Path) -> List[Path]:
     clips = []
@@ -362,71 +485,10 @@ def discover_clips(corpus_root: Path) -> List[Path]:
     return sorted(clips)
 
 
-# ── Threshold evaluation ───────────────────────────────────────────────── #
-
-def evaluate_threshold(
-    clips: List[ClipResult],
-    cand: Dict,
-) -> Tuple[float, float, float, float]:
-    """
-    Returns (false_accept_rate, false_reject_rate,
-             low_pert_pass_rate, modex_fail_rate).
-    Evaluates VMAF for SDR clips; falls back to SSIM/PSNR for HDR or VMAF-unavailable clips.
-    """
-    mean_min  = cand.get("vmaf_mean_min",  0.0)
-    p5_min    = cand.get("vmaf_p5_min",    0.0)
-    worst_min = cand.get("vmaf_worst_min", 0.0)
-
-    def passes(pr: PairResult) -> bool:
-        if pr.vmaf_status == "ok" and mean_min and pr.vmaf_mean > 0:
-            return (pr.vmaf_mean  >= mean_min and
-                    pr.vmaf_p5    >= p5_min   and
-                    pr.vmaf_worst >= worst_min)
-        # Fallback: SSIM/PSNR standard gate reference
-        return pr.ssim_mean >= 0.95 and pr.psnr_mean >= 30.0
-
-    fa = fr = low_pass = low_total = modex_fail = modex_total = 0
-
-    for clip in clips:
-        for pr in clip.fixtures:
-            if pr.fixture in ACCEPTABLE_FIXTURES:
-                if not passes(pr):
-                    fr += 1
-                if pr.fixture == "LOW_PERTURBATION":
-                    low_total += 1
-                    if passes(pr):
-                        low_pass += 1
-            elif pr.fixture in UNACCEPTABLE_FIXTURES:
-                if passes(pr):
-                    fa += 1
-            if pr.fixture == "MODERATE_EXCEEDANCE":
-                modex_total += 1
-                if not passes(pr):
-                    modex_fail += 1
-
-    total_accept = sum(
-        len([p for p in c.fixtures if p.fixture in ACCEPTABLE_FIXTURES])
-        for c in clips
-    )
-    total_reject = sum(
-        len([p for p in c.fixtures if p.fixture in UNACCEPTABLE_FIXTURES])
-        for c in clips
-    )
-
-    fa_rate = fa / max(total_reject, 1)
-    fr_rate = fr / max(total_accept, 1)
-    low_rate = low_pass / max(low_total, 1)
-    modex_rate = modex_fail / max(modex_total, 1)
-
-    return fa_rate, fr_rate, low_rate, modex_rate
-
-
-# ── Resumable state loading ────────────────────────────────────────────── #
-
 def load_existing_results(out_path: Path) -> Dict[str, Dict[str, PairResult]]:
     """
     Loads completed pair results from existing JSON for resumable execution.
-    Returns: {clip_path: {fixture_name: PairResult}}
+    Only valid completed results (status == 'success' or 'not_applicable_hdr') are cached.
     """
     if not out_path.exists():
         return {}
@@ -441,271 +503,291 @@ def load_existing_results(out_path: Path) -> Dict[str, Dict[str, PairResult]]:
             fixtures_dict = {}
             for fx in c.get("fixtures", []):
                 fname = fx.get("fixture")
-                if fname and not fx.get("error"):
+                status = fx.get("status")
+                # Resume only valid successes and HDR segregations (retry errors)
+                if fname and status in ("success", "not_applicable_hdr"):
                     fixtures_dict[fname] = PairResult(**fx)
-            cached[cp] = fixtures_dict
+            if fixtures_dict:
+                cached[cp] = fixtures_dict
         return cached
     except Exception:
         return {}
 
 
-# ── ASCII report ───────────────────────────────────────────────────────── #
+# ── Execution Summary Display ──────────────────────────────────────────── #
 
-def print_report(report: CorpusReport):
+def print_measurement_summary(report: CorpusReport):
     print()
     print("=" * 75)
-    print("  VeilFrame Phase B Corpus Validation Report (VMAF v1.0.16)")
+    print("  VeilFrame Phase B Corpus Measurement Summary (VMAF v1.0.16)")
     print("=" * 75)
-    print(f"  Clips processed:         {report.total_clips}")
-    print(f"  Total fixture pairs:     {report.total_pairs}")
-    print(f"  VMAF model version:      {report.vmaf_model_version}")
+    print(f"  Clips processed:        {report.total_clips}")
+    print(f"  Total fixture pairs:    {report.total_pairs}")
+    print(f"  Successful pairs:       {report.successful_pairs}")
+    print(f"  HDR segregated pairs:   {report.hdr_segregated_pairs}")
+    print(f"  Measurement errors:     {report.error_pairs}")
+    print(f"  Corpus manifest:        {report.manifest_path or 'none (filename heuristics used)'}")
     print()
-    print("  Candidate threshold:")
-    ct = report.candidate_threshold
-    print(f"    VMAF mean  >= {ct.get('vmaf_mean_min',  'n/a')}")
-    print(f"    VMAF P5    >= {ct.get('vmaf_p5_min',    'n/a')}")
-    print(f"    VMAF worst >= {ct.get('vmaf_worst_min', 'n/a')}")
-    print()
-    print("  Evaluation results:")
-    print(f"    LOW_PERTURBATION pass rate:      {report.low_pert_pass_rate*100:.1f}%  "
-          f"(need >= {PASS_RATE_LOW_MIN*100:.0f}%)  "
-          f"{'[OK]' if report.low_pert_pass_rate >= PASS_RATE_LOW_MIN else '[FAIL]'}")
-    print(f"    MODERATE_EXCEEDANCE fail rate:   {report.modex_fail_rate*100:.1f}%  "
-          f"(need >= {FAIL_RATE_MODEX_MIN*100:.0f}%)  "
-          f"{'[OK]' if report.modex_fail_rate >= FAIL_RATE_MODEX_MIN else '[FAIL]'}")
-    print(f"    False-accept rate:               {report.false_accept_rate*100:.2f}%  "
-          f"(need < {FA_RATE_MAX*100:.0f}%)  "
-          f"{'[OK]' if report.false_accept_rate < FA_RATE_MAX else '[FAIL]'}")
-    print(f"    False-reject rate:               {report.false_reject_rate*100:.2f}%  "
-          f"(need < {FR_RATE_MAX*100:.0f}%)  "
-          f"{'[OK]' if report.false_reject_rate < FR_RATE_MAX else '[FAIL]'}")
-    print()
-    verdict = "[ACCEPTED]" if report.threshold_accepted else "[NOT ACCEPTED]"
-    print(f"  Corpus threshold verdict:  {verdict}")
-    print(f"  Recommendation:  {report.recommendation}")
+    print("  Next step: Run scientific threshold analysis on measurement results:")
+    print("      uv run python tools/vmaf_threshold_analysis.py \\")
+    print(f"          --corpus-results {report.schema}.json --out vmaf_threshold_analysis.json")
     print("=" * 75)
     print()
 
 
-# ── Entry point ────────────────────────────────────────────────────────── #
+# ── Main Entry Point ───────────────────────────────────────────────────── #
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VeilFrame Phase B Corpus Validation Runner (VMAF v1.0.16)"
+        description="VeilFrame Phase B Corpus Measurement Runner (VMAF v1.0.16)"
     )
     parser.add_argument("--corpus", type=Path, required=True,
         help="Root directory of calibration_corpus/")
-    parser.add_argument("--candidate", type=Path,
-        default=Path("vmaf_calibration_results.json"),
-        help="Phase A calibration results JSON (for candidate threshold)")
+    parser.add_argument("--manifest", type=Path, default=None,
+        help="Path to manifest.json (defaults to <corpus>/manifest.json if present)")
     parser.add_argument("--model-root", type=Path, default=None,
         help="Custom VMAF model root directory (overrides $env:VMAF_MODEL_ROOT)")
-    parser.add_argument("--mean-min", type=float, default=None,
-        help="Override candidate VMAF mean minimum threshold (e.g. 85.0)")
-    parser.add_argument("--p5-min", type=float, default=None,
-        help="Override candidate VMAF P5 tail minimum threshold (e.g. 75.0)")
-    parser.add_argument("--worst-min", type=float, default=None,
-        help="Override candidate VMAF worst-frame minimum threshold (e.g. 70.0)")
     parser.add_argument("--no-resume", action="store_true",
         help="Do not resume; rerun all clip-fixture pairs from scratch")
     parser.add_argument("--out", type=Path,
         default=Path("vmaf_corpus_results.json"),
-        help="Output JSON path")
+        help="Output JSON path for measurements")
     args = parser.parse_args()
 
     print()
     print(f"VeilFrame VMAF Corpus Runner  v{TOOL_VERSION} (VMAF v{VMAF_MODEL_VERSION})")
     print("=" * 65)
 
-    # Load candidate threshold from Phase A results
-    cand: Dict = {}
-    if args.candidate.exists():
-        try:
-            with open(args.candidate, "r", encoding="utf-8") as f:
-                phase_a = json.load(f)
-            cand = phase_a.get("candidate_threshold", {})
-            if not cand:
-                print("  NOTE: candidate_threshold not found in Phase A results.")
-        except Exception as e:
-            print(f"  WARNING: Failed reading Phase A results: {e}")
-    else:
-        print(f"  WARNING: Phase A results not found at {args.candidate}")
-
-    # Apply command-line overrides if provided
-    if args.mean_min is not None:
-        cand["vmaf_mean_min"] = args.mean_min
-    if args.p5_min is not None:
-        cand["vmaf_p5_min"] = args.p5_min
-    if args.worst_min is not None:
-        cand["vmaf_worst_min"] = args.worst_min
-
-    if not cand:
-        print("  VMAF gate evaluation will use SSIM/PSNR fallback.")
-    else:
-        print(f"  Candidate VMAF Mean Min:  {cand.get('vmaf_mean_min', 'n/a')}")
-        print(f"  Candidate VMAF P5 Min:    {cand.get('vmaf_p5_min', 'n/a')}")
-        print(f"  Candidate VMAF Worst Min: {cand.get('vmaf_worst_min', 'n/a')}")
-
     # Discover clips
     clips_paths = discover_clips(args.corpus)
     if not clips_paths:
         print(f"\n  No video clips found in {args.corpus}")
-        print("  Populate the corpus first — supported extensions: " + ", ".join(sorted(VIDEO_EXTENSIONS)))
+        print("  Supported extensions: " + ", ".join(sorted(VIDEO_EXTENSIONS)))
         sys.exit(0)
+
+    # Load corpus manifest if available
+    manifest_path = args.manifest
+    if not manifest_path:
+        candidate_manifest = args.corpus / "manifest.json"
+        if candidate_manifest.exists():
+            manifest_path = candidate_manifest
+
+    manifest_data = load_corpus_manifest(manifest_path)
+    if manifest_data:
+        print(f"  Manifest:     {manifest_path} ({len(manifest_data)} entries loaded)")
+    else:
+        print("  Manifest:     Not specified (using filename heuristic grouping)")
 
     print(f"  Corpus root:  {args.corpus}")
     print(f"  Clips found:  {len(clips_paths)}")
     print()
 
+    ffmpeg_ver = _get_ffmpeg_version()
+    libvmaf_ver, libvmaf_source = _get_libvmaf_version()
     vmaf_ok = "libvmaf" in subprocess.run(
         ["ffmpeg", "-filters"], capture_output=True, text=True
     ).stdout
 
-    print(f"  libvmaf:  {'[OK]' if vmaf_ok else '[--] not available -- SSIM/PSNR only'}")
+    print(f"  FFmpeg:   {ffmpeg_ver}")
+    print(f"  libvmaf:  {'[OK] ' + str(libvmaf_ver) if vmaf_ok else '[--] not available -- SSIM/PSNR only'}")
     print()
 
     cached_results = {} if args.no_resume else load_existing_results(args.out)
     if cached_results:
         print(f"  Resuming from {args.out} ({len(cached_results)} cached clips detected).")
 
-    all_fixture_names = (ACCEPTABLE_FIXTURES + BOUNDARY_FIXTURES +
-                         UNACCEPTABLE_FIXTURES)
-
     clip_results: List[ClipResult] = []
     total_pairs = 0
+    successful_pairs = 0
+    hdr_segregated_pairs = 0
+    error_pairs = 0
 
     with tempfile.TemporaryDirectory(prefix="vf_corpus_") as tmp_str:
         tmp = Path(tmp_str)
 
         for i, clip_path in enumerate(clips_paths, 1):
-            cat, subcat = get_category(clip_path, args.corpus)
-            seq_group = derive_sequence_group(clip_path)
-            meta = get_video_stream_meta(clip_path)
-            is_hdr_val, hdr_reason = detect_hdr(meta)
-            clip_sha = compute_sha256(clip_path)
+            clip_name = clip_path.name
+            manifest_entry = manifest_data.get(clip_name)
 
+            if manifest_entry:
+                seq_group = manifest_entry.get("sequence_group", derive_sequence_group(clip_path))
+                seq_source = "manifest"
+                cat = manifest_entry.get("category", "")
+                subcat = manifest_entry.get("subcategory", "")
+                if not cat:
+                    cat, subcat = get_category(clip_path, args.corpus)
+            else:
+                seq_group = derive_sequence_group(clip_path)
+                seq_source = "filename_heuristic"
+                cat, subcat = get_category(clip_path, args.corpus)
+
+            # Metadata extraction with strict failure semantics
+            try:
+                meta = get_video_stream_meta(clip_path)
+            except VideoMetadataExtractionError as err:
+                print(f"  [{i}/{len(clips_paths)}] {clip_name} — [ERROR] Metadata extraction failed: {err}")
+                cr = ClipResult(
+                    clip_path=str(clip_path),
+                    clip_filename=clip_name,
+                    sequence_group=seq_group,
+                    sequence_group_source=seq_source,
+                    category=cat,
+                    subcategory=subcat,
+                    status="metadata_error",
+                    error_message=str(err),
+                )
+                clip_results.append(cr)
+                error_pairs += len(FIXTURE_SEVERITY_AXIS)
+                total_pairs += len(FIXTURE_SEVERITY_AXIS)
+                continue
+
+            clip_sha = compute_sha256(clip_path)
             w = meta["width"]
             h = meta["height"]
             fps = meta["fps"]
 
-            print(f"  [{i}/{len(clips_paths)}] {clip_path.name} ({w}x{h} @ {fps:.2f}fps, {meta['pix_fmt']})")
+            is_hdr_val, hdr_reason = detect_hdr(meta, path=clip_path)
+
+            print(f"  [{i}/{len(clips_paths)}] {clip_name} ({w}x{h} @ {fps:.2f}fps, {meta['pix_fmt']})")
+            print(f"      Group: '{seq_group}' ({seq_source}) | Category: '{cat}/{subcat}'")
             if is_hdr_val:
                 print(f"      HDR detected ({hdr_reason}) — VMAF disabled for this clip.")
 
             cr = ClipResult(
                 clip_path=str(clip_path),
+                clip_filename=clip_name,
                 clip_sha256=clip_sha,
                 sequence_group=seq_group,
+                sequence_group_source=seq_source,
                 category=cat,
                 subcategory=subcat,
                 width=w,
                 height=h,
                 fps=fps,
                 pix_fmt=meta["pix_fmt"],
+                color_transfer=meta.get("color_transfer"),
+                color_primaries=meta.get("color_primaries"),
+                color_space=meta.get("color_space"),
                 is_hdr=is_hdr_val,
                 hdr_reason=hdr_reason,
             )
 
-            # Resolve model for this resolution & frame-rate
+            # Resolve verified model for SDR clips
             model_spec: Optional[VmafModelSpec] = None
-            model_path: Optional[Path] = None
-            if vmaf_ok and not is_hdr_val:
+            resolved_model_path: Optional[Path] = None
+            unsupported_resolution = False
+            unsupported_err_msg = ""
+
+            if not is_hdr_val and vmaf_ok:
                 try:
                     model_spec = select_vmaf_model(w, h, fps, is_hdr=False)
-                    model_path = resolve_and_verify_model(model_spec, model_root=args.model_root)
-                except VmafUnsupportedResolutionError as ure:
-                    print(f"      Resolution unsupported for standard VMAF: {ure}")
-                except VmafModelError as vme:
-                    print(f"      VMAF model error: {vme}")
-
-            cached_clip_fixtures = cached_results.get(str(clip_path), {})
-
-            for fname in all_fixture_names:
-                # Check for cached result if resuming
-                if fname in cached_clip_fixtures:
-                    cached_pr = cached_clip_fixtures[fname]
-                    # Verify model hash matches if VMAF was evaluated
-                    if (cached_pr.vmaf_status != "ok" or
-                        not model_spec or
-                        cached_pr.vmaf_model_sha256 == model_spec.expected_sha256):
-                        cr.fixtures.append(cached_pr)
-                        total_pairs += 1
-                        print(
-                            f"      {fname:<22}  [CACHED] VMAF={cached_pr.vmaf_mean:6.2f}  "
-                            f"SSIM={cached_pr.ssim_mean:.4f}  PSNR={cached_pr.psnr_mean:.2f}dB",
-                            flush=True,
-                        )
-                        continue
-
-                dist = tmp / f"dist_{fname.lower()}.mp4"
-                pr = PairResult(fixture=fname)
-                try:
-                    build_fixture(fname, clip_path, dist, w, h)
-                    pr = measure_pair(
-                        clip_path, dist, tmp, vmaf_ok,
-                        model_spec=model_spec,
-                        model_path=model_path,
-                        is_hdr=is_hdr_val,
-                        hdr_reason=hdr_reason,
+                    resolved_model_path = resolve_and_verify_model(
+                        model_spec, model_root=args.model_root
                     )
-                    pr.fixture = fname
-                    total_pairs += 1
-                    status_flag = f"[{pr.vmaf_status}]" if pr.vmaf_status != "ok" else ""
-                    print(
-                        f"      {fname:<22}  VMAF={pr.vmaf_mean:6.2f} {status_flag}  "
-                        f"SSIM={pr.ssim_mean:.4f}  PSNR={pr.psnr_mean:.2f}dB",
-                        flush=True,
-                    )
-                except Exception as e:
-                    pr.error = str(e)
-                    print(f"      {fname:<22}  ERROR: {e}", flush=True)
-                finally:
-                    dist.unlink(missing_ok=True)
+                except VmafUnsupportedResolutionError as exc:
+                    unsupported_resolution = True
+                    unsupported_err_msg = str(exc)
+                    print(f"      Unsupported resolution ({exc}) — VMAF marked unsupported.")
+                except VmafModelError as exc:
+                    print(f"      VMAF model error ({exc}) — skipping VMAF.")
 
+            # Evaluate all 8 fixtures
+            cached_clip = cached_results.get(str(clip_path), {})
+
+            for fx_name in FIXTURE_SEVERITY_AXIS:
+                total_pairs += 1
+
+                # Check cache
+                if fx_name in cached_clip:
+                    pr = cached_clip[fx_name]
+                    cr.fixtures.append(pr)
+                    if pr.status == "success":
+                        successful_pairs += 1
+                        vmaf_str = f"{pr.vmaf_mean:6.2f}" if pr.vmaf_mean is not None else "  None"
+                        print(f"      {fx_name:<23} [CACHED] VMAF={vmaf_str}  SSIM={pr.ssim_mean:.4f}  PSNR={pr.psnr_mean:.2f}dB")
+                    elif pr.status == "not_applicable_hdr":
+                        hdr_segregated_pairs += 1
+                        print(f"      {fx_name:<23} [CACHED] [not_applicable_hdr]  SSIM={pr.ssim_mean:.4f}  PSNR={pr.psnr_mean:.2f}dB")
+                    else:
+                        error_pairs += 1
+                        print(f"      {fx_name:<23} [CACHED] [{pr.status}]")
+                    continue
+
+                if unsupported_resolution:
+                    pr = PairResult(
+                        fixture=fx_name,
+                        status="unsupported_resolution",
+                        error_type="unsupported_resolution",
+                        error_message=unsupported_err_msg,
+                    )
+                    cr.fixtures.append(pr)
+                    error_pairs += 1
+                    print(f"      {fx_name:<23} [unsupported_resolution]")
+                    continue
+
+                # Build fixture
+                dist_path = tmp / f"fixture_{fx_name.lower()}_{clip_path.stem}.mp4"
+                built = build_fixture(fx_name, clip_path, dist_path, w, h)
+                if not built:
+                    pr = PairResult(
+                        fixture=fx_name,
+                        status="measurement_error",
+                        error_type="fixture_build_error",
+                        error_message=f"Failed to generate fixture {fx_name}",
+                    )
+                    cr.fixtures.append(pr)
+                    error_pairs += 1
+                    print(f"      {fx_name:<23} [BUILD ERROR]")
+                    continue
+
+                # Measure pair
+                pr = measure_pair(
+                    clip_path, dist_path, fx_name, tmp,
+                    vmaf_ok, model_spec, resolved_model_path,
+                    is_hdr=is_hdr_val, hdr_reason=hdr_reason,
+                )
                 cr.fixtures.append(pr)
 
+                if pr.status == "success":
+                    successful_pairs += 1
+                    vmaf_str = f"{pr.vmaf_mean:6.2f}" if pr.vmaf_mean is not None else "  None"
+                    print(f"      {fx_name:<23} VMAF={vmaf_str}   SSIM={pr.ssim_mean:.4f}  PSNR={pr.psnr_mean:.2f}dB")
+                elif pr.status == "not_applicable_hdr":
+                    hdr_segregated_pairs += 1
+                    print(f"      {fx_name:<23} [not_applicable_hdr]  SSIM={pr.ssim_mean:.4f}  PSNR={pr.psnr_mean:.2f}dB")
+                else:
+                    error_pairs += 1
+                    print(f"      {fx_name:<23} [{pr.status}]: {pr.error_message}")
+
+                dist_path.unlink(missing_ok=True)
+
             clip_results.append(cr)
-
-    # Evaluate threshold
-    fa_rate, fr_rate, low_rate, modex_rate = evaluate_threshold(clip_results, cand)
-
-    accepted = (
-        low_rate   >= PASS_RATE_LOW_MIN  and
-        modex_rate >= FAIL_RATE_MODEX_MIN and
-        fa_rate    < FA_RATE_MAX         and
-        fr_rate    < FR_RATE_MAX
-    )
-
-    if accepted:
-        rec = "Threshold accepted -- proceed to Phase C (gate promotion) with these values."
-    elif fa_rate >= FA_RATE_MAX:
-        rec = "False-accept rate too high -- raise vmaf_mean_min or expand corpus."
-    elif fr_rate >= FR_RATE_MAX:
-        rec = "False-reject rate too high -- lower vmaf_worst_min or check LOW_PERTURBATION fixtures."
-    else:
-        rec = "Threshold not stable across content types -- expand corpus or revise fixture definitions."
+            print()
 
     report = CorpusReport(
+        schema="veilframe-vmaf-corpus-v1",
         tool_version=TOOL_VERSION,
         vmaf_model_version=VMAF_MODEL_VERSION,
-        candidate_threshold=cand,
+        timestamp_utc=datetime.datetime.utcnow().isoformat() + "Z",
+        ffmpeg_version=ffmpeg_ver,
+        libvmaf_version=libvmaf_ver,
+        libvmaf_version_source=libvmaf_source,
+        corpus_root=str(args.corpus),
+        manifest_path=str(manifest_path) if manifest_path else None,
         total_clips=len(clip_results),
         total_pairs=total_pairs,
-        false_accept_rate=fa_rate,
-        false_reject_rate=fr_rate,
-        low_pert_pass_rate=low_rate,
-        modex_fail_rate=modex_rate,
-        threshold_accepted=accepted,
-        recommendation=rec,
+        successful_pairs=successful_pairs,
+        hdr_segregated_pairs=hdr_segregated_pairs,
+        error_pairs=error_pairs,
         clips=clip_results,
     )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(asdict(report), f, indent=2)
-    print(f"\n  Results -> {args.out}")
 
-    print_report(report)
+    print(f"  Results saved → {args.out}")
+    print_measurement_summary(report)
 
 
 if __name__ == "__main__":
