@@ -2,7 +2,7 @@
   "schema": "veilframe-vmaf-analysis-v1",
   "analysis_version": "1.2.0",
   "vmaf_model_version": "1.0.16",
-  "timestamp_utc": "2026-09-04T19:12:17.095135Z",
+  "timestamp_utc": "2026-09-04T20:46:19.059447Z",
   "calibration_status": "no_feasible_threshold",
   "policy_evaluated": "combined",
   "partitioning_metadata": {
@@ -824,6 +824,268 @@
     }
   },
   "selected_operating_point": null,
+  "clustered_bootstrap_dev": null,
+  "clustered_bootstrap_heldout": null,
+  "clustered_roc_dev": {
+    "policy_name": "combined",
+    "auc": 0.9649,
+    "roc_curve": [
+      {
+        "fpr": 0.0,
+        "tpr": 0.5238,
+        "threshold": 99.985
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.5238,
+        "threshold": 100.0
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.5714,
+        "threshold": 99.6
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.5714,
+        "threshold": 99.97
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.619,
+        "threshold": 99.12
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.619,
+        "threshold": 99.23
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.6667,
+        "threshold": 97.215
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.6667,
+        "threshold": 99.01
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.7143,
+        "threshold": 95.24
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.7143,
+        "threshold": 95.42
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.7619,
+        "threshold": 94.075
+      },
+      {
+        "fpr": 0.0,
+        "tpr": 0.7619,
+        "threshold": 95.06
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.7619,
+        "threshold": 92.835
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.7619,
+        "threshold": 93.09
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.8095,
+        "threshold": 91.655
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.8095,
+        "threshold": 92.58
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.8571,
+        "threshold": 90.53
+      },
+      {
+        "fpr": 0.0169,
+        "tpr": 0.8571,
+        "threshold": 90.73
+      },
+      {
+        "fpr": 0.0339,
+        "tpr": 0.8571,
+        "threshold": 90.025
+      },
+      {
+        "fpr": 0.0339,
+        "tpr": 0.8571,
+        "threshold": 90.33
+      },
+      {
+        "fpr": 0.0339,
+        "tpr": 0.9048,
+        "threshold": 89.275
+      },
+      {
+        "fpr": 0.0339,
+        "tpr": 0.9048,
+        "threshold": 89.72
+      },
+      {
+        "fpr": 0.0508,
+        "tpr": 0.9048,
+        "threshold": 88.735
+      },
+      {
+        "fpr": 0.0508,
+        "tpr": 0.9048,
+        "threshold": 88.83
+      },
+      {
+        "fpr": 0.0678,
+        "tpr": 0.9048,
+        "threshold": 84.435
+      },
+      {
+        "fpr": 0.0678,
+        "tpr": 0.9048,
+        "threshold": 88.64
+      },
+      {
+        "fpr": 0.0847,
+        "tpr": 0.9048,
+        "threshold": 79.26
+      },
+      {
+        "fpr": 0.0847,
+        "tpr": 0.9048,
+        "threshold": 80.23
+      },
+      {
+        "fpr": 0.1017,
+        "tpr": 0.9048,
+        "threshold": 77.315
+      },
+      {
+        "fpr": 0.1017,
+        "tpr": 0.9048,
+        "threshold": 78.29
+      },
+      {
+        "fpr": 0.1017,
+        "tpr": 0.9524,
+        "threshold": 76.195
+      },
+      {
+        "fpr": 0.1017,
+        "tpr": 0.9524,
+        "threshold": 76.34
+      },
+      {
+        "fpr": 0.1186,
+        "tpr": 0.9524,
+        "threshold": 73.755
+      },
+      {
+        "fpr": 0.1186,
+        "tpr": 0.9524,
+        "threshold": 76.05
+      },
+      {
+        "fpr": 0.1356,
+        "tpr": 0.9524,
+        "threshold": 70.0
+      },
+      {
+        "fpr": 0.1356,
+        "tpr": 0.9524,
+        "threshold": 71.46
+      }
+    ]
+  },
+  "multi_policy_comparison_dev": {
+    "mean": {
+      "threshold": 90.0,
+      "policy_name": "mean",
+      "total_samples": 80,
+      "acceptable_samples": 21,
+      "unacceptable_samples": 59,
+      "true_accepts": 19,
+      "true_rejects": 55,
+      "false_accepts": 4,
+      "false_rejects": 2,
+      "false_accept_rate": 0.0678,
+      "false_reject_rate": 0.0952,
+      "acceptance_rate": 0.2875,
+      "rejection_rate": 0.7125,
+      "precision": 0.8261,
+      "recall": 0.9048,
+      "balanced_accuracy": 0.9185
+    },
+    "p5": {
+      "threshold": 90.0,
+      "policy_name": "p5",
+      "total_samples": 80,
+      "acceptable_samples": 21,
+      "unacceptable_samples": 59,
+      "true_accepts": 18,
+      "true_rejects": 57,
+      "false_accepts": 2,
+      "false_rejects": 3,
+      "false_accept_rate": 0.0339,
+      "false_reject_rate": 0.1429,
+      "acceptance_rate": 0.25,
+      "rejection_rate": 0.75,
+      "precision": 0.9,
+      "recall": 0.8571,
+      "balanced_accuracy": 0.9116
+    },
+    "combined": {
+      "threshold": 90.0,
+      "policy_name": "combined",
+      "total_samples": 80,
+      "acceptable_samples": 21,
+      "unacceptable_samples": 59,
+      "true_accepts": 18,
+      "true_rejects": 57,
+      "false_accepts": 2,
+      "false_rejects": 3,
+      "false_accept_rate": 0.0339,
+      "false_reject_rate": 0.1429,
+      "acceptance_rate": 0.25,
+      "rejection_rate": 0.75,
+      "precision": 0.9,
+      "recall": 0.8571,
+      "balanced_accuracy": 0.9116
+    },
+    "worst": {
+      "threshold": 90.0,
+      "policy_name": "worst",
+      "total_samples": 80,
+      "acceptable_samples": 21,
+      "unacceptable_samples": 59,
+      "true_accepts": 18,
+      "true_rejects": 58,
+      "false_accepts": 1,
+      "false_rejects": 3,
+      "false_accept_rate": 0.0169,
+      "false_reject_rate": 0.1429,
+      "acceptance_rate": 0.2375,
+      "rejection_rate": 0.7625,
+      "precision": 0.9474,
+      "recall": 0.8571,
+      "balanced_accuracy": 0.9201
+    }
+  },
   "heldout_validation": {
     "status": "heldout_preserved_validation_not_executed",
     "reason": "No feasible development candidate emerged from exhaustive boundary search; held-out partition remains unblinded to preserve evidentiary integrity."

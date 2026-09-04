@@ -26,6 +26,8 @@ from tools.vmaf_threshold_analysis import (
     load_corpus_samples,
     partition_by_sequence_group_algorithmic,
     evaluate_policy_operating_point,
+    compute_clustered_bootstrap_ci,
+    evaluate_multi_policy_comparison,
     CorpusSample,
 )
 from veilframe.quality.vmaf_models import classify_resolution, is_hfr
@@ -173,8 +175,19 @@ def run_domain_qualification(
             "frr_pct": round(ho_m.false_reject_rate * 100, 2),
         }
 
+        # Clustered Bootstrap Uncertainty & Multi-Policy Evaluation
+        dev_boot = compute_clustered_bootstrap_ci(dev_binary, best_threshold, policy_name="combined", seed=seed)
+        ho_boot = compute_clustered_bootstrap_ci(ho_binary, best_threshold, policy_name="combined", seed=seed)
+        multi_pol = evaluate_multi_policy_comparison(dev_binary, best_threshold)
+
+        domain_summary["clustered_bootstrap_dev"] = dev_boot
+        domain_summary["clustered_bootstrap_heldout"] = ho_boot
+        domain_summary["multi_policy_dev"] = {k: asdict(v) for k, v in multi_pol.items()}
+
         print(f"  Development Feasible Point: T={best_threshold:.2f} (FAR={best_dev_m.false_accept_rate*100:.2f}%, FRR={best_dev_m.false_reject_rate*100:.2f}%)")
+        print(f"    Dev Clustered 95% CI: FAR [{dev_boot['far_ci'][0]*100:.2f}%, {dev_boot['far_ci'][1]*100:.2f}%] | FRR [{dev_boot['frr_ci'][0]*100:.2f}%, {dev_boot['frr_ci'][1]*100:.2f}%]")
         print(f"  Held-Out Generalization:   T={best_threshold:.2f} (FAR={ho_m.false_accept_rate*100:.2f}%, FRR={ho_m.false_reject_rate*100:.2f}%)")
+        print(f"    Held-Out Clustered 95% CI: FAR [{ho_boot['far_ci'][0]*100:.2f}%, {ho_boot['far_ci'][1]*100:.2f}%] | FRR [{ho_boot['frr_ci'][0]*100:.2f}%, {ho_boot['frr_ci'][1]*100:.2f}%]")
 
         if ho_m.false_accept_rate < 0.02 and ho_m.false_reject_rate < 0.05:
             domain_summary["status"] = "validated"
@@ -206,6 +219,16 @@ def run_domain_qualification(
 
 
 if __name__ == "__main__":
-    results_path = Path("vmaf_corpus_results.json")
-    out_path = Path("vmaf_domain_qualification.json")
-    run_domain_qualification(results_path, out_path)
+    import argparse
+    parser = argparse.ArgumentParser(description="VeilFrame Technical Domain-Specific VMAF Qualification Study")
+    parser.add_argument("--corpus-results", type=Path, default=Path("vmaf_corpus_results.json"),
+                        help="Path to corpus results JSON")
+    parser.add_argument("--out", type=Path, default=Path("vmaf_domain_qualification.json"),
+                        help="Path to output qualification report JSON")
+    parser.add_argument("--dev-fraction", type=float, default=0.70,
+                        help="Development fraction (default: 0.70)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="RNG seed for deterministic split (default: 42)")
+
+    args = parser.parse_args()
+    run_domain_qualification(args.corpus_results, args.out, dev_fraction=args.dev_fraction, seed=args.seed)

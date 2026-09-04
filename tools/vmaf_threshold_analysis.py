@@ -32,6 +32,7 @@ Scientific & Architectural Invariants:
 import argparse
 import datetime
 import json
+import math
 import random
 import sys
 import io
@@ -88,6 +89,7 @@ class CorpusSample:
     motion_score:           Optional[float] = None
     evidence_path:          Optional[str] = None
     evidence_sha256:        Optional[str] = None
+    measurement_status:     str = "empirical"
 
 
 @dataclass
@@ -138,11 +140,16 @@ def assign_independent_policy_label(
 
 def load_corpus_samples(
     corpus_results_path: Path,
+    allow_simulated: bool = False,
 ) -> Tuple[List[CorpusSample], Dict[str, int], List[CorpusSample], List[Dict[str, Any]]]:
     """
     Loads measurement samples from vmaf_corpus_results.json.
     Excludes HDR not-applicable samples, metadata errors, and measurement failures.
     Missing data is NEVER interpreted as 0.0.
+
+    Strict Empirical Integrity:
+      - Any sample with measurement_status == "simulated" or clip marked is_simulated
+        is strictly rejected from empirical qualification unless allow_simulated=True.
 
     Strict Domain Segregation:
       - Domain 1: Modern/representative SDR (1080p and 2160p UHD) -> primary_samples
@@ -155,6 +162,8 @@ def load_corpus_samples(
     with open(corpus_results_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    is_simulated_dataset = data.get("simulation_mode", False) or data.get("boundary_targeting", False)
+
     primary_samples: List[CorpusSample] = []
     secondary_samples: List[CorpusSample] = []
     hdr_samples: List[Dict[str, Any]] = []
@@ -166,6 +175,7 @@ def load_corpus_samples(
         "unsupported_resolution": 0,
         "missing_vmaf": 0,
         "secondary_domain_diagnostic": 0,
+        "simulated_data_rejected": 0,
     }
 
     clips = data.get("clips", [])
@@ -232,6 +242,14 @@ def load_corpus_samples(
                 exclusion_counts["missing_vmaf"] += 1
                 continue
 
+            meas_status = fx.get("measurement_status") or clip.get("measurement_status")
+            if not meas_status:
+                meas_status = "simulated" if (is_simulated_dataset or clip.get("is_simulated") or fx.get("is_simulated")) else "empirical"
+
+            if meas_status == "simulated" and not allow_simulated:
+                exclusion_counts["simulated_data_rejected"] += 1
+                continue
+
             v_p5 = fx.get("vmaf_p5")
             v_worst = fx.get("vmaf_worst")
             v_std = fx.get("vmaf_stddev") or 0.0
@@ -275,10 +293,11 @@ def load_corpus_samples(
                 model_name=fx.get("model_name"),
                 model_sha256=fx.get("model_sha256"),
                 independent_policy_label=label,
+                measurement_status=meas_status,
             )
 
-            # Strict Domain Segregation: Domain 1 for primary calibration, Domain 2 for secondary diagnostic
-            if domain == "Domain 1: Primary SDR" or (not domain and "720p" not in c_fn.lower()):
+            # Strict Domain Segregation: Domain 1 / technical target domains for primary calibration, Domain 2 for secondary diagnostic
+            if domain in ("Domain 1: Primary SDR", "1080p_sdr", "1080p_hfr", "2160p_sdr", "2160p_hfr") or (not domain and "720p" not in c_fn.lower()):
                 primary_samples.append(sample)
             else:
                 exclusion_counts["secondary_domain_diagnostic"] += 1
@@ -728,6 +747,159 @@ def evaluate_exhaustive_threshold_boundaries(
     }
 
 
+def compute_clustered_bootstrap_ci(
+    samples: List[CorpusSample],
+    threshold: float,
+    policy_name: str = "combined",
+    n_bootstraps: int = 1000,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """
+    Computes clustered bootstrap confidence intervals for FAR and FRR by resampling
+    independent sequence groups with replacement.
+
+    Cardinal Independence Invariant:
+      Resampling individual pairs violates the assumption of independent and identically
+      distributed observations, because multiple fixtures/distortions originate from the same
+      reference master scene. Clustered bootstrap resamples sequence groups.
+    """
+    eval_samples = [s for s in samples if s.independent_policy_label in ("acceptable", "unacceptable")]
+    if not eval_samples:
+        return {
+            "n_bootstraps": n_bootstraps,
+            "n_clusters": 0,
+            "confidence_level": confidence_level,
+            "far_point": 0.0,
+            "frr_point": 0.0,
+            "far_ci": (0.0, 0.0),
+            "frr_ci": (0.0, 0.0),
+            "far_mean": 0.0,
+            "frr_mean": 0.0,
+            "far_std_err": 0.0,
+            "frr_std_err": 0.0,
+        }
+
+    # Group samples by sequence_group
+    group_map: Dict[str, List[CorpusSample]] = {}
+    for s in eval_samples:
+        group_map.setdefault(s.sequence_group, []).append(s)
+
+    unique_groups = sorted(list(group_map.keys()))
+    n_groups = len(unique_groups)
+
+    pt_metrics = evaluate_policy_operating_point(eval_samples, threshold, policy_name=policy_name)
+    far_point = pt_metrics.false_accept_rate
+    frr_point = pt_metrics.false_reject_rate
+
+    rng = random.Random(seed)
+    boot_fars: List[float] = []
+    boot_frrs: List[float] = []
+
+    for _ in range(n_bootstraps):
+        resampled_groups = [rng.choice(unique_groups) for _ in range(n_groups)]
+        boot_samples = []
+        for g in resampled_groups:
+            boot_samples.extend(group_map[g])
+
+        m = evaluate_policy_operating_point(boot_samples, threshold, policy_name=policy_name)
+        boot_fars.append(m.false_accept_rate)
+        boot_frrs.append(m.false_reject_rate)
+
+    boot_fars.sort()
+    boot_frrs.sort()
+
+    alpha = 1.0 - confidence_level
+    low_idx = int(math.floor(alpha / 2.0 * n_bootstraps))
+    high_idx = int(math.ceil((1.0 - alpha / 2.0) * n_bootstraps)) - 1
+    low_idx = max(0, min(low_idx, n_bootstraps - 1))
+    high_idx = max(0, min(high_idx, n_bootstraps - 1))
+
+    far_ci = (round(boot_fars[low_idx], 4), round(boot_fars[high_idx], 4))
+    frr_ci = (round(boot_frrs[low_idx], 4), round(boot_frrs[high_idx], 4))
+
+    far_mean = sum(boot_fars) / n_bootstraps
+    frr_mean = sum(boot_frrs) / n_bootstraps
+    far_std = math.sqrt(sum((x - far_mean) ** 2 for x in boot_fars) / max(1, n_bootstraps - 1))
+    frr_std = math.sqrt(sum((x - frr_mean) ** 2 for x in boot_frrs) / max(1, n_bootstraps - 1))
+
+    return {
+        "n_bootstraps": n_bootstraps,
+        "n_clusters": n_groups,
+        "confidence_level": confidence_level,
+        "far_point": round(far_point, 4),
+        "frr_point": round(frr_point, 4),
+        "far_ci": far_ci,
+        "frr_ci": frr_ci,
+        "far_mean": round(far_mean, 4),
+        "frr_mean": round(frr_mean, 4),
+        "far_std_err": round(far_std, 4),
+        "frr_std_err": round(frr_std, 4),
+    }
+
+
+def evaluate_multi_policy_comparison(
+    samples: List[CorpusSample],
+    threshold: float,
+    policies: Optional[List[str]] = None,
+) -> Dict[str, OperatingMetrics]:
+    """
+    Evaluates classification performance across multiple policy definitions:
+      - mean: V_mean >= T
+      - p5: V_p5 >= T
+      - combined: min(V_mean, V_p5) >= T
+      - worst: V_worst >= T
+    """
+    if policies is None:
+        policies = ["mean", "p5", "combined", "worst"]
+    results: Dict[str, OperatingMetrics] = {}
+    for pol in policies:
+        results[pol] = evaluate_policy_operating_point(samples, threshold, policy_name=pol)
+    return results
+
+
+def compute_clustered_roc(
+    samples: List[CorpusSample],
+    policy_name: str = "combined",
+    domain_start: float = 70.0,
+    domain_stop: float = 100.0,
+) -> Dict[str, Any]:
+    """
+    Computes the empirical ROC curve (TPR vs FPR) across all unique decision boundaries.
+    Calculates empirical AUC using the trapezoidal rule.
+    """
+    eval_res = evaluate_exhaustive_threshold_boundaries(
+        samples, policy_name=policy_name, domain_start=domain_start, domain_stop=domain_stop
+    )
+    evaluations = eval_res.get("evaluations", [])
+
+    roc_points = []
+    for ev in evaluations:
+        fpr = ev["false_accept_rate"]
+        tpr = round(1.0 - ev["false_reject_rate"], 4)
+        t = ev["threshold_evaluated"]
+        roc_points.append((fpr, tpr, t))
+
+    roc_points.sort(key=lambda x: (x[0], x[1]))
+
+    extended_points = [(0.0, 0.0, domain_stop)] + roc_points + [(1.0, 1.0, domain_start)]
+    extended_points.sort(key=lambda x: (x[0], x[1]))
+
+    auc = 0.0
+    for i in range(len(extended_points) - 1):
+        x1, y1, _ = extended_points[i]
+        x2, y2, _ = extended_points[i + 1]
+        auc += (x2 - x1) * (y1 + y2) / 2.0
+
+    auc = max(0.0, min(1.0, auc))
+
+    return {
+        "policy_name": policy_name,
+        "auc": round(auc, 4),
+        "roc_curve": [{"fpr": pt[0], "tpr": pt[1], "threshold": pt[2]} for pt in roc_points],
+    }
+
+
 # ── Minimum Data Confidence Requirements ──────────────────────────────── #
 
 MIN_TOTAL_SEQUENCE_GROUPS = 12
@@ -874,6 +1046,8 @@ def print_analysis_report(
     fr_max: float,
     failure_reasons: Optional[List[str]] = None,
     dev_exhaustive: Optional[Dict[str, Any]] = None,
+    dev_boot: Optional[Dict[str, Any]] = None,
+    heldout_boot: Optional[Dict[str, Any]] = None,
 ):
     dev_binary = sum(1 for s in dev_samples if s.independent_policy_label in ("acceptable", "unacceptable"))
     dev_boundary = len(dev_samples) - dev_binary
@@ -926,6 +1100,8 @@ def print_analysis_report(
         print(f"    Dev False-Accept Rate:   {dev_candidate.false_accept_rate*100:.2f}% (FAR < {fa_max*100:.1f}%) [OK]")
         print(f"    Dev False-Reject Rate:   {dev_candidate.false_reject_rate*100:.2f}% (FRR < {fr_max*100:.1f}%) [OK]")
         print(f"    Dev Balanced Accuracy:   {dev_candidate.balanced_accuracy*100:.1f}%")
+        if dev_boot:
+            print(f"    Dev Clustered 95% CI:    FAR [{dev_boot['far_ci'][0]*100:.2f}%, {dev_boot['far_ci'][1]*100:.2f}%] | FRR [{dev_boot['frr_ci'][0]*100:.2f}%, {dev_boot['frr_ci'][1]*100:.2f}%] ({dev_boot['n_clusters']} clusters)")
         print()
     else:
         print("  Development Candidate Operating Point: NONE")
@@ -940,6 +1116,8 @@ def print_analysis_report(
         print(f"    Held-Out FRR:            {heldout_result.false_reject_rate*100:.2f}% "
               f"[{'PASS' if ho_frr_ok else 'FAIL'}]")
         print(f"    Held-Out Balanced Acc:   {heldout_result.balanced_accuracy*100:.1f}%")
+        if heldout_boot:
+            print(f"    Held-Out Clustered 95% CI: FAR [{heldout_boot['far_ci'][0]*100:.2f}%, {heldout_boot['far_ci'][1]*100:.2f}%] | FRR [{heldout_boot['frr_ci'][0]*100:.2f}%, {heldout_boot['frr_ci'][1]*100:.2f}%] ({heldout_boot['n_clusters']} clusters)")
         print()
     else:
         print("  Held-Out Partition Status: PRESERVED UNTOUCHED (Validation Not Executed)")
@@ -1024,6 +1202,12 @@ def main():
         help=f"Minimum valid development binary samples required (default: {MIN_DEV_BINARY_SAMPLES})")
     parser.add_argument("--min-heldout-binary", type=int, default=MIN_HELDOUT_BINARY_SAMPLES,
         help=f"Minimum valid held-out binary samples required (default: {MIN_HELDOUT_BINARY_SAMPLES})")
+    parser.add_argument("--bootstrap-iterations", type=int, default=1000,
+        help="Number of clustered bootstrap resamples for confidence intervals (default: 1000)")
+    parser.add_argument("--confidence-level", type=float, default=0.95,
+        help="Confidence level for bootstrap percentile intervals (default: 0.95)")
+    parser.add_argument("--allow-simulated", action="store_true", default=False,
+        help="Allow simulated datasets for research simulation studies (rejected by default for empirical qualification)")
     args = parser.parse_args()
 
     # Invariant: Verify production policy remains False
@@ -1035,7 +1219,7 @@ def main():
     print(f"VeilFrame VMAF Threshold Analysis Engine  v{ANALYSIS_VERSION}")
     print("=" * 65)
 
-    primary_samples, exclusions, secondary_samples, hdr_samples = load_corpus_samples(args.corpus_results)
+    primary_samples, exclusions, secondary_samples, hdr_samples = load_corpus_samples(args.corpus_results, allow_simulated=args.allow_simulated)
     hdr_count = len(hdr_samples)
     print(f"  Domain 1 (Primary SDR) samples: {len(primary_samples)}")
     print(f"  Domain 2 (Secondary diag) samples: {len(secondary_samples)}")
@@ -1388,9 +1572,28 @@ def main():
     cat_breakdown = compute_category_breakdown(primary_samples, chosen_threshold, policy_name=args.policy)
     res_breakdown = compute_resolution_breakdown(primary_samples, chosen_threshold, policy_name=args.policy)
 
+    # Clustered Bootstrap Uncertainty
+    dev_boot = None
+    if dev_candidate:
+        dev_boot = compute_clustered_bootstrap_ci(
+            dev_samples, dev_candidate.threshold, policy_name=args.policy,
+            n_bootstraps=args.bootstrap_iterations, confidence_level=args.confidence_level, seed=args.seed
+        )
+
+    heldout_boot = None
+    if heldout_result:
+        heldout_boot = compute_clustered_bootstrap_ci(
+            heldout_samples, heldout_result.threshold, policy_name=args.policy,
+            n_bootstraps=args.bootstrap_iterations, confidence_level=args.confidence_level, seed=args.seed
+        )
+
+    # Clustered ROC and Multi-Policy Comparison
+    clustered_roc = compute_clustered_roc(dev_samples, policy_name=args.policy)
+    multi_policy_cmp = evaluate_multi_policy_comparison(dev_samples, chosen_threshold)
+
     print_analysis_report(
         status, dev_candidate, heldout_result, dev_groups, heldout_groups, dev_samples, heldout_samples,
-        args.fa_max, args.fr_max, dev_exhaustive=dev_exhaustive
+        args.fa_max, args.fr_max, dev_exhaustive=dev_exhaustive, dev_boot=dev_boot, heldout_boot=heldout_boot
     )
 
     scientific_conclusion = (
@@ -1423,6 +1626,10 @@ def main():
         "exhaustive_analysis": dev_exhaustive,
         "sensitivity_analysis": sensitivity_analysis,
         "selected_operating_point": asdict(dev_candidate) if dev_candidate else None,
+        "clustered_bootstrap_dev": dev_boot,
+        "clustered_bootstrap_heldout": heldout_boot,
+        "clustered_roc_dev": clustered_roc,
+        "multi_policy_comparison_dev": {k: asdict(v) for k, v in multi_policy_cmp.items()},
         "heldout_validation": heldout_validation_data,
         "category_breakdown": cat_breakdown,
         "resolution_breakdown": res_breakdown,
