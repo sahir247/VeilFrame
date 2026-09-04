@@ -151,7 +151,15 @@ class VisualBudgetPolicy:
     # (FAR < 2.0%, FRR < 5.0%) yielded NO_FEASIBLE_THRESHOLD for a single global scalar.
     # The production gate MUST remain disabled (vmaf_gate_enabled=False) until an
     # operating point achieves verified held-out validation.
-    # "Providers measure. VeilFrame decides." — QualityGate owns verdict logic.
+    # VMAF perceptual quality gate mode (Tier 2b):
+    # - "disabled": No VMAF evaluation or gate.
+    # - "audit": Mandatory measurement and evidence with verified provenance,
+    #            but CANNOT reject production output. (VeilFrame v1 production default).
+    # - "validated_model": Model-specific qualified threshold gating; only active
+    #                      if domain is empirically qualified. Unqualified domains
+    #                      fall back to audit mode.
+    # - "validated_global": Global scalar threshold gating (unqualified per empirical baseline).
+    vmaf_gate_mode: str = "audit"
     vmaf_gate_enabled: bool = False
     vmaf_mean_min: float = 85.0   # Uncalibrated baseline mean placeholder (gate disabled)
     vmaf_p5_min: float = 75.0     # Uncalibrated baseline P5 tail placeholder (gate disabled)
@@ -171,6 +179,15 @@ class VisualBudgetPolicy:
     signing_mode: str = "ephemeral"  # "ephemeral" or "persistent"
     signing_key_path: Optional[str] = None
     key_id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Synchronizes vmaf_gate_mode and backward-compatible vmaf_gate_enabled."""
+        if self.vmaf_gate_enabled and self.vmaf_gate_mode == "audit":
+            self.vmaf_gate_mode = "validated_global"
+        elif self.vmaf_gate_mode in ("validated_model", "validated_global"):
+            self.vmaf_gate_enabled = True
+        elif self.vmaf_gate_mode in ("disabled", "audit"):
+            self.vmaf_gate_enabled = False
 
 
 @dataclass

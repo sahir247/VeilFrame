@@ -27,7 +27,7 @@ When vmaf_gate_enabled=True (after calibration):
 
 Architectural invariant: Providers measure. VeilFrame decides.
 """
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from .models import QualityResult
 from ..models.video_info import (
@@ -54,7 +54,7 @@ class QualityGate:
 
     def _validate_policy(self, policy: VisualBudgetPolicy) -> None:
         """Validates that policy constraints and thresholds are well-formed."""
-        if policy.vmaf_gate_enabled:
+        if policy.vmaf_gate_enabled or getattr(policy, "vmaf_gate_mode", "audit") in ("validated_global", "validated_model"):
             if policy.vmaf_mean_min < 0.0 or policy.vmaf_mean_min > 100.0:
                 raise ValueError(f"Invalid vmaf_mean_min: {policy.vmaf_mean_min}. Must be in [0, 100].")
             if policy.vmaf_p5_min < 0.0 or policy.vmaf_p5_min > 100.0:
@@ -81,7 +81,7 @@ class QualityGate:
             policy_score:     Application-defined 5% policy budget evaluation.
 
         Returns:
-            ThreeTierQualityVerdict with overall PASS/REJECT.
+            ThreeTierQualityVerdict with overall PASS/REJECT and VMAF provenance.
         """
         policy = self._policy
 
@@ -100,16 +100,17 @@ class QualityGate:
         all_violations.extend(t1_violations)
 
         # ── Tier 2a: Rendered Visual Fidelity (SSIM + PSNR) ──────────────── #
+        # SSIM and PSNR remain the authoritative quality safety gate.
         t2_violations: List[str] = []
         if ssim_stats.mean < policy.ssim_mean_min:
             t2_violations.append(
                 f"Mean SSIM ({ssim_stats.mean:.4f}) below constraint (>= {policy.ssim_mean_min:.4f})"
             )
-        if ssim_stats.p5 < policy.ssim_p5_min:
+        if ssim_stats.p5 is not None and ssim_stats.p5 < policy.ssim_p5_min:
             t2_violations.append(
                 f"P5 Tail SSIM ({ssim_stats.p5:.4f}) below constraint (>= {policy.ssim_p5_min:.4f})"
             )
-        if ssim_stats.min_val < policy.ssim_worst_min:
+        if ssim_stats.min_val is not None and ssim_stats.min_val < policy.ssim_worst_min:
             t2_violations.append(
                 f"Worst-Frame SSIM ({ssim_stats.min_val:.4f}) below constraint (>= {policy.ssim_worst_min:.4f})"
             )
@@ -117,52 +118,204 @@ class QualityGate:
             t2_violations.append(
                 f"Mean PSNR ({psnr_stats.mean:.2f} dB) below constraint (>= {policy.psnr_mean_min_db:.1f} dB)"
             )
-        if psnr_stats.min_val < policy.psnr_worst_min_db:
+        if psnr_stats.min_val is not None and psnr_stats.min_val < policy.psnr_worst_min_db:
             t2_violations.append(
                 f"Worst-Frame PSNR ({psnr_stats.min_val:.2f} dB) below constraint (>= {policy.psnr_worst_min_db:.1f} dB)"
             )
 
-        # ── Tier 2b: VMAF Gate (calibration-gated) ───────────────────────── #
-        # Activates only when vmaf_gate_enabled=True AND VMAF results exist.
-        # VMAF provider absence with gate enabled is NOT a silent pass:
-        #   → it appends a violation unless the caller documented the absence.
-        # This preserves the adversarial property:
-        #   "a missing provider cannot silently suppress a REJECT signal."
-        if policy.vmaf_gate_enabled:
-            if vmaf_available:
-                if vmaf_stats.mean < policy.vmaf_mean_min:
+        # ── Tier 2b: VMAF Policy Evaluation ─────────────────────────────── #
+        # Technical classification from native stream geometry:
+        w = h = 0
+        if native_metrics:
+            for res_str in (native_metrics.resolution_trans, native_metrics.resolution_ref):
+                if res_str and "x" in res_str:
+                    parts = res_str.split("x")
+                    try:
+                        w, h = int(parts[0]), int(parts[1])
+                        break
+                    except Exception:
+                        pass
+        fps = 30.0
+        if native_metrics:
+            fps = native_metrics.fps_trans or native_metrics.fps_ref or 30.0
+
+        from .vmaf_policy import classify_technical_domain, resolve_vmaf_policy
+        tech_domain = classify_technical_domain(w, h, fps, is_hdr=False)
+        gate_mode = getattr(policy, "vmaf_gate_mode", "validated_global" if policy.vmaf_gate_enabled else "audit")
+        vmaf_profile = resolve_vmaf_policy(tech_domain, gate_mode=gate_mode)
+
+        vmaf_verdict_data: Optional[Dict[str, Any]] = None
+        policy_provenance_data: Optional[Dict[str, Any]] = {
+            "study_id": vmaf_profile.calibration_study_id,
+            "dataset_version": vmaf_profile.dataset_version,
+            "policy_version": vmaf_profile.policy_version,
+            "analysis_version": vmaf_profile.analysis_version,
+        }
+
+        if gate_mode == "disabled":
+            vmaf_verdict_data = {
+                "status": "disabled",
+                "gate_mode": "disabled",
+                "domain": tech_domain,
+                "policy_id": vmaf_profile.policy_id,
+                "decision": "DISABLED",
+            }
+        elif gate_mode == "audit":
+            # Production v1 baseline: Measurement only. NEVER rejects production output.
+            if vmaf_available and vmaf_result:
+                is_p5_missing = (vmaf_result.p5 is None)
+                decision = "AUDIT_INCOMPLETE" if is_p5_missing else "AUDIT"
+                note = "VMAF P5 percentile missing; audit incomplete" if is_p5_missing else "Audit measurement recorded"
+                vmaf_verdict_data = {
+                    "status": "audit_only",
+                    "gate_mode": "audit",
+                    "domain": tech_domain,
+                    "model_id": vmaf_result.model_name or "unknown",
+                    "model_sha256": vmaf_result.model_sha256,
+                    "evidence_sha256": vmaf_result.evidence_sha256,
+                    "mean": vmaf_stats.mean,
+                    "p5": vmaf_stats.p5,
+                    "worst": vmaf_stats.min_val,
+                    "policy_id": vmaf_profile.policy_id,
+                    "mean_min": None,
+                    "p5_min": None,
+                    "decision": decision,
+                    "note": note,
+                }
+            else:
+                vmaf_verdict_data = {
+                    "status": "unavailable",
+                    "gate_mode": "audit",
+                    "domain": tech_domain,
+                    "policy_id": vmaf_profile.policy_id,
+                    "decision": "AUDIT_INCOMPLETE",
+                    "note": "VMAF provider produced no results; audit incomplete",
+                }
+        elif gate_mode == "validated_model":
+            # Domain-specific model gating:
+            if vmaf_profile.status == "validated":
+                # Validated domain: enforces empirical thresholds
+                if not vmaf_available:
                     t2_violations.append(
+                        f"VMAF gate armed for validated domain '{tech_domain}' but libvmaf provider produced no results"
+                        " — verification cannot pass without required VMAF evidence"
+                    )
+                    vmaf_decision = "REJECT"
+                else:
+                    vmaf_v = []
+                    if vmaf_profile.mean_min is not None and vmaf_stats.mean < vmaf_profile.mean_min:
+                        vmaf_v.append(
+                            f"Mean VMAF ({vmaf_stats.mean:.2f}) below domain threshold (>= {vmaf_profile.mean_min:.1f})"
+                        )
+                    if vmaf_profile.p5_min is not None:
+                        if vmaf_result and vmaf_result.p5 is None:
+                            vmaf_v.append(
+                                f"VMAF P5 percentile unavailable (full per-frame JSON evidence required for P5 >= {vmaf_profile.p5_min:.1f})"
+                            )
+                        elif vmaf_stats.p5 is not None and vmaf_stats.p5 < vmaf_profile.p5_min:
+                            vmaf_v.append(
+                                f"P5 VMAF ({vmaf_stats.p5:.2f}) below domain threshold (>= {vmaf_profile.p5_min:.1f})"
+                            )
+                    if vmaf_profile.worst_min is not None:
+                        if vmaf_result and vmaf_result.minimum is None:
+                            vmaf_v.append(
+                                f"VMAF worst-frame score unavailable (per-frame evidence required for min >= {vmaf_profile.worst_min:.1f})"
+                            )
+                        elif vmaf_stats.min_val is not None and vmaf_stats.min_val < vmaf_profile.worst_min:
+                            vmaf_v.append(
+                                f"Worst-Frame VMAF ({vmaf_stats.min_val:.2f}) below domain threshold (>= {vmaf_profile.worst_min:.1f})"
+                            )
+                    t2_violations.extend(vmaf_v)
+                    vmaf_decision = "PASS" if len(vmaf_v) == 0 else "REJECT"
+
+                vmaf_verdict_data = {
+                    "status": "validated",
+                    "gate_mode": "validated_model",
+                    "domain": tech_domain,
+                    "model_id": vmaf_result.model_name if vmaf_result else "unknown",
+                    "model_sha256": vmaf_result.model_sha256 if vmaf_result else None,
+                    "evidence_sha256": vmaf_result.evidence_sha256 if vmaf_result else None,
+                    "mean": vmaf_stats.mean if vmaf_available else None,
+                    "p5": vmaf_stats.p5 if vmaf_available else None,
+                    "worst": vmaf_stats.min_val if vmaf_available else None,
+                    "policy_id": vmaf_profile.policy_id,
+                    "mean_min": vmaf_profile.mean_min,
+                    "p5_min": vmaf_profile.p5_min,
+                    "decision": vmaf_decision,
+                }
+            else:
+                # Unqualified domain: falls back to audit mode with SSIM/PSNR authority
+                vmaf_decision = "AUDIT_FALLBACK"
+                vmaf_verdict_data = {
+                    "status": vmaf_profile.status,
+                    "gate_mode": "validated_model",
+                    "domain": tech_domain,
+                    "model_id": vmaf_result.model_name if vmaf_result else "unknown",
+                    "model_sha256": vmaf_result.model_sha256 if vmaf_result else None,
+                    "evidence_sha256": vmaf_result.evidence_sha256 if vmaf_result else None,
+                    "mean": vmaf_stats.mean if vmaf_available else None,
+                    "p5": vmaf_stats.p5 if vmaf_available else None,
+                    "worst": vmaf_stats.min_val if vmaf_available else None,
+                    "policy_id": vmaf_profile.policy_id,
+                    "mean_min": None,
+                    "p5_min": None,
+                    "decision": vmaf_decision,
+                    "note": f"Domain '{tech_domain}' is not qualified; falling back to audit mode with SSIM/PSNR authority",
+                }
+        elif gate_mode == "validated_global":
+            # Global scalar gate (preserves backward-compat for legacy vmaf_gate_enabled=True)
+            if not vmaf_available:
+                t2_violations.append(
+                    "VMAF gate is enabled (calibrated Tier 2b) but libvmaf provider produced no results"
+                    " — verification cannot pass without required VMAF evidence"
+                )
+                vmaf_decision = "REJECT"
+            else:
+                vmaf_v = []
+                if vmaf_stats.mean < policy.vmaf_mean_min:
+                    vmaf_v.append(
                         f"Mean VMAF ({vmaf_stats.mean:.2f}) below gate threshold"
                         f" (>= {policy.vmaf_mean_min:.1f}) — calibrated Tier 2b"
                     )
                 if vmaf_result and vmaf_result.p5 is None:
-                    t2_violations.append(
+                    vmaf_v.append(
                         f"VMAF P5 percentile unavailable (full per-frame JSON evidence required for P5 >= {policy.vmaf_p5_min:.1f})"
                         f" — calibrated Tier 2b"
                     )
-                elif vmaf_stats.p5 < policy.vmaf_p5_min:
-                    t2_violations.append(
+                elif vmaf_stats.p5 is not None and vmaf_stats.p5 < policy.vmaf_p5_min:
+                    vmaf_v.append(
                         f"P5 VMAF ({vmaf_stats.p5:.2f}) below gate threshold"
                         f" (>= {policy.vmaf_p5_min:.1f}) — calibrated Tier 2b"
                     )
                 if getattr(policy, "vmaf_worst_min", None) is not None:
                     if vmaf_result and vmaf_result.minimum is None:
-                        t2_violations.append(
+                        vmaf_v.append(
                             f"VMAF worst-frame score unavailable (per-frame evidence required for min >= {policy.vmaf_worst_min:.1f})"
                             f" — calibrated Tier 2b"
                         )
-                    elif vmaf_stats.min_val < policy.vmaf_worst_min:
-                        t2_violations.append(
+                    elif vmaf_stats.min_val is not None and vmaf_stats.min_val < policy.vmaf_worst_min:
+                        vmaf_v.append(
                             f"Worst-Frame VMAF ({vmaf_stats.min_val:.2f}) below gate threshold"
                             f" (>= {policy.vmaf_worst_min:.1f}) — calibrated Tier 2b"
                         )
-            else:
-                # Provider unavailable with gate armed: fails Tier 2b.
-                # When vmaf_gate_enabled=True, VMAF evaluation is mandatory.
-                t2_violations.append(
-                    "VMAF gate is enabled (calibrated Tier 2b) but libvmaf provider produced no results"
-                    " — verification cannot pass without required VMAF evidence"
-                )
+                t2_violations.extend(vmaf_v)
+                vmaf_decision = "PASS" if len(vmaf_v) == 0 else "REJECT"
+
+            vmaf_verdict_data = {
+                "status": "validated_global",
+                "gate_mode": "validated_global",
+                "domain": tech_domain,
+                "model_id": vmaf_result.model_name if vmaf_result else "unknown",
+                "model_sha256": vmaf_result.model_sha256 if vmaf_result else None,
+                "evidence_sha256": vmaf_result.evidence_sha256 if vmaf_result else None,
+                "mean": vmaf_stats.mean if vmaf_available else None,
+                "p5": vmaf_stats.p5 if vmaf_available else None,
+                "worst": vmaf_stats.min_val if vmaf_available else None,
+                "policy_id": "vmaf-global-unqualified",
+                "mean_min": policy.vmaf_mean_min,
+                "p5_min": policy.vmaf_p5_min,
+                "decision": vmaf_decision,
+            }
 
         t2_passed = len(t2_violations) == 0
         all_violations.extend(t2_violations)
@@ -184,6 +337,8 @@ class QualityGate:
             tier3_violations=t3_violations,
             overall_verdict=overall_verdict,
             all_passed=all_passed,
+            vmaf_verdict=vmaf_verdict_data,
+            policy_provenance=policy_provenance_data,
         )
 
     def _extract_stats(

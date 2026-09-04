@@ -170,20 +170,37 @@ def is_hfr(fps: float) -> bool:
 
 def classify_resolution(width: int, height: int) -> str:
     """
-    Orientation-safe classification of video resolution into VMAF model domains.
+    Orientation-safe, explicit classification of video resolution into VMAF technical domains.
 
-    Returns:
-        "1080p": Max dimension <= 1920 and min dimension <= 1080 (covers 1080p, 720p, 480p, vertical 1080x1920)
-        "2160p": Max dimension >= 3840 or min dimension >= 2160 (covers 4K UHD, DCI 4K, vertical 2160x3840)
-        "unsupported": Non-standard intermediate resolutions (e.g. 1440p / 2560x1440)
+    Domains:
+      - "1080p": True 1080p-class video:
+          * Standard landscape 1920x1080 or portrait 1080x1920.
+          * Windowed/cropped 1080p content where min dimension is exactly 1080 and max dimension <= 1920
+            (e.g., 1808x1080, 1080x1080).
+      - "2160p": 2160p (4K UHD / DCI 4K) class video:
+          * Standard 3840x2160, portrait 2160x3840, or DCI 4096x2160.
+          * Min dimension >= 2160 or max dimension >= 3840.
+      - "secondary": Legacy/secondary resolutions (720p, 480p, SD):
+          * Max dimension <= 1280 and min dimension <= 720 (e.g., 1280x720, 720x1280, 854x480, 640x480).
+      - "unsupported": Intermediate non-standard resolutions outside primary VMAF domains:
+          * e.g., 2560x1440 (1440p), 3000x2000, 1440x1440.
     """
     max_dim = max(width, height)
     min_dim = min(width, height)
 
-    if max_dim <= 1920 and min_dim <= 1080:
-        return "1080p"
+    # 1. 2160p (4K UHD / DCI 4K) class
     if max_dim >= 3840 or min_dim >= 2160:
         return "2160p"
+
+    # 2. True 1080p class: min_dim == 1080 and max_dim <= 1920
+    if min_dim == 1080 and max_dim <= 1920:
+        return "1080p"
+
+    # 3. Secondary domain: 720p, 480p, SD
+    if max_dim <= 1280 and min_dim <= 720:
+        return "secondary"
+
+    # 4. Non-standard intermediate (e.g. 1440p / 2560x1440)
     return "unsupported"
 
 
@@ -230,7 +247,7 @@ def select_vmaf_model(
 
     Raises:
         VmafNotApplicableHdrError: If is_hdr is True.
-        VmafUnsupportedResolutionError: If resolution does not map to 1080p or 2160p class.
+        VmafUnsupportedResolutionError: If resolution belongs to secondary or unsupported domain.
     """
     if is_hdr:
         raise VmafNotApplicableHdrError(
@@ -239,6 +256,12 @@ def select_vmaf_model(
         )
 
     res_tier = classify_resolution(width, height)
+    if res_tier == "secondary":
+        raise VmafUnsupportedResolutionError(
+            f"Resolution {width}x{height} belongs to the secondary domain (720p/SD). "
+            f"VMAF v1.0.16 models are validated for 1080p and 2160p domains only. "
+            f"Secondary resolutions must not silently use 1080p models."
+        )
     if res_tier == "unsupported":
         raise VmafUnsupportedResolutionError(
             f"Resolution {width}x{height} does not match standard 1080p or 2160p VMAF domains. "

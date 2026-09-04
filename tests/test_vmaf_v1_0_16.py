@@ -128,12 +128,15 @@ class TestVmafModelSelection(unittest.TestCase):
         self.assertTrue(is_hfr(120.0))
 
     def test_resolution_classification(self):
-        # 1080p class
+        # True 1080p class
         self.assertEqual(classify_resolution(1920, 1080), "1080p")
-        self.assertEqual(classify_resolution(1280, 720), "1080p")
-        self.assertEqual(classify_resolution(640, 480), "1080p")
-        # Vertical mobile 1080x1920
         self.assertEqual(classify_resolution(1080, 1920), "1080p")
+        self.assertEqual(classify_resolution(1808, 1080), "1080p")
+
+        # Secondary class (720p, SD)
+        self.assertEqual(classify_resolution(1280, 720), "secondary")
+        self.assertEqual(classify_resolution(720, 1280), "secondary")
+        self.assertEqual(classify_resolution(640, 480), "secondary")
 
         # 2160p class (4K)
         self.assertEqual(classify_resolution(3840, 2160), "2160p")

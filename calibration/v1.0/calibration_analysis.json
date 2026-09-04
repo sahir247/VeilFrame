@@ -1,0 +1,695 @@
+{
+  "schema": "veilframe-vmaf-analysis-v1",
+  "analysis_version": "1.2.0",
+  "vmaf_model_version": "1.0.16",
+  "timestamp_utc": "2026-09-04T05:42:43.647439Z",
+  "calibration_status": "no_feasible_threshold",
+  "policy_evaluated": "combined",
+  "partitioning_metadata": {
+    "algorithm": "algorithmic_deterministic_search",
+    "seed_used": 42,
+    "constraints_satisfied": true,
+    "failure_reasons": [],
+    "dev_groups_count": 9,
+    "heldout_groups_count": 4,
+    "dev_groups": [
+      "ducks_take_off",
+      "ide_editing",
+      "old_town_cross",
+      "park_joy",
+      "pdf_reading",
+      "red_kayak",
+      "rush_field_cuts",
+      "speed_bag",
+      "tractor"
+    ],
+    "heldout_groups": [
+      "aspen",
+      "browsing",
+      "night_drive",
+      "snow_mnt"
+    ],
+    "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+  },
+  "research_constraints": {
+    "fa_max": 0.02,
+    "fr_max": 0.05
+  },
+  "sequence_groups": {
+    "total_domain1_groups": 13,
+    "dev_groups": [
+      "ducks_take_off",
+      "ide_editing",
+      "old_town_cross",
+      "park_joy",
+      "pdf_reading",
+      "red_kayak",
+      "rush_field_cuts",
+      "speed_bag",
+      "tractor"
+    ],
+    "heldout_groups": [
+      "aspen",
+      "browsing",
+      "night_drive",
+      "snow_mnt"
+    ]
+  },
+  "sample_accounting": {
+    "total_primary_sdr_pairs": 112,
+    "hdr_segregated_pairs": 8,
+    "secondary_domain_diagnostic_pairs": 8,
+    "total_clips_in_domain1": 14,
+    "development_split": {
+      "sequence_groups_count": 9,
+      "sequence_groups": [
+        "ducks_take_off",
+        "ide_editing",
+        "old_town_cross",
+        "park_joy",
+        "pdf_reading",
+        "red_kayak",
+        "rush_field_cuts",
+        "speed_bag",
+        "tractor"
+      ],
+      "clips_count": 10,
+      "total_pairs": 80,
+      "binary_evaluation_samples": 70,
+      "acceptable_samples": 18,
+      "unacceptable_samples": 52,
+      "boundary_moderate_excluded": 10
+    },
+    "heldout_split": {
+      "sequence_groups_count": 4,
+      "sequence_groups": [
+        "aspen",
+        "browsing",
+        "night_drive",
+        "snow_mnt"
+      ],
+      "clips_count": 4,
+      "total_pairs": 32,
+      "binary_evaluation_samples": 28,
+      "acceptable_samples": 8,
+      "unacceptable_samples": 20,
+      "boundary_moderate_excluded": 4
+    },
+    "total_binary_evaluation_samples": 98,
+    "total_boundary_moderate_excluded": 14,
+    "arithmetic_verification": {
+      "domain1_pairs_check": "80 dev + 32 heldout = 112 Domain 1 pairs",
+      "binary_plus_boundary_check": "98 binary + 14 boundary = 112 Domain 1 pairs"
+    },
+    "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+  },
+  "scientific_conclusion": "Under the prespecified development corpus, independent labeling rule, decision policy, threshold domain [70.0, 100.0], and strict research constraints (FAR < 2.0% and FRR < 5.0%), an exhaustive threshold-boundary search over the complete development decision space found no feasible threshold. This indicates that further calibration and/or evaluation of multi-tier operating points is warranted.",
+  "exhaustive_analysis": {
+    "domain_start": 70.0,
+    "domain_stop": 100.0,
+    "policy_name": "combined",
+    "fa_max": 0.02,
+    "fr_max": 0.05,
+    "total_binary_samples": 70,
+    "acceptable_samples": 18,
+    "unacceptable_samples": 52,
+    "unique_decision_values_count": 11,
+    "unique_decision_values": [
+      71.46,
+      89.72,
+      90.33,
+      92.58,
+      93.09,
+      95.06,
+      95.42,
+      99.01,
+      99.23,
+      99.97,
+      100.0
+    ],
+    "evaluated_segments_count": 22,
+    "feasible_segments_count": 0,
+    "feasible_intervals": [],
+    "lowest_feasible_threshold": null,
+    "status": "no_feasible_threshold",
+    "evaluations": [
+      {
+        "threshold_evaluated": 70.0,
+        "point_type": "left_interval",
+        "interval_repr": "[70.00, 71.4600)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 18,
+        "true_rejects": 49,
+        "false_accepts": 3,
+        "false_rejects": 0,
+        "false_accept_rate": 0.0577,
+        "false_reject_rate": 0.0,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0577) >= 0.0200"
+        ]
+      },
+      {
+        "threshold_evaluated": 71.46,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 71.4600",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 18,
+        "true_rejects": 49,
+        "false_accepts": 3,
+        "false_rejects": 0,
+        "false_accept_rate": 0.0577,
+        "false_reject_rate": 0.0,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0577) >= 0.0200"
+        ]
+      },
+      {
+        "threshold_evaluated": 80.59,
+        "point_type": "open_interval",
+        "interval_repr": "(71.4600, 89.7200)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 18,
+        "true_rejects": 50,
+        "false_accepts": 2,
+        "false_rejects": 0,
+        "false_accept_rate": 0.0385,
+        "false_reject_rate": 0.0,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0385) >= 0.0200"
+        ]
+      },
+      {
+        "threshold_evaluated": 89.72,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 89.7200",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 18,
+        "true_rejects": 50,
+        "false_accepts": 2,
+        "false_rejects": 0,
+        "false_accept_rate": 0.0385,
+        "false_reject_rate": 0.0,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0385) >= 0.0200"
+        ]
+      },
+      {
+        "threshold_evaluated": 90.025,
+        "point_type": "open_interval",
+        "interval_repr": "(89.7200, 90.3300)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 17,
+        "true_rejects": 50,
+        "false_accepts": 2,
+        "false_rejects": 1,
+        "false_accept_rate": 0.0385,
+        "false_reject_rate": 0.0556,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0385) >= 0.0200",
+          "FRR (0.0556) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 90.33,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 90.3300",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 17,
+        "true_rejects": 50,
+        "false_accepts": 2,
+        "false_rejects": 1,
+        "false_accept_rate": 0.0385,
+        "false_reject_rate": 0.0556,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FAR (0.0385) >= 0.0200",
+          "FRR (0.0556) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 91.455,
+        "point_type": "open_interval",
+        "interval_repr": "(90.3300, 92.5800)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 17,
+        "true_rejects": 51,
+        "false_accepts": 1,
+        "false_rejects": 1,
+        "false_accept_rate": 0.0192,
+        "false_reject_rate": 0.0556,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.0556) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 92.58,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 92.5800",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 17,
+        "true_rejects": 51,
+        "false_accepts": 1,
+        "false_rejects": 1,
+        "false_accept_rate": 0.0192,
+        "false_reject_rate": 0.0556,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.0556) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 92.835,
+        "point_type": "open_interval",
+        "interval_repr": "(92.5800, 93.0900)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 16,
+        "true_rejects": 51,
+        "false_accepts": 1,
+        "false_rejects": 2,
+        "false_accept_rate": 0.0192,
+        "false_reject_rate": 0.1111,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1111) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 93.09,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 93.0900",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 16,
+        "true_rejects": 51,
+        "false_accepts": 1,
+        "false_rejects": 2,
+        "false_accept_rate": 0.0192,
+        "false_reject_rate": 0.1111,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1111) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 94.075,
+        "point_type": "open_interval",
+        "interval_repr": "(93.0900, 95.0600)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 16,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 2,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.1111,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1111) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 95.06,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 95.0600",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 16,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 2,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.1111,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1111) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 95.24,
+        "point_type": "open_interval",
+        "interval_repr": "(95.0600, 95.4200)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 15,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 3,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.1667,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1667) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 95.42,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 95.4200",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 15,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 3,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.1667,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.1667) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 97.215,
+        "point_type": "open_interval",
+        "interval_repr": "(95.4200, 99.0100)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 14,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 4,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.2222,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.2222) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.01,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 99.0100",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 14,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 4,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.2222,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.2222) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.12,
+        "point_type": "open_interval",
+        "interval_repr": "(99.0100, 99.2300)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 13,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 5,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.2778,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.2778) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.23,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 99.2300",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 13,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 5,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.2778,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.2778) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.6,
+        "point_type": "open_interval",
+        "interval_repr": "(99.2300, 99.9700)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 12,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 6,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.3333,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.3333) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.97,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 99.9700",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 12,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 6,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.3333,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.3333) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 99.985,
+        "point_type": "open_interval",
+        "interval_repr": "(99.9700, 100.0000)",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 11,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 7,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.3889,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.3889) >= 0.0500"
+        ]
+      },
+      {
+        "threshold_evaluated": 100.0,
+        "point_type": "exact_boundary",
+        "interval_repr": "T = 100.0000",
+        "total_samples": 70,
+        "acceptable_samples": 18,
+        "unacceptable_samples": 52,
+        "true_accepts": 11,
+        "true_rejects": 52,
+        "false_accepts": 0,
+        "false_rejects": 7,
+        "false_accept_rate": 0.0,
+        "false_reject_rate": 0.3889,
+        "is_feasible": false,
+        "rejection_reasons": [
+          "FRR (0.3889) >= 0.0500"
+        ]
+      }
+    ]
+  },
+  "sensitivity_analysis": {
+    "ide_editing_geometry_audit": {
+      "native_resolution": "1808x1080",
+      "aspect_ratio": "226:135 (non-standard 1080p width)",
+      "selected_model": "vmaf_v1.0.16_hfr_3d0h",
+      "domain_1_with_ide_editing": {
+        "sequence_groups_count": 9,
+        "binary_samples_count": 70,
+        "status": "no_feasible_threshold",
+        "feasible_intervals": [],
+        "lowest_feasible_threshold": null
+      },
+      "domain_1_quarantined_ide_editing": {
+        "sequence_groups_count": 8,
+        "binary_samples_count": 63,
+        "status": "no_feasible_threshold",
+        "feasible_intervals": [],
+        "lowest_feasible_threshold": null
+      }
+    }
+  },
+  "selected_operating_point": null,
+  "heldout_validation": {
+    "status": "heldout_preserved_validation_not_executed",
+    "reason": "No feasible development candidate emerged from exhaustive boundary search; held-out partition remains unblinded to preserve evidentiary integrity."
+  },
+  "category_breakdown": {
+    "high_detail/architecture": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1667,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9167
+    },
+    "high_detail/landscape": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "high_motion/boxing": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "high_motion/landscape_motion": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "high_motion/running": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "landscape/snow": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "machinery/agriculture": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "natural/foliage": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "natural/urban_night": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/browser_ui": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/document": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/editor_ui": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.5,
+      "balanced_accuracy": 0.75
+    },
+    "texture/water_wildlife": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1667,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9167
+    },
+    "water/sports": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    }
+  },
+  "resolution_breakdown": {
+    "1080p_HFR": {
+      "samples": 40,
+      "sequence_groups": 5,
+      "false_accept_rate": 0.0741,
+      "false_reject_rate": 0.125,
+      "balanced_accuracy": 0.9005
+    },
+    "1080p_SDR": {
+      "samples": 56,
+      "sequence_groups": 7,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "2160p_HFR": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "2160p_SDR": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    }
+  },
+  "production_gate_status": {
+    "vmaf_gate_enabled": false
+  }
+}

@@ -906,6 +906,8 @@ def generate_ed25519_signed_manifest(
             }
             for r in (report.provider_results or [])
         },
+        "vmaf": report.vmaf_verdict or report.three_tier_verdict.vmaf_verdict,
+        "calibration": report.policy_provenance or report.three_tier_verdict.policy_provenance,
         "verdict": {
             "tier1_policy_passed": report.three_tier_verdict.tier1_policy_passed,
             "tier2_fidelity_passed": report.three_tier_verdict.tier2_fidelity_passed,
@@ -1223,6 +1225,8 @@ def evaluate_visual_quality(
         signing_mode=policy.signing_mode,
         signing_key_id=policy.key_id,
         provider_results=serialized_provider_results,
+        vmaf_verdict=verdict.vmaf_verdict,
+        policy_provenance=verdict.policy_provenance,
         raw_details={
             "canonical_canvas": f"{canonical_w}x{canonical_h}",
             "policy_budget": policy.policy_budget,

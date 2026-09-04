@@ -142,13 +142,13 @@ class VideoInfo:
 class QualityMetricStats:
     """Statistical distribution of a quality metric across evaluated frames."""
     mean: float = 0.0
-    median: float = 0.0
-    p1: float = 0.0
-    p5: float = 0.0
-    p95: float = 0.0
-    min_val: float = 0.0  # Worst-case frame score
-    max_val: float = 0.0
-    std_dev: float = 0.0
+    median: Optional[float] = None
+    p1: Optional[float] = None
+    p5: Optional[float] = None
+    p95: Optional[float] = None
+    min_val: Optional[float] = None  # Worst-case frame score
+    max_val: Optional[float] = None
+    std_dev: Optional[float] = None
 
 
 @dataclass
@@ -241,6 +241,8 @@ class ThreeTierQualityVerdict:
     tier3_violations: List[str] = field(default_factory=list)
     overall_verdict: str = "PASS"  # "PASS" or "REJECT"
     all_passed: bool = True
+    vmaf_verdict: Optional[Dict[str, Any]] = None
+    policy_provenance: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -271,6 +273,8 @@ class VisualQualityReport:
     provider_results: List[Dict[str, Any]] = field(default_factory=list)
     manifest_path: Optional[str] = None
     evidence_dir: Optional[str] = None
+    vmaf_verdict: Optional[Dict[str, Any]] = None
+    policy_provenance: Optional[Dict[str, Any]] = None
 
 
     @property

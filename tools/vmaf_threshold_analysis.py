@@ -118,22 +118,18 @@ def assign_independent_policy_label(
     psnr_mean: Optional[float],
 ) -> str:
     """
-    Assigns an independent quality label based strictly on VeilFrame's existing fidelity criteria.
-    SSIM constraint: >= 0.95. PSNR constraint: >= 30.0 dB.
+    Assigns an independent quality label based strictly on VeilFrame's existing fidelity criteria:
+    SSIM constraint: >= 0.9500. PSNR constraint: >= 30.00 dB.
 
     Rule: Fixture names/severity labels are semantic identifiers only and must never be used
-    as a substitute for the computed SSIM/PSNR policy label. The implementation must derive
-    the final binary/boundary label from measured SSIM/PSNR and the declared policy, even
-    when the fixture's nominal severity name suggests an expected outcome.
+    as a substitute for the computed SSIM/PSNR policy label. The implementation derives
+    the final label strictly from measured SSIM and PSNR against the declared policy.
     """
-    if fixture == "MODERATE":
-        return "boundary"
+    if ssim_mean is None or psnr_mean is None:
+        return "missing"
 
-    if ssim_mean is not None and psnr_mean is not None:
-        if ssim_mean >= 0.95 and psnr_mean >= 30.0:
-            return "acceptable"
-        else:
-            return "unacceptable"
+    if ssim_mean >= 0.95 and psnr_mean >= 30.0:
+        return "acceptable"
 
     return "unacceptable"
 

@@ -93,9 +93,18 @@ class TestIndependentPolicyLabeling(unittest.TestCase):
         lbl = assign_independent_policy_label("HIGH", ssim_mean=0.956, psnr_mean=31.2)
         self.assertEqual(lbl, "acceptable")
 
-    def test_moderate_boundary_labeled_boundary(self):
+    def test_moderate_fixture_follows_measured_fidelity(self):
+        # Fixture names do not determine labels: measured SSIM/PSNR governs
         lbl = assign_independent_policy_label("MODERATE", ssim_mean=0.96, psnr_mean=35.0)
-        self.assertEqual(lbl, "boundary")
+        self.assertEqual(lbl, "acceptable")
+        lbl_failing = assign_independent_policy_label("MODERATE", ssim_mean=0.92, psnr_mean=28.0)
+        self.assertEqual(lbl_failing, "unacceptable")
+
+    def test_missing_metrics_labeled_missing(self):
+        lbl = assign_independent_policy_label("MODERATE", ssim_mean=None, psnr_mean=35.0)
+        self.assertEqual(lbl, "missing")
+        lbl2 = assign_independent_policy_label("MODERATE", ssim_mean=0.96, psnr_mean=None)
+        self.assertEqual(lbl2, "missing")
 
 
 class TestThresholdSweepAndSelection(unittest.TestCase):
