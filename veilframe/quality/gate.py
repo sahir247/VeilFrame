@@ -145,11 +145,17 @@ class QualityGate:
                         f"P5 VMAF ({vmaf_stats.p5:.2f}) below gate threshold"
                         f" (>= {policy.vmaf_p5_min:.1f}) — calibrated Tier 2b"
                     )
-                if getattr(policy, "vmaf_worst_min", None) is not None and vmaf_stats.min_val < policy.vmaf_worst_min:
-                    t2_violations.append(
-                        f"Worst-Frame VMAF ({vmaf_stats.min_val:.2f}) below gate threshold"
-                        f" (>= {policy.vmaf_worst_min:.1f}) — calibrated Tier 2b"
-                    )
+                if getattr(policy, "vmaf_worst_min", None) is not None:
+                    if vmaf_result and vmaf_result.minimum is None:
+                        t2_violations.append(
+                            f"VMAF worst-frame score unavailable (per-frame evidence required for min >= {policy.vmaf_worst_min:.1f})"
+                            f" — calibrated Tier 2b"
+                        )
+                    elif vmaf_stats.min_val < policy.vmaf_worst_min:
+                        t2_violations.append(
+                            f"Worst-Frame VMAF ({vmaf_stats.min_val:.2f}) below gate threshold"
+                            f" (>= {policy.vmaf_worst_min:.1f}) — calibrated Tier 2b"
+                        )
             else:
                 # Provider unavailable with gate armed: fails Tier 2b.
                 # When vmaf_gate_enabled=True, VMAF evaluation is mandatory.

@@ -328,5 +328,149 @@ class TestLibvmafLiveInputOrdering(unittest.TestCase):
                            "Separation between identical and degraded pair must exceed 40 points")
 
 
+class TestLibvmafMissingMetricsFailClosed(unittest.TestCase):
+    """
+    Verifies that LibvmafFFmpegProvider and QualityGate fail-closed when
+    VMAF metric measurements are missing or malformed, and never manufacture 0.0.
+    """
+
+    def setUp(self):
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="vmaf_missing_test_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_parse_vmaf_json_empty_frames_raises_runtime_error(self):
+        """Empty frames array without pooled metrics must raise RuntimeError, never 0.0."""
+        json_file = self.temp_dir / "empty_frames.json"
+        json_file.write_text('{"frames": []}', encoding="utf-8")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            LibvmafFFmpegProvider._parse_vmaf_json(json_file)
+        self.assertIn("contains no valid VMAF frame scores", str(ctx.exception))
+
+    def test_parse_vmaf_json_corrupt_file_raises_runtime_error(self):
+        """Malformed JSON must raise RuntimeError."""
+        json_file = self.temp_dir / "corrupt.json"
+        json_file.write_text('{invalid_json: 123', encoding="utf-8")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            LibvmafFFmpegProvider._parse_vmaf_json(json_file)
+        self.assertIn("Failed to parse vmaf.json", str(ctx.exception))
+
+    def test_parse_vmaf_json_missing_vmaf_key_raises_runtime_error(self):
+        """Frames containing other metrics but no 'vmaf' key must raise RuntimeError."""
+        json_file = self.temp_dir / "no_vmaf_key.json"
+        json_file.write_text('{"frames": [{"frameNum": 0, "metrics": {"psnr": 40.0}}]}', encoding="utf-8")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            LibvmafFFmpegProvider._parse_vmaf_json(json_file)
+        self.assertIn("contains no valid VMAF frame scores", str(ctx.exception))
+
+    def test_parse_vmaf_json_pooled_only_preserves_none_percentiles(self):
+        """Pooled-only JSON must preserve None for uncomputed percentiles, never 0.0."""
+        json_file = self.temp_dir / "pooled_only.json"
+        json_file.write_text(
+            '{"pooled_metrics": {"vmaf": {"mean": 94.5, "min": 88.0}}, "frames": []}',
+            encoding="utf-8",
+        )
+
+        raw = LibvmafFFmpegProvider._parse_vmaf_json(json_file)
+        self.assertEqual(raw["mean"], 94.5)
+        self.assertEqual(raw["min"], 88.0)
+        self.assertIsNone(raw["p1"], "P1 must be None when per-frame stats are absent (not 0.0)")
+        self.assertIsNone(raw["p5"], "P5 must be None when per-frame stats are absent (not 0.0)")
+        self.assertIsNone(raw["p95"], "P95 must be None when per-frame stats are absent (not 0.0)")
+
+    def test_parse_stderr_summary_missing_score_raises_runtime_error(self):
+        """FFmpeg stderr output with no VMAF score pattern must raise RuntimeError, never 0.0."""
+        stderr = "frame= 100 fps= 50 q=-0.0 Lsize=N/A time=00:00:04.00 bitrate=N/A speed=1.5x\nvideo:100kB audio:0kB"
+
+        with self.assertRaises(RuntimeError) as ctx:
+            LibvmafFFmpegProvider._parse_stderr_summary(stderr)
+        self.assertIn("Failed to parse VMAF score", str(ctx.exception))
+
+    def test_parse_stderr_summary_valid_score_preserves_none_percentiles(self):
+        """Parsed stderr summary must leave percentiles as None (absent, not 0.0)."""
+        stderr = "[Parsed_libvmaf_0 @ 000001] VMAF score = 93.421000\n[libx264 @ 000002] frame I:2"
+
+        raw = LibvmafFFmpegProvider._parse_stderr_summary(stderr)
+        self.assertAlmostEqual(raw["mean"], 93.421, places=3)
+        self.assertIsNone(raw["min"], "Min must be None from stderr summary (not 0.0)")
+        self.assertIsNone(raw["p1"], "P1 must be None from stderr summary (not 0.0)")
+        self.assertIsNone(raw["p5"], "P5 must be None from stderr summary (not 0.0)")
+        self.assertIsNone(raw["p95"], "P95 must be None from stderr summary (not 0.0)")
+
+    def test_gate_rejects_when_p5_unavailable(self):
+        """When vmaf_gate_enabled=True, missing P5 (None) must trigger explicit rejection."""
+        from veilframe.quality.gate import QualityGate
+        from veilframe.quality.models import QualityResult
+        from veilframe.models.settings import VisualBudgetPolicy
+        from veilframe.models.video_info import (
+            NativeDomainMetrics, TemporalIntegrityMetrics, TransformationPolicyScore
+        )
+
+        policy = VisualBudgetPolicy(
+            vmaf_gate_enabled=True,
+            vmaf_mean_min=80.0,
+            vmaf_p5_min=75.0,
+        )
+        gate = QualityGate(policy)
+
+        # Result with valid mean but p5=None (e.g. from stderr summary)
+        results = [
+            QualityResult("native", "ssim", mean=0.98, minimum=0.96, p1=0.965, p5=0.97, p95=0.99),
+            QualityResult("native", "psnr", mean=42.0, minimum=38.0, p1=38.5, p5=39.0, p95=45.0),
+            QualityResult("vmaf", "vmaf", mean=95.0, minimum=90.0, p1=None, p5=None, p95=None),
+        ]
+
+        verdict = gate.evaluate(
+            results=results,
+            native_metrics=NativeDomainMetrics(),
+            temporal_metrics=TemporalIntegrityMetrics(0, 0, 0, 0.0, []),
+            policy_score=TransformationPolicyScore(0, 0, 0, 0, 0, 0, 5.0, True, []),
+        )
+
+        self.assertFalse(verdict.all_passed)
+        self.assertFalse(verdict.tier2_fidelity_passed)
+        p5_viols = [v for v in verdict.tier2_violations if "P5 percentile unavailable" in v]
+        self.assertGreater(len(p5_viols), 0, "Missing P5 must produce explicit unavailable violation")
+
+    def test_gate_rejects_when_worst_frame_unavailable(self):
+        """When vmaf_gate_enabled=True and vmaf_worst_min is set, missing min (None) must reject."""
+        from veilframe.quality.gate import QualityGate
+        from veilframe.quality.models import QualityResult
+        from veilframe.models.settings import VisualBudgetPolicy
+        from veilframe.models.video_info import (
+            NativeDomainMetrics, TemporalIntegrityMetrics, TransformationPolicyScore
+        )
+
+        policy = VisualBudgetPolicy(
+            vmaf_gate_enabled=True,
+            vmaf_mean_min=80.0,
+            vmaf_p5_min=75.0,
+            vmaf_worst_min=70.0,
+        )
+        gate = QualityGate(policy)
+
+        # Result with valid mean and p5, but minimum=None
+        results = [
+            QualityResult("native", "ssim", mean=0.98, minimum=0.96, p1=0.965, p5=0.97, p95=0.99),
+            QualityResult("native", "psnr", mean=42.0, minimum=38.0, p1=38.5, p5=39.0, p95=45.0),
+            QualityResult("vmaf", "vmaf", mean=95.0, minimum=None, p1=92.0, p5=93.0, p95=97.0),
+        ]
+
+        verdict = gate.evaluate(
+            results=results,
+            native_metrics=NativeDomainMetrics(),
+            temporal_metrics=TemporalIntegrityMetrics(0, 0, 0, 0.0, []),
+            policy_score=TransformationPolicyScore(0, 0, 0, 0, 0, 0, 5.0, True, []),
+        )
+
+        self.assertFalse(verdict.all_passed)
+        worst_viols = [v for v in verdict.tier2_violations if "worst-frame score unavailable" in v]
+        self.assertGreater(len(worst_viols), 0, "Missing worst-frame score must produce explicit unavailable violation")
+
+
 if __name__ == "__main__":
     unittest.main()

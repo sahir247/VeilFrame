@@ -212,13 +212,8 @@ class LibvmafFFmpegProvider:
             evidence_sha256=evidence_sha256,
             # VMAF sub-metrics stored flat in feature_metrics — no VmafResult subclass
             feature_metrics={
-                "adm2": raw.get("adm2", 0.0),
-                "vif_scale0": raw.get("vif_scale0", 0.0),
-                "vif_scale1": raw.get("vif_scale1", 0.0),
-                "vif_scale2": raw.get("vif_scale2", 0.0),
-                "vif_scale3": raw.get("vif_scale3", 0.0),
-                "integer_motion": raw.get("integer_motion", 0.0),
-                "integer_motion2": raw.get("integer_motion2", 0.0),
+                k: float(v) for k, v in raw.items()
+                if k not in ("mean", "min", "p1", "p5", "p95") and v is not None
             },
         )]
 
@@ -281,12 +276,18 @@ class LibvmafFFmpegProvider:
         return self._parse_stderr_summary(result.stderr)
 
     @staticmethod
-    def _parse_vmaf_json(evidence_file: Path) -> Dict[str, float]:
-        """Parses aggregated VMAF scores from the JSON evidence log."""
+    def _parse_vmaf_json(evidence_file: Path) -> Dict[str, Any]:
+        """
+        Parses aggregated VMAF scores from the JSON evidence log.
+
+        Fail-closed invariant:
+        If the evidence log contains no frame scores and no pooled metrics,
+        raises RuntimeError. Missing measurements are never manufactured as 0.0.
+        """
         try:
             data = json.loads(evidence_file.read_text(encoding="utf-8", errors="replace"))
         except Exception as exc:
-            raise RuntimeError(f"Failed to parse vmaf.json: {exc}") from exc
+            raise RuntimeError(f"LibvmafFFmpegProvider: Failed to parse vmaf.json: {exc}") from exc
 
         # JSON schema varies between libvmaf versions; handle both 0.x and 3.x
         pooled = data.get("pooled_metrics", {})
@@ -303,47 +304,69 @@ class LibvmafFFmpegProvider:
 
         for frame in frames:
             m = frame.get("metrics", {})
-            if "vmaf" in m:
+            if "vmaf" in m and m["vmaf"] is not None:
                 vmaf_scores.append(float(m["vmaf"]))
-            if "adm2" in m:
+            if "adm2" in m and m["adm2"] is not None:
                 adm2_scores.append(float(m["adm2"]))
             for k, lst in [
                 ("vif_scale0", vif0_scores), ("vif_scale1", vif1_scores),
                 ("vif_scale2", vif2_scores), ("vif_scale3", vif3_scores),
                 ("integer_motion", motion_scores), ("integer_motion2", motion2_scores),
             ]:
-                if k in m:
+                if k in m and m[k] is not None:
                     lst.append(float(m[k]))
 
-        def _agg(scores: List[float]) -> Dict[str, float]:
-            if not scores:
-                return {"mean": 0.0, "min": 0.0, "p1": 0.0, "p5": 0.0, "p95": 0.0}
-            s = sorted(scores)
+        # Inspect pooled metrics if present
+        vmaf_pool = pooled.get("vmaf", {}) if isinstance(pooled, dict) else {}
+        has_pooled_mean = isinstance(vmaf_pool, dict) and "mean" in vmaf_pool and vmaf_pool["mean"] is not None
+
+        # Fail-closed check: No measurements anywhere in evidence file
+        if not vmaf_scores and not has_pooled_mean:
+            raise RuntimeError(
+                f"LibvmafFFmpegProvider: Evidence file '{evidence_file.name}' contains no valid VMAF frame scores or pooled metrics."
+            )
+
+        if vmaf_scores:
+            s = sorted(vmaf_scores)
             n = len(s)
-            return {
+            base: Dict[str, Any] = {
                 "mean": sum(s) / n,
                 "min": s[0],
                 "p1": _percentile(s, 1.0),
                 "p5": _percentile(s, 5.0),
                 "p95": _percentile(s, 95.0),
             }
+        else:
+            # Pooled metrics only: frame-level percentiles are None (unavailable, NEVER 0.0)
+            base = {
+                "mean": float(vmaf_pool["mean"]),
+                "min": float(vmaf_pool["min"]) if "min" in vmaf_pool and vmaf_pool["min"] is not None else None,
+                "p1": None,
+                "p5": None,
+                "p95": None,
+            }
 
-        base = _agg(vmaf_scores)
-        base.update({
-            "adm2": sum(adm2_scores) / len(adm2_scores) if adm2_scores else 0.0,
-            "vif_scale0": sum(vif0_scores) / len(vif0_scores) if vif0_scores else 0.0,
-            "vif_scale1": sum(vif1_scores) / len(vif1_scores) if vif1_scores else 0.0,
-            "vif_scale2": sum(vif2_scores) / len(vif2_scores) if vif2_scores else 0.0,
-            "vif_scale3": sum(vif3_scores) / len(vif3_scores) if vif3_scores else 0.0,
-            "integer_motion": sum(motion_scores) / len(motion_scores) if motion_scores else 0.0,
-            "integer_motion2": sum(motion2_scores) / len(motion2_scores) if motion2_scores else 0.0,
-        })
+        # If pooled_metrics present (libvmaf 3.x), prefer pooled mean/min if available
+        if has_pooled_mean:
+            base["mean"] = float(vmaf_pool["mean"])
+            if "min" in vmaf_pool and vmaf_pool["min"] is not None:
+                base["min"] = float(vmaf_pool["min"])
 
-        # If pooled_metrics present (libvmaf 3.x), prefer those for mean
-        if pooled and "vmaf" in pooled:
-            vmaf_pool = pooled["vmaf"]
-            base["mean"] = float(vmaf_pool.get("mean", base["mean"]))
-            base["min"] = float(vmaf_pool.get("min", base["min"]))
+        # Sub-metrics: only include if measurements actually exist
+        if adm2_scores:
+            base["adm2"] = sum(adm2_scores) / len(adm2_scores)
+        if vif0_scores:
+            base["vif_scale0"] = sum(vif0_scores) / len(vif0_scores)
+        if vif1_scores:
+            base["vif_scale1"] = sum(vif1_scores) / len(vif1_scores)
+        if vif2_scores:
+            base["vif_scale2"] = sum(vif2_scores) / len(vif2_scores)
+        if vif3_scores:
+            base["vif_scale3"] = sum(vif3_scores) / len(vif3_scores)
+        if motion_scores:
+            base["integer_motion"] = sum(motion_scores) / len(motion_scores)
+        if motion2_scores:
+            base["integer_motion2"] = sum(motion2_scores) / len(motion2_scores)
 
         return base
 
@@ -353,9 +376,17 @@ class LibvmafFFmpegProvider:
         Fallback: parse the VMAF summary line from FFmpeg stderr when no
         JSON evidence file was written.
         Example: VMAF score = 97.831442 or VMAF score: 97.831442
+
+        Fail-closed invariant:
+        If no VMAF score pattern matches, raises RuntimeError.
+        Percentiles are None because stderr only prints the mean score.
         """
         match = re.search(r"VMAF score\s*[:=]\s*([\d.]+)", stderr)
-        mean = float(match.group(1)) if match else 0.0
+        if not match:
+            raise RuntimeError(
+                "LibvmafFFmpegProvider: Failed to parse VMAF score from FFmpeg stderr output (no VMAF score found)."
+            )
+        mean = float(match.group(1))
         return {
             "mean": mean,
             "min": None,
