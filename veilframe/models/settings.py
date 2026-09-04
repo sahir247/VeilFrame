@@ -144,13 +144,18 @@ class VisualBudgetPolicy:
     psnr_mean_min_db: float = 30.0
     psnr_worst_min_db: float = 25.0
 
-    # VMAF perceptual quality gate (Tier 2b — calibrated via Phase A & B laboratory).
-    # Empirical bounds: vmaf_mean >= 85.0, vmaf_p5 >= 75.0, vmaf_worst >= 70.0
-    # "Providers measure. VeilFrame decides." — the QualityGate owns these thresholds.
+    # VMAF perceptual quality gate (Tier 2b).
+    # NOTE: Uncalibrated exploratory defaults. These values (85 / 75 / 70) are
+    # baseline placeholders and must NOT be represented as an empirically validated
+    # production threshold. Real-corpus calibration with strict research constraints
+    # (FAR < 2.0%, FRR < 5.0%) yielded NO_FEASIBLE_THRESHOLD for a single global scalar.
+    # The production gate MUST remain disabled (vmaf_gate_enabled=False) until an
+    # operating point achieves verified held-out validation.
+    # "Providers measure. VeilFrame decides." — QualityGate owns verdict logic.
     vmaf_gate_enabled: bool = False
-    vmaf_mean_min: float = 85.0   # Calibrated empirical mean threshold
-    vmaf_p5_min: float = 75.0     # Calibrated empirical P5 tail threshold
-    vmaf_worst_min: float = 70.0  # Calibrated empirical worst-frame floor
+    vmaf_mean_min: float = 85.0   # Uncalibrated baseline mean placeholder (gate disabled)
+    vmaf_p5_min: float = 75.0     # Uncalibrated baseline P5 tail placeholder (gate disabled)
+    vmaf_worst_min: float = 70.0  # Uncalibrated baseline worst-frame placeholder (gate disabled)
 
     # VMAF model provenance and audit controls
     vmaf_model_path: Optional[str] = None
