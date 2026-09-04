@@ -1,41 +1,102 @@
 {
   "schema_version": 1,
+  "description": "VeilFrame VMAF Calibration Corpus Manifest v1.2 with 15 distinct sequence groups",
   "clips": [
     {
-      "filename": "night_drive_1080p25_sdr.mp4",
-      "sequence_group": "night_drive",
-      "category": "natural",
-      "subcategory": "urban_night"
-    },
-    {
-      "filename": "browsing_1080p60_hfr.mp4",
-      "sequence_group": "browsing",
-      "category": "screen_content",
-      "subcategory": "browser_ui"
+      "filename": "chimera_4k5994p_hdr.mp4",
+      "sequence_group": "chimera",
+      "category": "dark/hdr_p3pq",
+      "subcategory": "hdr"
     },
     {
       "filename": "park_joy_2160p25_sdr.mp4",
       "sequence_group": "park_joy",
-      "category": "high_detail",
-      "subcategory": "landscape"
+      "category": "high_detail/landscape",
+      "subcategory": "nature"
     },
     {
       "filename": "park_joy_2160p50_hfr.mp4",
       "sequence_group": "park_joy",
-      "category": "high_motion",
-      "subcategory": "landscape_motion"
+      "category": "high_motion/landscape_motion",
+      "subcategory": "motion"
+    },
+    {
+      "filename": "night_drive_1080p25_sdr.mp4",
+      "sequence_group": "night_drive",
+      "category": "natural/urban_night",
+      "subcategory": "low_light"
+    },
+    {
+      "filename": "browsing_1080p60_hfr.mp4",
+      "sequence_group": "browsing",
+      "category": "screen_content/browser_ui",
+      "subcategory": "text"
     },
     {
       "filename": "ducks_take_off_1080p50_raw.y4m",
       "sequence_group": "ducks_take_off",
-      "category": "texture",
-      "subcategory": "water_wildlife"
+      "category": "texture/water_wildlife",
+      "subcategory": "water"
     },
     {
-      "filename": "chimera_4k5994p_hdr.mp4",
-      "sequence_group": "chimera",
-      "category": "dark",
-      "subcategory": "hdr_p3pq"
+      "filename": "aspen_1080p_sdr.mp4",
+      "sequence_group": "aspen",
+      "category": "natural/foliage",
+      "subcategory": "trees"
+    },
+    {
+      "filename": "old_town_cross_1080p50_hfr.mp4",
+      "sequence_group": "old_town_cross",
+      "category": "high_detail/architecture",
+      "subcategory": "cityscape"
+    },
+    {
+      "filename": "red_kayak_1080p_sdr.mp4",
+      "sequence_group": "red_kayak",
+      "category": "water/sports",
+      "subcategory": "kayak"
+    },
+    {
+      "filename": "rush_field_cuts_1080p_sdr.mp4",
+      "sequence_group": "rush_field_cuts",
+      "category": "high_motion/running",
+      "subcategory": "sports"
+    },
+    {
+      "filename": "snow_mnt_1080p_sdr.mp4",
+      "sequence_group": "snow_mnt",
+      "category": "landscape/snow",
+      "subcategory": "mountains"
+    },
+    {
+      "filename": "speed_bag_1080p_sdr.mp4",
+      "sequence_group": "speed_bag",
+      "category": "high_motion/boxing",
+      "subcategory": "indoor"
+    },
+    {
+      "filename": "tractor_1080p25_sdr.mp4",
+      "sequence_group": "tractor",
+      "category": "machinery/agriculture",
+      "subcategory": "dust"
+    },
+    {
+      "filename": "ide_editing_1080p_sdr.mp4",
+      "sequence_group": "ide_editing",
+      "category": "screen_content/editor_ui",
+      "subcategory": "code"
+    },
+    {
+      "filename": "pdf_reading_1080p_sdr.mp4",
+      "sequence_group": "pdf_reading",
+      "category": "screen_content/document",
+      "subcategory": "document"
+    },
+    {
+      "filename": "four_people_720p60_hfr.mp4",
+      "sequence_group": "four_people",
+      "category": "conferencing/faces",
+      "subcategory": "talking_heads"
     }
   ]
 }

@@ -183,7 +183,7 @@ def load_corpus_samples(
                 continue
 
             v_mean = fx.get("vmaf_mean")
-            if v_mean is None or v_mean <= 0.0:
+            if v_mean is None:
                 exclusion_counts["missing_vmaf"] += 1
                 continue
 
@@ -367,6 +367,83 @@ def select_lowest_feasible_threshold(
     return min(feasible, key=lambda p: p.threshold)
 
 
+# ── Minimum Data Confidence Requirements ──────────────────────────────── #
+
+MIN_TOTAL_SEQUENCE_GROUPS = 12
+MIN_DEV_SEQUENCE_GROUPS = 8
+MIN_HELDOUT_SEQUENCE_GROUPS = 4
+MIN_TOTAL_BINARY_SAMPLES = 60
+MIN_DEV_BINARY_SAMPLES = 40
+MIN_HELDOUT_BINARY_SAMPLES = 20
+
+
+def check_minimum_data_requirements(
+    dev_samples: List[CorpusSample],
+    heldout_samples: List[CorpusSample],
+    dev_groups: List[str],
+    heldout_groups: List[str],
+    min_total_groups: int = MIN_TOTAL_SEQUENCE_GROUPS,
+    min_dev_groups: int = MIN_DEV_SEQUENCE_GROUPS,
+    min_heldout_groups: int = MIN_HELDOUT_SEQUENCE_GROUPS,
+    min_total_binary: int = MIN_TOTAL_BINARY_SAMPLES,
+    min_dev_binary: int = MIN_DEV_BINARY_SAMPLES,
+    min_heldout_binary: int = MIN_HELDOUT_BINARY_SAMPLES,
+) -> Tuple[bool, List[str]]:
+    """
+    Evaluates whether the partitioned dataset satisfies scientific minimum-data requirements.
+
+    Requirements:
+      1. Total sequence groups >= min_total_groups (12)
+      2. Development sequence groups >= min_dev_groups (8)
+      3. Held-out sequence groups >= min_heldout_groups (4)
+      4. Total binary evaluation samples >= min_total_binary (60)
+      5. Development binary samples >= min_dev_binary (40)
+      6. Held-out binary samples >= min_heldout_binary (20)
+      7. Both 'acceptable' and 'unacceptable' samples present in dev and in held-out.
+    """
+    reasons: List[str] = []
+
+    total_groups = len(dev_groups) + len(heldout_groups)
+    if total_groups < min_total_groups:
+        reasons.append(f"Total sequence groups ({total_groups}) < minimum ({min_total_groups})")
+
+    if len(dev_groups) < min_dev_groups:
+        reasons.append(f"Development sequence groups ({len(dev_groups)}) < minimum ({min_dev_groups})")
+
+    if len(heldout_groups) < min_heldout_groups:
+        reasons.append(f"Held-out sequence groups ({len(heldout_groups)}) < minimum ({min_heldout_groups})")
+
+    # Binary samples only (exclude boundary 'MODERATE')
+    dev_binary = [s for s in dev_samples if s.independent_policy_label in ("acceptable", "unacceptable")]
+    heldout_binary = [s for s in heldout_samples if s.independent_policy_label in ("acceptable", "unacceptable")]
+    total_binary = len(dev_binary) + len(heldout_binary)
+
+    if total_binary < min_total_binary:
+        reasons.append(f"Total binary samples ({total_binary}) < minimum ({min_total_binary})")
+
+    if len(dev_binary) < min_dev_binary:
+        reasons.append(f"Development binary samples ({len(dev_binary)}) < minimum ({min_dev_binary})")
+
+    if len(heldout_binary) < min_heldout_binary:
+        reasons.append(f"Held-out binary samples ({len(heldout_binary)}) < minimum ({min_heldout_binary})")
+
+    dev_acc = sum(1 for s in dev_binary if s.independent_policy_label == "acceptable")
+    dev_unacc = sum(1 for s in dev_binary if s.independent_policy_label == "unacceptable")
+    if dev_acc < 1:
+        reasons.append("Development set has zero acceptable samples")
+    if dev_unacc < 1:
+        reasons.append("Development set has zero unacceptable samples")
+
+    ho_acc = sum(1 for s in heldout_binary if s.independent_policy_label == "acceptable")
+    ho_unacc = sum(1 for s in heldout_binary if s.independent_policy_label == "unacceptable")
+    if ho_acc < 1:
+        reasons.append("Held-out set has zero acceptable samples")
+    if ho_unacc < 1:
+        reasons.append("Held-out set has zero unacceptable samples")
+
+    return (len(reasons) == 0, reasons)
+
+
 # ── Diagnostic Breakdowns ──────────────────────────────────────────────── #
 
 def compute_category_breakdown(
@@ -432,6 +509,7 @@ def print_analysis_report(
     heldout_groups: List[str],
     fa_max: float,
     fr_max: float,
+    failure_reasons: Optional[List[str]] = None,
 ):
     print()
     print("=" * 80)
@@ -473,7 +551,11 @@ def print_analysis_report(
         print("    No candidate threshold satisfied both FAR and FRR constraints on development data.")
     elif calibration_status == "insufficient_data":
         print("  VERDICT: [INSUFFICIENT DATA]")
-        print("    Corpus does not satisfy minimum independent sequence groups or sample requirements.")
+        print("    Corpus does not satisfy minimum scientific data confidence requirements.")
+        if failure_reasons:
+            print("    Reasons:")
+            for r in failure_reasons:
+                print(f"      - {r}")
     elif calibration_status == "failed":
         print("  VERDICT: [FAILED]")
         print("    Candidate threshold failed research constraints upon held-out validation.")
@@ -504,12 +586,18 @@ def main():
         help="Maximum false-accept rate constraint (default: 0.02)")
     parser.add_argument("--fr-max", type=float, default=0.05,
         help="Maximum false-reject rate constraint (default: 0.05)")
-    parser.add_argument("--min-sequence-groups", type=int, default=4,
-        help="Minimum unique sequence groups required (default: 4)")
-    parser.add_argument("--min-dev-samples", type=int, default=8,
-        help="Minimum valid development samples required (default: 8)")
-    parser.add_argument("--min-heldout-samples", type=int, default=4,
-        help="Minimum valid held-out samples required (default: 4)")
+    parser.add_argument("--min-sequence-groups", type=int, default=MIN_TOTAL_SEQUENCE_GROUPS,
+        help=f"Minimum unique sequence groups required (default: {MIN_TOTAL_SEQUENCE_GROUPS})")
+    parser.add_argument("--min-dev-groups", type=int, default=MIN_DEV_SEQUENCE_GROUPS,
+        help=f"Minimum development sequence groups required (default: {MIN_DEV_SEQUENCE_GROUPS})")
+    parser.add_argument("--min-heldout-groups", type=int, default=MIN_HELDOUT_SEQUENCE_GROUPS,
+        help=f"Minimum held-out sequence groups required (default: {MIN_HELDOUT_SEQUENCE_GROUPS})")
+    parser.add_argument("--min-total-binary", type=int, default=MIN_TOTAL_BINARY_SAMPLES,
+        help=f"Minimum total binary evaluation samples required (default: {MIN_TOTAL_BINARY_SAMPLES})")
+    parser.add_argument("--min-dev-binary", type=int, default=MIN_DEV_BINARY_SAMPLES,
+        help=f"Minimum valid development binary samples required (default: {MIN_DEV_BINARY_SAMPLES})")
+    parser.add_argument("--min-heldout-binary", type=int, default=MIN_HELDOUT_BINARY_SAMPLES,
+        help=f"Minimum valid held-out binary samples required (default: {MIN_HELDOUT_BINARY_SAMPLES})")
     args = parser.parse_args()
 
     # Invariant: Verify production policy remains False
@@ -541,13 +629,22 @@ def main():
     print()
 
     # Minimum Data Check
-    total_groups = len(dev_groups) + len(heldout_groups)
-    if (total_groups < args.min_sequence_groups or
-        len(dev_samples) < args.min_dev_samples or
-        len(heldout_samples) < args.min_heldout_samples):
+    passed_min, min_reasons = check_minimum_data_requirements(
+        dev_samples, heldout_samples, dev_groups, heldout_groups,
+        min_total_groups=args.min_sequence_groups,
+        min_dev_groups=args.min_dev_groups,
+        min_heldout_groups=args.min_heldout_groups,
+        min_total_binary=args.min_total_binary,
+        min_dev_binary=args.min_dev_binary,
+        min_heldout_binary=args.min_heldout_binary,
+    )
 
+    if not passed_min:
         status = "insufficient_data"
-        print_analysis_report(status, None, None, dev_groups, heldout_groups, args.fa_max, args.fr_max)
+        print_analysis_report(
+            status, None, None, dev_groups, heldout_groups,
+            args.fa_max, args.fr_max, failure_reasons=min_reasons
+        )
 
         out_data = {
             "schema": "veilframe-vmaf-analysis-v1",
@@ -555,12 +652,14 @@ def main():
             "vmaf_model_version": VMAF_MODEL_VERSION,
             "timestamp_utc": datetime.datetime.utcnow().isoformat() + "Z",
             "calibration_status": status,
-            "reason": (
-                f"Insufficient data: {total_groups} groups (min {args.min_sequence_groups}), "
-                f"{len(dev_samples)} dev samples (min {args.min_dev_samples}), "
-                f"{len(heldout_samples)} held-out samples (min {args.min_heldout_samples})"
-            ),
+            "insufficient_data_reasons": min_reasons,
             "sequence_groups": {"dev": dev_groups, "heldout": heldout_groups},
+            "sample_counts": {
+                "total_valid": len(samples),
+                "dev_samples": len(dev_samples),
+                "heldout_samples": len(heldout_samples),
+                "excluded_samples": exclusions,
+            },
             "production_gate_status": {"vmaf_gate_enabled": False},
         }
         with open(args.out, "w", encoding="utf-8") as f:
@@ -604,7 +703,7 @@ def main():
         "random_seed": args.seed,
         "research_constraints": {"fa_max": args.fa_max, "fr_max": args.fr_max},
         "sequence_groups": {
-            "total_groups": total_groups,
+            "total_groups": len(dev_groups) + len(heldout_groups),
             "dev_groups": dev_groups,
             "heldout_groups": heldout_groups,
         },

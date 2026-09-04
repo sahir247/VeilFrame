@@ -186,5 +186,77 @@ class TestCorpusRunnerDecoupled(unittest.TestCase):
                          "FAIL_RATE_MODEX_MIN must be removed from vmaf_corpus_runner")
 
 
+class TestMinimumDataRequirements(unittest.TestCase):
+    """Verifies that check_minimum_data_requirements strictly catches underpowered datasets."""
+
+    def _make_sample(self, name: str, group: str, label: str) -> CorpusSample:
+        return CorpusSample(
+            clip_filename=name, sequence_group=group, sequence_group_source="manifest",
+            category="test", subcategory="", width=1920, height=1080, fps=30.0,
+            pix_fmt="yuv420p", fixture="LOW_PERTURBATION", vmaf_mean=95.0, vmaf_p5=93.0,
+            vmaf_worst=90.0, vmaf_stddev=1.0, ssim_mean=0.98, psnr_mean=42.0,
+            model_id=None, model_name=None, model_sha256=None, independent_policy_label=label,
+        )
+
+    def test_insufficient_total_sequence_groups_fails(self):
+        from tools.vmaf_threshold_analysis import check_minimum_data_requirements
+        # 3 dev groups, 1 heldout group = 4 total < 12
+        dev_groups = ["g1", "g2", "g3"]
+        ho_groups = ["g4"]
+        dev_s = [self._make_sample(f"d{i}", dev_groups[i % 3], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(40)]
+        ho_s = [self._make_sample(f"h{i}", "g4", "acceptable" if i % 2 == 0 else "unacceptable") for i in range(20)]
+
+        passed, reasons = check_minimum_data_requirements(dev_s, ho_s, dev_groups, ho_groups)
+        self.assertFalse(passed)
+        self.assertTrue(any("Total sequence groups (4) < minimum (12)" in r for r in reasons))
+
+    def test_insufficient_dev_or_heldout_groups_fails(self):
+        from tools.vmaf_threshold_analysis import check_minimum_data_requirements
+        # 10 dev groups, 2 heldout groups = 12 total, but heldout < 4
+        dev_groups = [f"d{i}" for i in range(10)]
+        ho_groups = ["h1", "h2"]
+        dev_s = [self._make_sample(f"ds{i}", dev_groups[i % 10], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(40)]
+        ho_s = [self._make_sample(f"hs{i}", ho_groups[i % 2], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(20)]
+
+        passed, reasons = check_minimum_data_requirements(dev_s, ho_s, dev_groups, ho_groups)
+        self.assertFalse(passed)
+        self.assertTrue(any("Held-out sequence groups (2) < minimum (4)" in r for r in reasons))
+
+    def test_insufficient_binary_samples_fails(self):
+        from tools.vmaf_threshold_analysis import check_minimum_data_requirements
+        # 8 dev groups, 4 heldout groups, but only 20 dev binary samples (< 40)
+        dev_groups = [f"d{i}" for i in range(8)]
+        ho_groups = [f"h{i}" for i in range(4)]
+        dev_s = [self._make_sample(f"ds{i}", dev_groups[i % 8], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(20)]
+        ho_s = [self._make_sample(f"hs{i}", ho_groups[i % 4], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(20)]
+
+        passed, reasons = check_minimum_data_requirements(dev_s, ho_s, dev_groups, ho_groups)
+        self.assertFalse(passed)
+        self.assertTrue(any("Development binary samples (20) < minimum (40)" in r for r in reasons))
+
+    def test_missing_class_in_partition_fails(self):
+        from tools.vmaf_threshold_analysis import check_minimum_data_requirements
+        dev_groups = [f"d{i}" for i in range(8)]
+        ho_groups = [f"h{i}" for i in range(4)]
+        # All acceptable, zero unacceptable
+        dev_s = [self._make_sample(f"ds{i}", dev_groups[i % 8], "acceptable") for i in range(40)]
+        ho_s = [self._make_sample(f"hs{i}", ho_groups[i % 4], "acceptable") for i in range(20)]
+
+        passed, reasons = check_minimum_data_requirements(dev_s, ho_s, dev_groups, ho_groups)
+        self.assertFalse(passed)
+        self.assertTrue(any("zero unacceptable samples" in r for r in reasons))
+
+    def test_all_requirements_satisfied_passes(self):
+        from tools.vmaf_threshold_analysis import check_minimum_data_requirements
+        dev_groups = [f"d{i}" for i in range(10)]
+        ho_groups = [f"h{i}" for i in range(4)]
+        dev_s = [self._make_sample(f"ds{i}", dev_groups[i % 10], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(50)]
+        ho_s = [self._make_sample(f"hs{i}", ho_groups[i % 4], "acceptable" if i % 2 == 0 else "unacceptable") for i in range(25)]
+
+        passed, reasons = check_minimum_data_requirements(dev_s, ho_s, dev_groups, ho_groups)
+        self.assertTrue(passed)
+        self.assertEqual(len(reasons), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

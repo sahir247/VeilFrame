@@ -2,8 +2,8 @@
   "schema": "veilframe-vmaf-analysis-v1",
   "analysis_version": "1.2.0",
   "vmaf_model_version": "1.0.16",
-  "timestamp_utc": "2026-09-04T02:06:37.841190Z",
-  "calibration_status": "validated",
+  "timestamp_utc": "2026-09-04T02:31:11.383402Z",
+  "calibration_status": "no_feasible_threshold",
   "policy_evaluated": "mean",
   "random_seed": 42,
   "research_constraints": {
@@ -11,95 +11,141 @@
     "fr_max": 0.05
   },
   "sequence_groups": {
-    "total_groups": 4,
+    "total_groups": 14,
     "dev_groups": [
       "ducks_take_off",
+      "four_people",
       "night_drive",
-      "park_joy"
+      "old_town_cross",
+      "park_joy",
+      "pdf_reading",
+      "red_kayak",
+      "snow_mnt",
+      "speed_bag",
+      "tractor"
     ],
     "heldout_groups": [
-      "browsing"
+      "aspen",
+      "browsing",
+      "ide_editing",
+      "rush_field_cuts"
     ]
   },
   "sample_counts": {
-    "total_valid": 25,
-    "dev_samples": 20,
-    "heldout_samples": 5,
+    "total_valid": 120,
+    "dev_samples": 88,
+    "heldout_samples": 32,
     "excluded_samples": {
       "not_applicable_hdr": 8,
       "metadata_error": 0,
       "measurement_error": 0,
       "unsupported_resolution": 0,
-      "missing_vmaf": 15
+      "missing_vmaf": 0
     }
   },
-  "selected_operating_point": {
-    "threshold": 93.5,
-    "policy_name": "mean",
-    "total_samples": 20,
-    "acceptable_samples": 7,
-    "unacceptable_samples": 13,
-    "true_accepts": 7,
-    "true_rejects": 13,
-    "false_accepts": 0,
-    "false_rejects": 0,
-    "false_accept_rate": 0.0,
-    "false_reject_rate": 0.0,
-    "acceptance_rate": 0.35,
-    "rejection_rate": 0.65,
-    "precision": 1.0,
-    "recall": 1.0,
-    "balanced_accuracy": 1.0
-  },
-  "heldout_validation": {
-    "threshold": 93.5,
-    "policy_name": "mean",
-    "total_samples": 5,
-    "acceptable_samples": 2,
-    "unacceptable_samples": 3,
-    "true_accepts": 2,
-    "true_rejects": 3,
-    "false_accepts": 0,
-    "false_rejects": 0,
-    "false_accept_rate": 0.0,
-    "false_reject_rate": 0.0,
-    "acceptance_rate": 0.4,
-    "rejection_rate": 0.6,
-    "precision": 1.0,
-    "recall": 1.0,
-    "balanced_accuracy": 1.0
-  },
+  "selected_operating_point": null,
+  "heldout_validation": null,
   "category_breakdown": {
-    "high_detail": {
-      "samples": 5,
+    "conferencing/faces": {
+      "samples": 8,
       "sequence_groups": 1,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
       "balanced_accuracy": 1.0
     },
-    "high_motion": {
-      "samples": 5,
+    "high_detail/architecture": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1429,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9286
+    },
+    "high_detail/landscape": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1667,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9167
+    },
+    "high_motion/boxing": {
+      "samples": 8,
       "sequence_groups": 1,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
       "balanced_accuracy": 1.0
     },
-    "natural": {
-      "samples": 5,
+    "high_motion/landscape_motion": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1667,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9167
+    },
+    "high_motion/running": {
+      "samples": 8,
       "sequence_groups": 1,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
       "balanced_accuracy": 1.0
     },
-    "screen_content": {
-      "samples": 5,
+    "landscape/snow": {
+      "samples": 8,
       "sequence_groups": 1,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
       "balanced_accuracy": 1.0
     },
-    "texture": {
-      "samples": 5,
+    "machinery/agriculture": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "natural/foliage": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "natural/urban_night": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/browser_ui": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/document": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "screen_content/editor_ui": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.0,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 1.0
+    },
+    "texture/water_wildlife": {
+      "samples": 8,
+      "sequence_groups": 1,
+      "false_accept_rate": 0.1429,
+      "false_reject_rate": 0.0,
+      "balanced_accuracy": 0.9286
+    },
+    "water/sports": {
+      "samples": 8,
       "sequence_groups": 1,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
@@ -108,32 +154,32 @@
   },
   "resolution_breakdown": {
     "1080p_HFR": {
-      "samples": 10,
-      "sequence_groups": 2,
-      "false_accept_rate": 0.0,
+      "samples": 48,
+      "sequence_groups": 6,
+      "false_accept_rate": 0.0556,
       "false_reject_rate": 0.0,
-      "balanced_accuracy": 1.0
+      "balanced_accuracy": 0.9722
     },
     "1080p_SDR": {
-      "samples": 5,
-      "sequence_groups": 1,
+      "samples": 56,
+      "sequence_groups": 7,
       "false_accept_rate": 0.0,
       "false_reject_rate": 0.0,
       "balanced_accuracy": 1.0
     },
     "2160p_HFR": {
-      "samples": 5,
+      "samples": 8,
       "sequence_groups": 1,
-      "false_accept_rate": 0.0,
+      "false_accept_rate": 0.1667,
       "false_reject_rate": 0.0,
-      "balanced_accuracy": 1.0
+      "balanced_accuracy": 0.9167
     },
     "2160p_SDR": {
-      "samples": 5,
+      "samples": 8,
       "sequence_groups": 1,
-      "false_accept_rate": 0.0,
+      "false_accept_rate": 0.1667,
       "false_reject_rate": 0.0,
-      "balanced_accuracy": 1.0
+      "balanced_accuracy": 0.9167
     }
   },
   "production_gate_status": {
