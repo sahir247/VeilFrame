@@ -1,53 +1,43 @@
 {
   "schema": "veilframe-data-quality-v1",
-  "timestamp_utc": "2026-09-04T19:12:17.081221Z",
+  "timestamp_utc": "2026-09-05T20:53:13.062238Z",
   "data_sufficiency_passed": true,
   "failure_reasons": [],
   "sample_accounting": {
-    "total_primary_sdr_pairs": 112,
-    "hdr_segregated_pairs": 8,
-    "secondary_domain_diagnostic_pairs": 8,
-    "total_clips_in_domain1": 14,
+    "total_primary_sdr_pairs": 81,
+    "hdr_segregated_pairs": 0,
+    "secondary_domain_diagnostic_pairs": 0,
+    "total_clips_in_domain1": 3,
     "development_split": {
-      "sequence_groups_count": 9,
+      "sequence_groups_count": 2,
       "sequence_groups": [
-        "ducks_take_off",
-        "ide_editing",
-        "old_town_cross",
-        "park_joy",
-        "pdf_reading",
-        "red_kayak",
-        "rush_field_cuts",
-        "speed_bag",
-        "tractor"
+        "dinner",
+        "pedestrian_area"
       ],
-      "clips_count": 10,
-      "total_pairs": 80,
-      "binary_evaluation_samples": 80,
-      "acceptable_samples": 21,
-      "unacceptable_samples": 59,
+      "clips_count": 2,
+      "total_pairs": 44,
+      "binary_evaluation_samples": 44,
+      "acceptable_samples": 19,
+      "unacceptable_samples": 25,
       "boundary_moderate_excluded": 0
     },
     "heldout_split": {
-      "sequence_groups_count": 4,
+      "sequence_groups_count": 1,
       "sequence_groups": [
-        "aspen",
-        "browsing",
-        "night_drive",
-        "snow_mnt"
+        "sintel_trailer"
       ],
-      "clips_count": 4,
-      "total_pairs": 32,
-      "binary_evaluation_samples": 32,
-      "acceptable_samples": 9,
-      "unacceptable_samples": 23,
+      "clips_count": 1,
+      "total_pairs": 37,
+      "binary_evaluation_samples": 37,
+      "acceptable_samples": 18,
+      "unacceptable_samples": 19,
       "boundary_moderate_excluded": 0
     },
-    "total_binary_evaluation_samples": 112,
+    "total_binary_evaluation_samples": 81,
     "total_boundary_moderate_excluded": 0,
     "arithmetic_verification": {
-      "domain1_pairs_check": "80 dev + 32 heldout = 112 Domain 1 pairs",
-      "binary_plus_boundary_check": "112 binary + 0 boundary = 112 Domain 1 pairs"
+      "domain1_pairs_check": "44 dev + 37 heldout = 81 Domain 1 pairs",
+      "binary_plus_boundary_check": "81 binary + 0 boundary = 81 Domain 1 pairs"
     },
     "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
   },
@@ -56,24 +46,14 @@
     "seed_used": 42,
     "constraints_satisfied": true,
     "failure_reasons": [],
-    "dev_groups_count": 9,
-    "heldout_groups_count": 4,
+    "dev_groups_count": 2,
+    "heldout_groups_count": 1,
     "dev_groups": [
-      "ducks_take_off",
-      "ide_editing",
-      "old_town_cross",
-      "park_joy",
-      "pdf_reading",
-      "red_kayak",
-      "rush_field_cuts",
-      "speed_bag",
-      "tractor"
+      "dinner",
+      "pedestrian_area"
     ],
     "heldout_groups": [
-      "aspen",
-      "browsing",
-      "night_drive",
-      "snow_mnt"
+      "sintel_trailer"
     ],
     "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
   },
