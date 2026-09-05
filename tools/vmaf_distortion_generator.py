@@ -73,37 +73,37 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "SSIM_BND_PASS_01", target_ssim=0.955, target_psnr=41.0,
         distortion_type="quantization", category="near_boundary_pass", region="ssim_axis_psnr_safe", quadrant="q1_pass",
         crf=23, desired_ssim_min=0.953, desired_ssim_max=0.958, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="crf", max_search_iterations=2
+        tune_param="crf", max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_PASS_02", target_ssim=0.952, target_psnr=40.5,
         distortion_type="quantization_blur", category="near_boundary_pass", region="ssim_axis_psnr_safe", quadrant="q1_pass",
         crf=22, filter_expr="gblur=sigma=0.8", desired_ssim_min=0.9505, desired_ssim_max=0.9545, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="blur", tune_val=0.8, max_search_iterations=2
+        tune_param="blur", tune_val=0.8, max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_PASS_03", target_ssim=0.962, target_psnr=42.0,
         distortion_type="quantization", category="near_boundary_pass", region="ssim_axis_psnr_safe", quadrant="q1_pass",
         crf=21, desired_ssim_min=0.958, desired_ssim_max=0.966, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="crf", max_search_iterations=2
+        tune_param="crf", max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_FAIL_01", target_ssim=0.948, target_psnr=40.0,
         distortion_type="quantization", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
         crf=24, desired_ssim_min=0.9465, desired_ssim_max=0.9499, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="crf", max_search_iterations=2
+        tune_param="crf", max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_FAIL_02", target_ssim=0.944, target_psnr=39.8,
         distortion_type="quantization", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
         crf=25, desired_ssim_min=0.9420, desired_ssim_max=0.9460, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="crf", max_search_iterations=2
+        tune_param="crf", max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_FAIL_03_BLUR", target_ssim=0.938, target_psnr=38.1,
         distortion_type="blur", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
         crf=22, filter_expr="gblur=sigma=1.6", desired_ssim_min=0.9340, desired_ssim_max=0.9410, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="blur", tune_val=1.6, max_search_iterations=2
+        tune_param="blur", tune_val=1.6, max_search_iterations=5
     ),
 
     # ── Region B: PSNR-boundary / SSIM-safe (PSNR in [28.5, 31.5] dB, SSIM >= 0.960) ──
@@ -111,37 +111,37 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "PSNR_BND_PASS_01_GAMMA", target_ssim=0.972, target_psnr=31.4,
         distortion_type="gamma", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
         crf=16, filter_expr="eq=gamma=0.910", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=30.8, desired_psnr_max=32.0,
-        tune_param="gamma", tune_val=0.910, max_search_iterations=2
+        tune_param="gamma", tune_val=0.910, max_search_iterations=5
     ),
     DistortionTarget(
         "PSNR_BND_PASS_02_GAMMA", target_ssim=0.970, target_psnr=30.5,
         distortion_type="gamma", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
         crf=16, filter_expr="eq=gamma=0.900", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=30.1, desired_psnr_max=30.7,
-        tune_param="gamma", tune_val=0.900, max_search_iterations=2
+        tune_param="gamma", tune_val=0.900, max_search_iterations=5
     ),
     DistortionTarget(
         "PSNR_BND_PASS_03_BRIGHT", target_ssim=0.972, target_psnr=30.6,
         distortion_type="brightness", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
         crf=16, filter_expr="eq=brightness=0.045", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=30.1, desired_psnr_max=31.2,
-        tune_param="brightness", tune_val=0.045, max_search_iterations=2
+        tune_param="brightness", tune_val=0.045, max_search_iterations=5
     ),
     DistortionTarget(
         "PSNR_BND_FAIL_01_GAMMA", target_ssim=0.969, target_psnr=29.7,
         distortion_type="gamma", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
         crf=16, filter_expr="eq=gamma=0.890", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=29.4, desired_psnr_max=29.99,
-        tune_param="gamma", tune_val=0.890, max_search_iterations=2
+        tune_param="gamma", tune_val=0.890, max_search_iterations=5
     ),
     DistortionTarget(
         "PSNR_BND_FAIL_02_GAMMA", target_ssim=0.967, target_psnr=28.9,
         distortion_type="gamma", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
         crf=16, filter_expr="eq=gamma=0.880", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=28.6, desired_psnr_max=29.3,
-        tune_param="gamma", tune_val=0.880, max_search_iterations=2
+        tune_param="gamma", tune_val=0.880, max_search_iterations=5
     ),
     DistortionTarget(
         "PSNR_BND_FAIL_03_CONTRAST", target_ssim=0.961, target_psnr=28.2,
         distortion_type="gamma", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
         crf=16, filter_expr="eq=gamma=0.870", desired_ssim_min=0.960, desired_ssim_max=0.985, desired_psnr_min=27.5, desired_psnr_max=28.6,
-        tune_param="gamma", tune_val=0.870, max_search_iterations=2
+        tune_param="gamma", tune_val=0.870, max_search_iterations=5
     ),
 
     # ── Region C: JOINT boundary region (Around SSIM=0.950, PSNR=30.0 dB, 4 Quadrants) ──
@@ -150,13 +150,13 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "JOINT_Q1_PASS_01", target_ssim=0.951, target_psnr=30.3,
         distortion_type="joint_gamma_quant", category="near_boundary_pass", region="joint_boundary", quadrant="q1_pass",
         crf=22, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9500, desired_ssim_max=0.9540, desired_psnr_min=30.05, desired_psnr_max=30.70,
-        tune_param="joint", tune_val=0.900, max_search_iterations=2
+        tune_param="joint", tune_val=0.900, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q1_PASS_02", target_ssim=0.953, target_psnr=31.2,
         distortion_type="joint_gamma_quant", category="near_boundary_pass", region="joint_boundary", quadrant="q1_pass",
         crf=22, filter_expr="eq=gamma=0.910", desired_ssim_min=0.9510, desired_ssim_max=0.9560, desired_psnr_min=30.80, desired_psnr_max=31.60,
-        tune_param="joint", tune_val=0.910, max_search_iterations=2
+        tune_param="joint", tune_val=0.910, max_search_iterations=5
     ),
 
     # Q2: SSIM < 0.9500 AND PSNR >= 30.00 dB -> Unacceptable
@@ -164,13 +164,13 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "JOINT_Q2_FAIL_SSIM_01", target_ssim=0.948, target_psnr=30.3,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q2_fail_ssim",
         crf=23, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9460, desired_ssim_max=0.9499, desired_psnr_min=30.05, desired_psnr_max=30.70,
-        tune_param="joint", tune_val=0.900, max_search_iterations=2
+        tune_param="joint", tune_val=0.900, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q2_FAIL_SSIM_02", target_ssim=0.946, target_psnr=31.1,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q2_fail_ssim",
         crf=24, filter_expr="eq=gamma=0.910", desired_ssim_min=0.9430, desired_ssim_max=0.9490, desired_psnr_min=30.80, desired_psnr_max=31.60,
-        tune_param="joint", tune_val=0.910, max_search_iterations=2
+        tune_param="joint", tune_val=0.910, max_search_iterations=5
     ),
 
     # Q3: SSIM >= 0.9500 AND PSNR < 30.00 dB -> Unacceptable
@@ -178,13 +178,13 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "JOINT_Q3_FAIL_PSNR_01", target_ssim=0.952, target_psnr=28.9,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
         crf=21, filter_expr="eq=gamma=0.880", desired_ssim_min=0.9500, desired_ssim_max=0.9540, desired_psnr_min=28.50, desired_psnr_max=29.30,
-        tune_param="joint", tune_val=0.880, max_search_iterations=2
+        tune_param="joint", tune_val=0.880, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q3_FAIL_PSNR_02", target_ssim=0.955, target_psnr=28.9,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
         crf=20, filter_expr="eq=gamma=0.880", desired_ssim_min=0.9530, desired_ssim_max=0.9580, desired_psnr_min=28.50, desired_psnr_max=29.30,
-        tune_param="joint", tune_val=0.880, max_search_iterations=2
+        tune_param="joint", tune_val=0.880, max_search_iterations=5
     ),
 
     # Q4: SSIM < 0.9500 AND PSNR < 30.00 dB -> Unacceptable
@@ -192,13 +192,13 @@ DEFAULT_TARGETS: List[DistortionTarget] = [
         "JOINT_Q4_FAIL_BOTH_01", target_ssim=0.944, target_psnr=29.5,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q4_fail_both",
         crf=24, filter_expr="eq=gamma=0.890", desired_ssim_min=0.9410, desired_ssim_max=0.9470, desired_psnr_min=29.10, desired_psnr_max=29.80,
-        tune_param="joint", tune_val=0.890, max_search_iterations=2
+        tune_param="joint", tune_val=0.890, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q4_FAIL_BOTH_02", target_ssim=0.942, target_psnr=28.8,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q4_fail_both",
         crf=24, filter_expr="eq=gamma=0.880", desired_ssim_min=0.9380, desired_ssim_max=0.9450, desired_psnr_min=28.40, desired_psnr_max=29.10,
-        tune_param="joint", tune_val=0.880, max_search_iterations=2
+        tune_param="joint", tune_val=0.880, max_search_iterations=5
     ),
 
     # ── Anchors: Global Extremes ──
@@ -450,16 +450,30 @@ def closed_loop_tune_and_generate(
         target_s = (
             (target.desired_ssim_min + target.desired_ssim_max) / 2
             if (target.desired_ssim_min and target.desired_ssim_max)
-            else s
+            else (target.target_ssim if target.target_ssim is not None else s)
         )
         target_p = (
             (target.desired_psnr_min + target.desired_psnr_max) / 2
             if (target.desired_psnr_min and target.desired_psnr_max)
-            else p
+            else (target.target_psnr if target.target_psnr is not None else p)
         )
-        dist = abs(s - target_s) * 100 + abs(p - target_p)
 
-        if dist < best_dist:
+        # Calculate boundary error (0 if inside desired bounds)
+        err_s = 0.0
+        if target.desired_ssim_min and s < target.desired_ssim_min:
+            err_s = target.desired_ssim_min - s
+        elif target.desired_ssim_max and s > target.desired_ssim_max:
+            err_s = s - target.desired_ssim_max
+
+        err_p = 0.0
+        if target.desired_psnr_min and p < target.desired_psnr_min:
+            err_p = target.desired_psnr_min - p
+        elif target.desired_psnr_max and p > target.desired_psnr_max:
+            err_p = p - target.desired_psnr_max
+
+        dist = err_s * 1000.0 + err_p * 10.0
+
+        if (in_s and in_p) or (dist < best_dist):
             if best_candidate and best_candidate["path"].exists():
                 try:
                     best_candidate["path"].unlink()
@@ -476,6 +490,8 @@ def closed_loop_tune_and_generate(
                 "fexpr": fexpr,
                 "iter": it,
             }
+            if in_s and in_p:
+                break
         else:
             if temp_out.exists():
                 try:
@@ -483,25 +499,47 @@ def closed_loop_tune_and_generate(
                 except Exception:
                     pass
 
-        if in_s and in_p:
-            break
-
-        # Adjust parameters
-        if target.desired_ssim_min and s < target.desired_ssim_min:
-            crf = max(10, crf - 1)
-        elif target.desired_ssim_max and s > target.desired_ssim_max:
-            crf = min(45, crf + 1)
-
-        if target.tune_param in ("gamma", "joint", "gamma_joint") and val is not None:
+        # Adjust parameters dynamically based on distance from target bounds
+        if target.tune_param == "crf":
+            diff = s - target_s
+            step = max(1, min(6, int(abs(diff) / 0.005)))
+            if s < target.desired_ssim_min:
+                crf = max(10, crf - step)
+            elif s > target.desired_ssim_max:
+                crf = min(45, crf + step)
+        elif target.tune_param == "blur" and val is not None:
+            diff = s - target_s
+            step_b = max(0.2, min(1.2, abs(diff) * 25.0))
+            if s < target.desired_ssim_min:
+                val = max(0.2, round(val - step_b, 2))
+            elif s > target.desired_ssim_max:
+                val = min(6.0, round(val + step_b, 2))
+        elif target.tune_param in ("gamma", "joint", "gamma_joint") and val is not None:
+            diff_p = p - target_p
+            step_g = max(0.005, min(0.03, abs(diff_p) * 0.005))
             if target.desired_psnr_min and p < target.desired_psnr_min:
-                val = round(val + 0.01, 3)
+                val = round(val + step_g, 3)
             elif target.desired_psnr_max and p > target.desired_psnr_max:
-                val = round(val - 0.01, 3)
+                val = round(val - step_g, 3)
+            if target.tune_param in ("joint", "gamma_joint") and target.desired_ssim_min and target.desired_ssim_max:
+                diff_s = s - target_s
+                step_c = max(1, min(5, int(abs(diff_s) / 0.005)))
+                if s < target.desired_ssim_min:
+                    crf = max(10, crf - step_c)
+                elif s > target.desired_ssim_max:
+                    crf = min(45, crf + step_c)
         elif target.tune_param == "brightness" and val is not None:
+            diff_p = p - target_p
+            step_br = max(0.002, min(0.02, abs(diff_p) * 0.003))
             if target.desired_psnr_min and p < target.desired_psnr_min:
-                val = round(max(0.0, val - 0.005), 4)
+                val = round(max(0.0, val - step_br), 4)
             elif target.desired_psnr_max and p > target.desired_psnr_max:
-                val = round(val + 0.005, 4)
+                val = round(val + step_br, 4)
+        else:
+            if target.desired_ssim_min and s < target.desired_ssim_min:
+                crf = max(10, crf - 1)
+            elif target.desired_ssim_max and s > target.desired_ssim_max:
+                crf = min(45, crf + 1)
 
     if best_candidate is None:
         return False, "", 0.0, 0.0, {}, 0
@@ -547,6 +585,18 @@ def generate_boundary_dataset(
     output_results_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_dir.mkdir(parents=True, exist_ok=True)
     dist_dir.mkdir(parents=True, exist_ok=True)
+
+    existing_clips: Dict[str, Any] = {}
+    if output_results_path.exists():
+        try:
+            with open(output_results_path, "r", encoding="utf-8") as f:
+                prev_data = json.load(f)
+                for c in prev_data.get("clips", []):
+                    grp_id = c.get("sequence_group")
+                    if grp_id:
+                        existing_clips[grp_id] = c
+        except Exception:
+            pass
 
     results_data: Dict[str, Any] = {
         "study_id": "VF-CAL-VMAF-EMPIRICAL-EXPANDED-2026" if not simulate else "VF-CAL-VMAF-BOUNDARY-SIMULATED-2026",
@@ -754,7 +804,9 @@ def generate_boundary_dataset(
             clip_entry["fixtures"].append(fixture_entry)
             total_pairs_generated += 1
 
-        results_data["clips"].append(clip_entry)
+        existing_clips[grp] = clip_entry
+
+    results_data["clips"] = list(existing_clips.values())
 
     with open(output_results_path, "w", encoding="utf-8") as f:
         json.dump(results_data, f, indent=2)

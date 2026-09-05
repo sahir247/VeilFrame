@@ -2109,6 +2109,3248 @@
           "evidence_sha256": "6a00fa663bc7fd3e4cc735f924c9d4e67a3fade6369d6233f082c9bb0039a4d0"
         }
       ]
+    },
+    {
+      "clip_filename": "dinner_1080p30.y4m",
+      "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+      "sequence_group": "dinner",
+      "category": "people_faces",
+      "subcategory": "indoor_faces_conversation",
+      "domain": "1080p_sdr",
+      "suitability_status": "eligible",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "measurement_status": "empirical",
+      "is_simulated": false,
+      "fixtures": [
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_PASS_01",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 31,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.979888,
+                "measured_psnr": 43.935081,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.968506,
+                "measured_psnr": 41.257689,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 29,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.961714,
+                "measured_psnr": 40.002264,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 30,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.958013,
+                "measured_psnr": 39.37891,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 5,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 31,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.979888,
+                "measured_psnr": 43.935081,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.968506,
+                "measured_psnr": 41.257689,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 29,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.961714,
+                "measured_psnr": 40.002264,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 30,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.958013,
+                "measured_psnr": 39.37891,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 5,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 5,
+          "target_bounds": {
+            "desired_ssim_min": 0.953,
+            "desired_ssim_max": 0.958,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 31 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_PASS_01_iter_5.mp4",
+          "distorted_filename": "dinner_SSIM_BND_PASS_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_PASS_01.mp4",
+          "distorted_sha256": "abb3f7583c2d01bb755be1d3288a664d7d40822eccbd13b50d7e24d1eb2961d2",
+          "ssim": {
+            "mean": 0.953658
+          },
+          "psnr": {
+            "mean": 38.732112
+          },
+          "vmaf": {
+            "mean": 86.15,
+            "p5": 79.68,
+            "min": 74.71
+          },
+          "ssim_mean": 0.953658,
+          "psnr_mean": 38.732112,
+          "vmaf_mean": 86.15,
+          "vmaf_p5": 79.68,
+          "vmaf_worst": 74.71,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_PASS_01_vmaf_evidence.json",
+          "evidence_sha256": "1430d27d5d3a6e7870b2865d89afb31d5a6b97167eac5bd707706d658d66a653"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_PASS_02",
+          "status": "success",
+          "target_type": "quantization_blur",
+          "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=2.27",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.8,
+                "filter_expr": "gblur=sigma=0.80",
+                "measured_ssim": 0.977121,
+                "measured_psnr": 41.911125,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 1.42,
+                "filter_expr": "gblur=sigma=1.42",
+                "measured_ssim": 0.968407,
+                "measured_psnr": 39.019532,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 22,
+                "tune_val": 1.82,
+                "filter_expr": "gblur=sigma=1.82",
+                "measured_ssim": 0.962477,
+                "measured_psnr": 37.670475,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 22,
+                "tune_val": 2.07,
+                "filter_expr": "gblur=sigma=2.07",
+                "measured_ssim": 0.958823,
+                "measured_psnr": 36.963407,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 5,
+                "crf": 22,
+                "tune_val": 2.27,
+                "filter_expr": "gblur=sigma=2.27",
+                "measured_ssim": 0.955889,
+                "measured_psnr": 36.451076,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=2.27",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.8,
+                "filter_expr": "gblur=sigma=0.80",
+                "measured_ssim": 0.977121,
+                "measured_psnr": 41.911125,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 1.42,
+                "filter_expr": "gblur=sigma=1.42",
+                "measured_ssim": 0.968407,
+                "measured_psnr": 39.019532,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 22,
+                "tune_val": 1.82,
+                "filter_expr": "gblur=sigma=1.82",
+                "measured_ssim": 0.962477,
+                "measured_psnr": 37.670475,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 22,
+                "tune_val": 2.07,
+                "filter_expr": "gblur=sigma=2.07",
+                "measured_ssim": 0.958823,
+                "measured_psnr": 36.963407,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 5,
+                "crf": 22,
+                "tune_val": 2.27,
+                "filter_expr": "gblur=sigma=2.27",
+                "measured_ssim": 0.955889,
+                "measured_psnr": 36.451076,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 5,
+          "target_bounds": {
+            "desired_ssim_min": 0.9505,
+            "desired_ssim_max": 0.9545,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf gblur=sigma=2.27 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_PASS_02_iter_5.mp4",
+          "distorted_filename": "dinner_SSIM_BND_PASS_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_PASS_02.mp4",
+          "distorted_sha256": "d060f8e0e67624f7ae8bea0f7f96c1fa8a9e3d40f21643346c6c8cbfb5ef8f80",
+          "ssim": {
+            "mean": 0.955889
+          },
+          "psnr": {
+            "mean": 36.451076
+          },
+          "vmaf": {
+            "mean": 54.97,
+            "p5": 46.63,
+            "min": 44.93
+          },
+          "ssim_mean": 0.955889,
+          "psnr_mean": 36.451076,
+          "vmaf_mean": 54.97,
+          "vmaf_p5": 46.63,
+          "vmaf_worst": 44.93,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_PASS_02_vmaf_evidence.json",
+          "evidence_sha256": "63941913255ea6302f25b212e02b8c5afe51ff8dacfb553c050fb34f3323e393"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_PASS_03",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "near_boundary_pass",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 28,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.983906,
+                "measured_psnr": 45.266765,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.974468,
+                "measured_psnr": 42.512754,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 27,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.968506,
+                "measured_psnr": 41.257689,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.965172,
+                "measured_psnr": 40.61693,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 28,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.983906,
+                "measured_psnr": 45.266765,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.974468,
+                "measured_psnr": 42.512754,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 27,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.968506,
+                "measured_psnr": 41.257689,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.965172,
+                "measured_psnr": 40.61693,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.958,
+            "desired_ssim_max": 0.966,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_PASS_03_iter_4.mp4",
+          "distorted_filename": "dinner_SSIM_BND_PASS_03.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_PASS_03.mp4",
+          "distorted_sha256": "3d2ae965c0d3748e6f9f2f3fc8080308b65efbe714ba39658f52633cd420184f",
+          "ssim": {
+            "mean": 0.965172
+          },
+          "psnr": {
+            "mean": 40.61693
+          },
+          "vmaf": {
+            "mean": 90.1,
+            "p5": 85.48,
+            "min": 79.24
+          },
+          "ssim_mean": 0.965172,
+          "psnr_mean": 40.61693,
+          "vmaf_mean": 90.1,
+          "vmaf_p5": 85.48,
+          "vmaf_worst": 79.24,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_PASS_03_vmaf_evidence.json",
+          "evidence_sha256": "eb12dc054ec8bb1e03ba4a6ef50b33cfe068d16c4a30cc3a89fb0c6ecdcb3a76"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_FAIL_01",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 32,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.977564,
+                "measured_psnr": 43.287343,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 29,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.961714,
+                "measured_psnr": 40.002264,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 32,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.949726,
+                "measured_psnr": 38.17998,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 32,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.977564,
+                "measured_psnr": 43.287343,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 29,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.961714,
+                "measured_psnr": 40.002264,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 32,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.949726,
+                "measured_psnr": 38.17998,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.9465,
+            "desired_ssim_max": 0.9499,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 32 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_FAIL_01_iter_4.mp4",
+          "distorted_filename": "dinner_SSIM_BND_FAIL_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_FAIL_01.mp4",
+          "distorted_sha256": "a768689605390c9302d85665fc26b984a9e85821b962789d7278994b986d7116",
+          "ssim": {
+            "mean": 0.949726
+          },
+          "psnr": {
+            "mean": 38.17998
+          },
+          "vmaf": {
+            "mean": 84.64,
+            "p5": 77.55,
+            "min": 72.48
+          },
+          "ssim_mean": 0.949726,
+          "psnr_mean": 38.17998,
+          "vmaf_mean": 84.64,
+          "vmaf_p5": 77.55,
+          "vmaf_worst": 72.48,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_FAIL_01_vmaf_evidence.json",
+          "evidence_sha256": "08ae24579df188d7005040fc9cde5bc5e20163a6efad09bb5bed7b639e191514"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_FAIL_02",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 33,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.974468,
+                "measured_psnr": 42.512754,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 32,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.949726,
+                "measured_psnr": 38.17998,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 33,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.944003,
+                "measured_psnr": 37.49263,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 33,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "crf",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 25,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.974468,
+                "measured_psnr": 42.512754,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 31,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.953658,
+                "measured_psnr": 38.732112,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 32,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.949726,
+                "measured_psnr": 38.17998,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 33,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.944003,
+                "measured_psnr": 37.49263,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.942,
+            "desired_ssim_max": 0.946,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 33 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_FAIL_02_iter_4.mp4",
+          "distorted_filename": "dinner_SSIM_BND_FAIL_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_FAIL_02.mp4",
+          "distorted_sha256": "a6d57f36e029a7dd8fa92ae20d660acc3787e8f4c1363c8917d10f8005c72753",
+          "ssim": {
+            "mean": 0.944003
+          },
+          "psnr": {
+            "mean": 37.49263
+          },
+          "vmaf": {
+            "mean": 82.95,
+            "p5": 74.98,
+            "min": 69.45
+          },
+          "ssim_mean": 0.944003,
+          "psnr_mean": 37.49263,
+          "vmaf_mean": 82.95,
+          "vmaf_p5": 74.98,
+          "vmaf_worst": 69.45,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_FAIL_02_vmaf_evidence.json",
+          "evidence_sha256": "1b732b957dc7e749ab7920a181a89f6c74562e950f169f2bd6df503ffd5f9539"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "SSIM_BND_FAIL_03_BLUR",
+          "status": "success",
+          "target_type": "blur",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=3.04",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 1.6,
+                "filter_expr": "gblur=sigma=1.60",
+                "measured_ssim": 0.965778,
+                "measured_psnr": 38.376624,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 2.31,
+                "filter_expr": "gblur=sigma=2.31",
+                "measured_ssim": 0.955302,
+                "measured_psnr": 36.353693,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 22,
+                "tune_val": 2.76,
+                "filter_expr": "gblur=sigma=2.76",
+                "measured_ssim": 0.948841,
+                "measured_psnr": 35.360677,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 22,
+                "tune_val": 3.04,
+                "filter_expr": "gblur=sigma=3.04",
+                "measured_ssim": 0.945028,
+                "measured_psnr": 34.823587,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 5,
+                "crf": 22,
+                "tune_val": 3.24,
+                "filter_expr": "gblur=sigma=3.24",
+                "measured_ssim": 0.942373,
+                "measured_psnr": 34.470136,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "gblur=sigma=3.04",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "blur",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 5,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 1.6,
+                "filter_expr": "gblur=sigma=1.60",
+                "measured_ssim": 0.965778,
+                "measured_psnr": 38.376624,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 2.31,
+                "filter_expr": "gblur=sigma=2.31",
+                "measured_ssim": 0.955302,
+                "measured_psnr": 36.353693,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 22,
+                "tune_val": 2.76,
+                "filter_expr": "gblur=sigma=2.76",
+                "measured_ssim": 0.948841,
+                "measured_psnr": 35.360677,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 22,
+                "tune_val": 3.04,
+                "filter_expr": "gblur=sigma=3.04",
+                "measured_ssim": 0.945028,
+                "measured_psnr": 34.823587,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 5,
+                "crf": 22,
+                "tune_val": 3.24,
+                "filter_expr": "gblur=sigma=3.24",
+                "measured_ssim": 0.942373,
+                "measured_psnr": 34.470136,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              }
+            ]
+          },
+          "search_iterations": 5,
+          "target_bounds": {
+            "desired_ssim_min": 0.934,
+            "desired_ssim_max": 0.941,
+            "desired_psnr_min": 35.0,
+            "desired_psnr_max": 50.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf gblur=sigma=3.04 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_SSIM_BND_FAIL_03_BLUR_iter_4.mp4",
+          "distorted_filename": "dinner_SSIM_BND_FAIL_03_BLUR.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_SSIM_BND_FAIL_03_BLUR.mp4",
+          "distorted_sha256": "e65d8101f875e271ffd30efb1b587757436866686311b5b78d456f6bf9b55adb",
+          "ssim": {
+            "mean": 0.945028
+          },
+          "psnr": {
+            "mean": 34.823587
+          },
+          "vmaf": {
+            "mean": 38.85,
+            "p5": 29.15,
+            "min": 28.02
+          },
+          "ssim_mean": 0.945028,
+          "psnr_mean": 34.823587,
+          "vmaf_mean": 38.85,
+          "vmaf_p5": 29.15,
+          "vmaf_worst": 28.02,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_SSIM_BND_FAIL_03_BLUR_vmaf_evidence.json",
+          "evidence_sha256": "fa4c12c1d0b49586d3ed204903dfc96522ba39ff7372a5b4aba07551bb2a1121"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_PASS_01_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.899",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 3,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.980499,
+                "measured_psnr": 32.618493,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.978245,
+                "measured_psnr": 32.028928,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.97729,
+                "measured_psnr": 31.652174,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.899",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 3,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.980499,
+                "measured_psnr": 32.618493,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.978245,
+                "measured_psnr": 32.028928,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.97729,
+                "measured_psnr": 31.652174,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 3,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 32.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.899 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_PASS_01_GAMMA_iter_3.mp4",
+          "distorted_filename": "dinner_PSNR_BND_PASS_01_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_PASS_01_GAMMA.mp4",
+          "distorted_sha256": "bf85a1b42ed830c40dc96b326622e8e2cf31e5c4a243f41b19e4d6bf94898d23",
+          "ssim": {
+            "mean": 0.97729
+          },
+          "psnr": {
+            "mean": 31.652174
+          },
+          "vmaf": {
+            "mean": 95.88,
+            "p5": 93.35,
+            "min": 88.76
+          },
+          "ssim_mean": 0.97729,
+          "psnr_mean": 31.652174,
+          "vmaf_mean": 95.88,
+          "vmaf_p5": 93.35,
+          "vmaf_worst": 88.76,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_PASS_01_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "1946a67febadc2c6332e7edf12e98bd958b55ef720357e7784be06ea0e7ef8b1"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_PASS_02_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.884",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.977348,
+                "measured_psnr": 31.698228,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.976091,
+                "measured_psnr": 31.203587,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.974678,
+                "measured_psnr": 30.847202,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.973146,
+                "measured_psnr": 30.434476,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.884",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.977348,
+                "measured_psnr": 31.698228,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.976091,
+                "measured_psnr": 31.203587,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.974678,
+                "measured_psnr": 30.847202,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.973146,
+                "measured_psnr": 30.434476,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.1,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.884 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_PASS_02_GAMMA_iter_4.mp4",
+          "distorted_filename": "dinner_PSNR_BND_PASS_02_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_PASS_02_GAMMA.mp4",
+          "distorted_sha256": "6a06fcb547f57e1186f19a1658f31b4eba0495125d2cc7cf888c42db9a1bd994",
+          "ssim": {
+            "mean": 0.973146
+          },
+          "psnr": {
+            "mean": 30.434476
+          },
+          "vmaf": {
+            "mean": 95.24,
+            "p5": 92.54,
+            "min": 88.55
+          },
+          "ssim_mean": 0.973146,
+          "psnr_mean": 30.434476,
+          "vmaf_mean": 95.24,
+          "vmaf_p5": 92.54,
+          "vmaf_worst": 88.55,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_PASS_02_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "b6b0d1fef60d41f044fa25e33ea6c5640098581294ced27ae44a1fdbb4d463b7"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_PASS_03_BRIGHT",
+          "status": "success",
+          "target_type": "brightness",
+          "target_category": "near_boundary_pass",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=brightness=0.0450",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "brightness",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.045,
+                "filter_expr": "eq=brightness=0.0450",
+                "measured_ssim": 0.976486,
+                "measured_psnr": 30.725581,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=brightness=0.0450",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "brightness",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.045,
+                "filter_expr": "eq=brightness=0.0450",
+                "measured_ssim": 0.976486,
+                "measured_psnr": 30.725581,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 30.1,
+            "desired_psnr_max": 31.2
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=brightness=0.0450 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_PASS_03_BRIGHT_iter_1.mp4",
+          "distorted_filename": "dinner_PSNR_BND_PASS_03_BRIGHT.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_PASS_03_BRIGHT.mp4",
+          "distorted_sha256": "836f54851d1e6e282d566fe83e5e3582e7439886d03c08b8852c7695c4c36b50",
+          "ssim": {
+            "mean": 0.976486
+          },
+          "psnr": {
+            "mean": 30.725581
+          },
+          "vmaf": {
+            "mean": 97.8,
+            "p5": 96.37,
+            "min": 90.01
+          },
+          "ssim_mean": 0.976486,
+          "psnr_mean": 30.725581,
+          "vmaf_mean": 97.8,
+          "vmaf_p5": 96.37,
+          "vmaf_worst": 90.01,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_PASS_03_BRIGHT_vmaf_evidence.json",
+          "evidence_sha256": "622577609b543da1a98efc62f03c7222d60e9362210159052a25f6a3704b0840"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_FAIL_01_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.874",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.974956,
+                "measured_psnr": 30.906514,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.973146,
+                "measured_psnr": 30.434476,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.879,
+                "filter_expr": "eq=gamma=0.879",
+                "measured_ssim": 0.970897,
+                "measured_psnr": 30.108884,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.969192,
+                "measured_psnr": 29.692929,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.874",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.974956,
+                "measured_psnr": 30.906514,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.973146,
+                "measured_psnr": 30.434476,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.879,
+                "filter_expr": "eq=gamma=0.879",
+                "measured_ssim": 0.970897,
+                "measured_psnr": 30.108884,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.969192,
+                "measured_psnr": 29.692929,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 29.4,
+            "desired_psnr_max": 29.99
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.874 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_FAIL_01_GAMMA_iter_4.mp4",
+          "distorted_filename": "dinner_PSNR_BND_FAIL_01_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_FAIL_01_GAMMA.mp4",
+          "distorted_sha256": "fe5096ba1334c53569f866f8d678276179c3ee7e97619ed6181afcbaf00b274e",
+          "ssim": {
+            "mean": 0.969192
+          },
+          "psnr": {
+            "mean": 29.692929
+          },
+          "vmaf": {
+            "mean": 94.95,
+            "p5": 92.12,
+            "min": 88.35
+          },
+          "ssim_mean": 0.969192,
+          "psnr_mean": 29.692929,
+          "vmaf_mean": 94.95,
+          "vmaf_p5": 92.12,
+          "vmaf_worst": 88.35,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_FAIL_01_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "0eeb612bb405a0f563574c1ef51cb423153cbf267323695fc785d531c8b8e6b9"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_FAIL_02_GAMMA",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.971951,
+                "measured_psnr": 30.170243,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.969192,
+                "measured_psnr": 29.692929,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.967853,
+                "measured_psnr": 29.425792,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.96633,
+                "measured_psnr": 29.063988,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.971951,
+                "measured_psnr": 30.170243,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.969192,
+                "measured_psnr": 29.692929,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.967853,
+                "measured_psnr": 29.425792,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.96633,
+                "measured_psnr": 29.063988,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 28.6,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.864 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_FAIL_02_GAMMA_iter_4.mp4",
+          "distorted_filename": "dinner_PSNR_BND_FAIL_02_GAMMA.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_FAIL_02_GAMMA.mp4",
+          "distorted_sha256": "fd069eae0675dbd001e1d25865729483a329cf1861a2ff9286b5c8e79db8ba2d",
+          "ssim": {
+            "mean": 0.96633
+          },
+          "psnr": {
+            "mean": 29.063988
+          },
+          "vmaf": {
+            "mean": 94.45,
+            "p5": 91.57,
+            "min": 88.56
+          },
+          "ssim_mean": 0.96633,
+          "psnr_mean": 29.063988,
+          "vmaf_mean": 94.45,
+          "vmaf_p5": 91.57,
+          "vmaf_worst": 88.56,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_FAIL_02_GAMMA_vmaf_evidence.json",
+          "evidence_sha256": "98d880d46482319ad2292a11dcf99ebc030ed4483597662a035f791833591bc0"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "PSNR_BND_FAIL_03_CONTRAST",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.853",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.87,
+                "filter_expr": "eq=gamma=0.870",
+                "measured_ssim": 0.968043,
+                "measured_psnr": 29.466293,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.863,
+                "filter_expr": "eq=gamma=0.863",
+                "measured_ssim": 0.965638,
+                "measured_psnr": 28.98265,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.858,
+                "filter_expr": "eq=gamma=0.858",
+                "measured_ssim": 0.963622,
+                "measured_psnr": 28.708438,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.853,
+                "filter_expr": "eq=gamma=0.853",
+                "measured_ssim": 0.960849,
+                "measured_psnr": 28.374143,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 16,
+            "filter_expr": "eq=gamma=0.853",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 16,
+                "tune_val": 0.87,
+                "filter_expr": "eq=gamma=0.870",
+                "measured_ssim": 0.968043,
+                "measured_psnr": 29.466293,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 16,
+                "tune_val": 0.863,
+                "filter_expr": "eq=gamma=0.863",
+                "measured_ssim": 0.965638,
+                "measured_psnr": 28.98265,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 16,
+                "tune_val": 0.858,
+                "filter_expr": "eq=gamma=0.858",
+                "measured_ssim": 0.963622,
+                "measured_psnr": 28.708438,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 16,
+                "tune_val": 0.853,
+                "filter_expr": "eq=gamma=0.853",
+                "measured_ssim": 0.960849,
+                "measured_psnr": 28.374143,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.96,
+            "desired_ssim_max": 0.985,
+            "desired_psnr_min": 27.5,
+            "desired_psnr_max": 28.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.853 -c:v libx264 -crf 16 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_PSNR_BND_FAIL_03_CONTRAST_iter_4.mp4",
+          "distorted_filename": "dinner_PSNR_BND_FAIL_03_CONTRAST.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_PSNR_BND_FAIL_03_CONTRAST.mp4",
+          "distorted_sha256": "4f0be3a9252b1d2855b69b4acfdd1e5267ec9d62628aafc33a190eeca74f9a46",
+          "ssim": {
+            "mean": 0.960849
+          },
+          "psnr": {
+            "mean": 28.374143
+          },
+          "vmaf": {
+            "mean": 94.08,
+            "p5": 90.99,
+            "min": 88.6
+          },
+          "ssim_mean": 0.960849,
+          "psnr_mean": 28.374143,
+          "vmaf_mean": 94.08,
+          "vmaf_p5": 90.99,
+          "vmaf_worst": 88.6,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_PSNR_BND_FAIL_03_CONTRAST_vmaf_evidence.json",
+          "evidence_sha256": "88e0c8506fdb20fa9a67f6c2c3b8518af3886d476f394a8041d4ea57266b1ea9"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q1_PASS_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_pass",
+          "region": "joint_boundary",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 27,
+            "filter_expr": "eq=gamma=0.889",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.968603,
+                "measured_psnr": 31.571433,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.960131,
+                "measured_psnr": 30.982314,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 26,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.956377,
+                "measured_psnr": 30.598708,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 27,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.952955,
+                "measured_psnr": 30.531888,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 27,
+            "filter_expr": "eq=gamma=0.889",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.968603,
+                "measured_psnr": 31.571433,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.960131,
+                "measured_psnr": 30.982314,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 26,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.956377,
+                "measured_psnr": 30.598708,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 27,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.952955,
+                "measured_psnr": 30.531888,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.95,
+            "desired_ssim_max": 0.954,
+            "desired_psnr_min": 30.05,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.889 -c:v libx264 -crf 27 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q1_PASS_01_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q1_PASS_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q1_PASS_01.mp4",
+          "distorted_sha256": "7dabdea62af5950f5a93705afe3566d3de5947be2378e87682973fb3662a2557",
+          "ssim": {
+            "mean": 0.952955
+          },
+          "psnr": {
+            "mean": 30.531888
+          },
+          "vmaf": {
+            "mean": 89.88,
+            "p5": 86.33,
+            "min": 81.2
+          },
+          "ssim_mean": 0.952955,
+          "psnr_mean": 30.531888,
+          "vmaf_mean": 89.88,
+          "vmaf_p5": 86.33,
+          "vmaf_worst": 81.2,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q1_PASS_01_vmaf_evidence.json",
+          "evidence_sha256": "ec5110f697d037c6321986df0be4a25fa3b521caedb25ee80170dd63e0e1c0cb"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q1_PASS_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_pass",
+          "region": "joint_boundary",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 27,
+            "filter_expr": "eq=gamma=0.899",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.971736,
+                "measured_psnr": 32.462527,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.962215,
+                "measured_psnr": 31.760329,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 26,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.958872,
+                "measured_psnr": 31.353067,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 27,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.955412,
+                "measured_psnr": 31.273727,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 27,
+            "filter_expr": "eq=gamma=0.899",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q1_pass",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 22,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.971736,
+                "measured_psnr": 32.462527,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 25,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.962215,
+                "measured_psnr": 31.760329,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 26,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.958872,
+                "measured_psnr": 31.353067,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 27,
+                "tune_val": 0.899,
+                "filter_expr": "eq=gamma=0.899",
+                "measured_ssim": 0.955412,
+                "measured_psnr": 31.273727,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.951,
+            "desired_ssim_max": 0.956,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 31.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.899 -c:v libx264 -crf 27 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q1_PASS_02_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q1_PASS_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q1_PASS_02.mp4",
+          "distorted_sha256": "13986bdc2168f8bec961b0dae2286ea26417c69b8d7851d453223003ab09aa88",
+          "ssim": {
+            "mean": 0.955412
+          },
+          "psnr": {
+            "mean": 31.273727
+          },
+          "vmaf": {
+            "mean": 90.09,
+            "p5": 86.73,
+            "min": 80.89
+          },
+          "ssim_mean": 0.955412,
+          "psnr_mean": 31.273727,
+          "vmaf_mean": 90.09,
+          "vmaf_p5": 86.73,
+          "vmaf_worst": 80.89,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q1_PASS_02_vmaf_evidence.json",
+          "evidence_sha256": "e91848002ec7db42820d99c100aa25deff9965dddccc0917c3867f0f00889ab5"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q2_FAIL_SSIM_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.889",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.966707,
+                "measured_psnr": 31.562245,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 26,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.957733,
+                "measured_psnr": 30.934251,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 27,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.952955,
+                "measured_psnr": 30.531888,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.949685,
+                "measured_psnr": 30.477186,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.889",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 23,
+                "tune_val": 0.9,
+                "filter_expr": "eq=gamma=0.900",
+                "measured_ssim": 0.966707,
+                "measured_psnr": 31.562245,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 26,
+                "tune_val": 0.894,
+                "filter_expr": "eq=gamma=0.894",
+                "measured_ssim": 0.957733,
+                "measured_psnr": 30.934251,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 27,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.952955,
+                "measured_psnr": 30.531888,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": 0.889,
+                "filter_expr": "eq=gamma=0.889",
+                "measured_ssim": 0.949685,
+                "measured_psnr": 30.477186,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.946,
+            "desired_ssim_max": 0.9499,
+            "desired_psnr_min": 30.05,
+            "desired_psnr_max": 30.7
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.889 -c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q2_FAIL_SSIM_01_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q2_FAIL_SSIM_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q2_FAIL_SSIM_01.mp4",
+          "distorted_sha256": "5d9d930edcb167c50bdce52313c9f62de0e0e55f949cae32d626fe10270a8b2e",
+          "ssim": {
+            "mean": 0.949685
+          },
+          "psnr": {
+            "mean": 30.477186
+          },
+          "vmaf": {
+            "mean": 88.93,
+            "p5": 85.62,
+            "min": 79.5
+          },
+          "ssim_mean": 0.949685,
+          "psnr_mean": 30.477186,
+          "vmaf_mean": 88.93,
+          "vmaf_p5": 85.62,
+          "vmaf_worst": 79.5,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q2_FAIL_SSIM_01_vmaf_evidence.json",
+          "evidence_sha256": "c7a60e290b508f58fd5b2d4c50d315d84d0ef1ec2f130bd62f374239b2690623"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q2_FAIL_SSIM_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 30,
+            "filter_expr": "eq=gamma=0.904",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.967469,
+                "measured_psnr": 32.373395,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 28,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.95308,
+                "measured_psnr": 31.549888,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 29,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.949723,
+                "measured_psnr": 31.452919,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 30,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.946065,
+                "measured_psnr": 31.357158,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 30,
+            "filter_expr": "eq=gamma=0.904",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.91,
+                "filter_expr": "eq=gamma=0.910",
+                "measured_ssim": 0.967469,
+                "measured_psnr": 32.373395,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 28,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.95308,
+                "measured_psnr": 31.549888,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 3,
+                "crf": 29,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.949723,
+                "measured_psnr": 31.452919,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 4,
+                "crf": 30,
+                "tune_val": 0.904,
+                "filter_expr": "eq=gamma=0.904",
+                "measured_ssim": 0.946065,
+                "measured_psnr": 31.357158,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.943,
+            "desired_ssim_max": 0.949,
+            "desired_psnr_min": 30.8,
+            "desired_psnr_max": 31.6
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.904 -c:v libx264 -crf 30 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q2_FAIL_SSIM_02_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q2_FAIL_SSIM_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q2_FAIL_SSIM_02.mp4",
+          "distorted_sha256": "dfdf14f59087217bb204e7c9b76b57c29e5617ed18a18663655ad66e6afa62e9",
+          "ssim": {
+            "mean": 0.946065
+          },
+          "psnr": {
+            "mean": 31.357158
+          },
+          "vmaf": {
+            "mean": 86.92,
+            "p5": 82.49,
+            "min": 75.29
+          },
+          "ssim_mean": 0.946065,
+          "psnr_mean": 31.357158,
+          "vmaf_mean": 86.92,
+          "vmaf_p5": 82.49,
+          "vmaf_worst": 75.29,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q2_FAIL_SSIM_02_vmaf_evidence.json",
+          "evidence_sha256": "e06d03969b5f394c7b0b23167d78bef7fa275cf646767b7cbeb110034cace868"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q3_FAIL_PSNR_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 25,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.965284,
+                "measured_psnr": 30.112272,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 23,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.958728,
+                "measured_psnr": 29.611977,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 24,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.955024,
+                "measured_psnr": 29.306672,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 25,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.950613,
+                "measured_psnr": 28.929144,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 25,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 21,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.965284,
+                "measured_psnr": 30.112272,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 23,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.958728,
+                "measured_psnr": 29.611977,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 24,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.955024,
+                "measured_psnr": 29.306672,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 25,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.950613,
+                "measured_psnr": 28.929144,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.95,
+            "desired_ssim_max": 0.954,
+            "desired_psnr_min": 28.5,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.864 -c:v libx264 -crf 25 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q3_FAIL_PSNR_01_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q3_FAIL_PSNR_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q3_FAIL_PSNR_01.mp4",
+          "distorted_sha256": "40965abbd727f21f26a8a41b03b216d14ef2dc2c95d22f00432b718986c5ec73",
+          "ssim": {
+            "mean": 0.950613
+          },
+          "psnr": {
+            "mean": 28.929144
+          },
+          "vmaf": {
+            "mean": 90.57,
+            "p5": 87.77,
+            "min": 83.45
+          },
+          "ssim_mean": 0.950613,
+          "psnr_mean": 28.929144,
+          "vmaf_mean": 90.57,
+          "vmaf_p5": 87.77,
+          "vmaf_worst": 83.45,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
+          "evidence_sha256": "60e6f28be9715a96f748a1e50b0a78aa59f7b187978dcf597c1a399453fdbec6"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q3_FAIL_PSNR_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q3_fail_psnr",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 23,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 20,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.967193,
+                "measured_psnr": 30.126749,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.960554,
+                "measured_psnr": 29.612718,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 23,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.95743,
+                "measured_psnr": 29.350492,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 23,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.95596,
+                "measured_psnr": 28.995691,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 23,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q3_fail_psnr",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 20,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.967193,
+                "measured_psnr": 30.126749,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 22,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.960554,
+                "measured_psnr": 29.612718,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 23,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.95743,
+                "measured_psnr": 29.350492,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 23,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.95596,
+                "measured_psnr": 28.995691,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.953,
+            "desired_ssim_max": 0.958,
+            "desired_psnr_min": 28.5,
+            "desired_psnr_max": 29.3
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.864 -c:v libx264 -crf 23 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q3_FAIL_PSNR_02_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q3_FAIL_PSNR_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q3_FAIL_PSNR_02.mp4",
+          "distorted_sha256": "0afe4a4f63392a740a2dd6398971a8e3bf67468dfc25c4b12725b77589fd626c",
+          "ssim": {
+            "mean": 0.95596
+          },
+          "psnr": {
+            "mean": 28.995691
+          },
+          "vmaf": {
+            "mean": 91.97,
+            "p5": 88.92,
+            "min": 84.78
+          },
+          "ssim_mean": 0.95596,
+          "psnr_mean": 28.995691,
+          "vmaf_mean": 91.97,
+          "vmaf_p5": 88.92,
+          "vmaf_worst": 84.78,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q3_FAIL_PSNR_02_vmaf_evidence.json",
+          "evidence_sha256": "60f073904d7c3e282109954a30ed69e4a67cfe629f32c4b15c07098e44d91334"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q4_FAIL_BOTH_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.879",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 3,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.962016,
+                "measured_psnr": 30.740363,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.951384,
+                "measured_psnr": 30.143627,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 28,
+                "tune_val": 0.879,
+                "filter_expr": "eq=gamma=0.879",
+                "measured_ssim": 0.94594,
+                "measured_psnr": 29.792575,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.879",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 3,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.89,
+                "filter_expr": "eq=gamma=0.890",
+                "measured_ssim": 0.962016,
+                "measured_psnr": 30.740363,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": 0.884,
+                "filter_expr": "eq=gamma=0.884",
+                "measured_ssim": 0.951384,
+                "measured_psnr": 30.143627,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 28,
+                "tune_val": 0.879,
+                "filter_expr": "eq=gamma=0.879",
+                "measured_ssim": 0.94594,
+                "measured_psnr": 29.792575,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 3,
+          "target_bounds": {
+            "desired_ssim_min": 0.941,
+            "desired_ssim_max": 0.947,
+            "desired_psnr_min": 29.1,
+            "desired_psnr_max": 29.8
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.879 -c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q4_FAIL_BOTH_01_iter_3.mp4",
+          "distorted_filename": "dinner_JOINT_Q4_FAIL_BOTH_01.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q4_FAIL_BOTH_01.mp4",
+          "distorted_sha256": "b0808cb10c814710f56a0cee2af8903bd51c990685a14139ee2f642dbbe201aa",
+          "ssim": {
+            "mean": 0.94594
+          },
+          "psnr": {
+            "mean": 29.792575
+          },
+          "vmaf": {
+            "mean": 88.61,
+            "p5": 85.44,
+            "min": 79.0
+          },
+          "ssim_mean": 0.94594,
+          "psnr_mean": 29.792575,
+          "vmaf_mean": 88.61,
+          "vmaf_p5": 85.44,
+          "vmaf_worst": 79.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q4_FAIL_BOTH_01_vmaf_evidence.json",
+          "evidence_sha256": "5d4552ffb8376988e2c94b135f9b33d39cb656c013ce747250be0d439a0dac61"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "JOINT_Q4_FAIL_BOTH_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.95908,
+                "measured_psnr": 30.029172,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.947583,
+                "measured_psnr": 29.447516,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 28,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.943042,
+                "measured_psnr": 29.15367,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.941616,
+                "measured_psnr": 28.813968,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 28,
+            "filter_expr": "eq=gamma=0.864",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both",
+            "search_iterations": 4,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 24,
+                "tune_val": 0.88,
+                "filter_expr": "eq=gamma=0.880",
+                "measured_ssim": 0.95908,
+                "measured_psnr": 30.029172,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 2,
+                "crf": 27,
+                "tune_val": 0.874,
+                "filter_expr": "eq=gamma=0.874",
+                "measured_ssim": 0.947583,
+                "measured_psnr": 29.447516,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 3,
+                "crf": 28,
+                "tune_val": 0.869,
+                "filter_expr": "eq=gamma=0.869",
+                "measured_ssim": 0.943042,
+                "measured_psnr": 29.15367,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": false
+              },
+              {
+                "iteration": 4,
+                "crf": 28,
+                "tune_val": 0.864,
+                "filter_expr": "eq=gamma=0.864",
+                "measured_ssim": 0.941616,
+                "measured_psnr": 28.813968,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 4,
+          "target_bounds": {
+            "desired_ssim_min": 0.938,
+            "desired_ssim_max": 0.945,
+            "desired_psnr_min": 28.4,
+            "desired_psnr_max": 29.1
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -vf eq=gamma=0.864 -c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_JOINT_Q4_FAIL_BOTH_02_iter_4.mp4",
+          "distorted_filename": "dinner_JOINT_Q4_FAIL_BOTH_02.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_JOINT_Q4_FAIL_BOTH_02.mp4",
+          "distorted_sha256": "365bc0098c18aded10b340762d174dbc78514b3f585f3c770407f4a6092c1f0a",
+          "ssim": {
+            "mean": 0.941616
+          },
+          "psnr": {
+            "mean": 28.813968
+          },
+          "vmaf": {
+            "mean": 88.03,
+            "p5": 84.84,
+            "min": 79.02
+          },
+          "ssim_mean": 0.941616,
+          "psnr_mean": 28.813968,
+          "vmaf_mean": 88.03,
+          "vmaf_p5": 84.84,
+          "vmaf_worst": 79.02,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_JOINT_Q4_FAIL_BOTH_02_vmaf_evidence.json",
+          "evidence_sha256": "003ddeac53846c06f998db3dffe7d201678876eda98e58fda4e014863e4aece8"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "ANCHOR_DEEP_PASS",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "deep_pass",
+          "region": "anchor",
+          "quadrant": "q1_pass",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 10,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 10,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.995441,
+                "measured_psnr": 51.949204,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 10,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q1_pass",
+            "search_iterations": 1,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 10,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.995441,
+                "measured_psnr": 51.949204,
+                "in_ssim_bounds": true,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 1,
+          "target_bounds": {
+            "desired_ssim_min": 0.985,
+            "desired_ssim_max": 1.0,
+            "desired_psnr_min": 45.0,
+            "desired_psnr_max": 60.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 10 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_ANCHOR_DEEP_PASS_iter_1.mp4",
+          "distorted_filename": "dinner_ANCHOR_DEEP_PASS.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_ANCHOR_DEEP_PASS.mp4",
+          "distorted_sha256": "eacda9654a9472e21ff3b7da42a78c569485b39efddc483148431d5453d1f087",
+          "ssim": {
+            "mean": 0.995441
+          },
+          "psnr": {
+            "mean": 51.949204
+          },
+          "vmaf": {
+            "mean": 99.46,
+            "p5": 98.26,
+            "min": 95.0
+          },
+          "ssim_mean": 0.995441,
+          "psnr_mean": 51.949204,
+          "vmaf_mean": 99.46,
+          "vmaf_p5": 98.26,
+          "vmaf_worst": 95.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_ANCHOR_DEEP_PASS_vmaf_evidence.json",
+          "evidence_sha256": "3035aea48ef5218a0d9f6f44975856eb7507283c8918d8588c81c6a1a8c3c54e"
+        },
+        {
+          "sequence_group": "dinner",
+          "clip_filename": "dinner_1080p30.y4m",
+          "clip_sha256": "03bfb189cc10174b1d86ad9d11eafd33b20cd7e761ce20d936eced9cc065d5df",
+          "fixture": "ANCHOR_DEEP_FAIL",
+          "status": "success",
+          "target_type": "quantization",
+          "target_category": "deep_fail",
+          "region": "anchor",
+          "quadrant": "q2_fail_ssim",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 39,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 38,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.914247,
+                "measured_psnr": 34.44702,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 39,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.905457,
+                "measured_psnr": 33.704884,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "parameters": {
+            "crf": 39,
+            "filter_expr": null,
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": null,
+            "region": "anchor",
+            "quadrant": "q2_fail_ssim",
+            "search_iterations": 2,
+            "search_history": [
+              {
+                "iteration": 1,
+                "crf": 38,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.914247,
+                "measured_psnr": 34.44702,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              },
+              {
+                "iteration": 2,
+                "crf": 39,
+                "tune_val": null,
+                "filter_expr": null,
+                "measured_ssim": 0.905457,
+                "measured_psnr": 33.704884,
+                "in_ssim_bounds": false,
+                "in_psnr_bounds": true
+              }
+            ]
+          },
+          "search_iterations": 2,
+          "target_bounds": {
+            "desired_ssim_min": 0.8,
+            "desired_ssim_max": 0.89,
+            "desired_psnr_min": 25.0,
+            "desired_psnr_max": 36.0
+          },
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\dinner_1080p30.y4m -c:v libx264 -crf 39 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\dinner_ANCHOR_DEEP_FAIL_iter_2.mp4",
+          "distorted_filename": "dinner_ANCHOR_DEEP_FAIL.mp4",
+          "distorted_path": "calibration/data/distorted/dinner_ANCHOR_DEEP_FAIL.mp4",
+          "distorted_sha256": "ee54e4215a011f62be4e8f86ae14f6612422b02eb3196a21bf9bbb54c624870a",
+          "ssim": {
+            "mean": 0.905457
+          },
+          "psnr": {
+            "mean": 33.704884
+          },
+          "vmaf": {
+            "mean": 68.73,
+            "p5": 55.35,
+            "min": 46.43
+          },
+          "ssim_mean": 0.905457,
+          "psnr_mean": 33.704884,
+          "vmaf_mean": 68.73,
+          "vmaf_p5": 55.35,
+          "vmaf_worst": 46.43,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/dinner_ANCHOR_DEEP_FAIL_vmaf_evidence.json",
+          "evidence_sha256": "33dfd5f07881f493c4931ce1446a3b85251866c71554033021ab6142e4a6854c"
+        }
+      ]
     }
   ]
 }
