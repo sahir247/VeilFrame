@@ -101,8 +101,9 @@ def download_file_with_progress(
         if expected_sha256:
             actual_sha = calculate_sha256(temp_path)
             if actual_sha.lower() != expected_sha256.lower():
-                temp_path.unlink(missing_ok=True)
-                return False, f"SHA-256 mismatch! Expected {expected_sha256}, got {actual_sha}"
+                unv = dest_path.with_name(dest_path.name + ".unverified")
+                shutil.move(str(temp_path), str(unv))
+                return False, f"SHA-256 mismatch! Expected {expected_sha256}, got {actual_sha} (saved as {unv.name})"
 
         # Atomic replace with retry for Windows file locks
         if dest_path.exists():
