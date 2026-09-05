@@ -1,0 +1,61 @@
+{
+  "schema": "veilframe-vmaf-analysis-v1",
+  "analysis_version": "1.2.0",
+  "vmaf_model_version": "1.0.16",
+  "timestamp_utc": "2026-09-05T20:49:57.145178Z",
+  "calibration_status": "insufficient_data",
+  "insufficient_data_reasons": [
+    "Held-out set has zero acceptable samples",
+    "Held-out set has zero unacceptable samples"
+  ],
+  "partitioning_metadata": {
+    "algorithm": "algorithmic_deterministic_search",
+    "seed_used": 42,
+    "constraints_satisfied": false,
+    "failure_reasons": [
+      "Held-out set has zero acceptable samples",
+      "Held-out set has zero unacceptable samples"
+    ],
+    "dev_groups_count": 1,
+    "heldout_groups_count": 0,
+    "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+  },
+  "sample_accounting": {
+    "total_primary_sdr_pairs": 8,
+    "hdr_segregated_pairs": 0,
+    "secondary_domain_diagnostic_pairs": 0,
+    "total_clips_in_domain1": 1,
+    "development_split": {
+      "sequence_groups_count": 1,
+      "sequence_groups": [
+        "sintel_trailer"
+      ],
+      "clips_count": 1,
+      "total_pairs": 8,
+      "binary_evaluation_samples": 8,
+      "acceptable_samples": 3,
+      "unacceptable_samples": 5,
+      "boundary_moderate_excluded": 0
+    },
+    "heldout_split": {
+      "sequence_groups_count": 0,
+      "sequence_groups": [],
+      "clips_count": 0,
+      "total_pairs": 0,
+      "binary_evaluation_samples": 0,
+      "acceptable_samples": 0,
+      "unacceptable_samples": 0,
+      "boundary_moderate_excluded": 0
+    },
+    "total_binary_evaluation_samples": 8,
+    "total_boundary_moderate_excluded": 0,
+    "arithmetic_verification": {
+      "domain1_pairs_check": "8 dev + 0 heldout = 8 Domain 1 pairs",
+      "binary_plus_boundary_check": "8 binary + 0 boundary = 8 Domain 1 pairs"
+    },
+    "safeguard_disclaimer": "The minimum sample/group requirements are eligibility safeguards, not a claim of statistical power or universal perceptual validity. Confidence intervals and uncertainty must be reported independently of the minimum-data pass/fail decision."
+  },
+  "production_gate_status": {
+    "vmaf_gate_enabled": false
+  }
+}

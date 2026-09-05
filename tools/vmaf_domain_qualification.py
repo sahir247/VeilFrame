@@ -39,7 +39,11 @@ def run_domain_qualification(
     dev_fraction: float = 0.70,
     seed: int = 42,
 ) -> Dict[str, Any]:
-    primary_samples, group_counts, secondary_samples, hdr_samples = load_corpus_samples(corpus_results_path)
+    primary_samples, group_counts, secondary_samples, hdr_samples, adv_samples = load_corpus_samples(
+        corpus_results_path,
+        dataset_mode="representative",
+        return_adversarial=True,
+    )
 
     # Re-verify labeling strictly from measured SSIM and PSNR
     for s in primary_samples:
@@ -74,7 +78,19 @@ def run_domain_qualification(
         "dev_fraction": dev_fraction,
         "seed": seed,
         "domains": {},
+        "adversarial_stress_test": {
+            "total_samples": len(adv_samples),
+            "sequence_groups": sorted(list(set(s.sequence_group for s in adv_samples))),
+            "ssim_range": [round(min(s.ssim_mean for s in adv_samples), 4), round(max(s.ssim_mean for s in adv_samples), 4)] if adv_samples else None,
+            "psnr_range": [round(min(s.psnr_mean for s in adv_samples), 2), round(max(s.psnr_mean for s in adv_samples), 2)] if adv_samples else None,
+            "vmaf_mean_range": [round(min(s.vmaf_mean for s in adv_samples), 2), round(max(s.vmaf_mean for s in adv_samples), 2)] if adv_samples else None,
+            "vmaf_p5_range": [round(min(s.vmaf_p5 for s in adv_samples if s.vmaf_p5 is not None), 2), round(max(s.vmaf_p5 for s in adv_samples if s.vmaf_p5 is not None), 2)] if any(s.vmaf_p5 is not None for s in adv_samples) else None,
+            "vmaf_worst_range": [round(min(s.vmaf_worst for s in adv_samples if s.vmaf_worst is not None), 2), round(max(s.vmaf_worst for s in adv_samples if s.vmaf_worst is not None), 2)] if any(s.vmaf_worst is not None for s in adv_samples) else None,
+            "policy_violations_count": sum(1 for s in adv_samples if (s.ssim_mean < 0.9500 or s.psnr_mean < 30.00) and s.vmaf_mean > 90.0),
+            "disclaimer": "These observations demonstrate a constructed failure mode of VMAF relative to the SSIM/PSNR policy and are not treated as estimates of the ordinary production distortion distribution.",
+        },
     }
+
 
     print("=" * 70)
     print("VeilFrame Technical Domain-Specific VMAF Qualification Study")

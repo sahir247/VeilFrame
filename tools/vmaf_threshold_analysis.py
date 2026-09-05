@@ -90,6 +90,9 @@ class CorpusSample:
     evidence_path:          Optional[str] = None
     evidence_sha256:        Optional[str] = None
     measurement_status:     str = "empirical"
+    distortion_role:        str = "representative"
+    calibration_eligibility: str = "primary_calibration"
+    exclusion_reason:       str = ""
 
 
 @dataclass
@@ -141,7 +144,10 @@ def assign_independent_policy_label(
 def load_corpus_samples(
     corpus_results_path: Path,
     allow_simulated: bool = False,
-) -> Tuple[List[CorpusSample], Dict[str, int], List[CorpusSample], List[Dict[str, Any]]]:
+    dataset_mode: str = "representative",
+    fail_on_missing_role: bool = False,
+    return_adversarial: bool = False,
+) -> Tuple[Any, ...]:
     """
     Loads measurement samples from vmaf_corpus_results.json.
     Excludes HDR not-applicable samples, metadata errors, and measurement failures.
@@ -150,6 +156,17 @@ def load_corpus_samples(
     Strict Empirical Integrity:
       - Any sample with measurement_status == "simulated" or clip marked is_simulated
         is strictly rejected from empirical qualification unless allow_simulated=True.
+
+    Strict Distortion-Role Segregation:
+      - dataset_mode == 'representative': only samples with distortion_role == 'representative'
+        enter primary_samples. Adversarial stress-test samples are counted in
+        adversarial_stress_test_excluded.
+      - dataset_mode == 'adversarial': only samples with distortion_role == 'adversarial_policy_stress_test'
+        enter primary_samples.
+      - dataset_mode == 'all': returns all valid empirical samples (and separates adversarial_samples
+        if return_adversarial=True).
+      - Missing distortion_role fails closed: rejected from primary calibration. If fail_on_missing_role=True,
+        raises ValueError.
 
     Strict Domain Segregation:
       - Domain 1: Modern/representative SDR (1080p and 2160p UHD) -> primary_samples
@@ -167,6 +184,7 @@ def load_corpus_samples(
     primary_samples: List[CorpusSample] = []
     secondary_samples: List[CorpusSample] = []
     hdr_samples: List[Dict[str, Any]] = []
+    adversarial_samples: List[CorpusSample] = []
 
     exclusion_counts: Dict[str, int] = {
         "not_applicable_hdr": 0,
@@ -176,6 +194,9 @@ def load_corpus_samples(
         "missing_vmaf": 0,
         "secondary_domain_diagnostic": 0,
         "simulated_data_rejected": 0,
+        "adversarial_stress_test_excluded": 0,
+        "diagnostic_excluded": 0,
+        "missing_distortion_role": 0,
     }
 
     clips = data.get("clips", [])
@@ -250,6 +271,23 @@ def load_corpus_samples(
                 exclusion_counts["simulated_data_rejected"] += 1
                 continue
 
+            # Role classification & fails-closed validation
+            dist_role = fx.get("distortion_role") or clip.get("distortion_role")
+            cal_elig = fx.get("calibration_eligibility") or clip.get("calibration_eligibility")
+            excl_reason = fx.get("exclusion_reason") or clip.get("exclusion_reason", "")
+
+            if not dist_role:
+                if meas_status == "simulated" and allow_simulated:
+                    dist_role = "representative"
+                    cal_elig = "primary_calibration"
+                else:
+                    exclusion_counts["missing_distortion_role"] += 1
+                    if fail_on_missing_role:
+                        raise ValueError(f"Missing distortion_role in fixture '{fixture_name}' (clip '{c_fn}'): fails closed")
+                    dist_role = "missing"
+                    cal_elig = "excluded"
+                    excl_reason = "Missing distortion_role: fails closed"
+
             v_p5 = fx.get("vmaf_p5")
             v_worst = fx.get("vmaf_worst")
             v_std = fx.get("vmaf_stddev") or 0.0
@@ -294,16 +332,44 @@ def load_corpus_samples(
                 model_sha256=fx.get("model_sha256"),
                 independent_policy_label=label,
                 measurement_status=meas_status,
+                distortion_role=dist_role,
+                calibration_eligibility=cal_elig or ("primary_calibration" if dist_role == "representative" else "excluded"),
+                exclusion_reason=excl_reason,
             )
 
-            # Strict Domain Segregation: Domain 1 / technical target domains for primary calibration, Domain 2 for secondary diagnostic
-            if domain in ("Domain 1: Primary SDR", "1080p_sdr", "1080p_hfr", "2160p_sdr", "2160p_hfr") or (not domain and "720p" not in c_fn.lower()):
-                primary_samples.append(sample)
+            # Strict Domain Segregation and Distortion Role Segregation
+            is_domain1 = domain in ("Domain 1: Primary SDR", "1080p_sdr", "1080p_hfr", "2160p_sdr", "2160p_hfr") or (not domain and "720p" not in c_fn.lower())
+
+            if is_domain1:
+                if dist_role == "adversarial_policy_stress_test":
+                    adversarial_samples.append(sample)
+                    if dataset_mode == "representative":
+                        exclusion_counts["adversarial_stress_test_excluded"] += 1
+                        continue
+                    elif dataset_mode == "adversarial":
+                        primary_samples.append(sample)
+                    elif dataset_mode == "all":
+                        primary_samples.append(sample)
+                elif dist_role == "diagnostic":
+                    exclusion_counts["diagnostic_excluded"] += 1
+                    secondary_samples.append(sample)
+                    continue
+                elif dist_role == "representative":
+                    if dataset_mode == "adversarial":
+                        continue
+                    else:
+                        primary_samples.append(sample)
+                else:
+                    # Missing or excluded -> fails closed, excluded from primary!
+                    continue
             else:
                 exclusion_counts["secondary_domain_diagnostic"] += 1
                 secondary_samples.append(sample)
 
+    if return_adversarial:
+        return primary_samples, exclusion_counts, secondary_samples, hdr_samples, adversarial_samples
     return primary_samples, exclusion_counts, secondary_samples, hdr_samples
+
 
 
 # ── Sequence Group Splitting ───────────────────────────────────────────── #
@@ -1208,6 +1274,8 @@ def main():
         help="Confidence level for bootstrap percentile intervals (default: 0.95)")
     parser.add_argument("--allow-simulated", action="store_true", default=False,
         help="Allow simulated datasets for research simulation studies (rejected by default for empirical qualification)")
+    parser.add_argument("--dataset-mode", choices=["representative", "adversarial", "all"], default="representative",
+        help="Dataset selection mode: 'representative' (default, primary calibration), 'adversarial' (adversarial stress test only), or 'all' (evaluates and reports both populations separately without merging)")
     args = parser.parse_args()
 
     # Invariant: Verify production policy remains False
@@ -1219,12 +1287,21 @@ def main():
     print(f"VeilFrame VMAF Threshold Analysis Engine  v{ANALYSIS_VERSION}")
     print("=" * 65)
 
-    primary_samples, exclusions, secondary_samples, hdr_samples = load_corpus_samples(args.corpus_results, allow_simulated=args.allow_simulated)
+    primary_samples, exclusions, secondary_samples, hdr_samples, adv_samples = load_corpus_samples(
+        args.corpus_results,
+        allow_simulated=args.allow_simulated,
+        dataset_mode=args.dataset_mode,
+        return_adversarial=True,
+    )
     hdr_count = len(hdr_samples)
+    print(f"  Dataset Selection Mode: {args.dataset_mode}")
     print(f"  Domain 1 (Primary SDR) samples: {len(primary_samples)}")
+    print(f"  Adversarial Stress Test samples: {len(adv_samples)}")
     print(f"  Domain 2 (Secondary diag) samples: {len(secondary_samples)}")
     print(f"  Domain 3 (HDR segregated) samples: {hdr_count}")
-    print(f"  Other exclusions: {sum(exclusions.values()) - hdr_count}")
+    print(f"  Adversarial excluded from primary: {exclusions.get('adversarial_stress_test_excluded', 0)}")
+    print(f"  Other exclusions: {sum(exclusions.values()) - hdr_count - exclusions.get('adversarial_stress_test_excluded', 0)}")
+
 
     if not primary_samples:
         print("\nERROR: No valid Domain 1 measurement samples found in corpus results.", file=sys.stderr)

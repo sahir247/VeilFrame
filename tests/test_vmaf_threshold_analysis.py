@@ -294,6 +294,8 @@ class TestMissingMetricIntegrity(unittest.TestCase):
                                 "vmaf_worst": None,    # Missing worst
                                 "ssim_mean": 0.99,
                                 "psnr_mean": 45.0,
+                                "distortion_role": "representative",
+                                "measurement_status": "empirical",
                             }
                         ]
                     }

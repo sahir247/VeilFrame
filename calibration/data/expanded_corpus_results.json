@@ -113,7 +113,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "9e812104daa9824d37a161d37d7f1ac40bfc326ce75ea9647605abcb83fdd916"
+          "evidence_sha256": "9e812104daa9824d37a161d37d7f1ac40bfc326ce75ea9647605abcb83fdd916",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -206,7 +209,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_02_vmaf_evidence.json",
-          "evidence_sha256": "889c5aa4da5ca4a673116eb0992aebe27bc070f4a8e28b8fdf50c1e5a7ec1ab7"
+          "evidence_sha256": "889c5aa4da5ca4a673116eb0992aebe27bc070f4a8e28b8fdf50c1e5a7ec1ab7",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -299,7 +305,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_PASS_03_vmaf_evidence.json",
-          "evidence_sha256": "a944158743a599ddcd5181759976c084640a75d0835be64a7e69108fd121f245"
+          "evidence_sha256": "a944158743a599ddcd5181759976c084640a75d0835be64a7e69108fd121f245",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -412,7 +421,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_01_vmaf_evidence.json",
-          "evidence_sha256": "5e108f3181165f651d0c273a4ec2b5fd913216ce92234cc04109ee224b20d8f7"
+          "evidence_sha256": "5e108f3181165f651d0c273a4ec2b5fd913216ce92234cc04109ee224b20d8f7",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -525,7 +537,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_02_vmaf_evidence.json",
-          "evidence_sha256": "0db1900cf11e7c2f296fe4262fbc15eb940fa48a41848a22dbbbe0c65ee58d5d"
+          "evidence_sha256": "0db1900cf11e7c2f296fe4262fbc15eb940fa48a41848a22dbbbe0c65ee58d5d",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -618,7 +633,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_SSIM_BND_FAIL_03_BLUR_vmaf_evidence.json",
-          "evidence_sha256": "e27199bc22415a107d7a0a3cc57148fea3a4e64f2b7d843c72868a69152e80f1"
+          "evidence_sha256": "e27199bc22415a107d7a0a3cc57148fea3a4e64f2b7d843c72868a69152e80f1",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -711,7 +729,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_01_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "d7a52daf0579e609276ea30a83b0052a5d8e6b319b041e135d1c9660f8c4331b"
+          "evidence_sha256": "d7a52daf0579e609276ea30a83b0052a5d8e6b319b041e135d1c9660f8c4331b",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -804,7 +825,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_02_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "041c28720619fcc297da104bb32ec9aa7818e38d4b11139bf72f491ddc53ea3e"
+          "evidence_sha256": "041c28720619fcc297da104bb32ec9aa7818e38d4b11139bf72f491ddc53ea3e",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -897,7 +921,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_PASS_03_BRIGHT_vmaf_evidence.json",
-          "evidence_sha256": "42d9fd18a95aa572281404b0ff28a2178313756df3668483d32aaaf37256f485"
+          "evidence_sha256": "42d9fd18a95aa572281404b0ff28a2178313756df3668483d32aaaf37256f485",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -990,7 +1017,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_01_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "d753bb78ab4c2cbd14ebf1c25a503dcdf71f15b2d88a06cd3cadc2b5331a3d24"
+          "evidence_sha256": "d753bb78ab4c2cbd14ebf1c25a503dcdf71f15b2d88a06cd3cadc2b5331a3d24",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1083,7 +1113,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_02_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "dee46c1757f823917f42f28fa31cfdd4a718d8c760e87ad1f1eeab3afe5a283d"
+          "evidence_sha256": "dee46c1757f823917f42f28fa31cfdd4a718d8c760e87ad1f1eeab3afe5a283d",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1176,7 +1209,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_PSNR_BND_FAIL_03_CONTRAST_vmaf_evidence.json",
-          "evidence_sha256": "ac4b3e3ff050fd29ac9eb8228267bcf9ba21594079c0e4b0d78333805ef8d7e4"
+          "evidence_sha256": "ac4b3e3ff050fd29ac9eb8228267bcf9ba21594079c0e4b0d78333805ef8d7e4",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1269,7 +1305,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q1_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "92dc7576a228033042356305ee84bd41b9fa0f24217b8633c352af9b619cdcad"
+          "evidence_sha256": "92dc7576a228033042356305ee84bd41b9fa0f24217b8633c352af9b619cdcad",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1362,7 +1401,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q1_PASS_02_vmaf_evidence.json",
-          "evidence_sha256": "eb21b3ce9b006a3540d304aaa5bfb476870a5161b0970ddfeddeed5ad36958f9"
+          "evidence_sha256": "eb21b3ce9b006a3540d304aaa5bfb476870a5161b0970ddfeddeed5ad36958f9",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1455,7 +1497,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q2_FAIL_SSIM_01_vmaf_evidence.json",
-          "evidence_sha256": "1dd9f3da4c939ec613b786417d66f3ef330f8d265b4a3d8cfad61a1d3eec0f9a"
+          "evidence_sha256": "1dd9f3da4c939ec613b786417d66f3ef330f8d265b4a3d8cfad61a1d3eec0f9a",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1548,7 +1593,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q2_FAIL_SSIM_02_vmaf_evidence.json",
-          "evidence_sha256": "44cc72475e73a4a645d3c16dbaf85f8eba586265f8b11c58d02ae96dadc66035"
+          "evidence_sha256": "44cc72475e73a4a645d3c16dbaf85f8eba586265f8b11c58d02ae96dadc66035",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1641,7 +1689,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
-          "evidence_sha256": "0a194d793c250f916ca2cab349dfc601076a7004e8814632d7a23eb4473f9b28"
+          "evidence_sha256": "0a194d793c250f916ca2cab349dfc601076a7004e8814632d7a23eb4473f9b28",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1734,7 +1785,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q3_FAIL_PSNR_02_vmaf_evidence.json",
-          "evidence_sha256": "ac05e6876f200b83362df88134d9e5cd176c68608f7293512ce702c069415a09"
+          "evidence_sha256": "ac05e6876f200b83362df88134d9e5cd176c68608f7293512ce702c069415a09",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1827,7 +1881,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q4_FAIL_BOTH_01_vmaf_evidence.json",
-          "evidence_sha256": "67e93307eb8d6a1593ea178e7f6e7fa006192eba9928882068cf8c3b4a0e950a"
+          "evidence_sha256": "67e93307eb8d6a1593ea178e7f6e7fa006192eba9928882068cf8c3b4a0e950a",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -1920,7 +1977,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_JOINT_Q4_FAIL_BOTH_02_vmaf_evidence.json",
-          "evidence_sha256": "81029ae74e2548d2d9afda86eb3647369391628ebbadcd8d45051754be290630"
+          "evidence_sha256": "81029ae74e2548d2d9afda86eb3647369391628ebbadcd8d45051754be290630",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -2013,7 +2073,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_ANCHOR_DEEP_PASS_vmaf_evidence.json",
-          "evidence_sha256": "906b6adbc8f6f7dac4409a6c463082d7b2666117bb80a367a8b0163742b778b6"
+          "evidence_sha256": "906b6adbc8f6f7dac4409a6c463082d7b2666117bb80a367a8b0163742b778b6",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "pedestrian_area",
@@ -2106,7 +2169,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/pedestrian_area_ANCHOR_DEEP_FAIL_vmaf_evidence.json",
-          "evidence_sha256": "6a00fa663bc7fd3e4cc735f924c9d4e67a3fade6369d6233f082c9bb0039a4d0"
+          "evidence_sha256": "6a00fa663bc7fd3e4cc735f924c9d4e67a3fade6369d6233f082c9bb0039a4d0",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         }
       ]
     },
@@ -2295,7 +2361,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "1430d27d5d3a6e7870b2865d89afb31d5a6b97167eac5bd707706d658d66a653"
+          "evidence_sha256": "1430d27d5d3a6e7870b2865d89afb31d5a6b97167eac5bd707706d658d66a653",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -2468,7 +2537,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_PASS_02_vmaf_evidence.json",
-          "evidence_sha256": "63941913255ea6302f25b212e02b8c5afe51ff8dacfb553c050fb34f3323e393"
+          "evidence_sha256": "63941913255ea6302f25b212e02b8c5afe51ff8dacfb553c050fb34f3323e393",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -2621,7 +2693,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_PASS_03_vmaf_evidence.json",
-          "evidence_sha256": "eb12dc054ec8bb1e03ba4a6ef50b33cfe068d16c4a30cc3a89fb0c6ecdcb3a76"
+          "evidence_sha256": "eb12dc054ec8bb1e03ba4a6ef50b33cfe068d16c4a30cc3a89fb0c6ecdcb3a76",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -2774,7 +2849,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_FAIL_01_vmaf_evidence.json",
-          "evidence_sha256": "08ae24579df188d7005040fc9cde5bc5e20163a6efad09bb5bed7b639e191514"
+          "evidence_sha256": "08ae24579df188d7005040fc9cde5bc5e20163a6efad09bb5bed7b639e191514",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -2927,7 +3005,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_FAIL_02_vmaf_evidence.json",
-          "evidence_sha256": "1b732b957dc7e749ab7920a181a89f6c74562e950f169f2bd6df503ffd5f9539"
+          "evidence_sha256": "1b732b957dc7e749ab7920a181a89f6c74562e950f169f2bd6df503ffd5f9539",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3100,7 +3181,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_SSIM_BND_FAIL_03_BLUR_vmaf_evidence.json",
-          "evidence_sha256": "fa4c12c1d0b49586d3ed204903dfc96522ba39ff7372a5b4aba07551bb2a1121"
+          "evidence_sha256": "fa4c12c1d0b49586d3ed204903dfc96522ba39ff7372a5b4aba07551bb2a1121",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3233,7 +3317,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_PASS_01_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "1946a67febadc2c6332e7edf12e98bd958b55ef720357e7784be06ea0e7ef8b1"
+          "evidence_sha256": "1946a67febadc2c6332e7edf12e98bd958b55ef720357e7784be06ea0e7ef8b1",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3386,7 +3473,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_PASS_02_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "b6b0d1fef60d41f044fa25e33ea6c5640098581294ced27ae44a1fdbb4d463b7"
+          "evidence_sha256": "b6b0d1fef60d41f044fa25e33ea6c5640098581294ced27ae44a1fdbb4d463b7",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3479,7 +3569,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_PASS_03_BRIGHT_vmaf_evidence.json",
-          "evidence_sha256": "622577609b543da1a98efc62f03c7222d60e9362210159052a25f6a3704b0840"
+          "evidence_sha256": "622577609b543da1a98efc62f03c7222d60e9362210159052a25f6a3704b0840",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3632,7 +3725,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_FAIL_01_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "0eeb612bb405a0f563574c1ef51cb423153cbf267323695fc785d531c8b8e6b9"
+          "evidence_sha256": "0eeb612bb405a0f563574c1ef51cb423153cbf267323695fc785d531c8b8e6b9",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3785,7 +3881,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_FAIL_02_GAMMA_vmaf_evidence.json",
-          "evidence_sha256": "98d880d46482319ad2292a11dcf99ebc030ed4483597662a035f791833591bc0"
+          "evidence_sha256": "98d880d46482319ad2292a11dcf99ebc030ed4483597662a035f791833591bc0",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -3938,7 +4037,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_PSNR_BND_FAIL_03_CONTRAST_vmaf_evidence.json",
-          "evidence_sha256": "88e0c8506fdb20fa9a67f6c2c3b8518af3886d476f394a8041d4ea57266b1ea9"
+          "evidence_sha256": "88e0c8506fdb20fa9a67f6c2c3b8518af3886d476f394a8041d4ea57266b1ea9",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4091,7 +4193,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q1_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "ec5110f697d037c6321986df0be4a25fa3b521caedb25ee80170dd63e0e1c0cb"
+          "evidence_sha256": "ec5110f697d037c6321986df0be4a25fa3b521caedb25ee80170dd63e0e1c0cb",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4244,7 +4349,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q1_PASS_02_vmaf_evidence.json",
-          "evidence_sha256": "e91848002ec7db42820d99c100aa25deff9965dddccc0917c3867f0f00889ab5"
+          "evidence_sha256": "e91848002ec7db42820d99c100aa25deff9965dddccc0917c3867f0f00889ab5",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4397,7 +4505,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q2_FAIL_SSIM_01_vmaf_evidence.json",
-          "evidence_sha256": "c7a60e290b508f58fd5b2d4c50d315d84d0ef1ec2f130bd62f374239b2690623"
+          "evidence_sha256": "c7a60e290b508f58fd5b2d4c50d315d84d0ef1ec2f130bd62f374239b2690623",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4550,7 +4661,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q2_FAIL_SSIM_02_vmaf_evidence.json",
-          "evidence_sha256": "e06d03969b5f394c7b0b23167d78bef7fa275cf646767b7cbeb110034cace868"
+          "evidence_sha256": "e06d03969b5f394c7b0b23167d78bef7fa275cf646767b7cbeb110034cace868",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4703,7 +4817,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
-          "evidence_sha256": "60e6f28be9715a96f748a1e50b0a78aa59f7b187978dcf597c1a399453fdbec6"
+          "evidence_sha256": "60e6f28be9715a96f748a1e50b0a78aa59f7b187978dcf597c1a399453fdbec6",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4856,7 +4973,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q3_FAIL_PSNR_02_vmaf_evidence.json",
-          "evidence_sha256": "60f073904d7c3e282109954a30ed69e4a67cfe629f32c4b15c07098e44d91334"
+          "evidence_sha256": "60f073904d7c3e282109954a30ed69e4a67cfe629f32c4b15c07098e44d91334",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -4989,7 +5109,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q4_FAIL_BOTH_01_vmaf_evidence.json",
-          "evidence_sha256": "5d4552ffb8376988e2c94b135f9b33d39cb656c013ce747250be0d439a0dac61"
+          "evidence_sha256": "5d4552ffb8376988e2c94b135f9b33d39cb656c013ce747250be0d439a0dac61",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -5142,7 +5265,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_JOINT_Q4_FAIL_BOTH_02_vmaf_evidence.json",
-          "evidence_sha256": "003ddeac53846c06f998db3dffe7d201678876eda98e58fda4e014863e4aece8"
+          "evidence_sha256": "003ddeac53846c06f998db3dffe7d201678876eda98e58fda4e014863e4aece8",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -5235,7 +5361,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_ANCHOR_DEEP_PASS_vmaf_evidence.json",
-          "evidence_sha256": "3035aea48ef5218a0d9f6f44975856eb7507283c8918d8588c81c6a1a8c3c54e"
+          "evidence_sha256": "3035aea48ef5218a0d9f6f44975856eb7507283c8918d8588c81c6a1a8c3c54e",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "dinner",
@@ -5348,7 +5477,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/dinner_ANCHOR_DEEP_FAIL_vmaf_evidence.json",
-          "evidence_sha256": "33dfd5f07881f493c4931ce1446a3b85251866c71554033021ab6142e4a6854c"
+          "evidence_sha256": "33dfd5f07881f493c4931ce1446a3b85251866c71554033021ab6142e4a6854c",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         }
       ]
     },
@@ -5537,7 +5669,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "97d04de78acce03075fe1431835b3cb01382db27fd8d3779dc437f34fde4a92f"
+          "evidence_sha256": "97d04de78acce03075fe1431835b3cb01382db27fd8d3779dc437f34fde4a92f",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -5710,7 +5845,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_PASS_02_BLUR_vmaf_evidence.json",
-          "evidence_sha256": "cf472f43b075abadf36dc4e64b0191665d51d07c9152a46fc41f635ddefd818b"
+          "evidence_sha256": "cf472f43b075abadf36dc4e64b0191665d51d07c9152a46fc41f635ddefd818b",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -5883,7 +6021,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_PASS_03_RESAMPLE_vmaf_evidence.json",
-          "evidence_sha256": "a483aa2d65e7751150a21ec1850bfa5c56b7dd46e47bae90fa26f4a10ea4cd14"
+          "evidence_sha256": "a483aa2d65e7751150a21ec1850bfa5c56b7dd46e47bae90fa26f4a10ea4cd14",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6056,7 +6197,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_FAIL_01_vmaf_evidence.json",
-          "evidence_sha256": "fcf379ea07926a1883e334eb2abe9c7c0e4571147f628be59611f32668aefbf4"
+          "evidence_sha256": "fcf379ea07926a1883e334eb2abe9c7c0e4571147f628be59611f32668aefbf4",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6229,7 +6373,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_FAIL_02_BLUR_vmaf_evidence.json",
-          "evidence_sha256": "08e0ace81ca372fa5856cff2c2f8072e0c83b5a04a8539c0881dc80ee780e61c"
+          "evidence_sha256": "08e0ace81ca372fa5856cff2c2f8072e0c83b5a04a8539c0881dc80ee780e61c",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6402,7 +6549,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_SSIM_BND_FAIL_03_RESAMPLE_vmaf_evidence.json",
-          "evidence_sha256": "ee6b98addb6cf131b8234da68db6bc9c5e75021ec9d3526bb1df259c8e06e93f"
+          "evidence_sha256": "ee6b98addb6cf131b8234da68db6bc9c5e75021ec9d3526bb1df259c8e06e93f",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6495,7 +6645,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_01_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "31d7fdb132fc70a33cb911d4fd422d7aded76c0b21dcd89adf0b9dd9990a3def"
+          "evidence_sha256": "31d7fdb132fc70a33cb911d4fd422d7aded76c0b21dcd89adf0b9dd9990a3def",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6588,7 +6741,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_02_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "7208f450a570967e14e248194fe86a92272a7f825b2d87a353fb76964ce2d10c"
+          "evidence_sha256": "7208f450a570967e14e248194fe86a92272a7f825b2d87a353fb76964ce2d10c",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6681,7 +6837,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_03_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "9e3e02a183204a682d190f6b45503d3a3099e6b25dcd54256369f55207d355f0"
+          "evidence_sha256": "9e3e02a183204a682d190f6b45503d3a3099e6b25dcd54256369f55207d355f0",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6774,7 +6933,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_01_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "7ee5d16d6add844f18161943fba35f3a64c8dc8c60442ce9367e4ff71154dedd"
+          "evidence_sha256": "7ee5d16d6add844f18161943fba35f3a64c8dc8c60442ce9367e4ff71154dedd",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6867,7 +7029,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_02_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "305ea0b1fde8ccfac8f9a6ba2a299c6add1ff6d1255cd79aaadc70e51a3cf740"
+          "evidence_sha256": "305ea0b1fde8ccfac8f9a6ba2a299c6add1ff6d1255cd79aaadc70e51a3cf740",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -6960,7 +7125,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_03_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "89c4f2693d35d3fc5e27fa6fbc7594da3c8804c4bf37ed2ef308f67b337c1b20"
+          "evidence_sha256": "89c4f2693d35d3fc5e27fa6fbc7594da3c8804c4bf37ed2ef308f67b337c1b20",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7133,7 +7301,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q1_PASS_01_vmaf_evidence.json",
-          "evidence_sha256": "0c1b2201bbdb7835f6a2972c2db7801e90001fd69e085501e0945e41923815b0"
+          "evidence_sha256": "0c1b2201bbdb7835f6a2972c2db7801e90001fd69e085501e0945e41923815b0",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7306,7 +7477,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q1_PASS_02_RESAMPLE_vmaf_evidence.json",
-          "evidence_sha256": "236e0075c58abae1ef268004b3ac2886107bd508a3e3122cc02e7f257d6527d5"
+          "evidence_sha256": "236e0075c58abae1ef268004b3ac2886107bd508a3e3122cc02e7f257d6527d5",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7479,7 +7653,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q2_FAIL_SSIM_01_vmaf_evidence.json",
-          "evidence_sha256": "7decd72aaa1d72458037b4b9b6d621013d41668c7b70c42af588ab310367debc"
+          "evidence_sha256": "7decd72aaa1d72458037b4b9b6d621013d41668c7b70c42af588ab310367debc",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7652,7 +7829,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q2_FAIL_SSIM_02_BLUR_vmaf_evidence.json",
-          "evidence_sha256": "37858f1381bb344b9777510e28fa3e641b054ceb1f46b3e7c67369156cdc1ff3"
+          "evidence_sha256": "37858f1381bb344b9777510e28fa3e641b054ceb1f46b3e7c67369156cdc1ff3",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7745,7 +7925,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
-          "evidence_sha256": "a3928381304203dcd0b628545e98b2fd182a04f00e561fa9bb1d0a581d75b33a"
+          "evidence_sha256": "a3928381304203dcd0b628545e98b2fd182a04f00e561fa9bb1d0a581d75b33a",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7838,7 +8021,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q3_FAIL_PSNR_02_CHROMA_vmaf_evidence.json",
-          "evidence_sha256": "93a34d220b42b72f2c11418cbf8374e29643d982d02a7edc10376e01a51966b7"
+          "evidence_sha256": "93a34d220b42b72f2c11418cbf8374e29643d982d02a7edc10376e01a51966b7",
+          "distortion_role": "adversarial_policy_stress_test",
+          "calibration_eligibility": "adversarial_only",
+          "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
         },
         {
           "sequence_group": "sintel_trailer",
@@ -7931,7 +8117,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q4_FAIL_BOTH_01_vmaf_evidence.json",
-          "evidence_sha256": "59003fda943096cab67bbf1acf885b0fa2c19b47c0675e57e9bf9f88d1f5ba72"
+          "evidence_sha256": "59003fda943096cab67bbf1acf885b0fa2c19b47c0675e57e9bf9f88d1f5ba72",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -8104,7 +8293,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_JOINT_Q4_FAIL_BOTH_02_NOISE_vmaf_evidence.json",
-          "evidence_sha256": "1cf51962d08fc36e90cfef9d8fe43f0318b0c0364d9c6e398ee57fd93392fd87"
+          "evidence_sha256": "1cf51962d08fc36e90cfef9d8fe43f0318b0c0364d9c6e398ee57fd93392fd87",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -8197,7 +8389,10 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_ANCHOR_DEEP_PASS_vmaf_evidence.json",
-          "evidence_sha256": "9a7e89c134674c70377fe327e417e0852df316d85d768c9ab315b300a1699349"
+          "evidence_sha256": "9a7e89c134674c70377fe327e417e0852df316d85d768c9ab315b300a1699349",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
         },
         {
           "sequence_group": "sintel_trailer",
@@ -8310,7 +8505,970 @@
           "ffmpeg_version": "9.0-full_build-www.gyan.dev",
           "libvmaf_version": "4991d2b5",
           "evidence_path": "evidence/sintel_trailer_ANCHOR_DEEP_FAIL_vmaf_evidence.json",
-          "evidence_sha256": "53955309543f770956e39ff4209bde0e9192de0aad5d76690d85a985bcf341cc"
+          "evidence_sha256": "53955309543f770956e39ff4209bde0e9192de0aad5d76690d85a985bcf341cc",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": ""
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q2_NOISE_01",
+          "status": "success",
+          "target_type": "noise",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 18,
+            "filter_expr": "noise=alls=10:allf=t+u",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "noise",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim"
+          },
+          "parameters": {
+            "crf": 18,
+            "filter_expr": "noise=alls=10:allf=t+u"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf noise=alls=10:allf=t+u -c:v libx264 -crf 18 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q2_NOISE_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q2_NOISE_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q2_NOISE_01.mp4",
+          "distorted_sha256": "18f10773838935dbec23d80e194b9a420789305ca8f5d1f5b12056f0d90ccfaa",
+          "ssim": {
+            "mean": 0.905072
+          },
+          "psnr": {
+            "mean": 39.696832
+          },
+          "vmaf": {
+            "mean": 88.18,
+            "p5": 72.09,
+            "min": 63.32
+          },
+          "ssim_mean": 0.905072,
+          "psnr_mean": 39.696832,
+          "vmaf_mean": 88.18,
+          "vmaf_p5": 72.09,
+          "vmaf_worst": 63.32,
+          "vmaf_stddev": 8.5959,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q2_NOISE_01_vmaf_evidence.json",
+          "evidence_sha256": "70aafb8cb134c8a123941ed6ed8d4dc26591eff6f24db2b72a62ae7f9607b090"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q2_NOISE_02",
+          "status": "success",
+          "target_type": "noise",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 18,
+            "filter_expr": "noise=alls=12:allf=t+u",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "noise",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim"
+          },
+          "parameters": {
+            "crf": 18,
+            "filter_expr": "noise=alls=12:allf=t+u"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf noise=alls=12:allf=t+u -c:v libx264 -crf 18 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q2_NOISE_02.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q2_NOISE_02.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q2_NOISE_02.mp4",
+          "distorted_sha256": "0a3c70a98dc12cdcaf44d6303ef08c8e65352dafec57a3999c48ed057661350d",
+          "ssim": {
+            "mean": 0.869244
+          },
+          "psnr": {
+            "mean": 38.184101
+          },
+          "vmaf": {
+            "mean": 85.65,
+            "p5": 67.3,
+            "min": 58.24
+          },
+          "ssim_mean": 0.869244,
+          "psnr_mean": 38.184101,
+          "vmaf_mean": 85.65,
+          "vmaf_p5": 67.3,
+          "vmaf_worst": 58.24,
+          "vmaf_stddev": 9.9656,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q2_NOISE_02_vmaf_evidence.json",
+          "evidence_sha256": "0b7eece1eb73621e257cf4b24d5d5b11ecf169377b5c9a577151691111ed35d5"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q2_NOISE_03",
+          "status": "success",
+          "target_type": "noise",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 18,
+            "filter_expr": "noise=alls=14:allf=t+u",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "noise",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim"
+          },
+          "parameters": {
+            "crf": 18,
+            "filter_expr": "noise=alls=14:allf=t+u"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf noise=alls=14:allf=t+u -c:v libx264 -crf 18 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q2_NOISE_03.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q2_NOISE_03.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q2_NOISE_03.mp4",
+          "distorted_sha256": "ff76f9406018d413d950db52a72224b345f79b011e08b378c622accf28958e69",
+          "ssim": {
+            "mean": 0.827976
+          },
+          "psnr": {
+            "mean": 36.823918
+          },
+          "vmaf": {
+            "mean": 82.91,
+            "p5": 61.62,
+            "min": 52.58
+          },
+          "ssim_mean": 0.827976,
+          "psnr_mean": 36.823918,
+          "vmaf_mean": 82.91,
+          "vmaf_p5": 61.62,
+          "vmaf_worst": 52.58,
+          "vmaf_stddev": 11.4964,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q2_NOISE_03_vmaf_evidence.json",
+          "evidence_sha256": "88177819a0c38f97167c3bfa984a2938024c4f24fab3204f3859cc3b0bcaa43f"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q2_NOISE_04",
+          "status": "success",
+          "target_type": "noise",
+          "target_category": "near_boundary_fail",
+          "region": "ssim_axis_psnr_safe",
+          "quadrant": "q2_fail_ssim",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 18,
+            "filter_expr": "noise=alls=16:allf=t+u",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "noise",
+            "region": "ssim_axis_psnr_safe",
+            "quadrant": "q2_fail_ssim"
+          },
+          "parameters": {
+            "crf": 18,
+            "filter_expr": "noise=alls=16:allf=t+u"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf noise=alls=16:allf=t+u -c:v libx264 -crf 18 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q2_NOISE_04.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q2_NOISE_04.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q2_NOISE_04.mp4",
+          "distorted_sha256": "809068ff616c53ef0e9188bc5eb709c4fb88c945b8e1c6d5ff258c46e1cab4fe",
+          "ssim": {
+            "mean": 0.785358
+          },
+          "psnr": {
+            "mean": 35.648084
+          },
+          "vmaf": {
+            "mean": 80.04,
+            "p5": 55.99,
+            "min": 46.32
+          },
+          "ssim_mean": 0.785358,
+          "psnr_mean": 35.648084,
+          "vmaf_mean": 80.04,
+          "vmaf_p5": 55.99,
+          "vmaf_worst": 46.32,
+          "vmaf_stddev": 13.0884,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q2_NOISE_04_vmaf_evidence.json",
+          "evidence_sha256": "dff697b6f897cfaf2c9d8a34fde8b9b27775675b7e397ca56ca0d424e27204df"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_GAMMA_01",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.870",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.870"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.870 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_GAMMA_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_GAMMA_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_GAMMA_01.mp4",
+          "distorted_sha256": "2ecd28a0d7497cb1e62d43921c2a8adce35df3d597264f5cf5cada5002b44cc8",
+          "ssim": {
+            "mean": 0.957386
+          },
+          "psnr": {
+            "mean": 30.846141
+          },
+          "vmaf": {
+            "mean": 92.72,
+            "p5": 80.34,
+            "min": 76.01
+          },
+          "ssim_mean": 0.957386,
+          "psnr_mean": 30.846141,
+          "vmaf_mean": 92.72,
+          "vmaf_p5": 80.34,
+          "vmaf_worst": 76.01,
+          "vmaf_stddev": 6.3426,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_GAMMA_01_vmaf_evidence.json",
+          "evidence_sha256": "b20975f02f0f3256b6354ae8cf93e1776060a89861218cbadca7246ae1d6d5f5"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_GAMMA_02",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.865",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.865"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.865 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_GAMMA_02.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_GAMMA_02.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_GAMMA_02.mp4",
+          "distorted_sha256": "5c06951fcce6c581e26b6cafba0c527d182c982f7ca58aadeabf6baed219df2b",
+          "ssim": {
+            "mean": 0.956569
+          },
+          "psnr": {
+            "mean": 30.551379
+          },
+          "vmaf": {
+            "mean": 92.25,
+            "p5": 79.43,
+            "min": 74.42
+          },
+          "ssim_mean": 0.956569,
+          "psnr_mean": 30.551379,
+          "vmaf_mean": 92.25,
+          "vmaf_p5": 79.43,
+          "vmaf_worst": 74.42,
+          "vmaf_stddev": 6.6475,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_GAMMA_02_vmaf_evidence.json",
+          "evidence_sha256": "5e372b3153bb92c273b60bc3eb166c335a92c2c3d0005702ad927edd33a313a1"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_GAMMA_03",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.860",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.860"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.860 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_GAMMA_03.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_GAMMA_03.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_GAMMA_03.mp4",
+          "distorted_sha256": "e6710b7a8a4611d8de18bc1d1b47b8396eeb861a6ca70d76d7c96a7307550333",
+          "ssim": {
+            "mean": 0.955654
+          },
+          "psnr": {
+            "mean": 30.310156
+          },
+          "vmaf": {
+            "mean": 92.06,
+            "p5": 78.88,
+            "min": 72.74
+          },
+          "ssim_mean": 0.955654,
+          "psnr_mean": 30.310156,
+          "vmaf_mean": 92.06,
+          "vmaf_p5": 78.88,
+          "vmaf_worst": 72.74,
+          "vmaf_stddev": 6.799,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_GAMMA_03_vmaf_evidence.json",
+          "evidence_sha256": "8875ef985ba194a1cebfd60ca20b9483a451582a24b442b659ea960065d48e14"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_GAMMA_04",
+          "status": "success",
+          "target_type": "gamma",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q1_pass",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.855",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "gamma",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q1_pass"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=gamma=0.855"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.855 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_GAMMA_04.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_GAMMA_04.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_GAMMA_04.mp4",
+          "distorted_sha256": "31829832eb7ecc89537387ee530e8c294cce52018ce7393a215645ee600f0064",
+          "ssim": {
+            "mean": 0.954869
+          },
+          "psnr": {
+            "mean": 30.026388
+          },
+          "vmaf": {
+            "mean": 91.52,
+            "p5": 77.66,
+            "min": 71.72
+          },
+          "ssim_mean": 0.954869,
+          "psnr_mean": 30.026388,
+          "vmaf_mean": 91.52,
+          "vmaf_p5": 77.66,
+          "vmaf_worst": 71.72,
+          "vmaf_stddev": 7.1531,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "acceptable",
+          "policy_label": "acceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_GAMMA_04_vmaf_evidence.json",
+          "evidence_sha256": "b7bdd753bb52d438857a8812ac7d5ac9d2ccd4ce6a83521e86adc6f90d237ed0"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_BRIGHT_01",
+          "status": "success",
+          "target_type": "brightness",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=brightness=0.050",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "brightness",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=brightness=0.050"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=brightness=0.050 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_BRIGHT_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_BRIGHT_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_BRIGHT_01.mp4",
+          "distorted_sha256": "c626c7d5bc957539bb3a76ed73a6e7fb315ffc3da166e48c113b37c551e1e9c8",
+          "ssim": {
+            "mean": 0.946591
+          },
+          "psnr": {
+            "mean": 28.29229
+          },
+          "vmaf": {
+            "mean": 97.55,
+            "p5": 89.91,
+            "min": 86.4
+          },
+          "ssim_mean": 0.946591,
+          "psnr_mean": 28.29229,
+          "vmaf_mean": 97.55,
+          "vmaf_p5": 89.91,
+          "vmaf_worst": 86.4,
+          "vmaf_stddev": 3.3076,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_BRIGHT_01_vmaf_evidence.json",
+          "evidence_sha256": "8093084250f2178fd4e08e474731ecf4effcf143af6f9a02f8335ca322167af9"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q3_CONTRAST_01",
+          "status": "success",
+          "target_type": "contrast",
+          "target_category": "near_boundary_fail",
+          "region": "psnr_axis_ssim_safe",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 14,
+            "filter_expr": "eq=contrast=0.860",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "contrast",
+            "region": "psnr_axis_ssim_safe",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 14,
+            "filter_expr": "eq=contrast=0.860"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=contrast=0.860 -c:v libx264 -crf 14 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q3_CONTRAST_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q3_CONTRAST_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q3_CONTRAST_01.mp4",
+          "distorted_sha256": "5348df6d2f89ea34071741c317be6a88c7c3b76ebb8029338a0794d0b39dde65",
+          "ssim": {
+            "mean": 0.937049
+          },
+          "psnr": {
+            "mean": 28.715022
+          },
+          "vmaf": {
+            "mean": 79.32,
+            "p5": 66.19,
+            "min": 65.27
+          },
+          "ssim_mean": 0.937049,
+          "psnr_mean": 28.715022,
+          "vmaf_mean": 79.32,
+          "vmaf_p5": 66.19,
+          "vmaf_worst": 65.27,
+          "vmaf_stddev": 8.4098,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q3_CONTRAST_01_vmaf_evidence.json",
+          "evidence_sha256": "c4760f0ba701c4eb1a9d7196c7829bdc51d66bb888127616a861d7aebc21121f"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q4_GAMMA_CRF_01",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.850",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.850"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.850 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q4_GAMMA_CRF_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q4_GAMMA_CRF_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q4_GAMMA_CRF_01.mp4",
+          "distorted_sha256": "89d59abc14798fbceea6d4c07b009c86eed216b92e2f9c41274d57233e561260",
+          "ssim": {
+            "mean": 0.937384
+          },
+          "psnr": {
+            "mean": 29.538384
+          },
+          "vmaf": {
+            "mean": 89.73,
+            "p5": 74.85,
+            "min": 69.93
+          },
+          "ssim_mean": 0.937384,
+          "psnr_mean": 29.538384,
+          "vmaf_mean": 89.73,
+          "vmaf_p5": 74.85,
+          "vmaf_worst": 69.93,
+          "vmaf_stddev": 8.0783,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q4_GAMMA_CRF_01_vmaf_evidence.json",
+          "evidence_sha256": "c2564f6c84ceb25a2d3c75cd9e21dae2f79bca2b267eddf11137de2311eb14fd"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q4_GAMMA_CRF_02",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.850",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 24,
+            "filter_expr": "eq=gamma=0.850"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.850 -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q4_GAMMA_CRF_02.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q4_GAMMA_CRF_02.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q4_GAMMA_CRF_02.mp4",
+          "distorted_sha256": "7ec6f5bb372614167e7bf3b0de1c1432834f77e6d7fce680df890a2f6076bda5",
+          "ssim": {
+            "mean": 0.935875
+          },
+          "psnr": {
+            "mean": 29.521778
+          },
+          "vmaf": {
+            "mean": 88.79,
+            "p5": 73.24,
+            "min": 68.3
+          },
+          "ssim_mean": 0.935875,
+          "psnr_mean": 29.521778,
+          "vmaf_mean": 88.79,
+          "vmaf_p5": 73.24,
+          "vmaf_worst": 68.3,
+          "vmaf_stddev": 8.5516,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q4_GAMMA_CRF_02_vmaf_evidence.json",
+          "evidence_sha256": "03d2edd72b7d6de3ffb6e5a1400a13263fe1c63592f4b5c6c59f962ba0d84b01"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q4_GAMMA_CRF_03",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.820",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 22,
+            "filter_expr": "eq=gamma=0.820"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.820 -c:v libx264 -crf 22 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q4_GAMMA_CRF_03.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q4_GAMMA_CRF_03.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q4_GAMMA_CRF_03.mp4",
+          "distorted_sha256": "9a360ef8224633ac658f65ce485252d1d3e5eba8a87e4dd28f9b8d0f379d4c60",
+          "ssim": {
+            "mean": 0.914722
+          },
+          "psnr": {
+            "mean": 27.935454
+          },
+          "vmaf": {
+            "mean": 87.88,
+            "p5": 70.94,
+            "min": 66.63
+          },
+          "ssim_mean": 0.914722,
+          "psnr_mean": 27.935454,
+          "vmaf_mean": 87.88,
+          "vmaf_p5": 70.94,
+          "vmaf_worst": 66.63,
+          "vmaf_stddev": 9.22,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q4_GAMMA_CRF_03_vmaf_evidence.json",
+          "evidence_sha256": "83d0297bd96966cac6eb5f007697172a34712248ac9545a38949330bba4a1fe1"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q4_GAMMA_CRF_04",
+          "status": "success",
+          "target_type": "joint_gamma_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 26,
+            "filter_expr": "eq=gamma=0.800",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 26,
+            "filter_expr": "eq=gamma=0.800"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=gamma=0.800 -c:v libx264 -crf 26 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q4_GAMMA_CRF_04.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q4_GAMMA_CRF_04.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q4_GAMMA_CRF_04.mp4",
+          "distorted_sha256": "e0abb9a320ebdf10eea3db7875244067ff8a0de8b3ca6d4ab58acc453f5f9ca2",
+          "ssim": {
+            "mean": 0.907766
+          },
+          "psnr": {
+            "mean": 27.113254
+          },
+          "vmaf": {
+            "mean": 84.3,
+            "p5": 64.79,
+            "min": 59.66
+          },
+          "ssim_mean": 0.907766,
+          "psnr_mean": 27.113254,
+          "vmaf_mean": 84.3,
+          "vmaf_p5": 64.79,
+          "vmaf_worst": 59.66,
+          "vmaf_stddev": 10.9504,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q4_GAMMA_CRF_04_vmaf_evidence.json",
+          "evidence_sha256": "9cac9327f68494675998be254f0466d4158d2c4d5bf354ce617ed38aded24063"
+        },
+        {
+          "sequence_group": "sintel_trailer",
+          "clip_filename": "sintel_trailer_1080p24.y4m",
+          "clip_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+          "fixture": "REP_Q4_BRIGHT_CRF_01",
+          "status": "success",
+          "target_type": "joint_brightness_quant",
+          "target_category": "near_boundary_fail",
+          "region": "joint_boundary",
+          "quadrant": "q4_fail_both",
+          "distortion_role": "representative",
+          "calibration_eligibility": "primary_calibration",
+          "exclusion_reason": "",
+          "measurement_status": "empirical",
+          "is_simulated": false,
+          "configuration": {
+            "crf": 24,
+            "filter_expr": "eq=brightness=0.080",
+            "preset": "ultrafast",
+            "codec": "libx264",
+            "tune_param": "joint",
+            "region": "joint_boundary",
+            "quadrant": "q4_fail_both"
+          },
+          "parameters": {
+            "crf": 24,
+            "filter_expr": "eq=brightness=0.080"
+          },
+          "search_iterations": 1,
+          "target_bounds": {},
+          "distortion_command": "ffmpeg -y -i calibration\\data\\raw\\sintel_trailer_1080p24.y4m -vf eq=brightness=0.080 -c:v libx264 -crf 24 -preset ultrafast -pix_fmt yuv420p -an calibration\\data\\distorted\\sintel_trailer_REP_Q4_BRIGHT_CRF_01.mp4",
+          "distorted_filename": "sintel_trailer_REP_Q4_BRIGHT_CRF_01.mp4",
+          "distorted_path": "calibration/data/distorted/sintel_trailer_REP_Q4_BRIGHT_CRF_01.mp4",
+          "distorted_sha256": "432c91885c16c41549d4a46856d3e337b1f72fc00c46cf31a2c8f916bd236bc6",
+          "ssim": {
+            "mean": 0.912318
+          },
+          "psnr": {
+            "mean": 25.26261
+          },
+          "vmaf": {
+            "mean": 93.83,
+            "p5": 82.22,
+            "min": 76.29
+          },
+          "ssim_mean": 0.912318,
+          "psnr_mean": 25.26261,
+          "vmaf_mean": 93.83,
+          "vmaf_p5": 82.22,
+          "vmaf_worst": 76.29,
+          "vmaf_stddev": 5.9142,
+          "adm2_score": 0.0,
+          "vif_score": 0.0,
+          "motion_score": 0.0,
+          "independent_policy_label": "unacceptable",
+          "policy_label": "unacceptable",
+          "model_id": "vmaf_v1.0.16_3d0h",
+          "model_name": "vmaf_v1.0.16_3d0h.json",
+          "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+          "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+          "libvmaf_version": "4991d2b5",
+          "evidence_path": "evidence/sintel_trailer_REP_Q4_BRIGHT_CRF_01_vmaf_evidence.json",
+          "evidence_sha256": "b179ebd7d38cea43e0da7c5427911add7ceabaac707eddb91d2ef76515d6c2df"
         }
       ]
     }

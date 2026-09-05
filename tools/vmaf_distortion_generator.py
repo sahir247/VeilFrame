@@ -65,6 +65,10 @@ class DistortionTarget:
     max_search_iterations: int = 2
     region: str = "general"
     quadrant: Optional[str] = None
+    distortion_role: str = "representative"  # "representative", "adversarial_policy_stress_test", "diagnostic"
+    calibration_eligibility: str = "primary_calibration"  # "primary_calibration", "adversarial_only", "diagnostic_only", "excluded"
+    exclusion_reason: str = ""
+
 
 
 DEFAULT_TARGETS: List[DistortionTarget] = [
@@ -957,6 +961,9 @@ def generate_boundary_dataset(
                 "target_category": t.category,
                 "region": t.region,
                 "quadrant": t.quadrant,
+                "distortion_role": t.distortion_role,
+                "calibration_eligibility": t.calibration_eligibility,
+                "exclusion_reason": t.exclusion_reason,
                 "measurement_status": meas_status,
                 "is_simulated": simulate,
                 "configuration": cfg_used if not simulate else {
