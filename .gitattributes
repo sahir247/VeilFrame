@@ -1,2 +1,7 @@
 # Ensure frozen calibration artifacts keep LF line endings across all platforms
 calibration/** text eol=lf
+calibration/v1.0/*.tar.gz binary
+*.tar.gz binary
+*.gz binary
+*.zip binary
+*.y4m binary

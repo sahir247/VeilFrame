@@ -40,6 +40,11 @@ include = ["veilframe*"]
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.png", "*.svg", "*.ico"]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
