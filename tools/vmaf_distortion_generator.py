@@ -236,117 +236,120 @@ CGI_TARGETS: List[DistortionTarget] = [
         tune_param="resample", tune_val=1440.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "SSIM_BND_FAIL_01", target_ssim=0.948, target_psnr=38.5,
+        "SSIM_BND_FAIL_01", target_ssim=0.945, target_psnr=38.5,
         distortion_type="quantization", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
-        crf=29, desired_ssim_min=0.9460, desired_ssim_max=0.9499, desired_psnr_min=35.0, desired_psnr_max=50.0,
+        crf=33, desired_ssim_min=0.9420, desired_ssim_max=0.9480, desired_psnr_min=35.0, desired_psnr_max=50.0,
         tune_param="crf", max_search_iterations=5
     ),
     DistortionTarget(
         "SSIM_BND_FAIL_02_BLUR", target_ssim=0.944, target_psnr=37.5,
         distortion_type="blur", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
-        crf=20, filter_expr="gblur=sigma=1.80", desired_ssim_min=0.9420, desired_ssim_max=0.9460, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="blur", tune_val=1.80, max_search_iterations=5
+        crf=20, filter_expr="gblur=sigma=2.20", desired_ssim_min=0.9420, desired_ssim_max=0.9460, desired_psnr_min=35.0, desired_psnr_max=50.0,
+        tune_param="blur", tune_val=2.20, max_search_iterations=5
     ),
     DistortionTarget(
-        "SSIM_BND_FAIL_03_RESAMPLE", target_ssim=0.946, target_psnr=38.0,
+        "SSIM_BND_FAIL_03_RESAMPLE", target_ssim=0.945, target_psnr=38.0,
         distortion_type="resampling", category="near_boundary_fail", region="ssim_axis_psnr_safe", quadrant="q2_fail_ssim",
-        crf=20, filter_expr="scale=960:540:flags=bicubic,scale=1920:1080:flags=bicubic", desired_ssim_min=0.9430, desired_ssim_max=0.9495, desired_psnr_min=35.0, desired_psnr_max=50.0,
-        tune_param="resample", tune_val=960.0, max_search_iterations=5
+        crf=20, filter_expr="scale=720:405:flags=bicubic,scale=1920:1080:flags=bicubic", desired_ssim_min=0.9420, desired_ssim_max=0.9480, desired_psnr_min=35.0, desired_psnr_max=50.0,
+        tune_param="resample", tune_val=720.0, max_search_iterations=5
     ),
 
-    # ── Region B: PSNR-boundary / SSIM-safe (PSNR in [28.5, 31.5] dB, SSIM >= 0.960) ──
+    # ── Region B: PSNR-boundary / SSIM-safe (PSNR in [27.0, 33.0] dB, SSIM >= 0.960) ──
+    # True Q1 Controls (SSIM >= 0.960, PSNR >= 30.0 dB)
     DistortionTarget(
-        "PSNR_BND_PASS_01_NOISE", target_ssim=0.970, target_psnr=31.4,
-        distortion_type="noise", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
-        crf=16, filter_expr="noise=alls=10:allf=t+u", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=30.8, desired_psnr_max=32.0,
-        tune_param="noise", tune_val=10.0, max_search_iterations=5
+        "PSNR_BND_PASS_01_CHROMA", target_ssim=0.996, target_psnr=32.8,
+        distortion_type="chroma_shift", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
+        crf=14, filter_expr="lutyuv=u='clip(val+10,0,255)':v='clip(val+10,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=32.0, desired_psnr_max=34.0,
+        tune_param="chroma", tune_val=10.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "PSNR_BND_PASS_02_GAMMA", target_ssim=0.970, target_psnr=30.5,
-        distortion_type="gamma", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
-        crf=16, filter_expr="eq=gamma=0.900", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=30.1, desired_psnr_max=30.7,
-        tune_param="gamma", tune_val=0.900, max_search_iterations=5
+        "PSNR_BND_PASS_02_CHROMA", target_ssim=0.996, target_psnr=31.3,
+        distortion_type="chroma_shift", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
+        crf=14, filter_expr="lutyuv=u='clip(val+12,0,255)':v='clip(val+12,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=30.8, desired_psnr_max=31.8,
+        tune_param="chroma", tune_val=12.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "PSNR_BND_PASS_03_NOISE", target_ssim=0.968, target_psnr=30.4,
-        distortion_type="noise", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
-        crf=16, filter_expr="noise=alls=12:allf=t+u", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=30.1, desired_psnr_max=30.7,
-        tune_param="noise", tune_val=12.0, max_search_iterations=5
+        "PSNR_BND_PASS_03_CHROMA", target_ssim=0.995, target_psnr=30.6,
+        distortion_type="chroma_shift", category="near_boundary_pass", region="psnr_axis_ssim_safe", quadrant="q1_pass",
+        crf=14, filter_expr="lutyuv=u='clip(val+13,0,255)':v='clip(val+13,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=30.1, desired_psnr_max=30.8,
+        tune_param="chroma", tune_val=13.0, max_search_iterations=5
+    ),
+
+    # True Q3 Targets (SSIM >= 0.960, PSNR < 30.0 dB)
+    DistortionTarget(
+        "PSNR_BND_FAIL_01_CHROMA", target_ssim=0.995, target_psnr=29.9,
+        distortion_type="chroma_shift", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
+        crf=14, filter_expr="lutyuv=u='clip(val+14,0,255)':v='clip(val+14,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=29.4, desired_psnr_max=29.99,
+        tune_param="chroma", tune_val=14.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "PSNR_BND_FAIL_01_NOISE", target_ssim=0.966, target_psnr=29.6,
-        distortion_type="noise", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
-        crf=16, filter_expr="noise=alls=15:allf=t+u", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=29.4, desired_psnr_max=29.99,
-        tune_param="noise", tune_val=15.0, max_search_iterations=5
+        "PSNR_BND_FAIL_02_CHROMA", target_ssim=0.995, target_psnr=28.8,
+        distortion_type="chroma_shift", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
+        crf=14, filter_expr="lutyuv=u='clip(val+16,0,255)':v='clip(val+16,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=28.3, desired_psnr_max=29.2,
+        tune_param="chroma", tune_val=16.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "PSNR_BND_FAIL_02_GAMMA", target_ssim=0.967, target_psnr=28.9,
-        distortion_type="gamma", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
-        crf=16, filter_expr="eq=gamma=0.880", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=28.6, desired_psnr_max=29.3,
-        tune_param="gamma", tune_val=0.880, max_search_iterations=5
-    ),
-    DistortionTarget(
-        "PSNR_BND_FAIL_03_NOISE", target_ssim=0.962, target_psnr=28.3,
-        distortion_type="noise", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
-        crf=16, filter_expr="noise=alls=20:allf=t+u", desired_ssim_min=0.960, desired_ssim_max=0.990, desired_psnr_min=27.5, desired_psnr_max=28.6,
-        tune_param="noise", tune_val=20.0, max_search_iterations=5
+        "PSNR_BND_FAIL_03_CHROMA", target_ssim=0.994, target_psnr=27.8,
+        distortion_type="chroma_shift", category="near_boundary_fail", region="psnr_axis_ssim_safe", quadrant="q3_fail_psnr",
+        crf=14, filter_expr="lutyuv=u='clip(val+18,0,255)':v='clip(val+18,0,255)'", desired_ssim_min=0.960, desired_ssim_max=1.000, desired_psnr_min=27.0, desired_psnr_max=28.2,
+        tune_param="chroma", tune_val=18.0, max_search_iterations=5
     ),
 
     # ── Region C: JOINT boundary region (Around SSIM=0.950, PSNR=30.0 dB, 4 Quadrants) ──
     # Q1: SSIM >= 0.9500 AND PSNR >= 30.00 dB -> Acceptable
     DistortionTarget(
-        "JOINT_Q1_PASS_01", target_ssim=0.952, target_psnr=30.4,
+        "JOINT_Q1_PASS_01", target_ssim=0.952, target_psnr=30.5,
         distortion_type="joint_gamma_quant", category="near_boundary_pass", region="joint_boundary", quadrant="q1_pass",
-        crf=24, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9500, desired_ssim_max=0.9550, desired_psnr_min=30.05, desired_psnr_max=30.70,
+        crf=24, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9500, desired_ssim_max=0.9560, desired_psnr_min=30.05, desired_psnr_max=30.80,
         tune_param="joint", tune_val=0.900, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q1_PASS_02_RESAMPLE", target_ssim=0.953, target_psnr=31.2,
         distortion_type="joint_resample_quant", category="near_boundary_pass", region="joint_boundary", quadrant="q1_pass",
-        crf=24, filter_expr="scale=1440:810:flags=bicubic,scale=1920:1080:flags=bicubic", desired_ssim_min=0.9510, desired_ssim_max=0.9560, desired_psnr_min=30.80, desired_psnr_max=31.80,
+        crf=24, filter_expr="scale=1440:810:flags=bicubic,scale=1920:1080:flags=bicubic", desired_ssim_min=0.9510, desired_ssim_max=0.9580, desired_psnr_min=30.80, desired_psnr_max=32.00,
         tune_param="joint_resample", tune_val=1440.0, max_search_iterations=5
     ),
 
     # Q2: SSIM < 0.9500 AND PSNR >= 30.00 dB -> Unacceptable
     DistortionTarget(
-        "JOINT_Q2_FAIL_SSIM_01", target_ssim=0.948, target_psnr=30.3,
+        "JOINT_Q2_FAIL_SSIM_01", target_ssim=0.947, target_psnr=30.5,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q2_fail_ssim",
-        crf=26, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9460, desired_ssim_max=0.9499, desired_psnr_min=30.05, desired_psnr_max=30.70,
+        crf=26, filter_expr="eq=gamma=0.900", desired_ssim_min=0.9440, desired_ssim_max=0.9495, desired_psnr_min=30.05, desired_psnr_max=31.50,
         tune_param="joint", tune_val=0.900, max_search_iterations=5
     ),
     DistortionTarget(
         "JOINT_Q2_FAIL_SSIM_02_BLUR", target_ssim=0.946, target_psnr=31.0,
         distortion_type="joint_blur_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q2_fail_ssim",
-        crf=24, filter_expr="gblur=sigma=1.40", desired_ssim_min=0.9430, desired_ssim_max=0.9490, desired_psnr_min=30.50, desired_psnr_max=31.60,
+        crf=24, filter_expr="gblur=sigma=1.40", desired_ssim_min=0.9430, desired_ssim_max=0.9490, desired_psnr_min=30.50, desired_psnr_max=32.00,
         tune_param="blur", tune_val=1.40, max_search_iterations=5
     ),
 
     # Q3: SSIM >= 0.9500 AND PSNR < 30.00 dB -> Unacceptable
     DistortionTarget(
-        "JOINT_Q3_FAIL_PSNR_01", target_ssim=0.952, target_psnr=28.9,
-        distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
-        crf=22, filter_expr="eq=gamma=0.880", desired_ssim_min=0.9500, desired_ssim_max=0.9560, desired_psnr_min=28.50, desired_psnr_max=29.30,
-        tune_param="joint", tune_val=0.880, max_search_iterations=5
+        "JOINT_Q3_FAIL_PSNR_01", target_ssim=0.995, target_psnr=29.4,
+        distortion_type="joint_chroma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
+        crf=14, filter_expr="lutyuv=u='clip(val+15,0,255)':v='clip(val+15,0,255)'", desired_ssim_min=0.9600, desired_ssim_max=1.0000, desired_psnr_min=29.00, desired_psnr_max=29.80,
+        tune_param="chroma", tune_val=15.0, max_search_iterations=5
     ),
     DistortionTarget(
-        "JOINT_Q3_FAIL_PSNR_02_NOISE", target_ssim=0.953, target_psnr=28.9,
-        distortion_type="joint_noise_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
-        crf=22, filter_expr="noise=alls=16:allf=t+u", desired_ssim_min=0.9500, desired_ssim_max=0.9570, desired_psnr_min=28.40, desired_psnr_max=29.30,
-        tune_param="joint_noise", tune_val=16.0, max_search_iterations=5
+        "JOINT_Q3_FAIL_PSNR_02_CHROMA", target_ssim=0.986, target_psnr=28.8,
+        distortion_type="joint_luma_chroma", category="near_boundary_fail", region="joint_boundary", quadrant="q3_fail_psnr",
+        crf=14, filter_expr="lutyuv=y='clip(val+4,0,255)':u='clip(val+15,0,255)':v='clip(val+15,0,255)'", desired_ssim_min=0.9600, desired_ssim_max=1.0000, desired_psnr_min=28.30, desired_psnr_max=29.20,
+        max_search_iterations=5
     ),
 
     # Q4: SSIM < 0.9500 AND PSNR < 30.00 dB -> Unacceptable
     DistortionTarget(
-        "JOINT_Q4_FAIL_BOTH_01", target_ssim=0.944, target_psnr=29.4,
+        "JOINT_Q4_FAIL_BOTH_01", target_ssim=0.913, target_psnr=27.9,
         distortion_type="joint_gamma_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q4_fail_both",
-        crf=27, filter_expr="eq=gamma=0.880", desired_ssim_min=0.9410, desired_ssim_max=0.9480, desired_psnr_min=29.00, desired_psnr_max=29.80,
-        tune_param="joint", tune_val=0.880, max_search_iterations=5
+        crf=24, filter_expr="eq=gamma=0.82", desired_ssim_min=0.8800, desired_ssim_max=0.9450, desired_psnr_min=26.50, desired_psnr_max=29.50,
+        max_search_iterations=5
     ),
     DistortionTarget(
-        "JOINT_Q4_FAIL_BOTH_02_NOISE", target_ssim=0.943, target_psnr=28.8,
+        "JOINT_Q4_FAIL_BOTH_02_NOISE", target_ssim=0.880, target_psnr=28.5,
         distortion_type="joint_noise_quant", category="near_boundary_fail", region="joint_boundary", quadrant="q4_fail_both",
-        crf=27, filter_expr="noise=alls=18:allf=t+u", desired_ssim_min=0.9380, desired_ssim_max=0.9460, desired_psnr_min=28.30, desired_psnr_max=29.10,
-        tune_param="joint_noise", tune_val=18.0, max_search_iterations=5
+        crf=26, filter_expr="noise=alls=24:allf=t+u", desired_ssim_min=0.8000, desired_ssim_max=0.9450, desired_psnr_min=26.00, desired_psnr_max=29.50,
+        max_search_iterations=5
     ),
 
     # ── Anchors: Global Extremes ──
@@ -358,9 +361,10 @@ CGI_TARGETS: List[DistortionTarget] = [
     DistortionTarget(
         "ANCHOR_DEEP_FAIL", target_ssim=0.865, target_psnr=33.6,
         distortion_type="quantization", category="deep_fail", region="anchor", quadrant="q2_fail_ssim",
-        crf=38, desired_ssim_min=0.800, desired_ssim_max=0.890, desired_psnr_min=25.0, desired_psnr_max=36.0
+        crf=42, desired_ssim_min=0.800, desired_ssim_max=0.890, desired_psnr_min=25.0, desired_psnr_max=36.0
     ),
 ]
+
 
 
 def check_ffmpeg_available() -> bool:
@@ -394,6 +398,8 @@ def simulate_distortion_metrics(
         vmaf_est = 100.0 - (1.0 - meas_ssim) * 350.0 - max(0.0, 40.0 - meas_psnr) * 0.8
     elif target.distortion_type == "noise":
         vmaf_est = 100.0 - (1.0 - meas_ssim) * 180.0 - max(0.0, 38.0 - meas_psnr) * 1.2
+    elif target.distortion_type in ("chroma_shift", "joint_chroma_quant", "joint_luma_chroma"):
+        vmaf_est = 100.0 - (1.0 - meas_ssim) * 150.0 - max(0.0, 35.0 - meas_psnr) * 1.5
     else:
         vmaf_est = 100.0 - (1.0 - meas_ssim) * 220.0 - max(0.0, 35.0 - meas_psnr) * 1.0
 
@@ -558,6 +564,9 @@ def closed_loop_tune_and_generate(
             dh = int(round(dw * 9 / 16))
             dh = dh if dh % 2 == 0 else dh - 1
             fexpr = f"scale={dw}:{dh}:flags=bicubic,scale=1920:1080:flags=bicubic"
+        elif target.tune_param in ("chroma", "chroma_shift"):
+            shift = int(round(val)) if val is not None else 14
+            fexpr = f"lutyuv=u='clip(val+{shift},0,255)':v='clip(val+{shift},0,255)'"
         else:
             fexpr = target.filter_expr
 
@@ -719,6 +728,13 @@ def closed_loop_tune_and_generate(
                 val = round(max(0.0, val - step_br), 4)
             elif target.desired_psnr_max and p > target.desired_psnr_max:
                 val = round(val + step_br, 4)
+        elif target.tune_param in ("chroma", "chroma_shift") and val is not None:
+            diff_p = p - target_p
+            step_ch = max(1.0, min(4.0, abs(diff_p) * 1.5))
+            if target.desired_psnr_min and p < target.desired_psnr_min:
+                val = max(1.0, round(val - step_ch, 1))
+            elif target.desired_psnr_max and p > target.desired_psnr_max:
+                val = min(60.0, round(val + step_ch, 1))
         else:
             if target.desired_ssim_min and s < target.desired_ssim_min:
                 crf = max(10, crf - 1)
