@@ -1,9 +1,16 @@
 """
-VeilFrame VMAF Pipeline Sensitivity Experiment: 8-Bit vs Higher-Precision.
-==========================================================================
+VeilFrame VMAF Pipeline Sensitivity Experiment: Decode-Stage Bit-Depth Promotion.
+==================================================================================
 Executes a controlled A/B measurement experiment on anomalous SINTEL observations:
-  Path A: Production decoded 8-bit (yuv420p) path.
-  Path B: Higher-precision controlled path (yuv420p10le), preserving identical visual content.
+  Path A: Standard decoded 8-bit intermediate path (yuv420p).
+  Path B: High-precision 10-bit intermediate path (yuv420p10le), promoting decoded 8-bit samples.
+
+METHODOLOGICAL NOTE:
+  This experiment strictly tests whether converting already-decoded 8-bit samples to a 10-bit
+  representation prior to libvmaf calculation alters the VMAF score. It establishes representation
+  invariance at the decode/filter stage.
+  It does NOT test whether original 8-bit video encoding/quantization from high-precision source
+  masters caused the anomalous scores, as true 10-bit source encodes were not generated.
 
 A Priori Reproducibility Criterion:
   Absolute VMAF Mean delta <= 1.50 points.
@@ -193,13 +200,22 @@ def run_pipeline_sensitivity_experiment(
     all_within_tol = all(r["reproducibility_criterion_satisfied"] for r in results)
 
     conclusion = (
-        f"8-bit vs 10-bit pipeline sensitivity differences are negligible (median delta_VMAF={median_delta:.2f}, max delta_VMAF={max_delta:.2f} <= {A_PRIORI_TOLERANCE_VMAF} threshold). "
-        "The observed metric non-separability (e.g. blur VMAF collapsing to ~20-40 on acceptable video, and brightness/contrast retaining VMAF ~90-98 on unacceptable video) "
-        "is NOT an artifact of 8-bit pixel quantization or precision truncation, but reflects intrinsic properties of the VMAF feature set and SVM model."
+        f"Decode-stage intermediate precision conversion (8-bit yuv420p promoted to 10-bit yuv420p10le) "
+        f"produces negligible score differences (median delta_VMAF={median_delta:.2f}, max delta_VMAF={max_delta:.2f} <= {A_PRIORI_TOLERANCE_VMAF} threshold). "
+        "The collapse is reproducible under the specified libvmaf v1.0.16 measurement pipeline and was not explained by the tested decode-precision conversion. "
+        "This establishes decode-representation stability. However, this experiment does not test whether original 8-bit source encoding/quantization "
+        "contributed to the score shift, as high-bit-depth source encodes were not evaluated."
     )
 
     report = {
         "report_type": "vmaf_pipeline_sensitivity_report",
+        "experiment_name": "decode_stage_precision_promotion_sensitivity",
+        "methodological_scope": {
+            "tested_transformation": "8-bit decoded samples -> 10-bit representation before VMAF calculation",
+            "untested_transformation": "high-precision source -> 8-bit encode vs high-precision source -> 10-bit encode",
+            "quantization_causality_status": "NOT_TESTED",
+            "decode_stage_invariance_status": "CONFIRMED_WITHIN_TOLERANCE",
+        },
         "a_priori_reproducibility_tolerance_vmaf": A_PRIORI_TOLERANCE_VMAF,
         "a_priori_reproducibility_tolerance_ssim": A_PRIORI_TOLERANCE_SSIM,
         "a_priori_reproducibility_tolerance_psnr_db": A_PRIORI_TOLERANCE_PSNR,

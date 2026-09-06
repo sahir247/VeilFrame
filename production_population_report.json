@@ -1,7 +1,8 @@
 {
   "report_type": "production_population_report",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "production_population_evidence": "insufficient",
+  "scope_of_empirical_findings": "The empirical findings (including non-separability of VMAF from SSIM/PSNR) apply strictly to full-frame controlled benchmark distortions. The operational behavior of VMAF on actual VeilFrame production outputs (which apply localized privacy redactions, face blur masks, and bounding-box transformations) has NOT yet been directly characterized.",
   "evaluation_verdict": {
     "can_generalize_to_production": false,
     "production_gate_status": "LOCKED_DISABLED",

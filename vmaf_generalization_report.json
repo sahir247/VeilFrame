@@ -1,6 +1,6 @@
 {
   "report_type": "vmaf_generalization_report",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "evaluation_protocol": "Leave-One-Group-Out (LOGO) Cross-Validation",
   "total_sequence_groups_evaluated": 3,
   "sequence_groups": [
@@ -25,8 +25,10 @@
       "training_samples_count": 51,
       "training_exhaustive_status": "no_feasible_threshold",
       "training_lowest_feasible_threshold": null,
+      "held_out_evaluation_executed": false,
       "held_out_evaluation": null,
-      "generalization_verdict": "training_failed_no_candidate"
+      "generalization_verdict": "training_fold_empty_feasible_set",
+      "interpretation_note": "Held-out evaluation was not executable because the training fold failed to discover a feasible operating point under FAR < 2% and FRR < 5% constraints."
     },
     {
       "held_out_group": "pedestrian_area",
@@ -38,8 +40,10 @@
       "training_samples_count": 51,
       "training_exhaustive_status": "no_feasible_threshold",
       "training_lowest_feasible_threshold": null,
+      "held_out_evaluation_executed": false,
       "held_out_evaluation": null,
-      "generalization_verdict": "training_failed_no_candidate"
+      "generalization_verdict": "training_fold_empty_feasible_set",
+      "interpretation_note": "Held-out evaluation was not executable because the training fold failed to discover a feasible operating point under FAR < 2% and FRR < 5% constraints."
     },
     {
       "held_out_group": "sintel_trailer",
@@ -51,12 +55,15 @@
       "training_samples_count": 44,
       "training_exhaustive_status": "no_feasible_threshold",
       "training_lowest_feasible_threshold": null,
+      "held_out_evaluation_executed": false,
       "held_out_evaluation": null,
-      "generalization_verdict": "training_failed_no_candidate"
+      "generalization_verdict": "training_fold_empty_feasible_set",
+      "interpretation_note": "Held-out evaluation was not executable because the training fold failed to discover a feasible operating point under FAR < 2% and FRR < 5% constraints."
     }
   ],
   "cross_group_gap_analysis": {
-    "natural_vs_cgi_gap": "A severe generalization gap exists between natural photographic sequences (pedestrian_area, dinner) and computer-generated animation (sintel_trailer). When training exclusively on natural content, operating thresholds settle in the range [88, 92]. When transferred to Sintel, acceptable blur distortions score ~20\u201340 VMAF, causing 100% false rejection on held-out CGI content. Conversely, if CGI data is included, the decision space collapses to 0 feasible operating points because no single scalar threshold can simultaneously admit acceptable CGI blur without admitting unacceptable photographic noise/quantization."
+    "observed_divergence": "Score distributions differ substantially across the evaluated sequences: acceptable blur distortions score ~20\u201340 VMAF on sintel_trailer, while natural sequences (pedestrian_area, dinner) exhibit higher scores on mild blur.",
+    "confounding_limitation": "Because the corpus contains only 3 sequence groups (2 natural photographic, 1 CGI animation), content type is heavily confounded with sequence identity, spatial texture complexity, motion cadence, and specific distortion implementations across the 3 available groups. The observed differences cannot be definitively isolated as a CGI-vs-natural domain gap."
   },
-  "scientific_verdict": "Generalization across content domains fails completely. No universal scalar threshold generalizes across both photographic and CGI visual structures under strict FAR < 2% and FRR < 5% constraints."
+  "scientific_verdict": "LOGO qualification was not executable because every training fold failed to produce a qualifying threshold under the mandated FAR < 2% and FRR < 5% constraints (the feasible threshold set was empty on training data for all 3 folds). This represents an in-fold threshold non-discoverability result, rather than a failure of generalization from a fitted model."
 }

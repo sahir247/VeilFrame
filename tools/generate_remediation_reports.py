@@ -175,6 +175,16 @@ def generate_representative_corpus_report(
                 }
             }
         },
+        "corpus_design_characteristics": {
+            "sampling_methodology": "Decision-boundary stress-test sampling",
+            "sampling_design_limitation": (
+                "The 73 representative samples were purposefully synthesized with distortion parameters "
+                "clustered near the SSIM >= 0.9500 and PSNR >= 30.00 dB policy thresholds to evaluate classifier "
+                "separability under difficult edge cases. While labels are determined independently by formula, "
+                "the sampling distribution reflects boundary stress testing rather than the natural distribution "
+                "of real-world video cleaner traffic."
+            ),
+        },
         "scientific_summary": (
             f"The representative empirical corpus comprises {len(samples)} physical pairs across {len(seq_groups)} "
             f"sequence groups ({', '.join(seq_groups.keys())}). While quantization and natural photographic distortions "
@@ -198,8 +208,14 @@ def generate_production_population_report(
     """Generates Deliverable #5: production_population_report.json"""
     report = {
         "report_type": "production_population_report",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "production_population_evidence": "insufficient",
+        "scope_of_empirical_findings": (
+            "The empirical findings (including non-separability of VMAF from SSIM/PSNR) apply strictly "
+            "to full-frame controlled benchmark distortions. The operational behavior of VMAF on actual "
+            "VeilFrame production outputs (which apply localized privacy redactions, face blur masks, "
+            "and bounding-box transformations) has NOT yet been directly characterized."
+        ),
         "evaluation_verdict": {
             "can_generalize_to_production": False,
             "production_gate_status": "LOCKED_DISABLED",
@@ -289,8 +305,10 @@ def generate_vmaf_generalization_report(
         lowest_t = train_exhaustive["lowest_feasible_threshold"]
 
         test_metrics = None
-        generalization_status = "training_failed_no_candidate"
+        generalization_status = "training_fold_empty_feasible_set"
+        held_out_executed = False
         if lowest_t is not None:
+            held_out_executed = True
             tm = evaluate_policy_operating_point(test_samples, lowest_t, policy_name="combined")
             test_metrics = asdict(tm)
             if tm.false_accept_rate < 0.02 and tm.false_reject_rate < 0.05:
@@ -305,13 +323,19 @@ def generate_vmaf_generalization_report(
             "training_samples_count": len(train_samples),
             "training_exhaustive_status": train_status,
             "training_lowest_feasible_threshold": lowest_t,
+            "held_out_evaluation_executed": held_out_executed,
             "held_out_evaluation": test_metrics,
             "generalization_verdict": generalization_status,
+            "interpretation_note": (
+                "Held-out evaluation was not executable because the training fold failed to discover "
+                "a feasible operating point under FAR < 2% and FRR < 5% constraints."
+                if not held_out_executed else "Evaluated on held-out group."
+            ),
         })
 
     report = {
         "report_type": "vmaf_generalization_report",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "evaluation_protocol": "Leave-One-Group-Out (LOGO) Cross-Validation",
         "total_sequence_groups_evaluated": n_groups,
         "sequence_groups": unique_groups,
@@ -328,18 +352,23 @@ def generate_vmaf_generalization_report(
         },
         "logo_cross_validation": logo_results,
         "cross_group_gap_analysis": {
-            "natural_vs_cgi_gap": (
-                "A severe generalization gap exists between natural photographic sequences (pedestrian_area, dinner) "
-                "and computer-generated animation (sintel_trailer). When training exclusively on natural content, "
-                "operating thresholds settle in the range [88, 92]. When transferred to Sintel, acceptable blur distortions "
-                "score ~20–40 VMAF, causing 100% false rejection on held-out CGI content. Conversely, if CGI data is included, "
-                "the decision space collapses to 0 feasible operating points because no single scalar threshold can simultaneously "
-                "admit acceptable CGI blur without admitting unacceptable photographic noise/quantization."
+            "observed_divergence": (
+                "Score distributions differ substantially across the evaluated sequences: acceptable blur "
+                "distortions score ~20–40 VMAF on sintel_trailer, while natural sequences (pedestrian_area, dinner) "
+                "exhibit higher scores on mild blur."
+            ),
+            "confounding_limitation": (
+                "Because the corpus contains only 3 sequence groups (2 natural photographic, 1 CGI animation), "
+                "content type is heavily confounded with sequence identity, spatial texture complexity, "
+                "motion cadence, and specific distortion implementations across the 3 available groups. "
+                "The observed differences cannot be definitively isolated as a CGI-vs-natural domain gap."
             )
         },
         "scientific_verdict": (
-            "Generalization across content domains fails completely. No universal scalar threshold generalizes across "
-            "both photographic and CGI visual structures under strict FAR < 2% and FRR < 5% constraints."
+            "LOGO qualification was not executable because every training fold failed to produce a qualifying "
+            "threshold under the mandated FAR < 2% and FRR < 5% constraints (the feasible threshold set was empty "
+            "on training data for all 3 folds). This represents an in-fold threshold non-discoverability result, "
+            "rather than a failure of generalization from a fitted model."
         )
     }
 

@@ -249,5 +249,9 @@
       }
     }
   },
+  "corpus_design_characteristics": {
+    "sampling_methodology": "Decision-boundary stress-test sampling",
+    "sampling_design_limitation": "The 73 representative samples were purposefully synthesized with distortion parameters clustered near the SSIM >= 0.9500 and PSNR >= 30.00 dB policy thresholds to evaluate classifier separability under difficult edge cases. While labels are determined independently by formula, the sampling distribution reflects boundary stress testing rather than the natural distribution of real-world video cleaner traffic."
+  },
   "scientific_summary": "The representative empirical corpus comprises 73 physical pairs across 3 sequence groups (pedestrian_area, dinner, sintel_trailer). While quantization and natural photographic distortions exhibit standard monotonic correlation with VMAF, the inclusion of CGI content and spatial edge-filtering produces severe non-monotonic inversions: acceptable mild blur collapses VMAF to ~20.59\u201339.87, while unacceptable brightness and contrast shifts retain VMAF >= 89.73\u201397.55."
 }

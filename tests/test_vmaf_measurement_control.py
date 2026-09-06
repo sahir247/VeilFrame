@@ -149,3 +149,27 @@ def test_bit_depth_mismatch_recorded():
     res = audit_color_domain(ref, dist)
     assert res.bit_depth_match is False
     assert any("Bit depth difference" in w for w in res.warnings)
+
+
+def test_timestamp_offset_calculated_from_pts():
+    ref = _make_dummy_stream("ref.y4m")
+    ref.start_time_sec = 0.0
+    dist = _make_dummy_stream("dist.mp4")
+    dist.start_time_sec = 0.040
+
+    res = audit_frame_alignment(ref, dist)
+    assert res.timestamp_offset_sec == 0.040
+    assert res.audit_scope == "stream_header_and_frame_count_consistency"
+    assert res.per_frame_pts_verified is False
+
+
+def test_pixel_format_difference_recorded():
+    ref = _make_dummy_stream("ref.y4m", pix_fmt="yuv420p")
+    dist = _make_dummy_stream("dist.mp4", pix_fmt="yuv422p")
+
+    res = audit_color_domain(ref, dist)
+    assert res.pix_fmt_match is False
+    assert any("Pixel format difference" in w for w in res.warnings)
+    assert any("Pixel format change" in c for c in res.implicit_conversions)
+    assert res.is_equivalent is False
+    assert res.is_acceptable_sdr is True

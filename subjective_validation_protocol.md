@@ -1,10 +1,13 @@
 # VeilFrame Subjective Validation Protocol
 ## Psychophysical Experimental Protocol for Disputed Quality Boundaries
 
-**Document Version:** 1.0.0  
-**Status:** Approved Formal Protocol  
-**Domain:** Video Privacy Redaction & Quality Assurance  
-**Target Reference:** ITU-R BT.500-14 / ITU-T P.910  
+**Document Version:** 1.1.0  
+**Status:** Pre-Specified Experimental Protocol (Unexecuted; Zero Human Data Collected to Date)  
+**Evidence Classification:** Future Experimental Protocol Design — Does Not Constitute Empirical Perceptual Evidence  
+**Target Reference:** ITU-R BT.500-14 / ITU-T P.910 / ITU-R BT.1788  
+
+> [!IMPORTANT]
+> **Experimental Protocol Status Notice**: This document specifies a formal psychophysical testing procedure designed for future empirical execution. No human observer trials have been performed to date. The presence of this experimental specification does not constitute perceptual proof or empirical evidence of human acceptance.
 
 ---
 
@@ -19,7 +22,7 @@ Empirical calibration studies across both photographic and computer-generated im
    - Clip: `sintel_trailer` with mild spatial softening (`JOINT_Q2_FAIL_SSIM_02_BLUR` and `SSIM_BND_PASS_02_BLUR`).
    - Physical Measurements: $\text{SSIM} = 0.9673–0.9768$ (Pass), $\text{PSNR} = 33.41–35.65\text{ dB}$ (Pass).
    - VMAF Prediction: $\text{VMAF Mean} = 20.59–39.87$ (Catastrophic collapse).
-   - Core Mechanism: ADM2 and VIF scale-0 features heavily penalize slight edge-softening on razor-sharp synthetic CGI textures.
+   - Hypothesized Mechanism: Detail and additive impairment features (such as `adm2` and `vif_scale0`) are hypothesized to penalize slight edge-softening on sharp textures, though sub-feature ablation has not been causally isolated.
 
 2. **False Acceptance Blindness (Unacceptable Content, Saturated VMAF):**
    - Clip: `sintel_trailer` with brightness/contrast and chroma DC shifts (`REP_Q3_BRIGHT_01` and `REP_Q4_BRIGHT_CRF_01`).

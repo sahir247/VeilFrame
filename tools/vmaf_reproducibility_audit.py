@@ -219,17 +219,21 @@ def run_reproducibility_audit(
     all_reproduced = all(r["exact_reproducibility_confirmed"] for r in results)
 
     conclusion = (
-        "Independent physical re-execution confirms that all anomalous SINTEL observations are 100% reproducible "
-        "from the physical media files on disk. The extreme VMAF scores (e.g. VMAF=20.59 on acceptable mild blur, "
-        "and VMAF=97.55 on unacceptable brightness offset) are NOT pipeline artifacts, frame misalignment bugs, "
-        "or stale cache anomalies. They represent the genuine physical response of the libvmaf v1.0.16 feature set "
-        "and support vector machine (SVM) model to CGI visual structures."
+        "Independent physical re-execution confirms that all anomalous SINTEL observations reproduce the stored "
+        "rounded VMAF statistics (delta = 0.00 across mean and P5 to two decimal places) from the physical media files on disk. "
+        "The extreme VMAF scores (e.g. VMAF=20.59 on acceptable mild blur, and VMAF=97.55 on unacceptable brightness offset) "
+        "are NOT stale cache anomalies or frame-count mismatches, but represent the reproducible behavior of the specified "
+        "libvmaf v1.0.16 measurement pipeline on these test sequences. Bit-level floating-point metric equality was not evaluated."
     )
 
     report = {
         "report_type": "vmaf_measurement_reproducibility_report",
-        "audit_version": "1.0.0",
+        "audit_version": "1.1.0",
+        "reproducibility_criterion": "Exact reproduction of stored rounded VMAF statistics to 2 decimal places (delta == 0.00)",
+        "physical_media_sha256_verified": True,
+        "floating_point_bitstream_equality_tested": False,
         "targets_audited": len(results),
+        "rounded_statistics_reproducibility_rate_pct": 100.0 if all_reproduced else round(sum(1 for r in results if r["exact_reproducibility_confirmed"]) / len(results) * 100, 2),
         "exact_reproducibility_rate_pct": 100.0 if all_reproduced else round(sum(1 for r in results if r["exact_reproducibility_confirmed"]) / len(results) * 100, 2),
         "all_targets_reproduced": all_reproduced,
         "scientific_conclusion": conclusion,

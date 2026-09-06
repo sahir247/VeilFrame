@@ -1,5 +1,12 @@
 {
   "report_type": "vmaf_pipeline_sensitivity_report",
+  "experiment_name": "decode_stage_precision_promotion_sensitivity",
+  "methodological_scope": {
+    "tested_transformation": "8-bit decoded samples -> 10-bit representation before VMAF calculation",
+    "untested_transformation": "high-precision source -> 8-bit encode vs high-precision source -> 10-bit encode",
+    "quantization_causality_status": "NOT_TESTED",
+    "decode_stage_invariance_status": "CONFIRMED_WITHIN_TOLERANCE"
+  },
   "a_priori_reproducibility_tolerance_vmaf": 1.5,
   "a_priori_reproducibility_tolerance_ssim": 0.005,
   "a_priori_reproducibility_tolerance_psnr_db": 0.5,
@@ -10,7 +17,7 @@
     "max_delta_vmaf_mean": 0.83,
     "threshold_feasibility_changed": false
   },
-  "scientific_conclusion": "8-bit vs 10-bit pipeline sensitivity differences are negligible (median delta_VMAF=0.70, max delta_VMAF=0.83 <= 1.5 threshold). The observed metric non-separability (e.g. blur VMAF collapsing to ~20-40 on acceptable video, and brightness/contrast retaining VMAF ~90-98 on unacceptable video) is NOT an artifact of 8-bit pixel quantization or precision truncation, but reflects intrinsic properties of the VMAF feature set and SVM model.",
+  "scientific_conclusion": "Decode-stage intermediate precision conversion (8-bit yuv420p promoted to 10-bit yuv420p10le) produces negligible score differences (median delta_VMAF=0.70, max delta_VMAF=0.83 <= 1.50 threshold). The collapse is reproducible under the specified libvmaf v1.0.16 measurement pipeline and was not explained by the tested decode-precision conversion. This establishes decode-representation stability. However, this experiment does not test whether original 8-bit source encoding/quantization contributed to the score shift, as high-bit-depth source encodes were not evaluated.",
   "evaluations": [
     {
       "fixture": "JOINT_Q2_FAIL_SSIM_02_BLUR",
