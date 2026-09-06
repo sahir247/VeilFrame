@@ -1,5 +1,6 @@
 # VeilFrame — Privacy-Preserving Media Sanitization, Bounded Forensic Disruption & Cryptographically Signed Audit Manifests
 
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/sahir247/VeilFrame)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue.svg)](https://github.com/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://python.org/)
 [![CLI](https://img.shields.io/badge/CLI-veilframe-informational.svg)](https://github.com/)
@@ -7,6 +8,8 @@
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
 [![Audit Signatures](https://img.shields.io/badge/Audit%20Signatures-Ed25519-purple.svg)](https://ed25519.cr.yp.to/)
 [![RFC Compliance](https://img.shields.io/badge/RFC%208785-JSON%20Canonicalization-blueviolet.svg)](https://datatracker.ietf.org/doc/html/rfc8785)
+
+**Version:** 1.1.0
 
 **VeilFrame** is an advanced local media sanitization and bounded forensic signal transformation system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers, **VeilFrame** applies bounded, orthogonal signal perturbations across spatial geometry, temporal cadence, physical sensor noise (Bayer CFA PRNU), transform-domain perceptual hashes (2D DCT), ISP chrominance drift, and acoustic Electrical Network Frequency (ENF) hums within strict **5% or 10% transformation policy budgets**, guarded by an **independent read-only three-tier visual fidelity gate** and sealed with **Ed25519 asymmetric cryptographic audit manifests**.
 

@@ -151,10 +151,14 @@ jobs:
 
       - name: Setup FFmpeg with libvmaf (Linux)
         if: runner.os == 'Linux'
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        with:
-          ffmpeg-version: release
-          architecture: x64
+        run: |
+          curl -sSL --retry 3 --retry-delay 2 https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          sudo cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /usr/local/bin/ffmpeg
+          sudo cp ffmpeg-master-latest-linux64-gpl/bin/ffprobe /usr/local/bin/ffprobe
+          sudo chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
+          rm -rf ffmpeg.tar.xz ffmpeg-master-latest-linux64-gpl
+          ffmpeg -version
 
       - name: Install FFmpeg with libvmaf (Windows)
         if: runner.os == 'Windows'
