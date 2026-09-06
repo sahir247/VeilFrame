@@ -1,0 +1,253 @@
+{
+  "report_type": "representative_corpus_report",
+  "schema_version": "1.0.0",
+  "total_representative_samples": 73,
+  "sequence_groups_count": 3,
+  "sequence_groups": [
+    "pedestrian_area",
+    "dinner",
+    "sintel_trailer"
+  ],
+  "group_breakdowns": {
+    "pedestrian_area": {
+      "sequence_group": "pedestrian_area",
+      "representative_clip": "pedestrian_area_1080p25.y4m",
+      "category": "people_faces",
+      "subcategory": "pedestrians_surveillance",
+      "resolution": "1920x1080",
+      "fps": 25.0,
+      "pix_fmt": "unknown",
+      "sample_count": 22,
+      "acceptable_count": 10,
+      "unacceptable_count": 12,
+      "vmaf_mean_range": [
+        58.96,
+        100.0
+      ],
+      "ssim_mean_range": [
+        0.8649,
+        0.9918
+      ],
+      "psnr_mean_range": [
+        28.23,
+        49.4
+      ]
+    },
+    "dinner": {
+      "sequence_group": "dinner",
+      "representative_clip": "dinner_1080p30.y4m",
+      "category": "people_faces",
+      "subcategory": "indoor_faces_conversation",
+      "resolution": "1920x1080",
+      "fps": 30.0,
+      "pix_fmt": "unknown",
+      "sample_count": 22,
+      "acceptable_count": 9,
+      "unacceptable_count": 13,
+      "vmaf_mean_range": [
+        38.85,
+        99.46
+      ],
+      "ssim_mean_range": [
+        0.9055,
+        0.9954
+      ],
+      "psnr_mean_range": [
+        28.37,
+        51.95
+      ]
+    },
+    "sintel_trailer": {
+      "sequence_group": "sintel_trailer",
+      "representative_clip": "sintel_trailer_1080p24.y4m",
+      "category": "animation_cgi",
+      "subcategory": "stylized_cgi_high_contrast",
+      "resolution": "1920x1080",
+      "fps": 24.0,
+      "pix_fmt": "unknown",
+      "sample_count": 29,
+      "acceptable_count": 15,
+      "unacceptable_count": 14,
+      "vmaf_mean_range": [
+        20.59,
+        98.45
+      ],
+      "ssim_mean_range": [
+        0.7162,
+        0.9982
+      ],
+      "psnr_mean_range": [
+        25.26,
+        56.67
+      ]
+    }
+  },
+  "distortion_families": {
+    "composite_distortion": 43,
+    "spatial_gaussian_blur": 5,
+    "gamma_transfer_modification": 12,
+    "brightness_offset": 3,
+    "additive_noise": 5,
+    "quantization_h264": 5
+  },
+  "metric_distributions": {
+    "ssim": {
+      "count": 73,
+      "min": 0.7162,
+      "max": 0.9982,
+      "mean": 0.9445,
+      "median": 0.953,
+      "stddev": 0.0434,
+      "q1": 0.944,
+      "q3": 0.9652
+    },
+    "psnr_db": {
+      "count": 73,
+      "min": 25.2626,
+      "max": 56.6713,
+      "mean": 33.5862,
+      "median": 31.0882,
+      "stddev": 5.832,
+      "q1": 29.5384,
+      "q3": 36.7215
+    },
+    "vmaf_mean": {
+      "count": 73,
+      "min": 20.59,
+      "max": 100.0,
+      "mean": 84.3047,
+      "median": 90.09,
+      "stddev": 16.5017,
+      "q1": 83.05,
+      "q3": 93.83
+    },
+    "vmaf_p5": {
+      "count": 73,
+      "min": 0.0,
+      "max": 100.0,
+      "mean": 74.2364,
+      "median": 84.84,
+      "stddev": 24.3065,
+      "q1": 67.23,
+      "q3": 90.86
+    },
+    "vmaf_worst": {
+      "count": 73,
+      "min": 0.0,
+      "max": 100.0,
+      "mean": 70.0027,
+      "median": 79.0,
+      "stddev": 25.9674,
+      "q1": 63.32,
+      "q3": 88.6
+    }
+  },
+  "policy_classification": {
+    "acceptable_samples_count": 34,
+    "unacceptable_samples_count": 39,
+    "ratio_acceptable": 0.4658,
+    "disagreement_cases": {
+      "acceptable_samples_with_vmaf_sub_70": {
+        "count": 9,
+        "examples": [
+          {
+            "clip": "dinner_1080p30.y4m",
+            "fixture": "SSIM_BND_PASS_02",
+            "group": "dinner",
+            "ssim": 0.955889,
+            "psnr_db": 36.451076,
+            "vmaf_mean": 54.97,
+            "vmaf_p5": 46.63
+          },
+          {
+            "clip": "sintel_trailer_1080p24.y4m",
+            "fixture": "SSIM_BND_PASS_01",
+            "group": "sintel_trailer",
+            "ssim": 0.9603,
+            "psnr_db": 36.817089,
+            "vmaf_mean": 66.24,
+            "vmaf_p5": 34.61
+          },
+          {
+            "clip": "sintel_trailer_1080p24.y4m",
+            "fixture": "SSIM_BND_PASS_02_BLUR",
+            "group": "sintel_trailer",
+            "ssim": 0.976812,
+            "psnr_db": 35.651131,
+            "vmaf_mean": 39.87,
+            "vmaf_p5": 1.62
+          },
+          {
+            "clip": "sintel_trailer_1080p24.y4m",
+            "fixture": "SSIM_BND_FAIL_01",
+            "group": "sintel_trailer",
+            "ssim": 0.950552,
+            "psnr_db": 34.651689,
+            "vmaf_mean": 57.07,
+            "vmaf_p5": 22.09
+          },
+          {
+            "clip": "sintel_trailer_1080p24.y4m",
+            "fixture": "SSIM_BND_FAIL_02_BLUR",
+            "group": "sintel_trailer",
+            "ssim": 0.975023,
+            "psnr_db": 35.112696,
+            "vmaf_mean": 35.17,
+            "vmaf_p5": 0.0
+          }
+        ]
+      },
+      "unacceptable_samples_with_vmaf_gte_70": {
+        "count": 35,
+        "examples": [
+          {
+            "clip": "pedestrian_area_1080p25.y4m",
+            "fixture": "SSIM_BND_FAIL_02",
+            "group": "pedestrian_area",
+            "ssim": 0.947615,
+            "psnr_db": 40.088527,
+            "vmaf_mean": 91.07,
+            "vmaf_p5": 88.47
+          },
+          {
+            "clip": "pedestrian_area_1080p25.y4m",
+            "fixture": "SSIM_BND_FAIL_03_BLUR",
+            "group": "pedestrian_area",
+            "ssim": 0.937527,
+            "psnr_db": 38.105059,
+            "vmaf_mean": 70.91,
+            "vmaf_p5": 67.23
+          },
+          {
+            "clip": "pedestrian_area_1080p25.y4m",
+            "fixture": "PSNR_BND_FAIL_01_GAMMA",
+            "group": "pedestrian_area",
+            "ssim": 0.969023,
+            "psnr_db": 29.702632,
+            "vmaf_mean": 97.44,
+            "vmaf_p5": 94.49
+          },
+          {
+            "clip": "pedestrian_area_1080p25.y4m",
+            "fixture": "PSNR_BND_FAIL_02_GAMMA",
+            "group": "pedestrian_area",
+            "ssim": 0.966923,
+            "psnr_db": 28.941877,
+            "vmaf_mean": 97.01,
+            "vmaf_p5": 93.88
+          },
+          {
+            "clip": "pedestrian_area_1080p25.y4m",
+            "fixture": "PSNR_BND_FAIL_03_CONTRAST",
+            "group": "pedestrian_area",
+            "ssim": 0.964493,
+            "psnr_db": 28.229419,
+            "vmaf_mean": 96.69,
+            "vmaf_p5": 93.55
+          }
+        ]
+      }
+    }
+  },
+  "scientific_summary": "The representative empirical corpus comprises 73 physical pairs across 3 sequence groups (pedestrian_area, dinner, sintel_trailer). While quantization and natural photographic distortions exhibit standard monotonic correlation with VMAF, the inclusion of CGI content and spatial edge-filtering produces severe non-monotonic inversions: acceptable mild blur collapses VMAF to ~20.59\u201339.87, while unacceptable brightness and contrast shifts retain VMAF >= 89.73\u201397.55."
+}

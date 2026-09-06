@@ -1,0 +1,176 @@
+{
+  "report_type": "vmaf_pipeline_sensitivity_report",
+  "a_priori_reproducibility_tolerance_vmaf": 1.5,
+  "a_priori_reproducibility_tolerance_ssim": 0.005,
+  "a_priori_reproducibility_tolerance_psnr_db": 0.5,
+  "targets_evaluated": 5,
+  "all_within_tolerance": true,
+  "aggregate_metrics": {
+    "median_delta_vmaf_mean": 0.7,
+    "max_delta_vmaf_mean": 0.83,
+    "threshold_feasibility_changed": false
+  },
+  "scientific_conclusion": "8-bit vs 10-bit pipeline sensitivity differences are negligible (median delta_VMAF=0.70, max delta_VMAF=0.83 <= 1.5 threshold). The observed metric non-separability (e.g. blur VMAF collapsing to ~20-40 on acceptable video, and brightness/contrast retaining VMAF ~90-98 on unacceptable video) is NOT an artifact of 8-bit pixel quantization or precision truncation, but reflects intrinsic properties of the VMAF feature set and SVM model.",
+  "evaluations": [
+    {
+      "fixture": "JOINT_Q2_FAIL_SSIM_02_BLUR",
+      "policy_label": "acceptable",
+      "path_a_8bit": {
+        "ssim": 0.967293,
+        "psnr": 33.408808,
+        "vmaf_mean": 20.59,
+        "vmaf_p5": 0.0,
+        "vmaf_worst": 0.0,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p",
+        "bit_depth": 8
+      },
+      "path_b_10bit": {
+        "ssim": 0.967385,
+        "psnr": 33.434317,
+        "vmaf_mean": 19.81,
+        "vmaf_p5": 0.0,
+        "vmaf_worst": 0.0,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p10le",
+        "bit_depth": 10
+      },
+      "deltas": {
+        "delta_ssim": 9.2e-05,
+        "delta_psnr_db": 0.0255,
+        "delta_vmaf_mean": 0.78,
+        "delta_vmaf_p5": 0.0,
+        "delta_vmaf_worst": 0.0
+      },
+      "reproducibility_criterion_satisfied": true
+    },
+    {
+      "fixture": "SSIM_BND_PASS_02_BLUR",
+      "policy_label": "acceptable",
+      "path_a_8bit": {
+        "ssim": 0.976812,
+        "psnr": 35.651131,
+        "vmaf_mean": 39.87,
+        "vmaf_p5": 1.62,
+        "vmaf_worst": 0.09,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p",
+        "bit_depth": 8
+      },
+      "path_b_10bit": {
+        "ssim": 0.976881,
+        "psnr": 35.676641,
+        "vmaf_mean": 39.04,
+        "vmaf_p5": 1.62,
+        "vmaf_worst": 0.08,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p10le",
+        "bit_depth": 10
+      },
+      "deltas": {
+        "delta_ssim": 6.9e-05,
+        "delta_psnr_db": 0.0255,
+        "delta_vmaf_mean": 0.83,
+        "delta_vmaf_p5": 0.0,
+        "delta_vmaf_worst": 0.01
+      },
+      "reproducibility_criterion_satisfied": true
+    },
+    {
+      "fixture": "SSIM_BND_PASS_01",
+      "policy_label": "acceptable",
+      "path_a_8bit": {
+        "ssim": 0.9603,
+        "psnr": 36.817089,
+        "vmaf_mean": 66.24,
+        "vmaf_p5": 34.61,
+        "vmaf_worst": 22.5,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p",
+        "bit_depth": 8
+      },
+      "path_b_10bit": {
+        "ssim": 0.960435,
+        "psnr": 36.842598,
+        "vmaf_mean": 65.93,
+        "vmaf_p5": 34.39,
+        "vmaf_worst": 21.75,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p10le",
+        "bit_depth": 10
+      },
+      "deltas": {
+        "delta_ssim": 0.000135,
+        "delta_psnr_db": 0.0255,
+        "delta_vmaf_mean": 0.31,
+        "delta_vmaf_p5": 0.22,
+        "delta_vmaf_worst": 0.75
+      },
+      "reproducibility_criterion_satisfied": true
+    },
+    {
+      "fixture": "REP_Q3_BRIGHT_01",
+      "policy_label": "unacceptable",
+      "path_a_8bit": {
+        "ssim": 0.946591,
+        "psnr": 28.29229,
+        "vmaf_mean": 97.55,
+        "vmaf_p5": 89.91,
+        "vmaf_worst": 86.4,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p",
+        "bit_depth": 8
+      },
+      "path_b_10bit": {
+        "ssim": 0.946604,
+        "psnr": 28.317799,
+        "vmaf_mean": 96.89,
+        "vmaf_p5": 88.24,
+        "vmaf_worst": 84.47,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p10le",
+        "bit_depth": 10
+      },
+      "deltas": {
+        "delta_ssim": 1.3e-05,
+        "delta_psnr_db": 0.0255,
+        "delta_vmaf_mean": 0.66,
+        "delta_vmaf_p5": 1.67,
+        "delta_vmaf_worst": 1.93
+      },
+      "reproducibility_criterion_satisfied": true
+    },
+    {
+      "fixture": "REP_Q4_GAMMA_CRF_01",
+      "policy_label": "unacceptable",
+      "path_a_8bit": {
+        "ssim": 0.937384,
+        "psnr": 29.538384,
+        "vmaf_mean": 89.73,
+        "vmaf_p5": 74.85,
+        "vmaf_worst": 69.93,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p",
+        "bit_depth": 8
+      },
+      "path_b_10bit": {
+        "ssim": 0.937414,
+        "psnr": 29.563894,
+        "vmaf_mean": 89.03,
+        "vmaf_p5": 74.13,
+        "vmaf_worst": 69.14,
+        "frame_count": 1253,
+        "pix_fmt": "yuv420p10le",
+        "bit_depth": 10
+      },
+      "deltas": {
+        "delta_ssim": 3e-05,
+        "delta_psnr_db": 0.0255,
+        "delta_vmaf_mean": 0.7,
+        "delta_vmaf_p5": 0.72,
+        "delta_vmaf_worst": 0.79
+      },
+      "reproducibility_criterion_satisfied": true
+    }
+  ]
+}

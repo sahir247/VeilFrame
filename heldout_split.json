@@ -6,10 +6,10 @@
     "sintel_trailer"
   ],
   "clips_count": 1,
-  "total_pairs": 37,
-  "binary_evaluation_samples": 37,
-  "acceptable_samples": 18,
-  "unacceptable_samples": 19,
+  "total_pairs": 29,
+  "binary_evaluation_samples": 29,
+  "acceptable_samples": 15,
+  "unacceptable_samples": 14,
   "boundary_moderate_excluded": 0,
   "samples": [
     {
@@ -46,6 +46,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -82,6 +83,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -118,6 +120,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -154,6 +157,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -190,6 +194,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -226,223 +231,8 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_PASS_01_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.996252,
-      "psnr_mean": 32.850683,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "acceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_01_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "31d7fdb132fc70a33cb911d4fd422d7aded76c0b21dcd89adf0b9dd9990a3def",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_PASS_02_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.995852,
-      "psnr_mean": 31.279752,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "acceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_02_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "7208f450a570967e14e248194fe86a92272a7f825b2d87a353fb76964ce2d10c",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_PASS_03_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.995628,
-      "psnr_mean": 30.588957,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "acceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_PASS_03_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "9e3e02a183204a682d190f6b45503d3a3099e6b25dcd54256369f55207d355f0",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_FAIL_01_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.99539,
-      "psnr_mean": 29.94888,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "unacceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_01_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "7ee5d16d6add844f18161943fba35f3a64c8dc8c60442ce9367e4ff71154dedd",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_FAIL_02_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.994871,
-      "psnr_mean": 28.794537,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "unacceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_02_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "305ea0b1fde8ccfac8f9a6ba2a299c6add1ff6d1255cd79aaadc70e51a3cf740",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "PSNR_BND_FAIL_03_CHROMA",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.994296,
-      "psnr_mean": 27.775433,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "unacceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_PSNR_BND_FAIL_03_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "89c4f2693d35d3fc5e27fa6fbc7594da3c8804c4bf37ed2ef308f67b337c1b20",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
     },
     {
       "clip_filename": "sintel_trailer_1080p24.y4m",
@@ -478,6 +268,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -514,6 +305,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -550,6 +342,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -586,79 +379,8 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "JOINT_Q3_FAIL_PSNR_01",
-      "vmaf_mean": 97.52,
-      "vmaf_p5": 90.23,
-      "vmaf_worst": 87.71,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.995138,
-      "psnr_mean": 29.352606,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "unacceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_JOINT_Q3_FAIL_PSNR_01_vmaf_evidence.json",
-      "evidence_sha256": "a3928381304203dcd0b628545e98b2fd182a04f00e561fa9bb1d0a581d75b33a",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
-    },
-    {
-      "clip_filename": "sintel_trailer_1080p24.y4m",
-      "sequence_group": "sintel_trailer",
-      "sequence_group_source": "filename_heuristic",
-      "category": "animation_cgi",
-      "subcategory": "stylized_cgi_high_contrast",
-      "width": 1920,
-      "height": 1080,
-      "fps": 24.0,
-      "pix_fmt": "unknown",
-      "fixture": "JOINT_Q3_FAIL_PSNR_02_CHROMA",
-      "vmaf_mean": 97.46,
-      "vmaf_p5": 89.92,
-      "vmaf_worst": 86.49,
-      "vmaf_stddev": 0.0,
-      "ssim_mean": 0.986482,
-      "psnr_mean": 28.776562,
-      "model_id": "vmaf_v1.0.16_3d0h",
-      "model_name": "vmaf_v1.0.16_3d0h.json",
-      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
-      "independent_policy_label": "unacceptable",
-      "domain": "1080p_sdr",
-      "suitability_status": "eligible",
-      "vmaf_median": null,
-      "vmaf_p1": null,
-      "vmaf_p95": null,
-      "adm2_score": null,
-      "vif_score": null,
-      "motion_score": null,
-      "evidence_path": "evidence/sintel_trailer_JOINT_Q3_FAIL_PSNR_02_CHROMA_vmaf_evidence.json",
-      "evidence_sha256": "93a34d220b42b72f2c11418cbf8374e29643d982d02a7edc10376e01a51966b7",
-      "measurement_status": "empirical",
-      "distortion_role": "adversarial_policy_stress_test",
-      "calibration_eligibility": "adversarial_only",
-      "exclusion_reason": "Constructed chroma DC offset isolates luma/chroma metric decoupling; not representative of ordinary production pipeline degradations."
     },
     {
       "clip_filename": "sintel_trailer_1080p24.y4m",
@@ -694,6 +416,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -730,6 +453,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -766,6 +490,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -802,6 +527,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -838,6 +564,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -874,6 +601,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -910,6 +638,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -946,6 +675,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -982,6 +712,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1018,6 +749,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1054,6 +786,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1090,6 +823,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1126,6 +860,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1162,6 +897,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1198,6 +934,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1234,6 +971,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1270,6 +1008,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1306,6 +1045,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     },
     {
@@ -1342,6 +1082,7 @@
       "measurement_status": "empirical",
       "distortion_role": "representative",
       "calibration_eligibility": "primary_calibration",
+      "population_relevance": "production_plausible",
       "exclusion_reason": ""
     }
   ]

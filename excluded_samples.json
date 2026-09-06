@@ -1,6 +1,6 @@
 {
   "schema": "veilframe-excluded-samples-v1",
-  "timestamp_utc": "2026-09-05T20:53:13.063250Z",
+  "timestamp_utc": "2026-09-06T09:01:28.833387Z",
   "total_excluded": 0,
   "hdr_segregated_samples": [],
   "secondary_domain_samples": [],
@@ -13,7 +13,7 @@
     "missing_vmaf": 0,
     "secondary_domain_diagnostic": 0,
     "simulated_data_rejected": 0,
-    "adversarial_stress_test_excluded": 0,
+    "adversarial_stress_test_excluded": 8,
     "diagnostic_excluded": 0,
     "missing_distortion_role": 0
   }

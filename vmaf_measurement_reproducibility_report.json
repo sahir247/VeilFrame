@@ -1,0 +1,202 @@
+{
+  "report_type": "vmaf_measurement_reproducibility_report",
+  "audit_version": "1.0.0",
+  "targets_audited": 6,
+  "exact_reproducibility_rate_pct": 100.0,
+  "all_targets_reproduced": true,
+  "scientific_conclusion": "Independent physical re-execution confirms that all anomalous SINTEL observations are 100% reproducible from the physical media files on disk. The extreme VMAF scores (e.g. VMAF=20.59 on acceptable mild blur, and VMAF=97.55 on unacceptable brightness offset) are NOT pipeline artifacts, frame misalignment bugs, or stale cache anomalies. They represent the genuine physical response of the libvmaf v1.0.16 feature set and support vector machine (SVM) model to CGI visual structures.",
+  "audit_records": [
+    {
+      "cluster": "Acceptable VMAF ~20.59",
+      "fixture": "JOINT_Q2_FAIL_SSIM_02_BLUR",
+      "distorted_filename": "sintel_trailer_JOINT_Q2_FAIL_SSIM_02_BLUR.mp4",
+      "distorted_sha256": "0b319ccb6ef1ec72ce05f407af48a4ef337b6cac89d29cbb6c8e8c6f3bed26be",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "37858f1381bb344b9777510e28fa3e641b054ceb1f46b3e7c67369156cdc1ff3",
+      "fresh_measurement": {
+        "ssim": 0.967293,
+        "psnr_db": 33.4088,
+        "vmaf_mean": 20.59,
+        "vmaf_p5": 0.0,
+        "vmaf_worst": 0.0,
+        "frame_count": 1253,
+        "independent_policy_label": "acceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 20.59,
+        "vmaf_p5": 0.0,
+        "vmaf_worst": 0.0,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    },
+    {
+      "cluster": "Acceptable VMAF ~35-40",
+      "fixture": "SSIM_BND_PASS_02_BLUR",
+      "distorted_filename": "sintel_trailer_SSIM_BND_PASS_02_BLUR.mp4",
+      "distorted_sha256": "af89292b1d3857baf6cbc8c0f438390f14f13684a6198c0105199aa00592be77",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "cf472f43b075abadf36dc4e64b0191665d51d07c9152a46fc41f635ddefd818b",
+      "fresh_measurement": {
+        "ssim": 0.976812,
+        "psnr_db": 35.6511,
+        "vmaf_mean": 39.87,
+        "vmaf_p5": 1.62,
+        "vmaf_worst": 0.09,
+        "frame_count": 1253,
+        "independent_policy_label": "acceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 39.87,
+        "vmaf_p5": 1.62,
+        "vmaf_worst": 0.09,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    },
+    {
+      "cluster": "Acceptable VMAF ~57-66",
+      "fixture": "SSIM_BND_FAIL_01",
+      "distorted_filename": "sintel_trailer_SSIM_BND_FAIL_01.mp4",
+      "distorted_sha256": "77978406a70f176acd0b17204c6ec2e53aaedd89d27a0cc3efba35e21acdd4c0",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "fcf379ea07926a1883e334eb2abe9c7c0e4571147f628be59611f32668aefbf4",
+      "fresh_measurement": {
+        "ssim": 0.950552,
+        "psnr_db": 34.6517,
+        "vmaf_mean": 57.07,
+        "vmaf_p5": 22.09,
+        "vmaf_worst": 8.5,
+        "frame_count": 1253,
+        "independent_policy_label": "acceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 57.07,
+        "vmaf_p5": 22.09,
+        "vmaf_worst": 8.5,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    },
+    {
+      "cluster": "Acceptable VMAF ~57-66",
+      "fixture": "SSIM_BND_PASS_01",
+      "distorted_filename": "sintel_trailer_SSIM_BND_PASS_01.mp4",
+      "distorted_sha256": "a9713dd1ec947f1bb7005697672dfc286c9f418603618ab59b84dfe0418bc8ef",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "97d04de78acce03075fe1431835b3cb01382db27fd8d3779dc437f34fde4a92f",
+      "fresh_measurement": {
+        "ssim": 0.9603,
+        "psnr_db": 36.8171,
+        "vmaf_mean": 66.24,
+        "vmaf_p5": 34.61,
+        "vmaf_worst": 22.5,
+        "frame_count": 1253,
+        "independent_policy_label": "acceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 66.24,
+        "vmaf_p5": 34.61,
+        "vmaf_worst": 22.5,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    },
+    {
+      "cluster": "Unacceptable VMAF ~90-98",
+      "fixture": "REP_Q3_BRIGHT_01",
+      "distorted_filename": "sintel_trailer_REP_Q3_BRIGHT_01.mp4",
+      "distorted_sha256": "c626c7d5bc957539bb3a76ed73a6e7fb315ffc3da166e48c113b37c551e1e9c8",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "8093084250f2178fd4e08e474731ecf4effcf143af6f9a02f8335ca322167af9",
+      "fresh_measurement": {
+        "ssim": 0.946591,
+        "psnr_db": 28.2923,
+        "vmaf_mean": 97.55,
+        "vmaf_p5": 89.91,
+        "vmaf_worst": 86.4,
+        "frame_count": 1253,
+        "independent_policy_label": "unacceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 97.55,
+        "vmaf_p5": 89.91,
+        "vmaf_worst": 86.4,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    },
+    {
+      "cluster": "Unacceptable VMAF ~90-98",
+      "fixture": "REP_Q4_BRIGHT_CRF_01",
+      "distorted_filename": "sintel_trailer_REP_Q4_BRIGHT_CRF_01.mp4",
+      "distorted_sha256": "432c91885c16c41549d4a46856d3e337b1f72fc00c46cf31a2c8f916bd236bc6",
+      "reference_filename": "sintel_trailer_1080p24.y4m",
+      "reference_sha256": "5359b4215c4308839d127f46beba972b7458cb03ea507196d6e93fc51b1d5209",
+      "model_path": "vmaf_v1.0.16_3d0h.json",
+      "model_sha256": "cdb62c255f17a17b6dc2b97fba5429c4b303aa5523a8b0d0316d8a112cfd893f",
+      "stored_evidence_sha256": "b179ebd7d38cea43e0da7c5427911add7ceabaac707eddb91d2ef76515d6c2df",
+      "fresh_measurement": {
+        "ssim": 0.912318,
+        "psnr_db": 25.2626,
+        "vmaf_mean": 93.83,
+        "vmaf_p5": 82.22,
+        "vmaf_worst": 76.29,
+        "frame_count": 1253,
+        "independent_policy_label": "unacceptable"
+      },
+      "stored_evidence": {
+        "vmaf_mean": 93.83,
+        "vmaf_p5": 82.22,
+        "vmaf_worst": 76.29,
+        "frame_count": 1253
+      },
+      "deltas": {
+        "delta_mean": 0.0,
+        "delta_p5": 0.0,
+        "delta_worst": 0.0
+      },
+      "exact_reproducibility_confirmed": true
+    }
+  ]
+}

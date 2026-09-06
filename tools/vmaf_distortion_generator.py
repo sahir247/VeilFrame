@@ -47,6 +47,23 @@ from veilframe.quality.vmaf_models import (
 from veilframe.core.crypto import compute_sha256
 
 
+def compute_percentile_linear(scores: List[float], p: float = 5.0) -> Optional[float]:
+    """Computes the p-th percentile using deterministic linear interpolation."""
+    if not scores:
+        return None
+    s = sorted(scores)
+    n = len(s)
+    if n == 1:
+        return float(s[0])
+    idx = (n - 1) * (p / 100.0)
+    low = int(math.floor(idx))
+    high = int(math.ceil(idx))
+    if low == high:
+        return float(s[low])
+    weight = idx - low
+    return float(s[low] + weight * (s[high] - s[low]))
+
+
 @dataclass
 class DistortionTarget:
     target_id: str
@@ -67,6 +84,7 @@ class DistortionTarget:
     quadrant: Optional[str] = None
     distortion_role: str = "representative"  # "representative", "adversarial_policy_stress_test", "diagnostic"
     calibration_eligibility: str = "primary_calibration"  # "primary_calibration", "adversarial_only", "diagnostic_only", "excluded"
+    population_relevance: str = "production_plausible"  # "production_plausible", "controlled_stress", "synthetic_boundary_characterization"
     exclusion_reason: str = ""
 
 
@@ -516,9 +534,8 @@ def measure_real_vmaf(
     if scores:
         vmaf_mean = round(float(statistics.mean(scores)), 2)
         vmaf_worst = round(float(min(scores)), 2)
-        s = sorted(scores)
-        idx_p5 = max(0, int(round(len(s) * 0.05)) - 1)
-        vmaf_p5 = round(float(s[idx_p5]), 2)
+        p5_val = compute_percentile_linear(scores, 5.0)
+        vmaf_p5 = round(float(p5_val), 2) if p5_val is not None else vmaf_worst
     else:
         pooled = data.get("pooled_metrics", {})
         vmaf_mean = round(float(pooled.get("vmaf", {}).get("mean", 0.0)), 2)

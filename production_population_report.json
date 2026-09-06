@@ -1,0 +1,39 @@
+{
+  "report_type": "production_population_report",
+  "schema_version": "1.0.0",
+  "production_population_evidence": "insufficient",
+  "evaluation_verdict": {
+    "can_generalize_to_production": false,
+    "production_gate_status": "LOCKED_DISABLED",
+    "vmaf_gate_enabled": false,
+    "vmaf_gate_mode": "audit"
+  },
+  "population_alignment_audit": {
+    "production_workload_characteristics": [
+      "Selective localized spatial masking (bounding-box and polygon face anonymization)",
+      "License plate redaction with feathering and gradient boundary blending",
+      "Temporal bounding box tracking with variable occlusion and movement",
+      "Heterogeneous capture sensors (CCTV, mobile cameras, dashcams, consumer phones)",
+      "Variable lighting conditions, low-light sensor noise, and rolling-shutter artifacts",
+      "Downstream multi-pass re-encoding with commercial H.264/H.265/AV1 codecs"
+    ],
+    "calibration_corpus_characteristics": [
+      "Standard high-fidelity benchmark masters (Xiph / Derf / Sintel / UVG)",
+      "Global uniform parametric distortions applied to the entire 1080p raster",
+      "Full-frame Gaussian blur, global CRF quantization, global gamma/brightness offsets",
+      "Zero localized redaction masks or selective object-replacement operations",
+      "Only 3 independent sequence groups in Domain 1 (far below statistical N=12 requirement)"
+    ],
+    "gap_declaration": "CRITICAL GAP IDENTIFIED: The calibration corpus evaluates full-frame global synthetic distortions on benchmark sequences. It contains ZERO localized spatial redactions, zero privacy anonymization masks, and zero real-world surveillance or mobile video streams. Therefore, empirical separability or lack thereof on this corpus cannot be construed as evidence of VMAF behavior on production privacy-cleaning workloads. Evidence for production population validity is formally INSUFFICIENT.",
+    "production_deployment_risks": {
+      "risk_1_false_rejections": "If a global VMAF threshold (e.g. T=90 or T=85) were applied to privacy-cleaned video, intentional face blurring or redaction softens high-frequency features, which VMAF's ADM2 and VIF features interpret as catastrophic quality degradation. This would cause massive false rejections, blocking fully compliant privacy-preserved outputs.",
+      "risk_2_false_accepts": "If a lower VMAF threshold (e.g. T=60 or T=70) were used, subtle visual artifacts, blockiness, or contrast shifts that fail VeilFrame's authoritative visual budget (PSNR < 30 dB or SSIM < 0.95) readily achieve VMAF scores above 90, passing low-fidelity or artifact-ridden frames into production."
+    }
+  },
+  "governance_recommendations": [
+    "Maintain vmaf_gate_enabled = False unconditionally in production settings.",
+    "Retain authoritative fidelity policy: SSIM >= 0.9500 and PSNR >= 30.00 dB.",
+    "Do not deploy full-frame VMAF to evaluate localized redaction/cleaning operations.",
+    "Commission a dedicated privacy-cleaning validation corpus containing real redaction masks and human subjective ratings before any perceptual gate is considered."
+  ]
+}

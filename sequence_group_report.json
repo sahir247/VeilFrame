@@ -1,6 +1,6 @@
 {
   "schema": "veilframe-sequence-group-report-v1",
-  "timestamp_utc": "2026-09-05T20:53:13.063327Z",
+  "timestamp_utc": "2026-09-06T09:01:28.834029Z",
   "total_groups_in_corpus": 3,
   "domain_1_primary_groups_count": 3,
   "domain_2_secondary_groups_count": 0,
@@ -52,8 +52,8 @@
       "height": 1080,
       "fps": 24.0,
       "pix_fmt": "unknown",
-      "total_pairs": 37,
-      "binary_pairs": 37,
+      "total_pairs": 29,
+      "binary_pairs": 29,
       "boundary_pairs": 0,
       "clips": [
         "sintel_trailer_1080p24.y4m"
