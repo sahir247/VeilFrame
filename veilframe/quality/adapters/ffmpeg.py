@@ -83,14 +83,11 @@ class FFmpegNativeProvider:
     def runtime_info(self) -> Dict[str, Any]:
         """
         Returns structured provider metadata for the signed manifest.
-        libvmaf fields are always None/unavailable for this provider.
         """
         return {
             "provider": self.name,
             "adapter_version": self.version,
             "runtime_version": _get_ffmpeg_version(),
-            "libvmaf_version": None,
-            "libvmaf_version_source": "unavailable",
             "model_identity": None,
             "capabilities": list(self.capabilities),
         }

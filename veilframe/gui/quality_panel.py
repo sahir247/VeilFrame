@@ -11,8 +11,6 @@ Layout:
   │  ── Rendered Fidelity ──────────────────────────────────────│
   │     SSIM sparkbar row                                       │
   │     PSNR sparkbar row                                       │
-  │  ── VMAF Evidence ──────────────────────────────────────────│
-  │     VMAF sparkbar row  (or SKIPPED badge)                   │
   │  ── Policy Score ───────────────────────────────────────────│
   │     Aggregate bar + 5-dimension grid                        │
   │  ── Temporal Integrity ─────────────────────────────────────│
@@ -157,7 +155,6 @@ class QualityPanel(QGroupBox):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("QUALITY GATE", parent)
         self._report: Optional[VisualQualityReport] = None
-        self._vmaf_evidence_path: Optional[Path] = None
         self._init_ui()
 
     def _init_ui(self):
@@ -185,14 +182,12 @@ class QualityPanel(QGroupBox):
         scroll.setWidget(self._content)
         outer.addWidget(scroll)
 
-    def set_report(self, report: VisualQualityReport, vmaf_evidence_path: Optional[Path] = None):
+    def set_report(self, report: VisualQualityReport):
         self._report = report
-        self._vmaf_evidence_path = vmaf_evidence_path
         self._rebuild()
 
     def clear(self):
         self._report = None
-        self._vmaf_evidence_path = None
         self._rebuild()
 
     def _rebuild(self):
@@ -288,76 +283,6 @@ class QualityPanel(QGroupBox):
             unit=" dB", min_val=0.0, max_val=50.0, decimals=2,
         ))
         self._lay.addWidget(fidelity_frame)
-
-        # ── VMAF Evidence ──────────────────────────────────────────── #
-        self._lay.addWidget(_section_label("VMAF Evidence"))
-
-        vmaf_entries = [p for p in (r.provider_results or []) if p.get("metric") == "vmaf"]
-
-        if vmaf_entries:
-            vmaf = vmaf_entries[0]
-            vmaf_frame = QFrame()
-            vmaf_frame.setStyleSheet("background: #222222; border: 1px solid #333333; border-radius: 4px;")
-            vmaf_inner = QVBoxLayout(vmaf_frame)
-            vmaf_inner.setContentsMargins(10, 8, 10, 8)
-            vmaf_inner.setSpacing(8)
-
-            vmaf_inner.addWidget(SparkBar(
-                "VMAF",
-                vmaf.get("mean", 0.0),
-                vmaf.get("p5", 0.0),
-                vmaf.get("minimum", 0.0),
-                min_val=0.0, max_val=100.0, decimals=1,
-            ))
-
-            note_row = QHBoxLayout()
-            note_badge = _badge("Measurement only — not a gate input in v1.1", "info")
-            note_row.addWidget(note_badge)
-            note_row.addStretch()
-            vmaf_inner.addLayout(note_row)
-
-            # Evidence file row
-            evidence_sha = vmaf.get("evidence_sha256")
-            ev_path: Optional[Path] = self._vmaf_evidence_path
-            if (not ev_path or not ev_path.exists()) and r.evidence_dir:
-                candidate = Path(r.evidence_dir) / "vmaf.json"
-                if candidate.exists():
-                    ev_path = candidate
-            if (not ev_path or not ev_path.exists()) and r.manifest_path:
-                candidate = Path(r.manifest_path).parent / "vmaf.json"
-                if candidate.exists():
-                    ev_path = candidate
-
-            if evidence_sha:
-                ev_row = QHBoxLayout()
-                ev_row.addWidget(_meta_label("Evidence:"))
-                sha_short = evidence_sha[:16] + "…"
-                ev_row.addWidget(_value_label(f"vmaf.json  SHA-256: {sha_short}", "#707070"))
-
-                if ev_path and ev_path.exists():
-                    btn_open = QPushButton("Open")
-                    btn_open.setObjectName("iconBtn")
-                    btn_open.setFixedWidth(46)
-                    target_file = str(ev_path)
-
-                    def _open_evidence(checked=False, f=target_file):
-                        QDesktopServices.openUrl(QUrl.fromLocalFile(f))
-
-                    btn_open.clicked.connect(_open_evidence)
-                    ev_row.addWidget(btn_open)
-
-                ev_row.addStretch()
-                vmaf_inner.addLayout(ev_row)
-
-            self._lay.addWidget(vmaf_frame)
-        else:
-            skip_row = QHBoxLayout()
-            skip_row.addWidget(
-                _badge("libvmaf not available in this FFmpeg build — SKIPPED", "skip")
-            )
-            skip_row.addStretch()
-            self._lay.addLayout(skip_row)
-
         self._lay.addWidget(_hline())
 
         # ── Policy Score ───────────────────────────────────────────── #

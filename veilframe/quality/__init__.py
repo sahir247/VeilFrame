@@ -5,7 +5,6 @@ from .models import QualityConfig, QualityResult, PerFrameMetric
 from .provider import QualityProvider
 from .gate import QualityGate
 from .adapters.ffmpeg import FFmpegNativeProvider
-from .adapters.vmaf import LibvmafFFmpegProvider
 
 __all__ = [
     "QualityConfig",
@@ -14,5 +13,4 @@ __all__ = [
     "QualityProvider",
     "QualityGate",
     "FFmpegNativeProvider",
-    "LibvmafFFmpegProvider",
 ]

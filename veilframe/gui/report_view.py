@@ -186,7 +186,6 @@ class ReportViewWidget(QGroupBox):
         super().__init__("PRIVACY & QUALITY REPORT", parent)
         self._report: Optional[VerificationReport] = None
         self._quality_report: Optional[VisualQualityReport] = None
-        self._vmaf_evidence_path: Optional[Path] = None
         self._init_ui()
 
     def _init_ui(self):
@@ -232,10 +231,8 @@ class ReportViewWidget(QGroupBox):
     def set_report(
         self,
         report: VerificationReport,
-        vmaf_evidence_path: Optional[Path] = None,
     ):
         self._report = report
-        self._vmaf_evidence_path = vmaf_evidence_path
         self._quality_report = report.quality_report if report else None
 
         # Summary tab — raw text
@@ -250,16 +247,8 @@ class ReportViewWidget(QGroupBox):
                 ssim_str = f"SSIM: {q.ssim.mean:.4f}"
                 psnr_str = f"PSNR: {q.psnr.mean:.1f} dB"
 
-                # Check if VMAF available
-                vmaf_entries = [p for p in (q.provider_results or []) if p.get("metric") == "vmaf"]
-                if vmaf_entries:
-                    vmaf_mean = vmaf_entries[0].get("mean", 0.0)
-                    extra = f"  VMAF: {vmaf_mean:.1f}"
-                else:
-                    extra = ""
-
                 self.lbl_verdict.setText(
-                    f"PASSED     {ssim_str}   {psnr_str}{extra}"
+                    f"PASSED     {ssim_str}   {psnr_str}"
                 )
                 self.lbl_verdict.setStyleSheet(
                     "color: #3fb768; font-weight: 700; font-size: 12px;"
@@ -287,7 +276,7 @@ class ReportViewWidget(QGroupBox):
 
         # Quality Gate tab
         if q:
-            self._quality_panel.set_report(q, vmaf_evidence_path=vmaf_evidence_path)
+            self._quality_panel.set_report(q)
         else:
             self._quality_panel.clear()
 

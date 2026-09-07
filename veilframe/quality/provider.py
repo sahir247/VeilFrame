@@ -4,13 +4,13 @@ QualityProvider Protocol.
 Architectural invariant:
   Providers measure. VeilFrame decides.
 
-Every external quality tool (FFmpeg lavfi, libvmaf, ffmpeg-quality-metrics)
+Every external quality tool (e.g. FFmpeg lavfi)
 implements this protocol. QualityGate has no knowledge of which backend
 produced the QualityResult objects it receives.
 
 Key design rules:
   - is_available() must NEVER raise. Unavailability is a first-class state.
-  - runtime_info() returns Dict[str, Any] so nullable fields (libvmaf_version)
+  - runtime_info() returns Dict[str, Any] so nullable fields
     are represented as None, not as empty strings or manufactured values.
   - evaluate() may raise if is_available() returned True but runtime fails.
   - No provider may set or enforce pass/fail thresholds.
@@ -29,8 +29,6 @@ class QualityProvider(Protocol):
     runtime_info() key schema (all providers):
       adapter_version:          str       VeilFrame-controlled adapter semver
       runtime_version:          str|None  Backend binary version (ffmpeg -version)
-      libvmaf_version:          str|None  libvmaf version if detectable; None otherwise
-      libvmaf_version_source:   str       "ffmpeg-version-output" | "unavailable"
       model_identity:           dict|None { name, sha256, source } or None
       capabilities:             List[str] metric names this provider can produce
     """
@@ -40,16 +38,14 @@ class QualityProvider(Protocol):
 
     def is_available(self) -> bool:
         """
-        Returns True only if all required binaries, libraries, and (in audit mode)
-        model files are present and functional. Must never raise.
+        Returns True only if all required binaries and libraries are present
+        and functional. Must never raise.
         """
         ...
 
     def runtime_info(self) -> Dict[str, Any]:
         """
         Returns structured metadata for inclusion in the signed manifest.
-        libvmaf_version must be None when not reliably detectable —
-        never manufacture version strings.
         """
         ...
 

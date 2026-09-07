@@ -1,10 +1,9 @@
 """
 Shared cryptographic utilities.
 
-Extracted from validator.py to break the circular import between
-veilframe.core.validator and veilframe.quality.adapters.vmaf.
+Extracted from validator.py to provide shared cryptographic utilities.
 
-Both modules (and any other code) should import compute_sha256 from here,
+Modules should import compute_sha256 from here,
 not from validator.py. The validator re-exports it for backward compatibility.
 """
 import hashlib

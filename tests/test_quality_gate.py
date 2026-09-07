@@ -559,12 +559,8 @@ class TestProviderArchitectureContracts(unittest.TestCase):
     """
     Phase 0 architecture contract tests.
 
-    These three tests verify that the QualityProvider abstraction is correctly
-    wired. They are intentionally separate from the 26 legacy regression tests
-    so the two sets can be tracked independently.
-
-    Exit criterion: 26 legacy + 3 contract = 29 total must be green before
-    Phase 1 (VMAF) can be started.
+    These tests verify that the QualityProvider abstraction is correctly
+    wired and QualityGate owns the verdict logic.
     """
 
     @classmethod
@@ -602,17 +598,15 @@ class TestProviderArchitectureContracts(unittest.TestCase):
     def test_provider_availability_never_raises(self):
         """is_available() must return a bool and never raise on any provider."""
         from veilframe.quality.adapters.ffmpeg import FFmpegNativeProvider
-        from veilframe.quality.adapters.vmaf import LibvmafFFmpegProvider
-        for provider in [FFmpegNativeProvider(), LibvmafFFmpegProvider()]:
-            with self.subTest(provider=provider.name):
-                try:
-                    result = provider.is_available()
-                    self.assertIsInstance(result, bool,
-                                          f"{provider.name}.is_available() must return bool")
-                except Exception as exc:
-                    self.fail(
-                        f"{provider.name}.is_available() raised unexpectedly: {exc}"
-                    )
+        provider = FFmpegNativeProvider()
+        try:
+            result = provider.is_available()
+            self.assertIsInstance(result, bool,
+                                  f"{provider.name}.is_available() must return bool")
+        except Exception as exc:
+            self.fail(
+                f"{provider.name}.is_available() raised unexpectedly: {exc}"
+            )
 
     def test_quality_gate_owns_verdict(self):
         """
@@ -795,13 +789,13 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         from veilframe.quality.gate import QualityGate
         from veilframe.models.settings import VisualBudgetPolicy
 
-        # 1. Negative threshold
-        bad_policy1 = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=-5.0)
+        # 1. Invalid SSIM threshold
+        bad_policy1 = VisualBudgetPolicy(ssim_mean_min=-0.5)
         with self.assertRaises(ValueError):
             QualityGate(bad_policy1)
 
-        # 2. P5 threshold higher than mean threshold
-        bad_policy2 = VisualBudgetPolicy(vmaf_gate_enabled=True, vmaf_mean_min=70.0, vmaf_p5_min=85.0)
+        # 2. Invalid PSNR threshold
+        bad_policy2 = VisualBudgetPolicy(psnr_mean_min_db=-10.0)
         with self.assertRaises(ValueError):
             QualityGate(bad_policy2)
 
@@ -858,7 +852,7 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         self.assertEqual(metrics.missing_frames, 0)
         self.assertTrue(metrics.passed)
 
-    def test_vmaf_evidence_propagation_in_pipeline(self):
+    def test_evidence_dir_propagation_in_pipeline(self):
         """evaluate_visual_quality with evidence_dir must record evidence_dir in the report."""
         from veilframe.core.validator import evaluate_visual_quality
 

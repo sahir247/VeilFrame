@@ -11,7 +11,7 @@ VeilFrame strictly decouples **production sanitization & quality verification** 
 1. **Production Engine (`veilframe/`):**
    - Strips container metadata, SEI NAL units, and bitstream markers.
    - Applies bounded signal perturbations within a strict $\le 5\%$ visual policy budget.
-   - Enforces read-only independent quality gating ($\text{SSIM} \ge 0.95$, $\text{PSNR} \ge 30.0\text{ dB}$, VMAF).
+   - Enforces read-only independent quality gating ($\text{SSIM} \ge 0.9500$, $\text{PSNR} \ge 30.0\text{ dB}$).
    - Generates cryptographically signed Ed25519 audit manifests.
 
 2. **Research Benchmark Layer (`research/attribution_benchmarks/`):**

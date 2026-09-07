@@ -519,7 +519,6 @@ def cmd_doctor(args):
     import platform
     import numpy as np
     from veilframe.core.resources import get_ffmpeg_path, get_ffprobe_path
-    from veilframe.quality.adapters.vmaf import LibvmafFFmpegProvider
 
     ffmpeg_p = get_ffmpeg_path()
     ffprobe_p = get_ffprobe_path()
@@ -535,10 +534,6 @@ def cmd_doctor(args):
             ffmpeg_ver = first_line.split("version")[1].split()[0] if "version" in first_line else "Available"
         except Exception:
             ffmpeg_ver = "Present"
-
-    # Libvmaf check
-    vmaf_provider = LibvmafFFmpegProvider()
-    vmaf_ok = vmaf_provider.is_available()
 
     # PySide6 GUI check
     pyside_ok = True
@@ -578,7 +573,7 @@ def cmd_doctor(args):
         "python": sys.version.split()[0],
         "ffmpeg": {"available": ffmpeg_ok, "path": str(ffmpeg_p), "version": ffmpeg_ver},
         "ffprobe": {"available": ffprobe_ok, "path": str(ffprobe_p)},
-        "libvmaf": {"available": vmaf_ok},
+        "quality_gate": {"policy": "SSIM >= 0.95, PSNR >= 30 dB", "active": True},
         "pyside6": {"available": pyside_ok, "version": pyside_ver},
         "cryptography": {"available": crypto_ok, "version": crypto_ver},
         "numpy": {"version": np.__version__},
@@ -602,7 +597,7 @@ def cmd_doctor(args):
         ["Python Runtime", sys.version.split()[0], badge_pass(">= 3.10")],
         ["FFmpeg Binary", f"{ffmpeg_ver} ({ffmpeg_p.name})", badge_pass("FOUND") if ffmpeg_ok else badge_fail("MISSING")],
         ["FFprobe Binary", str(ffprobe_p.name), badge_pass("FOUND") if ffprobe_ok else badge_fail("MISSING")],
-        ["libvmaf Filter", "FFmpeg libvmaf filter", badge_pass("ENABLED") if vmaf_ok else badge_warn("UNAVAILABLE (Skipped in local)")],
+        ["Quality Gate Policy", "SSIM >= 0.9500, PSNR >= 30.0 dB", badge_pass("ACTIVE")],
         ["Cryptography (Ed25519)", f"v{crypto_ver}", badge_pass("ACCELERATED") if crypto_ok else badge_fail("MISSING")],
         ["NumPy Engine", f"v{np.__version__}", badge_pass("ACCELERATED")],
         ["OpenCV Demosaic Engine", f"v{cv_ver}" if cv_ok else "Pure NumPy Fallback", badge_pass("ACCELERATED") if cv_ok else badge_info("NUMPY FALLBACK")],
@@ -663,10 +658,8 @@ def cmd_benchmark(args):
 def run_interactive_wizard():
     """Persistent, rich CLI-based GUI / TUI application dashboard."""
     from veilframe.core.resources import get_ffmpeg_path
-    from veilframe.quality.adapters.vmaf import LibvmafFFmpegProvider
 
     ffmpeg_ok = get_ffmpeg_path().exists()
-    vmaf_ok = LibvmafFFmpegProvider().is_available()
 
     cv_ok = False
     try:
@@ -682,7 +675,7 @@ def run_interactive_wizard():
         status_chips = [
             ("Core", "v1.1.0", Style.BRIGHT_GREEN),
             ("FFmpeg", "Ready" if ffmpeg_ok else "Missing", Style.BRIGHT_GREEN if ffmpeg_ok else Style.BRIGHT_RED),
-            ("libvmaf", "Enabled" if vmaf_ok else "Disabled", Style.BRIGHT_GREEN if vmaf_ok else Style.BRIGHT_YELLOW),
+            ("Gate", "SSIM + PSNR", Style.BRIGHT_GREEN),
             ("OpenCV", "Accelerated" if cv_ok else "NumPy Fallback", Style.BRIGHT_GREEN if cv_ok else Style.BRIGHT_CYAN),
             ("Signer", "Ed25519", Style.BRIGHT_MAGENTA),
         ]

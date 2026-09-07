@@ -243,8 +243,6 @@ class ThreeTierQualityVerdict:
     tier3_violations: List[str] = field(default_factory=list)
     overall_verdict: str = "PASS"  # "PASS" or "REJECT"
     all_passed: bool = True
-    vmaf_verdict: Optional[Dict[str, Any]] = None
-    policy_provenance: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -275,8 +273,6 @@ class VisualQualityReport:
     provider_results: List[Dict[str, Any]] = field(default_factory=list)
     manifest_path: Optional[str] = None
     evidence_dir: Optional[str] = None
-    vmaf_verdict: Optional[Dict[str, Any]] = None
-    policy_provenance: Optional[Dict[str, Any]] = None
 
 
     @property

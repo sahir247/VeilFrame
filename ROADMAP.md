@@ -12,32 +12,22 @@
 
 ### v1.1 CURRENT (Production Release Candidate)
 - **Multi-Pass Sanitization Pipeline**: Container atom stripping, SEI removal, Bayer CFA PRNU dither, 2D DCT perturbation, ENF mains filtering.
-- **Provider / Gate Separation**: `QualityProvider` protocol with `FFmpegNativeProvider` (SSIM, PSNR) and `LibvmafFFmpegProvider` (VMAF, ADM2, VIF).
+- **Provider / Gate Separation**: `QualityProvider` protocol with `FFmpegNativeProvider` (SSIM, PSNR via native libavfilter).
 - **Independent 3-Tier QualityGate**:
   - Tier 1: Multi-dimensional mathematical budget ceilings (Spatial, Temporal, Luma, Chroma, Frequency, Aggregate).
-  - Tier 2a: Structural & pixel fidelity (`SSIM >= 0.95`, `PSNR >= 30 dB`, $D_{TV}$ luma distribution drift).
+  - Tier 2: Structural & pixel fidelity (`SSIM >= 0.9500`, `PSNR >= 30.0 dB`, $D_{TV}$ luma distribution drift).
   - Tier 3: Temporal integrity & pre-resampling presentation timestamp (PTS) monotonicity audit.
-- **Production Audit Bundle**: Dedicated `<video>_audit/` bundle co-locating `manifest.json` (RFC 8785 canonical JCS), `manifest.sig` (Ed25519), `manifest.sha256`, `public_key.pem`, and `vmaf.json` evidence.
+- **Production Audit Bundle**: Dedicated `<video>_audit/` bundle co-locating `manifest.json` (RFC 8785 canonical JCS), `manifest.sig` (Ed25519), `manifest.sha256`, and `public_key.pem`.
 - **Cryptographic Provenance**: Dual-mode Ed25519 signing (ephemeral & persistent) with pinned public key fingerprints and standalone zero-dependency verifier (`examples/verify_manifest.py`).
 - **Interactive Developer TUI / CLI**: Keyboard-arrow traversable navigation, `#CE9178` brand styling, physical GPU detection, and hardware encoder diagnostics.
-- **Test Matrix & CI**: 106+ comprehensive unit and integration tests passing across Ubuntu and Windows matrices.
+- **Test Matrix & CI**: Comprehensive unit and integration test suite passing across Ubuntu and Windows matrices.
 
 ---
 
-### v1.2 IN-PROGRESS: Calibrated VMAF Perceptual Gate Promotion
-
-The Tier 2b VMAF gate logic is implemented behind `VisualBudgetPolicy.vmaf_gate_enabled = False`. To promote it to active production status:
-
-#### Phase A: Calibration Laboratory Execution (`tools/vmaf_calibration.py`)
-- Evaluates 8-level perturbation severity ladder: `IDENTICAL`, `VERY_LOW`, `LOW_PERTURBATION`, `MODERATE`, `MODERATE_EXCEEDANCE`, `HIGH`, `SEVERE`, `EXTREME`.
-- Records VMAF mean, median, P1, P5, P95, worst, stddev, ADM2, and VIF across fixture matrices.
-
-#### Phase B: Real-Content Calibration Corpus (`tools/vmaf_corpus_runner.py`)
-- Runs multi-clip evaluation across natural, high-motion, textured, low-light, screen-content, and high-detail video categories.
-
-#### Phase C: Threshold Freeze & Gate Promotion
-- Replace initial development placeholders (`vmaf_mean_min = 75.0`, `vmaf_p5_min = 60.0`) with frozen empirical bounds (false-accept rate $< 2\%$, false-reject rate $< 5\%$).
-- Promote `vmaf_gate_enabled = True` in default production profiles.
+### v1.2 UPCOMING: Objective Perceptual Refinement & Performance Optimization
+- **VMAF Architecture Resolution**: Formal non-qualification and permanent excision of VMAF from production pipeline (see [ADR 0002](docs/adr/0002-remove-vmaf-from-production-quality-pipeline.md)); static historical research archive maintained under `research/vmaf/`.
+- **High-Throughput Acceleration**: Zero-copy hardware accelerated pipeline paths for high-speed batch sanitization.
+- **Advanced Audio Sanitization**: Enhanced multi-band ENF mains notch filtering and acoustic watermark neutralization.
 
 ---
 

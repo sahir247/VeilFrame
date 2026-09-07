@@ -5,7 +5,6 @@ Changes from v1.0:
   - Title updated to VeilFrame v1.1
   - Provider status bar (below drop zone, always visible)
   - Two-phase progress: indeterminate shimmer → determinate fill
-  - VMAF evidence path passed to ReportViewWidget after processing
   - Gradient primary action button + cancel button with objectName
 """
 import subprocess
@@ -48,18 +47,6 @@ def _detect_ffmpeg_version() -> str:
     except Exception:
         pass
     return "?"
-
-
-def _detect_libvmaf_available() -> bool:
-    """Return True if the local FFmpeg build includes libvmaf."""
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-filters"],
-            capture_output=True, text=True, timeout=8,
-        )
-        return "libvmaf" in result.stdout
-    except Exception:
-        return False
 
 
 # ── Worker thread ─────────────────────────────────────────────────────── #
@@ -215,14 +202,6 @@ class ProviderStatusBar(QFrame):
         sep1.setStyleSheet(_s_sep)
         lay.addWidget(sep1)
 
-        self._lbl_vmaf = QLabel("libvmaf  --")
-        self._lbl_vmaf.setStyleSheet(_s_mute)
-        lay.addWidget(self._lbl_vmaf)
-
-        sep2 = QLabel("|")
-        sep2.setStyleSheet(_s_sep)
-        lay.addWidget(sep2)
-
         self._lbl_gate = QLabel("Gate  SSIM + PSNR  active")
         self._lbl_gate.setStyleSheet("color: #3fb768; font-size: 11px; font-weight: 600;")
         lay.addWidget(self._lbl_gate)
@@ -233,20 +212,13 @@ class ProviderStatusBar(QFrame):
         self._note.setStyleSheet("color: #383838; font-size: 10px; font-style: italic;")
         lay.addWidget(self._note)
 
-    def populate(self, ffmpeg_version: str, vmaf_available: bool):
+    def populate(self, ffmpeg_version: str):
         if ffmpeg_version and ffmpeg_version != "?":
             self._lbl_ffmpeg.setText(f"FFmpeg  {ffmpeg_version}")
             self._lbl_ffmpeg.setStyleSheet(self._ok)
         else:
             self._lbl_ffmpeg.setText("FFmpeg  not found")
             self._lbl_ffmpeg.setStyleSheet(self._err)
-
-        if vmaf_available:
-            self._lbl_vmaf.setText("libvmaf  available")
-            self._lbl_vmaf.setStyleSheet(self._ok)
-        else:
-            self._lbl_vmaf.setText("libvmaf  not in build")
-            self._lbl_vmaf.setStyleSheet(self._mute)
 
 
 # ── Main Window ───────────────────────────────────────────────────────── #
@@ -263,7 +235,6 @@ class MainWindow(QMainWindow):
         self.dst_path: Optional[Path] = None
         self.current_info: Optional[VideoInfo] = None
         self.worker: Optional[PipelineWorker] = None
-        self._vmaf_available: bool = False
 
         self._init_ui()
 
@@ -382,8 +353,7 @@ class MainWindow(QMainWindow):
 
     def _detect_providers(self):
         ver = _detect_ffmpeg_version()
-        self._vmaf_available = _detect_libvmaf_available()
-        self.provider_bar.populate(ver, self._vmaf_available)
+        self.provider_bar.populate(ver)
 
     # ── File loading ──────────────────────────────────────────────────── #
 
@@ -469,14 +439,7 @@ class MainWindow(QMainWindow):
         self.btn_process.setEnabled(True)
         self.lbl_status.setText("Processing, quality gate, and verification complete.")
 
-        # Determine VMAF evidence sibling path
-        vmaf_evidence_path: Optional[Path] = None
-        if self.dst_path:
-            candidate = self.dst_path.with_name(f"{self.dst_path.stem}_vmaf.json")
-            if candidate.exists():
-                vmaf_evidence_path = candidate
-
-        self.report_widget.set_report(report, vmaf_evidence_path=vmaf_evidence_path)
+        self.report_widget.set_report(report)
 
         verdict = "PASS" if (report.all_passed and (not report.quality_report or report.quality_report.passed)) else "REJECT"
         QMessageBox.information(
@@ -507,7 +470,6 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self):
-        vmaf_status = "Available" if self._vmaf_available else "Not in this FFmpeg build"
         QMessageBox.about(
             self, "About VeilFrame v1.1",
             "<h3>VeilFrame v1.1 — Privacy-Focused Media Sanitization</h3>"
@@ -519,7 +481,6 @@ class MainWindow(QMainWindow):
             "<li><b>VeilFrame Quality Gate (v4.0):</b> Independent read-only three-tier gate: "
             "Tier 1 policy score, Tier 2 SSIM ≥ 0.95 / PSNR ≥ 30.0 dB, Tier 3 temporal integrity.</li>"
             "<li><b>FFmpegNativeProvider:</b> SSIM + PSNR measured via libavfilter lavfi.</li>"
-            f"<li><b>LibvmafFFmpegProvider:</b> VMAF evidence (measurement only in v1.1) — {vmaf_status}.</li>"
             "<li><b>VeilFrame Audit Engine:</b> Ed25519 signed audit manifests (v1.1.0 schema).</li>"
             "<li><b>VeilFrame Manifest Verifier:</b> Standalone third-party verifier.</li>"
             "</ul>"

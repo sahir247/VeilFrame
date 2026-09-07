@@ -21,7 +21,7 @@ import datetime
 import threading
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 import numpy as np
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -103,6 +103,26 @@ def compute_stats(values: List[float]) -> QualityMetricStats:
     )
 
 
+def _detect_hdr(
+    stream_meta: Dict[str, Any],
+    path: Optional[Union[str, Path]] = None,
+) -> Tuple[bool, str]:
+    """Detects HDR transfer characteristics, color spaces, or filename cues."""
+    color_transfer = str(stream_meta.get("color_transfer", "")).lower()
+    color_primaries = str(stream_meta.get("color_primaries", "")).lower()
+    if color_transfer in ("smpte2084", "arib-std-b67"):
+        return True, f"HDR transfer characteristic detected: {color_transfer}"
+    if "bt2020" in color_primaries and color_transfer in ("smpte2084", "arib-std-b67", "linear"):
+        return True, f"HDR BT.2020 color primaries with transfer: {color_transfer}"
+    if color_transfer.startswith("arib") or "hlg" in color_transfer or "pq" in color_transfer:
+        return True, f"HDR characteristic: {color_transfer}"
+    if path:
+        name = Path(path).name.lower()
+        if "_hdr" in name or "hdr10" in name or "p3pq" in name or "_dovi" in name:
+            return True, f"HDR metadata in filename: {Path(path).name}"
+    return False, ""
+
+
 def audit_native_domain(ref_info: VideoInfo, trans_info: VideoInfo) -> NativeDomainMetrics:
     """
     Tier 1A: Native-Domain Stream Geometry & Format Audit.
@@ -136,20 +156,19 @@ def audit_native_domain(ref_info: VideoInfo, trans_info: VideoInfo) -> NativeDom
         metrics.colorspace_trans = v_trans.color_space
 
         # Detect HDR characteristics on reference or transformed stream
-        from ..quality.vmaf_models import detect_hdr
         ref_meta = {
             "color_transfer": getattr(v_ref, "color_transfer", "") or v_ref.tags.get("color_transfer", ""),
             "color_primaries": getattr(v_ref, "color_primaries", "") or v_ref.tags.get("color_primaries", ""),
             "color_space": v_ref.color_space or v_ref.tags.get("color_space", ""),
         }
-        is_hdr_ref, reason_ref = detect_hdr(ref_meta, path=ref_info.file_path)
+        is_hdr_ref, reason_ref = _detect_hdr(ref_meta, path=ref_info.file_path)
 
         trans_meta = {
             "color_transfer": getattr(v_trans, "color_transfer", "") or v_trans.tags.get("color_transfer", ""),
             "color_primaries": getattr(v_trans, "color_primaries", "") or v_trans.tags.get("color_primaries", ""),
             "color_space": v_trans.color_space or v_trans.tags.get("color_space", ""),
         }
-        is_hdr_trans, reason_trans = detect_hdr(trans_meta, path=trans_info.file_path)
+        is_hdr_trans, reason_trans = _detect_hdr(trans_meta, path=trans_info.file_path)
 
         metrics.is_hdr = is_hdr_ref or is_hdr_trans
         metrics.hdr_reason = reason_ref if is_hdr_ref else (reason_trans if is_hdr_trans else None)
@@ -836,14 +855,6 @@ def generate_ed25519_signed_manifest(
                 "metrics": ["ssim", "psnr"],
                 "frame_count": report.evaluated_frames,
             },
-            "vmaf": {
-                "strategy": "full_sequence",
-                "metric": "vmaf",
-                "comparison_alignment": {
-                    "mode": "frame_sequence",
-                    "temporal_audit": report.temporal_metrics.timestamp_audit_mode,
-                },
-            },
         },
         "environment": {
             "python_version": sys.version.split()[0],
@@ -908,7 +919,7 @@ def generate_ed25519_signed_manifest(
             "psnr_mean_db": report.psnr.mean,
             "psnr_worst_db": report.psnr.min_val,
         },
-        # v1.1: Non-SSIM/PSNR provider results (VMAF etc) — measurement only
+        # Non-SSIM/PSNR provider results (if any)
         "quality_providers": {
             r["metric"]: {
                 "provider": r["provider"],
@@ -925,8 +936,6 @@ def generate_ed25519_signed_manifest(
             }
             for r in (report.provider_results or [])
         },
-        "vmaf": report.vmaf_verdict or report.three_tier_verdict.vmaf_verdict,
-        "calibration": report.policy_provenance or report.three_tier_verdict.policy_provenance,
         "verdict": {
             "tier1_policy_passed": report.three_tier_verdict.tier1_policy_passed,
             "tier2_fidelity_passed": report.three_tier_verdict.tier2_fidelity_passed,
@@ -1008,11 +1017,9 @@ def _run_providers(
     canonical_w: int,
     canonical_h: int,
     evidence_dir: Optional[Path] = None,
-    model_path: Optional[Path] = None,
-    audit_mode: bool = False,
 ) -> Tuple[List[QualityResult], List[Dict[str, Any]]]:
     """
-    Dispatches measurement to all available quality providers.
+    Dispatches measurement to available quality providers.
 
     Returns:
         results:         List of QualityResult from all active providers.
@@ -1032,9 +1039,8 @@ def _run_providers(
     )
 
     from ..quality.adapters.ffmpeg import FFmpegNativeProvider
-    from ..quality.adapters.vmaf import LibvmafFFmpegProvider
 
-    # 1. FFmpeg native (SSIM + PSNR) — mandatory provider
+    # FFmpeg native (SSIM + PSNR) — mandatory provider
     native_provider = FFmpegNativeProvider()
     if native_provider.is_available():
         info = native_provider.runtime_info()
@@ -1051,25 +1057,6 @@ def _run_providers(
         info = native_provider.runtime_info()
         info["status"] = "unavailable"
         info["error"] = "FFmpeg binary or ssim/psnr filters missing"
-        provider_infos.append(info)
-
-    # 2. libvmaf via FFmpeg — measurement only in v1.1
-    vmaf_provider = LibvmafFFmpegProvider(model_path=model_path, audit_mode=audit_mode)
-    if vmaf_provider.is_available():
-        info = vmaf_provider.runtime_info()
-        try:
-            vmaf_results = vmaf_provider.evaluate(cfg)
-            results.extend(vmaf_results)
-            info["status"] = "success"
-            info["error"] = None
-        except Exception as exc:
-            info["status"] = "error"
-            info["error"] = str(exc)
-        provider_infos.append(info)
-    else:
-        info = vmaf_provider.runtime_info()
-        info["status"] = "unavailable"
-        info["error"] = "libvmaf filter not available in FFmpeg build or required audit model missing"
         provider_infos.append(info)
 
     return results, provider_infos
@@ -1091,9 +1078,7 @@ def evaluate_visual_quality(
 
     v1.1 changes:
       - Quality measurement dispatched to QualityProvider adapters.
-      - libvmaf VMAF scores collected when available (measurement only).
-      - VMAF evidence written to evidence_dir/vmaf.json (default: dst_dir).
-      - Gate predicate unchanged: policy AND temporal AND SSIM/PSNR.
+      - Gate predicate: policy AND temporal AND SSIM/PSNR.
     """
     if policy is None:
         policy = VisualBudgetPolicy()
@@ -1135,17 +1120,13 @@ def evaluate_visual_quality(
         policy_ceiling_pct=policy.policy_budget * 100.0,
     )
 
-    # 5. Multi-provider quality measurement (SSIM, PSNR via FFmpegNativeProvider;
-    #    VMAF via LibvmafFFmpegProvider when available)
-    vmaf_model = Path(policy.vmaf_model_path) if policy.vmaf_model_path else None
+    # 5. Quality measurement (SSIM, PSNR via FFmpegNativeProvider)
     provider_results, provider_infos = _run_providers(
         ref_path=ref_path,
         trans_path=trans_path,
         canonical_w=canonical_w,
         canonical_h=canonical_h,
         evidence_dir=evidence_dir,
-        model_path=vmaf_model,
-        audit_mode=policy.vmaf_audit_mode,
     )
 
     # Mandatory provider execution integrity check:
@@ -1201,16 +1182,11 @@ def evaluate_visual_quality(
         + list(verdict.tier3_violations)
     )
 
-    # Serialize provider results for manifest (VMAF + others; SSIM/PSNR kept in legacy fields)
+    # Serialize provider results for manifest (SSIM/PSNR kept in legacy fields)
     serialized_provider_results = []
     for r in provider_results:
         if r.metric_name in ("ssim", "psnr"):
             continue  # covered by legacy rendered_fidelity block
-        vmaf_note = (
-            "gate input — Tier 2b calibrated threshold"
-            if (r.metric_name == "vmaf" and policy.vmaf_gate_enabled)
-            else "measurement only — not a gate input in v1.1"
-        )
         entry: Dict[str, Any] = {
             "provider": r.provider_name,
             "metric": r.metric_name,
@@ -1223,10 +1199,9 @@ def evaluate_visual_quality(
             "model_sha256": r.model_sha256,
             "evidence_sha256": r.evidence_sha256,
             "feature_metrics": r.feature_metrics,
-            "note": vmaf_note,
+            "note": "",
         }
         serialized_provider_results.append(entry)
-
 
     report = VisualQualityReport(
         evaluated_frames=max(len(ssim_scores), len(psnr_scores)),
@@ -1244,8 +1219,6 @@ def evaluate_visual_quality(
         signing_mode=policy.signing_mode,
         signing_key_id=policy.key_id,
         provider_results=serialized_provider_results,
-        vmaf_verdict=verdict.vmaf_verdict,
-        policy_provenance=verdict.policy_provenance,
         raw_details={
             "canonical_canvas": f"{canonical_w}x{canonical_h}",
             "policy_budget": policy.policy_budget,
