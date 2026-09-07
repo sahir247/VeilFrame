@@ -922,6 +922,26 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         )
         self.assertIsNotNone(report)
 
+    def test_frequency_ceiling_violation_triggers_rejection(self):
+        """Tier 1: When spectral frequency shift exceeds frequency_ceiling_pct, calculate_policy_score must fail."""
+        from veilframe.core.validator import calculate_policy_score
+        from veilframe.models.video_info import NativeDomainMetrics, DecodedEnergyMetrics
+        from veilframe.models.settings import VisualBudgetPolicy
+
+        policy = VisualBudgetPolicy(
+            frequency_ceiling_pct=1.0,
+            frequency_weight=1.0,
+            aggregate_ceiling_pct=10.0,
+        )
+        native = NativeDomainMetrics()
+        # High relative HF energy shift: 1.5 > ceiling of 1.0
+        energy = DecodedEnergyMetrics(rel_delta_hf=1.5)
+
+        score = calculate_policy_score(native, energy, policy=policy)
+        self.assertFalse(score.passed)
+        self.assertGreater(score.frequency_score_pct, policy.frequency_ceiling_pct)
+        self.assertTrue(any("Frequency injection policy score" in v for v in score.violations))
+
 
 if __name__ == "__main__":
     unittest.main()

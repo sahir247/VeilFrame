@@ -164,6 +164,7 @@ class NativeDomainMetrics:
     duration_trans: float = 0.0
     duration_delta_sec: float = 0.0
     duration_delta_pct: float = 0.0
+    temporal_delta_pct: float = 0.0
     aspect_ratio_ref: str = ""
     aspect_ratio_trans: str = ""
     pix_fmt_ref: str = ""

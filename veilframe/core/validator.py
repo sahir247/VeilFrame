@@ -597,7 +597,7 @@ def calculate_policy_score(
     temporal_score = native.temporal_delta_pct
     luma_score = energy.mean_luma_delta * luma_weight
     chroma_score = energy.chroma_delta_composite * chroma_weight
-    freq_score = min(policy.frequency_ceiling_pct, energy.rel_delta_hf * freq_weight)
+    freq_score = energy.rel_delta_hf * freq_weight
 
     aggregate = spatial_score + temporal_score + luma_score + chroma_score + freq_score
 
