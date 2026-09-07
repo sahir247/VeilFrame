@@ -96,7 +96,7 @@
 VeilFrame is partitioned into four decoupled engineering layers:
 
 1. **VeilFrame Sanitizer:** Multi-pass elementary stream extractor, ISO-BMFF box zeroer, SEI NAL stripper, and bounded multi-domain transformation engine.
-2. **VeilFrame Quality Gate:** An independent, read-only post-export auditor. Evaluates native-domain stream geometry, decoded frame plane energy distributions ($D_{TV}$), and canonical visual fidelity ($\text{SSIM}$, $\text{PSNR}$, optional $\text{VMAF}$).
+2. **VeilFrame Quality Gate:** An independent, read-only post-export auditor. Evaluates native-domain stream geometry, decoded frame plane energy distributions ($D_{TV}$), canonical visual fidelity ($\text{SSIM}$, $\text{PSNR}$), and pre-resampling temporal stream integrity.
 3. **VeilFrame Audit Engine:** Cryptographic signing engine generating deterministic RFC 8785 JSON manifests bound with Ed25519 digital signatures and SHA-256 bitstream checksums.
 4. **VeilFrame Manifest Verifier:** A zero-dependency external verification utility allowing downstream recipients to verify manifest authenticity, signature correctness, and video bitstream hashes without trusting the transformation pipeline.
 
@@ -214,7 +214,7 @@ The transformation engine **cannot declare itself successful**. The independent 
 │ Tier 2: Rendered Visual Fidelity & Perceptual Quality                     │
 │   • SSIM: Mean ≥ 0.95 (5%) / 0.90 (10%), P5 Tail ≥ 0.90 / 0.85            │
 │   • PSNR: Mean ≥ 30.0 dB (5%) / 28.0 dB (10%), Worst-Case ≥ 25 / 22 dB   │
-│   • Optional Tier 2b: VMAF Quality Gate                                   │
+│   • Distribution Tails: P5 & Worst-Case Percentile Constraints            │
 ├───────────────────────────────────────────────────────────────────────────┤
 │ Tier 3: Pre-Resampling Temporal Stream Integrity                          │
 │   • Packet PTS Monotonicity: ΔPTS_i = PTS_{i+1} - PTS_i > 0               │
@@ -267,12 +267,12 @@ Evaluates raw container packet presentation timestamps ($\text{PTS}$) before fra
 2. **Missing & Duplicate Frames:** Verification that packet count matches continuous presentation timestamps ($\text{Missing} = 0$, $\text{Duplicates} = 0$).
 3. **Cadence Jitter:** Standard deviation of inter-packet duration delta ($\Delta \text{cadence} \le 1.0\%$).
 
-### 4. Perceptual Fidelity Metric Integration & Calibration Status (VMAF v1.0.16)
+### 4. Perceptual Fidelity Metrics & VMAF Research Findings
 
-VeilFrame includes native support for **Netflix VMAF v1.0.16** (`veilframe/quality/adapters/vmaf_adapter.py`):
-- **Provider Architecture:** Adheres strictly to the architectural invariant: *"Providers measure; QualityGate decides."*
-- **Empirical Calibration Study (`VF-CAL-VMAF-2026-09`):** A rigorous empirical evaluation across 144 multimedia items and 112 Domain-1 fixture pairs using an exact decision-boundary search proved that no single global scalar operating point $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$.
-- **Operational Gate Policy:** `VisualBudgetPolicy.vmaf_gate_enabled = False` is strictly maintained. VMAF serves strictly as informational evidence recorded in audit manifests, while primary release gating is governed by SSIM, PSNR, and decoded plane energy metrics.
+VeilFrame's production Quality Gate relies strictly on canonical **SSIM** and **PSNR** metrics alongside temporal integrity audits:
+- **Production Standard:** Baseline fidelity requires $\text{SSIM}_{\text{mean}} \ge 0.9500$ and $\text{PSNR}_{\text{mean}} \ge 30.0\text{ dB}$, with strict tail percentile constraints ($\text{SSIM}_{p5} \ge 0.9000$, $\text{PSNR}_{\text{worst}} \ge 25.0\text{ dB}$).
+- **VMAF Research Calibration Study (`VF-CAL-VMAF-2026-09`):** An exhaustive empirical evaluation across 144 multimedia items and 112 Domain-1 fixture pairs using an exact decision-boundary search proved that no single global scalar operating point $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$. Full calibration datasets and analysis reside in `research/vmaf/`.
+- **Zero External ML Dependencies:** VMAF has been excised from production execution, ensuring deterministic execution with zero external model weights, reduced memory footprint, and complete compatibility with standard package distribution FFmpeg.
 
 ---
 

@@ -79,10 +79,12 @@ class QualityGate:
         all_violations.extend(t1_violations)
 
         # ── Tier 2: Rendered Visual Fidelity (SSIM + PSNR) ───────────────── #
-        # SSIM and PSNR remain the authoritative quality safety gate.
+        # SSIM and PSNR remain the authoritative visual quality safety gate.
         t2_violations: List[str] = []
         if not self._has_metric(results, "ssim"):
             t2_violations.append("Missing required quality measurement: SSIM")
+        elif ssim_stats.mean is None:
+            t2_violations.append("Missing or invalid required quality measurement: SSIM")
         else:
             if ssim_stats.mean < policy.ssim_mean_min:
                 t2_violations.append(
@@ -99,6 +101,8 @@ class QualityGate:
 
         if not self._has_metric(results, "psnr"):
             t2_violations.append("Missing required quality measurement: PSNR")
+        elif psnr_stats.mean is None:
+            t2_violations.append("Missing or invalid required quality measurement: PSNR")
         else:
             if psnr_stats.mean < policy.psnr_mean_min_db:
                 t2_violations.append(
@@ -138,7 +142,7 @@ class QualityGate:
     ) -> QualityMetricStats:
         """Finds the first QualityResult matching metric_name and converts to QualityMetricStats."""
         for r in results:
-            if r.metric_name == metric_name:
+            if r.metric_name == metric_name and r.status == "success" and r.mean is not None:
                 return QualityMetricStats(
                     mean=r.mean,
                     min_val=r.minimum,
@@ -149,5 +153,9 @@ class QualityGate:
         return QualityMetricStats()
 
     def _has_metric(self, results: List[QualityResult], metric_name: str) -> bool:
-        """Returns True if at least one QualityResult with the given metric_name is present."""
-        return any(r.metric_name == metric_name for r in results)
+        """Returns True if at least one successful QualityResult with the given metric_name is present."""
+        return any(
+            r.metric_name == metric_name and r.status == "success" and r.mean is not None
+            for r in results
+        )
+

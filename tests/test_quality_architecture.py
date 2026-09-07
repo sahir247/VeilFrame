@@ -254,6 +254,26 @@ class TestQualityArchitecture(unittest.TestCase):
             self.assertGreaterEqual(report.psnr.mean, 30.0)
             self.assertFalse(hasattr(report, "vmaf_verdict"))
 
+    def test_source_code_zero_vmaf_imports(self):
+        """Scans all veilframe production source code to ensure zero active imports or references to libvmaf or vmaf adapters."""
+        pkg_dir = Path(__file__).parent.parent / "veilframe"
+        for py_file in pkg_dir.rglob("*.py"):
+            content = py_file.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("#") or stripped.startswith('"""') or stripped.startswith("*"):
+                    continue
+                self.assertNotIn(
+                    "libvmaf",
+                    stripped.lower(),
+                    f"Forbidden 'libvmaf' reference in {py_file.name}: {stripped}",
+                )
+                self.assertNotIn(
+                    "vmaf_adapter",
+                    stripped.lower(),
+                    f"Forbidden 'vmaf_adapter' reference in {py_file.name}: {stripped}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

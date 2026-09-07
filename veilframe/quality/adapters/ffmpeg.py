@@ -207,13 +207,13 @@ class FFmpegNativeProvider:
         )
 
     @staticmethod
-    def _compute_stats(values: List[float]) -> Dict[str, float]:
+    def _compute_stats(values: List[float]) -> Dict[str, Optional[float]]:
         import math
         if not values:
-            return {"mean": 0.0, "min": 0.0, "p1": 0.0, "p5": 0.0, "p95": 0.0}
+            return {"mean": None, "min": None, "p1": None, "p5": None, "p95": None}
         clean = sorted([v for v in values if not math.isnan(v)])
         if not clean:
-            return {"mean": 0.0, "min": 0.0, "p1": 0.0, "p5": 0.0, "p95": 0.0}
+            return {"mean": None, "min": None, "p1": None, "p5": None, "p95": None}
         return {
             "mean": sum(clean) / len(clean),
             "min": clean[0],
@@ -225,13 +225,14 @@ class FFmpegNativeProvider:
     @staticmethod
     def _build_result(
         metric_name: str,
-        stats: Dict[str, float],
+        stats: Dict[str, Optional[float]],
         raw_scores: List[float],
     ) -> QualityResult:
         per_frame = [
-            PerFrameMetric(frame_index=i, timestamp_sec=float(i), value=v)
+            PerFrameMetric(frame_index=i, value=v, timestamp_sec=None)
             for i, v in enumerate(raw_scores)
         ]
+        status = "success" if stats.get("mean") is not None else "missing"
         return QualityResult(
             provider_name="ffmpeg-native",
             metric_name=metric_name,
@@ -240,5 +241,7 @@ class FFmpegNativeProvider:
             p1=stats["p1"],
             p5=stats["p5"],
             p95=stats["p95"],
+            status=status,
             per_frame=per_frame,
         )
+

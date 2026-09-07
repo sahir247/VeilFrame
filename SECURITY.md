@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 1.1.x   | :white_check_mark: |
+| < 1.1   | :x:                |
 
 ---
 
@@ -14,8 +14,10 @@
 VeilFrame is designed around strict defense-in-depth principles:
 1. **Local-Only Execution:** All media processing, encoding, and auditing execute 100% locally on the host machine. No telemetry, metadata, or media streams are transmitted over network sockets.
 2. **Read-Only Auditor Trust Boundary:** The transformation engine (`pipeline.py`, `encoder.py`) is decoupled from the independent read-only validator (`validator.py`). The validator cannot alter the processed output, and the transformer cannot falsify validation metrics.
-3. **Ephemeral Asymmetric Keys:** Ed25519 signing keys are generated ephemerally in RAM during the export audit phase. Private keys are never serialized to disk, saved in logs, or embedded in manifests.
-4. **Pinned Public Key Fingerprinting:** Public keys are fingerprinted via SHA-256 over raw 32-byte Ed25519 public key bytes (`SHA256:...`) to detect key substitution attacks.
+3. **Dual-Mode Cryptographic Signing:**
+   - **Ephemeral Mode (Default):** Ed25519 signing keys are generated fresh in RAM for each export audit. Private keys are never serialized to disk, saved in logs, or embedded in manifests.
+   - **Persistent Signer Mode:** Supports loading external PKCS#8 Ed25519 private keys for organizational identity and continuous audit provenance, with strict memory protection and pinned public key fingerprints.
+4. **Pinned Public Key Fingerprinting:** Public keys are fingerprinted via SHA-256 over raw 32-byte Ed25519 public key bytes (`SHA256:...`) and SubjectPublicKeyInfo PEM bytes to detect key substitution attacks.
 
 ---
 

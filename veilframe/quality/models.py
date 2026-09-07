@@ -24,8 +24,8 @@ class QualityConfig:
 class PerFrameMetric:
     """Single per-frame measurement from a quality provider."""
     frame_index: int
-    timestamp_sec: float
     value: float
+    timestamp_sec: Optional[float] = None
 
 
 @dataclass
@@ -37,13 +37,15 @@ class QualityResult:
     evidence is written to an external file (evidence_file) and hashed
     (evidence_sha256). The manifest records only the hash.
     """
-    provider_name: str          # e.g. "ffmpeg-native"
-    metric_name: str            # e.g. "ssim", "psnr"
-    mean: float
+    provider_name: str                      # e.g. "ffmpeg-native"
+    metric_name: str                        # e.g. "ssim", "psnr"
+    mean: Optional[float] = None
     minimum: Optional[float] = None
     p1: Optional[float] = None
     p5: Optional[float] = None
     p95: Optional[float] = None
+    status: str = "success"                 # "success", "missing", "error"
+    error_message: Optional[str] = None
     per_frame: List[PerFrameMetric] = field(default_factory=list)
     evidence_file: Optional[Path] = None
     evidence_sha256: Optional[str] = None
@@ -51,3 +53,4 @@ class QualityResult:
     model_sha256: Optional[str] = None
     feature_metrics: Dict[str, float] = field(default_factory=dict)
     raw_output: Optional[Dict[str, Any]] = None
+

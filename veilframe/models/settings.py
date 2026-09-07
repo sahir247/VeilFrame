@@ -144,6 +144,11 @@ class VisualBudgetPolicy:
     psnr_mean_min_db: float = 30.0
     psnr_worst_min_db: float = 25.0
 
+    # Temporal integrity constraints (Tier 3)
+    max_cadence_deviation_pct: float = 1.0  # Max acceptable inter-frame cadence deviation (1.0%)
+    max_timestamp_drift_sec: float = 0.1    # Max acceptable timestamp drift (0.1s)
+    max_frame_divergence_pct: float = 5.0   # Max acceptable frame-count divergence (5.0%)
+
     # Sampling controls
     sample_count: int = 15
     sample_range_start: float = 0.02
@@ -154,6 +159,7 @@ class VisualBudgetPolicy:
     signing_mode: str = "ephemeral"  # "ephemeral" or "persistent"
     signing_key_path: Optional[str] = None
     key_id: Optional[str] = None
+
 
 
 @dataclass

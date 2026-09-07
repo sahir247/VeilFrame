@@ -23,10 +23,14 @@ VMAF v1.0.16 was not qualified to reproduce VeilFrame's authoritative SSIM/PSNR 
 research/vmaf/
     ├── reports/        # Static analysis reports, threshold sweeps, and calibration summaries (Markdown, JSON, CSV)
     ├── provenance/     # Corpus inventory, licensing ledgers, and model provenance manifests
+    ├── evidence/       # Raw JSON per-frame and per-fixture VMAF evidence logs from calibration sweeps
     └── README.md       # This document
 ```
 
 ### Archived Contents
+
+- `evidence/`:
+  - 92 raw per-frame and boundary fixture metric evidence manifests (`*_vmaf_evidence.json`).
 
 - `reports/`:
   - `calibration_report.md` & `calibration_summary.md`: Initial Phase A calibration laboratory findings.

@@ -64,7 +64,7 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install ffmpeg-full --no-progress
+          choco install ffmpeg --no-progress
 
       - name: Verify FFmpeg Installation
         run: |

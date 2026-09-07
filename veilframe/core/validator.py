@@ -219,6 +219,7 @@ def audit_temporal_integrity(
     trans_info: VideoInfo,
     ref_path: Optional[Path] = None,
     trans_path: Optional[Path] = None,
+    policy: Optional[VisualBudgetPolicy] = None,
 ) -> TemporalIntegrityMetrics:
     """
     Tier 3: Temporal Integrity Audit (Evaluated on raw streams before resampling).
@@ -308,17 +309,26 @@ def audit_temporal_integrity(
         missing_count = max(0, n_ref - n_trans)
     metrics.missing_frames = missing_count
 
+    max_cadence = policy.max_cadence_deviation_pct if (policy and hasattr(policy, "max_cadence_deviation_pct")) else 1.0
+    max_drift = policy.max_timestamp_drift_sec if (policy and hasattr(policy, "max_timestamp_drift_sec")) else 0.1
+    max_divergence = policy.max_frame_divergence_pct if (policy and hasattr(policy, "max_frame_divergence_pct")) else 5.0
+
     violations = []
     if n_ref > 0 and n_trans == 0:
         violations.append("Output stream contains 0 frames (Total stream drop)")
-    elif n_ref > 0 and (abs(n_trans - n_ref) / float(n_ref)) > 0.05:
-        violations.append(f"Excessive frame count divergence: Ref={n_ref}, Trans={n_trans} (Δ={metrics.frame_count_diff})")
+    elif n_ref > 0 and (abs(n_trans - n_ref) / float(n_ref)) > (max_divergence / 100.0):
+        violations.append(f"Excessive frame count divergence: Ref={n_ref}, Trans={n_trans} (Δ={metrics.frame_count_diff}, >{max_divergence:.1f}%)")
     if metrics.reordered_frames > 0:
         violations.append(f"Non-monotonic presentation timestamps detected: {metrics.reordered_frames} reordered frame(s)")
+    if metrics.cadence_deviation_pct > max_cadence:
+        violations.append(f"Inter-frame cadence deviation ({metrics.cadence_deviation_pct:.2f}%) exceeds ceiling (>{max_cadence:.2f}%)")
+    if metrics.timestamp_drift_max_sec > max_drift:
+        violations.append(f"Maximum timestamp drift ({metrics.timestamp_drift_max_sec:.4f}s) exceeds ceiling (>{max_drift:.4f}s)")
 
     metrics.violations = violations
     metrics.passed = len(violations) == 0
     return metrics
+
 
 
 def extract_decoded_frame_energy(
@@ -1103,7 +1113,9 @@ def evaluate_visual_quality(
         trans_info=trans_info,
         ref_path=ref_path,
         trans_path=trans_path,
+        policy=policy,
     )
+
 
     # 3. Decoded-Frame Energy & Histogram Analysis (Uniform Timeline Sampling)
     energy_metrics = extract_decoded_frame_energy(

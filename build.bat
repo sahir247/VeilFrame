@@ -1,13 +1,16 @@
 @echo off
 setlocal
-echo Installing requirements...
-python -m pip install -r requirements.txt
-python -m pip install pyinstaller
-
-echo Building standalone Windows executable for VeilFrame...
-pyinstaller --noconfirm --clean --onefile --windowed ^
-    --add-data "veilframe\presets\profiles.json;veilframe\presets" ^
-    --name VeilFrame run.py
+echo Building standalone Windows executable for VeilFrame using VeilFrame.spec...
+where uv >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo Using uv environment...
+    uv run pyinstaller --noconfirm --clean VeilFrame.spec
+) else (
+    echo Using python environment...
+    python -m pip install -r requirements.txt
+    python -m pip install pyinstaller
+    python -m pyinstaller --noconfirm --clean VeilFrame.spec
+)
 
 echo.
 echo ========================================================

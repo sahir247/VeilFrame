@@ -39,29 +39,13 @@ Configure the official VMAF model root if models are outside `%USERPROFILE%\vmaf
 $env:VMAF_MODEL_ROOT = "C:\path\to\vmaf\model"
 ```
 
-## Running the Corpus Evaluation Pipeline
+## Historical Corpus Evaluation Pipeline
 
-The evaluation pipeline is strictly decoupled into two stages:
+During Phase B empirical calibration, the evaluation pipeline operated in two decoupled stages:
+1. **Measurement Runner (`tools/vmaf_corpus_runner.py`):** Applied fixture distortions and measured metric outputs.
+2. **Threshold Analysis Engine (`tools/vmaf_threshold_analysis.py`):** Evaluated candidate operating points against FAR (<2.0%) and FRR (<5.0%) constraints.
 
-### Stage 1: Measurement Runner (`tools/vmaf_corpus_runner.py`)
-Applies all 8 fixture distortions to each clip in the corpus manifest and records raw metric measurements (VMAF v1.0.16, SSIM, PSNR). The runner is measurement-only and makes no threshold or gating decisions.
-
-```bash
-uv run python tools/vmaf_corpus_runner.py \
-    --corpus calibration_corpus/ \
-    --out vmaf_corpus_results.json
-```
-
-### Stage 2: Scientific Threshold Analysis Engine (`tools/vmaf_threshold_analysis.py`)
-Partitions the measured results by independent sequence group into development (~70%) and untouched held-out (~30%) sets with zero content leakage. It evaluates policy operating points against predefined scientific constraints:
-- False-Accept Rate (FAR) < 2.0%
-- False-Reject Rate (FRR) < 5.0%
-
-```bash
-uv run python tools/vmaf_threshold_analysis.py \
-    --corpus-results vmaf_corpus_results.json \
-    --out vmaf_threshold_analysis.json
-```
+The resulting data proved that no feasible global scalar threshold exists, leading to formal VMAF excision (ADR-003). The full reports and provenance are archived in `research/vmaf/`.
 
 ## Corpus Structure and Sample Accounting
 
@@ -75,11 +59,12 @@ uv run python tools/vmaf_threshold_analysis.py \
 
 ## Production Gate Invariant
 
-VMAF remains strictly diagnostic and measurement-only in VeilFrame v1.1/v1.2:
-```python
-VisualBudgetPolicy.vmaf_gate_enabled = False
-```
-The production gate predicate depends strictly on existing SSIM, PSNR, and multi-scale temporal metrics. VMAF cannot be promoted to a production gate without separate human review and explicit code promotion.
+In VeilFrame v1.1+, the production quality gate is strictly independent and requires standard FFmpeg filters only:
+- **Tier 1:** Transformation Policy Budget
+- **Tier 2:** SSIM ($\ge 0.9500$) and PSNR ($\ge 30.0\text{ dB}$) Canonical Fidelity
+- **Tier 3:** Pre-Resampling Temporal Stream Integrity
+
+VMAF has been permanently excised from production dependencies, runtime configurations, and gating logic.
 
 ## Sourcing Clips
 

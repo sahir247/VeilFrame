@@ -15,7 +15,7 @@
 │ • SEI Header Stripping  │ • Decoded YUV Energy    │ • Ed25519 Digital Signature & Keypair        │
 │ • Bayer CFA PRNU Engine │ • SSIM (>=0.95) & PSNR  │ • Pinned Public Key Fingerprints             │
 │ • 2D DCT Block Dither   │ • PTS Monotonicity Audit│ • Standalone Zero-Dependency Verifier        │
-│ • ENF Acoustic Notch    │ • VMAF Evidence Logging │ • Immutable SHA-256 Bitstream Binding        │
+│ • ENF Acoustic Notch    │ • Cadence & Drift Audit │ • Immutable SHA-256 Bitstream Binding        │
 └─────────────────────────┴─────────────────────────┴──────────────────────────────────────────────┘
 ```
 
@@ -109,7 +109,7 @@
                         │ • Decoded YUV energy metrics    │
                         │ • Pre-resampling PTS audit      │
                         │ • Canonical SSIM & PSNR metrics │
-                        │ • VMAF evidence capture         │
+                        │ • Temporal Integrity Audit      │
                         │ • Three-Tier Verdict            │
                         └────────────────┬────────────────┘
                                          │
@@ -213,10 +213,10 @@ Pass/fail decisions are governed by a three-tier audit architecture:
 - Verifies packet presentation timestamps for strict monotonicity ($t_{i+1} \ge t_i$).
 - Detects dropped frames, packet cadence stutter, and reordered frame sequences in streams with non-trivial decode-vs-presentation order (B-frames).
 
-### 4. VMAF Evaluation Status & Provider Contract
-- **Adapter Integration:** Integrated Netflix VMAF v1.0.16 via `veilframe/quality/adapters/vmaf_adapter.py`.
-- **Empirical Calibration Verdict (`VF-CAL-VMAF-2026-09`):** `NO_FEASIBLE_THRESHOLD`. An exhaustive decision-boundary search across Domain-1 calibration assets proved that no single global scalar threshold $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$.
-- **Operational Status:** `VisualBudgetPolicy.vmaf_gate_enabled = False` strictly preserved. VMAF serves as measurement/audit evidence only; primary fidelity enforcement is governed by SSIM, PSNR, and plane energy metrics.
+### 4. Fidelity Enforcement & VMAF Research Findings
+- **Production Gate Standard:** In accordance with ADR `ADR-003-VMAF-DEPRECATION.md`, the production runtime exclusively enforces a three-tier quality contract: Tier 1 Transformation Policy Budget, Tier 2 SSIM ($\ge 0.9500$) & PSNR ($\ge 30.0\text{ dB}$) Canonical Fidelity, and Tier 3 Temporal Stream Integrity.
+- **VMAF Calibration Findings (`VF-CAL-VMAF-2026-09`):** Empirical research evaluated Netflix VMAF across calibration assets (`research/vmaf/`). Exhaustive boundary search proved that no single global scalar threshold $\min(\text{VMAF}_{\text{mean}}, \text{VMAF}_{p5}) \in [70, 100]$ satisfies both $\text{FAR} < 2.0\%$ and $\text{FRR} < 5.0\%$.
+- **Formal Excision:** VMAF was formally excised from production code and dependency chains, eliminating fragile external model dependencies and allowing standard, unmodified FFmpeg builds to operate deterministically.
 
 ---
 
@@ -265,7 +265,7 @@ veilframe/
 - **`veilframe audit <ref> <trans>`**: Independent 3-tier QualityGate visual fidelity audit.
 - **`veilframe verify <manifest.json>`**: Standalone Ed25519 signature and SHA-256 bitstream verification.
 - **`veilframe presets`**: Interactive inspection of transformation presets and budget allocations.
-- **`veilframe doctor`**: System diagnostics for OS, Python, FFmpeg, FFprobe, libvmaf, Cryptography, NumPy, and hardware encoders.
+- **`veilframe doctor`**: System diagnostics for OS, Python, FFmpeg, FFprobe, Cryptography, NumPy, and hardware encoders.
 - **`veilframe interactive`**: Interactive developer dashboard with menu navigation.
 - **`veilframe benchmark`**: Research attribution benchmark detector suite runner.
 

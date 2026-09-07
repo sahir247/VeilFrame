@@ -15,26 +15,27 @@ class FFmpegNotFoundError(RuntimeError):
 def find_executable(name: str) -> Path:
     """
     Locates the requested executable ('ffmpeg' or 'ffprobe') across:
-    1. System PATH (shutil.which)
-    2. Environment variable overrides (FFMPEG_BINARY / FFPROBE_BINARY)
+    1. Environment variable overrides (FFMPEG_BINARY / FFPROBE_BINARY)
+    2. System PATH (shutil.which)
     3. PyInstaller bundled resources (sys._MEIPASS)
     4. Package resources directory (`veilframe/resources/ffmpeg/`)
     5. Project root `resources/ffmpeg/`
-    6. Local application cache directories (Windows fallback)
+    6. Executable adjacent directory (when running as frozen binary)
+    7. Local application cache directories (Windows fallback)
     """
     ext = ".exe" if os.name == "nt" else ""
     exe_name = f"{name}{ext}"
 
-    # 1. System PATH
-    which_path = shutil.which(name)
-    if which_path:
-        return Path(which_path)
-
-    # 2. Environment variable override
+    # 1. Environment variable override (highest priority for testing & custom runtimes)
     env_var = f"{name.upper()}_BINARY"
     env_val = os.environ.get(env_var)
     if env_val and Path(env_val).exists():
         return Path(env_val)
+
+    # 2. System PATH
+    which_path = shutil.which(name)
+    if which_path:
+        return Path(which_path)
 
     # 3. PyInstaller bundle
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
