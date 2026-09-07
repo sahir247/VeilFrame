@@ -354,7 +354,10 @@ where $w[n]$ is a 4-term Blackman-Harris window ($a_0=0.35875, a_1=0.48829, a_2=
 
 ### 1. System Requirements & Prerequisites
 - **Python:** 3.10, 3.11, or 3.12 (64-bit)
-- **FFmpeg & FFprobe:** Installed and accessible on system `PATH` (or placed in `veilframe/resources/ffmpeg/`).
+- **FFmpeg & FFprobe:** Standard distribution FFmpeg and FFprobe installed and accessible on system `PATH` (or placed in `veilframe/resources/ffmpeg/` or alongside the executable).
+
+> [!NOTE]
+> VeilFrame uses standard native FFmpeg filters (`scale`, `split`, `ssim`, `psnr`, `format`) and the standard `libx264` encoder. It does **not** require `libvmaf` or specialized custom FFmpeg builds. Any standard package distribution (such as Ubuntu `apt install ffmpeg`, Homebrew `brew install ffmpeg`, or Windows standard builds) satisfies all requirements.
 
 #### Installing FFmpeg by Operating System:
 

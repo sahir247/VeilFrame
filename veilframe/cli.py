@@ -620,7 +620,7 @@ def cmd_doctor(args):
     print()
 
     if ffmpeg_ok and crypto_ok:
-        print(f"{badge_pass('HEALTHY')} VeilFrame is fully operational and ready to process media.\n")
+        print(f"{badge_pass('HEALTHY')} Core subsystems verified for this environment.\n")
     else:
         print(f"{badge_fail('ATTENTION')} Critical prerequisites are missing. Review table above.\n")
 
