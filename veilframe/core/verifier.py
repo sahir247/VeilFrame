@@ -42,6 +42,13 @@ class VerificationReport:
     video_info: Optional[VideoInfo] = None
     quality_report: Optional[VisualQualityReport] = None
 
+    # Performance & Profiling Metrics
+    stage_timings: Dict[str, float] = field(default_factory=dict)
+    encode_fps: float = 0.0
+    audit_fps: float = 0.0
+    total_fps: float = 0.0
+    peak_ram_mb: float = 0.0
+
     def format_text(self) -> str:
         """Returns the formatted ASCII Privacy & Fidelity Audit Report."""
         def mark(passed: bool) -> str:
@@ -121,6 +128,23 @@ class VerificationReport:
                 for v in q.policy_violations:
                     lines.append(f"    - {v}")
 
+        if self.stage_timings:
+            lines.extend([
+                "",
+                "Pipeline Performance & Stage Latencies",
+                "────────────────────────────────",
+            ])
+            for stage, elapsed in self.stage_timings.items():
+                lines.append(f"  {stage:<24} {elapsed:6.2f}s")
+            if self.encode_fps > 0:
+                lines.append(f"  Encode Throughput:       {self.encode_fps:6.1f} FPS")
+            if self.audit_fps > 0:
+                lines.append(f"  Audit Throughput:        {self.audit_fps:6.1f} FPS")
+            if self.total_fps > 0:
+                lines.append(f"  Overall Throughput:      {self.total_fps:6.1f} FPS")
+            if self.peak_ram_mb > 0:
+                lines.append(f"  Peak Resident Memory:    {self.peak_ram_mb:6.1f} MB")
+
         lines.extend([
             "",
             f"> {self.summary_statement}",
@@ -128,11 +152,12 @@ class VerificationReport:
         return "\n".join(lines)
 
 
-def verify_output(file_path: Path) -> VerificationReport:
+def verify_output(file_path: Path, video_info: Optional[VideoInfo] = None) -> VerificationReport:
     """
-    Performs fresh ffprobe inspection of the processed media file and generates a VerificationReport.
+    Performs verification inspection of the processed media file and generates a VerificationReport.
+    Reuses pre-probed VideoInfo if provided to avoid redundant disk I/O.
     """
-    info = analyze_video(file_path)
+    info = video_info if video_info is not None else analyze_video(file_path)
     meta = info.metadata
     v = info.video
     a = info.audio

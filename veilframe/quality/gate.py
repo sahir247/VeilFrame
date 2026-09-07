@@ -40,11 +40,72 @@ class QualityGate:
         self._validate_policy(policy)
 
     def _validate_policy(self, policy: VisualBudgetPolicy) -> None:
-        """Validates that policy constraints and thresholds are well-formed."""
-        if policy.ssim_mean_min < 0.0 or policy.ssim_mean_min > 1.0:
-            raise ValueError(f"Invalid ssim_mean_min: {policy.ssim_mean_min}. Must be in [0, 1].")
-        if policy.psnr_mean_min_db < 0.0:
-            raise ValueError(f"Invalid psnr_mean_min_db: {policy.psnr_mean_min_db}. Must be >= 0.")
+        """Validates all quality-gate policy constraints, ranges, and cross-field relationships."""
+        # 1. SSIM normalized [0, 1]
+        for name in ("ssim_mean_min", "ssim_p5_min", "ssim_worst_min"):
+            value = getattr(policy, name, None)
+            if value is None or not (0.0 <= value <= 1.0):
+                raise ValueError(f"Invalid {name}: {value}. Must be in [0, 1].")
+
+        # 2. PSNR thresholds >= 0
+        for name in ("psnr_mean_min_db", "psnr_worst_min_db"):
+            value = getattr(policy, name, None)
+            if value is None or value < 0.0:
+                raise ValueError(f"Invalid {name}: {value}. Must be >= 0.")
+
+        # 3. Percentage ceilings / budgets >= 0
+        for name in (
+            "spatial_ceiling_pct",
+            "temporal_ceiling_pct",
+            "luma_ceiling_pct",
+            "chroma_ceiling_pct",
+            "frequency_ceiling_pct",
+            "aggregate_ceiling_pct",
+            "max_cadence_deviation_pct",
+            "max_frame_divergence_pct",
+        ):
+            value = getattr(policy, name, None)
+            if value is None or value < 0.0:
+                raise ValueError(f"Invalid {name}: {value}. Must be >= 0.")
+
+        # 4. Timestamp tolerance >= 0
+        if policy.max_timestamp_drift_sec < 0.0:
+            raise ValueError(f"Invalid max_timestamp_drift_sec: {policy.max_timestamp_drift_sec}. Must be >= 0.")
+
+        # 5. Sampling controls
+        if policy.sample_count < 1:
+            raise ValueError(f"Invalid sample_count: {policy.sample_count}. Must be >= 1.")
+
+        if not (0.0 <= policy.sample_range_start < policy.sample_range_end <= 1.0):
+            raise ValueError(
+                f"Invalid sampling range: {policy.sample_range_start}..{policy.sample_range_end}. "
+                "Must satisfy 0 <= start < end <= 1."
+            )
+
+        if policy.max_eval_frames < 1:
+            raise ValueError(f"Invalid max_eval_frames: {policy.max_eval_frames}. Must be >= 1.")
+
+        if policy.policy_budget < 0.0:
+            raise ValueError(f"Invalid policy_budget: {policy.policy_budget}. Must be >= 0.")
+
+        # 6. Cross-field monotonic relationships
+        if policy.ssim_worst_min > policy.ssim_p5_min:
+            raise ValueError(
+                f"Cross-field constraint violated: ssim_worst_min ({policy.ssim_worst_min}) "
+                f"cannot exceed ssim_p5_min ({policy.ssim_p5_min})."
+            )
+
+        if policy.ssim_p5_min > policy.ssim_mean_min:
+            raise ValueError(
+                f"Cross-field constraint violated: ssim_p5_min ({policy.ssim_p5_min}) "
+                f"cannot exceed ssim_mean_min ({policy.ssim_mean_min})."
+            )
+
+        if policy.psnr_worst_min_db > policy.psnr_mean_min_db:
+            raise ValueError(
+                f"Cross-field constraint violated: psnr_worst_min_db ({policy.psnr_worst_min_db}) "
+                f"cannot exceed psnr_mean_min_db ({policy.psnr_mean_min_db})."
+            )
 
     def evaluate(
         self,

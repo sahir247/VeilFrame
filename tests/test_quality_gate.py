@@ -785,19 +785,73 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
                 self.assertIn("Mandatory quality provider 'ffmpeg-native' failed during execution", str(ctx.exception))
 
     def test_quality_gate_rejects_invalid_configuration(self):
-        """QualityGate must validate policy configuration on instantiation."""
+        """QualityGate must validate all policy configurations and cross-field relationships on instantiation."""
         from veilframe.quality.gate import QualityGate
         from veilframe.models.settings import VisualBudgetPolicy
 
-        # 1. Invalid SSIM threshold
-        bad_policy1 = VisualBudgetPolicy(ssim_mean_min=-0.5)
-        with self.assertRaises(ValueError):
-            QualityGate(bad_policy1)
+        # 1. Invalid SSIM thresholds
+        for field, bad_val in [
+            ("ssim_mean_min", -0.1),
+            ("ssim_mean_min", 1.5),
+            ("ssim_p5_min", -0.05),
+            ("ssim_p5_min", 1.05),
+            ("ssim_worst_min", -1.0),
+            ("ssim_worst_min", 2.0),
+        ]:
+            with self.subTest(field=field, bad_val=bad_val):
+                p = VisualBudgetPolicy(**{field: bad_val})
+                with self.assertRaises(ValueError):
+                    QualityGate(p)
 
-        # 2. Invalid PSNR threshold
-        bad_policy2 = VisualBudgetPolicy(psnr_mean_min_db=-10.0)
+        # 2. Invalid PSNR thresholds
+        for field, bad_val in [("psnr_mean_min_db", -5.0), ("psnr_worst_min_db", -0.1)]:
+            with self.subTest(field=field, bad_val=bad_val):
+                p = VisualBudgetPolicy(**{field: bad_val})
+                with self.assertRaises(ValueError):
+                    QualityGate(p)
+
+        # 3. Invalid percentage ceilings and tolerances
+        for field, bad_val in [
+            ("spatial_ceiling_pct", -1.0),
+            ("temporal_ceiling_pct", -0.5),
+            ("luma_ceiling_pct", -2.0),
+            ("chroma_ceiling_pct", -0.1),
+            ("frequency_ceiling_pct", -1.0),
+            ("aggregate_ceiling_pct", -5.0),
+            ("max_cadence_deviation_pct", -0.1),
+            ("max_frame_divergence_pct", -1.0),
+            ("max_timestamp_drift_sec", -0.05),
+            ("policy_budget", -0.05),
+        ]:
+            with self.subTest(field=field, bad_val=bad_val):
+                p = VisualBudgetPolicy(**{field: bad_val})
+                with self.assertRaises(ValueError):
+                    QualityGate(p)
+
+        # 4. Invalid sampling controls
         with self.assertRaises(ValueError):
-            QualityGate(bad_policy2)
+            QualityGate(VisualBudgetPolicy(sample_count=0))
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(sample_range_start=0.9, sample_range_end=0.1))
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(sample_range_start=-0.1, sample_range_end=0.9))
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(sample_range_start=0.1, sample_range_end=1.1))
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(max_eval_frames=0))
+
+        # 5. Cross-field contradictions
+        # ssim_worst_min cannot exceed ssim_p5_min
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(ssim_worst_min=0.92, ssim_p5_min=0.90, ssim_mean_min=0.95))
+
+        # ssim_p5_min cannot exceed ssim_mean_min
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(ssim_worst_min=0.85, ssim_p5_min=0.96, ssim_mean_min=0.95))
+
+        # psnr_worst_min_db cannot exceed psnr_mean_min_db
+        with self.assertRaises(ValueError):
+            QualityGate(VisualBudgetPolicy(psnr_worst_min_db=35.0, psnr_mean_min_db=30.0))
 
     def test_manifest_tab_reads_exact_signed_file_on_disk(self):
         """_ManifestTab must load the exact signed canonical JSON bytes from manifest_path."""

@@ -20,6 +20,7 @@ import platform
 import datetime
 import threading
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union
 
@@ -186,29 +187,35 @@ def audit_native_domain(ref_info: VideoInfo, trans_info: VideoInfo) -> NativeDom
 def extract_frame_packet_timestamps(video_path: Path) -> List[float]:
     """
     Extracts chronological presentation timestamps (PTS) from stream packets via FFprobe.
+    Streams output in compact CSV format to avoid building multi-megabyte JSON ASTs.
     """
     ffprobe = get_ffprobe_path()
     cmd = [
         str(ffprobe),
         "-hide_banner",
-        "-nostats",
         "-select_streams", "v:0",
-        "-show_entries", "frame=pkt_pts_time,best_effort_timestamp_time",
-        "-of", "json",
+        "-show_entries", "frame=best_effort_timestamp_time,pkt_pts_time",
+        "-of", "csv=p=0",
         str(video_path),
     ]
     try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True)
-        data = json.loads(res.stdout)
-        frames = data.get("frames", [])
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         pts_list: List[float] = []
-        for f in frames:
-            val = f.get("pkt_pts_time") or f.get("best_effort_timestamp_time")
-            if val is not None:
-                try:
-                    pts_list.append(float(val))
-                except (ValueError, TypeError):
-                    pass
+        if proc.stdout:
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                for part in line.split(","):
+                    part = part.strip()
+                    if part and part != "N/A":
+                        try:
+                            pts_list.append(float(part))
+                            break
+                        except ValueError:
+                            pass
+            proc.stdout.close()
+        proc.wait()
         return pts_list
     except Exception:
         return []
@@ -359,7 +366,6 @@ def extract_decoded_frame_energy(
         cmd = [
             str(ffprobe),
             "-hide_banner",
-            "-nostats",
             "-select_streams", "v:0",
             "-show_entries", "stream=nb_frames,r_frame_rate,duration",
             "-of", "json",
@@ -383,47 +389,95 @@ def extract_decoded_frame_energy(
             pass
         return max(1, int(round(fallback_dur * 30.0))) if fallback_dur > 0 else 30
 
-    def stream_sampled_planes(video_file: Path, target_indices: List[int]) -> Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    def stream_sampled_planes(
+        video_file: Path,
+        target_indices: List[int],
+        duration: float,
+        n_total: int,
+    ) -> Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
         target_set = set(target_indices)
         max_target = max(target_indices) if target_indices else -1
-        cmd = [
-            str(ffmpeg),
-            "-hide_banner",
-            "-nostats",
-            "-y",
-            "-i", str(video_file),
-            "-vf", f"scale={w}:{h}:flags=lanczos,format=yuv420p",
-            "-f", "rawvideo",
-            "-pix_fmt", "yuv420p",
-            "-",
-        ]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        sampled = {}
-        frame_idx = 0
-        try:
-            while True:
-                data = proc.stdout.read(frame_size)
-                if len(data) < frame_size:
-                    break
-                if frame_idx in target_set:
-                    y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w)).copy()
-                    u_plane = np.frombuffer(data[w * h:w * h + (w // 2 * h // 2)], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
-                    v_plane = np.frombuffer(data[w * h + (w // 2 * h // 2):], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
-                    sampled[frame_idx] = (y_plane, u_plane, v_plane)
-                    if len(sampled) == len(target_set) and frame_idx >= max_target:
+
+        # Fast path: For short sequences (max_target <= 200 frames), single sequential decode pipe is sub-second
+        if max_target <= 200:
+            cmd = [
+                str(ffmpeg),
+                "-hide_banner",
+                "-nostats",
+                "-y",
+                "-i", str(video_file),
+                "-vf", f"scale={w}:{h}:flags=lanczos,format=yuv420p",
+                "-f", "rawvideo",
+                "-pix_fmt", "yuv420p",
+                "-",
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            sampled = {}
+            frame_idx = 0
+            try:
+                while True:
+                    data = proc.stdout.read(frame_size)
+                    if len(data) < frame_size:
                         break
-                frame_idx += 1
-        finally:
-            if proc.stdout:
+                    if frame_idx in target_set:
+                        y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w)).copy()
+                        u_plane = np.frombuffer(data[w * h:w * h + (w // 2 * h // 2)], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                        v_plane = np.frombuffer(data[w * h + (w // 2 * h // 2):], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                        sampled[frame_idx] = (y_plane, u_plane, v_plane)
+                        if len(sampled) == len(target_set) and frame_idx >= max_target:
+                            break
+                    frame_idx += 1
+            finally:
+                if proc.stdout:
+                    try:
+                        proc.stdout.close()
+                    except Exception:
+                        pass
                 try:
-                    proc.stdout.close()
+                    proc.kill()
                 except Exception:
                     pass
+                proc.wait()
+            if len(sampled) == len(target_set):
+                return sampled
+
+        # Long-form path: Fast targeted seek for each timestamp.
+        # Instead of sequentially decoding tens of thousands of intervening frames,
+        # input seeking (-ss before -i) jumps directly to the target timestamp in ~50-100ms.
+        def extract_single_seek(idx: int) -> Optional[Tuple[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+            ts = max(0.0, (idx / float(n_total)) * duration) if (duration > 0 and n_total > 0) else idx / 30.0
+            cmd = [
+                str(ffmpeg),
+                "-hide_banner",
+                "-nostats",
+                "-y",
+                "-ss", f"{ts:.4f}",
+                "-i", str(video_file),
+                "-vf", f"scale={w}:{h}:flags=lanczos,format=yuv420p",
+                "-vframes", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "yuv420p",
+                "-",
+            ]
             try:
-                proc.kill()
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10.0)
+                data = res.stdout
+                if len(data) >= frame_size:
+                    y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w)).copy()
+                    u_plane = np.frombuffer(data[w * h:w * h + (w // 2 * h // 2)], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                    v_plane = np.frombuffer(data[w * h + (w // 2 * h // 2):w * h + (w // 2 * h // 2) * 2], dtype=np.uint8).reshape((h // 2, w // 2)).copy()
+                    return (idx, (y_plane, u_plane, v_plane))
             except Exception:
                 pass
-            proc.wait()
+            return None
+
+        sampled = {}
+        max_workers = min(4, os.cpu_count() or 1)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for item in executor.map(extract_single_seek, target_indices):
+                if item is not None:
+                    sampled[item[0]] = item[1]
+
         return sampled
 
     try:
@@ -444,8 +498,8 @@ def extract_decoded_frame_energy(
         if trans_duration > 0 and n_trans > 0:
             metrics.sampled_timestamps_trans = [round((idx / float(n_trans)) * trans_duration, 4) for idx in trans_indices]
 
-        ref_sampled = stream_sampled_planes(ref_path, ref_indices)
-        trans_sampled = stream_sampled_planes(trans_path, trans_indices)
+        ref_sampled = stream_sampled_planes(ref_path, ref_indices, ref_duration, n_ref)
+        trans_sampled = stream_sampled_planes(trans_path, trans_indices, trans_duration, n_trans)
 
         if not ref_sampled or not trans_sampled:
             return metrics
@@ -1082,6 +1136,10 @@ def evaluate_visual_quality(
     canonical_w: int = 1280,
     canonical_h: int = 720,
     evidence_dir: Optional[Path] = None,
+    ref_info: Optional[VideoInfo] = None,
+    trans_info: Optional[VideoInfo] = None,
+    ref_sha256: Optional[str] = None,
+    trans_sha256: Optional[str] = None,
 ) -> VisualQualityReport:
     """
     Production Quality Gate & Independent Audit Engine — v1.1.
@@ -1092,6 +1150,7 @@ def evaluate_visual_quality(
     v1.1 changes:
       - Quality measurement dispatched to QualityProvider adapters.
       - Gate predicate: policy AND temporal AND SSIM/PSNR.
+      - Supports pre-computed VideoInfo and SHA-256 digests to eliminate redundant passes.
     """
     if policy is None:
         policy = VisualBudgetPolicy()
@@ -1099,12 +1158,14 @@ def evaluate_visual_quality(
     if not ref_path.exists() or not trans_path.exists():
         raise FileNotFoundError("Both reference and transformed video files must exist for quality evaluation.")
 
-    input_hash = compute_sha256(ref_path)
-    output_hash = compute_sha256(trans_path)
+    input_hash = ref_sha256 if ref_sha256 is not None else compute_sha256(ref_path)
+    output_hash = trans_sha256 if trans_sha256 is not None else compute_sha256(trans_path)
 
     # 1. Native-Domain Stream Analysis
-    ref_info = analyze_video(ref_path)
-    trans_info = analyze_video(trans_path)
+    if ref_info is None:
+        ref_info = analyze_video(ref_path)
+    if trans_info is None:
+        trans_info = analyze_video(trans_path)
     native_metrics = audit_native_domain(ref_info, trans_info)
 
     # 2. Pre-Resampling Temporal Integrity

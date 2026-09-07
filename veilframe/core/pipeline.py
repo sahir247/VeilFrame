@@ -1,10 +1,9 @@
-"""
-Two-pass video privacy cleaning and processing pipeline.
-"""
+import time
+import platform
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 
 from .analyzer import analyze_video
 from .sanitizer import pre_sanitize, post_sanitize
@@ -13,6 +12,45 @@ from .verifier import verify_output, VerificationReport
 from .validator import evaluate_visual_quality, generate_ed25519_signed_manifest
 from ..models.settings import ProcessingSettings
 from ..models.video_info import VideoInfo, VisualQualityReport
+
+
+def _get_peak_memory_mb() -> float:
+    """Measures peak resident memory (RSS / Working Set) of the current process."""
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+            from ctypes import wintypes
+
+            class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ('cb', wintypes.DWORD),
+                    ('PageFaultCount', wintypes.DWORD),
+                    ('PeakWorkingSetSize', ctypes.c_size_t),
+                    ('WorkingSetSize', ctypes.c_size_t),
+                    ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
+                    ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                    ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
+                    ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                    ('PagefileUsage', ctypes.c_size_t),
+                    ('PeakPagefileUsage', ctypes.c_size_t),
+                ]
+
+            psapi = ctypes.WinDLL('psapi', use_last_error=True)
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESS_MEMORY_COUNTERS), wintypes.DWORD]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+            counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                return round(counters.PeakWorkingSetSize / (1024 * 1024), 2)
+        else:
+            import resource
+            return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0, 2)
+    except Exception:
+        pass
+    return 0.0
 
 
 def run_pipeline(
@@ -37,10 +75,15 @@ def run_pipeline(
     if cancel_check and cancel_check():
         raise RuntimeError("Cancelled before start.")
 
+    pipeline_start = time.perf_counter()
+    stage_timings: Dict[str, float] = {}
+
     # 1. Analyze
     if progress_callback:
         progress_callback(5.0, "Analyzing input media & inspecting metadata...")
+    t_stage = time.perf_counter()
     info: VideoInfo = analyze_video(src_path)
+    stage_timings["analyze"] = round(time.perf_counter() - t_stage, 3)
 
     if cancel_check and cancel_check():
         raise RuntimeError("Cancelled.")
@@ -55,7 +98,9 @@ def run_pipeline(
         if settings.privacy.remove_metadata:
             if progress_callback:
                 progress_callback(15.0, "Pass 1: Pre-sanitizing container metadata & attachments...")
+            t_stage = time.perf_counter()
             pre_sanitize(src_path, stage1_path)
+            stage_timings["pre_sanitize"] = round(time.perf_counter() - t_stage, 3)
             input_for_encode = stage1_path
         else:
             input_for_encode = src_path
@@ -73,6 +118,7 @@ def run_pipeline(
             if progress_callback:
                 progress_callback(mapped, msg)
 
+        t_stage = time.perf_counter()
         run_encode_pass(
             src=input_for_encode,
             dst=stage2_path,
@@ -81,6 +127,7 @@ def run_pipeline(
             progress_callback=encode_progress,
             cancel_check=cancel_check,
         )
+        stage_timings["encode"] = round(time.perf_counter() - t_stage, 3)
 
         if cancel_check and cancel_check():
             raise RuntimeError("Cancelled.")
@@ -89,7 +136,9 @@ def run_pipeline(
         if settings.privacy.scrub_after_encoding:
             if progress_callback:
                 progress_callback(82.0, "Pass 3: Post-sanitizing output container headers...")
+            t_stage = time.perf_counter()
             post_sanitize(stage2_path, final_temp_path)
+            stage_timings["post_sanitize"] = round(time.perf_counter() - t_stage, 3)
             output_source = final_temp_path
         else:
             output_source = stage2_path
@@ -103,6 +152,9 @@ def run_pipeline(
             dst_path.unlink()
         shutil.copy2(str(output_source), str(dst_path))
 
+    # Pre-probe output stream once for both Quality Gate and Verification passes
+    dst_info: VideoInfo = analyze_video(dst_path)
+
     # 5. Independent Visual Quality & Fidelity Gate
     quality_report: Optional[VisualQualityReport] = None
     q_policy = getattr(settings, "quality_gate", None)
@@ -110,6 +162,7 @@ def run_pipeline(
         if progress_callback:
             progress_callback(88.0, "Pass 4: Independent Visual Quality & Fidelity Gate (SSIM / PSNR)...")
 
+        t_stage = time.perf_counter()
         # Determine canvas dimensions matching aspect ratio
         can_w = 1280
         can_h = 720
@@ -130,6 +183,8 @@ def run_pipeline(
             canonical_w=can_w,
             canonical_h=can_h,
             evidence_dir=audit_dir,
+            ref_info=info,
+            trans_info=dst_info,
         )
 
         # Generate Ed25519 signed audit manifest
@@ -144,6 +199,8 @@ def run_pipeline(
                 import sys
                 print(f"[!] WARNING: Audit manifest generation failed: {e}", file=sys.stderr)
 
+        stage_timings["quality_audit"] = round(time.perf_counter() - t_stage, 3)
+
         if not quality_report.passed and q_policy.enforce_strict:
             if dst_path.exists():
                 dst_path.unlink()
@@ -153,11 +210,32 @@ def run_pipeline(
     if cancel_check and cancel_check():
         raise RuntimeError("Cancelled.")
 
-    # 6. Verify post-export container & metadata
+    # 6. Verify post-export container & metadata (reusing pre-probed dst_info)
     if progress_callback:
         progress_callback(96.0, "Pass 5: Running verification inspection on output...")
 
-    report = verify_output(dst_path)
+    t_stage = time.perf_counter()
+    report = verify_output(dst_path, video_info=dst_info)
+    stage_timings["verify"] = round(time.perf_counter() - t_stage, 3)
+
+    total_pipeline_time = time.perf_counter() - pipeline_start
+    stage_timings["total"] = round(total_pipeline_time, 3)
+
+    # Compute throughputs & peak memory
+    total_frames = 0
+    if info.video and info.video.frame_count > 0:
+        total_frames = info.video.frame_count
+    elif info.duration > 0 and info.video and info.video.fps > 0:
+        total_frames = int(round(info.duration * info.video.fps))
+
+    enc_time = stage_timings.get("encode", 0.0)
+    audit_time = stage_timings.get("quality_audit", 0.0)
+
+    report.stage_timings = stage_timings
+    report.encode_fps = round(total_frames / enc_time, 2) if (enc_time > 0 and total_frames > 0) else 0.0
+    report.audit_fps = round(total_frames / audit_time, 2) if (audit_time > 0 and total_frames > 0) else 0.0
+    report.total_fps = round(total_frames / total_pipeline_time, 2) if (total_pipeline_time > 0 and total_frames > 0) else 0.0
+    report.peak_ram_mb = _get_peak_memory_mb()
     report.quality_report = quality_report
 
     if progress_callback:

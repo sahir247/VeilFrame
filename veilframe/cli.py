@@ -629,7 +629,29 @@ def cmd_doctor(args):
 # Command: Benchmark                                                          #
 # --------------------------------------------------------------------------- #
 def cmd_benchmark(args):
-    """Run research attribution benchmark detectors."""
+    """Run research attribution benchmark detectors or pipeline performance profiling."""
+    if getattr(args, "performance", False):
+        from tools.benchmark_performance import main as perf_main
+        perf_argv = ["benchmark_performance"]
+        if args.ref:
+            perf_argv.append(str(args.ref))
+        if getattr(args, "synthetic", False):
+            perf_argv.append("--synthetic")
+        if getattr(args, "duration", None):
+            perf_argv.extend(["--duration", str(args.duration)])
+        if getattr(args, "preset", None):
+            perf_argv.extend(["--preset", str(args.preset)])
+        if args.output_json:
+            perf_argv.extend(["--output-json", str(args.output_json)])
+
+        old_argv = sys.argv
+        sys.argv = perf_argv
+        try:
+            perf_main()
+        finally:
+            sys.argv = old_argv
+        return
+
     from tools.run_attribution_benchmarks import main as bench_main
 
     sys_argv = ["run_attribution_benchmarks"]
@@ -977,9 +999,12 @@ Examples:
     p_doc.set_defaults(func=cmd_doctor)
 
     # 7. Benchmark
-    p_bnc = subparsers.add_parser("benchmark", help="Run research attribution benchmark detectors")
+    p_bnc = subparsers.add_parser("benchmark", help="Run research attribution benchmark detectors or pipeline performance profiling")
     p_bnc.add_argument("--ref", help="Reference video")
     p_bnc.add_argument("--trans", help="Transformed video")
+    p_bnc.add_argument("--performance", action="store_true", help="Run end-to-end pipeline latency, throughput (FPS), and memory benchmark")
+    p_bnc.add_argument("--duration", type=float, default=10.0, help="Duration in seconds for synthetic performance benchmark")
+    p_bnc.add_argument("--preset", default="5%", help="Preset to use for performance benchmark (default: 5%)")
     p_bnc.add_argument("--synthetic", action="store_true", help="Run on synthetic corpus")
     p_bnc.add_argument("--output-json", help="Path to export benchmark results JSON")
     p_bnc.set_defaults(func=cmd_benchmark)
