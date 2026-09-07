@@ -79,12 +79,12 @@ def cmd_sanitize(args):
     from veilframe.presets.manager import PresetManager
     from veilframe.models.settings import ProcessingSettings
 
-    src = Path(args.input)
+    src = Path(args.input).resolve()
     if not src.exists():
         print(f"{badge_fail()} Input video file not found: {src}")
         sys.exit(1)
 
-    dst = Path(args.output) if args.output else src.parent / f"{src.stem}_veilframe{src.suffix}"
+    dst = Path(args.output).resolve() if args.output else src.parent / f"{src.stem}_veilframe{src.suffix}"
 
     pm = PresetManager()
     preset = pm.get_preset(args.preset)
@@ -157,10 +157,11 @@ def cmd_sanitize(args):
             ]
 
             if q_rep:
+                qg = settings.quality_gate
                 tree_nodes.extend([
                     ("Quality Verdict", f"{verdict_badge} ({q_rep.three_tier_verdict.overall_verdict})"),
-                    ("Mean SSIM", f"{q_rep.ssim.mean:.4f} (Constraint >= {q_rep.policy.ssim_mean_min:.4f})"),
-                    ("Mean PSNR", f"{q_rep.psnr.mean:.2f} dB (Constraint >= {q_rep.policy.psnr_mean_min:.1f} dB)"),
+                    ("Mean SSIM", f"{q_rep.ssim.mean:.4f} (Constraint >= {qg.ssim_mean_min:.4f})"),
+                    ("Mean PSNR", f"{q_rep.psnr.mean:.2f} dB (Constraint >= {qg.psnr_mean_min_db:.1f} dB)"),
                     ("Policy Score", f"{q_rep.policy_score.aggregate_policy_score_pct:.2f}% (Ceiling <= {q_rep.policy_score.policy_ceiling_pct:.1f}%)"),
                     ("Temporalmonotone", badge_pass("No frame drops or PTS jitter")),
                 ])
@@ -303,8 +304,8 @@ def cmd_audit(args):
     from veilframe.models.settings import VisualBudgetPolicy
     from veilframe.presets.manager import PresetManager
 
-    ref = Path(args.reference)
-    trans = Path(args.transformed)
+    ref = Path(args.reference).resolve()
+    trans = Path(args.transformed).resolve()
 
     if not ref.exists():
         print(f"{badge_fail()} Reference video not found: {ref}")

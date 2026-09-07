@@ -31,6 +31,9 @@ def run_pipeline(
     5. QUALITY GATE: independent visual fidelity audit (SSIM & PSNR distribution vs policy constraints)
     6. VERIFY: performs fresh post-export inspection and produces auditable report
     """
+    src_path = Path(src_path).resolve()
+    dst_path = Path(dst_path).resolve()
+
     if cancel_check and cancel_check():
         raise RuntimeError("Cancelled before start.")
 

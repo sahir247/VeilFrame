@@ -20,7 +20,16 @@ from ..models.settings import (
     VisualBudgetPolicy,
 )
 
-PRESETS_FILE = Path(__file__).parent / "profiles.json"
+import sys
+
+def _get_presets_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        p = Path(sys._MEIPASS) / "veilframe" / "presets" / "profiles.json"
+        if p.exists():
+            return p
+    return Path(__file__).parent / "profiles.json"
+
+PRESETS_FILE = _get_presets_path()
 
 
 class PresetManager:

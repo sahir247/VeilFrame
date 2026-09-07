@@ -119,6 +119,8 @@ class FFmpegNativeProvider:
         """
         ffmpeg = get_ffmpeg_path()
         w, h = config.canonical_w, config.canonical_h
+        ref_path = Path(config.reference).resolve()
+        dist_path = Path(config.distorted).resolve()
 
         with tempfile.TemporaryDirectory() as td:
             ssim_log = Path(td) / "ssim.log"
@@ -134,8 +136,8 @@ class FFmpegNativeProvider:
             cmd = [
                 str(ffmpeg),
                 "-hide_banner", "-nostats", "-y",
-                "-i", str(config.reference),
-                "-i", str(config.distorted),
+                "-i", str(ref_path),
+                "-i", str(dist_path),
                 "-filter_complex", filtergraph,
                 "-map", "[p_out]",
                 "-f", "null", "-",

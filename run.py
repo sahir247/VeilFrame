@@ -19,7 +19,25 @@ if hasattr(sys.stderr, "reconfigure"):
     except Exception:
         pass
 
-from veilframe.app import main
+def launcher():
+    # If explicit CLI arguments provided (and not just "gui")
+    if len(sys.argv) > 1 and sys.argv[1].lower() != "gui":
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                # Attach to parent console if running from cmd or powershell
+                if ctypes.windll.kernel32.AttachConsole(-1):
+                    sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+        from veilframe.cli import main as cli_main
+        cli_main()
+    else:
+        from veilframe.app import main as gui_main
+        gui_main()
+
 
 if __name__ == "__main__":
-    main()
+    launcher()

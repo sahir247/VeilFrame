@@ -587,13 +587,16 @@ def evaluate_canonical_fidelity(
             f"[s_out][ref2]psnr=stats_file=psnr.log[p_out]"
         )
 
+        resolved_ref = Path(ref_path).resolve()
+        resolved_trans = Path(trans_path).resolve()
+
         cmd = [
             str(ffmpeg),
             "-hide_banner",
             "-nostats",
             "-y",
-            "-i", str(ref_path),
-            "-i", str(trans_path),
+            "-i", str(resolved_ref),
+            "-i", str(resolved_trans),
             "-filter_complex", filtergraph,
             "-map", "[p_out]",
             "-f", "null",

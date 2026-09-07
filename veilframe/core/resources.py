@@ -55,7 +55,17 @@ def find_executable(name: str) -> Path:
     if cwd_res.exists():
         return cwd_res
 
-    # 6. Windows local application cache fallback (searches dynamically without version hardcoding)
+    # 6. Executable adjacent directory (when running as frozen binary)
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).parent
+        adjacent_res = exe_dir / "resources" / "ffmpeg" / exe_name
+        if adjacent_res.exists():
+            return adjacent_res
+        adjacent_direct = exe_dir / exe_name
+        if adjacent_direct.exists():
+            return adjacent_direct
+
+    # 7. Windows local application cache fallback (searches dynamically without version hardcoding)
     if os.name == "nt":
         user_profile = os.environ.get("USERPROFILE", "")
         if user_profile:
