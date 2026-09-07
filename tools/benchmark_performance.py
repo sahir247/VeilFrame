@@ -149,6 +149,15 @@ def run_benchmark(
     print("-" * 60)
 
     qr = report.quality_report
+    substages = qr.raw_details.get("substage_latencies", {}) if qr and qr.raw_details else {}
+    if substages:
+        print("AUDIT SUB-STAGE LATENCIES:")
+        print(f"  Timestamp Audit Latency: {substages.get('temporal_audit_sec', 0.0):8.3f}s")
+        print(f"  Energy Audit Latency:    {substages.get('energy_audit_sec', 0.0):8.3f}s")
+        print(f"  Fidelity Audit (SSIM):   {substages.get('fidelity_audit_sec', 0.0):8.3f}s")
+        print(f"  Native Stream Audit:     {substages.get('native_audit_sec', 0.0):8.3f}s")
+        print("-" * 60)
+
     if qr:
         print("QUALITY GATE AUDIT:")
         print(f"  Overall Verdict:         {qr.three_tier_verdict.overall_verdict}")
@@ -172,6 +181,7 @@ def run_benchmark(
             "size_mb": size_mb,
         },
         "stage_latencies_sec": report.stage_timings,
+        "substage_latencies_sec": substages,
         "performance": {
             "total_latency_sec": total_time,
             "real_time_factor": rtf,

@@ -12,6 +12,7 @@ Architected to:
 import re
 import os
 import sys
+import time
 import math
 import json
 import hashlib
@@ -193,6 +194,7 @@ def extract_frame_packet_timestamps(video_path: Path) -> List[float]:
     cmd = [
         str(ffprobe),
         "-hide_banner",
+        "-threads", "0",
         "-select_streams", "v:0",
         "-show_entries", "frame=best_effort_timestamp_time,pkt_pts_time",
         "-of", "csv=p=0",
@@ -398,13 +400,14 @@ def extract_decoded_frame_energy(
         target_set = set(target_indices)
         max_target = max(target_indices) if target_indices else -1
 
-        # Fast path: For short sequences (max_target <= 200 frames), single sequential decode pipe is sub-second
-        if max_target <= 200:
+        # Fast path: For sequences up to 1800 frames (~30s-60s), single sequential decode pipe runs at ~300 FPS
+        if max_target <= 1800:
             cmd = [
                 str(ffmpeg),
                 "-hide_banner",
                 "-nostats",
                 "-y",
+                "-threads", "0",
                 "-i", str(video_file),
                 "-vf", f"scale={w}:{h}:flags=lanczos,format=yuv420p",
                 "-f", "rawvideo",
@@ -452,6 +455,7 @@ def extract_decoded_frame_energy(
                 "-nostats",
                 "-y",
                 "-ss", f"{ts:.4f}",
+                "-threads", "0",
                 "-i", str(video_file),
                 "-vf", f"scale={w}:{h}:flags=lanczos,format=yuv420p",
                 "-vframes", "1",
@@ -472,7 +476,7 @@ def extract_decoded_frame_energy(
             return None
 
         sampled = {}
-        max_workers = min(4, os.cpu_count() or 1)
+        max_workers = min(8, os.cpu_count() or 1)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for item in executor.map(extract_single_seek, target_indices):
                 if item is not None:
@@ -1162,13 +1166,16 @@ def evaluate_visual_quality(
     output_hash = trans_sha256 if trans_sha256 is not None else compute_sha256(trans_path)
 
     # 1. Native-Domain Stream Analysis
+    t0_native = time.perf_counter()
     if ref_info is None:
         ref_info = analyze_video(ref_path)
     if trans_info is None:
         trans_info = analyze_video(trans_path)
     native_metrics = audit_native_domain(ref_info, trans_info)
+    t_native = time.perf_counter() - t0_native
 
     # 2. Pre-Resampling Temporal Integrity
+    t0_temporal = time.perf_counter()
     temporal_metrics = audit_temporal_integrity(
         ref_info=ref_info,
         trans_info=trans_info,
@@ -1176,9 +1183,10 @@ def evaluate_visual_quality(
         trans_path=trans_path,
         policy=policy,
     )
-
+    t_temporal = time.perf_counter() - t0_temporal
 
     # 3. Decoded-Frame Energy & Histogram Analysis (Uniform Timeline Sampling)
+    t0_energy = time.perf_counter()
     energy_metrics = extract_decoded_frame_energy(
         ref_path=ref_path,
         trans_path=trans_path,
@@ -1187,6 +1195,7 @@ def evaluate_visual_quality(
         ref_duration=ref_info.duration,
         trans_duration=trans_info.duration,
     )
+    t_energy = time.perf_counter() - t0_energy
 
     # 4. Transformation Policy Score (Application-defined ceiling)
     policy_score = calculate_policy_score(
@@ -1197,6 +1206,7 @@ def evaluate_visual_quality(
     )
 
     # 5. Quality measurement (SSIM, PSNR via FFmpegNativeProvider)
+    t0_fidelity = time.perf_counter()
     provider_results, provider_infos = _run_providers(
         ref_path=ref_path,
         trans_path=trans_path,
@@ -1204,6 +1214,7 @@ def evaluate_visual_quality(
         canonical_h=canonical_h,
         evidence_dir=evidence_dir,
     )
+    t_fidelity = time.perf_counter() - t0_fidelity
 
     # Mandatory provider execution integrity check:
     # If the native provider is available on the system but failed during execution,
@@ -1301,6 +1312,12 @@ def evaluate_visual_quality(
             "ssim_count": len(ssim_scores),
             "psnr_count": len(psnr_scores),
             "provider_infos": provider_infos,
+            "substage_latencies": {
+                "native_audit_sec": round(t_native, 4),
+                "temporal_audit_sec": round(t_temporal, 4),
+                "energy_audit_sec": round(t_energy, 4),
+                "fidelity_audit_sec": round(t_fidelity, 4),
+            },
         },
     )
 
