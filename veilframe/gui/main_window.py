@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QProgressBar, QMessageBox, QScrollArea, QFrame,
     QTabWidget, QApplication, QButtonGroup, QRadioButton,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QShortcut, QDesktopServices
 
 from ..core.resources import get_ffmpeg_path
 from ..core.deps_manager import is_ffmpeg_installed
@@ -175,20 +175,20 @@ class DropZoneWidget(QFrame):
         lay.setSpacing(4)
         lay.setContentsMargins(20, 16, 20, 16)
 
-        lbl_main = QLabel("Drop a Video or Image File Here")
-        lbl_main.setAlignment(Qt.AlignCenter)
-        lbl_main.setStyleSheet(
+        self.lbl_main = QLabel("Drop a Video or Image File Here")
+        self.lbl_main.setAlignment(Qt.AlignCenter)
+        self.lbl_main.setStyleSheet(
             "color: #c0c0c0; font-size: 14px; font-weight: 600;"
             " background: transparent; letter-spacing: 0.2px;"
         )
-        lay.addWidget(lbl_main)
+        lay.addWidget(self.lbl_main)
 
-        lbl_sub = QLabel("VIDEO: MP4 · MOV · MKV · WebM · AVI   |   IMAGE: JPEG · PNG · WebP")
-        lbl_sub.setAlignment(Qt.AlignCenter)
-        lbl_sub.setStyleSheet(
+        self.lbl_sub = QLabel("VIDEO: MP4 · MOV · MKV · WebM · AVI   |   IMAGE: JPEG · PNG · WebP")
+        self.lbl_sub.setAlignment(Qt.AlignCenter)
+        self.lbl_sub.setStyleSheet(
             "color: #555555; font-size: 10px; background: transparent; letter-spacing: 0.5px;"
         )
-        lay.addWidget(lbl_sub)
+        lay.addWidget(self.lbl_sub)
 
         spacer = QLabel("")
         spacer.setFixedHeight(4)
@@ -201,6 +201,14 @@ class DropZoneWidget(QFrame):
         btn_row.addWidget(self.btn_browse)
         btn_row.addStretch()
         lay.addLayout(btn_row)
+
+    def set_mode_hint(self, is_image: bool):
+        if is_image:
+            self.lbl_main.setText("Drop an Image File Here")
+            self.lbl_sub.setText("IMAGE PRIVACY COMPILER: JPEG · PNG · WebP · TIFF · BMP")
+        else:
+            self.lbl_main.setText("Drop a Video File Here")
+            self.lbl_sub.setText("VIDEO PRIVACY SANITIZER: MP4 · MOV · MKV · WebM · AVI · TS")
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -223,20 +231,21 @@ class DropZoneWidget(QFrame):
 
 class ProviderStatusBar(QFrame):
     """Slim bar showing runtime provider availability."""
+    installRequested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setObjectName("card")
         self.setFixedHeight(34)
         self.setStyleSheet(
-            "background: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 4px;"
+            "background: #181818; border: 1px solid #2e2e2e; border-radius: 4px;"
         )
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 12, 0)
         lay.setSpacing(16)
 
         _s_ok   = "color: #3fb768; font-size: 11px; font-weight: 600;"
-        _s_err  = "color: #d84040; font-size: 11px; font-weight: 600;"
+        _s_err  = "color: #ef4444; font-size: 11px; font-weight: 600;"
         _s_mute = "color: #555555; font-size: 11px; font-weight: 600;"
         _s_sep  = "color: #303030; font-size: 11px;"
 
@@ -244,7 +253,7 @@ class ProviderStatusBar(QFrame):
         self._err  = _s_err
         self._mute = _s_mute
 
-        self._lbl_ffmpeg = QLabel("FFmpeg  --")
+        self._lbl_ffmpeg = QLabel("●  FFmpeg  --")
         self._lbl_ffmpeg.setStyleSheet(_s_mute)
         lay.addWidget(self._lbl_ffmpeg)
 
@@ -252,7 +261,7 @@ class ProviderStatusBar(QFrame):
         sep1.setStyleSheet(_s_sep)
         lay.addWidget(sep1)
 
-        self._lbl_cv = QLabel("OpenCV  active")
+        self._lbl_cv = QLabel("●  OpenCV  active")
         self._lbl_cv.setStyleSheet(_s_ok)
         lay.addWidget(self._lbl_cv)
 
@@ -260,23 +269,30 @@ class ProviderStatusBar(QFrame):
         sep2.setStyleSheet(_s_sep)
         lay.addWidget(sep2)
 
-        self._lbl_gate = QLabel("QualityGate  Fail-Closed (5 Contracts)")
+        self._lbl_gate = QLabel("●  QualityGate  Fail-Closed (5 Contracts)")
         self._lbl_gate.setStyleSheet("color: #3fb768; font-size: 11px; font-weight: 600;")
         lay.addWidget(self._lbl_gate)
 
         lay.addStretch()
 
         self._note = QLabel("Providers measure. VeilFrame decides.")
-        self._note.setStyleSheet("color: #383838; font-size: 10px; font-style: italic;")
+        self._note.setStyleSheet("color: #484848; font-size: 10px; font-style: italic;")
         lay.addWidget(self._note)
 
     def populate(self, ffmpeg_version: str):
         if ffmpeg_version and ffmpeg_version != "?":
-            self._lbl_ffmpeg.setText(f"FFmpeg  {ffmpeg_version}")
+            self._lbl_ffmpeg.setText(f"●  FFmpeg  {ffmpeg_version}")
             self._lbl_ffmpeg.setStyleSheet(self._ok)
+            self._lbl_ffmpeg.setCursor(Qt.ArrowCursor)
+            self._lbl_ffmpeg.setToolTip(f"FFmpeg binary version {ffmpeg_version} operational.")
+            self._lbl_ffmpeg.mousePressEvent = None
         else:
-            self._lbl_ffmpeg.setText("FFmpeg  not found")
-            self._lbl_ffmpeg.setStyleSheet(self._err)
+            self._lbl_ffmpeg.setText("○  FFmpeg  Not Found (Click to Install)")
+            self._lbl_ffmpeg.setStyleSheet(self._err + " text-decoration: underline;")
+            self._lbl_ffmpeg.setCursor(Qt.PointingHandCursor)
+            self._lbl_ffmpeg.setToolTip("Click here to automatically download and install FFmpeg.")
+            self._lbl_ffmpeg.mousePressEvent = lambda ev: self.installRequested.emit()
+
 
 
 # ── Main Window ───────────────────────────────────────────────────────── #
@@ -302,6 +318,7 @@ class MainWindow(QMainWindow):
         self.image_worker: Optional[ImagePipelineWorker] = None
 
         self._init_ui()
+        self._set_mode(False)
         QTimer.singleShot(200, self._detect_providers)
 
     def _init_ui(self):
@@ -332,9 +349,9 @@ class MainWindow(QMainWindow):
         hdr.addLayout(title_col)
         hdr.addStretch()
 
-        # Mode toggle buttons
+        # Mode toggle buttons (Segmented Control)
         mode_box = QFrame()
-        mode_box.setStyleSheet("background: #181818; border: 1px solid #333333; border-radius: 4px; padding: 2px;")
+        mode_box.setStyleSheet("background: #181818; border: 1px solid #333333; border-radius: 5px; padding: 2px;")
         mode_lay = QHBoxLayout(mode_box)
         mode_lay.setContentsMargins(2, 2, 2, 2)
         mode_lay.setSpacing(4)
@@ -383,6 +400,9 @@ class MainWindow(QMainWindow):
 
         # 2. Provider status bar
         self.provider_bar = ProviderStatusBar()
+        self.provider_bar.installRequested.connect(
+            lambda: prompt_missing_dependency(self, "FFmpeg", on_success=self._detect_providers)
+        )
         content_lay.addWidget(self.provider_bar)
 
         # 3. Input Info Cards (Video & Image)
@@ -436,6 +456,24 @@ class MainWindow(QMainWindow):
         self.btn_cancel.clicked.connect(self._cancel_job)
         btn_lay.addWidget(self.btn_cancel)
 
+        self.btn_open_folder = QPushButton("Open Output Folder")
+        self.btn_open_folder.setStyleSheet(
+            "background-color: #1e293b; color: #38bdf8; border: 1px solid #0284c7; "
+            "border-radius: 4px; padding: 6px 14px; font-weight: 600; font-size: 11px;"
+        )
+        self.btn_open_folder.hide()
+        self.btn_open_folder.clicked.connect(self._open_output_folder)
+        btn_lay.addWidget(self.btn_open_folder)
+
+        self.btn_copy_path = QPushButton("Copy File Path")
+        self.btn_copy_path.setStyleSheet(
+            "background-color: #262626; color: #d0d0d0; border: 1px solid #404040; "
+            "border-radius: 4px; padding: 6px 14px; font-size: 11px;"
+        )
+        self.btn_copy_path.hide()
+        self.btn_copy_path.clicked.connect(self._copy_output_path)
+        btn_lay.addWidget(self.btn_copy_path)
+
         btn_lay.addStretch()
 
         self.btn_process = QPushButton("PROCESS MEDIA")
@@ -447,18 +485,41 @@ class MainWindow(QMainWindow):
         action_lay.addLayout(btn_lay)
         main_lay.addWidget(action_box)
 
+        # Global Keyboard Shortcuts
+        QShortcut(QKeySequence("Ctrl+O"), self, self.browse_file)
+        QShortcut(QKeySequence("Ctrl+Return"), self, self.start_processing)
+        QShortcut(QKeySequence("Ctrl+Enter"), self, self.start_processing)
+        QShortcut(QKeySequence("Escape"), self, self._cancel_job)
+        QShortcut(QKeySequence("F1"), self, self._show_about)
+        QShortcut(QKeySequence("F5"), self, self._show_environment_doctor)
+
     def _set_mode(self, is_image: bool):
         self.is_image_mode = is_image
         self.btn_mode_image.setChecked(is_image)
         self.btn_mode_video.setChecked(not is_image)
 
+        _active_style = (
+            "background-color: #2563eb; color: #ffffff; font-weight: 700; "
+            "border: none; border-radius: 4px; padding: 5px 14px; font-size: 11px;"
+        )
+        _inactive_style = (
+            "background-color: transparent; color: #888888; font-weight: 500; "
+            "border: none; border-radius: 4px; padding: 5px 14px; font-size: 11px;"
+        )
+
         if is_image:
+            self.btn_mode_image.setStyleSheet(_active_style)
+            self.btn_mode_video.setStyleSheet(_inactive_style)
+            self.drop_zone.set_mode_hint(True)
             self.video_info_widget.hide()
             self.processing_panel.hide()
             self.image_info_widget.show()
             self.image_processing_panel.show()
             self.btn_process.setText("SANITIZE IMAGE & VERIFY")
         else:
+            self.btn_mode_video.setStyleSheet(_active_style)
+            self.btn_mode_image.setStyleSheet(_inactive_style)
+            self.drop_zone.set_mode_hint(False)
             self.image_info_widget.hide()
             self.image_processing_panel.hide()
             self.video_info_widget.show()
@@ -468,6 +529,15 @@ class MainWindow(QMainWindow):
     def _detect_providers(self):
         ver = _detect_ffmpeg_version()
         self.provider_bar.populate(ver)
+
+    def _open_output_folder(self):
+        if self.dst_path and self.dst_path.parent.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.dst_path.parent)))
+
+    def _copy_output_path(self):
+        if self.dst_path:
+            QApplication.clipboard().setText(str(self.dst_path.resolve()))
+            self.lbl_status.setText(f"Copied output path to clipboard: {self.dst_path.name}")
 
     # ── File loading ──────────────────────────────────────────────────── #
 
@@ -515,6 +585,8 @@ class MainWindow(QMainWindow):
             self.video_info_widget.set_video_info(info)
             self.processing_panel.set_video_info(info)
             self.report_widget.clear()
+            self.btn_open_folder.hide()
+            self.btn_copy_path.hide()
             self.btn_process.setEnabled(True)
             self.lbl_status.setText(f"Loaded Video: {path.name}  ({info.duration_str}, {info.size_str})")
         except Exception as e:
@@ -528,6 +600,8 @@ class MainWindow(QMainWindow):
             self.src_path = path
             self.image_info_widget.set_image_file(path)
             self.report_widget.clear()
+            self.btn_open_folder.hide()
+            self.btn_copy_path.hide()
             self.btn_process.setEnabled(True)
             self.lbl_status.setText(f"Loaded Image: {path.name} — ready to compile & sanitize.")
         except Exception as e:
@@ -539,6 +613,9 @@ class MainWindow(QMainWindow):
     def start_processing(self):
         if not self.src_path:
             return
+
+        self.btn_open_folder.hide()
+        self.btn_copy_path.hide()
 
         if self.is_image_mode:
             self._start_image_processing()
@@ -639,6 +716,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(600, self.progress_bar.hide)
         self.btn_cancel.hide()
         self.btn_process.setEnabled(True)
+        self.btn_open_folder.show()
+        self.btn_copy_path.show()
         self.lbl_status.setText("Video processing, QualityGate, and verification complete.")
 
         self.report_widget.set_report(report)
@@ -663,6 +742,8 @@ class MainWindow(QMainWindow):
         self.report_widget.set_image_report(result)
 
         if result.is_success:
+            self.btn_open_folder.show()
+            self.btn_copy_path.show()
             QMessageBox.information(
                 self, "Sanitization & Verification Succeeded",
                 f"Status: PASS (5 Contracts & Red-Team Probes Verified)\n\n"

@@ -447,46 +447,41 @@ class AboutDialog(QDialog):
 
         lay.addWidget(guar_box)
 
-        # GitHub Repository Section with Clickable Logo
-        gh_box = QFrame()
-        gh_box.setStyleSheet("background-color: #181c24; border: 1px solid #233044; border-radius: 6px; padding: 10px 14px;")
-        gh_lay = QHBoxLayout(gh_box)
-        gh_lay.setSpacing(12)
-
-        # GitHub Icon
+        # GitHub Repository Section (Clean button with GitHub icon, no raw URL text)
+        gh_row = QHBoxLayout()
         gh_icon_path = Path(__file__).resolve().parent.parent / "resources" / "github_icon.svg"
-        lbl_gh_icon = QLabel()
+        
+        btn_view_repo = QPushButton("  View Repository")
         if gh_icon_path.exists():
-            gh_pix = QPixmap(str(gh_icon_path)).scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            lbl_gh_icon.setPixmap(gh_pix)
-        lbl_gh_icon.setFixedSize(24, 24)
-        gh_lay.addWidget(lbl_gh_icon)
-
-        gh_text_col = QVBoxLayout()
-        gh_text_col.setSpacing(2)
-        lbl_gh_head = QLabel("Open Source on GitHub")
-        lbl_gh_head.setStyleSheet("font-size: 12px; font-weight: 700; color: #ffffff;")
-        lbl_gh_url = QLabel(self.REPO_URL)
-        lbl_gh_url.setStyleSheet("font-size: 11px; color: #38bdf8; text-decoration: underline;")
-        lbl_gh_url.setCursor(Qt.PointingHandCursor)
-        lbl_gh_url.mousePressEvent = lambda ev: QDesktopServices.openUrl(QUrl(self.REPO_URL))
-        gh_text_col.addWidget(lbl_gh_head)
-        gh_text_col.addWidget(lbl_gh_url)
-        gh_lay.addLayout(gh_text_col)
-        gh_lay.addStretch()
-
-        btn_view_repo = QPushButton("View Repository")
-        btn_view_repo.setStyleSheet("background-color: #2563eb; color: #ffffff; font-weight: 600; padding: 6px 14px; border: none; border-radius: 4px;")
+            btn_view_repo.setIcon(QIcon(str(gh_icon_path)))
+            btn_view_repo.setIconSize(btn_view_repo.iconSize())
+        btn_view_repo.setStyleSheet("""
+            QPushButton {
+                background-color: #1e2430;
+                color: #ffffff;
+                font-weight: 600;
+                font-size: 12px;
+                padding: 8px 18px;
+                border: 1px solid #334155;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #283344;
+                border-color: #38bdf8;
+                color: #38bdf8;
+            }
+            QPushButton:pressed {
+                background-color: #151a23;
+            }
+        """)
         btn_view_repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.REPO_URL)))
-        gh_lay.addWidget(btn_view_repo)
+        gh_row.addWidget(btn_view_repo)
+        gh_row.addStretch()
 
-        lay.addWidget(gh_box)
-
-        # Bottom Close button
-        bot_row = QHBoxLayout()
-        bot_row.addStretch()
         btn_close = QPushButton("Close")
-        btn_close.setStyleSheet("background-color: #262626; color: #d0d0d0; border: 1px solid #404040; padding: 6px 20px; border-radius: 4px;")
+        btn_close.setStyleSheet("background-color: #262626; color: #d0d0d0; border: 1px solid #404040; padding: 8px 22px; border-radius: 5px; font-weight: 500;")
         btn_close.clicked.connect(self.accept)
-        bot_row.addWidget(btn_close)
-        lay.addLayout(bot_row)
+        gh_row.addWidget(btn_close)
+
+        lay.addLayout(gh_row)
+
