@@ -279,6 +279,8 @@ class ImagePrivacyPolicy:
     redact_thumbnails: bool = True
     expansion_margin_px: int = 10
     max_mask_expansion_tolerance_px: int = 5
+    strict_redteam_gate: bool = False
+    target_format: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.policy_id:
@@ -318,6 +320,8 @@ class ImagePrivacyPolicy:
             "redact_thumbnails": self.redact_thumbnails,
             "expansion_margin_px": self.expansion_margin_px,
             "max_mask_expansion_tolerance_px": self.max_mask_expansion_tolerance_px,
+            "strict_redteam_gate": self.strict_redteam_gate,
+            "target_format": self.target_format,
         }
 
 

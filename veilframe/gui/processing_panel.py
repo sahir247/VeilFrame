@@ -38,6 +38,7 @@ from .controls import (
     FocusWheelSpinBox,
     FocusWheelDoubleSpinBox,
     create_section_reset_button,
+    CollapsibleSection,
 )
 
 
@@ -81,10 +82,61 @@ class ProcessingPanel(QWidget):
         p_lay.addWidget(self.lbl_preset_desc)
         main_lay.addWidget(preset_box)
 
-        # 2. Main Transformations Card
-        proc_box = QGroupBox("SPATIAL & TEMPORAL TRANSFORMATION CONTROLS")
-        proc_lay = QVBoxLayout(proc_box)
-        proc_lay.setSpacing(14)
+        # 2. Core Privacy & Transformation Toggles Card
+        core_box = QGroupBox("CORE PRIVACY & SANITIZATION PIPELINE")
+        core_lay = QVBoxLayout(core_box)
+        core_lay.setSpacing(8)
+
+        core_grid = QGridLayout()
+        core_grid.setHorizontalSpacing(16)
+        core_grid.setVerticalSpacing(8)
+
+        self.crop_enable = QCheckBox("Spatial Crop & Asymmetric Perturbation")
+        self.crop_enable.setChecked(True)
+        self.crop_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.crop_enable, 0, 0)
+
+        self.resize_enable = QCheckBox("Resolution Resampling (Lanczos Grid)")
+        self.resize_enable.setChecked(True)
+        self.resize_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.resize_enable, 0, 1)
+
+        self.fps_enable = QCheckBox("Frame Rate & PTS Normalization")
+        self.fps_enable.setChecked(True)
+        self.fps_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.fps_enable, 1, 0)
+
+        self.trim_enable = QCheckBox("Duration Micro-Time Warp")
+        self.trim_enable.setChecked(False)
+        self.trim_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.trim_enable, 1, 1)
+
+        self.color_enable = QCheckBox("Low-Frequency Color Drift (~1% Budget)")
+        self.color_enable.setChecked(True)
+        self.color_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.color_enable, 2, 0)
+
+        self.audio_enable = QCheckBox("Audio Privacy & ENF Notch Filter")
+        self.audio_enable.setChecked(True)
+        self.audio_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.audio_enable, 2, 1)
+
+        self.cb_priv_meta = QCheckBox("Container Metadata Scrubbing (EXIF/GPS)")
+        self.cb_priv_meta.setChecked(True)
+        self.cb_priv_meta.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.cb_priv_meta, 3, 0)
+
+        self.cb_qg_enable = QCheckBox("Visual Quality & Fidelity Gate (SSIM & PSNR)")
+        self.cb_qg_enable.setChecked(True)
+        self.cb_qg_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        core_grid.addWidget(self.cb_qg_enable, 3, 1)
+
+        core_lay.addLayout(core_grid)
+        main_lay.addWidget(core_box)
+
+        # 3. Collapsible Advanced Settings Drawer (with bottom-facing arrow ▼ / ▶)
+        self.adv_section = CollapsibleSection("ADVANCED MANUAL TRANSFORMATION SETTINGS", initially_expanded=False)
+        adv_lay = self.adv_section.content_layout
 
         # --- Section Helper ---
         def create_toggle_header(
@@ -94,8 +146,8 @@ class ProcessingPanel(QWidget):
             reset_tooltip: str = "Reset this section to default values",
         ):
             row = QHBoxLayout()
-            cb_enable = QCheckBox(title)
-            cb_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+            lbl = QLabel(title)
+            lbl.setStyleSheet("font-weight: 600; color: #d0d0d0; font-size: 11px;")
 
             bg = QButtonGroup(self)
             rb_auto = QRadioButton(default_auto_text)
@@ -104,7 +156,7 @@ class ProcessingPanel(QWidget):
             bg.addButton(rb_auto)
             bg.addButton(rb_manual)
 
-            row.addWidget(cb_enable)
+            row.addWidget(lbl)
             row.addSpacing(16)
             row.addWidget(rb_auto)
             row.addWidget(rb_manual)
@@ -114,11 +166,16 @@ class ProcessingPanel(QWidget):
                 btn_reset = create_section_reset_button(on_reset, tooltip=reset_tooltip)
                 row.addWidget(btn_reset)
 
-            return cb_enable, rb_auto, rb_manual, row
+            return rb_auto, rb_manual, row
+
+        # Spatial & Temporal Manual Controls
+        proc_box = QGroupBox("SPATIAL & TEMPORAL MANUAL CONTROLS")
+        proc_lay = QVBoxLayout(proc_box)
+        proc_lay.setSpacing(14)
 
         # --- CROP ---
-        self.crop_enable, self.crop_auto, self.crop_manual, crop_hdr = create_toggle_header(
-            "Crop (Asymmetric pHash Disruption)",
+        self.crop_auto, self.crop_manual, crop_hdr = create_toggle_header(
+            "Spatial Crop:",
             on_reset=self._reset_crop_section,
             reset_tooltip="Reset crop parameters to defaults",
         )
@@ -143,8 +200,8 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- RESIZE ---
-        self.resize_enable, self.resize_auto, self.resize_manual, resize_hdr = create_toggle_header(
-            "Resize (Lanczos Grid Resample)",
+        self.resize_auto, self.resize_manual, resize_hdr = create_toggle_header(
+            "Resolution Resampling:",
             on_reset=self._reset_resize_section,
             reset_tooltip="Reset resolution to source video dimensions",
         )
@@ -169,8 +226,8 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- FPS ---
-        self.fps_enable, self.fps_auto, self.fps_manual, fps_hdr = create_toggle_header(
-            "Frame Rate (FPS)",
+        self.fps_auto, self.fps_manual, fps_hdr = create_toggle_header(
+            "Frame Rate:",
             on_reset=self._reset_fps_section,
             reset_tooltip="Reset FPS to source video frame rate",
         )
@@ -191,8 +248,8 @@ class ProcessingPanel(QWidget):
         proc_lay.addWidget(self._create_divider())
 
         # --- TRIM / DURATION ---
-        self.trim_enable, self.trim_auto, self.trim_manual, trim_hdr = create_toggle_header(
-            "Duration / Micro-Time Warp",
+        self.trim_auto, self.trim_manual, trim_hdr = create_toggle_header(
+            "Duration / Micro-Time Warp:",
             on_reset=self._reset_trim_section,
             reset_tooltip="Reset timeline trim to full duration",
         )
@@ -217,14 +274,14 @@ class ProcessingPanel(QWidget):
         self.trim_dur.valueChanged.connect(self._on_control_changed)
         proc_lay.addLayout(trim_inputs_lay)
 
-        main_lay.addWidget(proc_box)
+        adv_lay.addWidget(proc_box)
 
-        # 3. Color & Luminance Drift Card (~1% Budget)
-        color_box = QGroupBox("COLOR & LUMINANCE DRIFT (~1% BUDGET)")
+        # Color & Luminance Calibration Card
+        color_box = QGroupBox("COLOR & LUMINANCE CALIBRATION (~1% BUDGET)")
         color_lay = QVBoxLayout(color_box)
 
-        self.color_enable, self.color_auto, self.color_manual, color_hdr = create_toggle_header(
-            "Low-Frequency Color Drift",
+        self.color_auto, self.color_manual, color_hdr = create_toggle_header(
+            "Color Calibration:",
             on_reset=self._reset_color_section,
             reset_tooltip="Reset color drift parameters to defaults",
         )
@@ -242,22 +299,21 @@ class ProcessingPanel(QWidget):
             sp.valueChanged.connect(self._on_control_changed)
         color_inputs_lay.addStretch()
         color_lay.addLayout(color_inputs_lay)
-        main_lay.addWidget(color_box)
+        adv_lay.addWidget(color_box)
 
-        # 4. Noise Engine Widget
+        # Noise Engine Widget
         self.noise_widget = NoiseControlWidget()
         self.noise_widget.settingsChanged.connect(self._on_control_changed)
-        main_lay.addWidget(self.noise_widget)
+        adv_lay.addWidget(self.noise_widget)
 
-        # 5. Audio Domain Privacy Card
+        # Audio Domain Privacy Card
         audio_box = QGroupBox("AUDIO DOMAIN PRIVACY & ENF NOTCH FILTERING")
         audio_lay = QVBoxLayout(audio_box)
 
         audio_hdr = QHBoxLayout()
-        self.audio_enable = QCheckBox("Enable Audio Privacy Pipeline")
-        self.audio_enable.setChecked(True)
-        self.audio_enable.setStyleSheet("font-weight: 600; color: #d0d0d0;")
-        audio_hdr.addWidget(self.audio_enable)
+        lbl_audio = QLabel("Audio Filter Controls:")
+        lbl_audio.setStyleSheet("font-weight: 600; color: #d0d0d0; font-size: 11px;")
+        audio_hdr.addWidget(lbl_audio)
         audio_hdr.addStretch()
         audio_hdr.addWidget(create_section_reset_button(self._reset_audio_section, "Reset audio privacy settings to defaults"))
         audio_lay.addLayout(audio_hdr)
@@ -275,12 +331,11 @@ class ProcessingPanel(QWidget):
         audio_opts_lay.addStretch()
         audio_lay.addLayout(audio_opts_lay)
 
-        self.audio_enable.stateChanged.connect(self._on_control_changed)
         self.cb_enf_notch.stateChanged.connect(self._on_control_changed)
         self.cb_micro_pitch.stateChanged.connect(self._on_control_changed)
-        main_lay.addWidget(audio_box)
+        adv_lay.addWidget(audio_box)
 
-        # 6. Deterministic Quantization & Encoding
+        # Deterministic Quantization & Encoding
         quant_box = QGroupBox("DETERMINISTIC QUANTIZATION & CODEC")
         quant_lay = QVBoxLayout(quant_box)
 
@@ -327,14 +382,14 @@ class ProcessingPanel(QWidget):
         self.cb_epoch_zero.stateChanged.connect(self._on_control_changed)
         quant_lay.addLayout(codec_row)
 
-        main_lay.addWidget(quant_box)
+        adv_lay.addWidget(quant_box)
 
-        # 7. Privacy Sanitization Checklist
+        # Privacy Sanitization Checklist
         priv_box = QGroupBox("PRIVACY SANITIZATION")
         priv_main_lay = QVBoxLayout(priv_box)
 
         priv_hdr = QHBoxLayout()
-        lbl_priv_title = QLabel("Forensic Metadata Scrubbing")
+        lbl_priv_title = QLabel("Forensic Metadata Scrubbing Details")
         lbl_priv_title.setStyleSheet("color: #707070; font-size: 11px; font-weight: 500;")
         priv_hdr.addWidget(lbl_priv_title)
         priv_hdr.addStretch()
@@ -345,8 +400,6 @@ class ProcessingPanel(QWidget):
         priv_lay.setHorizontalSpacing(20)
         priv_lay.setVerticalSpacing(8)
 
-        self.cb_priv_meta = QCheckBox("Remove metadata (EXIF/XMP/GPS/Camera)")
-        self.cb_priv_meta.setChecked(True)
         self.cb_priv_comm = QCheckBox("Remove comments & descriptions")
         self.cb_priv_comm.setChecked(True)
         self.cb_priv_chap = QCheckBox("Remove chapters & embedded attachments")
@@ -356,28 +409,26 @@ class ProcessingPanel(QWidget):
         self.cb_priv_verify = QCheckBox("Verify output and generate Forensic Report")
         self.cb_priv_verify.setChecked(True)
 
-        priv_lay.addWidget(self.cb_priv_meta, 0, 0)
-        priv_lay.addWidget(self.cb_priv_comm, 0, 1)
-        priv_lay.addWidget(self.cb_priv_chap, 1, 0)
-        priv_lay.addWidget(self.cb_priv_scrub, 1, 1)
-        priv_lay.addWidget(self.cb_priv_verify, 2, 0)
+        priv_lay.addWidget(self.cb_priv_comm, 0, 0)
+        priv_lay.addWidget(self.cb_priv_chap, 0, 1)
+        priv_lay.addWidget(self.cb_priv_scrub, 1, 0)
+        priv_lay.addWidget(self.cb_priv_verify, 1, 1)
 
         for cb in (self.cb_priv_meta, self.cb_priv_comm, self.cb_priv_chap, self.cb_priv_scrub, self.cb_priv_verify):
             cb.stateChanged.connect(self._on_control_changed)
 
         priv_main_lay.addLayout(priv_lay)
-        main_lay.addWidget(priv_box)
+        adv_lay.addWidget(priv_box)
 
-        # 8. Quality & Fidelity Gate
+        # Quality & Fidelity Gate Parameters
         qg_box = QGroupBox("INDEPENDENT VISUAL QUALITY & FIDELITY GATE")
         qg_lay = QVBoxLayout(qg_box)
         qg_lay.setSpacing(8)
 
         qg_hdr = QHBoxLayout()
-        self.cb_qg_enable = QCheckBox("Enable Visual Quality Gate (Audit rendered frames against SSIM & PSNR constraints)")
-        self.cb_qg_enable.setChecked(True)
-        self.cb_qg_enable.stateChanged.connect(self._on_control_changed)
-        qg_hdr.addWidget(self.cb_qg_enable)
+        lbl_qg_title = QLabel("Quality Gate Constraints:")
+        lbl_qg_title.setStyleSheet("color: #707070; font-size: 11px; font-weight: 500;")
+        qg_hdr.addWidget(lbl_qg_title)
         qg_hdr.addStretch()
         qg_hdr.addWidget(create_section_reset_button(self._reset_quality_gate_section, "Reset quality gate settings to defaults"))
         qg_lay.addLayout(qg_hdr)
@@ -406,7 +457,9 @@ class ProcessingPanel(QWidget):
         qg_params_lay.addStretch()
 
         qg_lay.addLayout(qg_params_lay)
-        main_lay.addWidget(qg_box)
+        adv_lay.addWidget(qg_box)
+
+        main_lay.addWidget(self.adv_section)
 
         # Wire toggle listeners
         for cb, rb_a, rb_m in (
@@ -419,6 +472,9 @@ class ProcessingPanel(QWidget):
             cb.stateChanged.connect(self._update_all_states)
             rb_a.toggled.connect(self._update_all_states)
             rb_m.toggled.connect(self._update_all_states)
+
+        self.audio_enable.stateChanged.connect(self._on_control_changed)
+        self.cb_qg_enable.stateChanged.connect(self._on_control_changed)
 
         self._update_all_states()
 

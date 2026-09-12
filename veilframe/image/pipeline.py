@@ -422,6 +422,7 @@ class ImagePrivacyPipeline:
             red_team_result=red_team_res,
             independence_status=indep_status,
             fidelity_result=fid_res,
+            strict_redteam_gate=getattr(self.policy, "strict_redteam_gate", False),
         )
 
         # 10. Cryptographic Provenance & Signing

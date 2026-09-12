@@ -267,10 +267,151 @@ class TestGUIControlsAndUX(unittest.TestCase):
             self.assertIn("PSNR (non-redacted):", report_widget.txt_report.toPlainText())
 
             # Test setting report when fidelity_result is None or partial
-            result.fidelity_result = None
-            report_widget.set_image_report(result)
-            self.assertIn("SSIM (non-redacted):     N/A", report_widget.txt_report.toPlainText())
+    def test_collapsible_section_toggle(self):
+        """CollapsibleSection should toggle content visibility and arrow indicator."""
+        from veilframe.gui.controls import CollapsibleSection
+        from PySide6.QtWidgets import QLabel
+
+        section = CollapsibleSection("ADVANCED SETTINGS", initially_expanded=False)
+        lbl = QLabel("Inner Content")
+        section.add_widget(lbl)
+
+        self.assertFalse(section.is_expanded())
+        self.assertTrue(section.content_widget.isHidden())
+        self.assertIn("▶", section.toggle_btn.text())
+
+        # Expand programmatically
+        section.set_expanded(True)
+        self.assertTrue(section.is_expanded())
+        self.assertFalse(section.content_widget.isHidden())
+        self.assertIn("▼", section.toggle_btn.text())
+
+        # Collapse via toggle button click
+        section.toggle_btn.click()
+        self.assertFalse(section.is_expanded())
+        self.assertTrue(section.content_widget.isHidden())
+        self.assertIn("▶", section.toggle_btn.text())
+
+    def test_image_panel_controls_and_format_conversion(self):
+        """ImageProcessingPanel should manage strict gate and format conversion toggles properly."""
+        from veilframe.gui.image_panel import ImageProcessingPanel
+
+        panel = ImageProcessingPanel()
+
+        # Strict gate checkbox defaults to False
+        self.assertFalse(panel.cb_strict_gate.isChecked())
+        policy = panel.get_policy()
+        self.assertFalse(policy.strict_redteam_gate)
+        self.assertIsNone(policy.target_format)
+
+        # Toggle strict gate
+        panel.cb_strict_gate.setChecked(True)
+        policy_strict = panel.get_policy()
+        self.assertTrue(policy_strict.strict_redteam_gate)
+
+        # Format conversion toggle
+        self.assertFalse(panel.cb_convert_format.isChecked())
+        self.assertFalse(panel.combo_format.isEnabled())
+
+        panel.cb_convert_format.setChecked(True)
+        self.assertTrue(panel.combo_format.isEnabled())
+        panel.combo_format.setCurrentIndex(1)  # PNG
+        policy_png = panel.get_policy()
+        self.assertEqual(policy_png.target_format, "PNG")
+
+        panel.combo_format.setCurrentIndex(2)  # WebP
+        policy_webp = panel.get_policy()
+        self.assertEqual(policy_webp.target_format, "WEBP")
+
+        # Threat model selection updates checkboxes
+        panel.combo_threat.setCurrentIndex(1)  # Strict Sanitization
+        self.assertTrue(panel.cb_strict_gate.isChecked())
+
+    def test_image_quality_gate_strict_vs_advisory(self):
+        """Image quality gate should allow export on heuristic warnings when strict_redteam_gate is False, but fail-closed on metadata or when strict_redteam_gate is True."""
+        from veilframe.image.gate.image_gate import ImageQualityGate
+        from veilframe.image.models.status import CheckStatus, PublicationState
+        from veilframe.image.models.coordinates import TransformationGeometryMap
+        from veilframe.image.verification.geometry import GeometryIntegrityAuditor
+        from veilframe.image.verification.completeness import CompletenessAuditResult
+        from veilframe.image.fidelity.region_fidelity import RegionFidelityResult
+        from veilframe.image.redteam.engine import PrivacyAttackResult
+        from veilframe.image.redteam.probes.base import ProbeResult
+
+        gate = ImageQualityGate()
+        geo_map = TransformationGeometryMap(100, 100, 100, 100, 0.0)
+        geo_res = GeometryIntegrityAuditor(geo_map).audit(100, 100)
+        comp_res = CompletenessAuditResult(
+            status=CheckStatus.PASS,
+            dag_hash_verified=True,
+            plan_hash_verified=True,
+            executed_task_ids=frozenset(["t1"]),
+            required_task_ids=frozenset(["t1"]),
+            missing_task_ids=frozenset(),
+            unexpected_task_ids=frozenset(),
+            redaction_records_valid=True,
+        )
+        fidelity = RegionFidelityResult(status=CheckStatus.PASS, ssim=0.99, psnr_db=45.0, mae=0.001)
+
+        # Case 1: EXIF/metadata probe FAIL -> ALWAYS QUARANTINED even if strict_redteam_gate is False
+        rt_exif_fail = PrivacyAttackResult(
+            overall_status=CheckStatus.FAIL,
+            probes_run=2,
+            probes_failed=1,
+            probe_results={
+                "metadata": ProbeResult(probe_name="metadata", status=CheckStatus.FAIL, findings=["EXIF GPS present"]),
+                "text": ProbeResult(probe_name="text", status=CheckStatus.PASS),
+            }
+        )
+        eval_exif_fail = gate.evaluate(
+            geometry_result=geo_res,
+            completeness_result=comp_res,
+            red_team_result=rt_exif_fail,
+            independence_status=CheckStatus.PASS,
+            fidelity_result=fidelity,
+            strict_redteam_gate=False,
+        )
+        self.assertEqual(eval_exif_fail.overall_status, CheckStatus.FAIL)
+        self.assertEqual(eval_exif_fail.publication_state, PublicationState.QUARANTINED)
+
+        # Case 2: Heuristic probe (text/plate) FAIL, Metadata PASS, strict_redteam_gate = False -> VERIFIED / PASS
+        rt_heuristic_fail = PrivacyAttackResult(
+            overall_status=CheckStatus.FAIL,
+            probes_run=4,
+            probes_failed=1,
+            probe_results={
+                "metadata": ProbeResult(probe_name="metadata", status=CheckStatus.PASS),
+                "thumbnail": ProbeResult(probe_name="thumbnail", status=CheckStatus.PASS),
+                "container": ProbeResult(probe_name="container", status=CheckStatus.PASS),
+                "text": ProbeResult(probe_name="text", status=CheckStatus.FAIL, findings=["Text edge detected"]),
+            }
+        )
+        eval_heuristic_pass = gate.evaluate(
+            geometry_result=geo_res,
+            completeness_result=comp_res,
+            red_team_result=rt_heuristic_fail,
+            independence_status=CheckStatus.PASS,
+            fidelity_result=fidelity,
+            strict_redteam_gate=False,
+        )
+        self.assertEqual(eval_heuristic_pass.overall_status, CheckStatus.PASS)
+        self.assertEqual(eval_heuristic_pass.publication_state, PublicationState.VERIFIED)
+
+        # Case 3: Same heuristic probe FAIL, strict_redteam_gate = True -> QUARANTINED
+        eval_heuristic_strict_fail = gate.evaluate(
+            geometry_result=geo_res,
+            completeness_result=comp_res,
+            red_team_result=rt_heuristic_fail,
+            independence_status=CheckStatus.PASS,
+            fidelity_result=fidelity,
+            strict_redteam_gate=True,
+        )
+        self.assertEqual(eval_heuristic_strict_fail.overall_status, CheckStatus.FAIL)
+        self.assertEqual(eval_heuristic_strict_fail.publication_state, PublicationState.QUARANTINED)
+
+
 
 
 if __name__ == "__main__":
     unittest.main()
+

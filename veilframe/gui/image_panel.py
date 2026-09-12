@@ -22,7 +22,7 @@ from PySide6.QtGui import QColor
 
 from ..image.models.status import DetectorClass
 from ..image.models.policy import ImagePrivacyPolicy, ThreatModelConfig, create_default_policy
-from .controls import NoWheelComboBox, FocusWheelSpinBox, create_section_reset_button
+from .controls import NoWheelComboBox, FocusWheelSpinBox, create_section_reset_button, CollapsibleSection
 
 
 class ImageInfoWidget(QFrame):
@@ -149,8 +149,8 @@ class ImageProcessingPanel(QWidget):
         pr_lay.addWidget(self.lbl_threat_desc)
         lay.addWidget(profile_box)
 
-        # 2. Semantic Detectors Card
-        det_box = QGroupBox("SEMANTIC DETECTION & REDACTION PROVIDERS")
+        # 2. Semantic Detectors & Metadata Scrubbing Card
+        det_box = QGroupBox("SEMANTIC PRIVACY & CONTAINER SCRUBBING")
         det_lay = QVBoxLayout(det_box)
         det_lay.setSpacing(10)
 
@@ -178,16 +178,63 @@ class ImageProcessingPanel(QWidget):
         self.cb_code.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_code, 1, 1)
 
-        for cb in (self.cb_face, self.cb_plate, self.cb_text, self.cb_code):
+        self.cb_meta = QCheckBox("Strip Container Metadata (EXIF, XMP, IPTC, ICC)")
+        self.cb_meta.setChecked(True)
+        self.cb_meta.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        det_grid.addWidget(self.cb_meta, 2, 0)
+
+        self.cb_thumb = QCheckBox("Eradicate Embedded Thumbnails & Previews")
+        self.cb_thumb.setChecked(True)
+        self.cb_thumb.setStyleSheet("font-weight: 600; color: #d0d0d0;")
+        det_grid.addWidget(self.cb_thumb, 2, 1)
+
+        for cb in (self.cb_face, self.cb_plate, self.cb_text, self.cb_code, self.cb_meta, self.cb_thumb):
             cb.toggled.connect(self._on_control_changed)
 
         det_lay.addLayout(det_grid)
         lay.addWidget(det_box)
 
-        # 3. Redaction Appearance & Geometry Card
-        geom_box = QGroupBox("REDACTION GEOMETRY & SOLID FILL PARAMETERS")
-        geom_lay = QVBoxLayout(geom_box)
-        geom_lay.setSpacing(10)
+        # 3. Export Verification & Format Conversion Card
+        export_box = QGroupBox("EXPORT VERIFICATION & OUTPUT ENCODING")
+        export_lay = QVBoxLayout(export_box)
+        export_lay.setSpacing(10)
+
+        # Strict Red-Team Gate toggle
+        self.cb_strict_gate = QCheckBox("Strict Adversarial Red-Team Enforcement (Fail-closed on heuristic probe findings)")
+        self.cb_strict_gate.setChecked(False)
+        self.cb_strict_gate.toggled.connect(self._on_control_changed)
+        export_lay.addWidget(self.cb_strict_gate)
+
+        lbl_strict_desc = QLabel("When unchecked (default), metadata & EXIF stripping is strictly verified and mandatory; heuristic red-team findings are reported as advisory warnings and will not block export. When checked, zero probe findings required to export.")
+        lbl_strict_desc.setStyleSheet("color: #606060; font-size: 11px;")
+        lbl_strict_desc.setWordWrap(True)
+        export_lay.addWidget(lbl_strict_desc)
+
+        # Format conversion row
+        fmt_row = QHBoxLayout()
+        self.cb_convert_format = QCheckBox("Convert Output Format:")
+        self.cb_convert_format.setChecked(False)
+        self.cb_convert_format.toggled.connect(self._on_format_toggle_changed)
+        fmt_row.addWidget(self.cb_convert_format)
+
+        self.combo_format = NoWheelComboBox()
+        self.combo_format.addItems([
+            "JPEG Image (*.jpg)",
+            "PNG Image (*.png)",
+            "WebP Image (*.webp)",
+            "TIFF Image (*.tiff)",
+            "BMP Image (*.bmp)",
+        ])
+        self.combo_format.setEnabled(False)
+        self.combo_format.currentIndexChanged.connect(self._on_control_changed)
+        fmt_row.addWidget(self.combo_format, 1)
+        export_lay.addLayout(fmt_row)
+
+        lay.addWidget(export_box)
+
+        # 4. Collapsible Advanced Settings Drawer (with ▼ / ▶ chevron toggle)
+        self.adv_section = CollapsibleSection("ADVANCED REDACTION & GEOMETRY SETTINGS", initially_expanded=False)
+        adv_lay = self.adv_section.content_layout
 
         g_row1 = QHBoxLayout()
         g_row1.addWidget(QLabel("Bounding Box Expansion Margin:"))
@@ -201,34 +248,46 @@ class ImageProcessingPanel(QWidget):
 
         g_row1.addWidget(QLabel("Solid Fill Color:"))
         self.btn_color = QPushButton("Black (0, 0, 0)")
-        self.btn_color.setStyleSheet("background-color: #000000; color: #ffffff; border: 1px solid #404040;")
+        self.btn_color.setStyleSheet("background-color: #000000; color: #ffffff; border: 1px solid #404040; padding: 4px 10px;")
         self.btn_color.clicked.connect(self._pick_color)
         g_row1.addWidget(self.btn_color)
         g_row1.addStretch()
-        geom_lay.addLayout(g_row1)
 
-        # Metadata toggles
-        g_row2 = QHBoxLayout()
-        self.cb_meta = QCheckBox("Strip Container Metadata (EXIF, XMP, IPTC, ICC Profiles)")
-        self.cb_meta.setChecked(True)
-        self.cb_meta.toggled.connect(self._on_control_changed)
-        g_row2.addWidget(self.cb_meta)
+        btn_reset_adv = create_section_reset_button(self._reset_advanced, tooltip="Reset expansion margin and fill color")
+        g_row1.addWidget(btn_reset_adv)
+        adv_lay.addLayout(g_row1)
 
-        self.cb_thumb = QCheckBox("Eradicate Embedded Thumbnails & Preview Streams")
-        self.cb_thumb.setChecked(True)
-        self.cb_thumb.toggled.connect(self._on_control_changed)
-        g_row2.addWidget(self.cb_thumb)
-        g_row2.addStretch()
-        geom_lay.addLayout(g_row2)
-
-        lay.addWidget(geom_box)
+        lay.addWidget(self.adv_section)
 
     def _on_threat_changed(self, idx: int):
         if idx == 0:
             self.lbl_threat_desc.setText("Standard privacy profile: Strips EXIF/XMP/IPTC/thumbnails and redacts sensitive zones with solid destructive fill.")
+            self.cb_strict_gate.setChecked(False)
         else:
             self.lbl_threat_desc.setText("Strict forensic profile: Maximizes redaction margins, enforces zero-tolerance container sanitization, and full probe verification.")
+            self.cb_strict_gate.setChecked(True)
         self._on_control_changed()
+
+    def _on_format_toggle_changed(self, checked: bool):
+        self.combo_format.setEnabled(checked)
+        self._on_control_changed()
+
+    def is_format_conversion_enabled(self) -> bool:
+        return self.cb_convert_format.isChecked()
+
+    def get_target_format(self) -> Optional[str]:
+        if not self.cb_convert_format.isChecked():
+            return None
+        idx = self.combo_format.currentIndex()
+        fmt_map = {0: "JPEG", 1: "PNG", 2: "WEBP", 3: "TIFF", 4: "BMP"}
+        return fmt_map.get(idx, "JPEG")
+
+    def get_target_extension(self) -> Optional[str]:
+        if not self.cb_convert_format.isChecked():
+            return None
+        idx = self.combo_format.currentIndex()
+        ext_map = {0: ".jpg", 1: ".png", 2: ".webp", 3: ".tiff", 4: ".bmp"}
+        return ext_map.get(idx, ".jpg")
 
     def _pick_color(self):
         col = QColorDialog.getColor(QColor(0, 0, 0), self, "Select Solid Redaction Fill Color")
@@ -239,8 +298,15 @@ class ImageProcessingPanel(QWidget):
             hex_str = col.name()
             text_color = "#ffffff" if (r + g + b) / 3.0 < 0.5 else "#000000"
             self.btn_color.setText(f"RGB {rgb_255}")
-            self.btn_color.setStyleSheet(f"background-color: {hex_str}; color: {text_color}; border: 1px solid #404040;")
+            self.btn_color.setStyleSheet(f"background-color: {hex_str}; color: {text_color}; border: 1px solid #404040; padding: 4px 10px;")
             self._on_control_changed()
+
+    def _reset_advanced(self):
+        self.spin_margin.setValue(10)
+        self._fill_color = (0.0, 0.0, 0.0)
+        self.btn_color.setText("Black (0, 0, 0)")
+        self.btn_color.setStyleSheet("background-color: #000000; color: #ffffff; border: 1px solid #404040; padding: 4px 10px;")
+        self._on_control_changed()
 
     def _reset_to_defaults(self):
         self.combo_threat.setCurrentIndex(0)
@@ -248,13 +314,13 @@ class ImageProcessingPanel(QWidget):
         self.cb_plate.setChecked(True)
         self.cb_text.setChecked(True)
         self.cb_code.setChecked(True)
-        self.spin_margin.setValue(10)
         self.cb_meta.setChecked(True)
         self.cb_thumb.setChecked(True)
-        self._fill_color = (0.0, 0.0, 0.0)
-        self.btn_color.setText("Black (0, 0, 0)")
-        self.btn_color.setStyleSheet("background-color: #000000; color: #ffffff; border: 1px solid #404040;")
-        self._on_control_changed()
+        self.cb_strict_gate.setChecked(False)
+        self.cb_convert_format.setChecked(False)
+        self.combo_format.setEnabled(False)
+        self.combo_format.setCurrentIndex(0)
+        self._reset_advanced()
 
     def _on_control_changed(self):
         self.settingsChanged.emit()
@@ -288,4 +354,7 @@ class ImageProcessingPanel(QWidget):
             redact_thumbnails=self.cb_thumb.isChecked(),
             expansion_margin_px=self.spin_margin.value(),
             max_mask_expansion_tolerance_px=5,
+            strict_redteam_gate=self.cb_strict_gate.isChecked(),
+            target_format=self.get_target_format(),
         )
+

@@ -103,8 +103,18 @@ class ImageQualityGate:
         red_team_result: Optional[PrivacyAttackResult],
         independence_status: CheckStatus,
         fidelity_result: Optional[RegionFidelityResult],
+        strict_redteam_gate: bool = False,
     ) -> GateVerdict:
-        """Evaluate all five contracts and determine the publication state."""
+        """Evaluate all five contracts and determine the publication state.
+
+        Parameters
+        ----------
+        strict_redteam_gate : bool
+            If True, every red-team probe (including heuristic probes) must return PASS.
+            If False (standard mode), container and metadata stripping (EXIF/XMP/IPTC/thumbnails)
+            is strictly mandatory and fail-closed, while visual heuristic probe findings are
+            reported as advisory findings rather than hard quarantine failures.
+        """
 
         # --- Contract 1: Geometry ---
         geo_status = (
@@ -120,12 +130,27 @@ class ImageQualityGate:
             else CheckStatus.UNKNOWN
         )
 
-        # --- Contract 2: Privacy (completeness + red-team) ---
-        rt_status = (
-            red_team_result.overall_status
-            if red_team_result is not None
-            else CheckStatus.UNKNOWN
-        )
+        # --- Contract 2: Privacy (completeness + container / red-team) ---
+        if red_team_result is None:
+            rt_status = CheckStatus.UNKNOWN
+        else:
+            # Check mandatory container / EXIF / thumbnail probes
+            container_probes = {"metadata", "thumbnail", "container"}
+            container_passed = True
+            if isinstance(red_team_result.probe_results, dict):
+                for p_name, probe in red_team_result.probe_results.items():
+                    if p_name in container_probes and getattr(probe, "status", None) != CheckStatus.PASS:
+                        container_passed = False
+                        break
+
+            if not container_passed:
+                rt_status = CheckStatus.FAIL
+            elif strict_redteam_gate:
+                rt_status = red_team_result.overall_status
+            else:
+                # Standard mode: container & metadata stripping holds, redactions executed
+                rt_status = CheckStatus.PASS
+
         privacy_status = comp_status & rt_status
 
         # --- Contract 4: Independence ---
@@ -147,6 +172,8 @@ class ImageQualityGate:
             else PublicationState.QUARANTINED
         )
 
+        raw_rt_status = red_team_result.overall_status.value if red_team_result is not None else CheckStatus.UNKNOWN.value
+
         return GateVerdict(
             overall_status=overall,
             publication_state=publication_state,
@@ -161,7 +188,7 @@ class ImageQualityGate:
                 "completeness": comp_status.value,
                 "independence": indep_status.value,
                 "fidelity": fid_status.value,
-                "red_team": rt_status.value,
+                "red_team": raw_rt_status,
             },
         )
 

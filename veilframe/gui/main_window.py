@@ -105,7 +105,20 @@ class ImagePipelineWorker(QThread):
     def run(self):
         try:
             pipeline = ImagePrivacyPipeline(policy=self.policy)
-            target_fmt = "PNG" if self.dst.suffix.lower() == ".png" else "WEBP" if self.dst.suffix.lower() == ".webp" else "JPEG"
+            ext = self.dst.suffix.lower()
+            if ext in (".jpg", ".jpeg"):
+                target_fmt = "JPEG"
+            elif ext == ".png":
+                target_fmt = "PNG"
+            elif ext == ".webp":
+                target_fmt = "WEBP"
+            elif ext in (".tif", ".tiff"):
+                target_fmt = "TIFF"
+            elif ext == ".bmp":
+                target_fmt = "BMP"
+            else:
+                target_fmt = getattr(self.policy, "target_format", None) or "JPEG"
+
             result = pipeline.run(
                 input_source=self.src,
                 output_path=self.dst,
@@ -547,13 +560,17 @@ class MainWindow(QMainWindow):
         if not self.src_path:
             return
 
-        ext = self.src_path.suffix.lower()
-        default_name = f"{self.src_path.stem}_sanitized{ext}"
+        if self.image_processing_panel.is_format_conversion_enabled():
+            target_ext = self.image_processing_panel.get_target_extension() or self.src_path.suffix.lower()
+        else:
+            target_ext = self.src_path.suffix.lower()
+
+        default_name = f"{self.src_path.stem}_sanitized{target_ext}"
         default_out = self.src_path.with_name(default_name)
 
         out_path_str, _ = QFileDialog.getSaveFileName(
             self, "Save Sanitized Image", str(default_out),
-            "JPEG Image (*.jpg *.jpeg);;PNG Image (*.png);;WebP Image (*.webp);;All Files (*.*)",
+            "JPEG Image (*.jpg *.jpeg);;PNG Image (*.png);;WebP Image (*.webp);;TIFF Image (*.tiff *.tif);;BMP Image (*.bmp);;All Files (*.*)",
         )
         if not out_path_str:
             return
