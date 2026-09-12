@@ -52,7 +52,7 @@ class VerificationReport:
     def format_text(self) -> str:
         """Returns the formatted ASCII Privacy & Fidelity Audit Report."""
         def mark(passed: bool) -> str:
-            return "✓" if passed else "✗ LEAK"
+            return "[PASS]" if passed else "[FAIL LEAK]"
 
         # Check if creation date is either NONE or Epoch 0 (1970-01-01)
         creation_clean = self.creation_date in ("NONE", "1970-01-01T00:00:00.000000Z", "1970-01-01T00:00:00Z")

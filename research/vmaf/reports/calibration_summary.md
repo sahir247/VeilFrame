@@ -88,10 +88,10 @@ In compliance with the methodological rules:
 ### Discrete Grid Sweep ([70.0, 100.0], Step 0.5)
 | Threshold Range $T$ | False Accept Rate ($\text{FAR}$) | Target $\text{FAR} < 2.0\%$ | False Reject Rate ($\text{FRR}$) | Target $\text{FRR} < 5.0\%$ | Feasibility Status |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| **$70.0 \le T \le 89.5$** | **$3.85\%$** | ❌ FAILS ($> 2.0\%$) | **$0.00\%$** | ✅ PASSES | **INFEASIBLE** |
-| **$90.0 \le T \le 92.5$** | **$1.92\%$** | ✅ PASSES ($< 2.0\%$) | **$5.56\%$** | ❌ FAILS ($> 5.0\%$) | **INFEASIBLE** |
-| **$93.0 \le T \le 95.0$** | **$0.00\% - 1.92\%$** | ✅ PASSES | **$11.11\%$** | ❌ FAILS ($> 5.0\%$) | **INFEASIBLE** |
-| **$T \ge 95.5$** | **$0.00\%$** | ✅ PASSES | **$22.22\% - 44.44\%$** | ❌ FAILS (Catastrophic) | **INFEASIBLE** |
+| **$70.0 \le T \le 89.5$** | **$3.85\%$** | [FAIL] FAILS ($> 2.0\%$) | **$0.00\%$** | [PASS] PASSES | **INFEASIBLE** |
+| **$90.0 \le T \le 92.5$** | **$1.92\%$** | [PASS] PASSES ($< 2.0\%$) | **$5.56\%$** | [FAIL] FAILS ($> 5.0\%$) | **INFEASIBLE** |
+| **$93.0 \le T \le 95.0$** | **$0.00\% - 1.92\%$** | [PASS] PASSES | **$11.11\%$** | [FAIL] FAILS ($> 5.0\%$) | **INFEASIBLE** |
+| **$T \ge 95.5$** | **$0.00\%$** | [PASS] PASSES | **$22.22\% - 44.44\%$** | [FAIL] FAILS (Catastrophic) | **INFEASIBLE** |
 
 ### Exhaustive Decision-Boundary & Interval Analysis
 To eliminate discrete grid artifacts and avoid arbitrary floating-point epsilons, the calibration engine evaluated every unique observed decision value $V_{\text{dec}} = \min(V_{\text{mean}}, V_{p5})$ and every constant open interval $(v_i, v_{i+1})$:

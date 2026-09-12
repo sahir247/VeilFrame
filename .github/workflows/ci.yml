@@ -85,7 +85,7 @@ jobs:
       - name: Test Independent Manifest Verifier Example
         run: |
           python -c "
-          import tempfile, subprocess
+          import tempfile, subprocess, sys
           from pathlib import Path
           from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
           from tests.test_quality_gate import TestProductionQualityGate
@@ -95,7 +95,7 @@ jobs:
           report = evaluate_visual_quality(t.ref_video, t.ref_video, canonical_w=320, canonical_h=240)
           td = Path(tempfile.mkdtemp())
           paths = generate_ed25519_signed_manifest(report, td)
-          cmd = ['python', 'examples/verify_manifest.py', str(paths[0]), str(paths[2]), str(paths[3]), '--expected-fingerprint', report.public_key_fingerprint, '--video-file', str(t.ref_video)]
+          cmd = [sys.executable, 'examples/verify_manifest.py', str(paths[0]), str(paths[2]), str(paths[3]), '--expected-fingerprint', report.public_key_fingerprint, '--video-file', str(t.ref_video)]
           subprocess.run(cmd, check=True)
           "
 

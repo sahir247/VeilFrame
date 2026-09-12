@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" width="100%" height="100%" style="background:#09090b;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#581c87"/>
+      <stop offset="100%" stop-color="#6b21a8"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </linearGradient>
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#78350f"/>
+      <stop offset="100%" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="38" fill="#f4f4f5" font-size="18" font-weight="800" letter-spacing="2" text-anchor="middle">VEILFRAME SYSTEM ARCHITECTURE</text>
+  <text x="500" y="58" fill="#71717a" font-size="12" text-anchor="middle">Fail-Closed Multimedia Privacy Compiler &amp; Provenance Engine</text>
+
+  <!-- Column 1: Video Pipeline -->
+  <g transform="translate(40, 80)">
+    <rect x="0" y="0" width="280" height="400" rx="8" fill="#141417" stroke="#27272a" stroke-width="1.5"/>
+    <rect x="0" y="0" width="280" height="36" rx="8" fill="url(#blueGrad)"/>
+    <text x="140" y="23" fill="#ffffff" font-size="12" font-weight="800" text-anchor="middle">VIDEO PRIVACY PIPELINE</text>
+
+    <g transform="translate(16, 52)" font-size="11">
+      <rect x="0" y="0" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" fill="#60a5fa" font-weight="700">Pass 1: Metadata Scrub</text>
+      <text x="10" y="36" fill="#a1a1aa">• Drop MP4/MOV atoms (udta, meta)</text>
+      <text x="10" y="50" fill="#a1a1aa">• Strip unreferenced SEI NAL units</text>
+
+      <rect x="0" y="70" width="248" height="84" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,70)" fill="#60a5fa" font-weight="700">Pass 2: Bounded Perturbation</text>
+      <text x="10" y="36" transform="translate(0,70)" fill="#a1a1aa">• Bayer CFA PRNU dither</text>
+      <text x="10" y="50" transform="translate(0,70)" fill="#a1a1aa">• 2D DCT block coefficient shift</text>
+      <text x="10" y="64" transform="translate(0,70)" fill="#a1a1aa">• ENF 50/60Hz acoustic notch filter</text>
+      <text x="10" y="78" transform="translate(0,70)" fill="#a1a1aa">• Decimal FPS micro-time warp</text>
+
+      <rect x="0" y="164" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,164)" fill="#60a5fa" font-weight="700">Pass 3: Container Assembly</text>
+      <text x="10" y="36" transform="translate(0,164)" fill="#a1a1aa">• Bit-exact muxing to Unix Epoch 0</text>
+      <text x="10" y="50" transform="translate(0,164)" fill="#a1a1aa">• Strict SPS/PPS header normalization</text>
+      
+      <rect x="0" y="234" width="248" height="95" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,234)" fill="#34d399" font-weight="700">3-Tier Video QualityGate</text>
+      <text x="10" y="36" transform="translate(0,234)" fill="#a1a1aa">• Tier 1: Multi-metric budget ceilings</text>
+      <text x="10" y="50" transform="translate(0,234)" fill="#a1a1aa">• Tier 2: SSIM &gt;= 0.95, PSNR &gt;= 30dB</text>
+      <text x="10" y="64" transform="translate(0,234)" fill="#a1a1aa">• Tier 3: PTS monotonicity audit</text>
+      <text x="10" y="78" transform="translate(0,234)" fill="#a1a1aa">• Invariant: Providers measure, gate decides</text>
+    </g>
+  </g>
+
+  <!-- Column 2: Image Pipeline -->
+  <g transform="translate(360, 80)">
+    <rect x="0" y="0" width="280" height="400" rx="8" fill="#141417" stroke="#27272a" stroke-width="1.5"/>
+    <rect x="0" y="0" width="280" height="36" rx="8" fill="url(#purpleGrad)"/>
+    <text x="140" y="23" fill="#ffffff" font-size="12" font-weight="800" text-anchor="middle">IMAGE PRIVACY COMPILER</text>
+
+    <g transform="translate(16, 52)" font-size="11">
+      <rect x="0" y="0" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" fill="#c084fc" font-weight="700">Layer A: Container Purge</text>
+      <text x="10" y="36" fill="#a1a1aa">• Parse &amp; strip JPEG APP/EXIF/XMP</text>
+      <text x="10" y="50" fill="#a1a1aa">• Strip PNG chunks (eXIf, tEXt, iTXt)</text>
+
+      <rect x="0" y="70" width="248" height="50" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,70)" fill="#c084fc" font-weight="700">Layer B: Representation</text>
+      <text x="10" y="36" transform="translate(0,70)" fill="#a1a1aa">• Bake EXIF orientation to pixels</text>
+      <text x="10" y="50" transform="translate(0,70)" fill="#a1a1aa">• Canonical linear-sRGB float32 space</text>
+
+      <rect x="0" y="130" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,130)" fill="#c084fc" font-weight="700">Layer C: Semantic Redaction</text>
+      <text x="10" y="36" transform="translate(0,130)" fill="#a1a1aa">• Detect Face, Plate, Text, QR codes</text>
+      <text x="10" y="50" transform="translate(0,130)" fill="#a1a1aa">• Isolated ConstantFill (ABSENT dep)</text>
+
+      <rect x="0" y="200" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,200)" fill="#f59e0b" font-weight="700">Adversarial Red-Team (7 Probes)</text>
+      <text x="10" y="36" transform="translate(0,200)" fill="#a1a1aa">• Level-3 Fingerprint-Distinct probes</text>
+      <text x="10" y="50" transform="translate(0,200)" fill="#a1a1aa">• Zero sensitive residue verification</text>
+
+      <rect x="0" y="270" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,270)" fill="#34d399" font-weight="700">5 Normative Contracts</text>
+      <text x="10" y="36" transform="translate(0,270)" fill="#a1a1aa">• Privacy, Geometry, Fidelity,</text>
+      <text x="10" y="50" transform="translate(0,270)" fill="#a1a1aa">• Integrity, Completeness (Fail-Closed)</text>
+    </g>
+  </g>
+
+  <!-- Column 3: Cryptographic Provenance -->
+  <g transform="translate(680, 80)">
+    <rect x="0" y="0" width="280" height="400" rx="8" fill="#141417" stroke="#27272a" stroke-width="1.5"/>
+    <rect x="0" y="0" width="280" height="36" rx="8" fill="url(#emeraldGrad)"/>
+    <text x="140" y="23" fill="#ffffff" font-size="12" font-weight="800" text-anchor="middle">CRYPTOGRAPHIC PROVENANCE</text>
+
+    <g transform="translate(16, 52)" font-size="11">
+      <rect x="0" y="0" width="248" height="80" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" fill="#34d399" font-weight="700">RFC 8785 Canonicalization (JCS)</text>
+      <text x="10" y="36" fill="#a1a1aa">• Domain separation:</text>
+      <text x="20" y="50" fill="#e4e4e7">VEILFRAME-IDENTITY-V1</text>
+      <text x="20" y="64" fill="#e4e4e7">VEILFRAME-EVIDENCE-V1</text>
+      <text x="10" y="78" fill="#a1a1aa">• Immutable deterministic hashes</text>
+
+      <rect x="0" y="90" width="248" height="60" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,90)" fill="#34d399" font-weight="700">Ed25519 Digital Signatures</text>
+      <text x="10" y="36" transform="translate(0,90)" fill="#a1a1aa">• Trust anchor key registry</text>
+      <text x="10" y="50" transform="translate(0,90)" fill="#a1a1aa">• Tamper-evident sidecars (.sig)</text>
+
+      <rect x="0" y="160" width="248" height="80" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,160)" fill="#34d399" font-weight="700">Atomic Publishing State Machine</text>
+      <text x="10" y="36" transform="translate(0,160)" fill="#a1a1aa">• STAGED ─► VERIFIED ─► COMMITTING</text>
+      <text x="10" y="50" transform="translate(0,160)" fill="#a1a1aa">• Automatic QUARANTINED rollback</text>
+      <text x="10" y="64" transform="translate(0,160)" fill="#a1a1aa">• Invariant: FinalHash == CandHash</text>
+
+      <rect x="0" y="250" width="248" height="80" rx="4" fill="#18181b" stroke="#27272a"/>
+      <text x="10" y="20" transform="translate(0,250)" fill="#34d399" font-weight="700">Production Audit Bundle</text>
+      <text x="10" y="36" transform="translate(0,250)" fill="#a1a1aa">• &lt;artifact&gt;.manifest.json</text>
+      <text x="10" y="50" transform="translate(0,250)" fill="#a1a1aa">• &lt;artifact&gt;.sig</text>
+      <text x="10" y="64" transform="translate(0,250)" fill="#a1a1aa">• &lt;artifact&gt;.sha256</text>
+      <text x="10" y="78" transform="translate(0,250)" fill="#a1a1aa">• &lt;artifact&gt;.pubkey.pem</text>
+    </g>
+  </g>
+</svg>

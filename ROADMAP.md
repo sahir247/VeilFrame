@@ -4,35 +4,43 @@
 
 > **Providers measure. VeilFrame decides.**
 >
-> No transformation engine or metric measurement provider ever decides whether a video passes. Pass/fail verdicts are owned strictly and exclusively by the independent, read-only `QualityGate`.
+> No transformation engine or metric measurement provider ever decides whether media passes. Pass/fail verdicts are owned strictly and exclusively by the independent, read-only `QualityGate`.
 
 ---
 
 ## Release Milestones & Architecture Status
 
-### v1.1 CURRENT (Production Release Candidate)
-- **Multi-Pass Sanitization Pipeline**: Container atom stripping, SEI removal, Bayer CFA PRNU dither, 2D DCT perturbation, ENF mains filtering.
-- **Provider / Gate Separation**: `QualityProvider` protocol with `FFmpegNativeProvider` (SSIM, PSNR via native libavfilter).
-- **Independent 3-Tier QualityGate**:
-  - Tier 1: Multi-dimensional mathematical budget ceilings (Spatial, Temporal, Luma, Chroma, Frequency, Aggregate).
-  - Tier 2: Structural & pixel fidelity (`SSIM >= 0.9500`, `PSNR >= 30.0 dB`, $D_{TV}$ luma distribution drift).
-  - Tier 3: Temporal integrity & pre-resampling presentation timestamp (PTS) monotonicity audit.
-- **Production Audit Bundle**: Dedicated `<video>_audit/` bundle co-locating `manifest.json` (RFC 8785 canonical JCS), `manifest.sig` (Ed25519), `manifest.sha256`, and `public_key.pem`.
-- **Cryptographic Provenance**: Dual-mode Ed25519 signing (ephemeral & persistent) with pinned public key fingerprints and standalone zero-dependency verifier (`examples/verify_manifest.py`).
-- **Interactive Developer TUI / CLI**: Keyboard-arrow traversable navigation, `#CE9178` brand styling, physical GPU detection, and hardware encoder diagnostics.
-- **Test Matrix & CI**: Comprehensive unit and integration test suite passing across Ubuntu and Windows matrices.
+### v2.0 CURRENT (Production Release)
+- **Dual Multimedia Pipeline**:
+  - **Video Sanitization Pipeline**: Multi-pass container atom stripping, SEI NAL removal, Bayer CFA PRNU dither, 2D DCT block perturbation, and acoustic ENF mains notch filtration.
+  - **Image Privacy Compiler**: Multi-layer deterministic compilation pipeline (Layer A Container Sanitization, Layer B Representation Normalization, Layer C Isolated Semantic Redaction).
+- **Independent 5-Contract QualityGate**:
+  - Privacy Contract: Zero residual facial, plate, text, or QR/barcode detections across independent probes.
+  - Geometry Contract: Exact preservation of spatial canvas dimensions ($\|Observed - Expected\|_\infty = 0$).
+  - Fidelity Contract: Strict pixel preservation in non-redacted areas ($D_{TV} \le \text{budget}$, $\text{SSIM} \ge \text{target}$).
+  - Integrity Contract: Strict alpha binary quantization ($\alpha \in \{0, 1\}$) with zero anti-aliasing edge leaks.
+  - Completeness Contract: Complete structural bounding-box coverage across all requested regions.
+- **Independent Red-Team Probe Suite**:
+  - 7 Level-3 Fingerprint-Distinct probes (Face, License Plate, OCR Text, QR/Barcode, Container Residuals, Alpha Fringe, Palette Indexing).
+- **Dual-Mode PySide6 GUI**:
+  - Modern desktop interface with real-time video/image mode switcher, drag-and-drop auto-detection, detector toggles, visual 5-contract checklist, probe results table, and signed manifest inspector.
+- **Cryptographic Provenance**:
+  - RFC 8785 Canonical JCS JSON manifests bound with Ed25519 digital signatures and SHA-256 bitstream digests.
+  - Ephemeral and persistent signing modes with pinned public key fingerprints.
+- **Unified CLI Suite**:
+  - Full CLI support (`veilframe sanitize`, `veilframe image sanitize`, `veilframe image verify`, `veilframe image inspect`, `veilframe image doctor`, `veilframe doctor`, `veilframe presets`).
 
 ---
 
-### v1.2 UPCOMING: Objective Perceptual Refinement & Performance Optimization
-- **VMAF Architecture Resolution**: Formal non-qualification and permanent excision of VMAF from production pipeline (see [ADR 0002](docs/adr/0002-remove-vmaf-from-production-quality-pipeline.md)); static historical research archive maintained under `research/vmaf/`.
-- **High-Throughput Acceleration**: Zero-copy hardware accelerated pipeline paths for high-speed batch sanitization.
-- **Advanced Audio Sanitization**: Enhanced multi-band ENF mains notch filtering and acoustic watermark neutralization.
+### v2.1 UPCOMING: Hardware Acceleration & High-Throughput Batch Processing
+- **Zero-Copy GPU Paths**: Direct GPU texture sharing for real-time video and image batch redaction.
+- **Async Batch Dispatcher**: Multi-threaded worker queue for large-scale directory and cloud bucket batch sanitization.
+- **Advanced Audio Neutralization**: Expanded harmonic notch filtering and acoustic watermark neutralization.
 
 ---
 
-### v1.3 UPCOMING: Advanced Forensic Consensus Layer
-- **Multi-Parser Consensus**: Cross-validation of container syntax using both `ffprobe` and `MediaInfo`.
-- **ExifTool Deep Forensic Audit**: Optional deep-inspection pass for non-standard vendor atoms.
-- **Adversarial Regression Lab**: Automated test fixtures designed to stress-test adversarial bitstream tampering and clock-skew vectors.
+### v2.2 UPCOMING: Advanced Forensic Consensus & Distributed Provenance
+- **Multi-Parser Consensus**: Cross-validation of container syntax using both `ffprobe`, `MediaInfo`, and native Rust parsers.
+- **ExifTool Deep Forensic Audit**: Optional deep-inspection pass for proprietary vendor metadata blocks.
+- **Hardware Security Module (HSM) Integration**: Direct PKCS#11 HSM support for enterprise cryptographic audit signing.
 - **Audit Reproducibility CLI**: `veilframe audit-reproduce <audit_bundle_dir>` for 1-click deterministic re-verification.

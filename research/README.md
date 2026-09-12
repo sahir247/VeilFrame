@@ -4,7 +4,7 @@ The **VeilFrame Research Layer** is a neutral scientific evaluation framework de
 
 ---
 
-## 🔬 Core Design Philosophy
+## Core Design Philosophy
 
 VeilFrame strictly decouples **production sanitization & quality verification** from **forensic attribution research**:
 
@@ -20,7 +20,7 @@ VeilFrame strictly decouples **production sanitization & quality verification** 
 
 ---
 
-## 🏛️ 3-Layer Metrics Architecture
+## 3-Layer Metrics Architecture
 
 Every benchmark detector implements a 3-layer output schema:
 
@@ -48,7 +48,7 @@ Every benchmark detector implements a 3-layer output schema:
 
 ---
 
-## 📦 Benchmark Detectors
+## Benchmark Detectors
 
 ### 1. Perceptual Hashing (`detectors/perceptual_hash.py`)
 - **Algorithms:**
@@ -88,7 +88,7 @@ Every benchmark detector implements a 3-layer output schema:
 
 ---
 
-## 🚀 Running the Benchmarks
+## Running the Benchmarks
 
 ### Benchmark a Single Video Pair
 ```bash
@@ -107,7 +107,7 @@ python tools/run_attribution_benchmarks.py \
 
 ---
 
-## 🔒 Reproducibility & Environment Invariants
+## Reproducibility & Environment Invariants
 
 Every benchmark report records:
 - Implementation version and git commit.

@@ -383,7 +383,7 @@ def cmd_audit(args):
             ],
         )
 
-        print_section_header("Transformation Policy Budget (Ceiling <= 5.0%)", icon="📊")
+        print_section_header("Transformation Policy Budget (Ceiling <= 5.0%)", icon="[BUDGET]")
         pol_rows = [
             ["Spatial Distortion (ΔW, ΔH)", f"{report.native_metrics.spatial_delta_pct:.2f}%", f"<= {policy.spatial_ceiling_pct:.1f}%", badge_pass() if report.native_metrics.spatial_delta_pct <= policy.spatial_ceiling_pct else badge_fail()],
             ["Temporal Speed / FPS Delta", f"{report.native_metrics.temporal_delta_pct:.2f}%", f"<= {policy.temporal_ceiling_pct:.1f}%", badge_pass() if report.native_metrics.temporal_delta_pct <= policy.temporal_ceiling_pct else badge_fail()],
@@ -393,7 +393,7 @@ def cmd_audit(args):
         ]
         print_table(["Metric Dimension", "Measured", "Ceiling", "Status"], pol_rows)
 
-        print_section_header("Rendered Fidelity (SSIM & PSNR Distributions)", icon="👁️")
+        print_section_header("Rendered Fidelity (SSIM & PSNR Distributions)", icon="[FIDELITY]")
         fid_rows = [
             ["Mean SSIM", f"{report.ssim.mean:.4f}", f">= {policy.ssim_mean_min:.4f}", badge_pass() if report.ssim.mean >= policy.ssim_mean_min else badge_fail()],
             ["5th Percentile SSIM (Tail)", f"{report.ssim.p5:.4f}", f">= {policy.ssim_p5_min:.4f}", badge_pass() if report.ssim.p5 >= policy.ssim_p5_min else badge_fail()],
@@ -404,7 +404,7 @@ def cmd_audit(args):
         ]
         print_table(["Fidelity Metric", "Measured Value", "Constraint", "Status"], fid_rows)
 
-        print_section_header("Temporal Stream Integrity (PTS Monotonicity)", icon="⏱️")
+        print_section_header("Temporal Stream Integrity (PTS Monotonicity)", icon="[INTEGRITY]")
         temp_rows = [
             ["Missing Frames", str(report.temporal_metrics.missing_frames), "0", badge_pass() if report.temporal_metrics.missing_frames == 0 else badge_fail()],
             ["Duplicate Frames", str(report.temporal_metrics.duplicate_frames), "0", badge_pass() if report.temporal_metrics.duplicate_frames == 0 else badge_fail()],
@@ -1019,6 +1019,13 @@ Examples:
 
     p_tui = subparsers.add_parser("tui", help="Launch interactive full-screen CLI dashboard / TUI")
     p_tui.set_defaults(func=lambda args: run_interactive_wizard())
+
+    # 10. Image Privacy Compiler Subsystem
+    try:
+        from veilframe.image.cli import add_image_subparsers
+        add_image_subparsers(subparsers)
+    except ImportError:
+        pass
 
     args = parser.parse_args()
 

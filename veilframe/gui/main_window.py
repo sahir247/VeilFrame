@@ -1,21 +1,20 @@
 """
 VeilFrame UI 2.0 — Main window.
 
-Changes from v1.0:
-  - Title updated to VeilFrame v1.1
-  - Provider status bar (below drop zone, always visible)
-  - Two-phase progress: indeterminate shimmer → determinate fill
-  - Gradient primary action button + cancel button with objectName
+Dual-Mode Architecture:
+  • Video Privacy Sanitizer (Multi-pass pipeline, PRNU/ENF/DCT bounded perturbation, 3-tier QualityGate).
+  • Image Privacy Compiler (Multi-layer container purge, linear sRGB normalization, isolated ConstantFill semantic redaction, 7-probe adversarial red-team verification, 5-contract QualityGate).
 """
+
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QLineEdit, QFileDialog,
+    QLabel, QPushButton, QFileDialog,
     QProgressBar, QMessageBox, QScrollArea, QFrame,
-    QTabWidget, QApplication, QSizePolicy,
+    QTabWidget, QApplication, QButtonGroup, QRadioButton,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
@@ -26,7 +25,13 @@ from ..core.verifier import VerificationReport
 from ..models.video_info import VideoInfo
 from ..models.settings import ProcessingSettings
 from ..presets.manager import PresetManager
+
+from ..image.pipeline import ImagePrivacyPipeline, ImageSanitizationResult
+from ..image.models.policy import ImagePrivacyPolicy
+from ..image.models.status import CheckStatus
+
 from .video_info import VideoInfoWidget
+from .image_panel import ImageInfoWidget, ImageProcessingPanel
 from .processing_panel import ProcessingPanel
 from .report_view import ReportViewWidget
 from .preview_dialog import PreviewDialog
@@ -49,9 +54,13 @@ def _detect_ffmpeg_version() -> str:
     return "?"
 
 
-# ── Worker thread ─────────────────────────────────────────────────────── #
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".ts", ".wmv"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-class PipelineWorker(QThread):
+
+# ── Worker threads ─────────────────────────────────────────────────────── #
+
+class VideoPipelineWorker(QThread):
     progress = Signal(float, str)   # percent, status message
     finished = Signal(object)       # VerificationReport
     failed = Signal(str)            # error message
@@ -81,6 +90,30 @@ class PipelineWorker(QThread):
 
     def _on_progress(self, pct: float, msg: str):
         self.progress.emit(pct, msg)
+
+
+class ImagePipelineWorker(QThread):
+    finished = Signal(object)       # ImageSanitizationResult
+    failed = Signal(str)            # error message
+
+    def __init__(self, src: Path, dst: Path, policy: ImagePrivacyPolicy):
+        super().__init__()
+        self.src = src
+        self.dst = dst
+        self.policy = policy
+
+    def run(self):
+        try:
+            pipeline = ImagePrivacyPipeline(policy=self.policy)
+            target_fmt = "PNG" if self.dst.suffix.lower() == ".png" else "WEBP" if self.dst.suffix.lower() == ".webp" else "JPEG"
+            result = pipeline.run(
+                input_source=self.src,
+                output_path=self.dst,
+                target_format=target_fmt,
+            )
+            self.finished.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
 
 
 # ── Drop Zone ─────────────────────────────────────────────────────────── #
@@ -122,7 +155,7 @@ class DropZoneWidget(QFrame):
         lay.setSpacing(4)
         lay.setContentsMargins(20, 16, 20, 16)
 
-        lbl_main = QLabel("Drop a Video File Here")
+        lbl_main = QLabel("Drop a Video or Image File Here")
         lbl_main.setAlignment(Qt.AlignCenter)
         lbl_main.setStyleSheet(
             "color: #c0c0c0; font-size: 14px; font-weight: 600;"
@@ -130,7 +163,7 @@ class DropZoneWidget(QFrame):
         )
         lay.addWidget(lbl_main)
 
-        lbl_sub = QLabel("MP4  ·  MOV  ·  MKV  ·  WebM  ·  AVI  ·  M4V  ·  TS")
+        lbl_sub = QLabel("VIDEO: MP4 · MOV · MKV · WebM · AVI   |   IMAGE: JPEG · PNG · WebP")
         lbl_sub.setAlignment(Qt.AlignCenter)
         lbl_sub.setStyleSheet(
             "color: #555555; font-size: 10px; background: transparent; letter-spacing: 0.5px;"
@@ -143,7 +176,7 @@ class DropZoneWidget(QFrame):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self.btn_browse = QPushButton("Browse File")
+        self.btn_browse = QPushButton("Browse Media File")
         self.btn_browse.clicked.connect(self.browseClicked.emit)
         btn_row.addWidget(self.btn_browse)
         btn_row.addStretch()
@@ -169,10 +202,7 @@ class DropZoneWidget(QFrame):
 # ── Provider Status Bar ───────────────────────────────────────────────── #
 
 class ProviderStatusBar(QFrame):
-    """
-    Slim always-visible bar showing runtime provider availability.
-    Populated once on startup; does not poll during processing.
-    """
+    """Slim bar showing runtime provider availability."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -202,7 +232,15 @@ class ProviderStatusBar(QFrame):
         sep1.setStyleSheet(_s_sep)
         lay.addWidget(sep1)
 
-        self._lbl_gate = QLabel("Gate  SSIM + PSNR  active")
+        self._lbl_cv = QLabel("OpenCV  active")
+        self._lbl_cv.setStyleSheet(_s_ok)
+        lay.addWidget(self._lbl_cv)
+
+        sep2 = QLabel("|")
+        sep2.setStyleSheet(_s_sep)
+        lay.addWidget(sep2)
+
+        self._lbl_gate = QLabel("QualityGate  Fail-Closed (5 Contracts)")
         self._lbl_gate.setStyleSheet("color: #3fb768; font-size: 11px; font-weight: 600;")
         lay.addWidget(self._lbl_gate)
 
@@ -226,22 +264,21 @@ class ProviderStatusBar(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VeilFrame v1.1 — Privacy-Focused Media Sanitization")
-        self.resize(960, 960)
-        self.setMinimumSize(820, 720)
+        self.setWindowTitle("VeilFrame v2.0 — Auditable Multimedia Privacy Compiler")
+        self.resize(1000, 960)
+        self.setMinimumSize(840, 720)
 
         self.preset_mgr = PresetManager()
         self.src_path: Optional[Path] = None
         self.dst_path: Optional[Path] = None
-        self.current_info: Optional[VideoInfo] = None
-        self.worker: Optional[PipelineWorker] = None
+        self.current_video_info: Optional[VideoInfo] = None
+        self.is_image_mode = False
+
+        self.video_worker: Optional[VideoPipelineWorker] = None
+        self.image_worker: Optional[ImagePipelineWorker] = None
 
         self._init_ui()
-
-        # Detect providers in background after window is shown
         QTimer.singleShot(200, self._detect_providers)
-
-    # ── UI construction ──────────────────────────────────────────────── #
 
     def _init_ui(self):
         root = QWidget()
@@ -262,7 +299,7 @@ class MainWindow(QMainWindow):
             "font-size: 18px; font-weight: 900; letter-spacing: 3px;"
             " color: #d8d8d8; background: transparent;"
         )
-        subtitle_lbl = QLabel("Privacy-Focused Media Sanitization  v1.1")
+        subtitle_lbl = QLabel("Auditable Multimedia Privacy Compiler  v2.0")
         subtitle_lbl.setStyleSheet(
             "font-size: 11px; color: #555555; letter-spacing: 0.3px; background: transparent;"
         )
@@ -270,6 +307,28 @@ class MainWindow(QMainWindow):
         title_col.addWidget(subtitle_lbl)
         hdr.addLayout(title_col)
         hdr.addStretch()
+
+        # Mode toggle buttons
+        mode_box = QFrame()
+        mode_box.setStyleSheet("background: #181818; border: 1px solid #333333; border-radius: 4px; padding: 2px;")
+        mode_lay = QHBoxLayout(mode_box)
+        mode_lay.setContentsMargins(2, 2, 2, 2)
+        mode_lay.setSpacing(4)
+
+        self.btn_mode_video = QPushButton("Video Sanitizer")
+        self.btn_mode_video.setCheckable(True)
+        self.btn_mode_video.setChecked(True)
+        self.btn_mode_video.clicked.connect(lambda: self._set_mode(False))
+        mode_lay.addWidget(self.btn_mode_video)
+
+        self.btn_mode_image = QPushButton("Image Privacy Compiler")
+        self.btn_mode_image.setCheckable(True)
+        self.btn_mode_image.setChecked(False)
+        self.btn_mode_image.clicked.connect(lambda: self._set_mode(True))
+        mode_lay.addWidget(self.btn_mode_image)
+
+        hdr.addWidget(mode_box)
+        hdr.addSpacing(10)
 
         btn_about = QPushButton("About / Help")
         btn_about.clicked.connect(self._show_about)
@@ -287,7 +346,7 @@ class MainWindow(QMainWindow):
 
         # 1. Drop zone
         self.drop_zone = DropZoneWidget()
-        self.drop_zone.fileDropped.connect(self.load_video)
+        self.drop_zone.fileDropped.connect(self.load_media_file)
         self.drop_zone.browseClicked.connect(self.browse_file)
         content_lay.addWidget(self.drop_zone)
 
@@ -295,16 +354,24 @@ class MainWindow(QMainWindow):
         self.provider_bar = ProviderStatusBar()
         content_lay.addWidget(self.provider_bar)
 
-        # 3. Input info
+        # 3. Input Info Cards (Video & Image)
         self.video_info_widget = VideoInfoWidget()
         content_lay.addWidget(self.video_info_widget)
 
-        # 4. Processing controls
+        self.image_info_widget = ImageInfoWidget()
+        self.image_info_widget.hide()
+        content_lay.addWidget(self.image_info_widget)
+
+        # 4. Processing panels (Video & Image)
         self.processing_panel = ProcessingPanel(self.preset_mgr)
         self.processing_panel.noise_widget.previewRequested.connect(self._open_preview)
         content_lay.addWidget(self.processing_panel)
 
-        # 5. Report view (3-tab)
+        self.image_processing_panel = ImageProcessingPanel()
+        self.image_processing_panel.hide()
+        content_lay.addWidget(self.image_processing_panel)
+
+        # 5. Report view
         self.report_widget = ReportViewWidget()
         content_lay.addWidget(self.report_widget)
 
@@ -326,7 +393,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.hide()
         action_lay.addWidget(self.progress_bar)
 
-        self.lbl_status = QLabel("Ready — load a video file to begin.")
+        self.lbl_status = QLabel("Ready — load a video or image file to begin.")
         self.lbl_status.setStyleSheet("color: #555555; font-size: 11px;")
         action_lay.addWidget(self.lbl_status)
 
@@ -340,7 +407,7 @@ class MainWindow(QMainWindow):
 
         btn_lay.addStretch()
 
-        self.btn_process = QPushButton("PROCESS VIDEO")
+        self.btn_process = QPushButton("PROCESS MEDIA")
         self.btn_process.setObjectName("primaryAction")
         self.btn_process.setEnabled(False)
         self.btn_process.clicked.connect(self.start_processing)
@@ -349,7 +416,23 @@ class MainWindow(QMainWindow):
         action_lay.addLayout(btn_lay)
         main_lay.addWidget(action_box)
 
-    # ── Provider detection ────────────────────────────────────────────── #
+    def _set_mode(self, is_image: bool):
+        self.is_image_mode = is_image
+        self.btn_mode_image.setChecked(is_image)
+        self.btn_mode_video.setChecked(not is_image)
+
+        if is_image:
+            self.video_info_widget.hide()
+            self.processing_panel.hide()
+            self.image_info_widget.show()
+            self.image_processing_panel.show()
+            self.btn_process.setText("SANITIZE IMAGE & VERIFY")
+        else:
+            self.image_info_widget.hide()
+            self.image_processing_panel.hide()
+            self.video_info_widget.show()
+            self.processing_panel.show()
+            self.btn_process.setText("PROCESS VIDEO")
 
     def _detect_providers(self):
         ver = _detect_ffmpeg_version()
@@ -358,39 +441,72 @@ class MainWindow(QMainWindow):
     # ── File loading ──────────────────────────────────────────────────── #
 
     def browse_file(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Video File", "",
-            "Video Files (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.flv *.ts *.wmv);;All Files (*.*)",
+        filter_str = (
+            "All Supported Media (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.ts *.jpg *.jpeg *.png *.webp);;"
+            "Video Files (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.ts);;"
+            "Image Files (*.jpg *.jpeg *.png *.webp);;"
+            "All Files (*.*)"
         )
+        path, _ = QFileDialog.getOpenFileName(self, "Select Media File", "", filter_str)
         if path:
-            self.load_video(path)
+            self.load_media_file(path)
 
-    def load_video(self, file_path_str: str):
+    def load_media_file(self, file_path_str: str):
         path = Path(file_path_str)
         if not path.exists():
             QMessageBox.critical(self, "Error", f"File does not exist:\n{file_path_str}")
             return
 
+        ext = path.suffix.lower()
+        if ext in IMAGE_EXTENSIONS:
+            self._set_mode(True)
+            self._load_image(path)
+        else:
+            self._set_mode(False)
+            self._load_video(path)
+
+    def _load_video(self, path: Path):
         self.lbl_status.setText(f"Analyzing {path.name}…")
         QApplication.processEvents()
-
         try:
             info = analyze_video(path)
             self.src_path = path
-            self.current_info = info
+            self.current_video_info = info
             self.video_info_widget.set_video_info(info)
             self.processing_panel.set_video_info(info)
             self.report_widget.clear()
             self.btn_process.setEnabled(True)
-            self.lbl_status.setText(f"Loaded: {path.name}  ({info.duration_str}, {info.size_str})")
+            self.lbl_status.setText(f"Loaded Video: {path.name}  ({info.duration_str}, {info.size_str})")
         except Exception as e:
             QMessageBox.critical(self, "Analysis Error", f"Failed to analyze video:\n{e}")
             self.lbl_status.setText("Failed to load video file.")
 
+    def _load_image(self, path: Path):
+        self.lbl_status.setText(f"Loading image {path.name}…")
+        QApplication.processEvents()
+        try:
+            self.src_path = path
+            self.image_info_widget.set_image_file(path)
+            self.report_widget.clear()
+            self.btn_process.setEnabled(True)
+            self.lbl_status.setText(f"Loaded Image: {path.name} — ready to compile & sanitize.")
+        except Exception as e:
+            QMessageBox.critical(self, "Image Error", f"Failed to load image:\n{e}")
+            self.lbl_status.setText("Failed to load image file.")
+
     # ── Processing ────────────────────────────────────────────────────── #
 
     def start_processing(self):
-        if not self.src_path or not self.current_info:
+        if not self.src_path:
+            return
+
+        if self.is_image_mode:
+            self._start_image_processing()
+        else:
+            self._start_video_processing()
+
+    def _start_video_processing(self):
+        if not self.src_path or not self.current_video_info:
             return
 
         default_name = f"{self.src_path.stem}_cleaned.mp4"
@@ -411,79 +527,133 @@ class MainWindow(QMainWindow):
         self.dst_path = dst_path
         settings = self.processing_panel.get_settings()
 
-        # UI: phase 1 — indeterminate shimmer
         self.btn_process.setEnabled(False)
         self.btn_cancel.show()
-        self.progress_bar.setRange(0, 0)   # indeterminate
+        self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
-        self.lbl_status.setText("Initializing two-pass privacy pipeline…")
+        self.lbl_status.setText("Initializing multi-pass video privacy pipeline…")
 
-        self.worker = PipelineWorker(self.src_path, dst_path, settings)
-        self.worker.progress.connect(self._on_worker_progress)
-        self.worker.finished.connect(self._on_worker_finished)
-        self.worker.failed.connect(self._on_worker_failed)
-        self.worker.start()
+        self.video_worker = VideoPipelineWorker(self.src_path, dst_path, settings)
+        self.video_worker.progress.connect(self._on_video_progress)
+        self.video_worker.finished.connect(self._on_video_finished)
+        self.video_worker.failed.connect(self._on_video_failed)
+        self.video_worker.start()
 
-    def _on_worker_progress(self, pct: float, msg: str):
-        # Switch from indeterminate to determinate once we have a real percentage
+    def _start_image_processing(self):
+        if not self.src_path:
+            return
+
+        ext = self.src_path.suffix.lower()
+        default_name = f"{self.src_path.stem}_sanitized{ext}"
+        default_out = self.src_path.with_name(default_name)
+
+        out_path_str, _ = QFileDialog.getSaveFileName(
+            self, "Save Sanitized Image", str(default_out),
+            "JPEG Image (*.jpg *.jpeg);;PNG Image (*.png);;WebP Image (*.webp);;All Files (*.*)",
+        )
+        if not out_path_str:
+            return
+
+        dst_path = Path(out_path_str)
+        if dst_path.resolve() == self.src_path.resolve():
+            QMessageBox.warning(self, "Invalid Output", "Output cannot overwrite input file.")
+            return
+
+        self.dst_path = dst_path
+        policy = self.image_processing_panel.get_policy()
+
+        self.btn_process.setEnabled(False)
+        self.btn_cancel.hide()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+        self.lbl_status.setText("Executing Image Privacy Compiler & Adversarial Red-Team...")
+
+        self.image_worker = ImagePipelineWorker(self.src_path, dst_path, policy)
+        self.image_worker.finished.connect(self._on_image_finished)
+        self.image_worker.failed.connect(self._on_image_failed)
+        self.image_worker.start()
+
+    def _on_video_progress(self, pct: float, msg: str):
         if self.progress_bar.maximum() == 0 and pct > 0:
             self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(int(pct))
         self.lbl_status.setText(msg)
 
-    def _on_worker_finished(self, report: VerificationReport):
+    def _on_video_finished(self, report: VerificationReport):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         QTimer.singleShot(600, self.progress_bar.hide)
         self.btn_cancel.hide()
         self.btn_process.setEnabled(True)
-        self.lbl_status.setText("Processing, quality gate, and verification complete.")
+        self.lbl_status.setText("Video processing, QualityGate, and verification complete.")
 
         self.report_widget.set_report(report)
-
         verdict = "PASS" if (report.all_passed and (not report.quality_report or report.quality_report.passed)) else "REJECT"
         QMessageBox.information(
             self, "Processing Complete",
             f"Verdict: {verdict}\n\nOutput saved to:\n{report.file_path}",
         )
 
-    def _on_worker_failed(self, err_msg: str):
+    def _on_video_failed(self, err_msg: str):
         self.progress_bar.hide()
         self.btn_cancel.hide()
         self.btn_process.setEnabled(True)
-        self.lbl_status.setText("Processing failed.")
+        self.lbl_status.setText("Video processing failed.")
         QMessageBox.critical(self, "Processing Failed", f"An error occurred:\n{err_msg}")
 
-    def _cancel_job(self):
-        if self.worker and self.worker.isRunning():
-            self.lbl_status.setText("Cancelling…")
-            self.worker.cancel()
+    def _on_image_finished(self, result: ImageSanitizationResult):
+        self.progress_bar.hide()
+        self.btn_process.setEnabled(True)
+        self.lbl_status.setText(f"Image sanitization complete — Verdict: {result.status.name}")
 
-    # ── Dialogs ───────────────────────────────────────────────────────── #
+        self.report_widget.set_image_report(result)
+
+        if result.is_success:
+            QMessageBox.information(
+                self, "Sanitization & Verification Succeeded",
+                f"Status: PASS (5 Contracts & Red-Team Probes Verified)\n\n"
+                f"Output saved to:\n{self.dst_path}\n\n"
+                f"Cryptographic Audit Manifest published alongside output.",
+            )
+        else:
+            QMessageBox.warning(
+                self, "Sanitization Gate Failed",
+                f"Status: {result.status.name} (QUARANTINED)\n\n"
+                f"Failure reasons:\n" + "\n".join(result.manifest.failure_reasons if result.manifest else ["Unknown error"]),
+            )
+
+    def _on_image_failed(self, err_msg: str):
+        self.progress_bar.hide()
+        self.btn_process.setEnabled(True)
+        self.lbl_status.setText("Image sanitization failed.")
+        QMessageBox.critical(self, "Image Processing Failed", f"An error occurred:\n{err_msg}")
+
+    def _cancel_job(self):
+        if self.video_worker and self.video_worker.isRunning():
+            self.lbl_status.setText("Cancelling video job…")
+            self.video_worker.cancel()
 
     def _open_preview(self):
-        if not self.src_path or not self.current_info:
+        if not self.src_path or not self.current_video_info:
             QMessageBox.information(self, "Load Video", "Please load a video first.")
             return
         settings = self.processing_panel.get_settings()
-        dlg = PreviewDialog(self.src_path, settings, self.current_info, self)
+        dlg = PreviewDialog(self.src_path, settings, self.current_video_info, self)
         dlg.exec()
 
     def _show_about(self):
         QMessageBox.about(
-            self, "About VeilFrame v1.1",
-            "<h3>VeilFrame v1.1 — Privacy-Focused Media Sanitization</h3>"
-            "<p><b>Quality Engine Architecture (v1.1):</b></p>"
+            self, "About VeilFrame v2.0",
+            "<h3>VeilFrame v2.0 — Auditable Multimedia Privacy Compiler</h3>"
+            "<p><b>Core Subsystems:</b></p>"
             "<ul>"
-            "<li><b>VeilFrame Sanitizer:</b> Zeroes container metadata, drops SEI NALs, "
-            "and applies bounded perturbations across spatial, temporal, frequency (PRNU dither), "
-            "and audio ENF domains.</li>"
-            "<li><b>VeilFrame Quality Gate (v4.0):</b> Independent read-only three-tier gate: "
-            "Tier 1 policy score, Tier 2 SSIM ≥ 0.95 / PSNR ≥ 30.0 dB, Tier 3 temporal integrity.</li>"
-            "<li><b>FFmpegNativeProvider:</b> SSIM + PSNR measured via libavfilter lavfi.</li>"
-            "<li><b>VeilFrame Audit Engine:</b> Ed25519 signed audit manifests (v1.1.0 schema).</li>"
-            "<li><b>VeilFrame Manifest Verifier:</b> Standalone third-party verifier.</li>"
+            "<li><b>Video Privacy Sanitizer:</b> Container atom purge, SEI NAL stripping, Bayer CFA PRNU noise, "
+            "2D DCT block dither, audio ENF filtering, and 3-tier QualityGate.</li>"
+            "<li><b>Image Privacy Compiler:</b> Multi-layer container sanitization, linear sRGB normalization, "
+            "isolated ConstantFill solid redaction (faces, plates, text, QR), 7 adversarial red-team probes, "
+            "and 5 normative contracts.</li>"
+            "<li><b>Cryptographic Provenance:</b> RFC 8785 canonical JSON with Ed25519 digital signatures.</li>"
             "</ul>"
             "<p><b>Invariant:</b> <i>Providers measure. VeilFrame decides.</i></p>"
-            "<p><i>All processing occurs 100% locally — no network transmission.</i></p>",
+            "<p><i>All operations run 100% locally. Zero network transmission.</i></p>",
         )
