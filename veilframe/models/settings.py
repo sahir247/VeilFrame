@@ -96,6 +96,8 @@ class QuantizationSettings:
 class CodecSettings:
     mode: str = "auto"  # "auto" or "manual"
     codec: str = "h264"  # "h264", "hevc", "av1"
+    hw_accel: str = "auto"  # "auto", "nvenc", "qsv", "amf", "videotoolbox", "cpu"
+    target_format: Optional[str] = None  # None / "auto", "mp4", "mkv", "webm", "mov", "avi", "ts"
 
 
 @dataclass

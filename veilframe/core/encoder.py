@@ -77,14 +77,64 @@ def build_encode_cmd(
     # FPS
     cmd += build_fps_arg(settings.fps, video_info)
 
-    # Codec selection
+    # Hardware acceleration & codec selection
+    hw_pref = getattr(settings.codec, "hw_accel", "auto") or "auto"
     codec_name = settings.codec.codec.lower() if settings.codec.mode == "manual" else "h264"
-    if codec_name in ("h265", "hevc", "libx265"):
-        cmd += ["-c:v", "libx265", "-tag:v", "hvc1"]
-    elif codec_name in ("av1", "libsvtav1", "svtav1"):
-        cmd += ["-c:v", "libsvtav1"]
+    
+    selected_encoder = None
+    if hw_pref != "cpu":
+        try:
+            from .resources import get_hardware_capabilities
+            caps = get_hardware_capabilities()
+            verified = [e["codec"] for e in caps.get("verified_encoders", [])]
+            
+            if hw_pref in ("nvenc", "nvidia"):
+                candidates = ["h264_nvenc"] if "h264" in codec_name else (["hevc_nvenc"] if "hevc" in codec_name or "265" in codec_name else ["av1_nvenc"])
+                for c in candidates:
+                    if c in verified or hw_pref != "auto":
+                        selected_encoder = c; break
+            elif hw_pref in ("qsv", "intel"):
+                candidates = ["h264_qsv"] if "h264" in codec_name else (["hevc_qsv"] if "hevc" in codec_name or "265" in codec_name else ["av1_qsv"])
+                for c in candidates:
+                    if c in verified or hw_pref != "auto":
+                        selected_encoder = c; break
+            elif hw_pref in ("amf", "amd"):
+                candidates = ["h264_amf"] if "h264" in codec_name else (["hevc_amf"] if "hevc" in codec_name or "265" in codec_name else ["av1_amf"])
+                for c in candidates:
+                    if c in verified or hw_pref != "auto":
+                        selected_encoder = c; break
+            elif hw_pref in ("videotoolbox", "apple"):
+                candidates = ["h264_videotoolbox"] if "h264" in codec_name else ["hevc_videotoolbox"]
+                for c in candidates:
+                    if c in verified or hw_pref != "auto":
+                        selected_encoder = c; break
+            elif hw_pref == "auto":
+                if "h265" in codec_name or "hevc" in codec_name or "265" in codec_name:
+                    for pref in ("hevc_nvenc", "hevc_qsv", "hevc_amf", "hevc_videotoolbox"):
+                        if pref in verified:
+                            selected_encoder = pref; break
+                elif "av1" in codec_name:
+                    for pref in ("av1_nvenc", "av1_qsv", "av1_amf"):
+                        if pref in verified:
+                            selected_encoder = pref; break
+                else: # h264
+                    for pref in ("h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"):
+                        if pref in verified:
+                            selected_encoder = pref; break
+        except Exception:
+            selected_encoder = None
+
+    if selected_encoder:
+        cmd += ["-c:v", selected_encoder]
+        if "hevc" in selected_encoder:
+            cmd += ["-tag:v", "hvc1"]
     else:
-        cmd += ["-c:v", "libx264"]
+        if codec_name in ("h265", "hevc", "libx265"):
+            cmd += ["-c:v", "libx265", "-tag:v", "hvc1"]
+        elif codec_name in ("av1", "libsvtav1", "svtav1"):
+            cmd += ["-c:v", "libsvtav1"]
+        else:
+            cmd += ["-c:v", "libx264"]
 
     cmd += ["-pix_fmt", "yuv420p"]
 
@@ -97,18 +147,23 @@ def build_encode_cmd(
 
     # Quality / Bitrate
     q_mode = settings.quality.mode
-    if q_mode == "crf":
-        cmd += ["-crf", str(settings.quality.crf), "-preset", "medium"]
-    elif q_mode == "bitrate":
+    crf_val = str(settings.quality.crf if q_mode == "crf" else 18)
+    if q_mode == "bitrate":
         kbps = max(100, settings.quality.bitrate_kbps)
         cmd += [
             "-b:v", f"{kbps}k",
             "-maxrate", f"{int(kbps * 1.5)}k",
             "-bufsize", f"{int(kbps * 2)}k",
-            "-preset", "medium",
         ]
-    else:  # auto
-        cmd += ["-crf", "18", "-preset", "medium"]
+    else:
+        if selected_encoder and "nvenc" in selected_encoder:
+            cmd += ["-cq", crf_val]
+        elif selected_encoder and "qsv" in selected_encoder:
+            cmd += ["-global_quality", crf_val]
+        elif selected_encoder and "videotoolbox" in selected_encoder:
+            cmd += ["-q:v", crf_val]
+        else:
+            cmd += ["-crf", crf_val, "-preset", "medium"]
 
     # Audio re-encoding & Audio Privacy Pipeline (ENF notch & micro-pitch)
     cmd += ["-c:a", "aac", "-b:a", "192k"]

@@ -44,7 +44,11 @@ VeilFrame includes a modern desktop application built on PySide6 / Qt supporting
 
 ### GUI Key Capabilities:
 - **Dual Pipeline Switcher:** Seamlessly toggle between `Video Sanitizer` and `Image Compiler` modes.
-- **Intelligent Drag-and-Drop:** Drops automatically detect media type and configure the appropriate pipeline.
+- **Hardware GPU Acceleration:** Auto-detects NVIDIA NVENC, Intel QuickSync, AMD AMF, and Apple VideoToolbox with graceful deterministic CPU fallback.
+- **Universal Format Conversion:** Real-time transcoding and re-muxing across video (MP4, MKV, WebM, MOV, AVI, TS) and image (JPEG, PNG, WebP, TIFF, BMP, GIF, ICO, PPM) formats.
+- **Forensic EXIF Metadata Inspector:** Live audit of device serials, camera models, capture timestamps, lens optics, and GPS geolocation alerts.
+- **Intelligent Dependency Doctor:** On-demand detection and one-click automatic installation for FFmpeg and missing runtime tools with standard left `[Cancel]` / right `[OK]` controls.
+- **Tactile Micro-Interactions:** Responsive visual click feedback, smooth transitions, and high-DPI custom UI styling.
 - **Granular Semantic Detectors:** Toggle Face, License Plate, Text OCR, and QR/Barcode detectors with configurable safety margins.
 - **5-Contract Visual Checklist:** Real-time verdict badges for Privacy, Geometry, Fidelity, Integrity, and Completeness.
 - **Independent Red-Team Results Table:** Tabular inspection of individual probe verdicts and confidence metrics.
@@ -55,6 +59,14 @@ To launch the GUI:
 veilframe gui
 # or directly:
 veilframe-gui
+```
+
+### Standalone Pre-Built Windows Executable:
+Download the pre-compiled `VeilFrame.exe` from the latest release. No Python or FFmpeg installation required:
+```powershell
+# Verify SHA-256 checksum:
+Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
+# SHA-256: 7362BDF696C56CF906EC39C1DFE757911C1CE59FE425AAF7038C23845CE3F7EE
 ```
 
 ---

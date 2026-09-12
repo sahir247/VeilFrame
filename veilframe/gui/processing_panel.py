@@ -361,26 +361,57 @@ class ProcessingPanel(QWidget):
         self.combo_codec.addItems(["H.264 (libx264)", "H.265 / HEVC (libx265)", "AV1 (libsvtav1)"])
         codec_row.addWidget(self.combo_codec)
 
-        codec_row.addSpacing(16)
-        codec_row.addWidget(QLabel("Quality:"))
+        codec_row.addSpacing(12)
+        codec_row.addWidget(QLabel("GPU Acceleration:"))
+        self.combo_hw_accel = NoWheelComboBox()
+        self.combo_hw_accel.addItems([
+            "Auto (GPU if Available)",
+            "NVIDIA NVENC",
+            "Intel QuickSync",
+            "AMD AMF",
+            "Apple VideoToolbox",
+            "Software CPU",
+        ])
+        codec_row.addWidget(self.combo_hw_accel)
+
+        codec_row.addSpacing(12)
+        codec_row.addWidget(QLabel("Target Format:"))
+        self.combo_video_format = NoWheelComboBox()
+        self.combo_video_format.addItems([
+            "Auto (Match Source)",
+            "MP4 (.mp4)",
+            "MKV (.mkv)",
+            "WebM (.webm)",
+            "MOV (.mov)",
+            "AVI (.avi)",
+            "MPEG-TS (.ts)",
+        ])
+        codec_row.addWidget(self.combo_video_format)
+        codec_row.addStretch()
+        quant_lay.addLayout(codec_row)
+
+        quality_row = QHBoxLayout()
+        quality_row.addWidget(QLabel("Quality Mode:"))
         self.combo_q_mode = NoWheelComboBox()
         self.combo_q_mode.addItems(["Auto (CRF 18-21)", "CRF", "Bitrate"])
-        codec_row.addWidget(self.combo_q_mode)
+        quality_row.addWidget(self.combo_q_mode)
 
         self.spin_crf = FocusWheelSpinBox(); self.spin_crf.setRange(0, 51); self.spin_crf.setValue(21); self.spin_crf.setPrefix("CRF: ")
         self.spin_bitrate = FocusWheelSpinBox(); self.spin_bitrate.setRange(100, 100000); self.spin_bitrate.setValue(12000); self.spin_bitrate.setSuffix(" kbps")
-        codec_row.addWidget(self.spin_crf)
-        codec_row.addWidget(self.spin_bitrate)
-        codec_row.addStretch()
+        quality_row.addWidget(self.spin_crf)
+        quality_row.addWidget(self.spin_bitrate)
+        quality_row.addStretch()
 
         self.combo_codec_mode.currentTextChanged.connect(self._on_control_changed)
         self.combo_codec.currentTextChanged.connect(self._on_control_changed)
+        self.combo_hw_accel.currentTextChanged.connect(self._on_control_changed)
+        self.combo_video_format.currentTextChanged.connect(self._on_control_changed)
         self.combo_q_mode.currentTextChanged.connect(self._on_control_changed)
         self.spin_crf.valueChanged.connect(self._on_control_changed)
         self.spin_bitrate.valueChanged.connect(self._on_control_changed)
         self.cb_forced_gop.stateChanged.connect(self._on_control_changed)
         self.cb_epoch_zero.stateChanged.connect(self._on_control_changed)
-        quant_lay.addLayout(codec_row)
+        quant_lay.addLayout(quality_row)
 
         adv_lay.addWidget(quant_box)
 
@@ -580,6 +611,36 @@ class ProcessingPanel(QWidget):
         q_idx = self.combo_q_mode.currentIndex()
         q_mode = "auto" if q_idx == 0 else ("crf" if q_idx == 1 else "bitrate")
 
+        hw_text = self.combo_hw_accel.currentText().lower()
+        if "nvenc" in hw_text:
+            hw_accel = "nvenc"
+        elif "quicksync" in hw_text or "qsv" in hw_text:
+            hw_accel = "qsv"
+        elif "amf" in hw_text:
+            hw_accel = "amf"
+        elif "videotoolbox" in hw_text:
+            hw_accel = "videotoolbox"
+        elif "software" in hw_text or "cpu" in hw_text:
+            hw_accel = "cpu"
+        else:
+            hw_accel = "auto"
+
+        fmt_text = self.combo_video_format.currentText().lower()
+        if "mp4" in fmt_text:
+            target_fmt = "mp4"
+        elif "mkv" in fmt_text:
+            target_fmt = "mkv"
+        elif "webm" in fmt_text:
+            target_fmt = "webm"
+        elif "mov" in fmt_text:
+            target_fmt = "mov"
+        elif "avi" in fmt_text:
+            target_fmt = "avi"
+        elif "ts" in fmt_text:
+            target_fmt = "ts"
+        else:
+            target_fmt = None
+
         return ProcessingSettings(
             preset_name=self.combo_presets.currentText(),
             crop=CropSettings(
@@ -633,7 +694,12 @@ class ProcessingPanel(QWidget):
                 epoch_zero=self.cb_epoch_zero.isChecked(),
                 bitexact=True,
             ),
-            codec=CodecSettings(mode=c_mode, codec=codec),
+            codec=CodecSettings(
+                mode=c_mode,
+                codec=codec,
+                hw_accel=hw_accel,
+                target_format=target_fmt,
+            ),
             quality=QualitySettings(
                 mode=q_mode,
                 crf=self.spin_crf.value(),
@@ -661,6 +727,15 @@ class ProcessingPanel(QWidget):
                 psnr_mean_min_db=self.spin_qg_psnr.value(),
             ),
         )
+
+    def get_target_extension(self) -> Optional[str]:
+        """Returns targeted video file extension based on format dropdown, e.g. '.mkv', or None."""
+        idx = self.combo_video_format.currentIndex()
+        ext_map = {1: ".mp4", 2: ".mkv", 3: ".webm", 4: ".mov", 5: ".avi", 6: ".ts"}
+        return ext_map.get(idx, None)
+
+    def is_format_conversion_enabled(self) -> bool:
+        return self.combo_video_format.currentIndex() > 0
 
     def set_settings(self, settings: ProcessingSettings):
         self._updating_ui = True
@@ -741,6 +816,16 @@ class ProcessingPanel(QWidget):
                 self.combo_codec.setCurrentIndex(2)
             else:
                 self.combo_codec.setCurrentIndex(0)
+
+            # Hardware Acceleration
+            hw = getattr(settings.codec, "hw_accel", "auto")
+            hw_map = {"auto": 0, "nvenc": 1, "qsv": 2, "amf": 3, "videotoolbox": 4, "cpu": 5}
+            self.combo_hw_accel.setCurrentIndex(hw_map.get(hw, 0))
+
+            # Video Format
+            target_fmt = getattr(settings.codec, "target_format", None)
+            fmt_map = {"mp4": 1, "mkv": 2, "webm": 3, "mov": 4, "avi": 5, "ts": 6}
+            self.combo_video_format.setCurrentIndex(fmt_map.get(target_fmt, 0) if target_fmt else 0)
 
             # Quality
             if settings.quality.mode == "crf":

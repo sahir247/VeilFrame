@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QShortcut, QDesktopServices
 
 from ..core.resources import get_ffmpeg_path
-from ..core.deps_manager import is_ffmpeg_installed
+from ..core.deps_manager import is_ffmpeg_installed, is_ffprobe_installed
 from ..core.analyzer import analyze_video
 from ..core.pipeline import run_pipeline
 from ..core.verifier import VerificationReport
@@ -62,7 +62,7 @@ def _detect_ffmpeg_version() -> str:
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".ts", ".wmv"}
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".tif", ".bmp", ".gif", ".ico", ".ppm"}
 
 
 # ── Worker threads ─────────────────────────────────────────────────────── #
@@ -567,13 +567,14 @@ class MainWindow(QMainWindow):
             self._load_video(path)
 
     def _load_video(self, path: Path):
-        if not is_ffmpeg_installed():
+        if not is_ffmpeg_installed() or not is_ffprobe_installed():
+            missing_tool = "FFprobe" if not is_ffprobe_installed() else "FFmpeg"
             installed = prompt_missing_dependency(
-                self, "FFmpeg",
+                self, missing_tool,
                 on_success=lambda: (self._detect_providers(), self._load_video(path)),
             )
             if not installed:
-                self.lbl_status.setText("Video loading cancelled — FFmpeg is required.")
+                self.lbl_status.setText(f"Video loading cancelled — {missing_tool} is required.")
                 return
 
         self.lbl_status.setText(f"Analyzing {path.name}…")
@@ -626,22 +627,27 @@ class MainWindow(QMainWindow):
         if not self.src_path or not self.current_video_info:
             return
 
-        if not is_ffmpeg_installed():
+        if not is_ffmpeg_installed() or not is_ffprobe_installed():
+            missing_tool = "FFprobe" if not is_ffprobe_installed() else "FFmpeg"
             installed = prompt_missing_dependency(
-                self, "FFmpeg",
+                self, missing_tool,
                 on_success=lambda: (self._detect_providers(), self._start_video_processing()),
             )
             if not installed:
-                self.lbl_status.setText("Video processing cancelled — FFmpeg is required.")
+                self.lbl_status.setText(f"Video processing cancelled — {missing_tool} is required.")
                 return
 
-        default_name = f"{self.src_path.stem}_cleaned.mp4"
+        if self.processing_panel.is_format_conversion_enabled():
+            target_ext = self.processing_panel.get_target_extension() or self.src_path.suffix.lower()
+        else:
+            target_ext = self.src_path.suffix.lower() if self.src_path.suffix.lower() in VIDEO_EXTENSIONS else ".mp4"
 
+        default_name = f"{self.src_path.stem}_cleaned{target_ext}"
         default_out = self.src_path.with_name(default_name)
 
         out_path_str, _ = QFileDialog.getSaveFileName(
             self, "Save Sanitized Video", str(default_out),
-            "MP4 Video (*.mp4);;MKV Video (*.mkv);;WebM Video (*.webm);;All Files (*.*)",
+            "MP4 Video (*.mp4);;MKV Video (*.mkv);;WebM Video (*.webm);;QuickTime MOV (*.mov);;AVI Video (*.avi);;MPEG-TS (*.ts);;All Files (*.*)",
         )
         if not out_path_str:
             return
@@ -680,7 +686,7 @@ class MainWindow(QMainWindow):
 
         out_path_str, _ = QFileDialog.getSaveFileName(
             self, "Save Sanitized Image", str(default_out),
-            "JPEG Image (*.jpg *.jpeg);;PNG Image (*.png);;WebP Image (*.webp);;TIFF Image (*.tiff *.tif);;BMP Image (*.bmp);;All Files (*.*)",
+            "JPEG Image (*.jpg *.jpeg);;PNG Image (*.png);;WebP Image (*.webp);;TIFF Image (*.tiff *.tif);;BMP Image (*.bmp);;GIF Image (*.gif);;ICO Icon (*.ico);;PPM Image (*.ppm);;All Files (*.*)",
         )
         if not out_path_str:
             return

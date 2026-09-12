@@ -47,22 +47,13 @@ def main():
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
-    # Global UX filter: Dropdowns only controlled via click/keys, Spinboxes require focus for wheel
+    # Global UX filters: Dropdown/Spinbox wheel safety + Button Click Micro-Animation Feedback
     from .gui.controls import UXWheelEventFilter
+    from .gui.theme import ButtonClickBlinkFilter
     wheel_filter = UXWheelEventFilter(app)
     app.installEventFilter(wheel_filter)
-
-    # Check for FFmpeg / FFprobe binaries
-    try:
-        get_ffmpeg_path()
-        get_ffprobe_path()
-    except FFmpegNotFoundError as e:
-        QMessageBox.critical(
-            None,
-            "FFmpeg Missing",
-            f"{e}\n\nPlease place 'ffmpeg.exe' and 'ffprobe.exe' in 'resources/ffmpeg/' or add them to PATH.",
-        )
-        sys.exit(1)
+    blink_filter = ButtonClickBlinkFilter(app)
+    app.installEventFilter(blink_filter)
 
     window = MainWindow()
     window.show()

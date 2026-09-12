@@ -79,7 +79,111 @@ class TestDepsAndEnvironment(unittest.TestCase):
         self.assertIn("MockDependency", dlg.lbl_title.text())
         dlg.close()
 
+    def test_prompt_missing_dependency_structure(self):
+        """prompt_missing_dependency should configure Cancel on Left and OK on Right."""
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("Missing Component")
+        dep_name = "FFprobe"
+        msg_box.setText(f"<b>{dep_name} is missing.</b><br><br>Do you want to install it automatically?")
+        btn_cancel = msg_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        btn_ok = msg_box.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+
+        self.assertIn("FFprobe is missing", msg_box.text())
+        self.assertEqual(btn_cancel.text(), "Cancel")
+        self.assertEqual(btn_ok.text(), "OK")
+
+    def test_codec_settings_gpu_and_target_format(self):
+        """CodecSettings should support hw_accel and target_format fields."""
+        from veilframe.models.settings import CodecSettings, ProcessingSettings
+        settings = CodecSettings(hw_accel="nvenc", target_format="mkv")
+        self.assertEqual(settings.hw_accel, "nvenc")
+        self.assertEqual(settings.target_format, "mkv")
+
+        proc_settings = ProcessingSettings(codec=settings)
+        d = proc_settings.to_dict()
+        self.assertEqual(d["codec"]["hw_accel"], "nvenc")
+        self.assertEqual(d["codec"]["target_format"], "mkv")
+
+    def test_encoder_hardware_capabilities_probe(self):
+        """get_hardware_capabilities should return dict with physical GPUs and verified encoders."""
+        from veilframe.core.resources import get_hardware_capabilities
+        caps = get_hardware_capabilities()
+        self.assertIsInstance(caps, dict)
+        self.assertIn("physical_gpus", caps)
+        self.assertIn("verified_encoders", caps)
+
+    def test_encoder_build_encode_cmd(self):
+        """build_encode_cmd should format ffmpeg command with correct arguments."""
+        from veilframe.core.encoder import build_encode_cmd
+        from veilframe.models.settings import ProcessingSettings, CodecSettings
+
+        proc = ProcessingSettings()
+        proc.codec = CodecSettings(mode="manual", codec="h264", hw_accel="cpu")
+        cmd = build_encode_cmd(
+            src=Path("input.mp4"),
+            dst=Path("output.mp4"),
+            settings=proc,
+        )
+        self.assertIn("-c:v", cmd)
+        self.assertIn("libx264", cmd)
+        self.assertIn("-crf", cmd)
+        self.assertEqual(cmd[-1], "output.mp4")
+
+    def test_image_info_widget_exif_formatting(self):
+        """ImageInfoWidget should display source file metadata and clear properly."""
+        from veilframe.gui.image_panel import ImageInfoWidget
+        widget = ImageInfoWidget()
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            temp_path = Path(tf.name)
+        try:
+            from PIL import Image
+            img = Image.new("RGB", (640, 480), color=(255, 0, 0))
+            img.save(temp_path)
+            widget.set_image_file(temp_path)
+            self.assertIn("640 x 480", widget._lbl_dims.text())
+            widget.clear()
+            self.assertEqual(widget._lbl_dims.text(), "—")
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+        widget.close()
+
+    def test_image_panel_format_conversion_options(self):
+        """ImageProcessingPanel should have all target formats in format conversion combo."""
+        from veilframe.gui.image_panel import ImageProcessingPanel
+        panel = ImageProcessingPanel()
+        expected_formats = ["JPEG", "PNG", "WebP", "TIFF", "BMP", "GIF", "ICO", "PPM"]
+        items = [panel.combo_format.itemText(i) for i in range(panel.combo_format.count())]
+        for fmt in expected_formats:
+            self.assertTrue(any(fmt in it for it in items), f"Expected format {fmt} in combo")
+        panel.close()
+
+    def test_processing_panel_gpu_and_target_format(self):
+        """ProcessingPanel should allow selecting GPU acceleration and video target format."""
+        from veilframe.gui.processing_panel import ProcessingPanel
+        from veilframe.presets.manager import PresetManager
+        preset_mgr = PresetManager()
+        panel = ProcessingPanel(preset_mgr)
+        gpu_items = [panel.combo_hw_accel.itemText(i) for i in range(panel.combo_hw_accel.count())]
+        self.assertIn("Auto (GPU if Available)", gpu_items)
+        self.assertIn("NVIDIA NVENC", gpu_items)
+        self.assertIn("Intel QuickSync", gpu_items)
+        self.assertIn("AMD AMF", gpu_items)
+        self.assertIn("Apple VideoToolbox", gpu_items)
+        self.assertIn("Software CPU", gpu_items)
+
+        fmt_items = [panel.combo_video_format.itemText(i) for i in range(panel.combo_video_format.count())]
+        self.assertIn("Auto (Match Source)", fmt_items)
+        self.assertIn("MP4 (.mp4)", fmt_items)
+        self.assertIn("MKV (.mkv)", fmt_items)
+        self.assertIn("WebM (.webm)", fmt_items)
+
+        panel.combo_video_format.setCurrentIndex(1)
+        self.assertTrue(panel.is_format_conversion_enabled())
+        self.assertEqual(panel.get_target_extension(), ".mp4")
+        panel.close()
 
 
 if __name__ == "__main__":
     unittest.main()
+

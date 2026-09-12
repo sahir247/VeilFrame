@@ -135,12 +135,14 @@ QPushButton {
 
 QPushButton:hover {
     background-color: #333333;
-    color: #e2e2e2;
-    border-color: #555555;
+    color: #ffffff;
+    border-color: #38bdf8;
 }
 
 QPushButton:pressed {
-    background-color: #222222;
+    background-color: #1e293b;
+    border-color: #38bdf8;
+    color: #38bdf8;
 }
 
 QPushButton:disabled {
@@ -152,7 +154,7 @@ QPushButton:disabled {
 QPushButton#primaryAction {
     background-color: #1f55d0;
     color: #ffffff;
-    border: none;
+    border: 1px solid #3570e6;
     border-radius: 4px;
     padding: 9px 28px;
     font-size: 12px;
@@ -164,10 +166,13 @@ QPushButton#primaryAction {
 
 QPushButton#primaryAction:hover {
     background-color: #2a63e0;
+    border-color: #60a5fa;
 }
 
 QPushButton#primaryAction:pressed {
-    background-color: #1748b8;
+    background-color: #0284c7;
+    border-color: #38bdf8;
+    color: #ffffff;
 }
 
 QPushButton#primaryAction:disabled {
@@ -190,6 +195,12 @@ QPushButton#cancelAction:hover {
     background-color: #2a2a2a;
     color: #c0c0c0;
     border-color: #606060;
+}
+
+QPushButton#cancelAction:pressed {
+    background-color: #332020;
+    border-color: #ef4444;
+    color: #ef4444;
 }
 
 QPushButton#iconBtn {
@@ -492,3 +503,22 @@ def badge_style(variant: str) -> str:
 DOT_OK   = "\u25cf"   # filled circle  ●
 DOT_MISS = "\u25cb"   # open circle    ○
 DOT_WARN = "\u25cf"   # same circle, styled via QSS color
+
+
+from PySide6.QtCore import QObject, QEvent, QTimer
+from PySide6.QtWidgets import QPushButton
+
+class ButtonClickBlinkFilter(QObject):
+    """
+    Global event filter that triggers a subtle, responsive visual blink feedback
+    when buttons are clicked, enhancing interactive desktop UX.
+    """
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if isinstance(obj, QPushButton) and event.type() == QEvent.MouseButtonPress:
+            orig_style = obj.styleSheet()
+            obj.setStyleSheet(orig_style + "; outline: 2px solid #38bdf8;")
+            QTimer.singleShot(130, lambda o=obj, s=orig_style: (
+                o.setStyleSheet(s) if o else None
+            ))
+        return super().eventFilter(obj, event)
+

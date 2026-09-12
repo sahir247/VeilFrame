@@ -26,7 +26,7 @@ from .controls import NoWheelComboBox, FocusWheelSpinBox, create_section_reset_b
 
 
 class ImageInfoWidget(QFrame):
-    """Card displaying source image metadata."""
+    """Card displaying source image metadata and EXIF forensic tags."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -80,6 +80,25 @@ class ImageInfoWidget(QFrame):
 
         lay.addLayout(self.grid)
 
+        # EXIF & Forensic Metadata Subsection
+        self._exif_frame = QFrame()
+        self._exif_frame.setStyleSheet("background: #181818; border: 1px solid #2e2e2e; border-radius: 4px; padding: 4px;")
+        exif_lay = QVBoxLayout(self._exif_frame)
+        exif_lay.setContentsMargins(8, 6, 8, 6)
+        exif_lay.setSpacing(4)
+
+        self._lbl_exif_title = QLabel("EXIF & FORENSIC METADATA AUDIT:")
+        self._lbl_exif_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #707070; letter-spacing: 1px;")
+        exif_lay.addWidget(self._lbl_exif_title)
+
+        self._lbl_exif_details = QLabel("No image loaded.")
+        self._lbl_exif_details.setStyleSheet("color: #a0a0a0; font-size: 11px;")
+        self._lbl_exif_details.setWordWrap(True)
+        self._lbl_exif_details.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        exif_lay.addWidget(self._lbl_exif_details)
+
+        lay.addWidget(self._exif_frame)
+
     def set_image_file(self, path: Path):
         try:
             with Image.open(path) as img:
@@ -87,6 +106,7 @@ class ImageInfoWidget(QFrame):
                 fmt = img.format or path.suffix.upper().lstrip(".")
                 mode = img.mode
                 channels = len(img.getbands())
+                raw_exif = getattr(img, "_getexif", lambda: None)()
             size_kb = path.stat().st_size / 1024.0
             size_str = f"{size_kb / 1024.0:.2f} MB" if size_kb >= 1024 else f"{size_kb:.1f} KB"
 
@@ -98,9 +118,38 @@ class ImageInfoWidget(QFrame):
             self._lbl_channels.setText(f"{channels} ({mode})")
             self._lbl_size.setText(size_str)
             self._lbl_hash.setText(f"{digest[:32]}...{digest[-8:]}")
+
+            # Parse EXIF metadata
+            exif_lines = []
+            if raw_exif:
+                total_tags = len(raw_exif)
+                make = raw_exif.get(271) or raw_exif.get(0x010f)
+                model = raw_exif.get(272) or raw_exif.get(0x0110)
+                dto = raw_exif.get(36867) or raw_exif.get(0x9003) or raw_exif.get(306)
+                software = raw_exif.get(305) or raw_exif.get(0x0131)
+                lens = raw_exif.get(42036) or raw_exif.get(0xa434)
+                gps = raw_exif.get(34853) or raw_exif.get(0x8825)
+
+                if make or model:
+                    exif_lines.append(f"• Device: <b>{str(make or '').strip()} {str(model or '').strip()}</b>".strip())
+                if dto:
+                    exif_lines.append(f"• Capture Timestamp: <b>{dto}</b>")
+                if lens:
+                    exif_lines.append(f"• Optics / Lens: {lens}")
+                if software:
+                    exif_lines.append(f"• Software / Firmware: {software}")
+                if gps:
+                    exif_lines.append(f"• <font color='#ef4444'><b>GPS Geolocation Present ({len(gps)} coordinate tags) — PURGE MANDATORY</b></font>")
+                
+                exif_lines.append(f"• Total EXIF Tags: <b>{total_tags} tags detected</b> (will be completely purged by Layer A Container Sanitizer)")
+                self._lbl_exif_details.setText("<br>".join(exif_lines))
+            else:
+                self._lbl_exif_details.setText("<font color='#3fb768'>● Clean container — zero EXIF metadata or geolocation tags found.</font>")
+
         except Exception as e:
             self._lbl_format.setText("Error loading metadata")
             self._lbl_dims.setText(str(e))
+            self._lbl_exif_details.setText(f"Metadata read error: {e}")
 
     def clear(self):
         self._lbl_format.setText("—")
@@ -108,6 +157,7 @@ class ImageInfoWidget(QFrame):
         self._lbl_channels.setText("—")
         self._lbl_size.setText("—")
         self._lbl_hash.setText("—")
+        self._lbl_exif_details.setText("No image loaded.")
 
 
 class ImageProcessingPanel(QWidget):
@@ -127,19 +177,19 @@ class ImageProcessingPanel(QWidget):
         lay.setSpacing(12)
 
         # 1. Threat Model & Profile Card
-        profile_box = QGroupBox("IMAGE PRIVACY THREAT MODEL")
+        profile_box = QGroupBox("THREAT MODEL PROFILE")
         pr_lay = QVBoxLayout(profile_box)
         pr_row = QHBoxLayout()
-        pr_row.addWidget(QLabel("Threat Profile:"))
+        pr_row.addWidget(QLabel("Threat Model:"))
         self.combo_threat = NoWheelComboBox()
         self.combo_threat.addItems([
-            "Anonymous Share (Metadata Stripping + Visual Redaction)",
-            "Strict Forensic (Full Zero-Residue Sanitization)",
+            "Standard (Anonymous Public Share)",
+            "Strict Forensic (Adversarial Defense)",
         ])
         self.combo_threat.currentIndexChanged.connect(self._on_threat_changed)
         pr_row.addWidget(self.combo_threat, 1)
 
-        btn_reset_pr = create_section_reset_button(self._reset_to_defaults, tooltip="Reset image privacy parameters")
+        btn_reset_pr = create_section_reset_button(self._reset_to_defaults, tooltip="Reset all settings to default")
         pr_row.addWidget(btn_reset_pr)
         pr_lay.addLayout(pr_row)
 
@@ -150,7 +200,7 @@ class ImageProcessingPanel(QWidget):
         lay.addWidget(profile_box)
 
         # 2. Semantic Detectors & Metadata Scrubbing Card
-        det_box = QGroupBox("SEMANTIC PRIVACY & CONTAINER SCRUBBING")
+        det_box = QGroupBox("SEMANTIC PRIVACY DETECTORS & SCRUBBING")
         det_lay = QVBoxLayout(det_box)
         det_lay.setSpacing(10)
 
@@ -158,44 +208,44 @@ class ImageProcessingPanel(QWidget):
         det_grid.setHorizontalSpacing(16)
         det_grid.setVerticalSpacing(8)
 
-        self.cb_face = QCheckBox("Facial Identity Redaction (Haar + Multi-Scale)")
+        self.cb_face = QCheckBox("Facial Identity Redaction (Haar / Spatial Skin Mesh)")
         self.cb_face.setChecked(True)
         self.cb_face.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_face, 0, 0)
 
-        self.cb_plate = QCheckBox("Vehicle License Plates (Aspect Ratio & Edge Filtering)")
+        self.cb_plate = QCheckBox("Vehicle License Plate Redaction (Morphological Contours)")
         self.cb_plate.setChecked(True)
         self.cb_plate.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_plate, 0, 1)
 
-        self.cb_text = QCheckBox("Document / Scene Text (MSER Density Gated)")
+        self.cb_text = QCheckBox("Document / Text / Serial Redaction (MSER Density)")
         self.cb_text.setChecked(True)
         self.cb_text.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_text, 1, 0)
 
-        self.cb_code = QCheckBox("QR Codes & Barcodes (Finder Pattern Detection)")
+        self.cb_code = QCheckBox("QR Code & 2D Barcode Redaction (Finder Patterns)")
         self.cb_code.setChecked(True)
         self.cb_code.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_code, 1, 1)
 
-        self.cb_meta = QCheckBox("Strip Container Metadata (EXIF, XMP, IPTC, ICC)")
+        self.cb_meta = QCheckBox("Forensic Metadata Scrubbing (EXIF / XMP / IPTC / ICC)")
         self.cb_meta.setChecked(True)
         self.cb_meta.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_meta, 2, 0)
 
-        self.cb_thumb = QCheckBox("Eradicate Embedded Thumbnails & Previews")
+        self.cb_thumb = QCheckBox("Embedded Thumbnail & Preview Extraction Purge")
         self.cb_thumb.setChecked(True)
         self.cb_thumb.setStyleSheet("font-weight: 600; color: #d0d0d0;")
         det_grid.addWidget(self.cb_thumb, 2, 1)
 
         for cb in (self.cb_face, self.cb_plate, self.cb_text, self.cb_code, self.cb_meta, self.cb_thumb):
-            cb.toggled.connect(self._on_control_changed)
+            cb.stateChanged.connect(self._on_control_changed)
 
         det_lay.addLayout(det_grid)
         lay.addWidget(det_box)
 
         # 3. Export Verification & Format Conversion Card
-        export_box = QGroupBox("EXPORT VERIFICATION & OUTPUT ENCODING")
+        export_box = QGroupBox("EXPORT GATE & FORMAT CONVERSION")
         export_lay = QVBoxLayout(export_box)
         export_lay.setSpacing(10)
 
@@ -224,6 +274,9 @@ class ImageProcessingPanel(QWidget):
             "WebP Image (*.webp)",
             "TIFF Image (*.tiff)",
             "BMP Image (*.bmp)",
+            "GIF Image (*.gif)",
+            "ICO Icon (*.ico)",
+            "PPM Image (*.ppm)",
         ])
         self.combo_format.setEnabled(False)
         self.combo_format.currentIndexChanged.connect(self._on_control_changed)
@@ -279,14 +332,14 @@ class ImageProcessingPanel(QWidget):
         if not self.cb_convert_format.isChecked():
             return None
         idx = self.combo_format.currentIndex()
-        fmt_map = {0: "JPEG", 1: "PNG", 2: "WEBP", 3: "TIFF", 4: "BMP"}
+        fmt_map = {0: "JPEG", 1: "PNG", 2: "WEBP", 3: "TIFF", 4: "BMP", 5: "GIF", 6: "ICO", 7: "PPM"}
         return fmt_map.get(idx, "JPEG")
 
     def get_target_extension(self) -> Optional[str]:
         if not self.cb_convert_format.isChecked():
             return None
         idx = self.combo_format.currentIndex()
-        ext_map = {0: ".jpg", 1: ".png", 2: ".webp", 3: ".tiff", 4: ".bmp"}
+        ext_map = {0: ".jpg", 1: ".png", 2: ".webp", 3: ".tiff", 4: ".bmp", 5: ".gif", 6: ".ico", 7: ".ppm"}
         return ext_map.get(idx, ".jpg")
 
     def _pick_color(self):
