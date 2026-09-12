@@ -82,18 +82,23 @@ class MetadataProbe(AttackProbe):
                 else:
                     break
 
-        # Method 3: XMP text scan
+        # Method 3: XMP and RDF packet scan
         try:
             lower = sanitized_bytes.lower()
             if (
                 b"<?xpacket" in lower
                 or b"<x:xmpmeta" in lower
+                or b"<xmpmeta" in lower
                 or b"<rdf:rdf" in lower
+                or b"<rdf:description" in lower
                 or b"xmlns:xmp" in lower
                 or b"xmlns:rdf" in lower
-                or b"http://ns.adobe.com/" in lower
-                or b"https://ns.adobe.com/" in lower
-                or b"http://www.w3.org/1999/02/22-rdf-syntax-ns#" in lower
+                or b"xmlns:dc" in lower
+                or b"xmlns:photoshop" in lower
+                or b"xmlns:xap" in lower
+                or b"xmlns:tiff" in lower
+                or b"xmlns:exif" in lower
+                or b"xap/1.0/" in lower
             ):
                 findings.append("XMP namespace detected in raw output bytes")
         except Exception:
