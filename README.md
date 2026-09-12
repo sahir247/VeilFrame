@@ -62,11 +62,10 @@ veilframe-gui
 ```
 
 ### Standalone Pre-Built Windows Executable:
-Download the pre-compiled `VeilFrame.exe` from the latest release. No Python or FFmpeg installation required:
+Download the pre-compiled `VeilFrame.exe` and `SHA256SUMS.txt` from the latest release. No Python or FFmpeg installation required:
 ```powershell
-# Verify SHA-256 checksum:
+# Verify SHA-256 checksum against SHA256SUMS.txt:
 Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
-# SHA-256: 013646FE1B3BE9AC055752B7A77BF6304736F18C923A4D289B84C8614C4460A7
 ```
 
 ---

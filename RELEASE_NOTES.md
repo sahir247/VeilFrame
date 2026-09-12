@@ -1,20 +1,5 @@
 # VeilFrame v2.0.0 Release Notes
 
-## Release Title
-**VeilFrame v2.0.0 — Auditable Multimedia Privacy Compiler & Hardware-Accelerated Engine**
-
----
-
-## Release Artifacts & Checksums
-
-| Artifact | Type | File Size | SHA-256 Checksum |
-| :--- | :--- | :--- | :--- |
-| `VeilFrame.exe` | Standalone Single-File Windows x64 Executable | 200.59 MB | `013646FE1B3BE9AC055752B7A77BF6304736F18C923A4D289B84C8614C4460A7` |
-| `veilframe-2.0.0-py3-none-any.whl` | Universal Python Wheel Package | 244.14 KB | `F882DA71A4AFDABCA192C561C71CC341F04DD859790CBA10487651FA0110D5C7` |
-| `veilframe-2.0.0.tar.gz` | Source Distribution Archive | 234.56 KB | `97E20845DD3406BE14B3EE6687C9864C67646B4928FA995A190C236C476C452F` |
-
----
-
 ## Key Highlights & Architectural Enhancements
 
 ### 1. Hardware-Accelerated GPU Encoding with Deterministic CPU Fallback
@@ -56,20 +41,20 @@
 ### 6. Full Cryptographic Verification & Auditability
 - Multi-layer image privacy compilation with 7 adversarial red-team probes (Face, License Plate, Text, QR Code, Thumbnail, Container, Metadata).
 - RFC 8785 Canonical JSON output manifests with Ed25519 digital signatures.
-- Continuous Integration and full test suite verification (216/216 passing automated tests).
+- Continuous Integration and full test suite verification (211/211 passing automated tests).
 
 ---
 
 ## Verification & Installation
 
 ### Running the Standalone Executable
-Download `VeilFrame.exe` and execute directly on Windows x64. No Python installation or external runtime dependencies are required.
+Download `VeilFrame.exe` and `SHA256SUMS.txt` from the release assets and execute directly on Windows x64. No Python installation or external runtime dependencies are required.
 
 To verify binary integrity:
 ```powershell
 Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
-# Expected Hash: 013646FE1B3BE9AC055752B7A77BF6304736F18C923A4D289B84C8614C4460A7
 ```
+Compare the resulting hash with the corresponding entry in `SHA256SUMS.txt`.
 
 ### Running from Source
 ```bash
