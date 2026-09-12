@@ -9,9 +9,9 @@
 
 | Artifact | Type | File Size | SHA-256 Checksum |
 | :--- | :--- | :--- | :--- |
-| `VeilFrame.exe` | Standalone Single-File Windows x64 Executable | 200.58 MB | `7362BDF696C56CF906EC39C1DFE757911C1CE59FE425AAF7038C23845CE3F7EE` |
-| `veilframe-2.0.0-py3-none-any.whl` | Universal Python Wheel Package | 244.03 KB | `5538B8CEE71224448E66AB593D21F836CB2CBB41AAFB3EE66A654C6D8DEED1CF` |
-| `veilframe-2.0.0.tar.gz` | Source Distribution Archive | 234.52 KB | `A3FC9F1078C5446BDFEDF1EE84DEF0C3E14B44D121B55A84453BC5A8D51E6897` |
+| `VeilFrame.exe` | Standalone Single-File Windows x64 Executable | 200.59 MB | `7D481682F2EE1FA2D3BB8F367D98E552FD8D58AE9005804240FC047F74C53B01` |
+| `veilframe-2.0.0-py3-none-any.whl` | Universal Python Wheel Package | 244.13 KB | `C0ABB86D302E32A21A28CAFD51B170AE43DF367AE4468825031CDB63E79E72F0` |
+| `veilframe-2.0.0.tar.gz` | Source Distribution Archive | 234.62 KB | `0B541603941CBFA1D8CD130DFC9817ADBE41528C5F522FFEEFCFF41902AF6A74` |
 
 ---
 
@@ -68,7 +68,7 @@ Download `VeilFrame.exe` and execute directly on Windows x64. No Python installa
 To verify binary integrity:
 ```powershell
 Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
-# Expected Hash: 7362BDF696C56CF906EC39C1DFE757911C1CE59FE425AAF7038C23845CE3F7EE
+# Expected Hash: 7D481682F2EE1FA2D3BB8F367D98E552FD8D58AE9005804240FC047F74C53B01
 ```
 
 ### Running from Source

@@ -66,7 +66,7 @@ Download the pre-compiled `VeilFrame.exe` from the latest release. No Python or 
 ```powershell
 # Verify SHA-256 checksum:
 Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
-# SHA-256: 7362BDF696C56CF906EC39C1DFE757911C1CE59FE425AAF7038C23845CE3F7EE
+# SHA-256: 7D481682F2EE1FA2D3BB8F367D98E552FD8D58AE9005804240FC047F74C53B01
 ```
 
 ---

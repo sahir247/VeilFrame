@@ -70,7 +70,11 @@ class MetadataProbe(AttackProbe):
                     seg_data = sanitized_bytes[i + 4: i + 2 + seg_len]
                     if seg_data[:4] == b"Exif":
                         findings.append("JPEG APP1 EXIF marker detected in output")
-                    elif seg_data[:28] == b"http://ns.adobe.com/xap/1.0/":
+                    elif (
+                        seg_data.startswith(b"http://ns.adobe.com/xap/1.0/")
+                        or seg_data.startswith(b"http://ns.adobe.com/xmp/")
+                        or seg_data.startswith(b"http://ns.adobe.com/")
+                    ):
                         findings.append("JPEG APP1 XMP marker detected in output")
                 if i + 3 < len(sanitized_bytes):
                     seg_len = int.from_bytes(sanitized_bytes[i + 2: i + 4], "big")
@@ -81,7 +85,16 @@ class MetadataProbe(AttackProbe):
         # Method 3: XMP text scan
         try:
             lower = sanitized_bytes.lower()
-            if b"xpacket" in lower or b"ns.adobe.com" in lower:
+            if (
+                b"<?xpacket" in lower
+                or b"<x:xmpmeta" in lower
+                or b"<rdf:rdf" in lower
+                or b"xmlns:xmp" in lower
+                or b"xmlns:rdf" in lower
+                or b"http://ns.adobe.com/" in lower
+                or b"https://ns.adobe.com/" in lower
+                or b"http://www.w3.org/1999/02/22-rdf-syntax-ns#" in lower
+            ):
                 findings.append("XMP namespace detected in raw output bytes")
         except Exception:
             pass
