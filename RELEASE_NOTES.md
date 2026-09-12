@@ -10,6 +10,8 @@
 | Artifact | Type | File Size | SHA-256 Checksum |
 | :--- | :--- | :--- | :--- |
 | `VeilFrame.exe` | Standalone Single-File Windows x64 Executable | 200.58 MB | `7362BDF696C56CF906EC39C1DFE757911C1CE59FE425AAF7038C23845CE3F7EE` |
+| `veilframe-2.0.0-py3-none-any.whl` | Universal Python Wheel Package | 244.03 KB | `5538B8CEE71224448E66AB593D21F836CB2CBB41AAFB3EE66A654C6D8DEED1CF` |
+| `veilframe-2.0.0.tar.gz` | Source Distribution Archive | 234.52 KB | `A3FC9F1078C5446BDFEDF1EE84DEF0C3E14B44D121B55A84453BC5A8D51E6897` |
 
 ---
 
