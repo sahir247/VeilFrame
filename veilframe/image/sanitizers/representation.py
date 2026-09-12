@@ -195,7 +195,7 @@ class RepresentationSanitizer:
         composited = rgb * alpha + white * (1.0 - alpha)
         composited_u8 = (composited * 255.0).clip(0, 255).astype(np.uint8)
         from PIL import Image  # type: ignore
-        return Image.fromarray(composited_u8, mode="RGB")
+        return Image.fromarray(composited_u8)
 
     @staticmethod
     def _detect_bit_depth(img) -> int:

@@ -168,7 +168,7 @@ def _linear_f32_to_srgb_u8(linear_f32: np.ndarray) -> np.ndarray:
 def _encode_to_clean_bytes(arr_f32: np.ndarray, format_name: str = "JPEG", quality: int = 92) -> bytes:
     """Encode linear sRGB float32 array to clean format bytes without metadata."""
     u8 = _linear_f32_to_srgb_u8(arr_f32)
-    pil_img = Image.fromarray(u8, mode="RGB")
+    pil_img = Image.fromarray(u8)
     buf = io.BytesIO()
 
     fmt = format_name.upper()
