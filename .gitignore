@@ -31,6 +31,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!VeilFrame.spec
 
 # Virtual Environments
 .venv/
