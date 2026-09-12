@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
+from ..core.resources import get_ffmpeg_path
+from ..core.deps_manager import is_ffmpeg_installed
 from ..core.analyzer import analyze_video
 from ..core.pipeline import run_pipeline
 from ..core.verifier import VerificationReport
@@ -35,6 +37,7 @@ from .image_panel import ImageInfoWidget, ImageProcessingPanel
 from .processing_panel import ProcessingPanel
 from .report_view import ReportViewWidget
 from .preview_dialog import PreviewDialog
+from .dialogs import AboutDialog, EnvironmentDoctorDialog, prompt_missing_dependency
 
 
 # ── Helpers ──────────────────────────────────────────────────────────── #
@@ -42,16 +45,20 @@ from .preview_dialog import PreviewDialog
 def _detect_ffmpeg_version() -> str:
     """Return short FFmpeg version string, e.g. '7.1.1', or '?' on failure."""
     try:
+        p = get_ffmpeg_path()
         result = subprocess.run(
-            ["ffmpeg", "-version"],
-            capture_output=True, text=True, timeout=5,
+            [str(p), "-version"],
+            capture_output=True, text=True, timeout=3,
         )
         for line in result.stdout.splitlines():
-            if line.startswith("ffmpeg version"):
-                return line.split()[2]
+            if "ffmpeg version" in line:
+                parts = line.split("version")
+                if len(parts) > 1:
+                    return parts[1].split()[0]
     except Exception:
         pass
     return "?"
+
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".ts", ".wmv"}
@@ -347,10 +354,17 @@ class MainWindow(QMainWindow):
         hdr.addWidget(mode_box)
         hdr.addSpacing(10)
 
+        self.btn_doctor = QPushButton("Check Environment")
+        self.btn_doctor.setStyleSheet("background-color: #222222; color: #d0d0d0; border: 1px solid #383838; padding: 5px 12px; border-radius: 4px;")
+        self.btn_doctor.clicked.connect(self._show_environment_doctor)
+        hdr.addWidget(self.btn_doctor)
+
         btn_about = QPushButton("About / Help")
+        btn_about.setStyleSheet("background-color: #222222; color: #d0d0d0; border: 1px solid #383838; padding: 5px 12px; border-radius: 4px;")
         btn_about.clicked.connect(self._show_about)
         hdr.addWidget(btn_about)
         main_lay.addLayout(hdr)
+
 
         # Scrollable content
         scroll = QScrollArea()
@@ -483,6 +497,15 @@ class MainWindow(QMainWindow):
             self._load_video(path)
 
     def _load_video(self, path: Path):
+        if not is_ffmpeg_installed():
+            installed = prompt_missing_dependency(
+                self, "FFmpeg",
+                on_success=lambda: (self._detect_providers(), self._load_video(path)),
+            )
+            if not installed:
+                self.lbl_status.setText("Video loading cancelled — FFmpeg is required.")
+                return
+
         self.lbl_status.setText(f"Analyzing {path.name}…")
         QApplication.processEvents()
         try:
@@ -526,7 +549,17 @@ class MainWindow(QMainWindow):
         if not self.src_path or not self.current_video_info:
             return
 
+        if not is_ffmpeg_installed():
+            installed = prompt_missing_dependency(
+                self, "FFmpeg",
+                on_success=lambda: (self._detect_providers(), self._start_video_processing()),
+            )
+            if not installed:
+                self.lbl_status.setText("Video processing cancelled — FFmpeg is required.")
+                return
+
         default_name = f"{self.src_path.stem}_cleaned.mp4"
+
         default_out = self.src_path.with_name(default_name)
 
         out_path_str, _ = QFileDialog.getSaveFileName(
@@ -663,18 +696,11 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self):
-        QMessageBox.about(
-            self, "About VeilFrame v2.0",
-            "<h3>VeilFrame v2.0 — Auditable Multimedia Privacy Compiler</h3>"
-            "<p><b>Core Subsystems:</b></p>"
-            "<ul>"
-            "<li><b>Video Privacy Sanitizer:</b> Container atom purge, SEI NAL stripping, Bayer CFA PRNU noise, "
-            "2D DCT block dither, audio ENF filtering, and 3-tier QualityGate.</li>"
-            "<li><b>Image Privacy Compiler:</b> Multi-layer container sanitization, linear sRGB normalization, "
-            "isolated ConstantFill solid redaction (faces, plates, text, QR), 7 adversarial red-team probes, "
-            "and 5 normative contracts.</li>"
-            "<li><b>Cryptographic Provenance:</b> RFC 8785 canonical JSON with Ed25519 digital signatures.</li>"
-            "</ul>"
-            "<p><b>Invariant:</b> <i>Providers measure. VeilFrame decides.</i></p>"
-            "<p><i>All operations run 100% locally. Zero network transmission.</i></p>",
-        )
+        dlg = AboutDialog(self)
+        dlg.exec()
+
+    def _show_environment_doctor(self):
+        dlg = EnvironmentDoctorDialog(self)
+        dlg.exec()
+        self._detect_providers()
+

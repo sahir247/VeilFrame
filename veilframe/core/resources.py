@@ -66,12 +66,20 @@ def find_executable(name: str) -> Path:
         if adjacent_direct.exists():
             return adjacent_direct
 
-    # 7. Windows local application cache fallback (searches dynamically without version hardcoding)
+    # 7. User-level persistent binary directory (~/.veilframe/bin/)
+    user_bin = Path.home() / ".veilframe" / "bin" / exe_name
+    if user_bin.exists():
+        return user_bin
+
+    # 8. Windows local application cache fallback (searches dynamically without version hardcoding)
     if os.name == "nt":
         user_profile = os.environ.get("USERPROFILE", "")
         if user_profile:
             appdata_local = Path(user_profile) / "AppData" / "Local"
             if appdata_local.exists():
+                veilframe_local_bin = appdata_local / "VeilFrame" / "bin" / exe_name
+                if veilframe_local_bin.exists():
+                    return veilframe_local_bin
                 for installer in ("ffmpeg-installer", "ffprobe-installer", "@ffmpeg-installer", "@ffprobe-installer"):
                     for candidate in appdata_local.glob(f"**/node_modules/{installer}/**/{exe_name}"):
                         if candidate.exists():
@@ -79,8 +87,9 @@ def find_executable(name: str) -> Path:
 
     raise FFmpegNotFoundError(
         f"'{name}' executable was not found. Please ensure FFmpeg and FFprobe are installed on system PATH, "
-        f"configured via {env_var}, or bundled in 'veilframe/resources/ffmpeg/'."
+        f"configured via {env_var}, installed in '~/.veilframe/bin/', or bundled in 'veilframe/resources/ffmpeg/'."
     )
+
 
 
 def get_ffmpeg_path() -> Path:
