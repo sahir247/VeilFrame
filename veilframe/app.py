@@ -28,10 +28,17 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
+    from pathlib import Path
+    from PySide6.QtGui import QIcon
+
     app = QApplication(sys.argv)
     app.setApplicationName("VeilFrame")
     app.setOrganizationName("VeilFrame")
     app.setStyleSheet(DARK_THEME_QSS)
+
+    icon_path = Path(__file__).resolve().parent / "resources" / "icon.svg"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Global UX filter: Dropdowns only controlled via click/keys, Spinboxes require focus for wheel
     from .gui.controls import UXWheelEventFilter

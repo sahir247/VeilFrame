@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QApplication, QButtonGroup, QRadioButton,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from ..core.analyzer import analyze_video
 from ..core.pipeline import run_pipeline
@@ -267,6 +267,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("VeilFrame v2.0 — Auditable Multimedia Privacy Compiler")
         self.resize(1000, 960)
         self.setMinimumSize(840, 720)
+
+        icon_path = Path(__file__).resolve().parent.parent / "resources" / "icon.svg"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self.preset_mgr = PresetManager()
         self.src_path: Optional[Path] = None

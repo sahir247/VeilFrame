@@ -1,15 +1,22 @@
-# VeilFrame: Privacy-Preserving Multimedia Sanitization & Cryptographic Provenance
+<p align="center">
+  <img src="docs/images/veilframe_logo.svg" width="160" height="160" alt="VeilFrame Logo" />
+  <br />
+  <h1 align="center">VeilFrame</h1>
+  <p align="center"><b>Auditable Multimedia Privacy Compiler, Bounded Forensic Disruption & Cryptographic Provenance</b></p>
+</p>
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/sahir247/VeilFrame)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue.svg)](https://github.com/)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://python.org/)
-[![CLI](https://img.shields.io/badge/CLI-veilframe-informational.svg)](https://github.com/)
-[![GUI](https://img.shields.io/badge/GUI-PySide6%20%2F%20Qt-brightgreen.svg)](https://pyside.org/)
-[![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
-[![Audit Signatures](https://img.shields.io/badge/Audit%20Signatures-Ed25519-purple.svg)](https://ed25519.cr.yp.to/)
-[![RFC Compliance](https://img.shields.io/badge/RFC%208785-JSON%20Canonicalization-blueviolet.svg)](https://datatracker.ietf.org/doc/html/rfc8785)
+<p align="center">
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue.svg" alt="Platform" /></a>
+  <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
+  <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
+  <a href="https://pyside.org/"><img src="https://img.shields.io/badge/GUI-PySide6%20%2F%20Qt-brightgreen.svg" alt="GUI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-orange.svg" alt="License" /></a>
+  <a href="https://ed25519.cr.yp.to/"><img src="https://img.shields.io/badge/Audit%20Signatures-Ed25519-purple.svg" alt="Audit Signatures" /></a>
+  <a href="https://datatracker.ietf.org/doc/html/rfc8785"><img src="https://img.shields.io/badge/RFC%208785-JSON%20Canonicalization-blueviolet.svg" alt="RFC 8785" /></a>
+</p>
 
-**Version:** 2.0.0
+---
 
 **VeilFrame** is an advanced local multimedia sanitization, bounded forensic signal transformation, and privacy compiler system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers or paint superficial blur filters, **VeilFrame** operates across both video and still-image domains:
 
@@ -19,7 +26,7 @@
 
 ---
 
-## System Architecture
+## <img src="docs/images/icons/architecture.svg" width="22" height="22" alt="" /> System Architecture
 
 ![VeilFrame System Architecture](docs/images/veilframe_architecture.svg)
 
@@ -29,7 +36,7 @@ VeilFrame is built upon the permanent architectural invariant:
 
 ---
 
-## Desktop Graphical Interface (GUI)
+## <img src="docs/images/icons/gui.svg" width="22" height="22" alt="" /> Desktop Graphical Interface (GUI)
 
 VeilFrame includes a modern desktop application built on PySide6 / Qt supporting both Video and Image workflows with real-time feedback:
 
@@ -52,7 +59,7 @@ veilframe-gui
 
 ---
 
-## Terminal Command-Line Interface (CLI)
+## <img src="docs/images/icons/cli.svg" width="22" height="22" alt="" /> Terminal Command-Line Interface (CLI)
 
 VeilFrame provides a unified developer terminal interface styled with structured cards, ANSI tables, and progress indicators:
 
@@ -74,7 +81,7 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
-## Core Pipelines
+## <img src="docs/images/icons/pipelines.svg" width="22" height="22" alt="" /> Core Pipelines
 
 ### 1. Video Pipeline: Bounded Forensic Disruption
 
@@ -99,7 +106,7 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 #### Mathematical Signal Transformations:
 1. **Physical Bayer CFA PRNU Sensor Dither:**
-   $$I_{\text{injected}} = \operatorname{clip}\left(I_{\text{bayer}} + \beta \cdot I_{\text{bayer}} \cdot K \cdot \sin\left(\pi \cdot \frac{I}{255}\right)^\gamma, 0, 255\right)$$
+   $$I_{\text{injected}} = \text{clip}\left(I_{\text{bayer}} + \beta \cdot I_{\text{bayer}} \cdot K \cdot \sin\left(\pi \cdot \frac{I}{255}\right)^\gamma, 0, 255\right)$$
 2. **2D DCT Transform-Domain Perceptual Hash Perturbation:**
    $$X'(u_i, v_i) = \mu_{1/2} \pm \left(|X(u_i, v_i) - \mu_{1/2}| + \delta_{\text{shift}}\right)$$
    $$\|f_{\text{perturbed}}(x, y) - f_{\text{original}}(x, y)\|_\infty \le \epsilon \quad (\text{SSIM} \ge 0.95)$$
@@ -143,7 +150,7 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
-## Built-in Presets Comparison
+## <img src="docs/images/icons/presets.svg" width="22" height="22" alt="" /> Built-in Presets Comparison
 
 | Feature / Policy Dimension | 5% Bounded Forensic Disruption | 10% Bounded Forensic Disruption | Privacy Clean |
 |---|:---:|:---:|:---:|
@@ -164,7 +171,7 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
-## Empirical Forensic Attribution Benchmarks (Research Suite)
+## <img src="docs/images/icons/benchmarks.svg" width="22" height="22" alt="" /> Empirical Forensic Attribution Benchmarks (Research Suite)
 
 The decoupled research benchmark layer evaluates empirical forensic decorrelation:
 
@@ -185,7 +192,7 @@ The decoupled research benchmark layer evaluates empirical forensic decorrelatio
 
 ---
 
-## Quickstart & Installation
+## <img src="docs/images/icons/quickstart.svg" width="22" height="22" alt="" /> Quickstart & Installation
 
 ### 1. Prerequisites
 - **Python:** 3.10 or newer.
@@ -197,7 +204,7 @@ The decoupled research benchmark layer evaluates empirical forensic decorrelatio
 git clone https://github.com/sahir247/VeilFrame.git
 cd VeilFrame
 
-# Install core package
+# Install core package with image and video support
 pip install -e .
 
 # Install GUI components
@@ -249,7 +256,7 @@ veilframe gui
 
 ---
 
-## Cryptographic Evidence Manifest
+## <img src="docs/images/icons/manifest.svg" width="22" height="22" alt="" /> Cryptographic Evidence Manifest
 
 Every sanitized output generates an RFC 8785 canonical JSON manifest:
 
@@ -276,7 +283,7 @@ Every sanitized output generates an RFC 8785 canonical JSON manifest:
 
 ---
 
-## Limitations & Non-Guarantees
+## <img src="docs/images/icons/limitations.svg" width="22" height="22" alt="" /> Limitations & Non-Guarantees
 
 1. **Semantic Context:** VeilFrame neutralizes physical, acoustic, container, and pixel-level identifiers. It cannot obscure semantic text that the user opts not to redact (e.g., spoken dialogue).
 2. **Extreme Adversaries:** Against determined manual human analysts with out-of-band context, manual inspection may still identify unredacted surroundings.
@@ -284,7 +291,7 @@ Every sanitized output generates an RFC 8785 canonical JSON manifest:
 
 ---
 
-## License & Security
+## <img src="docs/images/icons/license.svg" width="22" height="22" alt="" /> License & Security
 
 - **License:** MIT License. See [LICENSE](LICENSE) for details.
 - **Security Policy:** See [SECURITY.md](SECURITY.md) for vulnerability reporting procedures and threat model documentation.
