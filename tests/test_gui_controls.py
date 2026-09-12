@@ -243,6 +243,34 @@ class TestGUIControlsAndUX(unittest.TestCase):
         self.assertTrue(widget.rb_auto.isChecked())
         self.assertEqual(widget.slider.value(), 1)
 
+    def test_report_view_set_image_report(self):
+        """ReportViewWidget should format and render ImageSanitizationResult without errors."""
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from veilframe.gui.report_view import ReportViewWidget
+        from veilframe.image.pipeline import ImagePrivacyPipeline
+
+        report_widget = ReportViewWidget()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            in_img = Path(tmpdir) / "input.jpg"
+            out_img = Path(tmpdir) / "output.jpg"
+            Image.new("RGB", (64, 64), color=(120, 140, 160)).save(in_img, format="JPEG")
+
+            pipeline = ImagePrivacyPipeline()
+            result = pipeline.run(input_source=in_img, output_path=out_img)
+
+            # Test setting full report
+            report_widget.set_image_report(result)
+            self.assertIn("VEILFRAME IMAGE PRIVACY SANITIZATION REPORT", report_widget.txt_report.toPlainText())
+            self.assertIn("SSIM (non-redacted):", report_widget.txt_report.toPlainText())
+            self.assertIn("PSNR (non-redacted):", report_widget.txt_report.toPlainText())
+
+            # Test setting report when fidelity_result is None or partial
+            result.fidelity_result = None
+            report_widget.set_image_report(result)
+            self.assertIn("SSIM (non-redacted):     N/A", report_widget.txt_report.toPlainText())
+
 
 if __name__ == "__main__":
     unittest.main()

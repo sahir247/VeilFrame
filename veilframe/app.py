@@ -34,6 +34,13 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("VeilFrame")
     app.setOrganizationName("VeilFrame")
+
+    # Set explicit font point size to prevent QFont::setPointSize <= 0 warning
+    app_font = app.font()
+    if app_font.pointSize() <= 0:
+        app_font.setPointSize(10)
+    app.setFont(app_font)
+
     app.setStyleSheet(DARK_THEME_QSS)
 
     icon_path = Path(__file__).resolve().parent / "resources" / "icon.svg"

@@ -244,10 +244,17 @@ class ImageContractsWidget(QWidget):
         # Red-Team summary
         rt = result.red_team_result
         if rt:
-            lines = [f"Overall Status: {rt.overall_status.name}  |  Total Probes: {rt.total_probes_run}  |  Detections: {rt.total_detections}"]
-            for p in rt.probe_results:
-                indep_str = f"L{p.independence_level.value}" if hasattr(p, "independence_level") else "L3"
-                lines.append(f"  ● {p.probe_id.ljust(22)} [{p.status.name.ljust(4)}]  Confidence: {p.confidence:.2f}  Residual: {p.detected_count} ({indep_str})")
+            probes_run = getattr(rt, "probes_run", getattr(rt, "total_probes_run", len(rt.probe_results)))
+            probes_failed = getattr(rt, "probes_failed", getattr(rt, "total_detections", 0))
+            lines = [f"Overall Status: {rt.overall_status.name}  |  Probes Run: {probes_run}  |  Probes Failed: {probes_failed}"]
+            
+            probe_items = rt.probe_results.items() if isinstance(rt.probe_results, dict) else enumerate(rt.probe_results)
+            for key, p in probe_items:
+                p_name = getattr(p, "probe_name", getattr(p, "probe_id", str(key)))
+                p_status = p.status.name if hasattr(p, "status") else "UNKNOWN"
+                findings_cnt = len(p.findings) if hasattr(p, "findings") else getattr(p, "detected_count", 0)
+                reason_str = f" - {p.failure_reason}" if getattr(p, "failure_reason", None) else ""
+                lines.append(f"  ● {p_name.ljust(22)} [{p_status.ljust(4)}]  Findings: {findings_cnt}{reason_str}")
             self.lbl_rt_summary.setText("\n".join(lines))
             self.lbl_rt_summary.setStyleSheet("font-family: 'Cascadia Code', monospace; color: #b0b0b0; font-size: 11px;")
 
@@ -344,6 +351,11 @@ class ReportViewWidget(QGroupBox):
         self._image_result = result
         self._report = None
 
+        fid = result.fidelity_result
+        ssim_val = f"{fid.ssim:.4f}" if (fid and fid.ssim is not None) else "N/A"
+        psnr_val = f"{fid.psnr_db:.1f} dB" if (fid and fid.psnr_db is not None) else "N/A"
+        mae_val = f"{fid.mae:.6f}" if (fid and fid.mae is not None) else "N/A"
+
         # Build clean formatted text
         lines = [
             "==================================================",
@@ -361,15 +373,20 @@ class ReportViewWidget(QGroupBox):
             f"  5. Completeness Contract:{result.verdict.completeness_status.name}",
             "",
             "--- Outside-Mask Fidelity Metrics ---",
-            f"  SSIM (non-redacted):     {result.fidelity_result.ssim:.4f if result.fidelity_result and result.fidelity_result.ssim is not None else 'N/A'} (>= 0.95)",
-            f"  PSNR (non-redacted):     {result.fidelity_result.psnr_db:.1f} dB if result.fidelity_result and result.fidelity_result.psnr_db is not None else 'N/A' (>= 35 dB)",
-            f"  MAE  (non-redacted):     {result.fidelity_result.mae:.6f if result.fidelity_result and result.fidelity_result.mae is not None else 'N/A'} (<= 0.02)",
+            f"  SSIM (non-redacted):     {ssim_val} (>= 0.95)",
+            f"  PSNR (non-redacted):     {psnr_val} (>= 35 dB)",
+            f"  MAE  (non-redacted):     {mae_val} (<= 0.02)",
             "",
             "--- Adversarial Red-Team Probes ---",
         ]
         if result.red_team_result:
-            for p in result.red_team_result.probe_results:
-                lines.append(f"  ● {p.probe_id.ljust(22)}: {p.status.name} (confidence={p.confidence:.2f}, detected={p.detected_count})")
+            rt = result.red_team_result
+            probe_items = rt.probe_results.items() if isinstance(rt.probe_results, dict) else enumerate(rt.probe_results)
+            for key, p in probe_items:
+                p_name = getattr(p, "probe_name", getattr(p, "probe_id", str(key)))
+                p_status = p.status.name if hasattr(p, "status") else "UNKNOWN"
+                findings_cnt = len(p.findings) if hasattr(p, "findings") else getattr(p, "detected_count", 0)
+                lines.append(f"  ● {p_name.ljust(22)}: {p_status} (findings={findings_cnt})")
 
         text_out = "\n".join(lines)
         self.txt_report.setPlainText(text_out)
