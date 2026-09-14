@@ -174,11 +174,54 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path resources/ffmpeg
-          $ffmpegPath = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
-          $ffprobePath = (Get-Command ffprobe -ErrorAction SilentlyContinue).Source
-          if ($ffmpegPath) { Copy-Item $ffmpegPath -Destination resources/ffmpeg/ -Force }
-          if ($ffprobePath) { Copy-Item $ffprobePath -Destination resources/ffmpeg/ -Force }
-          Get-ChildItem resources/ffmpeg
+          New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg
+          
+          # 1. Search for pre-extracted real binaries in Chocolatey / tools directories
+          $realFfmpeg = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
+          $realFfprobe = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
+          
+          if ($realFfmpeg) {
+            Copy-Item $realFfmpeg.FullName -Destination resources/ffmpeg/ffmpeg.exe -Force
+            Copy-Item $realFfmpeg.FullName -Destination veilframe/resources/ffmpeg/ffmpeg.exe -Force
+          }
+          if ($realFfprobe) {
+            Copy-Item $realFfprobe.FullName -Destination resources/ffmpeg/ffprobe.exe -Force
+            Copy-Item $realFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
+          }
+          
+          # 2. Fallback: if either binary is missing or is a shim (<5MB), download official static release
+          $hasFfmpeg = (Test-Path resources/ffmpeg/ffmpeg.exe) -and ((Get-Item resources/ffmpeg/ffmpeg.exe).Length -gt 5MB)
+          $hasFfprobe = (Test-Path resources/ffmpeg/ffprobe.exe) -and ((Get-Item resources/ffmpeg/ffprobe.exe).Length -gt 5MB)
+          
+          if (-not $hasFfmpeg -or -not $hasFfprobe) {
+            Write-Host "Downloading official static FFmpeg release for standalone packaging..."
+            $zipPath = "$env:TEMP\ffmpeg_ci.zip"
+            Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath
+            Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\ffmpeg_extracted" -Force
+            $extractedFfmpeg = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffmpeg.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
+            $extractedFfprobe = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffprobe.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
+            if ($extractedFfmpeg) {
+              Copy-Item $extractedFfmpeg.FullName -Destination resources/ffmpeg/ffmpeg.exe -Force
+              Copy-Item $extractedFfmpeg.FullName -Destination veilframe/resources/ffmpeg/ffmpeg.exe -Force
+            }
+            if ($extractedFfprobe) {
+              Copy-Item $extractedFfprobe.FullName -Destination resources/ffmpeg/ffprobe.exe -Force
+              Copy-Item $extractedFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
+            }
+          }
+          
+          # 3. Assert that both binaries exist and are genuine (>5MB)
+          $f1 = Get-Item resources/ffmpeg/ffmpeg.exe -ErrorAction SilentlyContinue
+          $f2 = Get-Item resources/ffmpeg/ffprobe.exe -ErrorAction SilentlyContinue
+          if (-not $f1 -or $f1.Length -lt 5MB) {
+            throw "CRITICAL: resources/ffmpeg/ffmpeg.exe is missing or invalid (<5MB)!"
+          }
+          if (-not $f2 -or $f2.Length -lt 5MB) {
+            throw "CRITICAL: resources/ffmpeg/ffprobe.exe is missing or invalid (<5MB)!"
+          }
+          
+          Write-Host "FFmpeg binaries staged successfully for standalone packaging:"
+          Get-ChildItem resources/ffmpeg | Format-Table Name, Length
 
       - name: Install Dependencies & Build Tools
         run: |
@@ -191,6 +234,21 @@ jobs:
 
       - name: Build Standalone Windows Executable
         run: pyinstaller --noconfirm --clean VeilFrame.spec
+
+      - name: Verify Standalone Executable & Bundled FFmpeg
+        shell: pwsh
+        run: |
+          Write-Host "Probing dist/VeilFrame.exe doctor..."
+          $docRaw = .\dist\VeilFrame.exe doctor --json
+          Write-Host "Doctor output: $docRaw"
+          $docJson = $docRaw | ConvertFrom-Json
+          if (-not $docJson.ffmpeg.installed) {
+            throw "CRITICAL: Standalone VeilFrame.exe failed FFmpeg verification! Detail: $($docJson.ffmpeg.detail)"
+          }
+          if (-not $docJson.ffprobe.installed) {
+            throw "CRITICAL: Standalone VeilFrame.exe failed FFprobe verification! Detail: $($docJson.ffprobe.detail)"
+          }
+          Write-Host "SUCCESS: Standalone VeilFrame.exe verified with working bundled FFmpeg and FFprobe!"
 
       - name: Generate Checksums
         shell: pwsh

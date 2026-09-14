@@ -54,19 +54,66 @@ def get_user_bin_dir() -> Path:
     return bin_dir
 
 
-def is_ffmpeg_installed() -> bool:
-    """Check if FFmpeg binary is available and functionally executable."""
+def get_ffmpeg_version(ffmpeg_p: Optional[Path] = None) -> Optional[str]:
+    """Runs FFmpeg and returns parsed version string, or None if execution fails."""
     try:
-        ffmpeg_p = get_ffmpeg_path()
-        if not (ffmpeg_p.exists() and ffmpeg_p.stat().st_size > 1024):
-            return False
-        result = subprocess.run(
-            [str(ffmpeg_p), "-version"],
+        p = ffmpeg_p or get_ffmpeg_path()
+        res = subprocess.run(
+            [str(p), "-version"],
             capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             creationflags=get_subprocess_flags(),
         )
-        return result.returncode == 0
+        if res.returncode != 0:
+            return None
+        combined = (res.stdout or "") + "\n" + (res.stderr or "")
+        for line in combined.splitlines():
+            line_s = line.strip()
+            if "ffmpeg version" in line_s.lower():
+                parts = line_s.split("version")
+                if len(parts) > 1:
+                    ver = parts[1].strip().split()[0]
+                    return ver.rstrip(".,;:")
+        return "Available" if res.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def get_ffprobe_version(ffprobe_p: Optional[Path] = None) -> Optional[str]:
+    """Runs FFprobe and returns parsed version string, or None if execution fails."""
+    try:
+        p = ffprobe_p or get_ffprobe_path()
+        res = subprocess.run(
+            [str(p), "-version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            creationflags=get_subprocess_flags(),
+        )
+        if res.returncode != 0:
+            return None
+        combined = (res.stdout or "") + "\n" + (res.stderr or "")
+        for line in combined.splitlines():
+            line_s = line.strip()
+            if "ffprobe version" in line_s.lower():
+                parts = line_s.split("version")
+                if len(parts) > 1:
+                    ver = parts[1].strip().split()[0]
+                    return ver.rstrip(".,;:")
+        return "Available" if res.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def is_ffmpeg_installed() -> bool:
+    """Check if FFmpeg binary is available and functionally executable."""
+    try:
+        return get_ffmpeg_version() is not None
     except Exception:
         return False
 
@@ -74,16 +121,7 @@ def is_ffmpeg_installed() -> bool:
 def is_ffprobe_installed() -> bool:
     """Check if FFprobe binary is available and functionally executable."""
     try:
-        ffprobe_p = get_ffprobe_path()
-        if not (ffprobe_p.exists() and ffprobe_p.stat().st_size > 1024):
-            return False
-        result = subprocess.run(
-            [str(ffprobe_p), "-version"],
-            capture_output=True,
-            timeout=5,
-            creationflags=get_subprocess_flags(),
-        )
-        return result.returncode == 0
+        return get_ffprobe_version() is not None
     except Exception:
         return False
 
@@ -92,7 +130,6 @@ def audit_environment() -> EnvironmentReport:
     """Performs an audit of all multimedia and cryptographic dependencies."""
     items: List[DependencyAuditItem] = []
     missing_critical: List[str] = []
-    flags = get_subprocess_flags()
 
     # 1. FFmpeg
     ffmpeg_ok = False
@@ -100,21 +137,15 @@ def audit_environment() -> EnvironmentReport:
     ffmpeg_detail = "Not found on system PATH or bundle"
     try:
         p = get_ffmpeg_path()
-        if p.exists() and p.stat().st_size > 1024:
+        ver = get_ffmpeg_version(p)
+        if ver is not None:
             ffmpeg_ok = True
+            ffmpeg_ver = ver
             ffmpeg_detail = str(p)
-            try:
-                res = subprocess.run(
-                    [str(p), "-version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    creationflags=flags,
-                )
-                first = res.stdout.splitlines()[0] if res.stdout else ""
-                ffmpeg_ver = first.split("version")[1].split()[0] if "version" in first else "Available"
-            except Exception:
-                ffmpeg_ver = "Found"
+        else:
+            ffmpeg_ok = False
+            ffmpeg_ver = "Broken / Non-executable"
+            ffmpeg_detail = f"Found candidate at {p} but failed execution probe (-version)"
     except Exception as e:
         ffmpeg_detail = str(e)
 
@@ -136,10 +167,15 @@ def audit_environment() -> EnvironmentReport:
     ffprobe_detail = "Not found on system PATH or bundle"
     try:
         p = get_ffprobe_path()
-        if p.exists() and p.stat().st_size > 1024:
+        ver = get_ffprobe_version(p)
+        if ver is not None:
             ffprobe_ok = True
-            ffprobe_ver = "Available"
+            ffprobe_ver = ver
             ffprobe_detail = str(p)
+        else:
+            ffprobe_ok = False
+            ffprobe_ver = "Broken / Non-executable"
+            ffprobe_detail = f"Found candidate at {p} but failed execution probe (-version)"
     except Exception as e:
         ffprobe_detail = str(e)
 

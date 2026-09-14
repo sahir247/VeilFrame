@@ -26,33 +26,57 @@ def launcher():
             _console_handles = []
             try:
                 import ctypes
+                import msvcrt
                 import atexit
 
-                # Attach to parent console if running from cmd or powershell
-                if ctypes.windll.kernel32.AttachConsole(-1):
-                    _stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
-                    _stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
-                    _stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
-                    _console_handles = [_stdout, _stderr, _stdin]
-                    sys.stdout = _stdout
-                    sys.stderr = _stderr
-                    sys.stdin = _stdin
+                # 1. Try connecting to inherited piped handles (e.g. when stdout is redirected)
+                if sys.stdout is None:
+                    h_out = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+                    if h_out and h_out != -1 and h_out != 0:
+                        try:
+                            fd = msvcrt.open_osfhandle(h_out, os.O_WRONLY)
+                            sys.stdout = open(fd, "w", encoding="utf-8", errors="replace", closefd=False)
+                        except Exception:
+                            pass
 
-                    def _close_console_handles():
-                        for h in _console_handles:
-                            try:
-                                h.close()
-                            except Exception:
-                                pass
+                if sys.stderr is None:
+                    h_err = ctypes.windll.kernel32.GetStdHandle(-12)  # STD_ERROR_HANDLE
+                    if h_err and h_err != -1 and h_err != 0:
+                        try:
+                            fd = msvcrt.open_osfhandle(h_err, os.O_WRONLY)
+                            sys.stderr = open(fd, "w", encoding="utf-8", errors="replace", closefd=False)
+                        except Exception:
+                            pass
 
-                    atexit.register(_close_console_handles)
+                # 2. If still unattached, attach to parent terminal console
+                if sys.stdout is None or sys.stdout.closed:
+                    if ctypes.windll.kernel32.AttachConsole(-1):
+                        _stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                        _stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                        _stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+                        _console_handles = [_stdout, _stderr, _stdin]
+                        sys.stdout = _stdout
+                        sys.stderr = _stderr
+                        sys.stdin = _stdin
+
+                        def _close_console_handles():
+                            for h in _console_handles:
+                                try:
+                                    h.close()
+                                except Exception:
+                                    pass
+
+                        atexit.register(_close_console_handles)
             except Exception:
-                # If handle open fails, restore defaults silently
-                for h in _console_handles:
-                    try:
-                        h.close()
-                    except Exception:
-                        pass
+                pass
+
+        # Safe fallback if stdout/stderr are still None
+        import io
+        if sys.stdout is None:
+            sys.stdout = io.StringIO()
+        if sys.stderr is None:
+            sys.stderr = io.StringIO()
+
         from veilframe.cli import main as cli_main
         cli_main()
     else:

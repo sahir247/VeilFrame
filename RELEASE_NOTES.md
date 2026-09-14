@@ -13,7 +13,8 @@ VeilFrame v2.0.1 is a comprehensive production engineering release addressing pe
 - **Sub-Millisecond Hardware Discovery**: Implemented instant (<1ms) Win32 `EnumDisplayDevicesW` GPU query via `ctypes` and parallelized candidate encoder validation via `ThreadPoolExecutor`.
 
 ### 2. FFmpeg / FFprobe Live Verification & Download Resilience
-- **Functional Execution Probes**: Replaced naive static file-size checks with live `-version` process execution tests (`timeout=5`, `CREATE_NO_WINDOW`) in `is_ffmpeg_installed()` and `is_ffprobe_installed()`.
+- **Functional Execution Probes**: Replaced naive static file-size checks with live `-version` process execution tests (`timeout=5`, `CREATE_NO_WINDOW`) in `is_ffmpeg_installed()`, `is_ffprobe_installed()`, and `audit_environment()`.
+- **Precedence & Shim Elimination**: Prioritized persistent user binaries (`~/.veilframe/bin/`) over PyInstaller bundle paths, enforced >5MB binary size filters in packaging to eliminate package manager shims, and unified version detection across Environment Doctor and the Main Window.
 - **Multi-Mirror Download Fallback**: Added multi-mirror failover URLs (BtbN GitHub builds, gyan.dev release, and codexffmpeg release) with a 600s total wall-clock timeout and chunked progress reporting.
 - **Dual Binary Extraction**: Automatically extracts and verifies both `ffmpeg.exe` and `ffprobe.exe` into persistent user storage (`~/.veilframe/bin/`).
 

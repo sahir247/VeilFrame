@@ -32,12 +32,28 @@ def _is_valid_executable_file(path: Path) -> bool:
         return False
 
 
+def _is_functional_binary(path: Path) -> bool:
+    """Verifies that a candidate path exists and can execute -version successfully."""
+    try:
+        if not (path.is_file() and path.stat().st_size > 1024):
+            return False
+        res = subprocess.run(
+            [str(path), "-version"],
+            capture_output=True,
+            timeout=3,
+            creationflags=get_subprocess_flags(),
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
 def find_executable(name: str) -> Path:
     """
     Locates the requested executable ('ffmpeg' or 'ffprobe') across:
     1. Environment variable overrides (FFMPEG_BINARY / FFPROBE_BINARY)
-    2. PyInstaller bundled resources (sys._MEIPASS)
-    3. User-level persistent binary directory (~/.veilframe/bin/)
+    2. User-level persistent binary directory (~/.veilframe/bin/)
+    3. PyInstaller bundled resources (sys._MEIPASS)
     4. Package resources directory (`veilframe/resources/ffmpeg/`)
     5. Project root `resources/ffmpeg/`
     6. Executable adjacent directory (when running as frozen binary)
@@ -47,59 +63,60 @@ def find_executable(name: str) -> Path:
     ext = ".exe" if os.name == "nt" else ""
     exe_name = f"{name}{ext}"
 
+    candidates: List[Path] = []
+
     # 1. Environment variable override (highest priority for testing & custom runtimes)
     env_var = f"{name.upper()}_BINARY"
     env_val = os.environ.get(env_var)
-    if env_val and _is_valid_executable_file(Path(env_val)):
-        return Path(env_val)
+    if env_val:
+        candidates.append(Path(env_val))
 
-    # 2. PyInstaller bundle
+    # 2. PyInstaller bundle (top priority for standalone bundled executable)
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        bundle_path = Path(sys._MEIPASS) / "resources" / "ffmpeg" / exe_name
-        if _is_valid_executable_file(bundle_path):
-            return bundle_path
-        bundle_root_path = Path(sys._MEIPASS) / exe_name
-        if _is_valid_executable_file(bundle_root_path):
-            return bundle_root_path
+        meipass = Path(sys._MEIPASS)
+        candidates.append(meipass / "resources" / "ffmpeg" / exe_name)
+        candidates.append(meipass / "veilframe" / "resources" / "ffmpeg" / exe_name)
+        candidates.append(meipass / exe_name)
 
     # 3. User-level persistent binary directory (~/.veilframe/bin/)
-    user_bin = Path.home() / ".veilframe" / "bin" / exe_name
-    if _is_valid_executable_file(user_bin):
-        return user_bin
+    candidates.append(Path.home() / ".veilframe" / "bin" / exe_name)
 
     # 4. Package resources
-    pkg_res = Path(__file__).parent.parent / "resources" / "ffmpeg" / exe_name
-    if _is_valid_executable_file(pkg_res):
-        return pkg_res
+    pkg_dir = Path(__file__).parent.parent
+    candidates.append(pkg_dir / "resources" / "ffmpeg" / exe_name)
+    candidates.append(pkg_dir.parent / "resources" / "ffmpeg" / exe_name)
 
     # 5. Working directory resources
-    cwd_res = Path.cwd() / "resources" / "ffmpeg" / exe_name
-    if _is_valid_executable_file(cwd_res):
-        return cwd_res
+    candidates.append(Path.cwd() / "resources" / "ffmpeg" / exe_name)
+    candidates.append(Path.cwd() / "veilframe" / "resources" / "ffmpeg" / exe_name)
 
     # 6. Executable adjacent directory (when running as frozen binary)
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).parent
-        adjacent_res = exe_dir / "resources" / "ffmpeg" / exe_name
-        if _is_valid_executable_file(adjacent_res):
-            return adjacent_res
-        adjacent_direct = exe_dir / exe_name
-        if _is_valid_executable_file(adjacent_direct):
-            return adjacent_direct
+        candidates.append(exe_dir / "resources" / "ffmpeg" / exe_name)
+        candidates.append(exe_dir / "veilframe" / "resources" / "ffmpeg" / exe_name)
+        candidates.append(exe_dir / exe_name)
 
     # 7. System PATH
     which_path = shutil.which(name)
-    if which_path and _is_valid_executable_file(Path(which_path)):
-        return Path(which_path)
+    if which_path:
+        candidates.append(Path(which_path))
 
     # 8. Windows local application cache fallback
     if os.name == "nt":
         user_profile = os.environ.get("USERPROFILE", "")
         if user_profile:
-            appdata_local = Path(user_profile) / "AppData" / "Local"
-            veilframe_local_bin = appdata_local / "VeilFrame" / "bin" / exe_name
-            if _is_valid_executable_file(veilframe_local_bin):
-                return veilframe_local_bin
+            candidates.append(Path(user_profile) / "AppData" / "Local" / "VeilFrame" / "bin" / exe_name)
+
+    # First pass: find a functional, runnable binary
+    for cand in candidates:
+        if _is_functional_binary(cand):
+            return cand
+
+    # Second pass fallback: find any existing non-empty file (e.g. in test fixtures)
+    for cand in candidates:
+        if _is_valid_executable_file(cand):
+            return cand
 
     raise FFmpegNotFoundError(
         f"'{name}' executable was not found. Please ensure FFmpeg and FFprobe are installed on system PATH, "

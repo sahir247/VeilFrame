@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QShortcut, QDesktopServices
 
 from ..core.resources import get_ffmpeg_path, get_subprocess_flags
-from ..core.deps_manager import is_ffmpeg_installed, is_ffprobe_installed
+from ..core.deps_manager import is_ffmpeg_installed, is_ffprobe_installed, get_ffmpeg_version
 from ..core.analyzer import analyze_video
 from ..core.pipeline import run_pipeline
 from ..core.verifier import VerificationReport
@@ -44,23 +44,8 @@ from .dialogs import AboutDialog, EnvironmentDoctorDialog, prompt_missing_depend
 
 def _detect_ffmpeg_version() -> str:
     """Return short FFmpeg version string, e.g. '7.1.1', or '?' on failure."""
-    try:
-        p = get_ffmpeg_path()
-        result = subprocess.run(
-            [str(p), "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=get_subprocess_flags(),
-        )
-        for line in result.stdout.splitlines():
-            if "ffmpeg version" in line:
-                parts = line.split("version")
-                if len(parts) > 1:
-                    return parts[1].split()[0]
-    except Exception:
-        pass
-    return "?"
+    ver = get_ffmpeg_version()
+    return ver if ver is not None else "?"
 
 
 
