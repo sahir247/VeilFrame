@@ -1,4 +1,4 @@
-# VeilFrame v2.0.0 Release Notes
+# VeilFrame v2.0.1 Release Notes
 
 ## Key Highlights & Architectural Enhancements
 
