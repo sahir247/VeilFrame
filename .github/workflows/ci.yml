@@ -236,19 +236,39 @@ jobs:
         run: pyinstaller --noconfirm --clean VeilFrame.spec
 
       - name: Verify Standalone Executable & Bundled FFmpeg
-        shell: pwsh
         run: |
-          Write-Host "Probing dist/VeilFrame.exe doctor..."
-          $docRaw = .\dist\VeilFrame.exe doctor --json
-          Write-Host "Doctor output: $docRaw"
-          $docJson = $docRaw | ConvertFrom-Json
-          if (-not $docJson.ffmpeg.installed) {
-            throw "CRITICAL: Standalone VeilFrame.exe failed FFmpeg verification! Detail: $($docJson.ffmpeg.detail)"
-          }
-          if (-not $docJson.ffprobe.installed) {
-            throw "CRITICAL: Standalone VeilFrame.exe failed FFprobe verification! Detail: $($docJson.ffprobe.detail)"
-          }
-          Write-Host "SUCCESS: Standalone VeilFrame.exe verified with working bundled FFmpeg and FFprobe!"
+          python -c "
+          import subprocess, json, sys
+          print('Testing standalone binary: dist/VeilFrame.exe doctor --json')
+          res = subprocess.run(['dist/VeilFrame.exe', 'doctor', '--json'], capture_output=True, text=True, timeout=45)
+          print('Return code:', res.returncode)
+          print('STDOUT:\n', res.stdout)
+          if res.stderr:
+              print('STDERR:\n', res.stderr)
+          if res.returncode != 0:
+              print('CRITICAL: dist/VeilFrame.exe returned non-zero exit code!')
+              sys.exit(1)
+          if not res.stdout.strip():
+              print('CRITICAL: dist/VeilFrame.exe produced empty stdout!')
+              sys.exit(1)
+          try:
+              data = json.loads(res.stdout)
+          except Exception as e:
+              print(f'CRITICAL: Failed to parse doctor JSON output: {e}')
+              sys.exit(1)
+          ff = data.get('ffmpeg', {})
+          fp = data.get('ffprobe', {})
+          ff_ok = ff.get('available') or ff.get('installed')
+          fp_ok = fp.get('available') or fp.get('installed')
+          if not ff_ok:
+              print(f'CRITICAL: FFmpeg verification failed! Info: {ff}')
+              sys.exit(1)
+          if not fp_ok:
+              print(f'CRITICAL: FFprobe verification failed! Info: {fp}')
+              sys.exit(1)
+          ff_ver = ff.get('version', 'Available')
+          print(f'SUCCESS: Standalone binary verified with FFmpeg ({ff_ver}) and FFprobe!')
+          "
 
       - name: Generate Checksums
         shell: pwsh

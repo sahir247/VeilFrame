@@ -518,27 +518,39 @@ def cmd_doctor(args):
     """Run full diagnostic environment health check."""
     import platform
     import numpy as np
-    from veilframe.core.resources import get_ffmpeg_path, get_ffprobe_path, get_subprocess_flags
+    from veilframe.core.deps_manager import (
+        is_ffmpeg_installed,
+        is_ffprobe_installed,
+        get_ffmpeg_version,
+        get_ffprobe_version,
+    )
+    from veilframe.core.resources import (
+        get_ffmpeg_path,
+        get_ffprobe_path,
+        get_hardware_capabilities,
+    )
 
-    ffmpeg_p = get_ffmpeg_path()
-    ffprobe_p = get_ffprobe_path()
-    ffmpeg_ok = ffmpeg_p.exists()
-    ffprobe_ok = ffprobe_p.exists()
+    try:
+        ffmpeg_p = get_ffmpeg_path()
+        ffmpeg_ok = is_ffmpeg_installed()
+        ffmpeg_ver = get_ffmpeg_version(ffmpeg_p) or "Available"
+        ffmpeg_path_str = str(ffmpeg_p)
+    except Exception as e:
+        ffmpeg_p = Path("ffmpeg")
+        ffmpeg_ok = False
+        ffmpeg_ver = "Missing"
+        ffmpeg_path_str = str(e)
 
-    # Probe FFmpeg version
-    ffmpeg_ver = "Unknown"
-    if ffmpeg_ok:
-        try:
-            res = subprocess.run(
-                [str(ffmpeg_p), "-version"],
-                capture_output=True,
-                text=True,
-                creationflags=get_subprocess_flags(),
-            )
-            first_line = res.stdout.splitlines()[0] if res.stdout else ""
-            ffmpeg_ver = first_line.split("version")[1].split()[0] if "version" in first_line else "Available"
-        except Exception:
-            ffmpeg_ver = "Present"
+    try:
+        ffprobe_p = get_ffprobe_path()
+        ffprobe_ok = is_ffprobe_installed()
+        ffprobe_ver = get_ffprobe_version(ffprobe_p) or "Available"
+        ffprobe_path_str = str(ffprobe_p)
+    except Exception as e:
+        ffprobe_p = Path("ffprobe")
+        ffprobe_ok = False
+        ffprobe_ver = "Missing"
+        ffprobe_path_str = str(e)
 
     # PySide6 GUI check
     pyside_ok = True
@@ -568,7 +580,6 @@ def cmd_doctor(args):
         cv_ok = False
 
     # Hardware acceleration check (real GPU device probe + verified encoder micro-test)
-    from veilframe.core.resources import get_hardware_capabilities
     hw_info = get_hardware_capabilities()
     physical_gpus = hw_info.get("physical_gpus", [])
     verified_encoders = [e["codec"] for e in hw_info.get("verified_encoders", [])]
@@ -576,8 +587,20 @@ def cmd_doctor(args):
     diag_data = {
         "os": platform.platform(),
         "python": sys.version.split()[0],
-        "ffmpeg": {"available": ffmpeg_ok, "path": str(ffmpeg_p), "version": ffmpeg_ver},
-        "ffprobe": {"available": ffprobe_ok, "path": str(ffprobe_p)},
+        "ffmpeg": {
+            "available": ffmpeg_ok,
+            "installed": ffmpeg_ok,
+            "path": ffmpeg_path_str,
+            "version": ffmpeg_ver,
+            "detail": ffmpeg_path_str,
+        },
+        "ffprobe": {
+            "available": ffprobe_ok,
+            "installed": ffprobe_ok,
+            "path": ffprobe_path_str,
+            "version": ffprobe_ver,
+            "detail": ffprobe_path_str,
+        },
         "quality_gate": {"policy": "SSIM >= 0.95, PSNR >= 30 dB", "active": True},
         "pyside6": {"available": pyside_ok, "version": pyside_ver},
         "cryptography": {"available": crypto_ok, "version": crypto_ver},
