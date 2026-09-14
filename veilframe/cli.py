@@ -9,8 +9,7 @@ Provides unified command-line access to:
   4. verify     - Cryptographic verification of Ed25519 signed audit manifests
   5. presets    - Explore and inspect built-in transformation profiles
   6. doctor     - Diagnostic health check of local environment & encoders
-  7. benchmark  - Run research attribution benchmark detectors
-  8. gui        - Launch PySide6 desktop GUI
+  7. gui        - Launch PySide6 desktop GUI
 """
 import sys
 import os
@@ -519,7 +518,7 @@ def cmd_doctor(args):
     """Run full diagnostic environment health check."""
     import platform
     import numpy as np
-    from veilframe.core.resources import get_ffmpeg_path, get_ffprobe_path
+    from veilframe.core.resources import get_ffmpeg_path, get_ffprobe_path, get_subprocess_flags
 
     ffmpeg_p = get_ffmpeg_path()
     ffprobe_p = get_ffprobe_path()
@@ -530,7 +529,12 @@ def cmd_doctor(args):
     ffmpeg_ver = "Unknown"
     if ffmpeg_ok:
         try:
-            res = subprocess.run([str(ffmpeg_p), "-version"], capture_output=True, text=True)
+            res = subprocess.run(
+                [str(ffmpeg_p), "-version"],
+                capture_output=True,
+                text=True,
+                creationflags=get_subprocess_flags(),
+            )
             first_line = res.stdout.splitlines()[0] if res.stdout else ""
             ffmpeg_ver = first_line.split("version")[1].split()[0] if "version" in first_line else "Available"
         except Exception:
@@ -625,52 +629,6 @@ def cmd_doctor(args):
         print(f"{badge_fail('ATTENTION')} Critical prerequisites are missing. Review table above.\n")
 
 
-# --------------------------------------------------------------------------- #
-# Command: Benchmark                                                          #
-# --------------------------------------------------------------------------- #
-def cmd_benchmark(args):
-    """Run research attribution benchmark detectors or pipeline performance profiling."""
-    if getattr(args, "performance", False):
-        from tools.benchmark_performance import main as perf_main
-        perf_argv = ["benchmark_performance"]
-        if args.ref:
-            perf_argv.append(str(args.ref))
-        if getattr(args, "synthetic", False):
-            perf_argv.append("--synthetic")
-        if getattr(args, "duration", None):
-            perf_argv.extend(["--duration", str(args.duration)])
-        if getattr(args, "preset", None):
-            perf_argv.extend(["--preset", str(args.preset)])
-        if args.output_json:
-            perf_argv.extend(["--output-json", str(args.output_json)])
-
-        old_argv = sys.argv
-        sys.argv = perf_argv
-        try:
-            perf_main()
-        finally:
-            sys.argv = old_argv
-        return
-
-    from tools.run_attribution_benchmarks import main as bench_main
-
-    sys_argv = ["run_attribution_benchmarks"]
-    if args.ref:
-        sys_argv.extend(["--ref", str(args.ref)])
-    if args.trans:
-        sys_argv.extend(["--trans", str(args.trans)])
-    if args.synthetic:
-        sys_argv.append("--synthetic")
-    if args.output_json:
-        sys_argv.extend(["--output-json", str(args.output_json)])
-
-    old_argv = sys.argv
-    sys.argv = sys_argv
-    try:
-        bench_main()
-    finally:
-        sys.argv = old_argv
-
 
 # --------------------------------------------------------------------------- #
 # Interactive TUI Wizard                                                      #
@@ -713,7 +671,6 @@ def run_interactive_wizard():
             "Cryptographic Verifier         [Validate Ed25519 signature & bitstream SHA-256]",
             "Presets & Transformation Budgets [Explore 5%, 10% & Lossless profile ceilings]",
             "System Doctor & Diagnostics    [Comprehensive hardware, GPU & encoder health check]",
-            "Attribution Benchmark Suite    [Run PRNU PCE/NCC, pHash/dHash & ENF detectors]",
             "Launch Desktop GUI             [Start native PySide6 graphical window]",
             "Exit VeilFrame Console",
         ]
@@ -869,48 +826,15 @@ def run_interactive_wizard():
             pause_for_user()
 
         elif idx == 6:
-            # 7. Benchmark
-            clear_screen()
-            print_banner(subtitle="VeilFrame > Research Attribution Benchmark Suite")
-            b_mode = prompt_choice(
-                "Select benchmark execution mode",
-                [
-                    "Synthetic Multi-Camera Corpus Evaluation (Fully offline, multi-camera ROC)",
-                    "Single Reference vs. Transformed Video Pair Benchmark",
-                ],
-                default_idx=0,
-            )
-            if b_mode == 0:
-                out_j = prompt_text("Output JSON report path", default="synthetic_benchmark_results.json")
-                class Args:
-                    ref = None
-                    trans = None
-                    synthetic = True
-                    output_json = out_j
-                cmd_benchmark(Args())
-            else:
-                r_p = prompt_text("Enter reference video path")
-                t_p = prompt_text("Enter transformed video path")
-                out_j = prompt_text("Output JSON report path", default="benchmark_results.json")
-                class Args:
-                    ref = r_p
-                    trans = t_p
-                    synthetic = False
-                    output_json = out_j
-                cmd_benchmark(Args())
-
-            pause_for_user()
-
-        elif idx == 7:
-            # 8. Launch GUI
+            # 7. Launch GUI
             print(f"\n{badge_info()} Launching PySide6 desktop interface...")
             class Args:
                 pass
             cmd_gui(Args())
             pause_for_user("PySide6 GUI closed. Press Enter to return to TUI console...")
 
-        elif idx == 8:
-            # 9. Exit
+        elif idx == 7:
+            # 8. Exit
             clear_screen()
             print(f"\n{Style.BOLD}{Style.BRIGHT_CYAN}◈ Thank you for using VeilFrame.{Style.RESET}\n")
             break
@@ -998,18 +922,7 @@ Examples:
     p_doc.add_argument("--json", action="store_true", help="Output diagnostics in JSON format")
     p_doc.set_defaults(func=cmd_doctor)
 
-    # 7. Benchmark
-    p_bnc = subparsers.add_parser("benchmark", help="Run research attribution benchmark detectors or pipeline performance profiling")
-    p_bnc.add_argument("--ref", help="Reference video")
-    p_bnc.add_argument("--trans", help="Transformed video")
-    p_bnc.add_argument("--performance", action="store_true", help="Run end-to-end pipeline latency, throughput (FPS), and memory benchmark")
-    p_bnc.add_argument("--duration", type=float, default=10.0, help="Duration in seconds for synthetic performance benchmark")
-    p_bnc.add_argument("--preset", default="5%", help="Preset to use for performance benchmark (default: 5%)")
-    p_bnc.add_argument("--synthetic", action="store_true", help="Run on synthetic corpus")
-    p_bnc.add_argument("--output-json", help="Path to export benchmark results JSON")
-    p_bnc.set_defaults(func=cmd_benchmark)
-
-    # 8. GUI
+    # 7. GUI
     p_gui = subparsers.add_parser("gui", help="Launch VeilFrame desktop GUI")
     p_gui.set_defaults(func=cmd_gui)
 

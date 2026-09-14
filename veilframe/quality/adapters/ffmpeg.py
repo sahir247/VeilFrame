@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..models import QualityConfig, QualityResult, PerFrameMetric
-from ...core.resources import get_ffmpeg_path
+from ...core.resources import get_ffmpeg_path, get_subprocess_flags
 
 
 def _get_ffmpeg_version() -> Optional[str]:
@@ -27,6 +27,7 @@ def _get_ffmpeg_version() -> Optional[str]:
             capture_output=True,
             text=True,
             timeout=10,
+            creationflags=get_subprocess_flags(),
         )
         for line in result.stdout.splitlines():
             if line.startswith("ffmpeg version"):
@@ -75,6 +76,7 @@ class FFmpegNativeProvider:
                 [str(get_ffmpeg_path()), "-version"],
                 capture_output=True,
                 timeout=10,
+                creationflags=get_subprocess_flags(),
             )
             return result.returncode == 0
         except Exception:
@@ -151,6 +153,7 @@ class FFmpegNativeProvider:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                creationflags=get_subprocess_flags(),
             )
 
             stderr_lines: List[str] = []

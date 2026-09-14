@@ -38,7 +38,7 @@ def _supports_color() -> bool:
         return True
     if os.name == "nt" and ("WT_SESSION" in os.environ or "VSCODE_INJECTION" in os.environ or "TERM_PROGRAM" in os.environ):
         return True
-    return True
+    return False
 
 
 USE_COLOR = _supports_color()

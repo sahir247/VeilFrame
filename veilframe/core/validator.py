@@ -29,7 +29,7 @@ import numpy as np
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
-from .resources import get_ffmpeg_path, get_ffprobe_path
+from .resources import get_ffmpeg_path, get_ffprobe_path, get_subprocess_flags
 from .analyzer import analyze_video
 from ..models.video_info import (
     VideoInfo,
@@ -50,7 +50,7 @@ QUALITY_GATE_ALGORITHM_VERSION: str = "quality-gate-v4.0"
 QUALITY_GATE_POLICY_VERSION: str = "5pct-v1.0"
 
 
-from .crypto import compute_sha256, canonicalize_rfc8785  # noqa: F401
+from .crypto import compute_sha256, canonicalize_rfc8785
 
 
 def calc_percentile(sorted_data: List[float], p: float) -> float:
@@ -201,7 +201,13 @@ def extract_frame_packet_timestamps(video_path: Path) -> List[float]:
         str(video_path),
     ]
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            creationflags=get_subprocess_flags(),
+        )
         pts_list: List[float] = []
         if proc.stdout:
             for line in proc.stdout:
@@ -374,7 +380,14 @@ def extract_decoded_frame_energy(
             str(video_file),
         ]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=True)
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=True,
+                creationflags=get_subprocess_flags(),
+            )
             data = json.loads(res.stdout)
             streams = data.get("streams", [])
             if streams:
@@ -414,7 +427,12 @@ def extract_decoded_frame_energy(
                 "-pix_fmt", "yuv420p",
                 "-",
             ]
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                creationflags=get_subprocess_flags(),
+            )
             sampled = {}
             frame_idx = 0
             try:
@@ -464,7 +482,13 @@ def extract_decoded_frame_energy(
                 "-",
             ]
             try:
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10.0)
+                res = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10.0,
+                    creationflags=get_subprocess_flags(),
+                )
                 data = res.stdout
                 if len(data) >= frame_size:
                     y_plane = np.frombuffer(data[0:w * h], dtype=np.uint8).reshape((h, w)).copy()
@@ -679,6 +703,7 @@ def evaluate_canonical_fidelity(
             text=True,
             encoding="utf-8",
             errors="replace",
+            creationflags=get_subprocess_flags(),
         )
 
         stderr_lines: List[str] = []

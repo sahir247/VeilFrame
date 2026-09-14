@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Callable, List
 
-from .resources import get_ffmpeg_path
+from .resources import get_ffmpeg_path, get_subprocess_flags
 from .crop import build_crop_filter
 from .resize import build_resize_filter
 from .noise import build_noise_filter
@@ -211,6 +211,7 @@ def run_encode_pass(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        creationflags=get_subprocess_flags(),
     )
 
     stderr_lines: List[str] = []

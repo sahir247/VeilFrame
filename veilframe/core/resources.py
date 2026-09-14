@@ -4,24 +4,45 @@ Executable and binary resource locator for FFmpeg and FFprobe.
 import os
 import sys
 import shutil
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
+
+
+def get_subprocess_flags() -> int:
+    """
+    Returns platform-specific subprocess creation flags.
+    On Windows, returns CREATE_NO_WINDOW (0x08000000) to suppress flashing console windows in GUI mode.
+    """
+    if os.name == "nt":
+        return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    return 0
 
 
 class FFmpegNotFoundError(RuntimeError):
     pass
 
 
+def _is_valid_executable_file(path: Path) -> bool:
+    """Verifies that a candidate path is an existing, non-empty regular file."""
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except Exception:
+        return False
+
+
 def find_executable(name: str) -> Path:
     """
     Locates the requested executable ('ffmpeg' or 'ffprobe') across:
     1. Environment variable overrides (FFMPEG_BINARY / FFPROBE_BINARY)
-    2. System PATH (shutil.which)
-    3. PyInstaller bundled resources (sys._MEIPASS)
+    2. PyInstaller bundled resources (sys._MEIPASS)
+    3. User-level persistent binary directory (~/.veilframe/bin/)
     4. Package resources directory (`veilframe/resources/ffmpeg/`)
     5. Project root `resources/ffmpeg/`
     6. Executable adjacent directory (when running as frozen binary)
-    7. Local application cache directories (Windows fallback)
+    7. System PATH (shutil.which)
+    8. Local application cache directories (Windows fallback)
     """
     ext = ".exe" if os.name == "nt" else ""
     exe_name = f"{name}{ext}"
@@ -29,67 +50,61 @@ def find_executable(name: str) -> Path:
     # 1. Environment variable override (highest priority for testing & custom runtimes)
     env_var = f"{name.upper()}_BINARY"
     env_val = os.environ.get(env_var)
-    if env_val and Path(env_val).exists():
+    if env_val and _is_valid_executable_file(Path(env_val)):
         return Path(env_val)
 
-    # 2. System PATH
-    which_path = shutil.which(name)
-    if which_path:
-        return Path(which_path)
-
-    # 3. PyInstaller bundle
+    # 2. PyInstaller bundle
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         bundle_path = Path(sys._MEIPASS) / "resources" / "ffmpeg" / exe_name
-        if bundle_path.exists():
+        if _is_valid_executable_file(bundle_path):
             return bundle_path
         bundle_root_path = Path(sys._MEIPASS) / exe_name
-        if bundle_root_path.exists():
+        if _is_valid_executable_file(bundle_root_path):
             return bundle_root_path
+
+    # 3. User-level persistent binary directory (~/.veilframe/bin/)
+    user_bin = Path.home() / ".veilframe" / "bin" / exe_name
+    if _is_valid_executable_file(user_bin):
+        return user_bin
 
     # 4. Package resources
     pkg_res = Path(__file__).parent.parent / "resources" / "ffmpeg" / exe_name
-    if pkg_res.exists():
+    if _is_valid_executable_file(pkg_res):
         return pkg_res
 
     # 5. Working directory resources
     cwd_res = Path.cwd() / "resources" / "ffmpeg" / exe_name
-    if cwd_res.exists():
+    if _is_valid_executable_file(cwd_res):
         return cwd_res
 
     # 6. Executable adjacent directory (when running as frozen binary)
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).parent
         adjacent_res = exe_dir / "resources" / "ffmpeg" / exe_name
-        if adjacent_res.exists():
+        if _is_valid_executable_file(adjacent_res):
             return adjacent_res
         adjacent_direct = exe_dir / exe_name
-        if adjacent_direct.exists():
+        if _is_valid_executable_file(adjacent_direct):
             return adjacent_direct
 
-    # 7. User-level persistent binary directory (~/.veilframe/bin/)
-    user_bin = Path.home() / ".veilframe" / "bin" / exe_name
-    if user_bin.exists():
-        return user_bin
+    # 7. System PATH
+    which_path = shutil.which(name)
+    if which_path and _is_valid_executable_file(Path(which_path)):
+        return Path(which_path)
 
-    # 8. Windows local application cache fallback (searches dynamically without version hardcoding)
+    # 8. Windows local application cache fallback
     if os.name == "nt":
         user_profile = os.environ.get("USERPROFILE", "")
         if user_profile:
             appdata_local = Path(user_profile) / "AppData" / "Local"
-            if appdata_local.exists():
-                veilframe_local_bin = appdata_local / "VeilFrame" / "bin" / exe_name
-                if veilframe_local_bin.exists():
-                    return veilframe_local_bin
-                for installer in ("ffmpeg-installer", "ffprobe-installer", "@ffmpeg-installer", "@ffprobe-installer"):
-                    for candidate in appdata_local.glob(f"**/node_modules/{installer}/**/{exe_name}"):
-                        if candidate.exists():
-                            return candidate
+            veilframe_local_bin = appdata_local / "VeilFrame" / "bin" / exe_name
+            if _is_valid_executable_file(veilframe_local_bin):
+                return veilframe_local_bin
 
     raise FFmpegNotFoundError(
         f"'{name}' executable was not found. Please ensure FFmpeg and FFprobe are installed on system PATH, "
         f"configured via {env_var}, installed in '~/.veilframe/bin/', or bundled in 'veilframe/resources/ffmpeg/'."
     )
-
 
 
 def get_ffmpeg_path() -> Path:
@@ -104,28 +119,65 @@ def detect_physical_gpus() -> list[str]:
     """
     Queries operating system APIs to detect physically installed GPU hardware devices.
     Returns a list of device names (e.g. ['NVIDIA GeForce RTX 4050 Laptop GPU']).
+    Uses zero-subprocess Win32 EnumDisplayDevicesW API on Windows for instant (<1ms) detection.
     """
-    import subprocess
     gpus: list[str] = []
+    flags = get_subprocess_flags()
 
-    # 1. Try nvidia-smi if NVIDIA GPU is present
-    try:
-        res = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=2)
-        if res.returncode == 0 and res.stdout:
-            for line in res.stdout.strip().splitlines():
-                if "GPU " in line and ":" in line:
-                    # e.g. "GPU 0: NVIDIA GeForce RTX 4050 Laptop GPU (UUID: ...)"
-                    name_part = line.split(":", 1)[1].split("(UUID")[0].strip()
-                    if name_part and name_part not in gpus:
-                        gpus.append(name_part)
-    except Exception:
-        pass
-
-    # 2. Windows CIM / WMI Query
+    # 1. Windows: Try Win32 EnumDisplayDevicesW via ctypes (Instant, 0 subprocesses, no window popups)
     if os.name == "nt":
         try:
+            import ctypes
+            from ctypes import wintypes
+
+            class DISPLAY_DEVICEW(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("DeviceName", wintypes.WCHAR * 32),
+                    ("DeviceString", wintypes.WCHAR * 128),
+                    ("StateFlags", wintypes.DWORD),
+                    ("DeviceID", wintypes.WCHAR * 128),
+                    ("DeviceKey", wintypes.WCHAR * 128),
+                ]
+
+            dev = DISPLAY_DEVICEW()
+            dev.cb = ctypes.sizeof(dev)
+            i = 0
+            while ctypes.windll.user32.EnumDisplayDevicesW(None, i, ctypes.byref(dev), 0):
+                name = dev.DeviceString.strip()
+                if name and name not in gpus:
+                    # Filter out virtual/remote display drivers
+                    lower_name = name.lower()
+                    if not any(v in lower_name for v in ("rdp", "virtual", "vnc", "indirect", "basic render")):
+                        gpus.append(name)
+                i += 1
+        except Exception:
+            pass
+
+    # 2. Try nvidia-smi if NVIDIA GPU is present
+    if not gpus or not any("nvidia" in g.lower() for g in gpus):
+        try:
+            res = subprocess.run(
+                ["nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                creationflags=flags,
+            )
+            if res.returncode == 0 and res.stdout:
+                for line in res.stdout.strip().splitlines():
+                    if "GPU " in line and ":" in line:
+                        name_part = line.split(":", 1)[1].split("(UUID")[0].strip()
+                        if name_part and name_part not in gpus:
+                            gpus.append(name_part)
+        except Exception:
+            pass
+
+    # 3. Windows CIM / WMI Query fallback if ctypes returned nothing
+    if os.name == "nt" and not gpus:
+        try:
             cmd = ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=2.5, creationflags=flags)
             if res.returncode == 0 and res.stdout:
                 for line in res.stdout.strip().splitlines():
                     name = line.strip()
@@ -134,10 +186,10 @@ def detect_physical_gpus() -> list[str]:
         except Exception:
             pass
 
-    # 3. Linux lspci / sysfs
+    # 4. Linux lspci / sysfs
     elif sys.platform.startswith("linux"):
         try:
-            res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=2)
+            res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=1.5, creationflags=flags)
             if res.returncode == 0 and res.stdout:
                 for line in res.stdout.strip().splitlines():
                     if any(k in line.lower() for k in ("vga compatible", "3d controller", "display controller")):
@@ -148,10 +200,10 @@ def detect_physical_gpus() -> list[str]:
         except Exception:
             pass
 
-    # 4. macOS system_profiler
+    # 5. macOS system_profiler
     elif sys.platform == "darwin":
         try:
-            res = subprocess.run(["system_profiler", "SPDisplaysDataType"], capture_output=True, text=True, timeout=3)
+            res = subprocess.run(["system_profiler", "SPDisplaysDataType"], capture_output=True, text=True, timeout=2.5, creationflags=flags)
             if res.returncode == 0 and res.stdout:
                 for line in res.stdout.splitlines():
                     if "Chipset Model:" in line:
@@ -167,12 +219,11 @@ def detect_physical_gpus() -> list[str]:
 def get_hardware_capabilities() -> dict:
     """
     Probes real physical GPU hardware and verifies functional hardware encoders
-    by running micro-encoding test probes against the active FFmpeg binary.
+    by running concurrent micro-encoding test probes against the active FFmpeg binary.
+    Executes silently with CREATE_NO_WINDOW on Windows.
     """
-    import subprocess
     gpus = detect_physical_gpus()
 
-    verified_encoders: list[dict] = []
     try:
         ffmpeg_p = get_ffmpeg_path()
     except Exception:
@@ -182,24 +233,33 @@ def get_hardware_capabilities() -> dict:
             "cpu_fallback": "libx264 (Software CPU — Primary Deterministic Privacy Engine)",
         }
 
-    # Candidate hardware encoders to test
-    candidates = [
-        ("NVIDIA NVENC", "h264_nvenc", "H.264 Hardware Encoder"),
-        ("NVIDIA NVENC", "hevc_nvenc", "HEVC Hardware Encoder"),
-        ("NVIDIA NVENC", "av1_nvenc", "AV1 Hardware Encoder"),
-        ("Intel QuickSync", "h264_qsv", "H.264 Hardware Encoder"),
-        ("Intel QuickSync", "hevc_qsv", "HEVC Hardware Encoder"),
-        ("Intel QuickSync", "av1_qsv", "AV1 Hardware Encoder"),
-        ("AMD AMF", "h264_amf", "H.264 Hardware Encoder"),
-        ("AMD AMF", "hevc_amf", "HEVC Hardware Encoder"),
-        ("AMD AMF", "av1_amf", "AV1 Hardware Encoder"),
-        ("Apple VideoToolbox", "h264_videotoolbox", "H.264 Hardware Encoder"),
-        ("Apple VideoToolbox", "hevc_videotoolbox", "HEVC Hardware Encoder"),
-    ]
+    # Platform-filtered candidate hardware encoders to test
+    all_candidates = []
+    if sys.platform == "darwin":
+        all_candidates.extend([
+            ("Apple VideoToolbox", "h264_videotoolbox", "H.264 Hardware Encoder"),
+            ("Apple VideoToolbox", "hevc_videotoolbox", "HEVC Hardware Encoder"),
+        ])
+    else:
+        # Windows / Linux encoders
+        all_candidates.extend([
+            ("NVIDIA NVENC", "h264_nvenc", "H.264 Hardware Encoder"),
+            ("NVIDIA NVENC", "hevc_nvenc", "HEVC Hardware Encoder"),
+            ("NVIDIA NVENC", "av1_nvenc", "AV1 Hardware Encoder"),
+            ("Intel QuickSync", "h264_qsv", "H.264 Hardware Encoder"),
+            ("Intel QuickSync", "hevc_qsv", "HEVC Hardware Encoder"),
+            ("Intel QuickSync", "av1_qsv", "AV1 Hardware Encoder"),
+            ("AMD AMF", "h264_amf", "H.264 Hardware Encoder"),
+            ("AMD AMF", "hevc_amf", "HEVC Hardware Encoder"),
+            ("AMD AMF", "av1_amf", "AV1 Hardware Encoder"),
+        ])
 
-    for vendor, enc_name, desc in candidates:
+    flags = get_subprocess_flags()
+
+    def _probe_encoder(candidate: tuple) -> Optional[dict]:
+        vendor, enc_name, desc = candidate
         try:
-            # Run a fast 1-frame micro-encoding probe at 192x144 (satisfies NVENC/QSV/AMF minimum dimension limits)
+            # Run a fast 1-frame micro-encoding probe at 192x144
             probe_cmd = [
                 str(ffmpeg_p), "-y",
                 "-f", "lavfi", "-i", "nullsrc=s=192x144:d=0.04",
@@ -212,19 +272,30 @@ def get_hardware_capabilities() -> dict:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=1.5,
+                creationflags=flags,
             )
             if res.returncode == 0:
-                verified_encoders.append({
+                return {
                     "vendor": vendor,
                     "codec": enc_name,
                     "description": desc,
                     "status": "OPERATIONAL",
-                })
+                }
         except Exception:
-            continue
+            pass
+        return None
+
+    verified_encoders: list[dict] = []
+    max_workers = min(4, max(1, os.cpu_count() or 1))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(_probe_encoder, all_candidates)
+        for r in results:
+            if r is not None:
+                verified_encoders.append(r)
 
     return {
         "physical_gpus": gpus,
         "verified_encoders": verified_encoders,
         "cpu_fallback": "libx264 (Software CPU — Primary Deterministic Privacy Engine)",
     }
+

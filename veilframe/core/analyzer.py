@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from .resources import get_ffprobe_path, FFmpegNotFoundError
+from .resources import get_ffprobe_path, get_subprocess_flags, FFmpegNotFoundError
 from ..models.video_info import (
     VideoInfo,
     VideoStreamInfo,
@@ -48,6 +48,7 @@ def probe_raw(file_path: Path) -> Dict[str, Any]:
             encoding="utf-8",
             errors="replace",
             check=True,
+            creationflags=get_subprocess_flags(),
         )
         return json.loads(proc.stdout)
     except subprocess.CalledProcessError as e:

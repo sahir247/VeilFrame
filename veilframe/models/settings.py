@@ -1,6 +1,7 @@
 """
 Configuration and settings dataclasses for processing operations and presets.
 """
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
@@ -181,18 +182,4 @@ class ProcessingSettings:
     quality_gate: VisualBudgetPolicy = field(default_factory=VisualBudgetPolicy)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "preset_name": self.preset_name,
-            "crop": vars(self.crop),
-            "resize": vars(self.resize),
-            "fps": vars(self.fps),
-            "trim": vars(self.trim),
-            "noise": vars(self.noise),
-            "color": vars(self.color),
-            "audio_privacy": vars(self.audio_privacy),
-            "quantization": vars(self.quantization),
-            "codec": vars(self.codec),
-            "quality": vars(self.quality),
-            "privacy": vars(self.privacy),
-            "quality_gate": vars(self.quality_gate),
-        }
+        return dataclasses.asdict(self)

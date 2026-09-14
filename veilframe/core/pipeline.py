@@ -71,6 +71,7 @@ def run_pipeline(
     """
     src_path = Path(src_path).resolve()
     dst_path = Path(dst_path).resolve()
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
 
     if cancel_check and cancel_check():
         raise RuntimeError("Cancelled before start.")

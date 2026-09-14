@@ -68,7 +68,7 @@ class TestDepsAndEnvironment(unittest.TestCase):
 
     def test_environment_doctor_dialog_instantiation(self):
         """EnvironmentDoctorDialog should instantiate and populate table rows."""
-        dlg = EnvironmentDoctorDialog()
+        dlg = EnvironmentDoctorDialog(auto_scan=False)
         self.assertGreaterEqual(dlg.table.rowCount(), 5)
         dlg.close()
 

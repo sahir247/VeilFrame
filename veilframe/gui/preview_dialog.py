@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt, QThread, Signal
 
-from ..core.resources import get_ffmpeg_path
+from ..core.resources import get_ffmpeg_path, get_subprocess_flags
 from ..core.encoder import build_filter_complex
 from ..models.settings import ProcessingSettings
 from ..models.video_info import VideoInfo
@@ -48,6 +48,8 @@ class FrameExtractorThread(QThread):
                 orig_path = Path(f_orig.name)
                 proc_path = Path(f_proc.name)
 
+            flags = get_subprocess_flags()
+
             # 1. Extract original frame
             cmd_orig = [
                 str(ffmpeg), "-hide_banner", "-y",
@@ -57,7 +59,15 @@ class FrameExtractorThread(QThread):
                 "-q:v", "2",
                 str(orig_path),
             ]
-            subprocess.run(cmd_orig, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
+            subprocess.run(
+                cmd_orig,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+                creationflags=flags,
+            )
 
             # 2. Extract processed frame with filters
             vf = build_filter_complex(self.settings, self.video_info)
@@ -73,7 +83,15 @@ class FrameExtractorThread(QThread):
                 "-q:v", "2",
                 str(proc_path),
             ]
-            subprocess.run(cmd_proc, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
+            subprocess.run(
+                cmd_proc,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+                creationflags=flags,
+            )
 
             self.done.emit(str(orig_path), str(proc_path))
         except Exception as e:

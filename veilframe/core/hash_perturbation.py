@@ -7,59 +7,52 @@ perceptual hash matching (pHash, dHash, aHash) while strictly maintaining
 perceptual visual fidelity (SSIM >= 0.95, PSNR >= 30 dB).
 
 Mechanisms:
-1. Block-wise 2D Discrete Cosine Transform (DCT) decomposition.
+1. Block-wise 2D Discrete Cosine Transform (DCT) decomposition via fast vectorized orthogonal projections.
 2. Identifies boundary AC coefficients governing median and gradient threshold decisions.
 3. Applies bounded micro-perturbation across decision thresholds.
 4. Inverse 2D DCT reconstruction with orthogonal normalization and L_infinity clamping.
 """
-from typing import Optional, Tuple
+from typing import Optional, Dict
 import numpy as np
 
-
-def _dct_1d(x: np.ndarray) -> np.ndarray:
-    """Orthogonal Type-II 1D DCT."""
-    N = len(x)
-    n = np.arange(N)
-    k = n.reshape((N, 1))
-    weights = np.ones(N)
-    weights[0] = 1.0 / np.sqrt(2.0)
-    basis = np.cos((np.pi * (2 * n + 1) * k) / (2.0 * N))
-    return np.sqrt(2.0 / N) * weights * np.dot(basis, x)
+# Cache for precomputed orthogonal DCT projection matrices keyed by dimension N
+_DCT_MATRIX_CACHE: Dict[int, np.ndarray] = {}
 
 
-def _idct_1d(X: np.ndarray) -> np.ndarray:
-    """Orthogonal Type-III 1D IDCT (Inverse DCT)."""
-    N = len(X)
-    k = np.arange(N)
-    n = k.reshape((N, 1))
-    weights = np.ones(N)
-    weights[0] = 1.0 / np.sqrt(2.0)
-    basis = np.cos((np.pi * (2 * n + 1) * k) / (2.0 * N))
-    return np.sqrt(2.0 / N) * np.dot(basis, weights * X)
+def _get_dct_matrix(N: int) -> np.ndarray:
+    """Precomputes and caches the orthonormal Type-II DCT transformation matrix."""
+    if N not in _DCT_MATRIX_CACHE:
+        n = np.arange(N)
+        k = n.reshape((N, 1))
+        weights = np.ones((N, 1), dtype=np.float64)
+        weights[0] = 1.0 / np.sqrt(2.0)
+        D = np.sqrt(2.0 / N) * weights * np.cos((np.pi * (2 * n + 1) * k) / (2.0 * N))
+        _DCT_MATRIX_CACHE[N] = D
+    return _DCT_MATRIX_CACHE[N]
 
 
 def _dct_2d(img_block: np.ndarray) -> np.ndarray:
-    """2D Discrete Cosine Transform."""
+    """Fast 2D Discrete Cosine Transform via matrix projection (D @ M @ D.T)."""
     h, w = img_block.shape
-    row_dct = np.zeros((h, w), dtype=np.float64)
-    for i in range(h):
-        row_dct[i, :] = _dct_1d(img_block[i, :])
-    col_dct = np.zeros((h, w), dtype=np.float64)
-    for j in range(w):
-        col_dct[:, j] = _dct_1d(row_dct[:, j])
-    return col_dct
+    if h == w:
+        D = _get_dct_matrix(h)
+        return D @ img_block @ D.T
+    else:
+        Dh = _get_dct_matrix(h)
+        Dw = _get_dct_matrix(w)
+        return Dh @ img_block @ Dw.T
 
 
 def _idct_2d(dct_block: np.ndarray) -> np.ndarray:
-    """2D Inverse Discrete Cosine Transform."""
+    """Fast 2D Inverse Discrete Cosine Transform via transpose projection (D.T @ X @ D)."""
     h, w = dct_block.shape
-    row_idct = np.zeros((h, w), dtype=np.float64)
-    for i in range(h):
-        row_idct[i, :] = _idct_1d(dct_block[i, :])
-    col_idct = np.zeros((h, w), dtype=np.float64)
-    for j in range(w):
-        col_idct[:, j] = _idct_1d(row_idct[:, j])
-    return col_idct
+    if h == w:
+        D = _get_dct_matrix(h)
+        return D.T @ dct_block @ D
+    else:
+        Dh = _get_dct_matrix(h)
+        Dw = _get_dct_matrix(w)
+        return Dh.T @ dct_block @ Dw
 
 
 def perturb_luminance_dct(

@@ -21,6 +21,7 @@ from .resources import (
     get_ffmpeg_path,
     get_ffprobe_path,
     get_hardware_capabilities,
+    get_subprocess_flags,
     FFmpegNotFoundError,
 )
 
@@ -54,19 +55,35 @@ def get_user_bin_dir() -> Path:
 
 
 def is_ffmpeg_installed() -> bool:
-    """Check if FFmpeg and FFprobe binaries are available and functional."""
+    """Check if FFmpeg binary is available and functionally executable."""
     try:
         ffmpeg_p = get_ffmpeg_path()
-        return ffmpeg_p.exists()
+        if not (ffmpeg_p.exists() and ffmpeg_p.stat().st_size > 1024):
+            return False
+        result = subprocess.run(
+            [str(ffmpeg_p), "-version"],
+            capture_output=True,
+            timeout=5,
+            creationflags=get_subprocess_flags(),
+        )
+        return result.returncode == 0
     except Exception:
         return False
 
 
 def is_ffprobe_installed() -> bool:
-    """Check if FFprobe binary is available and functional."""
+    """Check if FFprobe binary is available and functionally executable."""
     try:
         ffprobe_p = get_ffprobe_path()
-        return ffprobe_p.exists()
+        if not (ffprobe_p.exists() and ffprobe_p.stat().st_size > 1024):
+            return False
+        result = subprocess.run(
+            [str(ffprobe_p), "-version"],
+            capture_output=True,
+            timeout=5,
+            creationflags=get_subprocess_flags(),
+        )
+        return result.returncode == 0
     except Exception:
         return False
 
@@ -75,6 +92,7 @@ def audit_environment() -> EnvironmentReport:
     """Performs an audit of all multimedia and cryptographic dependencies."""
     items: List[DependencyAuditItem] = []
     missing_critical: List[str] = []
+    flags = get_subprocess_flags()
 
     # 1. FFmpeg
     ffmpeg_ok = False
@@ -82,11 +100,17 @@ def audit_environment() -> EnvironmentReport:
     ffmpeg_detail = "Not found on system PATH or bundle"
     try:
         p = get_ffmpeg_path()
-        if p.exists():
+        if p.exists() and p.stat().st_size > 1024:
             ffmpeg_ok = True
             ffmpeg_detail = str(p)
             try:
-                res = subprocess.run([str(p), "-version"], capture_output=True, text=True, timeout=2)
+                res = subprocess.run(
+                    [str(p), "-version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=flags,
+                )
                 first = res.stdout.splitlines()[0] if res.stdout else ""
                 ffmpeg_ver = first.split("version")[1].split()[0] if "version" in first else "Available"
             except Exception:
@@ -112,7 +136,7 @@ def audit_environment() -> EnvironmentReport:
     ffprobe_detail = "Not found on system PATH or bundle"
     try:
         p = get_ffprobe_path()
-        if p.exists():
+        if p.exists() and p.stat().st_size > 1024:
             ffprobe_ok = True
             ffprobe_ver = "Available"
             ffprobe_detail = str(p)
@@ -232,6 +256,7 @@ def audit_environment() -> EnvironmentReport:
 FFMPEG_RELEASE_URLS = {
     "win64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "win64_fallback": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "win64_fallback2": "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip",
     "linux64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
     "macos64": "https://evermeet.cx/ffmpeg/getrelease/zip",
 }
@@ -259,18 +284,20 @@ def download_and_install_ffmpeg(
     """
     target_bin_dir = get_user_bin_dir()
 
-    # Determine platform URL
+    # Determine platform URLs
+    urls_to_try = []
     if os.name == "nt":
-        url = FFMPEG_RELEASE_URLS["win64"]
-        fallback_url = FFMPEG_RELEASE_URLS["win64_fallback"]
+        urls_to_try = [
+            FFMPEG_RELEASE_URLS["win64"],
+            FFMPEG_RELEASE_URLS["win64_fallback"],
+            FFMPEG_RELEASE_URLS["win64_fallback2"],
+        ]
         archive_ext = ".zip"
     elif sys.platform.startswith("linux"):
-        url = FFMPEG_RELEASE_URLS["linux64"]
-        fallback_url = None
+        urls_to_try = [FFMPEG_RELEASE_URLS["linux64"]]
         archive_ext = ".tar.xz"
     elif sys.platform == "darwin":
-        url = FFMPEG_RELEASE_URLS["macos64"]
-        fallback_url = None
+        urls_to_try = [FFMPEG_RELEASE_URLS["macos64"]]
         archive_ext = ".zip"
     else:
         return False, f"Unsupported operating system: {sys.platform}"
@@ -278,12 +305,19 @@ def download_and_install_ffmpeg(
     temp_archive = target_bin_dir / f"ffmpeg_download{archive_ext}"
 
     def _do_download(download_url: str) -> bool:
+        import time as _time
         if progress_callback:
-            progress_callback(5, f"Connecting to {download_url.split('/')[2]}...")
+            domain = download_url.split('/')[2] if '/' in download_url else download_url
+            progress_callback(5, f"Connecting to {domain}...")
         req = urllib.request.Request(
             download_url,
-            headers={"User-Agent": "VeilFrame-DependencyManager/2.0"}
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
         )
+        # Per-read socket timeout (30s) + hard wall-clock deadline (10 minutes)
+        TOTAL_TIMEOUT_SEC = 600
+        deadline = _time.monotonic() + TOTAL_TIMEOUT_SEC
         with urllib.request.urlopen(req, timeout=30) as resp, open(temp_archive, "wb") as out_file:
             total_size = int(resp.headers.get("content-length", 0))
             downloaded = 0
@@ -292,6 +326,8 @@ def download_and_install_ffmpeg(
             while True:
                 if cancel_check and cancel_check():
                     return False
+                if _time.monotonic() > deadline:
+                    raise TimeoutError(f"Download exceeded {TOTAL_TIMEOUT_SEC}s wall-clock timeout.")
                 chunk = resp.read(block_size)
                 if not chunk:
                     break
@@ -305,19 +341,20 @@ def download_and_install_ffmpeg(
 
         return True
 
-    # 1. Download
-    try:
-        download_success = _do_download(url)
-        if not download_success and fallback_url:
-            download_success = _do_download(fallback_url)
-    except Exception as e:
-        if fallback_url:
-            try:
-                download_success = _do_download(fallback_url)
-            except Exception as e2:
-                return False, f"Download failed: {e2}"
-        else:
-            return False, f"Download failed: {e}"
+    # 1. Download with fallback support
+    download_success = False
+    last_err = "No URLs attempted"
+    for candidate_url in urls_to_try:
+        try:
+            if _do_download(candidate_url):
+                download_success = True
+                break
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    if not download_success:
+        return False, f"Download failed across all mirrors: {last_err}"
 
     if cancel_check and cancel_check():
         if temp_archive.exists():
@@ -326,36 +363,54 @@ def download_and_install_ffmpeg(
 
     # 2. Extract executables
     if progress_callback:
-        progress_callback(85, "Extracting FFmpeg binaries...")
+        progress_callback(85, "Extracting FFmpeg & FFprobe binaries...")
 
-    exe_names = ["ffmpeg.exe", "ffprobe.exe"] if os.name == "nt" else ["ffmpeg", "ffprobe"]
-    extracted_count = 0
+    ffmpeg_target_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    ffprobe_target_name = "ffprobe.exe" if os.name == "nt" else "ffprobe"
+    extracted_ffmpeg = False
+    extracted_ffprobe = False
 
     try:
         if archive_ext == ".zip":
             with zipfile.ZipFile(temp_archive, "r") as zf:
                 for member in zf.namelist():
                     base_name = os.path.basename(member).lower()
-                    if base_name in [n.lower() for n in exe_names]:
-                        target_file = target_bin_dir / os.path.basename(member)
-                        with zf.open(member) as src, open(target_file, "wb") as dst:
+                    if base_name in ("ffmpeg.exe", "ffmpeg"):
+                        dst_file = target_bin_dir / ffmpeg_target_name
+                        with zf.open(member) as src, open(dst_file, "wb") as dst:
                             shutil.copyfileobj(src, dst)
                         if os.name != "nt":
-                            target_file.chmod(0o755)
-                        extracted_count += 1
+                            dst_file.chmod(0o755)
+                        extracted_ffmpeg = True
+                    elif base_name in ("ffprobe.exe", "ffprobe"):
+                        dst_file = target_bin_dir / ffprobe_target_name
+                        with zf.open(member) as src, open(dst_file, "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        if os.name != "nt":
+                            dst_file.chmod(0o755)
+                        extracted_ffprobe = True
         elif archive_ext == ".tar.xz":
             with tarfile.open(temp_archive, "r:xz") as tf:
                 for member in tf.getmembers():
                     base_name = os.path.basename(member.name).lower()
-                    if base_name in [n.lower() for n in exe_names]:
-                        target_file = target_bin_dir / os.path.basename(member.name)
+                    if base_name in ("ffmpeg.exe", "ffmpeg"):
+                        dst_file = target_bin_dir / ffmpeg_target_name
                         extracted_file = tf.extractfile(member)
                         if extracted_file:
-                            with open(target_file, "wb") as dst:
+                            with open(dst_file, "wb") as dst:
                                 shutil.copyfileobj(extracted_file, dst)
                             if os.name != "nt":
-                                target_file.chmod(0o755)
-                            extracted_count += 1
+                                dst_file.chmod(0o755)
+                            extracted_ffmpeg = True
+                    elif base_name in ("ffprobe.exe", "ffprobe"):
+                        dst_file = target_bin_dir / ffprobe_target_name
+                        extracted_file = tf.extractfile(member)
+                        if extracted_file:
+                            with open(dst_file, "wb") as dst:
+                                shutil.copyfileobj(extracted_file, dst)
+                            if os.name != "nt":
+                                dst_file.chmod(0o755)
+                            extracted_ffprobe = True
     except Exception as e:
         return False, f"Extraction failed: {e}"
     finally:
@@ -365,27 +420,48 @@ def download_and_install_ffmpeg(
             except Exception:
                 pass
 
-    if extracted_count == 0:
-        return False, "Could not locate ffmpeg / ffprobe binaries inside the downloaded archive."
+    if not extracted_ffmpeg:
+        return False, "Could not locate ffmpeg binary inside the downloaded archive."
 
     # 3. Add to live PATH environment
     bin_str = str(target_bin_dir)
-    if bin_str not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = f"{bin_str}{os.pathsep}{os.environ.get('PATH', '')}"
+    cur_path = os.environ.get("PATH", "")
+    if bin_str not in cur_path:
+        os.environ["PATH"] = f"{bin_str}{os.pathsep}{cur_path}"
 
-    # 4. Verify functional execution
+    # 4. Verify functional execution of both binaries
     if progress_callback:
         progress_callback(95, "Verifying installed binaries...")
 
+    flags = get_subprocess_flags()
     try:
-        ffmpeg_bin = target_bin_dir / exe_names[0]
-        res = subprocess.run([str(ffmpeg_bin), "-version"], capture_output=True, text=True, timeout=3)
+        ffmpeg_bin = target_bin_dir / ffmpeg_target_name
+        res = subprocess.run(
+            [str(ffmpeg_bin), "-version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags,
+        )
         if res.returncode != 0:
             return False, "FFmpeg binary failed execution probe."
+
+        if extracted_ffprobe:
+            ffprobe_bin = target_bin_dir / ffprobe_target_name
+            res_probe = subprocess.run(
+                [str(ffprobe_bin), "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                creationflags=flags,
+            )
+            if res_probe.returncode != 0:
+                return False, "FFprobe binary failed execution probe."
     except Exception as e:
         return False, f"Verification failed: {e}"
 
     if progress_callback:
-        progress_callback(100, "FFmpeg installation verified & operational!")
+        progress_callback(100, "FFmpeg & FFprobe verified & operational!")
 
     return True, f"FFmpeg & FFprobe installed successfully to {target_bin_dir}"
+

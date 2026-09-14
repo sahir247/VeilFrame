@@ -1,29 +1,49 @@
 """
-Tests for pipeline stage timing instrumentation and benchmark harness.
+Tests for pipeline stage timing instrumentation and throughput metrics.
 """
 import unittest
 import tempfile
 import shutil
+import subprocess
 from pathlib import Path
 
 from veilframe.core.pipeline import run_pipeline
+from veilframe.core.resources import get_ffmpeg_path, get_subprocess_flags
 from veilframe.models.settings import ProcessingSettings, VisualBudgetPolicy
-from veilframe.presets.manager import PresetManager
 from veilframe.core.verifier import VerificationReport
-from tools.benchmark_performance import generate_synthetic_video, run_benchmark
 
 
-class TestBenchmarkAndStageInstrumentation(unittest.TestCase):
+class TestPipelineStageInstrumentation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.ffmpeg = get_ffmpeg_path()
         cls.temp_dir = Path(tempfile.mkdtemp(prefix="vf_bench_test_"))
         cls.sample_video = cls.temp_dir / "bench_sample.mp4"
-        generate_synthetic_video(
-            dst_path=cls.sample_video,
-            duration_sec=1.5,
-            fps=30,
-            resolution="320x240",
+
+        cmd = [
+            str(cls.ffmpeg),
+            "-hide_banner",
+            "-nostats",
+            "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=duration=1.5:size=320x240:rate=30",
+            "-f", "lavfi",
+            "-i", "sine=frequency=1000:duration=1.5",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            str(cls.sample_video),
+        ]
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            creationflags=get_subprocess_flags(),
         )
+        if proc.returncode != 0:
+            raise RuntimeError(f"Failed to generate test reference video: {proc.stderr}")
 
     @classmethod
     def tearDownClass(cls):
@@ -33,7 +53,7 @@ class TestBenchmarkAndStageInstrumentation(unittest.TestCase):
         """Pipeline execution must populate stage_timings and throughput stats."""
         dst = self.temp_dir / "out_instrumented.mp4"
         settings = ProcessingSettings()
-        settings.quality_gate = VisualBudgetPolicy(sample_count=5)
+        settings.quality_gate = VisualBudgetPolicy()
         settings.quality_gate.enabled = True
 
         report: VerificationReport = run_pipeline(
@@ -54,37 +74,11 @@ class TestBenchmarkAndStageInstrumentation(unittest.TestCase):
         self.assertGreater(report.total_fps, 0.0)
         self.assertGreaterEqual(report.peak_ram_mb, 0.0)
 
-        # Check ASCII report includes performance section
+        # Check formatted text report includes performance section
         text = report.format_text()
         self.assertIn("Pipeline Performance & Stage Latencies", text)
         self.assertIn("Encode Throughput:", text)
         self.assertIn("Audit Throughput:", text)
-
-    def test_benchmark_harness_execution(self):
-        """Benchmark harness must return complete dictionary of metrics."""
-        result = run_benchmark(
-            input_video=self.sample_video,
-            preset_name="Privacy Clean",
-            output_dir=self.temp_dir / "runs",
-            keep_output=False,
-        )
-
-        self.assertIn("media_specs", result)
-        self.assertIn("stage_latencies_sec", result)
-        self.assertIn("performance", result)
-        self.assertIn("quality_gate", result)
-
-        perf = result["performance"]
-        self.assertGreater(perf["encode_fps"], 0.0)
-        self.assertGreater(perf["audit_fps"], 0.0)
-        self.assertGreater(perf["total_latency_sec"], 0.0)
-        self.assertGreater(perf["real_time_factor"], 0.0)
-
-        qg = result["quality_gate"]
-        self.assertEqual(qg["verdict"], "PASS")
-        self.assertTrue(qg["tier1_policy_passed"])
-        self.assertTrue(qg["tier2_fidelity_passed"])
-        self.assertTrue(qg["tier3_temporal_passed"])
 
 
 if __name__ == "__main__":

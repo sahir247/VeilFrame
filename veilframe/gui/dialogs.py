@@ -30,6 +30,8 @@ from ..core.deps_manager import (
     audit_environment,
     download_and_install_ffmpeg,
     is_ffmpeg_installed,
+    is_ffprobe_installed,
+    get_user_bin_dir,
     EnvironmentReport,
 )
 
@@ -77,6 +79,23 @@ class DependencyInstallerDialog(QDialog):
         if auto_start:
             self.worker.start()
 
+    def closeEvent(self, event):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.worker.wait(1000)
+        super().closeEvent(event)
+
+    def reject(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel()
+            self.worker.wait(1000)
+        super().reject()
+
+    def accept(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.wait(1000)
+        super().accept()
+
 
     def _init_ui(self):
         lay = QVBoxLayout(self)
@@ -87,9 +106,10 @@ class DependencyInstallerDialog(QDialog):
         self.lbl_title.setStyleSheet("font-size: 14px; font-weight: 700; color: #ffffff;")
         lay.addWidget(self.lbl_title)
 
+        _install_path = str(get_user_bin_dir())
         self.lbl_desc = QLabel(
             f"VeilFrame is automatically fetching the official static binary release and installing it to "
-            f"your local user environment (~/.veilframe/bin/)."
+            f"your local user environment ({_install_path})."
         )
         self.lbl_desc.setStyleSheet("color: #a0a0a0; font-size: 11px;")
         self.lbl_desc.setWordWrap(True)
@@ -201,20 +221,48 @@ def prompt_missing_dependency(
     return False
 
 
+# ── Environment Doctor Audit Worker Thread ──────────────────────────────── #
+
+class DoctorAuditWorker(QThread):
+    audit_finished = Signal(object)  # EnvironmentReport
+
+    def run(self):
+        report = audit_environment()
+        self.audit_finished.emit(report)
+
+
 # ── Environment Doctor Dialog ───────────────────────────────────────────── #
 
 class EnvironmentDoctorDialog(QDialog):
     """Comprehensive environment diagnostics and hardware capabilities dialog."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: Optional[QWidget] = None, auto_scan: bool = True):
         super().__init__(parent)
         self.setWindowTitle("Environment Doctor & Hardware Diagnostics — VeilFrame")
         self.resize(740, 580)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
+        self._worker: Optional[DoctorAuditWorker] = None
         self._init_ui()
-        self.refresh_diagnostics()
+        self._populate_initial_table()
+        if auto_scan:
+            self.refresh_diagnostics()
+
+    def closeEvent(self, event):
+        if self._worker and self._worker.isRunning():
+            self._worker.wait(1000)
+        super().closeEvent(event)
+
+    def reject(self):
+        if self._worker and self._worker.isRunning():
+            self._worker.wait(1000)
+        super().reject()
+
+    def accept(self):
+        if self._worker and self._worker.isRunning():
+            self._worker.wait(1000)
+        super().accept()
 
     def _init_ui(self):
         main_lay = QVBoxLayout(self)
@@ -304,20 +352,65 @@ class EnvironmentDoctorDialog(QDialog):
 
         main_lay.addLayout(bot_row)
 
-    def refresh_diagnostics(self):
-        report = audit_environment()
-        self.table.setRowCount(len(report.items))
+    def _populate_initial_table(self):
+        """Populates initial rows instantly so the UI is immediately interactive."""
+        default_items = [
+            ("FFmpeg Binary", "Probing...", "CHECKING", "Scanning system PATH & bundle...", is_ffmpeg_installed()),
+            ("FFprobe Binary", "Probing...", "CHECKING", "Scanning system PATH & bundle...", is_ffprobe_installed()),
+            ("OpenCV (cv2)", "Ready", "READY", "Haar cascades & DNN vision pipelines active", True),
+            ("Pillow (PIL)", "Ready", "READY", "Container sanitization & image parsing active", True),
+            ("Cryptography", "Ready", "ACCELERATED", "Ed25519 signing & RFC 8785 manifest provenance active", True),
+            ("NumPy Numerical Engine", "Ready", "ACCELERATED", "Vectorized CFA PRNU & DCT dither matrices", True),
+        ]
+        self.table.setRowCount(len(default_items))
+        for row, (name, ver, stat, det, is_ok) in enumerate(default_items):
+            item_name = QTableWidgetItem(name)
+            item_name.setForeground(QColor("#ffffff"))
 
+            item_ver = QTableWidgetItem(ver)
+            item_ver.setForeground(QColor("#c0c0c0"))
+
+            item_stat = QTableWidgetItem(stat)
+            item_stat.setTextAlignment(Qt.AlignCenter)
+            item_stat.setForeground(QColor("#38bdf8"))
+
+            item_det = QTableWidgetItem(det)
+            item_det.setForeground(QColor("#888888"))
+
+            self.table.setItem(row, 0, item_name)
+            self.table.setItem(row, 1, item_ver)
+            self.table.setItem(row, 2, item_stat)
+            self.table.setItem(row, 3, item_det)
+
+        has_missing_ffmpeg = not is_ffmpeg_installed()
+        self.btn_install_missing.setVisible(has_missing_ffmpeg)
+
+    def refresh_diagnostics(self):
+        """Launches an asynchronous audit worker in the background."""
+        if self._worker and self._worker.isRunning():
+            return
+
+        self.btn_refresh.setEnabled(False)
+        self.btn_refresh.setText("Auditing...")
+        self.lbl_gpus.setText("Physical GPUs: Probing system hardware...")
+        self.lbl_encoders.setText("Verified Encoders: Running micro-encoding test probes...")
+
+        self._worker = DoctorAuditWorker(self)
+        self._worker.audit_finished.connect(self._on_audit_finished)
+        self._worker.start()
+
+    def _on_audit_finished(self, report: EnvironmentReport):
+        self.btn_refresh.setEnabled(True)
+        self.btn_refresh.setText("Re-scan Environment")
+
+        self.table.setRowCount(len(report.items))
         for row, item in enumerate(report.items):
-            # Component Name
             item_name = QTableWidgetItem(item.name)
             item_name.setForeground(QColor("#ffffff"))
 
-            # Version
             item_ver = QTableWidgetItem(item.version)
             item_ver.setForeground(QColor("#c0c0c0"))
 
-            # Status Badge
             item_stat = QTableWidgetItem(item.status)
             item_stat.setTextAlignment(Qt.AlignCenter)
             if item.is_ok:
@@ -325,7 +418,6 @@ class EnvironmentDoctorDialog(QDialog):
             else:
                 item_stat.setForeground(QColor("#e53935"))
 
-            # Details
             item_det = QTableWidgetItem(item.details)
             item_det.setForeground(QColor("#888888"))
 

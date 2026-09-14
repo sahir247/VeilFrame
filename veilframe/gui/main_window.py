@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeySequence, QShortcut, QDesktopServices
 
-from ..core.resources import get_ffmpeg_path
+from ..core.resources import get_ffmpeg_path, get_subprocess_flags
 from ..core.deps_manager import is_ffmpeg_installed, is_ffprobe_installed
 from ..core.analyzer import analyze_video
 from ..core.pipeline import run_pipeline
@@ -48,7 +48,10 @@ def _detect_ffmpeg_version() -> str:
         p = get_ffmpeg_path()
         result = subprocess.run(
             [str(p), "-version"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=get_subprocess_flags(),
         )
         for line in result.stdout.splitlines():
             if "ffmpeg version" in line:
@@ -367,6 +370,12 @@ class MainWindow(QMainWindow):
         self.btn_mode_image.setChecked(False)
         self.btn_mode_image.clicked.connect(lambda: self._set_mode(True))
         mode_lay.addWidget(self.btn_mode_image)
+
+        # Exclusive button group — prevents both buttons being unchecked simultaneously
+        self._mode_btn_group = QButtonGroup(self)
+        self._mode_btn_group.setExclusive(True)
+        self._mode_btn_group.addButton(self.btn_mode_video)
+        self._mode_btn_group.addButton(self.btn_mode_image)
 
         hdr.addWidget(mode_box)
         hdr.addSpacing(10)

@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 
 from .analyzer import analyze_video
 from ..models.video_info import VideoInfo, VisualQualityReport
+from ..models.settings import VisualBudgetPolicy
 
 
 @dataclass
@@ -49,7 +50,7 @@ class VerificationReport:
     total_fps: float = 0.0
     peak_ram_mb: float = 0.0
 
-    def format_text(self) -> str:
+    def format_text(self, policy: Optional["VisualBudgetPolicy"] = None) -> str:
         """Returns the formatted ASCII Privacy & Fidelity Audit Report."""
         def mark(passed: bool) -> str:
             return "[PASS]" if passed else "[FAIL LEAK]"
@@ -92,29 +93,29 @@ class VerificationReport:
                 "QUALITY GATE (Independent Audit)",
                 "────────────────────────────────",
                 "Transformation Policy",
-                f"  Spatial policy:       {'PASS' if q.native_metrics.spatial_delta_pct <= 2.0 else 'FAIL'} ({q.native_metrics.spatial_delta_pct:.2f}%)",
-                f"  Temporal policy:      {'PASS' if q.native_metrics.temporal_delta_pct <= 1.0 else 'FAIL'} ({q.native_metrics.temporal_delta_pct:.2f}%)",
-                f"  Luminance policy:     {'PASS' if q.energy_metrics.mean_luma_delta * 100 <= 1.0 else 'FAIL'} ({q.energy_metrics.mean_luma_delta * 100:.2f}%)",
-                f"  Chroma policy:        {'PASS' if q.energy_metrics.chroma_delta_composite * 100 <= 1.0 else 'FAIL'} ({q.energy_metrics.chroma_delta_composite * 100:.2f}%)",
-                f"  Frequency policy:     {'PASS' if q.policy_score.frequency_score_pct <= 1.0 else 'FAIL'} ({q.policy_score.frequency_score_pct:.2f}%)",
+                f"  Spatial policy:       {'PASS' if q.native_metrics.spatial_delta_pct <= (policy.spatial_ceiling_pct if policy else 2.0) else 'FAIL'} ({q.native_metrics.spatial_delta_pct:.2f}%)",
+                f"  Temporal policy:      {'PASS' if q.native_metrics.temporal_delta_pct <= (policy.temporal_ceiling_pct if policy else 1.0) else 'FAIL'} ({q.native_metrics.temporal_delta_pct:.2f}%)",
+                f"  Luminance policy:     {'PASS' if q.energy_metrics.mean_luma_delta * 100 <= (policy.luma_ceiling_pct if policy else 1.0) else 'FAIL'} ({q.energy_metrics.mean_luma_delta * 100:.2f}%)",
+                f"  Chroma policy:        {'PASS' if q.energy_metrics.chroma_delta_composite * 100 <= (policy.chroma_ceiling_pct if policy else 1.0) else 'FAIL'} ({q.energy_metrics.chroma_delta_composite * 100:.2f}%)",
+                f"  Frequency policy:     {'PASS' if q.policy_score.frequency_score_pct <= (policy.frequency_ceiling_pct if policy else 1.0) else 'FAIL'} ({q.policy_score.frequency_score_pct:.2f}%)",
                 f"  Aggregate policy:     {'PASS' if q.policy_score.passed else 'FAIL'} (Score: {q.policy_score.aggregate_policy_score_pct:.2f}% / Max {q.policy_score.policy_ceiling_pct:.1f}%)",
                 f"  HF Spectral Energy:   Ref={q.energy_metrics.hf_energy_ref:.1f}, Out={q.energy_metrics.hf_energy_trans:.1f} (Δabs={q.energy_metrics.abs_delta_hf:.1f}, Δrel={q.energy_metrics.rel_delta_hf:.4f})",
                 "",
                 "Rendered Fidelity",
-                f"  SSIM mean:            {q.ssim.mean:.4f}  {'PASS' if q.ssim.mean >= 0.95 else 'FAIL'}",
-                f"  SSIM P5:              {q.ssim.p5:.4f}  {'PASS' if q.ssim.p5 >= 0.90 else 'FAIL'}",
-                f"  SSIM worst:           {q.ssim.min_val:.4f}  {'PASS' if q.ssim.min_val >= 0.85 else 'FAIL'}",
-                f"  PSNR mean:            {q.psnr.mean:.2f} dB  {'PASS' if q.psnr.mean >= 30.0 else 'FAIL'}",
-                f"  PSNR worst:           {q.psnr.min_val:.2f} dB  {'PASS' if q.psnr.min_val >= 25.0 else 'FAIL'}",
+                f"  SSIM mean:            {q.ssim.mean:.4f}  {'PASS' if q.ssim.mean >= (policy.ssim_mean_min if policy else 0.95) else 'FAIL'}",
+                f"  SSIM P5:              {q.ssim.p5:.4f}  {'PASS' if q.ssim.p5 >= (policy.ssim_p5_min if policy else 0.90) else 'FAIL'}",
+                f"  SSIM worst:           {q.ssim.min_val:.4f}  {'PASS' if q.ssim.min_val >= (policy.ssim_worst_min if policy else 0.85) else 'FAIL'}",
+                f"  PSNR mean:            {q.psnr.mean:.2f} dB  {'PASS' if q.psnr.mean >= (policy.psnr_mean_min_db if policy else 30.0) else 'FAIL'}",
+                f"  PSNR worst:           {q.psnr.min_val:.2f} dB  {'PASS' if q.psnr.min_val >= (policy.psnr_worst_min_db if policy else 25.0) else 'FAIL'}",
                 f"  Luma Dist Drift(D_TV):{q.energy_metrics.luma_hist_divergence_tv:.4f}",
                 "",
                 "Temporal Integrity",
                 f"  Missing frames:       {q.temporal_metrics.missing_frames}  {'PASS' if q.temporal_metrics.missing_frames == 0 else 'FAIL'}",
                 f"  Duplicate frames:     {q.temporal_metrics.duplicate_frames}  {'PASS' if q.temporal_metrics.duplicate_frames == 0 else 'FAIL'}",
                 f"  Reordered frames:     {q.temporal_metrics.reordered_frames}  {'PASS' if q.temporal_metrics.reordered_frames == 0 else 'FAIL'}",
-                f"  Duration delta:       {q.native_metrics.duration_delta_sec:+.3f}s ({q.native_metrics.duration_delta_pct:.2f}%)  {'PASS' if q.native_metrics.duration_delta_pct <= 1.0 else 'FAIL'}",
-                f"  Max timestamp drift:  {q.temporal_metrics.timestamp_drift_max_sec:.4f}s  {'PASS' if q.temporal_metrics.timestamp_drift_max_sec <= 0.1 else 'FAIL'}",
-                f"  Cadence deviation:    {q.temporal_metrics.cadence_deviation_pct:.2f}%  {'PASS' if q.temporal_metrics.cadence_deviation_pct <= 1.0 else 'FAIL'}",
+                f"  Duration delta:       {q.native_metrics.duration_delta_sec:+.3f}s ({q.native_metrics.duration_delta_pct:.2f}%)  {'PASS' if q.native_metrics.duration_delta_pct <= (policy.max_frame_divergence_pct if policy else 1.0) else 'FAIL'}",
+                f"  Max timestamp drift:  {q.temporal_metrics.timestamp_drift_max_sec:.4f}s  {'PASS' if q.temporal_metrics.timestamp_drift_max_sec <= (policy.max_timestamp_drift_sec if policy else 0.1) else 'FAIL'}",
+                f"  Cadence deviation:    {q.temporal_metrics.cadence_deviation_pct:.2f}%  {'PASS' if q.temporal_metrics.cadence_deviation_pct <= (policy.max_cadence_deviation_pct if policy else 1.0) else 'FAIL'}",
                 "",
                 f"FINAL VERDICT:          {q.three_tier_verdict.overall_verdict}",
                 f"Input SHA-256:          {q.input_sha256[:16]}...{q.input_sha256[-8:]}" if q.input_sha256 else "",
@@ -181,7 +182,15 @@ def verify_output(file_path: Path, video_info: Optional[VideoInfo] = None) -> Ve
 
     # Handle creation time: None or normalized Epoch 0 are both clean
     if meta.creation_date:
-        if meta.creation_date in ("1970-01-01T00:00:00.000000Z", "1970-01-01T00:00:00Z", "1970-01-01 00:00:00"):
+        # Normalise the date string before comparing; FFmpeg output varies by version
+        _cd = meta.creation_date.strip().replace(" ", "T")
+        _EPOCH_VARIANTS = {
+            "1970-01-01T00:00:00.000000Z",
+            "1970-01-01T00:00:00Z",
+            "1970-01-01T00:00:00",
+            "1970-01-01 00:00:00",
+        }
+        if _cd in _EPOCH_VARIANTS or _cd.startswith("1970-01-01T00:00:00"):
             report.creation_date = "EPOCH 0"
         else:
             report.creation_date = "PRESENT"
@@ -207,6 +216,7 @@ def verify_output(file_path: Path, video_info: Optional[VideoInfo] = None) -> Ve
         leaks["attachments"] = meta.attachments_count
 
     # Check for suspicious container tags (excluding innocent standard MP4 brands)
+    # Normalise keys to lowercase before comparison
     allowed_standard_tags = {"major_brand", "minor_version", "compatible_brands", "creation_time"}
     suspicious_container = {
         k: val for k, val in meta.container_tags.items()

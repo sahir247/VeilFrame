@@ -57,12 +57,8 @@ def build_noise_filter(settings: NoiseSettings, video_info: Optional[VideoInfo] 
     if strength <= 0:
         return ""
 
-    if strength == 1:
-        # Minimum level: lowest amplitude temporal noise
-        amp = 1
-    else:
-        # Scale smoothly up to 25
-        amp = max(1, round(1 + (strength - 1) * 0.24))
+    # Scale smoothly from amp=1 at strength=1 up to amp=25 at strength=100
+    amp = max(1, round(1 + (strength - 1) * 0.24))
 
     # 'alls' is noise strength for all components (luma and chroma)
     # 'allf=t+u' enables temporal + uniform noise pattern to disrupt frame fingerprinting

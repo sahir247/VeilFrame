@@ -38,7 +38,11 @@ def calculate_trim(settings: TrimSettings, video_info: Optional[VideoInfo] = Non
     if not settings.enabled:
         return None
 
-    src_dur = video_info.duration if (video_info and video_info.duration > 0) else 60.0
+    if video_info is None or video_info.duration <= 0:
+        # Cannot compute a safe trim without a known duration — skip silently.
+        return None
+
+    src_dur = video_info.duration
 
     if settings.mode == "auto":
         # Subtle micro-trim: shave 0.2% off total length (e.g. 100s -> 99.8s)

@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, List
 
-from .resources import get_ffmpeg_path
+from .resources import get_ffmpeg_path, get_subprocess_flags
 
 
 def build_sanitization_args(format_ext: str = ".mp4") -> List[str]:
@@ -80,9 +80,22 @@ def pre_sanitize(src: Path, dst: Path) -> None:
     cmd += build_sanitization_args(dst.suffix or src.suffix)
     cmd.append(str(dst))
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=get_subprocess_flags(),
+    )
     if proc.returncode != 0:
-        raise RuntimeError(f"Pre-sanitization failed: {proc.stderr[-4000:]}")
+        stderr_tail = proc.stderr[-6000:] if len(proc.stderr) > 6000 else proc.stderr
+        hint = ""
+        if "No such stream" in proc.stderr or "no video stream" in proc.stderr.lower():
+            hint = " (Hint: Input may have no primary video stream or only data/subtitle tracks.)"
+        elif "codec not currently supported" in proc.stderr.lower():
+            hint = " (Hint: Input codec is not supported by the installed FFmpeg build.)"
+        raise RuntimeError(f"Pre-sanitization failed:{hint}\n{stderr_tail}")
 
 
 def post_sanitize(src: Path, dst: Path) -> None:
@@ -103,6 +116,17 @@ def post_sanitize(src: Path, dst: Path) -> None:
     cmd += build_sanitization_args(dst.suffix or src.suffix)
     cmd.append(str(dst))
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=get_subprocess_flags(),
+    )
     if proc.returncode != 0:
-        raise RuntimeError(f"Post-sanitization failed: {proc.stderr[-4000:]}")
+        stderr_tail = proc.stderr[-6000:] if len(proc.stderr) > 6000 else proc.stderr
+        hint = ""
+        if "No such stream" in proc.stderr or "no video stream" in proc.stderr.lower():
+            hint = " (Hint: Encoded output may have no primary video stream.)"
+        raise RuntimeError(f"Post-sanitization failed:{hint}\n{stderr_tail}")
