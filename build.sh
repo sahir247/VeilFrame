@@ -183,6 +183,39 @@ EOF
     echo "========================================================"
 }
 
+do_verify() {
+    echo "==> Verifying generated packages..."
+
+    # Verify macOS packages
+    if [ "${PLATFORM}" = "macos" ]; then
+        if [ -f "dist/${PKG_NAME}.dmg" ]; then
+            echo "==> Testing macOS DMG mounting and execution..."
+            rm -rf /tmp/dmg_mount_test
+            mkdir -p /tmp/dmg_mount_test
+            hdiutil attach "dist/${PKG_NAME}.dmg" -mountpoint /tmp/dmg_mount_test -nobrowse -readonly
+            if [ -f "/tmp/dmg_mount_test/VeilFrame.app/Contents/MacOS/VeilFrame" ]; then
+                "/tmp/dmg_mount_test/VeilFrame.app/Contents/MacOS/VeilFrame" doctor --json
+                echo "✓ DMG app bundle execution verified!"
+            fi
+            hdiutil detach /tmp/dmg_mount_test
+            rm -rf /tmp/dmg_mount_test
+        fi
+    fi
+
+    # Verify Linux packages
+    if [ "${PLATFORM}" = "linux" ]; then
+        if [ -f "dist/${PKG_NAME}.tar.gz" ]; then
+            echo "==> Testing Linux tar.gz extraction and execution..."
+            rm -rf /tmp/tar_test
+            mkdir -p /tmp/tar_test
+            tar -xzf "dist/${PKG_NAME}.tar.gz" -C /tmp/tar_test/
+            /tmp/tar_test/VeilFrame doctor --json
+            echo "✓ Portable tar.gz execution verified!"
+            rm -rf /tmp/tar_test
+        fi
+    fi
+}
+
 # Main CLI dispatch
 ACTION="${1:-all}"
 
@@ -198,12 +231,17 @@ case "${ACTION}" in
         ;;
     package|--package)
         do_package
+        do_verify
+        ;;
+    verify|--verify)
+        do_verify
         ;;
     all)
         do_clean
         do_build
         do_test
         do_package
+        do_verify
         ;;
     help|--help|-h)
         show_help

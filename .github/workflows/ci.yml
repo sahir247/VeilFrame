@@ -242,6 +242,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts
           Copy-Item dist/VeilFrame.exe artifacts/VeilFrame-windows-x86_64.exe
 
+      - name: Verify Windows Standalone Executable
+        shell: pwsh
+        run: |
+          Write-Host "Verifying packaged Windows executable..."
+          & "artifacts/VeilFrame-windows-x86_64.exe" doctor --json
+          & "artifacts/VeilFrame-windows-x86_64.exe" presets
+
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -338,6 +345,23 @@ jobs:
           dpkg-deb --build --root-owner-group deb_root artifacts/VeilFrame-linux-x86_64.deb
           dpkg-deb -I artifacts/VeilFrame-linux-x86_64.deb
 
+      - name: Verify Linux .deb and .tar.gz Packages
+        run: |
+          echo "==> Verifying .deb installation and CLI commands..."
+          sudo apt-get install -y ./artifacts/VeilFrame-linux-x86_64.deb
+          test -x /usr/bin/veilframe
+          test -x /usr/bin/veilframe-gui
+          test -f /usr/share/applications/veilframe.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/veilframe.svg
+          /usr/bin/veilframe doctor --json
+          /usr/bin/veilframe presets
+
+          echo "==> Verifying portable .tar.gz extraction & execution..."
+          mkdir -p /tmp/test_linux_tar
+          tar -xzf artifacts/VeilFrame-linux-x86_64.tar.gz -C /tmp/test_linux_tar/
+          test -x /tmp/test_linux_tar/VeilFrame
+          /tmp/test_linux_tar/VeilFrame doctor --json
+
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -418,6 +442,25 @@ jobs:
             ln -s /Applications dmg_root/Applications
             hdiutil create -volname "VeilFrame" -srcfolder dmg_root -ov -format UDZO artifacts/VeilFrame-macos-arm64.dmg
           fi
+
+      - name: Verify macOS .dmg and .tar.gz Packages
+        run: |
+          echo "==> Verifying portable .tar.gz extraction & execution..."
+          mkdir -p /tmp/test_macos_tar
+          tar -xzf artifacts/VeilFrame-macos-arm64.tar.gz -C /tmp/test_macos_tar/
+          test -d /tmp/test_macos_tar/VeilFrame.app
+          test -x /tmp/test_macos_tar/VeilFrame.app/Contents/MacOS/VeilFrame
+          /tmp/test_macos_tar/VeilFrame.app/Contents/MacOS/VeilFrame doctor --json
+
+          echo "==> Verifying .dmg mounting, structure, and execution..."
+          mkdir -p /tmp/dmg_mount
+          hdiutil attach artifacts/VeilFrame-macos-arm64.dmg -mountpoint /tmp/dmg_mount -nobrowse -readonly
+          test -d "/tmp/dmg_mount/VeilFrame.app"
+          test -L "/tmp/dmg_mount/Applications"
+          test -x "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame"
+          "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame" doctor --json
+          "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame" presets
+          hdiutil detach /tmp/dmg_mount
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
