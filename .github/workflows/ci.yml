@@ -249,10 +249,10 @@ jobs:
           path: artifacts/VeilFrame-windows-x86_64.exe
 
   # ------------------------------------------------------------------ #
-  # 3b. Build Standalone Linux Package (x86_64)                        #
+  # 3b. Build Standalone Linux Package (.deb & .tar.gz x86_64)         #
   # ------------------------------------------------------------------ #
   build-linux:
-    name: Build Standalone Linux (x86_64)
+    name: Build Linux (.deb & .tar.gz x86_64)
     runs-on: ubuntu-22.04
     needs: [test, release-gate]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
@@ -293,24 +293,62 @@ jobs:
           ./dist/VeilFrame doctor --json
           python -m unittest tests/test_gui_smoke.py
 
-      - name: Package Linux Archive
+      - name: Package Linux .tar.gz and .deb Artifacts
         run: |
-          mkdir -p release_package artifacts
+          mkdir -p release_package artifacts deb_root/DEBIAN deb_root/opt/veilframe deb_root/usr/bin deb_root/usr/share/applications deb_root/usr/share/icons/hicolor/scalable/apps
+
+          # 1. Portable .tar.gz
           cp dist/VeilFrame release_package/
           cp README.md LICENSE release_package/
           tar -czvf artifacts/VeilFrame-linux-x86_64.tar.gz -C release_package VeilFrame README.md LICENSE
 
-      - name: Upload Linux Artifact
+          # 2. Debian .deb package
+          cp dist/VeilFrame deb_root/opt/veilframe/
+          chmod +x deb_root/opt/veilframe/VeilFrame
+          ln -s /opt/veilframe/VeilFrame deb_root/usr/bin/veilframe
+          ln -s /opt/veilframe/VeilFrame deb_root/usr/bin/veilframe-gui
+          cp veilframe/resources/icon.svg deb_root/usr/share/icons/hicolor/scalable/apps/veilframe.svg
+
+          cat << 'EOF' > deb_root/usr/share/applications/veilframe.desktop
+          [Desktop Entry]
+          Name=VeilFrame
+          Comment=Auditable Multimedia Privacy Compiler & High-Performance Folder Analyzer
+          Exec=/opt/veilframe/VeilFrame gui
+          Icon=veilframe
+          Terminal=false
+          Type=Application
+          Categories=AudioVideo;Utility;Security;
+          Keywords=Privacy;Video;Image;Folder;Security;Sanitizer;
+          EOF
+
+          cat << 'EOF' > deb_root/DEBIAN/control
+          Package: veilframe
+          Version: 2.0.2
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: VeilFrame Contributors <https://github.com/sahir247/VeilFrame>
+          Depends: libgl1, libegl1, libglx-mesa0, libxkbcommon-x11-0, ffmpeg
+          Description: Auditable Multimedia Privacy Compiler & High-Performance Folder Analyzer
+           VeilFrame is a local multimedia sanitization, bounded forensic signal
+           transformation, and high-performance folder analyzer with independent
+           visual-fidelity verification and Ed25519 cryptographic provenance.
+          EOF
+
+          dpkg-deb --build --root-owner-group deb_root artifacts/VeilFrame-linux-x86_64.deb
+          dpkg-deb -I artifacts/VeilFrame-linux-x86_64.deb
+
+      - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VeilFrame-linux-x86_64
-          path: artifacts/VeilFrame-linux-x86_64.tar.gz
+          path: artifacts/*
 
   # ------------------------------------------------------------------ #
-  # 3c. Build Standalone macOS Package (ARM64 / Apple Silicon)         #
+  # 3c. Build Standalone macOS Package (.dmg & .tar.gz ARM64)          #
   # ------------------------------------------------------------------ #
   build-macos:
-    name: Build Standalone macOS (ARM64)
+    name: Build macOS (.dmg & .tar.gz ARM64)
     runs-on: macos-latest
     needs: [test, release-gate]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
@@ -335,32 +373,57 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Build Standalone macOS Binary
+      - name: Build Standalone macOS App & Binary
         run: pyinstaller --noconfirm --clean VeilFrame.spec
 
       - name: Validate macOS Binary Architecture
         run: |
-          chmod +x dist/VeilFrame
-          file dist/VeilFrame
-          file dist/VeilFrame | grep -E "(arm64|arm64e)" || (echo "Architecture mismatch!" && exit 1)
+          BIN_PATH=""
+          if [ -d "dist/VeilFrame.app" ]; then
+            BIN_PATH="dist/VeilFrame.app/Contents/MacOS/VeilFrame"
+          else
+            BIN_PATH="dist/VeilFrame"
+          fi
+          chmod +x "$BIN_PATH"
+          file "$BIN_PATH"
+          file "$BIN_PATH" | grep -E "(arm64|arm64e)" || (echo "Architecture mismatch!" && exit 1)
 
       - name: Run macOS Doctor & GUI Smoke Test
         run: |
-          ./dist/VeilFrame doctor --json
+          BIN_PATH=""
+          if [ -d "dist/VeilFrame.app" ]; then
+            BIN_PATH="dist/VeilFrame.app/Contents/MacOS/VeilFrame"
+          else
+            BIN_PATH="dist/VeilFrame"
+          fi
+          "$BIN_PATH" doctor --json
           python -m unittest tests/test_gui_smoke.py
 
-      - name: Package macOS Archive
+      - name: Package macOS .dmg and .tar.gz
         run: |
-          mkdir -p release_package artifacts
-          cp dist/VeilFrame release_package/
-          cp README.md LICENSE release_package/
-          tar -czvf artifacts/VeilFrame-macos-arm64.tar.gz -C release_package VeilFrame README.md LICENSE
+          mkdir -p release_package artifacts dmg_root
 
-      - name: Upload macOS Artifact
+          # 1. Portable .tar.gz
+          if [ -d "dist/VeilFrame.app" ]; then
+            cp -R dist/VeilFrame.app release_package/
+          else
+            cp dist/VeilFrame release_package/
+          fi
+          cp README.md LICENSE release_package/
+          tar -czvf artifacts/VeilFrame-macos-arm64.tar.gz -C release_package .
+
+          # 2. Drag-to-Applications .dmg
+          if [ -d "dist/VeilFrame.app" ]; then
+            cp -R dist/VeilFrame.app dmg_root/
+            ln -s /Applications dmg_root/Applications
+            hdiutil create -volname "VeilFrame" -srcfolder dmg_root -ov -format UDZO artifacts/VeilFrame-macos-arm64.dmg
+          fi
+
+      - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VeilFrame-macos-arm64
-          path: artifacts/VeilFrame-macos-arm64.tar.gz
+          path: artifacts/*
 
   # ------------------------------------------------------------------ #
   # 3d. Build Universal Python Packages (Wheel & Sdist)                #
@@ -417,8 +480,8 @@ jobs:
         run: |
           mkdir -p final_release
           
-          # Find and copy all distribution files into final_release
-          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.tar.gz" -o -name "*.whl" \) -exec cp {} final_release/ \;
+          # Find and copy all distribution files (.exe, .deb, .dmg, .tar.gz, .whl) into final_release
+          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.whl" \) -exec cp {} final_release/ \;
           
           cd final_release
           sha256sum * > SHA256SUMS.txt

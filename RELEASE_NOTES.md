@@ -49,13 +49,15 @@ VeilFrame v2.0.2 introduces a comprehensive, high-throughput **Folder Analyzer a
 - `veilframe folder export <target> -o <report>`: Directly export scan results to HTML, Markdown, JSON, CSV, or TXT.
 
 ### 6. Cross-Platform Release Matrix & Standalone Packages
-VeilFrame v2.0.2 now officially provides standalone native distributions for **Windows x64**, **Linux x64**, and **macOS Apple Silicon (ARM64)** alongside universal Python wheels:
+VeilFrame v2.0.2 now officially provides standalone native distributions for **Windows x64**, **Linux x64** (.deb & .tar.gz), and **macOS Apple Silicon ARM64** (.dmg & .tar.gz) alongside universal Python wheels:
 
 | Distribution Artifact | Runner / OS | Architecture | Purpose / Description |
 |---|---|---|---|
 | `VeilFrame-windows-x86_64.exe` | `windows-latest` | x86_64 | Standalone single-file executable (GUI & CLI) |
-| `VeilFrame-linux-x86_64.tar.gz` | `ubuntu-22.04` | x86_64 | Standalone Linux executable + dependencies |
-| `VeilFrame-macos-arm64.tar.gz` | `macos-latest` | ARM64 | Apple Silicon macOS native standalone bundle |
+| `VeilFrame-linux-x86_64.deb` | `ubuntu-22.04` | x86_64 | Native Debian/Ubuntu package with desktop menu entry & icons |
+| `VeilFrame-linux-x86_64.tar.gz` | `ubuntu-22.04` | x86_64 | Standalone portable Linux archive (extract & run) |
+| `VeilFrame-macos-arm64.dmg` | `macos-latest` | ARM64 | Native Apple Silicon disk image (Drag-to-Applications) |
+| `VeilFrame-macos-arm64.tar.gz` | `macos-latest` | ARM64 | Standalone portable macOS archive (`VeilFrame.app` bundle) |
 | `veilframe-2.0.2-py3-none-any.whl` | Universal | Any | Universal Python Wheel (`pip install`) |
 | `veilframe-2.0.2.tar.gz` | Universal | Any | Source distribution package |
 | `SHA256SUMS.txt` | Release Gate | — | Cryptographic SHA-256 integrity verification |
@@ -65,7 +67,7 @@ VeilFrame v2.0.2 now officially provides standalone native distributions for **W
 ## Operating System Installation & Execution Guide
 
 ### 🪟 Windows (x86_64)
-1. Download `VeilFrame-windows-x86_64.exe` (or `VeilFrame.exe`) and `SHA256SUMS.txt`.
+1. Download `VeilFrame-windows-x86_64.exe` and `SHA256SUMS.txt`.
 2. Verify checksum:
    ```powershell
    Get-FileHash -Path .\VeilFrame-windows-x86_64.exe -Algorithm SHA256
@@ -74,42 +76,59 @@ VeilFrame v2.0.2 now officially provides standalone native distributions for **W
 4. Run CLI: `.\VeilFrame-windows-x86_64.exe doctor --json` or `.\VeilFrame-windows-x86_64.exe folder scan <dir>`.
 
 ### 🐧 Linux (x86_64)
-1. Download `VeilFrame-linux-x86_64.tar.gz` and extract:
-   ```bash
-   tar -xzf VeilFrame-linux-x86_64.tar.gz
-   cd release_package || cd .
-   chmod +x VeilFrame
-   ```
-2. System Dependencies:
-   VeilFrame bundles Python, PySide6, OpenCV, NumPy, and Cryptography. On minimal or headless distributions, install standard graphics/GL runtime libraries:
-   ```bash
-   # Debian / Ubuntu / Mint:
-   sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
-   # Fedora / RHEL:
-   sudo dnf install -y ffmpeg mesa-libGL mesa-libEGL libxkbcommon-x11
-   # Arch Linux:
-   sudo pacman -S ffmpeg mesa libxkbcommon
-   ```
-3. Run GUI: `./VeilFrame` or `./VeilFrame gui`.
-4. Run CLI: `./VeilFrame doctor --json` or `./VeilFrame folder scan /path/to/folder`.
+
+#### Option A: Native Debian/Ubuntu Package (`.deb`)
+Recommended for Ubuntu, Debian, Linux Mint, Pop!_OS:
+```bash
+# 1. Download and install .deb
+sudo dpkg -i VeilFrame-linux-x86_64.deb
+sudo apt-get install -f  # resolves any missing runtime libraries
+
+# 2. Launch from desktop application menu or terminal
+veilframe gui      # or simply 'veilframe'
+veilframe doctor   # CLI health probe
+```
+
+#### Option B: Portable Archive (`.tar.gz`)
+Works on any Linux distribution (Ubuntu, Fedora, Arch, openSUSE):
+```bash
+tar -xzf VeilFrame-linux-x86_64.tar.gz
+chmod +x VeilFrame
+./VeilFrame gui
+```
+
+**System Graphics Runtime Libraries:**
+VeilFrame bundles Python, PySide6, OpenCV, NumPy, Cryptography, and FFmpeg. On minimal or headless distributions, install standard graphics/GL runtime libraries:
+```bash
+# Debian / Ubuntu / Mint:
+sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
+# Fedora / RHEL:
+sudo dnf install -y ffmpeg mesa-libGL mesa-libEGL libxkbcommon-x11
+# Arch Linux:
+sudo pacman -S ffmpeg mesa libxkbcommon
+```
 
 ### 🍎 macOS (Apple Silicon ARM64)
-1. Download `VeilFrame-macos-arm64.tar.gz` and extract:
-   ```bash
-   tar -xzf VeilFrame-macos-arm64.tar.gz
-   chmod +x VeilFrame
-   ```
-2. FFmpeg & Hardware Acceleration:
-   Install FFmpeg via Homebrew (Apple VideoToolbox hardware acceleration is natively supported):
-   ```bash
-   brew install ffmpeg
-   ```
-3. macOS Gatekeeper Note:
-   As an open-source community release, this build is not notarized with a paid Apple Developer ID. If macOS displays a Gatekeeper security warning on first launch:
-   - Right-click the `VeilFrame` binary in Finder and select **Open**, OR
-   - Clear quarantine attribute via terminal: `xattr -d com.apple.quarantine VeilFrame`
-4. Run GUI: `./VeilFrame` or `./VeilFrame gui`.
-5. Run CLI: `./VeilFrame doctor --json`.
+
+#### Option A: Drag-to-Applications Disk Image (`.dmg`)
+1. Download `VeilFrame-macos-arm64.dmg`.
+2. Double-click to mount the disk image.
+3. Drag **VeilFrame.app** into the **Applications** folder.
+4. Launch VeilFrame from Launchpad, Spotlight, or Applications.
+
+#### Option B: Portable App Archive (`.tar.gz`)
+```bash
+tar -xzf VeilFrame-macos-arm64.tar.gz
+open VeilFrame.app
+```
+
+**macOS Gatekeeper Note:**
+As an open-source community release, this build is not notarized with a paid Apple Developer ID. If macOS displays a Gatekeeper security warning on first launch:
+- Right-click `VeilFrame.app` in Finder / Applications and select **Open**, OR
+- Clear quarantine attribute via terminal:
+  ```bash
+  xattr -d com.apple.quarantine /Applications/VeilFrame.app
+  ```
 
 ### 🐍 Universal Python Package (Any Platform)
 Install directly into any Python 3.10+ virtual environment:
@@ -120,13 +139,13 @@ pip install -e .
 ```
 
 ### 🛠️ Local Multi-Target POSIX Build Script (`build.sh`)
-Linux and macOS developers can build and package standalone binaries locally:
+Linux and macOS developers can build and package standalone binaries and native installers locally:
 ```bash
 chmod +x build.sh
 ./build.sh clean     # Clean previous builds
 ./build.sh build     # Build standalone binary with PyInstaller
 ./build.sh test      # Run full test suite & GUI smoke test
-./build.sh package   # Package compressed tarball
+./build.sh package   # Package .dmg (macOS) or .deb & .tar.gz (Linux)
 ./build.sh all       # Run clean, build, test, and package in one command
 ```
 

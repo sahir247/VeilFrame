@@ -31,7 +31,7 @@ show_help() {
     echo "  clean      Clean previous build/dist artifacts"
     echo "  build      Build standalone binary with PyInstaller"
     echo "  test       Run GUI & CLI test suite"
-    echo "  package    Create compressed tarball (${PKG_NAME}.tar.gz)"
+    echo "  package    Create installer packages (.dmg for macOS, .deb & .tar.gz for Linux)"
     echo "  all        Run clean, build, test, and package (default)"
     echo ""
     echo "Options:"
@@ -44,7 +44,7 @@ show_help() {
 
 do_clean() {
     echo "==> Cleaning build artifacts..."
-    rm -rf build dist release_package "${PKG_NAME}.tar.gz" *.egg-info
+    rm -rf build dist release_package deb_root dmg_root "${PKG_NAME}.tar.gz" *.egg-info
     echo "Clean complete."
 }
 
@@ -72,40 +72,114 @@ do_build() {
         pyinstaller --noconfirm --clean VeilFrame.spec
     fi
 
+    # Check for output binary
+    BIN_PATH=""
     if [ -f "dist/VeilFrame" ]; then
-        chmod +x dist/VeilFrame
-        echo "==> Standalone binary generated at: dist/VeilFrame"
-        # Validate binary architecture
+        BIN_PATH="dist/VeilFrame"
+    elif [ -f "dist/VeilFrame.app/Contents/MacOS/VeilFrame" ]; then
+        BIN_PATH="dist/VeilFrame.app/Contents/MacOS/VeilFrame"
+    fi
+
+    if [ -n "${BIN_PATH}" ]; then
+        chmod +x "${BIN_PATH}"
+        echo "==> Standalone binary generated at: ${BIN_PATH}"
         if command -v file >/dev/null 2>&1; then
-            echo "Binary details: $(file dist/VeilFrame)"
+            echo "Binary details: $(file "${BIN_PATH}")"
         fi
-        # Run doctor probe
         echo "==> Running self-test doctor probe..."
-        ./dist/VeilFrame doctor --json
+        "${BIN_PATH}" doctor --json
     else
-        echo "ERROR: Expected output binary dist/VeilFrame was not found!"
+        echo "ERROR: Expected output binary was not found in dist/!"
         exit 1
     fi
 }
 
 do_package() {
-    echo "==> Packaging ${PKG_NAME}.tar.gz..."
-    if [ ! -f "dist/VeilFrame" ]; then
-        echo "Binary not built yet. Running build first..."
-        do_build
-    fi
-
+    echo "==> Packaging native artifacts for ${PLATFORM} (${ARCH})..."
+    
+    # 1. Package Portable TAR.GZ
     rm -rf release_package
     mkdir -p release_package
-    cp dist/VeilFrame release_package/
+    if [ -d "dist/VeilFrame.app" ]; then
+        cp -R dist/VeilFrame.app release_package/
+    elif [ -f "dist/VeilFrame" ]; then
+        cp dist/VeilFrame release_package/
+    fi
     cp README.md LICENSE release_package/
-    
-    tar -czvf "dist/${PKG_NAME}.tar.gz" -C release_package VeilFrame README.md LICENSE
+    tar -czvf "dist/${PKG_NAME}.tar.gz" -C release_package .
     rm -rf release_package
+    echo "Created: dist/${PKG_NAME}.tar.gz"
+
+    # 2. Package macOS .DMG
+    if [ "${PLATFORM}" = "macos" ]; then
+        if [ -d "dist/VeilFrame.app" ]; then
+            echo "==> Creating macOS Drag-and-Drop DMG..."
+            rm -rf dmg_root
+            mkdir -p dmg_root
+            cp -R dist/VeilFrame.app dmg_root/
+            ln -s /Applications dmg_root/Applications
+            hdiutil create -volname "VeilFrame" -srcfolder dmg_root -ov -format UDZO "dist/${PKG_NAME}.dmg"
+            rm -rf dmg_root
+            echo "Created: dist/${PKG_NAME}.dmg"
+        fi
+    fi
+
+    # 3. Package Linux .DEB
+    if [ "${PLATFORM}" = "linux" ]; then
+        if command -v dpkg-deb >/dev/null 2>&1 && [ -f "dist/VeilFrame" ]; then
+            echo "==> Creating Debian/Ubuntu .deb package..."
+            rm -rf deb_root
+            mkdir -p deb_root/DEBIAN
+            mkdir -p deb_root/opt/veilframe
+            mkdir -p deb_root/usr/bin
+            mkdir -p deb_root/usr/share/applications
+            mkdir -p deb_root/usr/share/icons/hicolor/scalable/apps
+
+            cp dist/VeilFrame deb_root/opt/veilframe/
+            chmod +x deb_root/opt/veilframe/VeilFrame
+            ln -s /opt/veilframe/VeilFrame deb_root/usr/bin/veilframe
+            ln -s /opt/veilframe/VeilFrame deb_root/usr/bin/veilframe-gui
+
+            if [ -f "veilframe/resources/icon.svg" ]; then
+                cp veilframe/resources/icon.svg deb_root/usr/share/icons/hicolor/scalable/apps/veilframe.svg
+            fi
+
+            cat << 'EOF' > deb_root/usr/share/applications/veilframe.desktop
+[Desktop Entry]
+Name=VeilFrame
+Comment=Auditable Multimedia Privacy Compiler & High-Performance Folder Analyzer
+Exec=/opt/veilframe/VeilFrame gui
+Icon=veilframe
+Terminal=false
+Type=Application
+Categories=AudioVideo;Utility;Security;
+Keywords=Privacy;Video;Image;Folder;Security;Sanitizer;
+EOF
+
+            cat << 'EOF' > deb_root/DEBIAN/control
+Package: veilframe
+Version: 2.0.2
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: VeilFrame Contributors <https://github.com/sahir247/VeilFrame>
+Depends: libgl1, libegl1, libglx-mesa0, libxkbcommon-x11-0, ffmpeg
+Description: Auditable Multimedia Privacy Compiler & High-Performance Folder Analyzer
+ VeilFrame is a local multimedia sanitization, bounded forensic signal
+ transformation, and high-performance folder analyzer with independent
+ visual-fidelity verification and Ed25519 cryptographic provenance.
+EOF
+
+            dpkg-deb --build --root-owner-group deb_root "dist/${PKG_NAME}.deb"
+            rm -rf deb_root
+            echo "Created: dist/${PKG_NAME}.deb"
+        fi
+    fi
 
     echo ""
     echo "========================================================"
-    echo "Package successfully generated at: dist/${PKG_NAME}.tar.gz"
+    echo "Packaging complete! Dist directory contents:"
+    ls -lh dist/
     echo "========================================================"
 }
 

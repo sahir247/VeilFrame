@@ -63,13 +63,15 @@ veilframe-gui
 ```
 
 ### Standalone Pre-Built Cross-Platform Packages:
-Download pre-compiled native binaries and `SHA256SUMS.txt` from the [Latest Release](https://github.com/sahir247/VeilFrame/releases/latest):
+Download pre-compiled native binaries, installers, and `SHA256SUMS.txt` from the [Latest Release](https://github.com/sahir247/VeilFrame/releases/latest):
 
 | OS / Platform | Artifact | Architecture | Instructions |
 |---|---|---|---|
 | **Windows** | `VeilFrame-windows-x86_64.exe` | x86_64 | Run `.\VeilFrame-windows-x86_64.exe` (Standalone GUI & CLI) |
-| **Linux** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
-| **macOS** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and run `./VeilFrame` |
+| **Linux (Debian/Ubuntu)** | `VeilFrame-linux-x86_64.deb` | x86_64 | Install `sudo dpkg -i VeilFrame-linux-x86_64.deb` (Desktop app + CLI) |
+| **Linux (Portable)** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
+| **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
+| **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Python (Any OS)** | `veilframe-2.0.2-py3-none-any.whl` | Universal | `pip install veilframe-2.0.2-py3-none-any.whl` |
 
 ```powershell

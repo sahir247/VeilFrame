@@ -15,7 +15,9 @@ IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
 
-MIN_REAL_BIN_SIZE = 5 * 1024 * 1024  # 5 MB minimum threshold to avoid package-manager shims
+# On Windows, Chocolatey shims are ~20KB so 5MB threshold filters shims.
+# On Linux and macOS, dynamic system binaries are >50KB.
+MIN_REAL_BIN_SIZE = 5 * 1024 * 1024 if IS_WINDOWS else 50 * 1024
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +73,7 @@ def collect_ffmpeg_binaries():
         for f in user_bin.iterdir():
             _inspect_candidate(f)
 
-    # 3. System PATH / Chocolatey library locations
+    # 3. System PATH / Package manager library locations
     for tool in ['ffmpeg', 'ffprobe']:
         candidates = [f"{tool}.exe", tool] if IS_WINDOWS else [tool]
         for c in candidates:
@@ -152,3 +154,20 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if IS_MACOS:
+    app = BUNDLE(
+        exe,
+        name='VeilFrame.app',
+        icon=None,
+        bundle_identifier='org.veilframe.desktop',
+        info_plist={
+            'CFBundleDisplayName': 'VeilFrame',
+            'CFBundleName': 'VeilFrame',
+            'CFBundleShortVersionString': '2.0.2',
+            'CFBundleVersion': '2.0.2',
+            'NSHumanReadableCopyright': 'MIT License',
+            'NSHighResolutionCapable': 'True',
+            'LSMinimumSystemVersion': '11.0',
+        },
+    )
