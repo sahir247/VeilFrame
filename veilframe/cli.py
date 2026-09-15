@@ -552,12 +552,15 @@ def cmd_doctor(args):
         ffprobe_ver = "Missing"
         ffprobe_path_str = str(e)
 
-    # PySide6 GUI check
+    # PySide6 & Qt GUI check
     pyside_ok = True
     pyside_ver = "Unknown"
+    qt_ver = "Unknown"
     try:
         import PySide6
+        from PySide6 import QtCore
         pyside_ver = PySide6.__version__
+        qt_ver = QtCore.qVersion()
     except ImportError:
         pyside_ok = False
 
@@ -584,9 +587,20 @@ def cmd_doctor(args):
     physical_gpus = hw_info.get("physical_gpus", [])
     verified_encoders = [e["codec"] for e in hw_info.get("verified_encoders", [])]
 
+    plat_sys = platform.system()
+    plat_name = "macOS" if plat_sys == "Darwin" else plat_sys
+    plat_arch = platform.machine() or "x86_64"
+
     diag_data = {
+        "platform": plat_name,
+        "architecture": plat_arch,
         "os": platform.platform(),
+        "os_info": platform.platform(),
         "python": sys.version.split()[0],
+        "python_version": sys.version.split()[0],
+        "qt": qt_ver,
+        "pyside6": {"available": pyside_ok, "version": pyside_ver},
+        "qt_platform_plugin": os.environ.get("QT_QPA_PLATFORM", "default"),
         "ffmpeg": {
             "available": ffmpeg_ok,
             "installed": ffmpeg_ok,
@@ -602,13 +616,18 @@ def cmd_doctor(args):
             "detail": ffprobe_path_str,
         },
         "quality_gate": {"policy": "SSIM >= 0.95, PSNR >= 30 dB", "active": True},
-        "pyside6": {"available": pyside_ok, "version": pyside_ver},
         "cryptography": {"available": crypto_ok, "version": crypto_ver},
         "numpy": {"version": np.__version__},
         "opencv": {"available": cv_ok, "version": cv_ver},
+        "gpu": {"physical_gpus": physical_gpus},
         "physical_gpus": physical_gpus,
+        "encoders": {
+            "verified_hardware_encoders": verified_encoders,
+            "cpu_fallback": "libx264",
+        },
         "verified_hardware_encoders": verified_encoders,
         "primary_privacy_engine": "libx264 (Software CPU — Deterministic)",
+        "is_healthy": ffmpeg_ok and ffprobe_ok and crypto_ok,
     }
 
     if args.json:

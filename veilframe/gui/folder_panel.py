@@ -909,13 +909,17 @@ class FolderAnalyzerPanel(QWidget):
         try:
             if sys.platform == "win32":
                 if os.path.isfile(target_path):
-                    subprocess.run(["explorer", "/select,", os.path.normpath(target_path)])
+                    subprocess.run(["explorer", f"/select,{os.path.normpath(target_path)}"])
                 else:
                     os.startfile(target_path)
             elif sys.platform == "darwin":
-                subprocess.run(["open", "-R" if os.path.isfile(target_path) else "", target_path])
+                if os.path.isfile(target_path):
+                    subprocess.run(["open", "-R", target_path])
+                else:
+                    subprocess.run(["open", target_path])
             else:
-                subprocess.run(["xdg-open", os.path.dirname(target_path) if os.path.isfile(target_path) else target_path])
+                target_dir = os.path.dirname(target_path) if os.path.isfile(target_path) else target_path
+                subprocess.run(["xdg-open", target_dir])
         except Exception:
             pass
 

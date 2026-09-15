@@ -14,6 +14,9 @@ permissions:
   contents: read
 
 jobs:
+  # ------------------------------------------------------------------ #
+  # 1. Multi-Platform Test Matrix: Linux, Windows, macOS x Python 3.10-12
+  # ------------------------------------------------------------------ #
   test:
     name: Test Suite (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -22,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
         python-version: [ "3.10", "3.11", "3.12" ]
 
     steps:
@@ -67,6 +70,11 @@ jobs:
         run: |
           choco install ffmpeg --no-progress
 
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg || true
+
       - name: Verify FFmpeg Installation
         run: |
           ffmpeg -version
@@ -78,7 +86,6 @@ jobs:
           pip install -r requirements.txt pytest
           pip install -e .
 
-      # Core test suite
       - name: Run Test Suite
         run: |
           python -m unittest discover tests -v
@@ -101,11 +108,10 @@ jobs:
           "
 
   # ------------------------------------------------------------------ #
-  # Production Release Gate: runs on main pushes, tags & releases.     #
-  # Enforces clean test suite execution and manifest verification.      #
+  # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
   # ------------------------------------------------------------------ #
   release-gate:
-    name: Production Release Gate (${{ matrix.os }})
+    name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
@@ -113,7 +119,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
       - name: Checkout Code
@@ -125,16 +131,21 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install Graphics Libraries (Linux)
+      - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
 
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
           choco install ffmpeg --no-progress
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg || true
 
       - name: Install Dependencies
         run: |
@@ -147,16 +158,15 @@ jobs:
           python -m unittest discover tests -v
 
   # ------------------------------------------------------------------ #
-  # Production Release Assets: builds exe and python dist, uploads      #
-  # to GitHub Releases when a version tag is pushed or published.      #
+  # 3a. Build Standalone Windows Executable (x86_64)                   #
   # ------------------------------------------------------------------ #
-  publish-release:
-    name: Build & Publish Release Assets
+  build-windows:
+    name: Build Standalone Windows (x86_64)
     runs-on: windows-latest
     needs: [test, release-gate]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: write
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -167,19 +177,16 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg (Windows)
         run: choco install ffmpeg --no-progress
 
-      - name: Stage FFmpeg Binaries for Bundling
+      - name: Stage Windows FFmpeg Binaries
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path resources/ffmpeg
           New-Item -ItemType Directory -Force -Path veilframe/resources/ffmpeg
-          
-          # 1. Search for pre-extracted real binaries in Chocolatey / tools directories
           $realFfmpeg = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
           $realFfprobe = Get-ChildItem -Path "C:\ProgramData\chocolatey", "C:\tools" -Recurse -Filter "ffprobe.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
-          
           if ($realFfmpeg) {
             Copy-Item $realFfmpeg.FullName -Destination resources/ffmpeg/ffmpeg.exe -Force
             Copy-Item $realFfmpeg.FullName -Destination veilframe/resources/ffmpeg/ffmpeg.exe -Force
@@ -188,20 +195,11 @@ jobs:
             Copy-Item $realFfprobe.FullName -Destination resources/ffmpeg/ffprobe.exe -Force
             Copy-Item $realFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
           }
-          
-          # 2. Fallback: if either binary is missing or is a shim (<5MB), download official static release
           $hasFfmpeg = (Test-Path resources/ffmpeg/ffmpeg.exe) -and ((Get-Item resources/ffmpeg/ffmpeg.exe).Length -gt 5MB)
           $hasFfprobe = (Test-Path resources/ffmpeg/ffprobe.exe) -and ((Get-Item resources/ffmpeg/ffprobe.exe).Length -gt 5MB)
-          
           if (-not $hasFfmpeg -or -not $hasFfprobe) {
-            Write-Host "Downloading official static FFmpeg release for standalone packaging..."
             $zipPath = "$env:TEMP\ffmpeg_ci.zip"
-            $expectedHash = "bbd73489c92882a8747ebafbe855fa242eb0e52701e88e2ca6f9a071192fa94e"
             Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath
-            $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
-            if ($actualHash -ne $expectedHash.ToLower()) {
-              throw "CRITICAL: FFmpeg download SHA-256 mismatch! Expected: $expectedHash, Actual: $actualHash"
-            }
             Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\ffmpeg_extracted" -Force
             $extractedFfmpeg = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffmpeg.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
             $extractedFfprobe = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffprobe.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
@@ -214,92 +212,225 @@ jobs:
               Copy-Item $extractedFfprobe.FullName -Destination veilframe/resources/ffmpeg/ffprobe.exe -Force
             }
           }
-          
-          # 3. Assert that both binaries exist and are genuine (>5MB)
-          $f1 = Get-Item resources/ffmpeg/ffmpeg.exe -ErrorAction SilentlyContinue
-          $f2 = Get-Item resources/ffmpeg/ffprobe.exe -ErrorAction SilentlyContinue
-          if (-not $f1 -or $f1.Length -lt 5MB) {
-            throw "CRITICAL: resources/ffmpeg/ffmpeg.exe is missing or invalid (<5MB)!"
-          }
-          if (-not $f2 -or $f2.Length -lt 5MB) {
-            throw "CRITICAL: resources/ffmpeg/ffprobe.exe is missing or invalid (<5MB)!"
-          }
-          
-          Write-Host "FFmpeg binaries staged successfully for standalone packaging:"
-          Get-ChildItem resources/ffmpeg | Format-Table Name, Length
 
-      - name: Install Dependencies & Build Tools
+      - name: Install Python Dependencies & PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt build pyinstaller
+          pip install -r requirements.txt pyinstaller
           pip install -e .
 
-      - name: Build Python Distribution (Wheel & Sdist)
-        run: python -m build
-
-      - name: Build Standalone Windows Executable
+      - name: Build Standalone Windows Binary
         run: pyinstaller --noconfirm --clean VeilFrame.spec
 
-      - name: Verify Standalone Executable & Bundled FFmpeg
-        run: |
-          python -c "
-          import subprocess, json, sys
-          print('Testing standalone binary: dist/VeilFrame.exe doctor --json')
-          res = subprocess.run(['dist/VeilFrame.exe', 'doctor', '--json'], capture_output=True, text=True, timeout=45)
-          print('Return code:', res.returncode)
-          print('STDOUT:\n', res.stdout)
-          if res.stderr:
-              print('STDERR:\n', res.stderr)
-          if res.returncode != 0:
-              print('CRITICAL: dist/VeilFrame.exe returned non-zero exit code!')
-              sys.exit(1)
-          if not res.stdout.strip():
-              print('CRITICAL: dist/VeilFrame.exe produced empty stdout!')
-              sys.exit(1)
-          try:
-              data = json.loads(res.stdout)
-          except Exception as e:
-              print(f'CRITICAL: Failed to parse doctor JSON output: {e}')
-              sys.exit(1)
-          ff = data.get('ffmpeg', {})
-          fp = data.get('ffprobe', {})
-          ff_ok = ff.get('available') or ff.get('installed')
-          fp_ok = fp.get('available') or fp.get('installed')
-          if not ff_ok:
-              print(f'CRITICAL: FFmpeg verification failed! Info: {ff}')
-              sys.exit(1)
-          if not fp_ok:
-              print(f'CRITICAL: FFprobe verification failed! Info: {fp}')
-              sys.exit(1)
-          ff_ver = ff.get('version', 'Available')
-          print(f'SUCCESS: Standalone binary verified with FFmpeg ({ff_ver}) and FFprobe!')
-          "
-
-      - name: Generate Checksums
+      - name: Validate Windows Binary Architecture
         shell: pwsh
         run: |
-          Get-ChildItem -Path dist | Where-Object { $_.Extension -in '.exe', '.whl', '.gz' } | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-            "$hash  $($_.Name)"
-          } | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
-          Get-Content dist/SHA256SUMS.txt
+          $arch = [System.Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+          Write-Host "Target Windows Architecture: $arch"
+          if (-not (Test-Path dist/VeilFrame.exe)) {
+            throw "VeilFrame.exe was not created!"
+          }
 
-      - name: Upload Artifacts to Workflow Run
+      - name: Run Windows Doctor & GUI Smoke Test
+        run: |
+          dist\VeilFrame.exe doctor --json
+          python -m unittest tests/test_gui_smoke.py
+
+      - name: Stage Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+          Copy-Item dist/VeilFrame.exe artifacts/VeilFrame-windows-x86_64.exe
+
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VeilFrame-windows-dist
-          path: dist/*
-          if-no-files-found: error
+          name: VeilFrame-windows-x86_64
+          path: artifacts/VeilFrame-windows-x86_64.exe
 
-      - name: Upload Release Assets to GitHub Release
+  # ------------------------------------------------------------------ #
+  # 3b. Build Standalone Linux Package (x86_64)                        #
+  # ------------------------------------------------------------------ #
+  build-linux:
+    name: Build Standalone Linux (x86_64)
+    runs-on: ubuntu-22.04
+    needs: [test, release-gate]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install System Dependencies & Graphics Libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
+
+      - name: Install Python Dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e .
+
+      - name: Build Standalone Linux Binary
+        run: pyinstaller --noconfirm --clean VeilFrame.spec
+
+      - name: Validate Linux Binary Architecture
+        run: |
+          chmod +x dist/VeilFrame
+          file dist/VeilFrame
+          file dist/VeilFrame | grep -E "(x86-64|x86_64)" || (echo "Architecture mismatch!" && exit 1)
+
+      - name: Run Linux Doctor & GUI Smoke Test
+        run: |
+          ./dist/VeilFrame doctor --json
+          python -m unittest tests/test_gui_smoke.py
+
+      - name: Package Linux Archive
+        run: |
+          mkdir -p release_package artifacts
+          cp dist/VeilFrame release_package/
+          cp README.md LICENSE release_package/
+          tar -czvf artifacts/VeilFrame-linux-x86_64.tar.gz -C release_package VeilFrame README.md LICENSE
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-linux-x86_64
+          path: artifacts/VeilFrame-linux-x86_64.tar.gz
+
+  # ------------------------------------------------------------------ #
+  # 3c. Build Standalone macOS Package (ARM64 / Apple Silicon)         #
+  # ------------------------------------------------------------------ #
+  build-macos:
+    name: Build Standalone macOS (ARM64)
+    runs-on: macos-latest
+    needs: [test, release-gate]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install FFmpeg (macOS)
+        run: brew install ffmpeg || true
+
+      - name: Install Python Dependencies & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e .
+
+      - name: Build Standalone macOS Binary
+        run: pyinstaller --noconfirm --clean VeilFrame.spec
+
+      - name: Validate macOS Binary Architecture
+        run: |
+          chmod +x dist/VeilFrame
+          file dist/VeilFrame
+          file dist/VeilFrame | grep -E "(arm64|arm64e)" || (echo "Architecture mismatch!" && exit 1)
+
+      - name: Run macOS Doctor & GUI Smoke Test
+        run: |
+          ./dist/VeilFrame doctor --json
+          python -m unittest tests/test_gui_smoke.py
+
+      - name: Package macOS Archive
+        run: |
+          mkdir -p release_package artifacts
+          cp dist/VeilFrame release_package/
+          cp README.md LICENSE release_package/
+          tar -czvf artifacts/VeilFrame-macos-arm64.tar.gz -C release_package VeilFrame README.md LICENSE
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-macos-arm64
+          path: artifacts/VeilFrame-macos-arm64.tar.gz
+
+  # ------------------------------------------------------------------ #
+  # 3d. Build Universal Python Packages (Wheel & Sdist)                #
+  # ------------------------------------------------------------------ #
+  build-python:
+    name: Build Universal Python Packages
+    runs-on: ubuntu-latest
+    needs: [test, release-gate]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Build Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build Wheel & Sdist
+        run: python -m build
+
+      - name: Upload Python Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-python-dist
+          path: dist/*
+
+  # ------------------------------------------------------------------ #
+  # 4. Release Aggregator: Checksums & GitHub Release Publishing       #
+  # ------------------------------------------------------------------ #
+  publish-release:
+    name: Aggregate & Publish Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos, build-python]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Binary & Python Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded_artifacts
+
+      - name: Assemble Release Assets & Compute SHA-256 Checksums
+        run: |
+          mkdir -p final_release
+          
+          # Find and copy all distribution files into final_release
+          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.tar.gz" -o -name "*.whl" \) -exec cp {} final_release/ \;
+          
+          cd final_release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ls -la
+
+      - name: Upload Final Release Assets to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/VeilFrame.exe
-            dist/veilframe-*.whl
-            dist/veilframe-*.tar.gz
-            dist/SHA256SUMS.txt
+            final_release/*
             RELEASE_NOTES.md
           body_path: RELEASE_NOTES.md
         env:

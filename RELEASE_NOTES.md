@@ -48,9 +48,94 @@ VeilFrame v2.0.2 introduces a comprehensive, high-throughput **Folder Analyzer a
 - `veilframe folder stats <target>`: Compute quick size rollups, file type distributions, and summary metrics.
 - `veilframe folder export <target> -o <report>`: Directly export scan results to HTML, Markdown, JSON, CSV, or TXT.
 
-### 6. Full Test Suite & Quality Verification
-- Added 31 unit tests covering scanner traversal, hasher streaming, duplicate stages, SQLite database, analytics, exporter, and CLI.
-- **246 total tests passing** across video, image, quality gate, and folder modules.
+### 6. Cross-Platform Release Matrix & Standalone Packages
+VeilFrame v2.0.2 now officially provides standalone native distributions for **Windows x64**, **Linux x64**, and **macOS Apple Silicon (ARM64)** alongside universal Python wheels:
+
+| Distribution Artifact | Runner / OS | Architecture | Purpose / Description |
+|---|---|---|---|
+| `VeilFrame-windows-x86_64.exe` | `windows-latest` | x86_64 | Standalone single-file executable (GUI & CLI) |
+| `VeilFrame-linux-x86_64.tar.gz` | `ubuntu-22.04` | x86_64 | Standalone Linux executable + dependencies |
+| `VeilFrame-macos-arm64.tar.gz` | `macos-latest` | ARM64 | Apple Silicon macOS native standalone bundle |
+| `veilframe-2.0.2-py3-none-any.whl` | Universal | Any | Universal Python Wheel (`pip install`) |
+| `veilframe-2.0.2.tar.gz` | Universal | Any | Source distribution package |
+| `SHA256SUMS.txt` | Release Gate | — | Cryptographic SHA-256 integrity verification |
+
+---
+
+## Operating System Installation & Execution Guide
+
+### 🪟 Windows (x86_64)
+1. Download `VeilFrame-windows-x86_64.exe` (or `VeilFrame.exe`) and `SHA256SUMS.txt`.
+2. Verify checksum:
+   ```powershell
+   Get-FileHash -Path .\VeilFrame-windows-x86_64.exe -Algorithm SHA256
+   ```
+3. Run GUI: Double-click `VeilFrame-windows-x86_64.exe` or execute `.\VeilFrame-windows-x86_64.exe gui`.
+4. Run CLI: `.\VeilFrame-windows-x86_64.exe doctor --json` or `.\VeilFrame-windows-x86_64.exe folder scan <dir>`.
+
+### 🐧 Linux (x86_64)
+1. Download `VeilFrame-linux-x86_64.tar.gz` and extract:
+   ```bash
+   tar -xzf VeilFrame-linux-x86_64.tar.gz
+   cd release_package || cd .
+   chmod +x VeilFrame
+   ```
+2. System Dependencies:
+   VeilFrame bundles Python, PySide6, OpenCV, NumPy, and Cryptography. On minimal or headless distributions, install standard graphics/GL runtime libraries:
+   ```bash
+   # Debian / Ubuntu / Mint:
+   sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
+   # Fedora / RHEL:
+   sudo dnf install -y ffmpeg mesa-libGL mesa-libEGL libxkbcommon-x11
+   # Arch Linux:
+   sudo pacman -S ffmpeg mesa libxkbcommon
+   ```
+3. Run GUI: `./VeilFrame` or `./VeilFrame gui`.
+4. Run CLI: `./VeilFrame doctor --json` or `./VeilFrame folder scan /path/to/folder`.
+
+### 🍎 macOS (Apple Silicon ARM64)
+1. Download `VeilFrame-macos-arm64.tar.gz` and extract:
+   ```bash
+   tar -xzf VeilFrame-macos-arm64.tar.gz
+   chmod +x VeilFrame
+   ```
+2. FFmpeg & Hardware Acceleration:
+   Install FFmpeg via Homebrew (Apple VideoToolbox hardware acceleration is natively supported):
+   ```bash
+   brew install ffmpeg
+   ```
+3. macOS Gatekeeper Note:
+   As an open-source community release, this build is not notarized with a paid Apple Developer ID. If macOS displays a Gatekeeper security warning on first launch:
+   - Right-click the `VeilFrame` binary in Finder and select **Open**, OR
+   - Clear quarantine attribute via terminal: `xattr -d com.apple.quarantine VeilFrame`
+4. Run GUI: `./VeilFrame` or `./VeilFrame gui`.
+5. Run CLI: `./VeilFrame doctor --json`.
+
+### 🐍 Universal Python Package (Any Platform)
+Install directly into any Python 3.10+ virtual environment:
+```bash
+pip install veilframe-2.0.2-py3-none-any.whl
+# or from source:
+pip install -e .
+```
+
+### 🛠️ Local Multi-Target POSIX Build Script (`build.sh`)
+Linux and macOS developers can build and package standalone binaries locally:
+```bash
+chmod +x build.sh
+./build.sh clean     # Clean previous builds
+./build.sh build     # Build standalone binary with PyInstaller
+./build.sh test      # Run full test suite & GUI smoke test
+./build.sh package   # Package compressed tarball
+./build.sh all       # Run clean, build, test, and package in one command
+```
+
+---
+
+### 7. Full Test Suite & Quality Verification
+- Added dedicated `tests/test_gui_smoke.py` verifying offscreen Qt platform initialization, PySide6 widgets, and mode switching.
+- Added 31 unit tests covering folder scanning, staged hashing, duplicate pruning, and export generation.
+- **247 total tests passing** across video, image, quality gate, folder, and GUI smoke suites.
 
 ---
 

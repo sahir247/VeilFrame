@@ -62,11 +62,23 @@ veilframe gui
 veilframe-gui
 ```
 
-### Standalone Pre-Built Windows Executable:
-Download the pre-compiled `VeilFrame.exe` and `SHA256SUMS.txt` from the latest release. No Python or FFmpeg installation required:
+### Standalone Pre-Built Cross-Platform Packages:
+Download pre-compiled native binaries and `SHA256SUMS.txt` from the [Latest Release](https://github.com/sahir247/VeilFrame/releases/latest):
+
+| OS / Platform | Artifact | Architecture | Instructions |
+|---|---|---|---|
+| **Windows** | `VeilFrame-windows-x86_64.exe` | x86_64 | Run `.\VeilFrame-windows-x86_64.exe` (Standalone GUI & CLI) |
+| **Linux** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
+| **macOS** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and run `./VeilFrame` |
+| **Python (Any OS)** | `veilframe-2.0.2-py3-none-any.whl` | Universal | `pip install veilframe-2.0.2-py3-none-any.whl` |
+
 ```powershell
-# Verify SHA-256 checksum against SHA256SUMS.txt:
-Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
+# Windows Checksum Verification:
+Get-FileHash -Path .\VeilFrame-windows-x86_64.exe -Algorithm SHA256
+```
+```bash
+# Linux / macOS Checksum Verification:
+sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
 
 ---

@@ -1,74 +1,127 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""
+VeilFrame PyInstaller Specification File
+Cross-platform standalone packaging for Windows (x64), Linux (x86_64), and macOS (arm64/x86_64).
+"""
 import os
 import shutil
+import sys
 from pathlib import Path
 
-# Collect data files
-datas = [
-    ('veilframe/presets/profiles.json', 'veilframe/presets'),
-    ('veilframe/resources', 'veilframe/resources'),
-]
+# --------------------------------------------------------------------------- #
+# Platform Identification                                                     #
+# --------------------------------------------------------------------------- #
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX = sys.platform.startswith("linux")
+IS_MACOS = sys.platform == "darwin"
 
-# Collect ffmpeg & ffprobe binaries if present in project resources, user bin, or build environment PATH
-binaries = []
-added_names = set()
-MIN_REAL_BIN_SIZE = 5 * 1024 * 1024  # 5 MB minimum to ignore 20KB Chocolatey/WinGet shims
+MIN_REAL_BIN_SIZE = 5 * 1024 * 1024  # 5 MB minimum threshold to avoid package-manager shims
 
-def add_tool_binary(src_path: Path, tool_name: str):
-    p_str = str(src_path)
-    binaries.append((p_str, 'resources/ffmpeg'))
-    datas.append((p_str, 'resources/ffmpeg'))
-    datas.append((p_str, 'veilframe/resources/ffmpeg'))
-    added_names.add(tool_name.lower())
-    print(f"[VeilFrame.spec] Bundled {tool_name} from {p_str} (Size: {src_path.stat().st_size:,} bytes)")
 
-# 1. Project resource directories
-for ffmpeg_dir in [Path('resources/ffmpeg'), Path('veilframe/resources/ffmpeg'), Path('privacy_cleaner/resources/ffmpeg')]:
-    if ffmpeg_dir.exists():
-        for exe_f in ffmpeg_dir.glob('*.exe'):
-            if exe_f.name.lower() not in added_names and exe_f.is_file() and exe_f.stat().st_size > MIN_REAL_BIN_SIZE:
-                add_tool_binary(exe_f, exe_f.name)
+# --------------------------------------------------------------------------- #
+# Modular Collectors                                                          #
+# --------------------------------------------------------------------------- #
+def collect_application_resources():
+    """Collect non-code JSON presets, SVG/PNG icons, and static assets."""
+    collected_datas = [
+        ('veilframe/presets/profiles.json', 'veilframe/presets'),
+        ('veilframe/resources', 'veilframe/resources'),
+    ]
+    return collected_datas
 
-# 2. User binary directory ~/.veilframe/bin/
-user_bin = Path.home() / ".veilframe" / "bin"
-if user_bin.exists():
-    for exe_f in user_bin.glob('*.exe'):
-        if exe_f.name.lower() not in added_names and exe_f.is_file() and exe_f.stat().st_size > MIN_REAL_BIN_SIZE:
-            add_tool_binary(exe_f, exe_f.name)
 
-# 3. System PATH / Chocolatey library locations
-for tool in ['ffmpeg', 'ffprobe']:
-    tool_exe = f"{tool}.exe"
-    if tool_exe not in added_names:
-        which_p = shutil.which(tool)
-        if which_p:
-            p = Path(which_p)
-            if p.is_file() and p.stat().st_size > MIN_REAL_BIN_SIZE:
-                add_tool_binary(p, tool_exe)
-            else:
-                # If which_p was a shim (< 5MB), check common Chocolatey lib paths
-                choco_candidates = list(Path("C:/ProgramData/chocolatey/lib/ffmpeg").rglob(tool_exe))
-                for choco_p in choco_candidates:
-                    if choco_p.is_file() and choco_p.stat().st_size > MIN_REAL_BIN_SIZE:
-                        add_tool_binary(choco_p, tool_exe)
+def collect_ffmpeg_binaries():
+    """
+    Collects genuine FFmpeg & FFprobe binaries from project resources, user bin, or PATH.
+    Does NOT attempt to bundle macOS system frameworks (e.g. Cocoa, VideoToolbox).
+    """
+    collected_binaries = []
+    collected_datas = []
+    added_names = set()
+
+    def _add_binary(src_path: Path, name: str):
+        p_str = str(src_path)
+        collected_binaries.append((p_str, 'resources/ffmpeg'))
+        collected_datas.append((p_str, 'resources/ffmpeg'))
+        collected_datas.append((p_str, 'veilframe/resources/ffmpeg'))
+        added_names.add(name.lower())
+        print(f"[VeilFrame.spec] Bundled binary: {name} from {p_str} ({src_path.stat().st_size:,} bytes)")
+
+    def _inspect_candidate(f_path: Path):
+        if not f_path.is_file():
+            return
+        fname_lower = f_path.name.lower()
+        base_name = fname_lower.replace(".exe", "")
+        if base_name in ('ffmpeg', 'ffprobe') and fname_lower not in added_names:
+            try:
+                if f_path.stat().st_size > MIN_REAL_BIN_SIZE:
+                    _add_binary(f_path, f_path.name)
+            except Exception:
+                pass
+
+    # 1. Project resource directories
+    for search_dir in [Path('resources/ffmpeg'), Path('veilframe/resources/ffmpeg')]:
+        if search_dir.exists():
+            for f in search_dir.iterdir():
+                _inspect_candidate(f)
+
+    # 2. User persistent binary directory (~/.veilframe/bin)
+    user_bin = Path.home() / ".veilframe" / "bin"
+    if user_bin.exists():
+        for f in user_bin.iterdir():
+            _inspect_candidate(f)
+
+    # 3. System PATH / Chocolatey library locations
+    for tool in ['ffmpeg', 'ffprobe']:
+        candidates = [f"{tool}.exe", tool] if IS_WINDOWS else [tool]
+        for c in candidates:
+            if c.lower() not in added_names:
+                which_p = shutil.which(tool)
+                if which_p:
+                    p = Path(which_p)
+                    if p.is_file() and p.stat().st_size > MIN_REAL_BIN_SIZE:
+                        _add_binary(p, c)
                         break
+                if IS_WINDOWS:
+                    choco_candidates = list(Path("C:/ProgramData/chocolatey/lib/ffmpeg").rglob(c))
+                    for choco_p in choco_candidates:
+                        if choco_p.is_file() and choco_p.stat().st_size > MIN_REAL_BIN_SIZE:
+                            _add_binary(choco_p, c)
+                            break
 
-print(f"[VeilFrame.spec] Bundled tools: {sorted(list(added_names))}")
-if 'ffmpeg.exe' not in added_names or 'ffprobe.exe' not in added_names:
-    print(f"[VeilFrame.spec] WARNING: ffmpeg.exe or ffprobe.exe was NOT bundled in the executable!")
+    print(f"[VeilFrame.spec] Bundled external tools: {sorted(list(added_names))}")
+    return collected_binaries, collected_datas
 
-a = Analysis(
-    ['run.py'],
-    pathex=[],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=[
+
+def collect_hidden_imports():
+    """Collect core dynamic / native runtime modules."""
+    return [
         'cryptography',
+        'cryptography.hazmat.primitives.asymmetric.ed25519',
         'cv2',
         'PIL',
         'PIL.Image',
         'numpy',
         'PySide6',
-    ],
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# PyInstaller Analysis & Build Configuration                                  #
+# --------------------------------------------------------------------------- #
+datas = collect_application_resources()
+extra_binaries, extra_datas = collect_ffmpeg_binaries()
+datas.extend(extra_datas)
+
+a = Analysis(
+    ['run.py'],
+    pathex=[],
+    binaries=extra_binaries,
+    datas=datas,
+    hiddenimports=collect_hidden_imports(),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -89,7 +142,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # UPX disabled: causes AV false positives and fails on CI without UPX installed
+    upx=False,  # UPX disabled: prevents AV false positives and headless CI failure
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
