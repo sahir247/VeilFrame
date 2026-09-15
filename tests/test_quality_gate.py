@@ -943,6 +943,45 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         self.assertTrue(any("Frequency injection policy score" in v for v in score.violations))
 
 
+class TestRFC8785Canonicalization(unittest.TestCase):
+    """Test standard RFC 8785 JSON Canonicalization Scheme (JCS) compliance and parity across core and image modules."""
+
+    def test_rfc8785_canonical_formatting_properties(self):
+        from veilframe.core.crypto import canonicalize_rfc8785
+        from veilframe.image.models.audit import canonicalize_rfc8785 as image_canonicalize_rfc8785
+
+        # 1. Key sorting: UTF-16 code unit order (e.g. "b" before "ba", "a" before "b")
+        obj = {"z": 1, "a": 2, "m": 3, "aa": 4}
+        expected_keys_order = b'{"a":2,"aa":4,"m":3,"z":1}'
+        self.assertEqual(canonicalize_rfc8785(obj), expected_keys_order)
+        self.assertEqual(image_canonicalize_rfc8785(obj), expected_keys_order)
+
+        # 2. Number normalization: integers, floats, negative zero
+        num_obj = {"neg_zero": -0.0, "zero": 0.0, "float": 12.5, "int": 100}
+        core_jcs = canonicalize_rfc8785(num_obj)
+        image_jcs = image_canonicalize_rfc8785(num_obj)
+        self.assertEqual(core_jcs, image_jcs)
+        # Verify -0.0 is serialized as 0
+        self.assertIn(b'"neg_zero":0', core_jcs)
+
+        # 3. Unicode escaping and string formatting
+        str_obj = {"quote": 'Hello "World"', "newline": "Line1\nLine2", "tab": "A\tB", "unicode": "VeilFrame \u2764"}
+        core_str_jcs = canonicalize_rfc8785(str_obj)
+        image_str_jcs = image_canonicalize_rfc8785(str_obj)
+        self.assertEqual(core_str_jcs, image_str_jcs)
+        self.assertIn(b'\\"', core_str_jcs)
+        self.assertIn(b'\\u000a', core_str_jcs)
+        self.assertIn(b'\\u0009', core_str_jcs)
+
+        # 4. Nested structures
+        nested_obj = {
+            "media": "image",
+            "contracts": {"integrity": "PASS", "privacy": "PASS"},
+            "metrics": [3, 2, 1, {"inner": True, "empty": None}]
+        }
+        self.assertEqual(canonicalize_rfc8785(nested_obj), image_canonicalize_rfc8785(nested_obj))
+
+
 if __name__ == "__main__":
     unittest.main()
 

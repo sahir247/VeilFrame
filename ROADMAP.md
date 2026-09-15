@@ -10,10 +10,11 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.0 CURRENT (Production Release)
-- **Dual Multimedia Pipeline**:
+### v2.0.2 CURRENT (Production Release)
+- **Triple-Domain Architecture**:
   - **Video Sanitization Pipeline**: Multi-pass container atom stripping, SEI NAL removal, Bayer CFA PRNU dither, 2D DCT block perturbation, and acoustic ENF mains notch filtration.
   - **Image Privacy Compiler**: Multi-layer deterministic compilation pipeline (Layer A Container Sanitization, Layer B Representation Normalization, Layer C Isolated Semantic Redaction).
+  - **Folder Analyzer & Duplicate Scanner**: High-performance selective directory analysis with zero unselected I/O overhead, SQLite indexing repository, parallel streaming cryptographic hashing, and 3-tier staged duplicate detection.
 - **Independent 5-Contract QualityGate**:
   - Privacy Contract: Zero residual facial, plate, text, or QR/barcode detections across independent probes.
   - Geometry Contract: Exact preservation of spatial canvas dimensions ($\|Observed - Expected\|_\infty = 0$).
@@ -22,19 +23,23 @@
   - Completeness Contract: Complete structural bounding-box coverage across all requested regions.
 - **Independent Red-Team Probe Suite**:
   - 7 Level-3 Fingerprint-Distinct probes (Face, License Plate, OCR Text, QR/Barcode, Container Residuals, Alpha Fringe, Palette Indexing).
-- **Dual-Mode PySide6 GUI**:
-  - Modern desktop interface with real-time video/image mode switcher, drag-and-drop auto-detection, detector toggles, visual 5-contract checklist, probe results table, and signed manifest inspector.
+- **3-Mode Segmented PySide6 GUI**:
+  - Modern desktop interface with real-time `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer` mode switchers, live animated progressive directory tree, pulsing telemetry progress bar, and clipboard context menus.
+- **Full SHA-256 Cryptographic Integrity & Multi-Format Reporting**:
+  - Full 64-character SHA-256 hash preservation across all reports with interactive one-click copying.
+  - Interactive HTML dashboard reports with client-side live search, Markdown inventory tables, JSON, CSV, and formatted text.
+  - Automated standard folder naming: `<scanned_folder_name>_scan_report.<ext>`.
 - **Cryptographic Provenance**:
   - RFC 8785 Canonical JCS JSON manifests bound with Ed25519 digital signatures and SHA-256 bitstream digests.
   - Ephemeral and persistent signing modes with pinned public key fingerprints.
 - **Unified CLI Suite**:
-  - Full CLI support (`veilframe sanitize`, `veilframe image sanitize`, `veilframe image verify`, `veilframe image inspect`, `veilframe image doctor`, `veilframe doctor`, `veilframe presets`).
+  - Complete CLI commands (`veilframe sanitize`, `veilframe image sanitize`, `veilframe image verify`, `veilframe image inspect`, `veilframe folder scan`, `veilframe folder dupes`, `veilframe folder stats`, `veilframe folder export`, `veilframe doctor`, `veilframe presets`).
 
 ---
 
 ### v2.1 UPCOMING: Hardware Acceleration & High-Throughput Batch Processing
 - **Zero-Copy GPU Paths**: Direct GPU texture sharing for real-time video and image batch redaction.
-- **Async Batch Dispatcher**: Multi-threaded worker queue for large-scale directory and cloud bucket batch sanitization.
+- **Async Cloud Batch Dispatcher**: Multi-threaded worker queue for large-scale directory and cloud bucket batch sanitization.
 - **Advanced Audio Neutralization**: Expanded harmonic notch filtering and acoustic watermark neutralization.
 
 ---

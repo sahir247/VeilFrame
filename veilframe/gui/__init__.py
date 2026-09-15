@@ -8,6 +8,7 @@ from .noise_control import NoiseControlWidget
 from .report_view import ReportViewWidget
 from .preview_dialog import PreviewDialog
 from .quality_panel import QualityPanel
+from .folder_panel import FolderAnalyzerPanel, FolderScanWorker
 from .theme import DARK_THEME_QSS, badge_style
 
 __all__ = [
@@ -18,6 +19,9 @@ __all__ = [
     "ReportViewWidget",
     "PreviewDialog",
     "QualityPanel",
+    "FolderAnalyzerPanel",
+    "FolderScanWorker",
     "DARK_THEME_QSS",
     "badge_style",
 ]
+

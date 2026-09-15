@@ -16,7 +16,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .status import CheckStatus, PublicationState, ArtifactTrustStatus
 from .trust import SignerIdentity
@@ -26,17 +26,12 @@ from .trust import SignerIdentity
 # RFC 8785 canonical JSON helper
 # ---------------------------------------------------------------------------
 
-def _rfc8785_canonical(obj: dict) -> bytes:
-    """Produce a deterministic JSON encoding suitable as a hash preimage.
+from ...core.crypto import canonicalize_rfc8785
 
-    Uses json.dumps with sort_keys=True and no whitespace as an approximation
-    of RFC 8785 JCS.  All string values are ASCII-safe (hex digests, enum
-    values, ISO timestamps).
 
-    For full RFC 8785 compliance a dedicated JCS library should be substituted
-    in production; this implementation is sufficient for the schema domain.
-    """
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+def _rfc8785_canonical(obj: Any) -> bytes:
+    """Produce authoritative RFC 8785 (JCS) canonical JSON bytes."""
+    return canonicalize_rfc8785(obj)
 
 
 # ---------------------------------------------------------------------------

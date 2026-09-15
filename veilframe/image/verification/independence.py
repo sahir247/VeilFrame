@@ -28,14 +28,17 @@ def compute_independence_level(
 ) -> IndependenceLevel:
     """Compute the IndependenceLevel of a probe relative to the primary provider.
 
-    Evaluates fingerprint fields in order from weakest to strongest independence.
+    Evaluates fingerprint fields in order from weakest to strongest independence:
+    Level 0: Same implementation hash.
+    Level 1: Distinct implementation hash.
+    Level 2: Distinct algorithm OR distinct library binary.
+    Level 3: Distinct algorithm AND model family AND dependency graph AND library binary.
     """
     # Level 0: same implementation hash
     if probe.implementation_hash == primary.implementation_hash:
         return IndependenceLevel.LEVEL_0
 
-    # Level 1: distinct implementation
-    # Check if it qualifies for Level 2 or 3 first
+    # Dimension checks
     distinct_algorithm = probe.algorithm_id != primary.algorithm_id
     distinct_library = probe.library_binary_hash != primary.library_binary_hash
     distinct_model_family = probe.model_family != primary.model_family
@@ -43,7 +46,7 @@ def compute_independence_level(
 
     # Level 3: all four dimensions distinct
     if (distinct_algorithm and distinct_model_family
-            and distinct_dep_graph):
+            and distinct_dep_graph and distinct_library):
         return IndependenceLevel.LEVEL_3
 
     # Level 2: distinct algorithm OR distinct library
@@ -83,8 +86,10 @@ class IndependenceAuditor:
         primary_fingerprint: Optional[ProviderFingerprint] = None,
         required_level: int = 1,
         min_independence_level: Optional[int] = None,
+        primary_fingerprints_by_class: Optional[dict] = None,
     ) -> None:
         self._primary = primary_fingerprint
+        self._primaries_by_class = primary_fingerprints_by_class or {}
         level = min_independence_level if min_independence_level is not None else required_level
         self._required = IndependenceLevel(level)
 
@@ -92,9 +97,11 @@ class IndependenceAuditor:
         self,
         probe_id: str,
         probe_fingerprint: ProviderFingerprint,
+        primary_fingerprint: Optional[ProviderFingerprint] = None,
     ) -> IndependenceAuditResult:
         """Audit a single probe against the primary provider fingerprint."""
-        if self._primary is None:
+        primary = primary_fingerprint or self._primary
+        if primary is None:
             return IndependenceAuditResult(
                 probe_id=probe_id,
                 achieved_level=IndependenceLevel.LEVEL_3,
@@ -102,7 +109,7 @@ class IndependenceAuditor:
                 status=CheckStatus.PASS,
             )
 
-        achieved = compute_independence_level(self._primary, probe_fingerprint)
+        achieved = compute_independence_level(primary, probe_fingerprint)
 
         if achieved.value < self._required.value:
             reason = (

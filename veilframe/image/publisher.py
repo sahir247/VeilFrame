@@ -157,9 +157,17 @@ class ImagePublisher:
 
         self._state = PublicationState.COMMITTING
         temp_file = None
+        backup_path = None
+        staging_files = []
 
         try:
-            # 1. Atomic write candidate bytes via temporary sibling
+            # 1. If target exists, create a temporary backup to allow rollback
+            if target_path.exists():
+                import shutil
+                backup_path = target_dir / f".bak_{os.getpid()}_{target_path.name}"
+                shutil.copy2(target_path, backup_path)
+
+            # 2. Atomic write candidate bytes via temporary sibling
             with tempfile.NamedTemporaryFile(
                 dir=str(target_dir),
                 prefix=f".tmp_{target_path.stem}_",
@@ -170,21 +178,7 @@ class ImagePublisher:
                 tmp.flush()
                 os.fsync(tmp.fileno())
 
-            # Replace target atomically
-            temp_file.replace(target_path)
-            temp_file = None
-
-            # 2. Read back committed bytes and verify Publication Integrity Invariant
-            committed_bytes = target_path.read_bytes()
-            final_hash = hashlib.sha256(committed_bytes).hexdigest()
-
-            if final_hash != self._candidate_hash:
-                raise PublicationError(
-                    f"Publication Integrity Invariant violated: candidate hash {self._candidate_hash} "
-                    f"does not match final disk artifact hash {final_hash}"
-                )
-
-            # 3. Determine sidecar directory
+            # 3. Determine sidecar directory and prepare sidecar data
             sidecar_dir = Path(audit_dir).resolve() if audit_dir else target_dir
             sidecar_dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,10 +191,46 @@ class ImagePublisher:
             manifest_dict = manifest.to_dict()
             manifest_json_bytes = _rfc8785_canonical(manifest_dict)
 
-            manifest_file.write_bytes(manifest_json_bytes)
-            sig_file.write_text(manifest.ed25519_signature_hex, encoding="utf-8")
-            sha256_file.write_text(manifest.evidence_hash, encoding="utf-8")
-            pubkey_file.write_text(manifest.public_key_pem, encoding="utf-8")
+            # 4. Write sidecars to staging files first
+            tmp_manifest = sidecar_dir / f".tmp_{base_name}.manifest.json"
+            tmp_sig = sidecar_dir / f".tmp_{base_name}.manifest.sig"
+            tmp_sha256 = sidecar_dir / f".tmp_{base_name}.manifest.sha256"
+            tmp_pubkey = sidecar_dir / f".tmp_{base_name}.pubkey.pem"
+            staging_files = [tmp_manifest, tmp_sig, tmp_sha256, tmp_pubkey]
+
+            tmp_manifest.write_bytes(manifest_json_bytes)
+            tmp_sig.write_text(manifest.ed25519_signature_hex, encoding="utf-8")
+            tmp_sha256.write_text(manifest.evidence_hash, encoding="utf-8")
+            tmp_pubkey.write_text(manifest.public_key_pem, encoding="utf-8")
+
+            # 5. Commit main artifact atomically
+            temp_file.replace(target_path)
+            temp_file = None
+
+            # 6. Read back committed bytes and verify Publication Integrity Invariant
+            committed_bytes = target_path.read_bytes()
+            final_hash = hashlib.sha256(committed_bytes).hexdigest()
+
+            if final_hash != self._candidate_hash:
+                raise PublicationError(
+                    f"Publication Integrity Invariant violated: candidate hash {self._candidate_hash} "
+                    f"does not match final disk artifact hash {final_hash}"
+                )
+
+            # 7. Commit sidecars atomically
+            tmp_manifest.replace(manifest_file)
+            tmp_sig.replace(sig_file)
+            tmp_sha256.replace(sha256_file)
+            tmp_pubkey.replace(pubkey_file)
+            staging_files.clear()
+
+            # 8. Success: delete backup if one was created
+            if backup_path and backup_path.exists():
+                try:
+                    backup_path.unlink()
+                except OSError:
+                    pass
+                backup_path = None
 
             self._state = PublicationState.COMMITTED
 
@@ -216,12 +246,26 @@ class ImagePublisher:
 
         except Exception as exc:
             self._state = PublicationState.QUARANTINED
+            # Clean up temp main file
             if temp_file and temp_file.exists():
                 try:
                     temp_file.unlink()
                 except OSError:
                     pass
-            if target_path.exists():
+            # Clean up staging sidecars
+            for sf in staging_files:
+                if sf.exists():
+                    try:
+                        sf.unlink()
+                    except OSError:
+                        pass
+            # Rollback: restore backup if prior file existed, otherwise unlink failed candidate
+            if backup_path and backup_path.exists():
+                try:
+                    backup_path.replace(target_path)
+                except OSError:
+                    pass
+            elif target_path.exists():
                 try:
                     target_path.unlink()
                 except OSError:

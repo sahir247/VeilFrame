@@ -128,7 +128,7 @@ class RegionFidelityEngine:
             # 100% redacted — nothing to evaluate for fidelity
             return RegionFidelityResult(
                 status=CheckStatus.PASS,
-                ssim=1.0, psnr_db=float("inf"), mae=0.0,
+                ssim=1.0, psnr_db=100.0, mae=0.0,
                 non_redacted_pixel_fraction=0.0,
             )
 
@@ -142,7 +142,7 @@ class RegionFidelityEngine:
         # PSNR
         mse = float(np.mean((orig_public - san_public) ** 2))
         if mse < 1e-12:
-            psnr_db = float("inf")
+            psnr_db = 100.0
         else:
             psnr_db = 10.0 * math.log10(1.0 / mse)
 

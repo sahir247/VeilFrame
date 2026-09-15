@@ -24,14 +24,19 @@ class PlateProbe(AttackProbe):
             except Exception as e:
                 return ProbeResult(probe_name=self.name, status=CheckStatus.UNKNOWN,
                                    failure_reason=f"Decode error: {e}")
+        probe_fp = None
         try:
-            from ...detectors.plate import PrimaryPlateDetector
-            detections = PrimaryPlateDetector().safe_detect(sanitized_array)
+            from ...detectors.plate import ProbePlateDetector
+            detector = ProbePlateDetector()
+            probe_fp = detector.fingerprint
+            detections = detector.safe_detect(sanitized_array)
         except Exception as e:
             return ProbeResult(probe_name=self.name, status=CheckStatus.UNKNOWN,
-                               failure_reason=f"Plate detector error: {e}")
+                               failure_reason=f"Plate detector error: {e}",
+                               probe_fingerprint=probe_fp)
         if detections:
             return ProbeResult(probe_name=self.name, status=CheckStatus.FAIL,
                                failure_reason=f"{len(detections)} plate(s) detected in sanitized output",
-                               findings=[f"Plate at {d.bbox}" for d in detections])
-        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS)
+                               findings=[f"Plate at {d.bbox}" for d in detections],
+                               probe_fingerprint=probe_fp)
+        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS, probe_fingerprint=probe_fp)

@@ -42,15 +42,18 @@ class FaceProbe(AttackProbe):
                     failure_reason=f"Could not decode sanitized bytes: {e}",
                 )
 
+        probe_fp = None
         try:
-            from ...detectors.face import PrimaryFaceDetector
-            detector = PrimaryFaceDetector()
+            from ...detectors.face import ProbeFaceDetector
+            detector = ProbeFaceDetector()
+            probe_fp = detector.fingerprint
             detections = detector.safe_detect(sanitized_array, confidence_threshold=0.5)
         except Exception as e:
             return ProbeResult(
                 probe_name=self.name,
                 status=CheckStatus.UNKNOWN,
-                failure_reason=f"Face detector error: {e}",
+                failure_reason=f"ProbeFaceDetector failed: {e}",
+                probe_fingerprint=probe_fp,
             )
 
         if detections:
@@ -63,6 +66,7 @@ class FaceProbe(AttackProbe):
                 status=CheckStatus.FAIL,
                 failure_reason=f"{len(detections)} face(s) detected in sanitized output",
                 findings=findings,
+                probe_fingerprint=probe_fp,
             )
 
-        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS)
+        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS, probe_fingerprint=probe_fp)

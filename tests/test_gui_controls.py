@@ -409,9 +409,44 @@ class TestGUIControlsAndUX(unittest.TestCase):
         self.assertEqual(eval_heuristic_strict_fail.overall_status, CheckStatus.FAIL)
         self.assertEqual(eval_heuristic_strict_fail.publication_state, PublicationState.QUARANTINED)
 
+    def test_folder_analyzer_panel_and_mode_switching(self):
+        """Verify FolderAnalyzerPanel instantiation, profile switches, and MainWindow mode changes."""
+        from veilframe.gui.folder_panel import FolderAnalyzerPanel
+        from veilframe.gui.main_window import MainWindow
+        from veilframe.folder.config import ScanProfile
+
+        panel = FolderAnalyzerPanel()
+        panel.set_folder_path("C:/fake/path")
+        self.assertEqual(panel.txt_folder_path.text(), "C:/fake/path")
+
+        # Test profile dropdown triggers option checkboxes
+        panel._apply_profile(ScanProfile.INTEGRITY)
+        self.assertTrue(panel.chk_hash.isChecked())
+        self.assertEqual(panel.combo_hash_algo.currentText(), "SHA-256")
+
+        panel._apply_profile(ScanProfile.QUICK)
+        self.assertFalse(panel.chk_hash.isChecked())
+
+        # Test MainWindow 3-mode switching
+        win = MainWindow()
+        win._set_mode("video")
+        self.assertEqual(win.current_mode, "video")
+        self.assertTrue(win.btn_mode_video.isChecked())
+        self.assertTrue(win.folder_panel.isHidden())
+
+        win._set_mode("folder")
+        self.assertEqual(win.current_mode, "folder")
+        self.assertTrue(win.btn_mode_folder.isChecked())
+        self.assertFalse(win.folder_panel.isHidden())
+
+        win._set_mode("image")
+        self.assertEqual(win.current_mode, "image")
+        self.assertTrue(win.btn_mode_image.isChecked())
+        self.assertTrue(win.folder_panel.isHidden())
 
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

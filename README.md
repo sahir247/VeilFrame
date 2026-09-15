@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.0.0-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.0.2-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -18,11 +18,12 @@
 
 ---
 
-**VeilFrame** is an advanced local multimedia sanitization, bounded forensic signal transformation, and privacy compiler system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers or paint superficial blur filters, **VeilFrame** operates across both video and still-image domains:
+**VeilFrame** is an advanced local multimedia sanitization, bounded forensic signal transformation, privacy compiler, and high-performance folder analyzer system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers or paint superficial blur filters, **VeilFrame** operates across three core domains:
 
 1. **Video Domain:** Applies bounded, orthogonal signal perturbations across spatial geometry, temporal cadence, physical sensor noise (Bayer CFA PRNU), transform-domain perceptual hashes (2D DCT), ISP chrominance drift, and acoustic Electrical Network Frequency (ENF) hums within strict **5% or 10% transformation policy budgets**, guarded by an **independent read-only three-tier visual fidelity gate**.
 2. **Image Domain:** Compiles images through a deterministic multi-layer privacy compiler (Layer A Container Stripping, Layer B Representation Normalization, Layer C Isolated Solid Redaction), audited against **7 Level-3 Fingerprint-Distinct independent red-team probes** and enforced by a normative **5-Contract QualityGate** (Privacy, Geometry, Fidelity, Integrity, Completeness).
-3. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
+3. **Folder & Storage Domain:** High-performance selective directory analyzer, parallel cryptographic hasher, SQLite indexing engine, and staged duplicate candidate detector with **full uncut 64-character SHA-256 reporting** across interactive HTML dashboards, Markdown inventory tables, CSV, JSON, and text reports.
+4. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
 
 ---
 
@@ -38,20 +39,20 @@ VeilFrame is built upon the permanent architectural invariant:
 
 ## <img src="docs/images/icons/gui.svg" width="22" height="22" alt="" /> Desktop Graphical Interface (GUI)
 
-VeilFrame includes a modern desktop application built on PySide6 / Qt supporting both Video and Image workflows with real-time feedback:
+VeilFrame includes a modern desktop application built on PySide6 / Qt supporting Video, Image, and Folder analysis workflows with real-time feedback:
 
 ![VeilFrame GUI Overview](docs/images/veilframe_gui_overview.svg)
 
 ### GUI Key Capabilities:
-- **Dual Pipeline Switcher:** Seamlessly toggle between `Video Sanitizer` and `Image Compiler` modes.
+- **3-Mode Segmented Switcher:** Seamlessly toggle between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer` with exclusive state management.
 - **Hardware GPU Acceleration:** Auto-detects NVIDIA NVENC, Intel QuickSync, AMD AMF, and Apple VideoToolbox with graceful deterministic CPU fallback.
 - **Universal Format Conversion:** Real-time transcoding and re-muxing across video (MP4, MKV, WebM, MOV, AVI, TS) and image (JPEG, PNG, WebP, TIFF, BMP, GIF, ICO, PPM) formats.
 - **Forensic EXIF Metadata Inspector:** Live audit of device serials, camera models, capture timestamps, lens optics, and GPS geolocation alerts.
 - **Intelligent Dependency Doctor:** On-demand detection and one-click automatic installation for FFmpeg and missing runtime tools with standard left `[Cancel]` / right `[OK]` controls.
-- **Tactile Micro-Interactions:** Responsive visual click feedback, smooth transitions, and high-DPI custom UI styling.
+- **Live Progressive Tree & Pulsing Telemetry:** Animated directory tree rendering during active scans with real-time throughput metrics (items/s) and millisecond timers.
+- **Full SHA-256 Clipboard Copying:** Single-click or double-click to copy complete 64-character SHA-256 hashes, with rich right-click context menus.
 - **Granular Semantic Detectors:** Toggle Face, License Plate, Text OCR, and QR/Barcode detectors with configurable safety margins.
 - **5-Contract Visual Checklist:** Real-time verdict badges for Privacy, Geometry, Fidelity, Integrity, and Completeness.
-- **Independent Red-Team Results Table:** Tabular inspection of individual probe verdicts and confidence metrics.
 - **Cryptographic Manifest Inspector:** View, inspect, and copy signed RFC 8785 canonical JSON audit manifests directly from the UI.
 
 To launch the GUI:
@@ -84,6 +85,10 @@ VeilFrame provides a unified developer terminal interface styled with structured
 | `veilframe image verify <image> <manifest>` | Cryptographic image provenance and bitstream verification |
 | `veilframe image inspect <image>` | Deep inspection of image EXIF, XMP, IPTC, and embedded thumbnails |
 | `veilframe image doctor` | Diagnostics for neural detectors, OCR backends, and image libraries |
+| `veilframe folder scan <dir>` | High-performance selective directory analysis with configurable presets |
+| `veilframe folder dupes <dir>` | 3-stage duplicate file detection with wasted space calculations |
+| `veilframe folder stats <dir>` | Summary size rollups, file type distributions, and directory depth |
+| `veilframe folder export <dir> -o <out>` | Export comprehensive reports to interactive HTML, MD, JSON, CSV, TXT |
 | `veilframe inspect <video>` | Deep inspection of container atoms, elementary streams, and GPS tags |
 | `veilframe audit <ref> <trans>` | Independent visual-fidelity audit of reference vs transformed media |
 | `veilframe verify <manifest>` | Standalone Ed25519 signature and SHA-256 bitstream verification |
@@ -161,6 +166,32 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
+### 3. Folder Analyzer & Staged Duplicate Finder
+
+```
+[Target Directory]
+        │
+        ▼
+[os.scandir() Traversal] ──► Selective field extraction (zero unselected field I/O overhead)
+        │
+        ├─────────────────────────────────────────────────┐
+        ▼                                                 ▼
+[SQLite Storage & Index]                          [3-Stage Duplicate Engine]
+• Fast keyword search & filtering                 • Stage 1: Exact size partitioning (O(1))
+• Extension distribution aggregation              • Stage 2: 16 KiB head/tail staged fingerprinting
+• Directory depth rollups                         • Stage 3: Parallel streaming full SHA-256
+        │                                                 │
+        └────────────────────────┬────────────────────────┘
+                                 │
+                                 ▼
+                     [Multi-Format Exporter]
+             • Interactive HTML (Searchable Table + One-Click SHA Copy)
+             • Markdown Inventory Table (Complete 64-char Hashes)
+             • JSON, CSV, and Structured ASCII Text
+```
+
+---
+
 ## <img src="docs/images/icons/presets.svg" width="22" height="22" alt="" /> Built-in Presets Comparison
 
 | Feature / Policy Dimension | 5% Bounded Forensic Disruption | 10% Bounded Forensic Disruption | Privacy Clean |
@@ -182,27 +213,6 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
-## <img src="docs/images/icons/benchmarks.svg" width="22" height="22" alt="" /> Empirical Forensic Attribution Benchmarks (Research Suite)
-
-The decoupled research benchmark layer evaluates empirical forensic decorrelation:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   RESEARCH ATTRIBUTION BENCHMARK LAYER                 │
-├────────────────────────────────────────────────────────────────────────┤
-│ • Layer 1 (Physical/Signal): PRNU PCE / NCC, ENF Welch PSD Attenuation │
-│ • Layer 2 (Detector Decisions): pHash / dHash Hamming Distance Margins │
-│ • Layer 3 (Multi-Camera ROC): True Positive Rate, FPR, and ROC AUC     │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-- **PRNU Peak-to-Correlation Energy (PCE):**
-  $$\text{PCE} = \frac{\text{NCC}(r_{\text{peak}}, c_{\text{peak}})^2}{\frac{1}{|U|} \sum_{(r, c) \in U} \text{NCC}(r, c)^2}$$
-- **Welch Power Spectral Density Attenuation:**
-  $$P_{xx}(f) = \frac{1}{K L U} \sum_{k=1}^K \left| \sum_{n=0}^{L-1} x_k[n] w[n] e^{-j 2\pi f n / f_s} \right|^2$$
-
----
-
 ## <img src="docs/images/icons/quickstart.svg" width="22" height="22" alt="" /> Quickstart & Installation
 
 ### 1. Prerequisites
@@ -215,11 +225,8 @@ The decoupled research benchmark layer evaluates empirical forensic decorrelatio
 git clone https://github.com/sahir247/VeilFrame.git
 cd VeilFrame
 
-# Install core package with image and video support
+# Install core package with image, video, and folder support
 pip install -e .
-
-# Install GUI components
-pip install -e ".[gui]"
 
 # Install testing dependencies
 pip install -e ".[test]"
@@ -258,6 +265,18 @@ veilframe image verify doc_clean.png doc_clean.manifest.json
 
 # Deep inspection of container tags and thumbnails
 veilframe image inspect photo.jpg
+```
+
+#### Folder Analysis & Duplicate Scanning
+```bash
+# Scan a directory with integrity checks (SHA-256) and export an interactive HTML report
+veilframe folder scan ./my_directory -p integrity -e ./my_report.html
+
+# Scan specifically for duplicate files with wasted space calculations
+veilframe folder dupes ./my_directory -e ./duplicates_report.html
+
+# Quick statistical overview of file types and size rollups
+veilframe folder stats ./my_directory --json
 ```
 
 #### Desktop GUI

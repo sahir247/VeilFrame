@@ -62,21 +62,27 @@ def find_executable(name: str) -> Path:
     """
     ext = ".exe" if os.name == "nt" else ""
     exe_name = f"{name}{ext}"
-
     candidates: List[Path] = []
 
-    # 1. Environment variable override (highest priority for testing & custom runtimes)
+    # 1. PyInstaller bundle (top priority for standalone frozen executable)
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            meipass = Path(sys._MEIPASS)
+            candidates.append(meipass / "resources" / "ffmpeg" / exe_name)
+            candidates.append(meipass / "veilframe" / "resources" / "ffmpeg" / exe_name)
+            candidates.append(meipass / exe_name)
+        exe_dir = Path(sys.executable).parent
+        candidates.append(exe_dir / "resources" / "ffmpeg" / exe_name)
+        candidates.append(exe_dir / "veilframe" / "resources" / "ffmpeg" / exe_name)
+        candidates.append(exe_dir / exe_name)
+
+    # 2. Environment variable override (validated candidate)
     env_var = f"{name.upper()}_BINARY"
     env_val = os.environ.get(env_var)
     if env_val:
-        candidates.append(Path(env_val))
-
-    # 2. PyInstaller bundle (top priority for standalone bundled executable)
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        meipass = Path(sys._MEIPASS)
-        candidates.append(meipass / "resources" / "ffmpeg" / exe_name)
-        candidates.append(meipass / "veilframe" / "resources" / "ffmpeg" / exe_name)
-        candidates.append(meipass / exe_name)
+        env_p = Path(env_val).resolve()
+        if env_p.exists() and not env_p.is_dir():
+            candidates.append(env_p)
 
     # 3. User-level persistent binary directory (~/.veilframe/bin/)
     candidates.append(Path.home() / ".veilframe" / "bin" / exe_name)
@@ -89,13 +95,6 @@ def find_executable(name: str) -> Path:
     # 5. Working directory resources
     candidates.append(Path.cwd() / "resources" / "ffmpeg" / exe_name)
     candidates.append(Path.cwd() / "veilframe" / "resources" / "ffmpeg" / exe_name)
-
-    # 6. Executable adjacent directory (when running as frozen binary)
-    if getattr(sys, "frozen", False):
-        exe_dir = Path(sys.executable).parent
-        candidates.append(exe_dir / "resources" / "ffmpeg" / exe_name)
-        candidates.append(exe_dir / "veilframe" / "resources" / "ffmpeg" / exe_name)
-        candidates.append(exe_dir / exe_name)
 
     # 7. System PATH
     which_path = shutil.which(name)

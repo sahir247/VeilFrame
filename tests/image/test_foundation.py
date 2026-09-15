@@ -712,6 +712,24 @@ class TestIndependenceAuditor(unittest.TestCase):
         level = compute_independence_level(primary, probe)
         self.assertGreaterEqual(level.value, 2)
 
+    def test_level_3_requires_all_four_dimensions(self):
+        """Level 3 requires distinct algo, model family, dep graph, AND library binary hash."""
+        primary = self._primary()
+        # Same library binary hash -> only Level 2, NOT Level 3
+        probe_same_lib = _make_fingerprint("b" * 64, "dnn", "a" * 64, "face-dnn", "b" * 64)
+        level_same_lib = compute_independence_level(primary, probe_same_lib)
+        self.assertEqual(level_same_lib, IndependenceLevel.LEVEL_2)
+
+        # Same dep graph -> only Level 2
+        probe_same_dep = _make_fingerprint("b" * 64, "dnn", "b" * 64, "face-dnn", "a" * 64)
+        level_same_dep = compute_independence_level(primary, probe_same_dep)
+        self.assertEqual(level_same_dep, IndependenceLevel.LEVEL_2)
+
+        # All 4 distinct -> Level 3
+        probe_all_4 = _make_fingerprint("b" * 64, "dnn", "b" * 64, "face-dnn", "b" * 64)
+        level_all_4 = compute_independence_level(primary, probe_all_4)
+        self.assertEqual(level_all_4, IndependenceLevel.LEVEL_3)
+
     def test_auditor_rejects_level_0(self):
         primary = self._primary()
         auditor = IndependenceAuditor(primary, required_level=1)

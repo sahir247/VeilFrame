@@ -290,11 +290,16 @@ def audit_environment() -> EnvironmentReport:
 
 # Download URLs for FFmpeg static releases
 FFMPEG_RELEASE_URLS = {
-    "win64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "win64": "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip",
     "win64_fallback": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-    "win64_fallback2": "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip",
+    "win64_fallback2": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "linux64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
     "macos64": "https://evermeet.cx/ffmpeg/getrelease/zip",
+}
+
+# Cryptographic SHA-256 pinned checksums for immutable release builds
+FFMPEG_RELEASE_SHA256 = {
+    "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip": "4b92b67f1ec01c70e3bc87292277bb0b22a074092b774da3863481600db4623a",
 }
 
 
@@ -354,6 +359,8 @@ def download_and_install_ffmpeg(
         # Per-read socket timeout (30s) + hard wall-clock deadline (10 minutes)
         TOTAL_TIMEOUT_SEC = 600
         deadline = _time.monotonic() + TOTAL_TIMEOUT_SEC
+        sha_hasher = hashlib.sha256()
+
         with urllib.request.urlopen(req, timeout=30) as resp, open(temp_archive, "wb") as out_file:
             total_size = int(resp.headers.get("content-length", 0))
             downloaded = 0
@@ -368,12 +375,25 @@ def download_and_install_ffmpeg(
                 if not chunk:
                     break
                 out_file.write(chunk)
+                sha_hasher.update(chunk)
                 downloaded += len(chunk)
                 if total_size > 0 and progress_callback:
                     pct = int(10 + (downloaded / total_size) * 70)  # 10% to 80%
                     mb_cur = downloaded / (1024 * 1024)
                     mb_tot = total_size / (1024 * 1024)
                     progress_callback(pct, f"Downloading FFmpeg: {mb_cur:.1f} MB / {mb_tot:.1f} MB ({pct}%)")
+
+        # Verify SHA-256 checksum if pinned for this URL
+        expected_sha = FFMPEG_RELEASE_SHA256.get(download_url)
+        if expected_sha:
+            computed_sha = sha_hasher.hexdigest().lower()
+            if computed_sha != expected_sha.lower():
+                if temp_archive.exists():
+                    temp_archive.unlink()
+                raise ValueError(
+                    f"Cryptographic integrity failure: SHA-256 digest {computed_sha} "
+                    f"does not match expected pinned digest {expected_sha}"
+                )
 
         return True
 

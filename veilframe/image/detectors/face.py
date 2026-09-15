@@ -26,7 +26,7 @@ from typing import List, Optional
 from ..models.coordinates import BoundingBox, CoordinateSpace
 from ..models.graph import ProviderFingerprint
 from ..models.status import DetectorClass
-from .base import DetectionProvider, DetectionResult
+from .base import DetectionProvider, DetectionResult, DetectorUnavailableError
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,16 @@ class PrimaryFaceDetector(DetectionProvider):
     def fingerprint(self) -> ProviderFingerprint:
         if self._fingerprint is None:
             ocv_ver = _opencv_version()
+            if self._cascade is None:
+                self._load_cascade()
+            if self._cascade_path and Path(self._cascade_path).exists():
+                try:
+                    src_hash = hashlib.sha256(Path(self._cascade_path).read_bytes()).hexdigest()
+                except Exception:
+                    src_hash = _hash_str("haar_source", ocv_ver)
+            else:
+                src_hash = _hash_str("haar_source", ocv_ver)
+
             self._fingerprint = ProviderFingerprint(
                 provider_id=self._PROVIDER_ID,
                 implementation_id=self._IMPL_ID,
@@ -122,10 +132,11 @@ class PrimaryFaceDetector(DetectionProvider):
                 library_id=self._LIBRARY_ID,
                 model_family=self._MODEL_FAMILY,
                 version=ocv_ver,
-                source_hash=_hash_str("haar_source", ocv_ver),
-                implementation_hash=_hash_str("haar_impl", ocv_ver),
+                source_hash=src_hash,
+                implementation_hash=_hash_str("haar_impl", ocv_ver, src_hash[:16]),
                 dependency_graph_hash=_hash_str("opencv_deps", ocv_ver),
                 library_binary_hash=_hash_str("opencv_binary", ocv_ver),
+                model_hash=src_hash,
             )
         return self._fingerprint
 
@@ -143,7 +154,7 @@ class PrimaryFaceDetector(DetectionProvider):
 
         if self._cascade is None:
             if not self._load_cascade():
-                return []  # Cascade not available — fail-open
+                raise DetectorUnavailableError("OpenCV Haar cascade model 'haarcascade_frontalface_alt2.xml' is unavailable.")
 
         bgr = _linear_to_uint8_bgr(linear_srgb_f32)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
@@ -214,6 +225,8 @@ class ProbeFaceDetector(DetectionProvider):
     def __init__(self, confidence_default: float = 0.5) -> None:
         self._confidence_default = confidence_default
         self._net = None
+        self._cascade = None
+        self._is_dnn = False
         self._fingerprint: Optional[ProviderFingerprint] = None
 
     def _find_model_files(self):
@@ -229,32 +242,62 @@ class ProbeFaceDetector(DetectionProvider):
             pass
         return None, None
 
-    def _load_net(self) -> bool:
+    def _load_detector(self) -> bool:
+        # 1. Try DNN SSD
         proto, model = self._find_model_files()
-        if proto is None:
-            return False
+        if proto is not None and model is not None:
+            try:
+                import cv2  # type: ignore
+                self._net = cv2.dnn.readNetFromCaffe(proto, model)
+                self._is_dnn = True
+                return True
+            except Exception:
+                pass
+
+        # 2. Fallback to alternative Haar cascade (frontalface_default.xml)
         try:
             import cv2  # type: ignore
-            self._net = cv2.dnn.readNetFromCaffe(proto, model)
-            return True
+            data_root = Path(cv2.__file__).parent / "data"
+            cascade_path = data_root / "haarcascade_frontalface_default.xml"
+            if cascade_path.exists():
+                self._cascade = cv2.CascadeClassifier(str(cascade_path))
+                self._is_dnn = False
+                return not self._cascade.empty()
         except Exception:
-            return False
+            pass
+        return False
 
     @property
     def fingerprint(self) -> ProviderFingerprint:
         if self._fingerprint is None:
             ocv_ver = _opencv_version()
+            proto_path, model_path = self._find_model_files()
+            if model_path and Path(model_path).exists():
+                try:
+                    model_hash = hashlib.sha256(Path(model_path).read_bytes()).hexdigest()
+                except Exception:
+                    model_hash = _hash_str("ssd_model", ocv_ver)
+                algo = self._ALGORITHM_ID
+                model_family = self._MODEL_FAMILY
+                impl_id = self._IMPL_ID
+            else:
+                model_hash = _hash_str("haar_default_model", ocv_ver)
+                algo = "haar_cascade_default"
+                model_family = "face-haar-default"
+                impl_id = "probe_haar_v1"
+
             self._fingerprint = ProviderFingerprint(
                 provider_id=self._PROVIDER_ID,
-                implementation_id=self._IMPL_ID,
-                algorithm_id=self._ALGORITHM_ID,
+                implementation_id=impl_id,
+                algorithm_id=algo,
                 library_id=self._LIBRARY_ID,
-                model_family=self._MODEL_FAMILY,
+                model_family=model_family,
                 version=ocv_ver,
-                source_hash=_hash_str("ssd_source", ocv_ver),
-                implementation_hash=_hash_str("ssd_impl", ocv_ver),
-                dependency_graph_hash=_hash_str("ssd_deps", ocv_ver),
-                library_binary_hash=_hash_str("ssd_opencv_binary", ocv_ver),
+                source_hash=_hash_str(f"{algo}_source", ocv_ver, model_hash[:16]),
+                implementation_hash=_hash_str(f"{algo}_impl", ocv_ver, model_hash[:16]),
+                dependency_graph_hash=_hash_str(f"{algo}_deps", ocv_ver),
+                library_binary_hash=_hash_str("probe_opencv_binary", ocv_ver),
+                model_hash=model_hash,
             )
         return self._fingerprint
 
@@ -270,43 +313,66 @@ class ProbeFaceDetector(DetectionProvider):
         import numpy as np  # type: ignore
         import cv2  # type: ignore
 
-        if self._net is None:
-            if not self._load_net():
-                return []  # Model unavailable — fail-open
+        if self._net is None and self._cascade is None:
+            if not self._load_detector():
+                raise DetectorUnavailableError("OpenCV probe face model files not found or failed to load.")
 
         bgr = _linear_to_uint8_bgr(linear_srgb_f32)
         h, w = bgr.shape[:2]
 
-        blob = cv2.dnn.blobFromImage(
-            cv2.resize(bgr, (300, 300)),
-            scalefactor=1.0, size=(300, 300),
-            mean=(104.0, 177.0, 123.0),
-        )
-        self._net.setInput(blob)
-        detections = self._net.forward()
-
         results = []
-        for i in range(detections.shape[2]):
-            conf = float(detections[0, 0, i, 2])
-            if conf < confidence_threshold:
-                continue
-            x0 = max(0, int(detections[0, 0, i, 3] * w))
-            y0 = max(0, int(detections[0, 0, i, 4] * h))
-            x1 = min(w, int(detections[0, 0, i, 5] * w))
-            y1 = min(h, int(detections[0, 0, i, 6] * h))
-            if x1 <= x0 or y1 <= y0:
-                continue
-            bbox = BoundingBox(
-                x_min=float(x0), y_min=float(y0),
-                x_max=float(x1), y_max=float(y1),
-                space=CoordinateSpace.SOURCE_DECODED,
+        if self._is_dnn and self._net is not None:
+            blob = cv2.dnn.blobFromImage(
+                cv2.resize(bgr, (300, 300)),
+                scalefactor=1.0, size=(300, 300),
+                mean=(104.0, 177.0, 123.0),
             )
-            results.append(DetectionResult(
-                bbox=bbox, confidence=conf,
-                detector_class=DetectorClass.FACE,
-                provider_fingerprint=self.fingerprint,
-                sub_class=None,
-                raw_metadata={"dnn_confidence": conf},
-            ))
+            self._net.setInput(blob)
+            detections = self._net.forward()
+
+            for i in range(detections.shape[2]):
+                conf = float(detections[0, 0, i, 2])
+                if conf < confidence_threshold:
+                    continue
+                x0 = max(0, int(detections[0, 0, i, 3] * w))
+                y0 = max(0, int(detections[0, 0, i, 4] * h))
+                x1 = min(w, int(detections[0, 0, i, 5] * w))
+                y1 = min(h, int(detections[0, 0, i, 6] * h))
+                if x1 <= x0 or y1 <= y0:
+                    continue
+                bbox = BoundingBox(
+                    x_min=float(x0), y_min=float(y0),
+                    x_max=float(x1), y_max=float(y1),
+                    space=CoordinateSpace.SOURCE_DECODED,
+                )
+                results.append(DetectionResult(
+                    bbox=bbox, confidence=conf,
+                    detector_class=DetectorClass.FACE,
+                    provider_fingerprint=self.fingerprint,
+                    sub_class=None,
+                    raw_metadata={"dnn_confidence": conf},
+                ))
+        elif self._cascade is not None:
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            faces = self._cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=3, minSize=(20, 20),
+            )
+            for (x, y, fw, fh) in faces:
+                x0 = max(0, int(x))
+                y0 = max(0, int(y))
+                x1 = min(w, int(x + fw))
+                y1 = min(h, int(y + fh))
+                bbox = BoundingBox(
+                    x_min=float(x0), y_min=float(y0),
+                    x_max=float(x1), y_max=float(y1),
+                    space=CoordinateSpace.SOURCE_DECODED,
+                )
+                results.append(DetectionResult(
+                    bbox=bbox, confidence=0.8,
+                    detector_class=DetectorClass.FACE,
+                    provider_fingerprint=self.fingerprint,
+                    sub_class="haar_default",
+                    raw_metadata={"x": x0, "y": y0, "w": fw, "h": fh},
+                ))
 
         return results

@@ -12,7 +12,7 @@ from typing import List, Optional
 from ..models.coordinates import BoundingBox, CoordinateSpace
 from ..models.graph import ProviderFingerprint
 from ..models.status import DetectorClass
-from .base import DetectionProvider, DetectionResult
+from .base import DetectionProvider, DetectionResult, DetectorUnavailableError
 from .face import _linear_to_uint8_bgr, _hash_str, _opencv_version
 
 

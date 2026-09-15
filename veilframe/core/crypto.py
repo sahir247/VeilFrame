@@ -24,8 +24,11 @@ def compute_sha256(file_path: Path) -> str:
 
 def _serialize_rfc8785_string(s: str) -> str:
     """
-    Serializes a JSON string according to RFC 8785 Section 3.2.4.
-    Escapes only quotation mark ("), reverse solidus (\\), and control characters (U+0000..U+001F).
+    Serializes a JSON string according to RFC 8785 Section 3.2.2.2.
+    Escapes:
+    - quotation mark (") -> \\"
+    - reverse solidus (\\) -> \\\\
+    - control characters (U+0000..U+001F) -> \\u00xx (lowercase 4-digit hex)
     All other Unicode characters are written literally in UTF-8.
     """
     out = ['"']

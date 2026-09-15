@@ -1,3 +1,59 @@
+# VeilFrame v2.0.2 Release Notes
+
+## Major Release: High-Performance Folder Analyzer, Staged Duplicate Finder & Full SHA-256 Reporting
+
+VeilFrame v2.0.2 introduces a comprehensive, high-throughput **Folder Analyzer and Duplicate Scanner Subsystem**, complete **64-character SHA-256 cryptographic integrity preservation**, dynamic multi-format reporting with **interactive HTML dashboards**, automated **folder-based report naming**, and a polished **3-mode segmented desktop interface**.
+
+---
+
+## Key Highlights in v2.0.2
+
+### 1. High-Performance Selective Folder Analyzer
+- **Selective Field Traversal**: Powered by single-pass `os.scandir()` traversal. The scanner guarantees that unchecked metadata fields (created, accessed, permissions, hash) incur **zero filesystem I/O overhead**.
+- **Configurable Scan Presets**:
+  - `Quick Scan`: File names, extensions, sizes, and modified timestamps.
+  - `Full Metadata`: Complete attributes including creation time, access time, and POSIX/Windows permissions.
+  - `Integrity Scan`: Full metadata plus end-to-end cryptographic hashing (SHA-256, SHA-1, or MD5).
+  - `Duplicate Finder`: Staged candidate pruning and hash verification.
+  - `Custom Configuration`: Granular checkboxes, max recursion depth limits, directory exclusions, and extension filters.
+- **SQLite Indexing & Cache Repository**: Persistent or memory-backed indexing supporting instant multi-field keyword filtering, extension aggregations, and fast duplicate lookup queries.
+
+### 2. Staged Duplicate Detection Engine (10–100x Speedup)
+- **Staged 3-Tier Pipeline**:
+  - **Stage 1 (Size Partitioning)**: Group files by exact byte size; singleton sizes are eliminated instantly with zero file reads.
+  - **Stage 2 (Head/Tail Fingerprinting)**: For collision candidates, reads at most 16 KiB (8 KiB head + 8 KiB tail + file size) regardless of whether the file is 10 MB or 50 GB.
+  - **Stage 3 (Full Cryptographic Hash)**: Only files with identical Stage 2 fingerprints are fully streamed through the parallel cryptographic hash engine to confirm byte-for-byte identity.
+- **Parallel Streaming Hasher**: Bounded `ThreadPoolExecutor` with 1 MiB chunked streaming to prevent memory ballooning on massive media files.
+
+### 3. Full 64-Character SHA-256 Integrity & Interactive Reports
+- **Zero Truncation Policy**: Cryptographic hashes are stored and exported as full 64-hexadecimal-character strings across all reports (Markdown, HTML, TXT, CSV, JSON) and ASCII tree hierarchies.
+- **Dynamic Scanned Files Inventory**: Markdown and HTML reports dynamically generate tables displaying every user-selected attribute (Name, Relative Path, Size, Extension, Modified, Created, Accessed, Permissions, Full SHA-256).
+- **Interactive HTML Report**:
+  - Built-in live search bar with real-time client-side table filtering.
+  - Interactive collapsible directory hierarchy.
+  - Clickable copyable hash badges (`<code class="copyable-hash">`) that instantly copy the full 64-character SHA-256 hash to the clipboard with animated toast notification feedback.
+- **Standardized Folder Naming**: Automatically pre-fills `<scanned_folder_name>_scan_report.<ext>` (e.g. `PrivacyVideoCleaner_v1_source_scan_report.html`) while granting full flexibility to rename and select alternative formats.
+
+### 4. Desktop GUI 3-Mode Segmented Switcher & UI Polish
+- **Segmented Mode Switcher**: Seamlessly switch between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer` with exclusive state management.
+- **Live Progressive Tree**: Animated directory tree populates in real-time as the filesystem traversal streams in the background.
+- **Pulsing Progress & Telemetry**: Animated gradient progress bar displaying live items/sec scan throughput, item counters, and millisecond elapsed timers.
+- **Clipboard Integration & Context Menus**:
+  - Single-click / double-click on hash columns copies the complete uncut SHA-256 to the clipboard.
+  - Right-click context menus provide fast actions: *Copy Full SHA-256 Hash*, *Copy Name*, *Copy Relative Path*, *Copy Absolute Path*, and *Open Containing Folder*.
+
+### 5. Unified CLI Subcommands
+- `veilframe folder scan <target>`: Scan directory with configurable profile, hash algorithms, depth, and exclusions.
+- `veilframe folder dupes <target>`: Scan specifically for duplicate files with staged hashing and wasted space accounting.
+- `veilframe folder stats <target>`: Compute quick size rollups, file type distributions, and summary metrics.
+- `veilframe folder export <target> -o <report>`: Directly export scan results to HTML, Markdown, JSON, CSV, or TXT.
+
+### 6. Full Test Suite & Quality Verification
+- Added 31 unit tests covering scanner traversal, hasher streaming, duplicate stages, SQLite database, analytics, exporter, and CLI.
+- **246 total tests passing** across video, image, quality gate, and folder modules.
+
+---
+
 # VeilFrame v2.0.1 Release Notes
 
 ## Production Engineering, Performance Hardening & Bug Fixes
@@ -39,7 +95,7 @@ VeilFrame v2.0.1 is a comprehensive production engineering release addressing pe
 ### 6. Packaging, Antivirus Safety & Dead Code Cleanup
 - **Console Handle Leak Fix**: Fixed Windows `CONOUT$` / `CONIN$` handle lifecycle in `run.py` with explicit tracking and `atexit` cleanup handlers.
 - **Antivirus False-Positive Protection**: Disabled UPX compression (`upx=False`) in `VeilFrame.spec` to prevent heuristic false positives by antivirus scanners and CI build failures.
-- **Dead Code Elimination**: Removed obsolete research and calibration scripts from `tools/` (`benchmark_performance.py`, `run_attribution_benchmarks.py`, `chimera_segmenter.py`, `hue_controlled_inspector.py`, `download_calibration_corpus.py`) and removed broken `benchmark` command from the CLI.
+- **Dead Code Elimination**: Removed obsolete research and calibration scripts from `tools/` and removed broken `benchmark` command from the CLI.
 - **Automated CI Release Pipeline**: Added `workflow_dispatch` trigger and `actions/upload-artifact@v4` workflow run packaging to `.github/workflows/ci.yml`.
 
 ---
@@ -56,11 +112,12 @@ VeilFrame v2.0.1 is a comprehensive production engineering release addressing pe
 ### 2. Universal Multi-Format Conversion Support
 - **Video Containers**: MP4 (`.mp4`), Matroska (`.mkv`), WebM (`.webm`), QuickTime (`.mov`), Audio Video Interleave (`.avi`), MPEG-TS (`.ts`)
 - **Image Compilers**: JPEG (`.jpg`, `.jpeg`), PNG (`.png`), WebP (`.webp`), TIFF (`.tiff`, `.tif`), BMP (`.bmp`), GIF (`.gif`), ICO (`.ico`), PPM (`.ppm`)
+- **Folder Reports**: Interactive HTML (`.html`), Markdown (`.md`), JSON (`.json`), CSV (`.csv`), Plain Text (`.txt`)
 
 ### 3. Full Cryptographic Verification & Auditability
-- Multi-layer image privacy compilation with 7 adversarial red-team probes (Face, License Plate, Text, QR Code, Thumbnail, Container, Metadata).
+- Multi-layer image privacy compilation with 7 adversarial red-team probes.
 - RFC 8785 Canonical JSON output manifests with Ed25519 digital signatures.
-- Full automated test suite verification (210/210 passing tests).
+- Full automated test suite verification (246/246 passing tests).
 
 ---
 

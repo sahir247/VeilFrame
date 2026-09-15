@@ -881,10 +881,11 @@ Examples:
   veilframe gui
         """,
     )
+    from veilframe import __version__
     parser.add_argument(
         "--version",
         action="version",
-        version="VeilFrame 1.1.0 (Quality Gate v4.0, Policy 5pct-v1.0)",
+        version=f"VeilFrame {__version__} (Quality Gate v5.0, Multi-Domain Architecture)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
@@ -963,7 +964,15 @@ Examples:
     except ImportError:
         pass
 
+    # 11. Folder Analyzer Subsystem
+    try:
+        from veilframe.folder.cli import add_folder_subparsers
+        add_folder_subparsers(subparsers)
+    except ImportError:
+        pass
+
     args = parser.parse_args()
+
 
     if hasattr(args, "func"):
         args.func(args)

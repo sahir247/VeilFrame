@@ -34,10 +34,12 @@ from ..image.models.status import CheckStatus
 
 from .video_info import VideoInfoWidget
 from .image_panel import ImageInfoWidget, ImageProcessingPanel
+from .folder_panel import FolderAnalyzerPanel
 from .processing_panel import ProcessingPanel
 from .report_view import ReportViewWidget
 from .preview_dialog import PreviewDialog
 from .dialogs import AboutDialog, EnvironmentDoctorDialog, prompt_missing_dependency
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────── #
@@ -300,13 +302,14 @@ class MainWindow(QMainWindow):
         self.src_path: Optional[Path] = None
         self.dst_path: Optional[Path] = None
         self.current_video_info: Optional[VideoInfo] = None
+        self.current_mode = "video"
         self.is_image_mode = False
 
         self.video_worker: Optional[VideoPipelineWorker] = None
         self.image_worker: Optional[ImagePipelineWorker] = None
 
         self._init_ui()
-        self._set_mode(False)
+        self._set_mode("video")
         QTimer.singleShot(200, self._detect_providers)
 
     def _init_ui(self):
@@ -347,20 +350,27 @@ class MainWindow(QMainWindow):
         self.btn_mode_video = QPushButton("Video Sanitizer")
         self.btn_mode_video.setCheckable(True)
         self.btn_mode_video.setChecked(True)
-        self.btn_mode_video.clicked.connect(lambda: self._set_mode(False))
+        self.btn_mode_video.clicked.connect(lambda: self._set_mode("video"))
         mode_lay.addWidget(self.btn_mode_video)
 
-        self.btn_mode_image = QPushButton("Image Privacy Compiler")
+        self.btn_mode_image = QPushButton("Image Privacy")
         self.btn_mode_image.setCheckable(True)
         self.btn_mode_image.setChecked(False)
-        self.btn_mode_image.clicked.connect(lambda: self._set_mode(True))
+        self.btn_mode_image.clicked.connect(lambda: self._set_mode("image"))
         mode_lay.addWidget(self.btn_mode_image)
 
-        # Exclusive button group — prevents both buttons being unchecked simultaneously
+        self.btn_mode_folder = QPushButton("Folder Analyzer")
+        self.btn_mode_folder.setCheckable(True)
+        self.btn_mode_folder.setChecked(False)
+        self.btn_mode_folder.clicked.connect(lambda: self._set_mode("folder"))
+        mode_lay.addWidget(self.btn_mode_folder)
+
+        # Exclusive button group
         self._mode_btn_group = QButtonGroup(self)
         self._mode_btn_group.setExclusive(True)
         self._mode_btn_group.addButton(self.btn_mode_video)
         self._mode_btn_group.addButton(self.btn_mode_image)
+        self._mode_btn_group.addButton(self.btn_mode_folder)
 
         hdr.addWidget(mode_box)
         hdr.addSpacing(10)
@@ -416,12 +426,18 @@ class MainWindow(QMainWindow):
         self.image_processing_panel.hide()
         content_lay.addWidget(self.image_processing_panel)
 
-        # 5. Report view
+        # 5. Folder Analyzer Panel
+        self.folder_panel = FolderAnalyzerPanel()
+        self.folder_panel.hide()
+        content_lay.addWidget(self.folder_panel)
+
+        # 6. Report view
         self.report_widget = ReportViewWidget()
         content_lay.addWidget(self.report_widget)
 
         scroll.setWidget(scroll_content)
         main_lay.addWidget(scroll, 1)
+
 
         # Bottom action bar
         action_box = QFrame()
@@ -487,10 +503,15 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F1"), self, self._show_about)
         QShortcut(QKeySequence("F5"), self, self._show_environment_doctor)
 
-    def _set_mode(self, is_image: bool):
-        self.is_image_mode = is_image
-        self.btn_mode_image.setChecked(is_image)
-        self.btn_mode_video.setChecked(not is_image)
+    def _set_mode(self, mode: Union[str, bool]):
+        if isinstance(mode, bool):
+            mode = "image" if mode else "video"
+        self.current_mode = mode
+        self.is_image_mode = (mode == "image")
+
+        self.btn_mode_video.setChecked(mode == "video")
+        self.btn_mode_image.setChecked(mode == "image")
+        self.btn_mode_folder.setChecked(mode == "folder")
 
         _active_style = (
             "background-color: #2563eb; color: #ffffff; font-weight: 700; "
@@ -501,24 +522,49 @@ class MainWindow(QMainWindow):
             "border: none; border-radius: 4px; padding: 5px 14px; font-size: 11px;"
         )
 
-        if is_image:
-            self.btn_mode_image.setStyleSheet(_active_style)
-            self.btn_mode_video.setStyleSheet(_inactive_style)
+        self.btn_mode_video.setStyleSheet(_active_style if mode == "video" else _inactive_style)
+        self.btn_mode_image.setStyleSheet(_active_style if mode == "image" else _inactive_style)
+        self.btn_mode_folder.setStyleSheet(_active_style if mode == "folder" else _inactive_style)
+
+        if mode == "folder":
+            self.drop_zone.hide()
+            self.provider_bar.hide()
+            self.video_info_widget.hide()
+            self.processing_panel.hide()
+            self.image_info_widget.hide()
+            self.image_processing_panel.hide()
+            self.report_widget.hide()
+            self.folder_panel.show()
+            self.btn_process.hide()
+            self.btn_cancel.hide()
+            self.progress_bar.hide()
+            self.lbl_status.setText("Folder Analyzer mode active — select a directory to scan.")
+        elif mode == "image":
+            self.folder_panel.hide()
+            self.drop_zone.show()
             self.drop_zone.set_mode_hint(True)
+            self.provider_bar.show()
             self.video_info_widget.hide()
             self.processing_panel.hide()
             self.image_info_widget.show()
             self.image_processing_panel.show()
+            self.report_widget.show()
+            self.btn_process.show()
             self.btn_process.setText("SANITIZE IMAGE & VERIFY")
-        else:
-            self.btn_mode_video.setStyleSheet(_active_style)
-            self.btn_mode_image.setStyleSheet(_inactive_style)
+            self.lbl_status.setText("Ready — load an image file to begin.")
+        else:  # video
+            self.folder_panel.hide()
+            self.drop_zone.show()
             self.drop_zone.set_mode_hint(False)
+            self.provider_bar.show()
             self.image_info_widget.hide()
             self.image_processing_panel.hide()
             self.video_info_widget.show()
             self.processing_panel.show()
+            self.report_widget.show()
+            self.btn_process.show()
             self.btn_process.setText("PROCESS VIDEO")
+            self.lbl_status.setText("Ready — load a video file to begin.")
 
     def _detect_providers(self):
         ver = _detect_ffmpeg_version()
@@ -549,15 +595,20 @@ class MainWindow(QMainWindow):
     def load_media_file(self, file_path_str: str):
         path = Path(file_path_str)
         if not path.exists():
-            QMessageBox.critical(self, "Error", f"File does not exist:\n{file_path_str}")
+            QMessageBox.critical(self, "Error", f"Path does not exist:\n{file_path_str}")
+            return
+
+        if path.is_dir():
+            self._set_mode("folder")
+            self.folder_panel.set_folder_path(str(path.resolve()))
             return
 
         ext = path.suffix.lower()
         if ext in IMAGE_EXTENSIONS:
-            self._set_mode(True)
+            self._set_mode("image")
             self._load_image(path)
         else:
-            self._set_mode(False)
+            self._set_mode("video")
             self._load_video(path)
 
     def _load_video(self, path: Path):
@@ -567,6 +618,7 @@ class MainWindow(QMainWindow):
                 self, missing_tool,
                 on_success=lambda: (self._detect_providers(), self._load_video(path)),
             )
+
             if not installed:
                 self.lbl_status.setText(f"Video loading cancelled — {missing_tool} is required.")
                 return

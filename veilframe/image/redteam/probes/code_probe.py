@@ -24,14 +24,19 @@ class CodeProbe(AttackProbe):
             except Exception as e:
                 return ProbeResult(probe_name=self.name, status=CheckStatus.UNKNOWN,
                                    failure_reason=f"Decode error: {e}")
+        probe_fp = None
         try:
-            from ...detectors.code import PrimaryQRCodeDetector
-            detections = PrimaryQRCodeDetector().safe_detect(sanitized_array)
+            from ...detectors.code import ProbeQRCodeDetector, PrimaryQRCodeDetector
+            detector = ProbeQRCodeDetector()
+            probe_fp = detector.fingerprint
+            detections = detector.safe_detect(sanitized_array)
         except Exception as e:
             return ProbeResult(probe_name=self.name, status=CheckStatus.UNKNOWN,
-                               failure_reason=f"QR detector error: {e}")
+                               failure_reason=f"QR detector error: {e}",
+                               probe_fingerprint=probe_fp)
         if detections:
             return ProbeResult(probe_name=self.name, status=CheckStatus.FAIL,
                                failure_reason=f"{len(detections)} QR code(s) detected in sanitized output",
-                               findings=[f"QR at {d.bbox}" for d in detections])
-        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS)
+                               findings=[f"QR at {d.bbox}" for d in detections],
+                               probe_fingerprint=probe_fp)
+        return ProbeResult(probe_name=self.name, status=CheckStatus.PASS, probe_fingerprint=probe_fp)

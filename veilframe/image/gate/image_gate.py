@@ -104,6 +104,7 @@ class ImageQualityGate:
         independence_status: CheckStatus,
         fidelity_result: Optional[RegionFidelityResult],
         strict_redteam_gate: bool = False,
+        detector_errors: Optional[List[str]] = None,
     ) -> GateVerdict:
         """Evaluate all five contracts and determine the publication state.
 
@@ -114,6 +115,9 @@ class ImageQualityGate:
             If False (standard mode), container and metadata stripping (EXIF/XMP/IPTC/thumbnails)
             is strictly mandatory and fail-closed, while visual heuristic probe findings are
             reported as advisory findings rather than hard quarantine failures.
+        detector_errors : Optional[List[str]]
+            List of detector failure messages if any provider encountered exceptions.
+            Fail-closed: any detector error forces privacy status to FAIL.
         """
 
         # --- Contract 1: Geometry ---
@@ -130,7 +134,10 @@ class ImageQualityGate:
             else CheckStatus.UNKNOWN
         )
 
-        # --- Contract 2: Privacy (completeness + container / red-team) ---
+        # --- Detector Execution Health (Fail-Closed) ---
+        detector_status = CheckStatus.FAIL if detector_errors else CheckStatus.PASS
+
+        # --- Contract 2: Privacy (completeness + container / red-team + detector health) ---
         if red_team_result is None:
             rt_status = CheckStatus.UNKNOWN
         else:
@@ -151,7 +158,7 @@ class ImageQualityGate:
                 # Standard mode: container & metadata stripping holds, redactions executed
                 rt_status = CheckStatus.PASS
 
-        privacy_status = comp_status & rt_status
+        privacy_status = comp_status & rt_status & detector_status
 
         # --- Contract 4: Independence ---
         indep_status = independence_status

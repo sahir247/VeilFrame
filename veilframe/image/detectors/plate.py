@@ -16,7 +16,7 @@ from typing import List, Optional
 from ..models.coordinates import BoundingBox, CoordinateSpace
 from ..models.graph import ProviderFingerprint
 from ..models.status import DetectorClass
-from .base import DetectionProvider, DetectionResult
+from .base import DetectionProvider, DetectionResult, DetectorUnavailableError
 from .face import _linear_to_uint8_bgr, _hash_str, _opencv_version
 
 
@@ -31,6 +31,7 @@ class PrimaryPlateDetector(DetectionProvider):
 
     def __init__(self) -> None:
         self._cascade = None
+        self._cascade_path: Optional[str] = None
         self._fingerprint: Optional[ProviderFingerprint] = None
 
     def _load_cascade(self) -> bool:
@@ -45,6 +46,7 @@ class PrimaryPlateDetector(DetectionProvider):
                 path = data_dir / candidate
                 if path.exists():
                     self._cascade = cv2.CascadeClassifier(str(path))
+                    self._cascade_path = str(path)
                     return True
         except ImportError:
             pass
@@ -54,6 +56,16 @@ class PrimaryPlateDetector(DetectionProvider):
     def fingerprint(self) -> ProviderFingerprint:
         if self._fingerprint is None:
             ocv_ver = _opencv_version()
+            if self._cascade is None:
+                self._load_cascade()
+            if self._cascade_path and Path(self._cascade_path).exists():
+                try:
+                    src_hash = hashlib.sha256(Path(self._cascade_path).read_bytes()).hexdigest()
+                except Exception:
+                    src_hash = _hash_str("plate_haar_src", ocv_ver)
+            else:
+                src_hash = _hash_str("plate_haar_src", ocv_ver)
+
             self._fingerprint = ProviderFingerprint(
                 provider_id=self._PROVIDER_ID,
                 implementation_id=self._IMPL_ID,
@@ -61,10 +73,11 @@ class PrimaryPlateDetector(DetectionProvider):
                 library_id=self._LIBRARY_ID,
                 model_family=self._MODEL_FAMILY,
                 version=ocv_ver,
-                source_hash=_hash_str("plate_haar_src", ocv_ver),
-                implementation_hash=_hash_str("plate_haar_impl", ocv_ver),
+                source_hash=src_hash,
+                implementation_hash=_hash_str("plate_haar_impl", ocv_ver, src_hash[:16]),
                 dependency_graph_hash=_hash_str("plate_deps", ocv_ver),
                 library_binary_hash=_hash_str("plate_binary", ocv_ver),
+                model_hash=src_hash,
             )
         return self._fingerprint
 
@@ -76,7 +89,7 @@ class PrimaryPlateDetector(DetectionProvider):
         import cv2  # type: ignore
         if self._cascade is None:
             if not self._load_cascade():
-                return []
+                raise DetectorUnavailableError("OpenCV License Plate cascade model not found or failed to load.")
         bgr = _linear_to_uint8_bgr(linear_srgb_f32)
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         plates = self._cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3)

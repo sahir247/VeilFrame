@@ -267,17 +267,72 @@ All probes implement Level-3 Fingerprint-Distinct Independence (distinct algorit
 
 ---
 
-## Developer Interfaces: Dual-Mode GUI & CLI
+---
 
-VeilFrame offers both a modern terminal CLI and a dual-mode desktop GUI built on PySide6 / Qt:
+## Folder Analyzer & Staged Duplicate Detection Architecture
+
+```
+                               ┌──────────────────────────┐
+                               │     TARGET DIRECTORY     │
+                               └────────────┬─────────────┘
+                                            │
+                                            ▼
+                           ┌─────────────────────────────────┐
+                           │   Selective os.scandir() Walk   │
+                           │ • Zero unselected field I/O     │
+                           │ • Configurable scan profiles    │
+                           │ • Non-blocking streaming events │
+                           └────────┬───────────────┬────────┘
+                                    │               │
+                                    ▼               ▼
+                 ┌───────────────────────┐   ┌─────────────────────────────┐
+                 │   SQLite Index DB     │   │   Staged Duplicate Engine   │
+                 │ • Persistent / Memory │   │ • Stage 1: Size grouping    │
+                 │ • Instant text filter │   │ • Stage 2: Head/tail 16KiB  │
+                 │ • Size & depth rollup │   │ • Stage 3: Streaming SHA-256│
+                 └───────────┬───────────┘   └──────────────┬──────────────┘
+                             │                              │
+                             └──────────────┬───────────────┘
+                                            │
+                                            ▼
+                           ┌─────────────────────────────────┐
+                           │   Multi-Format Report Engine    │
+                           │ • Interactive HTML (Live Search)│
+                           │ • Full 64-char SHA-256 in MD    │
+                           │ • JSON, CSV, Structured TXT     │
+                           │ • Standardized Folder Naming    │
+                           └─────────────────────────────────┘
+```
+
+### 1. Selective Field-Driven Scanning
+- Traversal strictly avoids unnecessary syscalls (e.g. `stat()`, `created`, `accessed`, `permissions`) when those fields are not explicitly selected by the user.
+- Emits non-blocking progressive events (`folderDiscovered`, `fileDiscovered`, `progress`) to keep the user interface fully interactive and animated without GUI freezing.
+
+### 2. Staged 3-Tier Duplicate Filtering
+- **Stage 1 (Exact Size Matching)**: Instant $O(1)$ grouping. Files with unique sizes are filtered out immediately without disk reads.
+- **Stage 2 (Head/Tail Staged Fingerprint)**: Hashes `[file_size] + [head 8KiB] + [tail 8KiB]`. Reads at most 16 KiB even for massive multi-gigabyte media files.
+- **Stage 3 (Parallel Streaming Hash Verification)**: Parallel `ThreadPoolExecutor` streams 1 MiB chunks through cryptographic hashers (SHA-256) only for candidate collisions.
+
+### 3. Full Cryptographic Integrity & Report Generation
+- Uncut 64-character SHA-256 digests are stored internally and preserved across all export formats.
+- Generates interactive, self-contained HTML dashboards with one-click clipboard copying, searchable inventory tables, and collapsible directory trees.
+
+---
+
+## Developer Interfaces: 3-Mode GUI & CLI
+
+VeilFrame offers both a modern terminal CLI and a 3-mode desktop GUI built on PySide6 / Qt:
 
 ### Desktop GUI (`veilframe-gui` / `veilframe gui`)
-- **Dual Mode Switcher:** Instant toggling between `Video Sanitizer` and `Image Compiler`.
+- **3-Mode Segmented Switcher:** Instant toggling between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer`.
 - **Drag-and-Drop Auto-Detection:** Automatically switches pipelines based on file extension (`.mp4`, `.mov`, `.mkv` vs `.png`, `.jpg`, `.webp`).
+- **Live Progressive Tree:** Animated directory tree rendering during active folder scans.
+- **Pulsing Telemetry:** Animated gradient progress bar with items/sec throughput and millisecond timers.
 - **Semantic Detector Toggles:** Individual switches for Face, Plate, Text, and QR/Barcode detectors with safety margin controls.
 - **Live 5-Contract Checklist:** Visual indicator badges for Privacy, Geometry, Fidelity, Integrity, and Completeness contracts.
 - **Red-Team Results Table:** Tabular inspection of all 7 independent probe verdicts.
 - **Signed Manifest Inspector:** Built-in viewer and clipboard exporter for canonical RFC 8785 JSON audit manifests.
+- **Clipboard & Context Menu Actions:** One-click full SHA-256 copying and direct OS file manager integration.
 
 ### Command-Line Interface (`veilframe`)
 - `veilframe sanitize <video> -o <output>`: Multi-pass video sanitization with quality gate audit.
@@ -285,10 +340,15 @@ VeilFrame offers both a modern terminal CLI and a dual-mode desktop GUI built on
 - `veilframe image verify <image> <manifest.json>`: Cryptographic image provenance verification.
 - `veilframe image inspect <image>`: Deep inspection of container tags, thumbnails, and bit depths.
 - `veilframe image doctor`: System diagnostics for image backends, neural detectors, and OCR engines.
+- `veilframe folder scan <dir>`: Selective directory analysis with configurable presets and reports.
+- `veilframe folder dupes <dir>`: 3-stage duplicate file detection with wasted space calculations.
+- `veilframe folder stats <dir>`: Summary size rollups, file type distributions, and directory depth.
+- `veilframe folder export <dir> -o <out>`: Export comprehensive reports to interactive HTML, MD, JSON, CSV, TXT.
 - `veilframe inspect <video>`: Elementary stream and container atom inspection.
 - `veilframe audit <ref> <trans>`: Independent 3-tier visual fidelity audit.
 - `veilframe verify <manifest.json>`: Standalone Ed25519 signature and SHA-256 bitstream verification.
 - `veilframe doctor`: Video environment and hardware encoder diagnostics.
+- `veilframe presets`: Inspection of transformation presets and policy budgets.
 
 ---
 

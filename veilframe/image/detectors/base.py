@@ -28,6 +28,11 @@ from ..models.graph import DetectorEvidence, ProviderFingerprint
 from ..models.status import CheckStatus, DetectorClass
 
 
+class DetectorUnavailableError(RuntimeError):
+    """Raised when a detector's required model, cascade, or dependency is unavailable."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Detection result (returned by providers)
 # ---------------------------------------------------------------------------

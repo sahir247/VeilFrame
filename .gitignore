@@ -81,8 +81,10 @@ temp_test_videos/
 resources/ffmpeg/
 **/resources/ffmpeg/*.exe
 
-# Audit manifests in scratch dirs (preserve examples/ fixtures if any)
+# Audit manifests and scan reports in scratch dirs (preserve examples/ fixtures if any)
 audit_manifests/
+*_scan_report.*
+scan_report.*
 
 # Operating System Files
 .DS_Store

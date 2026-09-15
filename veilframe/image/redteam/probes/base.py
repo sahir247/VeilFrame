@@ -25,11 +25,14 @@ class ProbeResult:
         Human-readable description of what leaked.
     findings : List[str]
         Specific finding strings (e.g. GPS coordinates, face bbox).
+    probe_fingerprint : Optional[Any]
+        Fingerprint of the detection provider used by this probe.
     """
     probe_name: str
     status: CheckStatus
     failure_reason: Optional[str] = None
     findings: List[str] = field(default_factory=list)
+    probe_fingerprint: Optional[Any] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -41,6 +44,8 @@ class ProbeResult:
             d["failure_reason"] = self.failure_reason
         if self.findings:
             d["findings"] = self.findings[:5]  # first 5 findings
+        if self.probe_fingerprint is not None and hasattr(self.probe_fingerprint, "to_dict"):
+            d["probe_fingerprint"] = self.probe_fingerprint.to_dict()
         return d
 
 

@@ -87,7 +87,7 @@ from .sanitizers.representation import RepresentationSanitizer, RepresentationNo
 from .sanitizers.semantic import SemanticSanitizer, SemanticSanitizationResult
 from .detectors.face import PrimaryFaceDetector
 from .detectors.plate import PrimaryPlateDetector
-from .detectors.text import MSERTextDetector
+from .detectors.text import PrimaryTextDetector, MSERTextDetector
 from .detectors.code import PrimaryQRCodeDetector
 from .redteam.engine import RedTeamEngine, build_default_engine, PrivacyAttackResult
 from .fidelity.region_fidelity import RegionFidelityEngine, RegionFidelityResult
@@ -273,12 +273,20 @@ class ImagePrivacyPipeline:
             elif det_class == DetectorClass.LICENSE_PLATE:
                 detectors.append(PrimaryPlateDetector())
             elif det_class == DetectorClass.TEXT:
-                detectors.append(MSERTextDetector())
+                detectors.append(PrimaryTextDetector())
             elif det_class in (DetectorClass.QR_CODE, DetectorClass.BARCODE):
                 detectors.append(PrimaryQRCodeDetector())
 
         detected_count = 0
+        detector_errors: List[str] = []
+        primary_fingerprints_by_class: Dict[str, ProviderFingerprint] = {}
         for detector in detectors:
+            det_class_str = detector.detector_class.value
+            try:
+                primary_fingerprints_by_class[det_class_str] = detector.fingerprint
+            except Exception as exc:
+                detector_errors.append(f"{det_class_str} fingerprint error: {type(exc).__name__}: {exc}")
+
             try:
                 findings = detector.detect(orig_linear_f32)
                 for finding in findings:
@@ -302,9 +310,9 @@ class ImagePrivacyPipeline:
                         risk=RiskLevel.CRITICAL if finding.detector_class == DetectorClass.FACE else RiskLevel.HIGH,
                     )
                     detected_count += 1
-            except Exception:
-                # Detector error in provider — fail-closed is handled at gate
-                pass
+            except Exception as exc:
+                # Detector error in provider — record for fail-closed handling at gate
+                detector_errors.append(f"{det_class_str}: {type(exc).__name__}: {exc}")
 
         graph = graph_builder.build()
 
@@ -387,8 +395,27 @@ class ImagePrivacyPipeline:
         geom_auditor = GeometryIntegrityAuditor(geo_map)
         geom_res = geom_auditor.audit(width, height)
 
+        # Real execution ledger: track which verification tasks were evaluated by executed red-team probes
+        executed_vtasks = set()
+        for vtask in verification_plan.tasks:
+            req_cls = (vtask.required_detector_class or "").lower()
+            chk_typ = (vtask.check_type or "").lower()
+            if req_cls in red_team_res.probe_results:
+                executed_vtasks.add(vtask.task_id)
+            elif "face" in req_cls or "face" in chk_typ:
+                if "face" in red_team_res.probe_results:
+                    executed_vtasks.add(vtask.task_id)
+            elif "plate" in req_cls or "plate" in chk_typ:
+                if "plate" in red_team_res.probe_results:
+                    executed_vtasks.add(vtask.task_id)
+            elif "text" in req_cls or "text" in chk_typ or "ocr" in chk_typ:
+                if "ocr_text" in red_team_res.probe_results or "text" in red_team_res.probe_results:
+                    executed_vtasks.add(vtask.task_id)
+            elif "qr" in req_cls or "barcode" in req_cls or "qr" in chk_typ or "barcode" in chk_typ:
+                if "barcode" in red_team_res.probe_results or "qr_code" in red_team_res.probe_results:
+                    executed_vtasks.add(vtask.task_id)
+
         comp_auditor = CompletenessAuditor(dag, verification_plan)
-        executed_vtasks = {t.task_id for t in verification_plan.tasks}
         comp_res = comp_auditor.audit(
             executed_vtasks,
             semantic_res.redaction_records,
@@ -411,8 +438,36 @@ class ImagePrivacyPipeline:
             redaction_mask,
         )
 
-        indep_auditor = IndependenceAuditor(min_independence_level=self.rule_set.min_independence_level)
-        indep_status = CheckStatus.PASS  # Default probe suite has distinct implementations
+        # Independence evaluation across red-team probes
+        indep_auditor = IndependenceAuditor(
+            min_independence_level=self.rule_set.min_independence_level,
+            primary_fingerprints_by_class=primary_fingerprints_by_class,
+        )
+        independence_results = []
+        for probe_name, p_res in red_team_res.probe_results.items():
+            probe_fp = getattr(p_res, "probe_fingerprint", None)
+            if probe_fp is not None:
+                # Match to corresponding primary detector fingerprint
+                matching_primary = None
+                for cls_name, prim_fp in primary_fingerprints_by_class.items():
+                    if cls_name.lower() in probe_name.lower():
+                        matching_primary = prim_fp
+                        break
+                indep_res = indep_auditor.audit_probe(
+                    probe_name,
+                    probe_fp,
+                    primary_fingerprint=matching_primary,
+                )
+                independence_results.append(indep_res)
+
+        if independence_results:
+            indep_status = (
+                CheckStatus.PASS
+                if all(r.status == CheckStatus.PASS for r in independence_results)
+                else CheckStatus.FAIL
+            )
+        else:
+            indep_status = CheckStatus.PASS
 
         # 9. QualityGate Evaluation
         gate = ImageQualityGate()
@@ -423,6 +478,7 @@ class ImagePrivacyPipeline:
             independence_status=indep_status,
             fidelity_result=fid_res,
             strict_redteam_gate=getattr(self.policy, "strict_redteam_gate", False),
+            detector_errors=detector_errors if detector_errors else None,
         )
 
         # 10. Cryptographic Provenance & Signing
@@ -522,6 +578,7 @@ class ImagePrivacyPipeline:
                 *(fid_res.failure_reasons if fid_res else []),
                 *([geom_res.failure_reason] if geom_res and geom_res.failure_reason else []),
                 *(comp_res.failure_reasons if comp_res else []),
+                *detector_errors,
             ],
         )
 

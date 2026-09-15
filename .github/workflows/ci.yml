@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -196,7 +196,12 @@ jobs:
           if (-not $hasFfmpeg -or -not $hasFfprobe) {
             Write-Host "Downloading official static FFmpeg release for standalone packaging..."
             $zipPath = "$env:TEMP\ffmpeg_ci.zip"
+            $expectedHash = "bbd73489c92882a8747ebafbe855fa242eb0e52701e88e2ca6f9a071192fa94e"
             Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $zipPath
+            $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+            if ($actualHash -ne $expectedHash.ToLower()) {
+              throw "CRITICAL: FFmpeg download SHA-256 mismatch! Expected: $expectedHash, Actual: $actualHash"
+            }
             Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\ffmpeg_extracted" -Force
             $extractedFfmpeg = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffmpeg.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1
             $extractedFfprobe = Get-ChildItem -Path "$env:TEMP\ffmpeg_extracted" -Recurse -Filter "ffprobe.exe" | Where-Object { $_.Length -gt 5MB } | Select-Object -First 1

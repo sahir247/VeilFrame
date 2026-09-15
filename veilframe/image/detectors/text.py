@@ -12,12 +12,100 @@ from typing import List, Optional
 from ..models.coordinates import BoundingBox, CoordinateSpace
 from ..models.graph import ProviderFingerprint
 from ..models.status import DetectorClass
-from .base import DetectionProvider, DetectionResult
+from .base import DetectionProvider, DetectionResult, DetectorUnavailableError
 from .face import _linear_to_uint8_bgr, _hash_str, _opencv_version
 
 
+class PrimaryTextDetector(DetectionProvider):
+    """Morphological gradient text region detector (primary)."""
+
+    _ALGORITHM_ID = "morphological_gradient_text"
+    _LIBRARY_ID = "opencv"
+    _MODEL_FAMILY = "text-morph-grad"
+    _PROVIDER_ID = "veilframe.text.primary"
+    _IMPL_ID = "morph_text_v1"
+
+    def __init__(self, confidence_threshold: float = 0.5) -> None:
+        self._fingerprint: Optional[ProviderFingerprint] = None
+        self._default_threshold = confidence_threshold
+
+    @property
+    def fingerprint(self) -> ProviderFingerprint:
+        if self._fingerprint is None:
+            ocv_ver = _opencv_version()
+            self._fingerprint = ProviderFingerprint(
+                provider_id=self._PROVIDER_ID,
+                implementation_id=self._IMPL_ID,
+                algorithm_id=self._ALGORITHM_ID,
+                library_id=self._LIBRARY_ID,
+                model_family=self._MODEL_FAMILY,
+                version=ocv_ver,
+                source_hash=_hash_str("morph_text_src", ocv_ver),
+                implementation_hash=_hash_str("morph_text_impl", ocv_ver),
+                dependency_graph_hash=_hash_str("morph_text_deps", ocv_ver),
+                library_binary_hash=_hash_str("morph_text_binary", ocv_ver),
+            )
+        return self._fingerprint
+
+    @property
+    def detector_class(self) -> DetectorClass:
+        return DetectorClass.TEXT
+
+    def detect(self, linear_srgb_f32, confidence_threshold: float = 0.5) -> List[DetectionResult]:
+        """Detect text regions using morphological gradient and horizontal smearing."""
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+
+        bgr = _linear_to_uint8_bgr(linear_srgb_f32)
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape[:2]
+
+        # Morphological gradient to emphasize high-frequency stroke edges
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        grad = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
+
+        # Otsu thresholding
+        _, bw = cv2.threshold(grad, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+        # Connect text lines horizontally
+        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 1))
+        connected = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, h_kernel)
+
+        contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        results = []
+
+        for cnt in contours:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            if cw < 10 or ch < 6:
+                continue
+            aspect = cw / max(1, ch)
+            if not (0.2 <= aspect <= 20.0):
+                continue
+            roi = gray[y:y+ch, x:x+cw]
+            if roi.size == 0:
+                continue
+            # Stroke variance check
+            if cv2.Laplacian(roi, cv2.CV_64F).var() < 20.0:
+                continue
+
+            conf = min(1.0, 0.6 + 0.3 * min(1.0, cw / (w * 0.5)))
+            if conf >= confidence_threshold:
+                bbox = BoundingBox(
+                    x_min=float(max(0, x)), y_min=float(max(0, y)),
+                    x_max=float(min(w, x + cw)), y_max=float(min(h, y + ch)),
+                    space=CoordinateSpace.SOURCE_DECODED,
+                )
+                results.append(DetectionResult(
+                    bbox=bbox, confidence=conf,
+                    detector_class=DetectorClass.TEXT,
+                    provider_fingerprint=self.fingerprint,
+                ))
+
+        return results
+
+
 class EASTTextDetector(DetectionProvider):
-    """OpenCV EAST deep-learning text detector (primary)."""
+    """OpenCV EAST deep-learning text detector (optional neural primary)."""
 
     _ALGORITHM_ID = "east_scene_text_detector"
     _LIBRARY_ID = "opencv_dnn"
@@ -53,10 +141,8 @@ class EASTTextDetector(DetectionProvider):
         return DetectorClass.TEXT
 
     def detect(self, linear_srgb_f32, confidence_threshold: float = 0.5) -> List[DetectionResult]:
-        """EAST text detection. Returns empty list if model unavailable."""
-        # EAST requires a .pb model file not shipped with OpenCV by default.
-        # Returns empty list (fail-open for detection); red-team validates.
-        return []
+        """EAST text detection. Raises DetectorUnavailableError if model unavailable."""
+        raise DetectorUnavailableError("OpenCV EAST text detection model file is not available in runtime.")
 
 
 class MSERTextDetector(DetectionProvider):
