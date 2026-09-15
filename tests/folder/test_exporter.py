@@ -86,7 +86,7 @@ class TestFolderExporter(unittest.TestCase):
         self.assertEqual(name2, "my_folder_test_scan_report.md")
 
         name3 = FolderExporter.generate_default_filename("C:\\", "json")
-        self.assertIn(name3, ("drive_C_scan_report.json", "root_scan_report.json"))
+        self.assertEqual(name3, "drive_C_scan_report.json")
 
         name4 = FolderExporter.generate_default_filename("/", "txt")
         self.assertEqual(name4, "root_scan_report.txt")

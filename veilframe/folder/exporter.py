@@ -38,16 +38,17 @@ class FolderExporter:
         Generate standard sanitized report filename based on the scanned folder name.
         Example: PrivacyVideoCleaner_v1_source_scan_report.html
         """
-        norm_path = os.path.normpath(root_path).rstrip("/\\")
-        folder_name = os.path.basename(norm_path)
-        if not folder_name:
-            drive, _ = os.path.splitdrive(norm_path)
-            if drive:
-                folder_name = f"drive_{drive.rstrip(':')}"
-            else:
-                folder_name = "root"
-        elif folder_name in ("\\", "/", ":", "."):
+        p = str(root_path).replace("\\", "/").rstrip("/")
+        if not p or p == "/":
             folder_name = "root"
+        elif len(p) == 2 and p[1] == ":" and p[0].isalpha():
+            folder_name = f"drive_{p[0].upper()}"
+        else:
+            folder_name = os.path.basename(p)
+            if ":" in folder_name:
+                folder_name = folder_name.split(":")[-1]
+            if not folder_name or folder_name in (".", "..", "/", "\\"):
+                folder_name = "root"
 
         clean_name = "".join(c if (c.isalnum() or c in ("-", "_", " ")) else "_" for c in folder_name).strip().replace(" ", "_")
         clean_name = clean_name.strip("_")
