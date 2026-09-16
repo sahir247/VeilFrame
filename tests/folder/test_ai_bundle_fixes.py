@@ -172,8 +172,8 @@ class TestAIBundleFixes(unittest.TestCase):
 
     def test_bundle_generation_worker(self):
         """Verify BundleGenerationWorker runs in background thread and emits progress."""
-        from PySide6.QtCore import QCoreApplication
-        app = QCoreApplication.instance() or QCoreApplication([])
+        from tests.conftest import get_or_create_test_qapp
+        app = get_or_create_test_qapp()
         from veilframe.gui.folder.ai_program_lister_panel import BundleGenerationWorker
 
         with tempfile.TemporaryDirectory() as tmp_dir:
