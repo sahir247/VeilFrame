@@ -528,14 +528,23 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Do not request the removed legacy "tools" package.
+          packages: platform-tools
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
       - name: Install Android SDK packages
         shell: bash
         run: |
-          sdkmanager "platform-tools" \
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}" \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-          yes | sdkmanager --licenses || true
 
       - name: Verify Android toolchain
         shell: bash
