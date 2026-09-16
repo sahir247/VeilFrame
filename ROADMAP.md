@@ -10,8 +10,8 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.0.2 CURRENT (Production Release)
-- **Triple-Domain Architecture**:
+### v2.2.0 CURRENT (Production Release)
+- **Quad-Domain Architecture (Video, Image, Storage, AI Context)**:
   - **Video Sanitization Pipeline**: Multi-pass container atom stripping, SEI NAL removal, Bayer CFA PRNU dither, 2D DCT block perturbation, and acoustic ENF mains notch filtration.
   - **Image Privacy Compiler**: Multi-layer deterministic compilation pipeline (Layer A Container Sanitization, Layer B Representation Normalization, Layer C Isolated Semantic Redaction).
   - **Folder Analyzer & Duplicate Scanner**: High-performance selective directory analysis with zero unselected I/O overhead, SQLite indexing repository, parallel streaming cryptographic hashing, and 3-tier staged duplicate detection.

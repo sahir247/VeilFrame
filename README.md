@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.0.2-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.0-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -14,6 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-orange.svg" alt="License" /></a>
   <a href="https://ed25519.cr.yp.to/"><img src="https://img.shields.io/badge/Audit%20Signatures-Ed25519-purple.svg" alt="Audit Signatures" /></a>
   <a href="https://datatracker.ietf.org/doc/html/rfc8785"><img src="https://img.shields.io/badge/RFC%208785-JSON%20Canonicalization-blueviolet.svg" alt="RFC 8785" /></a>
+  <a href="#4-ai-project-intelligence--context-bundler-aibundle"><img src="https://img.shields.io/badge/AI%20Context-.aibundle%20v1-informational.svg" alt="AI Context .aibundle v1" /></a>
 </p>
 
 ---
@@ -23,7 +24,7 @@
 1. **Video Domain:** Applies bounded, orthogonal signal perturbations across spatial geometry, temporal cadence, physical sensor noise (Bayer CFA PRNU), transform-domain perceptual hashes (2D DCT), ISP chrominance drift, and acoustic Electrical Network Frequency (ENF) hums within strict **5% or 10% transformation policy budgets**, guarded by an **independent read-only three-tier visual fidelity gate**.
 2. **Image Domain:** Compiles images through a deterministic multi-layer privacy compiler (Layer A Container Stripping, Layer B Representation Normalization, Layer C Isolated Solid Redaction), audited against **7 Level-3 Fingerprint-Distinct independent red-team probes** and enforced by a normative **5-Contract QualityGate** (Privacy, Geometry, Fidelity, Integrity, Completeness).
 3. **Folder & Storage Domain:** High-performance selective directory analyzer, parallel cryptographic hasher, SQLite indexing engine, and staged duplicate candidate detector with **full uncut 64-character SHA-256 reporting** across interactive HTML dashboards, Markdown inventory tables, CSV, JSON, and text reports.
-4. **AI Project Intelligence & Bundle Domain:** High-fidelity project intelligence and LLM context compiler. Uses polyglot heuristics across 14 languages, language-family modular secret redaction, PathSpec GitIgnore parsing, AST/syntax outlining, and internal vs external dependency modeling to compile codebases into the native, deterministic `.aibundle` v1 format (alongside Markdown, JSON, HTML, and ZIP) under strict context budgets with a **zero-truncation guarantee** and a strict **10-Invariant Contract**.
+4. **AI Project Intelligence & Context Bundler (`.aibundle`):** Deterministic codebase packaging for LLMs and AI coding agents. Uses polyglot heuristics across 14 languages, modular syntax-preserving secret redaction, PathSpec `.gitignore` parsing, AST/syntax signature outlining, lockfile summarization, and priority knapsack budgeting to generate structured context bundles (`.aibundle`, Markdown, HTML, JSON, ZIP) with a zero-truncation guarantee on included source files.
 5. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
 
 ---
@@ -45,10 +46,14 @@ VeilFrame includes a modern desktop application built on PySide6 / Qt supporting
 ![VeilFrame GUI Overview](docs/images/veilframe_gui_overview.svg)
 
 ### GUI Key Capabilities:
-- **4-Mode Segmented Switcher:** Seamlessly toggle between `Video Sanitizer`, `Image Privacy`, `Folder Analyzer`, and the dedicated `AI Project Lister` with automatic tab priority ordering and state management.
-- **Dedicated AI Project Lister:** Elevates AI context generation to a primary GUI mode. Features live token budgeting, file inclusion/exclusion policies, secret redaction, and one-click export to native `.aibundle` v1, Markdown, HTML, JSON, and ZIP.
-- **Zero-Truncation Guarantee:** Never chops or truncates included files into arbitrary snippets; delivers complete, uncompromised source files, tests, configs, and docs.
-- **Logical Collapsed Tree:** Intelligently collapses noisy dependency, build, and VCS directories into compact summaries (`node_modules/ [EXCLUDED: dependency]`) to maximize token density.
+- **4-Mode Segmented Switcher:** Seamlessly toggle between `Video Sanitizer`, `Image Privacy`, `Folder Analyzer`, and the dedicated `AI Project Lister` with automatic state persistence.
+- **AI Project Lister Mode:** Desktop panel for generating LLM context bundles:
+  - **Token Budget Presets:** Target ceilings (`32k`, `64k`, `128k`, `200k`, `1M`, `Unlimited`) with live token estimation.
+  - **Selective Tree:** Checkbox tree with per-file token consumption counts and file pinning controls.
+  - **Asynchronous Generation:** Background worker (`BundleGenerationWorker`) with cancel support to keep the interface responsive during large scans.
+  - **Multi-Format Export & Clipboard:** One-click copy or file export across `.aibundle`, `.md`, `.html`, `.json`, `.zip`, and `.txt`.
+- **Zero-Truncation Guarantee:** Selected source files are delivered in their entirety; no arbitrary code slicing.
+- **Logical Collapsed Tree:** Collapses noisy dependency and build directories (`node_modules/ [EXCLUDED: dependency]`, `.venv/`) into single-line summaries to conserve token budget.
 - **Hardware GPU Acceleration:** Auto-detects NVIDIA NVENC, Intel QuickSync, AMD AMF, and Apple VideoToolbox with graceful deterministic CPU fallback.
 - **Universal Format Conversion:** Real-time transcoding and re-muxing across video (MP4, MKV, WebM, MOV, AVI, TS) and image (JPEG, PNG, WebP, TIFF, BMP, GIF, ICO, PPM) formats.
 - **Forensic EXIF Metadata Inspector:** Live audit of device serials, camera models, capture timestamps, lens optics, and GPS geolocation alerts.
@@ -78,7 +83,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` |
 | **Android (AAB)** | `VeilFrame-release.aab` | Universal (API 26+) | Google Play Store distribution app bundle |
-| **Python (Any OS)** | `veilframe-2.0.2-py3-none-any.whl` | Universal | `pip install veilframe-2.0.2-py3-none-any.whl` |
+| **Python (Any OS)** | `veilframe-2.2.0-py3-none-any.whl` | Universal | `pip install veilframe-2.2.0-py3-none-any.whl` |
 
 ```powershell
 # Windows Checksum Verification:
@@ -213,6 +218,120 @@ VeilFrame provides a unified developer terminal interface styled with structured
 
 ---
 
+### 4. AI Project Intelligence & Context Bundler (`.aibundle`)
+
+VeilFrame includes an AI context compiler designed to package codebases into token-bounded context for Large Language Models (LLMs) and coding agents. It handles dependency filtering, credential redaction, lockfile summarization, and file prioritization without truncating included source files:
+
+```
+[Target Codebase]
+        │
+        ▼
+[Pass 1: GitIgnore & Polyglot Heuristics] ──► PathSpec .gitignore engine, 14+ language identification
+        │
+        ▼
+[Pass 2: Modular Security Engine]         ──► Language-family regex & entropy scanning; in-situ secret masking
+        │
+        ▼
+[Pass 3: Content Optimizer]               ──► Lockfile summarization (uv.lock, package-lock.json), SQLite/binary schemas
+        │
+        ▼
+[Pass 4: Priority Knapsack Selector]      ──► Greedy token allocation: entry points & core logic ranked over tests/docs
+        │
+        ▼
+[Pass 5: Multi-Format Renderer]           ──► Native .aibundle v1, Markdown, interactive HTML, JSON, curated ZIP, Plain Text
+```
+
+#### The 10 Invariant Guarantees of VeilFrame AI Bundles:
+
+1. **Zero-Truncation Guarantee:** Selected source files are never sliced or chopped into arbitrary fragments. An included file is delivered complete and syntactically intact. If a file does not fit the remaining token budget, it is cleanly deferred.
+2. **Priority Knapsack Budgeting:** Operates under configurable token ceilings (presets: `32k`, `64k`, `128k`, `200k`, `1M`, or `Unlimited`). Uses a greedy knapsack algorithm ranking entry points (`priority >= 99`), core architecture, and configuration files first, followed by implementation files, documentation, and tests.
+3. **Modular Syntax-Preserving Secret Redaction:** Employs language-specific regexes and Shannon entropy scanners to detect and mask credentials (AWS keys, GitHub tokens, Slack tokens, JWTs, private keys) with `[REDACTED]`, while avoiding false positives on benign method chains, Windows paths, documentation URLs, and package lockfile hashes.
+4. **Credential Exclusion:** Sensitive key repositories and environment files (`.env`, `.env.*`, `*.pem`, `id_rsa`, `credentials.json`) are automatically excluded from the context payload and flagged in the security audit section.
+5. **Collapsed Directory Summaries:** Summarizes vendor directories (`node_modules/ [EXCLUDED: dependency, 14,210 files]`, `.venv/ [EXCLUDED: environment, 4,120 files]`) to preserve directory topology without consuming token budget.
+6. **AST & Syntax Structural Outlining:** When structural compression is requested, VeilFrame extracts Python AST signatures (`class`, `def`, docstrings) and brace-language declarations (TypeScript, Go, Rust, Java, C++) rather than raw line cuts.
+7. **Lockfile Summarization:** Condenses large lockfiles (`uv.lock`, `package-lock.json`, `Cargo.lock`, `poetry.lock`) into concise package lists, stripping repetitive hashes and download URLs.
+8. **Binary, Model & Database Summaries:** Inspects SQLite databases for table schemas and row counts; produces descriptive metadata for ML models and binaries instead of serializing raw bytes.
+9. **Polyglot Ecosystem Detection:** Detects languages (14+ languages), frameworks (PySide6, React, Next.js, Django, FastAPI), package managers (`uv`, `npm`, `cargo`, `pip`), and build systems (`setuptools`, `vite`, `gradle`).
+10. **Deterministic `.aibundle` v1 Text Protocol:** Plain UTF-8 format optimized for LLMs with standardized section delimiters (`@VEILFRAME_BUNDLE`, `@PROJECT`, `@SUMMARY`, `@TREE`, `@ECOSYSTEMS`, `@DEPENDENCIES`, `@ENTRY_POINTS`, `@RELATIONSHIPS`, `@FILE_INDEX`, `@FILES`, `@EXCLUDED`, `@SECURITY`, `@END`).
+
+#### Native `.aibundle` v1 Format Specification:
+```text
+@VEILFRAME_BUNDLE
+version=1
+project=VeilFrame v2.2.0
+root=/workspace/VeilFrame
+timestamp=2026-09-17T00:00:00Z
+total_tokens=94,520
+included_files=64
+excluded_files=182
+
+@PROJECT
+Name: VeilFrame v2.2.0
+Detected Languages: Python, Kotlin, Shell, HTML, CSS
+Detected Ecosystems: Python, Android, Gradle
+Frameworks: PySide6, Qt
+Package Managers: uv, pip, gradle
+Total Files on Disk: 246 (42.8 MiB)
+Included in Context: 64 files (~94,520 tokens)
+...
+
+@TREE
+├── veilframe/
+│   ├── core/ [INCLUDED: 12 files]
+│   └── gui/ [INCLUDED: 24 files]
+├── node_modules/ [EXCLUDED: dependency, 14,210 files]
+└── .venv/ [EXCLUDED: environment, 4,120 files]
+
+@DEPENDENCIES
+• pyproject.toml: PySide6>=6.6.0, opencv-python>=4.8.0, cryptography>=41.0.0
+• uv.lock: 84 resolved packages (hashes & URLs stripped)
+
+@ENTRY_POINTS
+• run.py | python | priority=100
+• veilframe/gui/main_window.py | python | priority=99
+
+@RELATIONSHIPS
+• veilframe/gui/main_window.py -> veilframe/core/engine.py, veilframe/gui/folder_panel.py
+
+@FILE_INDEX
+ID   | Path | Type | Language | Size | Tokens
+F001 | run.py | entry_point | python | 3.3 KiB | ~980
+F002 | veilframe/gui/main_window.py | source | python | 18.2 KiB | ~4,210
+...
+
+@FILES
+@FILE id="F001" path="run.py" type="entry_point" language="python"
+<<<
+[Complete, untruncated source code with inline secrets masked]
+>>>
+
+@EXCLUDED
+node_modules/ | 14,210 files | dependency
+.venv/ | 4,120 files | environment
+tests/large_fixtures/ | 12 files | Context budget exhausted (budget remaining: 140 tokens)
+
+@SECURITY
+STATUS: SECURE | 0 credentials exposed
+EXCLUDED CREDENTIAL FILES:
+  • .env | excluded | Security exclusion (sensitive filepath pattern)
+REDACTED INLINE SECRETS:
+  • veilframe/config/remote.py | redacted | AWS Client Key
+
+@END
+```
+
+#### Multi-Format Context Export:
+| Format | Extension | Flag | Optimal Use Case |
+|---|---|---|---|
+| **VeilFrame Native** | `.aibundle` | `-f aibundle` | **Recommended.** Highest token-density delimiter format for LLMs (Claude, GPT, Gemini). |
+| **Markdown** | `.md` | `-f markdown` | Human-readable documentation, GitHub PR reviews, chat interfaces with Markdown renderers. |
+| **Interactive HTML** | `.html` | `-f html` | Self-contained single-page dashboard with syntax-highlighted code viewer, search, and copy tools. |
+| **Structured JSON** | `.json` | `-f json` | Programmatic ingestion, agent workflows, CI/CD pipelines, and IDE plugin integrations. |
+| **Curated Archive** | `.zip` | `-f zip` | Standalone zip file containing only selected, unexcluded, secret-redacted source files without bloat. |
+| **Plain Text** | `.txt` | `-f text` | Minimalist ASCII format optimized for terminal pipes (`\| pbcopy`, `\| xclip`) and legacy utilities. |
+
+---
+
 ## <img src="docs/images/icons/presets.svg" width="22" height="22" alt="" /> Built-in Presets Comparison
 
 | Feature / Policy Dimension | 5% Bounded Forensic Disruption | 10% Bounded Forensic Disruption | Privacy Clean |
@@ -300,19 +419,30 @@ veilframe folder dupes ./my_directory -e ./duplicates_report.html
 veilframe folder stats ./my_directory --json
 ```
 
-#### AI Context Bundling & Program Lister
+#### AI Context Bundling & Program Lister (`veilframe folder ai`)
 ```bash
-# Compile codebase into official native .aibundle v1 context package (default: 128k tokens)
+# 1. Compile codebase into native .aibundle v1 under standard 128k token context window
 veilframe folder ai ./my_project -o ./my_project.aibundle
 
-# Compile into Markdown format under an explicit 200,000 token budget
+# 2. Compile into GitHub-flavored Markdown under an explicit 200,000 token budget
 veilframe folder ai ./my_project -f markdown -t 200000 -o ./my_project.md
 
-# Compile into interactive self-contained HTML context viewer
+# 3. Compile into an interactive, self-contained single-page HTML viewer
 veilframe folder ai ./my_project -f html -o ./my_project_bundle.html
 
-# Exclude test files or disable inline secret redaction if desired
-veilframe folder ai ./my_project -t 200000 --no-tests -o ./my_project.aibundle
+# 4. Export clean, curated source archive (omitting caches, .venv, node_modules, and secrets)
+veilframe folder ai ./my_project -f zip -o ./my_clean_source.zip
+
+# 5. Machine-readable JSON payload for API ingestion and autonomous AI agent workflows
+veilframe folder ai ./my_project -f json -t 64000 -o ./context.json
+
+# 6. Exclude test suites, documentation, or configs to maximize room for core source logic
+veilframe folder ai ./my_project -t 128000 --no-tests --no-docs -o ./core_logic.aibundle
+
+# 7. Pipe directly to terminal stdout / system clipboard for immediate LLM pasting
+veilframe folder ai ./my_project --stdout | pbcopy   # macOS
+veilframe folder ai ./my_project --stdout | xclip    # Linux
+veilframe folder ai ./my_project --stdout | Set-Clipboard  # Windows PowerShell
 ```
 
 #### Android Release Packaging & Distribution

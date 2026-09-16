@@ -1,354 +1,143 @@
-# VeilFrame v2.2.0 Release Notes
+# VeilFrame Release Notes
 
-## Major Release: Multi-Language Folder Intelligence, Modular Secret Detectors, Android Release Packaging & Automated CI Release Pipeline
+## VeilFrame v2.2.0
 
-VeilFrame v2.2.0 delivers **polyglot Folder Intelligence across 14 programming ecosystems**, **modular language-family secret detection**, **non-silent encoding discrimination (`TextReadResult`)**, **UI-independent media architecture (`MediaBackend` & `MediaSource`)**, **native Android packaging (`.apk` and `.aab`)**, a formal **10-Invariant Contract for `.aibundle` v1**, and a **7-platform automated GitHub Actions CI release pipeline**.
+> **Release Date:** September 2026  
+> **Target SDK / Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 35, ARM64/Universal), Python 3.10+
 
----
-
-### Key Highlights in v2.2.0
-
-#### 1. Modular Language-Family Secret Detectors
-- **Ecosystem-Specific Grammar Recognition**: Replaced universal regex heuristics with dedicated, modular detectors under `veilframe/folder/security/detectors/`:
-  - `python.py`: Python variable assignments and type hints (`api_key: str = "..."`).
-  - `javascript.py`: TypeScript / JavaScript declarations (`const apiKey: string = "..."`, `let secret = "..."`).
-  - `go.py`: Go declarations (`var stripeKey string = "..."`, shorthand `apiKey := "..."`).
-  - `rust.py`: Rust constants and let bindings (`const API_KEY: &str = "..."`).
-  - `jvm.py`: Java and Kotlin declarations (`val secretToken: String = "..."`, `private static final String API_KEY = "..."`).
-  - `c_family.py`: C, C++, C#, Dart, and Swift (`let signingKey: String = "..."`, `final String token = "..."`).
-  - `php.py`: PHP variable assignments (`$apiPassword = "..."`).
-  - `shell.py`: Shell / Bash exports (`export PRIVATE_KEY="..."`).
-  - `config.py`: Key-value configuration formats (YAML, JSON, TOML, `.env`).
-  - `generic.py`: Universal token formats (AWS, GitHub, Slack, OpenAI, Stripe, JWT, PEM private keys).
-- **Syntax-Preserving Redaction**: Preserves 100% of surrounding declaration keywords, colons, sigils, type annotations, and semicolons while masking sensitive credential strings with `[REDACTED]`.
-
-#### 2. Resilient Multi-Encoding Hierarchy & `TextReadResult`
-- Rich `TextReadResult` dataclass (`text`, `encoding`, `confidence`, `is_binary`, `decode_errors`).
-- Evaluates files through BOM detection (`UTF-8-SIG`, `UTF-16-LE`, `UTF-16-BE`), strict UTF-8, null-rate heuristic UTF-16 validation (rescuing valid PowerShell and Windows scripts from false binary misclassification), and CP1252 / Latin-1 fallback with strict non-silent binary discrimination.
-
-#### 3. Structured Project Taxonomy & Dependency Modeling
-- Clearly categorizes project components in `@PROJECT` into `Frameworks` (e.g. PySide6), `Libraries` (e.g. NumPy, OpenCV, Pillow, cryptography, PyYAML, pathspec), `Build Systems`, and `Package Managers`.
-- Identifies and tags module imports as `[INTERNAL]` or `[EXTERNAL]` in the `@RELATIONSHIPS` block.
-
-#### 4. UI-Independent Media Engine & Android Platform Architecture
-- **Core Decoupling**: Extracted `MediaBackend` (`DesktopFFmpegBackend` vs `AndroidMediaBackend`) and `MediaSource` (`open_read()`, `open_write()`, `as_path()`), allowing video, image, folder, and AI context engines to execute without desktop PySide6 GUI assumptions.
-- **Modern Scoped Storage**: Configured Android application (`android/`) with least-privilege Scoped Storage, removing legacy overbroad permissions (`WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`) in favor of Storage Access Framework (SAF) and `READ_MEDIA_*` pickers.
-- **Native Android Build Targets**:
-  - `./build.sh android-apk`: Compiles `dist/VeilFrame-android-arm64.apk` for testing and sideloading.
-  - `./build.sh android-aab`: Compiles `dist/VeilFrame-release.aab` for Google Play Store distribution.
-
-#### 5. The 10-Invariant Contract for `.aibundle` v1
-- Validates every generated `.aibundle` against 10 formal invariants:
-  1. No excluded credential content exists in output.
-  2. Zero unredacted detected secrets exist in included source files.
-  3. Bundle token estimate stays within configured budget.
-  4. Every `@FILE` has a deterministic, normalized relative path.
-  5. Exactly one corresponding `@FILE` block exists per included file.
-  6. Mandatory files (`README.md`, `ARCHITECTURE.md`, `pyproject.toml`, `main.py`) survive under extreme budget pressure (5,000 tokens).
-  7. Binary and media contents are never serialized as code.
-  8. `@SECURITY` contains security findings only.
-  9. `@EXCLUDED` contains context-selection explanations only.
-  10. The bundle is 100% valid UTF-8 text.
-
-#### 6. Multi-Platform GitHub Actions CI/CD Release Pipeline
-- Automated multi-OS testing matrix (Ubuntu, Windows, macOS across Python 3.10, 3.11, 3.12).
-- Pre-release 3-Layer Blackbox testing gate (`tests/blackbox/test_blackbox_release.py`).
-- Automated multi-platform package builds:
-  - Windows: `VeilFrame-windows-x86_64.exe`
-  - Linux: `VeilFrame-linux-x86_64.deb` & `VeilFrame-linux-x86_64.tar.gz`
-  - macOS: `VeilFrame-macos-arm64.dmg` & `VeilFrame-macos-arm64.tar.gz`
-  - Android: `VeilFrame-android-arm64.apk` & `VeilFrame-release.aab`
-  - Python: Universal `.whl` and `.tar.gz`
-- Checksum aggregation generating verifiable `SHA256SUMS.txt` and automated GitHub Release asset attachment.
+VeilFrame v2.2.0 introduces native **Android packaging (APK & AAB)**, **modular language-family secret detection** across 14 ecosystems, an **AI Context Bundler** with the native `.aibundle` v1 protocol, an asynchronous **desktop GUI background worker** eliminating scan lag, and an automated multi-platform release pipeline.
 
 ---
 
-# VeilFrame v2.1.0 Release Notes
+### 🌟 Top Features of v2.2.0
 
-#### 1. Dedicated AI Project Lister GUI Mode & Tab Prioritization
-- **4-Mode Segmented Control**: `AI Project Lister` is now a primary first-class mode in the desktop application alongside `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer`.
-- **First-Tab Priority**: Selecting AI Project Lister mode or choosing the `AI-Ready Project Scan` profile automatically positions `AI Program Lister` as Tab 0 and focuses it upfront.
-- **Project Intelligence Dashboard**: Displays detected ecosystems, primary languages, entry points, dependency manifests, security warnings, and live token usage gauges.
+1. **AI Project Intelligence & `.aibundle` v1 Protocol**
+   - Packages entire codebases into token-bounded context for LLMs (Claude, GPT-4o, Gemini).
+   - **Zero-Truncation Guarantee**: Selected source files are never sliced or chopped into fragments; files are either delivered 100% complete or cleanly deferred if exceeding budget.
+   - **Multi-Format Export**: Native `.aibundle` v1, GitHub-flavored Markdown, self-contained interactive HTML, structured JSON, clean ZIP archives, and plain text.
+   - **4th Primary GUI Tab**: Dedicated `AI Project Lister` with live token budget sliders (`32k` to `1M+`), interactive file tree with token consumption badges, and non-blocking background generation.
 
-#### 2. Native `.aibundle` v1 Plain-Text Protocol
-- **Two-Layer Architecture**:
-  - **Layer A (Project Index)**: `@INDEX`, `@PROJECT`, `@TREE`, `@ECOSYSTEMS`, `@DEPENDENCIES`, `@ENTRY_POINTS`, `@RELATIONSHIPS`.
-  - **Layer B (File Contents)**: Complete, untruncated source files mapped by ID (`F001`, `F002`) with unambiguous block fences:
-    ```text
-    @FILE id="F001" path="src/main.py" type="source" language="python"
-    <<<
-    [Complete Source Content]
-    >>>
+2. **Modular Language-Family Secret Detection**
+   - 10 dedicated detectors (`python`, `javascript`, `go`, `rust`, `jvm`, `c_family`, `php`, `shell`, `config`, `generic`) replace crude global regexes.
+   - In-situ secret masking (`[REDACTED]`) preserving surrounding code syntax, types, and structure.
+   - Zero false positives on method chains, Windows paths, documentation URLs, and package lockfile hashes.
+   - Automatic exclusion of credential files (`.env`, `*.pem`, `id_rsa`).
+
+3. **Native Android Platform Support (API 35)**
+   - Standalone ARM64 APK (`VeilFrame-android-arm64.apk`) for direct testing and sideloading.
+   - Universal Android App Bundle (`VeilFrame-release.aab`) for Google Play Store distribution.
+   - Powered by Chaquopy Python 3.11, mobile FFmpegKit, and least-privilege Scoped Storage (`READ_MEDIA_*`).
+
+4. **Intelligent Codebase Summarization**
+   - **Lockfile Summarizer**: Condenses multi-megabyte lockfiles (`uv.lock`, `package-lock.json`, `Cargo.lock`, `poetry.lock`) into concise package lists, stripping millions of tokens of hashes and download URLs.
+   - **Database & Model Summaries**: Extracts SQLite table schemas and row counts; produces metadata summaries for ML models and binaries without dumping unreadable byte streams.
+   - **Collapsed Directory Trees**: Collapses vendor folders (`node_modules/`, `.venv/`) into single-line summaries to conserve token budget.
+
+---
+
+### 📋 Changelog (v2.2.0)
+
+#### 🤖 AI Context & Folder Engine
+- Added `veilframe.folder.ai_bundle` containing priority knapsack allocation, context compression, and multi-format renderers.
+- Implemented `TextReadResult` with multi-encoding fallback (UTF-8, UTF-8-SIG, UTF-16, CP1252, Latin-1) and non-silent binary data rejection.
+- Implemented AST and brace-language structural signature outliners for oversized file summarization.
+- Integrated PathSpec `.gitignore` compliance into directory traversal.
+
+#### 🔒 Security & Privacy
+- Added modular secret detectors under `veilframe.folder.security.detectors/`.
+- Implemented Shannon entropy scoring with heuristic false-positive suppression.
+- Added automatic exclusion rules for sensitive credentials and environment files.
+
+#### 🖥️ Desktop GUI (PySide6)
+- Added `AI Project Lister` as the 4th top-level mode in the segmented mode switcher.
+- Added `BundleGenerationWorker` background threading to eliminate UI freezing during scans.
+- Added live token consumption badges and interactive token budget slider.
+
+#### 📱 Android & Packaging
+- Added full Android project structure under `android/` with ViewBinding, ForegroundService, and MediaBackend.
+- Updated `build.sh` with `android-apk` and `android-aab` build targets.
+- Fixed GitHub Actions Android SDK setup action using explicit `platforms;android-35` and `build-tools;35.0.0`.
+- Integrated automated GitHub Actions release workflow building Windows, macOS, Linux, Android, and Python packages.
+
+---
+
+### 💻 Platform-Specific Installation & Usage
+
+#### Windows (x86_64)
+- **Download**: `VeilFrame-windows-x86_64.exe`
+- **Usage**:
+  - Double-click `VeilFrame-windows-x86_64.exe` to launch the Desktop GUI.
+  - Or run from Command Prompt / PowerShell:
+    ```powershell
+    .\VeilFrame-windows-x86_64.exe gui
+    .\VeilFrame-windows-x86_64.exe folder ai .\my_project -t 128000 -o bundle.aibundle
     ```
-- **High Information Density**: Eliminates repeated metadata headers before every file, saving thousands of tokens while maximizing structural comprehension for consuming AI models.
 
-#### 3. Strict Zero-Truncation Guarantee on Included Files
-- **No Arbitrary Snippets**: Included source, test, doc, and config files are never chopped in half or truncated by default.
-- **Intelligent Summarization for Binaries**: SQLite databases are summarized with live schema definitions and row counts; ML models and binary artifacts are summarized via tensor metadata and MIME types.
-
-#### 4. Collapsed Logical Project Tree
-- Summarizes vast dependency trees (`node_modules/ [EXCLUDED: dependency]`, `.venv/ [EXCLUDED: environment]`, `.git/ [EXCLUDED: VCS internals]`) in a single line, reducing tree tokens from 50,000+ to under 200 tokens.
-
-#### 5. Multi-Ecosystem Rule Registry & PathSpec Engine
-- Fully decoupled, extensible YAML rules under `veilframe/folder/rules/builtin/` (Python, Web/JS, Rust, Go, C/C++, Docker, Java, and general development).
-- Native `.gitignore` compliance using `pathspec.GitIgnoreSpec` with fallback pattern matching.
-
-#### 6. CLI Command: `veilframe folder ai`
-- Compile any repository into `.aibundle`, Markdown, interactive HTML, JSON, or ZIP:
+#### Linux (Debian / Ubuntu & Portable)
+- **Debian / Ubuntu Package**:
   ```bash
-  veilframe folder ai ./my_project -o project.aibundle
+  sudo dpkg -i VeilFrame-linux-x86_64.deb
+  sudo apt-get install -f  # resolve any missing system dependencies
+  veilframe gui            # launch GUI from terminal or application launcher
+  ```
+- **Portable Tarball**:
+  ```bash
+  tar -xzf VeilFrame-linux-x86_64.tar.gz
+  ./VeilFrame gui
   ```
 
-#### 7. CI & Build Hardening
-- PyInstaller bundling updated in `VeilFrame.spec` to package ecosystem YAML rules and include `pathspec` and `yaml` in hidden imports.
-- GitHub Actions CI workflow updated to run `pytest -v` across Ubuntu, macOS, and Windows runners.
-
----
-
-# VeilFrame v2.0.2 Release Notes
-
-## Major Release: High-Performance Folder Analyzer, Staged Duplicate Finder & Full SHA-256 Reporting
-
-VeilFrame v2.0.2 introduces a comprehensive, high-throughput **Folder Analyzer and Duplicate Scanner Subsystem**, complete **64-character SHA-256 cryptographic integrity preservation**, dynamic multi-format reporting with **interactive HTML dashboards**, automated **folder-based report naming**, and a polished **3-mode segmented desktop interface**.
-
----
-
-## Key Highlights in v2.0.2
-
-### 1. High-Performance Selective Folder Analyzer
-- **Selective Field Traversal**: Powered by single-pass `os.scandir()` traversal. The scanner guarantees that unchecked metadata fields (created, accessed, permissions, hash) incur **zero filesystem I/O overhead**.
-- **Configurable Scan Presets**:
-  - `Quick Scan`: File names, extensions, sizes, and modified timestamps.
-  - `Full Metadata`: Complete attributes including creation time, access time, and POSIX/Windows permissions.
-  - `Integrity Scan`: Full metadata plus end-to-end cryptographic hashing (SHA-256, SHA-1, or MD5).
-  - `Duplicate Finder`: Staged candidate pruning and hash verification.
-  - `Custom Configuration`: Granular checkboxes, max recursion depth limits, directory exclusions, and extension filters.
-- **SQLite Indexing & Cache Repository**: Persistent or memory-backed indexing supporting instant multi-field keyword filtering, extension aggregations, and fast duplicate lookup queries.
-
-### 2. Staged Duplicate Detection Engine (10–100x Speedup)
-- **Staged 3-Tier Pipeline**:
-  - **Stage 1 (Size Partitioning)**: Group files by exact byte size; singleton sizes are eliminated instantly with zero file reads.
-  - **Stage 2 (Head/Tail Fingerprinting)**: For collision candidates, reads at most 16 KiB (8 KiB head + 8 KiB tail + file size) regardless of whether the file is 10 MB or 50 GB.
-  - **Stage 3 (Full Cryptographic Hash)**: Only files with identical Stage 2 fingerprints are fully streamed through the parallel cryptographic hash engine to confirm byte-for-byte identity.
-- **Parallel Streaming Hasher**: Bounded `ThreadPoolExecutor` with 1 MiB chunked streaming to prevent memory ballooning on massive media files.
-
-### 3. Full 64-Character SHA-256 Integrity & Interactive Reports
-- **Zero Truncation Policy**: Cryptographic hashes are stored and exported as full 64-hexadecimal-character strings across all reports (Markdown, HTML, TXT, CSV, JSON) and ASCII tree hierarchies.
-- **Dynamic Scanned Files Inventory**: Markdown and HTML reports dynamically generate tables displaying every user-selected attribute (Name, Relative Path, Size, Extension, Modified, Created, Accessed, Permissions, Full SHA-256).
-- **Interactive HTML Report**:
-  - Built-in live search bar with real-time client-side table filtering.
-  - Interactive collapsible directory hierarchy.
-  - Clickable copyable hash badges (`<code class="copyable-hash">`) that instantly copy the full 64-character SHA-256 hash to the clipboard with animated toast notification feedback.
-- **Standardized Folder Naming**: Automatically pre-fills `<scanned_folder_name>_scan_report.<ext>` (e.g. `PrivacyVideoCleaner_v1_source_scan_report.html`) while granting full flexibility to rename and select alternative formats.
-
-### 4. Desktop GUI 3-Mode Segmented Switcher & UI Polish
-- **Segmented Mode Switcher**: Seamlessly switch between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer` with exclusive state management.
-- **Live Progressive Tree**: Animated directory tree populates in real-time as the filesystem traversal streams in the background.
-- **Pulsing Progress & Telemetry**: Animated gradient progress bar displaying live items/sec scan throughput, item counters, and millisecond elapsed timers.
-- **Clipboard Integration & Context Menus**:
-  - Single-click / double-click on hash columns copies the complete uncut SHA-256 to the clipboard.
-  - Right-click context menus provide fast actions: *Copy Full SHA-256 Hash*, *Copy Name*, *Copy Relative Path*, *Copy Absolute Path*, and *Open Containing Folder*.
-
-### 5. Unified CLI Subcommands
-- `veilframe folder scan <target>`: Scan directory with configurable profile, hash algorithms, depth, and exclusions.
-- `veilframe folder dupes <target>`: Scan specifically for duplicate files with staged hashing and wasted space accounting.
-- `veilframe folder stats <target>`: Compute quick size rollups, file type distributions, and summary metrics.
-- `veilframe folder export <target> -o <report>`: Directly export scan results to HTML, Markdown, JSON, CSV, or TXT.
-
-### 6. Cross-Platform Release Matrix & Standalone Packages
-VeilFrame v2.0.2 now officially provides standalone native distributions for **Windows x64**, **Linux x64** (.deb & .tar.gz), and **macOS Apple Silicon ARM64** (.dmg & .tar.gz) alongside universal Python wheels:
-
-| Distribution Artifact | Runner / OS | Architecture | Purpose / Description |
-|---|---|---|---|
-| `VeilFrame-windows-x86_64.exe` | `windows-latest` | x86_64 | Standalone single-file executable (GUI & CLI) |
-| `VeilFrame-linux-x86_64.deb` | `ubuntu-22.04` | x86_64 | Native Debian/Ubuntu package with desktop menu entry & icons |
-| `VeilFrame-linux-x86_64.tar.gz` | `ubuntu-22.04` | x86_64 | Standalone portable Linux archive (extract & run) |
-| `VeilFrame-macos-arm64.dmg` | `macos-latest` | ARM64 | Native Apple Silicon disk image (Drag-to-Applications) |
-| `VeilFrame-macos-arm64.tar.gz` | `macos-latest` | ARM64 | Standalone portable macOS archive (`VeilFrame.app` bundle) |
-| `veilframe-2.0.2-py3-none-any.whl` | Universal | Any | Universal Python Wheel (`pip install`) |
-| `veilframe-2.0.2.tar.gz` | Universal | Any | Source distribution package |
-| `SHA256SUMS.txt` | Release Gate | — | Cryptographic SHA-256 integrity verification |
-
----
-
-## Operating System Installation & Execution Guide
-
-### 🪟 Windows (x86_64)
-1. Download `VeilFrame-windows-x86_64.exe` and `SHA256SUMS.txt`.
-2. Verify checksum:
-   ```powershell
-   Get-FileHash -Path .\VeilFrame-windows-x86_64.exe -Algorithm SHA256
-   ```
-3. Run GUI: Double-click `VeilFrame-windows-x86_64.exe` or execute `.\VeilFrame-windows-x86_64.exe gui`.
-4. Run CLI: `.\VeilFrame-windows-x86_64.exe doctor --json` or `.\VeilFrame-windows-x86_64.exe folder scan <dir>`.
-
-### 🐧 Linux (x86_64)
-
-#### Option A: Native Debian/Ubuntu Package (`.deb`)
-Recommended for Ubuntu, Debian, Linux Mint, Pop!_OS:
-```bash
-# 1. Download and install .deb
-sudo dpkg -i VeilFrame-linux-x86_64.deb
-sudo apt-get install -f  # resolves any missing runtime libraries
-
-# 2. Launch from desktop application menu or terminal
-veilframe gui      # or simply 'veilframe'
-veilframe doctor   # CLI health probe
-```
-
-#### Option B: Portable Archive (`.tar.gz`)
-Works on any Linux distribution (Ubuntu, Fedora, Arch, openSUSE):
-```bash
-tar -xzf VeilFrame-linux-x86_64.tar.gz
-chmod +x VeilFrame
-./VeilFrame gui
-```
-
-**System Graphics Runtime Libraries:**
-VeilFrame bundles Python, PySide6, OpenCV, NumPy, Cryptography, and FFmpeg. On minimal or headless distributions, install standard graphics/GL runtime libraries:
-```bash
-# Debian / Ubuntu / Mint:
-sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libglx-mesa0 libxkbcommon-x11-0
-# Fedora / RHEL:
-sudo dnf install -y ffmpeg mesa-libGL mesa-libEGL libxkbcommon-x11
-# Arch Linux:
-sudo pacman -S ffmpeg mesa libxkbcommon
-```
-
-### 🍎 macOS (Apple Silicon ARM64)
-
-#### Option A: Drag-to-Applications Disk Image (`.dmg`)
-1. Download `VeilFrame-macos-arm64.dmg`.
-2. Double-click to mount the disk image.
-3. Drag **VeilFrame.app** into the **Applications** folder.
-4. Launch VeilFrame from Launchpad, Spotlight, or Applications.
-
-#### Option B: Portable App Archive (`.tar.gz`)
-```bash
-tar -xzf VeilFrame-macos-arm64.tar.gz
-open VeilFrame.app
-```
-
-**macOS Gatekeeper Note:**
-As an open-source community release, this build is not notarized with a paid Apple Developer ID. If macOS displays a Gatekeeper security warning on first launch:
-- Right-click `VeilFrame.app` in Finder / Applications and select **Open**, OR
-- Clear quarantine attribute via terminal:
+#### macOS (Apple Silicon ARM64)
+- **Installer (DMG)**:
+  - Open `VeilFrame-macos-arm64.dmg` and drag `VeilFrame.app` to `/Applications`.
+- **Portable Tarball**:
   ```bash
-  xattr -d com.apple.quarantine /Applications/VeilFrame.app
+  tar -xzf VeilFrame-macos-arm64.tar.gz
+  open VeilFrame.app
   ```
 
-### 🐍 Universal Python Package (Any Platform)
-Install directly into any Python 3.10+ virtual environment:
-```bash
-pip install veilframe-2.0.2-py3-none-any.whl
-# or from source:
-pip install -e .
-```
+#### Android (API 26+, Target API 35)
+- **Testing & Sideloading (APK)**:
+  ```bash
+  adb install -r VeilFrame-android-arm64.apk
+  ```
+- **Google Play Distribution (AAB)**:
+  - Upload `VeilFrame-release.aab` directly to the Google Play Console Release Track.
 
-### 🛠️ Local Multi-Target POSIX Build Script (`build.sh`)
-Linux and macOS developers can build and package standalone binaries and native installers locally:
-```bash
-chmod +x build.sh
-./build.sh clean     # Clean previous builds
-./build.sh build     # Build standalone binary with PyInstaller
-./build.sh test      # Run full test suite & GUI smoke test
-./build.sh package   # Package .dmg (macOS) or .deb & .tar.gz (Linux)
-./build.sh all       # Run clean, build, test, and package in one command
-```
-
----
-
-### 7. Full Test Suite & Quality Verification
-- Added dedicated `tests/test_gui_smoke.py` verifying offscreen Qt platform initialization, PySide6 widgets, and mode switching.
-- Added 31 unit tests covering folder scanning, staged hashing, duplicate pruning, and export generation.
-- **247 total tests passing** across video, image, quality gate, folder, and GUI smoke suites.
+#### Python Package (Universal Wheel)
+- **Installation via pip**:
+  ```bash
+  pip install veilframe-2.2.0-py3-none-any.whl
+  # or from source:
+  pip install veilframe
+  ```
+- **CLI Commands**:
+  ```bash
+  veilframe sanitize input.mp4 -o output.mp4
+  veilframe image sanitize photo.jpg -o clean.png
+  veilframe folder ai ./my_project -t 128000 -o context.aibundle
+  veilframe gui
+  ```
 
 ---
 
-# VeilFrame v2.0.1 Release Notes
+## 📜 Previous Releases
 
-## Production Engineering, Performance Hardening & Bug Fixes
+<details>
+<summary><b>VeilFrame v2.0.2</b> — High-Performance Folder Analyzer, Staged Duplicate Finder & SHA-256 Reporting</summary>
 
-VeilFrame v2.0.1 is a comprehensive production engineering release addressing performance bottlenecks, process window flashing, dependency verification reliability, UI state management, dead code elimination, and cryptographic provenance consistency across CLI, GUI, and standalone executable distributions.
+- High-performance selective directory analysis via single-pass `os.scandir()`.
+- 3-stage duplicate detection (size partitioning, 16 KiB head/tail fingerprinting, parallel streaming full SHA-256).
+- SQLite directory caching and full 64-character SHA-256 reporting across interactive HTML, Markdown, CSV, and JSON.
+- 3-mode segmented PySide6 desktop interface (Video Sanitizer, Image Privacy, Folder Analyzer).
 
----
+</details>
 
-## Key Highlights & Fixes in v2.0.1
+<details>
+<summary><b>VeilFrame v2.0.1 & v2.0.0</b> — Bounded Forensic Disruption & Cryptographic Provenance</summary>
 
-### 1. Flashing Console Window Suppression & Subprocess Hardening
-- **Zero Flashing Windows**: Passed `creationflags=subprocess.CREATE_NO_WINDOW` (`0x08000000`) across all Windows subprocess executions (hardware probes, FFmpeg transcoding, FFprobe analysis, sanitization, and preview generation).
-- **Sub-Millisecond Hardware Discovery**: Implemented instant (<1ms) Win32 `EnumDisplayDevicesW` GPU query via `ctypes` and parallelized candidate encoder validation via `ThreadPoolExecutor`.
+- Initial release of the 5-contract QualityGate and 3-tier visual fidelity gate.
+- Video domain: Bayer CFA PRNU dithering, 2D DCT median shift, and acoustic ENF notch filtration within 5% and 10% policy ceilings.
+- Image domain: Container stripping, representation normalization, and solid redactions with 7 independent red-team probes.
+- RFC 8785 Canonical JSON manifests signed with Ed25519 asymmetric keys.
 
-### 2. FFmpeg / FFprobe Live Verification & Download Resilience
-- **Functional Execution Probes**: Replaced naive static file-size checks with live `-version` process execution tests (`timeout=5`, `CREATE_NO_WINDOW`) in `is_ffmpeg_installed()`, `is_ffprobe_installed()`, and `audit_environment()`.
-- **Precedence & Shim Elimination**: Prioritized persistent user binaries (`~/.veilframe/bin/`) over PyInstaller bundle paths, enforced >5MB binary size filters in packaging to eliminate package manager shims, and unified version detection across Environment Doctor and the Main Window.
-- **Multi-Mirror Download Fallback**: Added multi-mirror failover URLs (BtbN GitHub builds, gyan.dev release, and codexffmpeg release) with a 600s total wall-clock timeout and chunked progress reporting.
-- **Dual Binary Extraction**: Automatically extracts and verifies both `ffmpeg.exe` and `ffprobe.exe` into persistent user storage (`~/.veilframe/bin/`).
-
-### 3. Transform-Domain (DCT) Perturbation Vectorization (100–500x Speedup)
-- **Vectorized Matrix Projections**: Replaced pure-Python nested loops in `hash_perturbation.py` with precomputed orthonormal Type-II DCT projection matrices ($D M D^T$ and $D^T X D$).
-- **Zero Extra Dependencies**: Pure NumPy BLAS matrix multiplications preserving exact mathematical precision down to $10^{-15}$ machine epsilon while drastically improving execution throughput.
-
-### 4. Core Pipeline Robustness & Tag Normalization
-- **Fail-Fast Directory Creation**: Enforced `dst_path.parent.mkdir(parents=True, exist_ok=True)` at pipeline initialization to eliminate crashes on non-existent output paths.
-- **Case-Insensitive Tag Filtering**: Normalized container tag keys to lowercase before whitelist validation, eliminating false-positive privacy leak reports on standard MP4 metadata tags (`creation_time`, `CREATION_TIME`, `major_brand`).
-- **Epoch-0 Timestamp Normalization**: Expanded Epoch-0 matching to handle ISO timestamp variations (`1970-01-01T00:00:00.000000Z`, `1970-01-01T00:00:00Z`, `1970-01-01 00:00:00`).
-- **Enhanced Stderr Error Diagnostics**: Expanded stderr tail capture to 6000 characters and added heuristic hints for missing video streams or unsupported codecs.
-- **Safe Auto-Trim Bounds**: Guarded `calculate_trim()` against zero or invalid stream durations to prevent unintended fallbacks.
-
-### 5. GUI & CLI Polish
-- **Exclusive Mode Toggle**: Bound Video Sanitizer and Image Privacy Compiler toggle buttons to an exclusive `QButtonGroup` in `MainWindow`, preventing desynchronized UI states.
-- **Pre-Flight Dependency Interception**: Guarded video loading and processing start with live `is_ffmpeg_installed()` checks, prompting an interactive installer dialog before execution.
-- **Accurate Path Display**: Resolved platform paths in `DependencyInstallerDialog` via `get_user_bin_dir()` instead of Unix tilde shorthands on Windows.
-- **Non-TTY Color Code Suppression**: Fixed `_supports_color()` to cleanly return `False` when stdout is piped or redirected to files, eliminating ANSI code pollution in log streams.
-- **Dynamic Policy Thresholds**: Formatted text audit reports now dynamically reflect active `VisualBudgetPolicy` constraints.
-
-### 6. Packaging, Antivirus Safety & Dead Code Cleanup
-- **Console Handle Leak Fix**: Fixed Windows `CONOUT$` / `CONIN$` handle lifecycle in `run.py` with explicit tracking and `atexit` cleanup handlers.
-- **Antivirus False-Positive Protection**: Disabled UPX compression (`upx=False`) in `VeilFrame.spec` to prevent heuristic false positives by antivirus scanners and CI build failures.
-- **Dead Code Elimination**: Removed obsolete research and calibration scripts from `tools/` and removed broken `benchmark` command from the CLI.
-- **Automated CI Release Pipeline**: Added `workflow_dispatch` trigger and `actions/upload-artifact@v4` workflow run packaging to `.github/workflows/ci.yml`.
-
----
-
-## Architectural Capabilities
-
-### 1. Hardware-Accelerated GPU Encoding with Deterministic Fallback
-- **NVIDIA**: `h264_nvenc`, `hevc_nvenc`, `av1_nvenc`
-- **Intel**: `h264_qsv`, `hevc_qsv`, `av1_qsv`
-- **AMD**: `h264_amf`, `hevc_amf`, `av1_amf`
-- **Apple Silicon / macOS**: `h264_videotoolbox`, `hevc_videotoolbox`
-- **Software CPU Fallback**: Deterministic `libx264`, `libx265`, `libsvtav1`
-
-### 2. Universal Multi-Format Conversion Support
-- **Video Containers**: MP4 (`.mp4`), Matroska (`.mkv`), WebM (`.webm`), QuickTime (`.mov`), Audio Video Interleave (`.avi`), MPEG-TS (`.ts`)
-- **Image Compilers**: JPEG (`.jpg`, `.jpeg`), PNG (`.png`), WebP (`.webp`), TIFF (`.tiff`, `.tif`), BMP (`.bmp`), GIF (`.gif`), ICO (`.ico`), PPM (`.ppm`)
-- **Folder Reports**: Interactive HTML (`.html`), Markdown (`.md`), JSON (`.json`), CSV (`.csv`), Plain Text (`.txt`)
-
-### 3. Full Cryptographic Verification & Auditability
-- Multi-layer image privacy compilation with 7 adversarial red-team probes.
-- RFC 8785 Canonical JSON output manifests with Ed25519 digital signatures.
-- Full automated test suite verification (246/246 passing tests).
-
----
-
-## Verification & Installation
-
-### Running the Standalone Executable
-Download `VeilFrame.exe` and `SHA256SUMS.txt` from the GitHub release assets and execute directly on Windows x64. No Python installation or external runtime dependencies are required.
-
-To verify binary integrity:
-```powershell
-Get-FileHash -Path .\VeilFrame.exe -Algorithm SHA256
-```
-Compare the resulting hash with the corresponding entry in `SHA256SUMS.txt`.
-
-### Running from Source
-```bash
-git clone https://github.com/sahir247/VeilFrame.git
-cd VeilFrame
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -e .
-python run.py
-```
+</details>
