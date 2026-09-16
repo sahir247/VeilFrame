@@ -4,4 +4,7 @@ calibration/v1.0/*.tar.gz binary
 *.tar.gz binary
 *.gz binary
 *.zip binary
-*.y4m binary    
+*.y4m binary
+*.jar binary
+*.sh text eol=lf
+gradlew text eol=lf

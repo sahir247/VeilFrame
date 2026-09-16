@@ -228,15 +228,19 @@ do_android_apk() {
         exit 1
     fi
     mkdir -p dist
-    if [ -f "./android/gradlew" ]; then
-        (cd android && ./gradlew assembleRelease)
+    ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
+    if [ -f "${ANDROID_DIR}/gradlew" ]; then
+        chmod +x "${ANDROID_DIR}/gradlew"
+        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --info assembleRelease)
     elif command -v gradle >/dev/null 2>&1; then
-        (cd android && gradle assembleRelease)
+        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --info assembleRelease)
     else
         echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-android-arm64.apk"
         touch dist/VeilFrame-android-arm64.apk
     fi
-    if [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+    if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+        cp android/app/build/outputs/apk/release/app-release.apk dist/VeilFrame-android-arm64.apk
+    elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
         cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/VeilFrame-android-arm64.apk
     fi
     echo "✓ Android APK output ready in dist/VeilFrame-android-arm64.apk"
@@ -249,16 +253,20 @@ do_android_aab() {
         exit 1
     fi
     mkdir -p dist
-    if [ -f "./android/gradlew" ]; then
-        (cd android && ./gradlew bundleRelease)
+    ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
+    if [ -f "${ANDROID_DIR}/gradlew" ]; then
+        chmod +x "${ANDROID_DIR}/gradlew"
+        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --info bundleRelease)
     elif command -v gradle >/dev/null 2>&1; then
-        (cd android && gradle bundleRelease)
+        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --info bundleRelease)
     else
         echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-release.aab"
         touch dist/VeilFrame-release.aab
     fi
     if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
         cp android/app/build/outputs/bundle/release/app-release.aab dist/VeilFrame-release.aab
+    elif [ -f "android/app/build/outputs/bundle/release/app-release-unsigned.aab" ]; then
+        cp android/app/build/outputs/bundle/release/app-release-unsigned.aab dist/VeilFrame-release.aab
     fi
     echo "✓ Android AAB output ready in dist/VeilFrame-release.aab"
 }
