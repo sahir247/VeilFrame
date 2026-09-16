@@ -20,17 +20,6 @@ android {
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
-
-        python {
-            version = "3.11"
-            pip {
-                install("numpy>=1.24.0")
-                install("pillow>=10.0.0")
-                install("cryptography>=41.0.0")
-                install("pyyaml>=6.0.1")
-                install("pathspec>=0.11.0")
-            }
-        }
     }
 
     buildTypes {
@@ -61,10 +50,24 @@ android {
     buildFeatures {
         viewBinding = true
     }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.11"
+
+        pip {
+            install("numpy>=1.24.0")
+            install("pillow>=10.0.0")
+            install("cryptography>=41.0.0")
+            install("pyyaml>=6.0.1")
+            install("pathspec>=0.11.0")
+        }
+    }
 
     sourceSets {
         getByName("main") {
-            python.srcDir("../../veilframe")
+            srcDir("../../veilframe")
         }
     }
 }
