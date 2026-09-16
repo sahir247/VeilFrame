@@ -177,7 +177,14 @@ class ScanResult:
     def security_alerts(self) -> List[Any]:
         if self.project_context and hasattr(self.project_context, "security_alerts"):
             return self.project_context.security_alerts
-        return []
+        if isinstance(self.project_context, dict) and "security_alerts" in self.project_context:
+            return self.project_context["security_alerts"]
+        alerts: List[Any] = []
+        for f in self.files:
+            if getattr(f, "secret_alerts", None):
+                for a in f.secret_alerts:
+                    alerts.append(a)
+        return alerts
 
     @property
     def project_graph(self) -> Optional[Any]:

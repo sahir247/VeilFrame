@@ -231,6 +231,187 @@ def parse_go_mod(path: str) -> Optional[ParsedManifest]:
     )
 
 
+def parse_pubspec_yaml(path: str) -> Optional[ParsedManifest]:
+    """Parse Flutter/Dart pubspec.yaml manifest."""
+    if not os.path.exists(path):
+        return None
+
+    name = None
+    version = None
+    desc = None
+    deps: Dict[str, str] = {}
+    dev_deps: Dict[str, str] = {}
+    section = None
+
+    try:
+        from veilframe.folder.ai_bundle.context_compressor import read_text_file_safe
+        content, _ = read_text_file_safe(path)
+    except Exception:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except OSError:
+            return None
+
+    for line in content.splitlines():
+        line_str = line.rstrip()
+        if not line_str or line_str.startswith("#"):
+            continue
+        if not line_str.startswith(" "):
+            if line_str.startswith("name:"):
+                name = line_str.split(":", 1)[1].strip().strip('"\'')
+            elif line_str.startswith("version:"):
+                version = line_str.split(":", 1)[1].strip().strip('"\'')
+            elif line_str.startswith("description:"):
+                desc = line_str.split(":", 1)[1].strip().strip('"\'')
+            elif line_str.startswith("dependencies:"):
+                section = "deps"
+            elif line_str.startswith("dev_dependencies:"):
+                section = "dev_deps"
+            else:
+                section = None
+        elif section and line_str.startswith("  ") and not line_str.startswith("    "):
+            parts = line_str.strip().split(":", 1)
+            k = parts[0].strip()
+            v = parts[1].strip() if len(parts) > 1 else "*"
+            if section == "deps":
+                deps[k] = v
+            elif section == "dev_deps":
+                dev_deps[k] = v
+
+    return ParsedManifest(
+        file_path=path,
+        manifest_type="pubspec.yaml",
+        project_name=name,
+        version=version,
+        description=desc,
+        dependencies=deps,
+        dev_dependencies=dev_deps,
+        entry_points=["lib/main.dart"],
+    )
+
+
+def parse_composer_json(path: str) -> Optional[ParsedManifest]:
+    """Parse PHP composer.json manifest."""
+    if not os.path.exists(path):
+        return None
+    try:
+        from veilframe.folder.ai_bundle.context_compressor import read_text_file_safe
+        content, _ = read_text_file_safe(path)
+        data = json.loads(content)
+    except Exception:
+        return None
+
+    name = data.get("name")
+    version = data.get("version")
+    desc = data.get("description")
+    deps = data.get("require", {})
+    dev_deps = data.get("require-dev", {})
+
+    return ParsedManifest(
+        file_path=path,
+        manifest_type="composer.json",
+        project_name=name,
+        version=version,
+        description=desc,
+        dependencies={k: str(v) for k, v in deps.items()} if isinstance(deps, dict) else {},
+        dev_dependencies={k: str(v) for k, v in dev_deps.items()} if isinstance(dev_deps, dict) else {},
+    )
+
+
+def parse_gradle(path: str) -> Optional[ParsedManifest]:
+    """Parse Android/Kotlin Gradle build files (build.gradle, build.gradle.kts)."""
+    if not os.path.exists(path):
+        return None
+
+    deps: Dict[str, str] = {}
+    try:
+        from veilframe.folder.ai_bundle.context_compressor import read_text_file_safe
+        content, _ = read_text_file_safe(path)
+    except Exception:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+        except OSError:
+            return None
+
+    for line in content.splitlines():
+        m = re.search(r"""(?:implementation|api|compileOnly|testImplementation)\s*\(?['"]([^'"]+)['"]\)?""", line)
+        if m:
+            val = m.group(1)
+            parts = val.split(":")
+            if len(parts) >= 2:
+                deps[f"{parts[0]}:{parts[1]}"] = parts[2] if len(parts) > 2 else "*"
+
+    base = os.path.basename(path)
+    return ParsedManifest(
+        file_path=path,
+        manifest_type=base,
+        project_name=base,
+        dependencies=deps,
+    )
+
+
+def parse_pom_xml(path: str) -> Optional[ParsedManifest]:
+    """Parse Java Maven pom.xml manifest."""
+    if not os.path.exists(path):
+        return None
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(path)
+        root = tree.getroot()
+        ns = ""
+        if root.tag.startswith("{"):
+            ns = root.tag.split("}")[0] + "}"
+
+        artifact_id = root.findtext(f"{ns}artifactId")
+        version = root.findtext(f"{ns}version")
+        deps: Dict[str, str] = {}
+        for dep in root.findall(f".//{ns}dependency"):
+            g = dep.findtext(f"{ns}groupId") or ""
+            a = dep.findtext(f"{ns}artifactId") or ""
+            v = dep.findtext(f"{ns}version") or "*"
+            if g and a:
+                deps[f"{g}:{a}"] = v
+
+        return ParsedManifest(
+            file_path=path,
+            manifest_type="pom.xml",
+            project_name=artifact_id,
+            version=version,
+            dependencies=deps,
+        )
+    except Exception:
+        return None
+
+
+def parse_csproj(path: str) -> Optional[ParsedManifest]:
+    """Parse C# .NET *.csproj manifest."""
+    if not os.path.exists(path):
+        return None
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(path)
+        root = tree.getroot()
+        deps: Dict[str, str] = {}
+        for pkg in root.findall(".//PackageReference"):
+            inc = pkg.get("Include")
+            ver = pkg.get("Version", "*")
+            if inc:
+                deps[inc] = ver
+
+        base = os.path.basename(path)
+        proj_name = base.rsplit(".", 1)[0]
+        return ParsedManifest(
+            file_path=path,
+            manifest_type="csproj",
+            project_name=proj_name,
+            dependencies=deps,
+        )
+    except Exception:
+        return None
+
+
 def parse_manifest(path: str) -> Optional[ParsedManifest]:
     """Universal dispatcher to parse any recognized manifest by filename."""
     base = os.path.basename(path).lower()
@@ -242,4 +423,14 @@ def parse_manifest(path: str) -> Optional[ParsedManifest]:
         return parse_cargo_toml(path)
     elif base == "go.mod":
         return parse_go_mod(path)
+    elif base == "pubspec.yaml":
+        return parse_pubspec_yaml(path)
+    elif base == "composer.json":
+        return parse_composer_json(path)
+    elif base in ("build.gradle", "build.gradle.kts"):
+        return parse_gradle(path)
+    elif base == "pom.xml":
+        return parse_pom_xml(path)
+    elif base.endswith(".csproj"):
+        return parse_csproj(path)
     return None

@@ -50,7 +50,15 @@ class TestSecurityEngine(unittest.TestCase):
             alerts = detector.scan_file(rec)
             self.assertEqual(len(alerts), 1)
             self.assertEqual(alerts[0].rule_id, "sec.aws_access_key")
-            self.assertEqual(rec.effective_category, FileCategory.SECRET)
+            # Normal source file retains is_secret=False and its natural category, with secret_alerts populated
+            self.assertFalse(rec.is_secret)
+            self.assertEqual(len(rec.secret_alerts), 1)
+
+            # Dedicated sensitive file (e.g. .env) is marked is_secret=True and FileCategory.SECRET
+            env_rec = FileRecord(id=2, name=".env", path=".env", relative_path=".env", size=20)
+            env_alerts = detector.scan_file(env_rec)
+            self.assertTrue(env_rec.is_secret)
+            self.assertEqual(env_rec.effective_category, FileCategory.SECRET)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

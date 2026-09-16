@@ -5,6 +5,7 @@ veilframe.folder.security.secret_detector — Deep secret detection, scanning, a
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -52,8 +53,18 @@ class SecurityAlert:
         }
 
 
+from veilframe.folder.security.detectors import GENERIC_DETECTOR, resolve_detectors
+from veilframe.folder.security.detectors.base import (
+    DISALLOWED_VAR_SUFFIXES,
+    UUID_REGEX,
+    SecretFinding,
+    is_candidate_secret,
+    mask_secret,
+)
+
+
 class SecretDetector:
-    """Scans files and text content for secrets, tokens, and cryptographic keys."""
+    """Scans files and text content for secrets, tokens, and cryptographic keys using modular language-family detectors."""
 
     def __init__(self, check_entropy: bool = True, max_scan_bytes: int = 250_000) -> None:
         self.check_entropy = check_entropy
@@ -90,65 +101,101 @@ class SecretDetector:
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read(self.max_scan_bytes)
-                alerts.extend(self.scan_content(content, file_path=file_path))
+                lang = ""
+                if file_rec:
+                    lang = getattr(file_rec, "language", "") or getattr(file_rec, "detected_language", "") or ""
+                alerts.extend(self.scan_content(content, file_path=file_path, language=lang))
             except OSError:
                 pass
 
         if alerts and file_rec:
-            file_rec.is_secret = True
-            from veilframe.folder.models.classification import AIAction, FileCategory
-            if hasattr(file_rec, "classification") and file_rec.classification:
-                file_rec.classification.category = FileCategory.SECRET
-                file_rec.classification.action = AIAction.WARN
-                file_rec.classification.reason = alerts[0].description
+            file_rec.secret_alerts = [a.description for a in alerts]
+            # ONLY mark is_secret = True and category = SECRET if this is a dedicated sensitive credential file.
+            # Normal source or documentation files containing inline secrets retain their genuine category
+            # and are handled via safe redaction.
+            if is_sens:
+                file_rec.is_secret = True
+                from veilframe.folder.models.classification import AIAction, FileCategory
+                if hasattr(file_rec, "classification") and file_rec.classification:
+                    file_rec.classification.category = FileCategory.SECRET
+                    file_rec.classification.action = AIAction.WARN
+                    file_rec.classification.reason = alerts[0].description
 
         return alerts
 
-    def scan_content(self, content: str, file_path: str = "") -> List[SecurityAlert]:
-        """Scan raw string content line by line for secrets."""
+    def scan_content(self, content: str, file_path: str = "", language: str = "") -> List[SecurityAlert]:
+        """Scan raw string content line by line using language-family and generic detectors."""
         alerts: List[SecurityAlert] = []
-        lines = content.splitlines()
+        base_name = os.path.basename(file_path).lower() if file_path else ""
 
-        for idx, line in enumerate(lines, 1):
-            line_str = line.strip()
-            if not line_str or line_str.startswith(("#", "//", "/*", "*")):
-                # Light skip for pure comments unless containing key patterns
-                pass
+        # Skip lockfiles (e.g. uv.lock, package-lock.json) which naturally contain package integrity hashes
+        if base_name in ("uv.lock", "package-lock.json", "poetry.lock", "cargo.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock"):
+            return alerts
 
-            # A. Match Regex Patterns
-            for rule_id, desc, pattern in SECRET_PATTERNS:
-                m = pattern.search(line)
-                if m:
-                    # Extract matched secret (group 1 if present, else full match)
-                    secret_val = m.group(1) if m.groups() else m.group(0)
-                    alerts.append(
-                        SecurityAlert(
-                            file_path=file_path,
-                            line_number=idx,
-                            alert_type="PATTERN_MATCH",
-                            description=desc,
-                            masked_snippet=mask_secret(secret_val),
-                            rule_id=rule_id,
-                            confidence=0.98,
-                        )
+        detectors = resolve_detectors(language=language, file_path=file_path)
+        seen_keys = set()
+
+        for det in detectors:
+            if not self.check_entropy and det != GENERIC_DETECTOR:
+                continue
+            findings = det.detect(content, file_path=file_path)
+            for f in findings:
+                dedup_key = (f.line_number, f.rule_id or f.masked_snippet)
+                if dedup_key in seen_keys:
+                    continue
+                seen_keys.add(dedup_key)
+                alerts.append(
+                    SecurityAlert(
+                        file_path=file_path,
+                        line_number=f.line_number,
+                        alert_type=f.alert_type,
+                        description=f.description,
+                        masked_snippet=f.masked_snippet,
+                        rule_id=f.rule_id,
+                        severity=f.severity,
+                        confidence=f.confidence,
                     )
-
-            # B. Entropy check for assignments: key = "high-entropy-string"
-            if self.check_entropy and ("=" in line_str or ":" in line_str):
-                tokens = line_str.replace("=", " ").replace(":", " ").replace('"', " ").replace("'", " ").split()
-                for token in tokens:
-                    if len(token) >= 24 and has_high_entropy(token):
-                        alerts.append(
-                            SecurityAlert(
-                                file_path=file_path,
-                                line_number=idx,
-                                alert_type="HIGH_ENTROPY",
-                                description="High-entropy string token (potential API key/password)",
-                                masked_snippet=mask_secret(token),
-                                rule_id="high_entropy_token",
-                                confidence=0.85,
-                            )
-                        )
-                        break
+                )
 
         return alerts
+
+
+def redact_inline_secrets(content: str, file_path: str = "", language: str = "") -> Tuple[str, List[SecurityAlert]]:
+    """
+    Deterministic, conservative inline redaction for source and config files.
+    Safely replaces matched secret literals with '[REDACTED]' while strictly preserving code syntax.
+
+    Example:
+        API_KEY = "sk-proj-12345678901234567890" -> API_KEY = "[REDACTED]"
+    """
+    base_name = os.path.basename(file_path).lower() if file_path else ""
+    if base_name in ("uv.lock", "package-lock.json", "poetry.lock", "cargo.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock"):
+        return content, []
+
+    detectors = resolve_detectors(language=language, file_path=file_path)
+    all_alerts: List[SecurityAlert] = []
+    redacted = content
+    seen_keys = set()
+
+    for det in detectors:
+        redacted, findings = det.redact(redacted, file_path=file_path)
+        for f in findings:
+            dedup_key = (f.line_number, f.rule_id or f.masked_snippet)
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+            all_alerts.append(
+                SecurityAlert(
+                    file_path=file_path,
+                    line_number=f.line_number,
+                    alert_type=f.alert_type,
+                    description=f.description,
+                    masked_snippet=f.masked_snippet,
+                    rule_id=f.rule_id,
+                    severity=f.severity,
+                    confidence=f.confidence,
+                )
+            )
+
+    return redacted, all_alerts
+

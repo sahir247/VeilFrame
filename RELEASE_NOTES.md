@@ -1,12 +1,69 @@
-# VeilFrame v2.1.0 Release Notes
+# VeilFrame v2.2.0 Release Notes
 
-## Major Release: AI Project Intelligence Subsystem, Native `.aibundle` v1 Text Protocol & Dedicated 4-Mode GUI
+## Major Release: Multi-Language Folder Intelligence, Modular Secret Detectors, Android Release Packaging & Automated CI Release Pipeline
 
-VeilFrame v2.1.0 introduces the **AI Project Intelligence & LLM Context Subsystem**, the official **native `.aibundle` v1 plain-text protocol**, the **4-mode segmented GUI switcher**, **PathSpec GitIgnore compliance**, and a strict **Zero-Truncation Guarantee** on all included project files.
+VeilFrame v2.2.0 delivers **polyglot Folder Intelligence across 14 programming ecosystems**, **modular language-family secret detection**, **non-silent encoding discrimination (`TextReadResult`)**, **UI-independent media architecture (`MediaBackend` & `MediaSource`)**, **native Android packaging (`.apk` and `.aab`)**, a formal **10-Invariant Contract for `.aibundle` v1**, and a **7-platform automated GitHub Actions CI release pipeline**.
 
 ---
 
-### Key Highlights in v2.1.0
+### Key Highlights in v2.2.0
+
+#### 1. Modular Language-Family Secret Detectors
+- **Ecosystem-Specific Grammar Recognition**: Replaced universal regex heuristics with dedicated, modular detectors under `veilframe/folder/security/detectors/`:
+  - `python.py`: Python variable assignments and type hints (`api_key: str = "..."`).
+  - `javascript.py`: TypeScript / JavaScript declarations (`const apiKey: string = "..."`, `let secret = "..."`).
+  - `go.py`: Go declarations (`var stripeKey string = "..."`, shorthand `apiKey := "..."`).
+  - `rust.py`: Rust constants and let bindings (`const API_KEY: &str = "..."`).
+  - `jvm.py`: Java and Kotlin declarations (`val secretToken: String = "..."`, `private static final String API_KEY = "..."`).
+  - `c_family.py`: C, C++, C#, Dart, and Swift (`let signingKey: String = "..."`, `final String token = "..."`).
+  - `php.py`: PHP variable assignments (`$apiPassword = "..."`).
+  - `shell.py`: Shell / Bash exports (`export PRIVATE_KEY="..."`).
+  - `config.py`: Key-value configuration formats (YAML, JSON, TOML, `.env`).
+  - `generic.py`: Universal token formats (AWS, GitHub, Slack, OpenAI, Stripe, JWT, PEM private keys).
+- **Syntax-Preserving Redaction**: Preserves 100% of surrounding declaration keywords, colons, sigils, type annotations, and semicolons while masking sensitive credential strings with `[REDACTED]`.
+
+#### 2. Resilient Multi-Encoding Hierarchy & `TextReadResult`
+- Rich `TextReadResult` dataclass (`text`, `encoding`, `confidence`, `is_binary`, `decode_errors`).
+- Evaluates files through BOM detection (`UTF-8-SIG`, `UTF-16-LE`, `UTF-16-BE`), strict UTF-8, null-rate heuristic UTF-16 validation (rescuing valid PowerShell and Windows scripts from false binary misclassification), and CP1252 / Latin-1 fallback with strict non-silent binary discrimination.
+
+#### 3. Structured Project Taxonomy & Dependency Modeling
+- Clearly categorizes project components in `@PROJECT` into `Frameworks` (e.g. PySide6), `Libraries` (e.g. NumPy, OpenCV, Pillow, cryptography, PyYAML, pathspec), `Build Systems`, and `Package Managers`.
+- Identifies and tags module imports as `[INTERNAL]` or `[EXTERNAL]` in the `@RELATIONSHIPS` block.
+
+#### 4. UI-Independent Media Engine & Android Platform Architecture
+- **Core Decoupling**: Extracted `MediaBackend` (`DesktopFFmpegBackend` vs `AndroidMediaBackend`) and `MediaSource` (`open_read()`, `open_write()`, `as_path()`), allowing video, image, folder, and AI context engines to execute without desktop PySide6 GUI assumptions.
+- **Modern Scoped Storage**: Configured Android application (`android/`) with least-privilege Scoped Storage, removing legacy overbroad permissions (`WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`) in favor of Storage Access Framework (SAF) and `READ_MEDIA_*` pickers.
+- **Native Android Build Targets**:
+  - `./build.sh android-apk`: Compiles `dist/VeilFrame-android-arm64.apk` for testing and sideloading.
+  - `./build.sh android-aab`: Compiles `dist/VeilFrame-release.aab` for Google Play Store distribution.
+
+#### 5. The 10-Invariant Contract for `.aibundle` v1
+- Validates every generated `.aibundle` against 10 formal invariants:
+  1. No excluded credential content exists in output.
+  2. Zero unredacted detected secrets exist in included source files.
+  3. Bundle token estimate stays within configured budget.
+  4. Every `@FILE` has a deterministic, normalized relative path.
+  5. Exactly one corresponding `@FILE` block exists per included file.
+  6. Mandatory files (`README.md`, `ARCHITECTURE.md`, `pyproject.toml`, `main.py`) survive under extreme budget pressure (5,000 tokens).
+  7. Binary and media contents are never serialized as code.
+  8. `@SECURITY` contains security findings only.
+  9. `@EXCLUDED` contains context-selection explanations only.
+  10. The bundle is 100% valid UTF-8 text.
+
+#### 6. Multi-Platform GitHub Actions CI/CD Release Pipeline
+- Automated multi-OS testing matrix (Ubuntu, Windows, macOS across Python 3.10, 3.11, 3.12).
+- Pre-release 3-Layer Blackbox testing gate (`tests/blackbox/test_blackbox_release.py`).
+- Automated multi-platform package builds:
+  - Windows: `VeilFrame-windows-x86_64.exe`
+  - Linux: `VeilFrame-linux-x86_64.deb` & `VeilFrame-linux-x86_64.tar.gz`
+  - macOS: `VeilFrame-macos-arm64.dmg` & `VeilFrame-macos-arm64.tar.gz`
+  - Android: `VeilFrame-android-arm64.apk` & `VeilFrame-release.aab`
+  - Python: Universal `.whl` and `.tar.gz`
+- Checksum aggregation generating verifiable `SHA256SUMS.txt` and automated GitHub Release asset attachment.
+
+---
+
+# VeilFrame v2.1.0 Release Notes
 
 #### 1. Dedicated AI Project Lister GUI Mode & Tab Prioritization
 - **4-Mode Segmented Control**: `AI Project Lister` is now a primary first-class mode in the desktop application alongside `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer`.

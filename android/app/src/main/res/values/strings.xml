@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">VeilFrame</string>
+    <string name="tab_video">Video Cleaner</string>
+    <string name="tab_image">Image Cleaner</string>
+    <string name="tab_folder">Folder Scanner</string>
+    <string name="tab_bundle">AI Bundle Generator</string>
+</resources>

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QTreeWidget,
@@ -34,6 +35,47 @@ from veilframe.gui.folder.bundle_preview import BundlePreviewDialog
 from veilframe.gui.folder.project_tree_model import populate_ai_tree_item
 
 
+class BundleGenerationWorker(QThread):
+    """Background worker for AI bundle compilation to prevent UI thread freezing."""
+    progress = Signal(int, int, str)
+    finished = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        builder: AIBundleBuilder,
+        scan_result: ScanResult,
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.builder = builder
+        self.scan_result = scan_result
+        self._is_cancelled = False
+
+    def cancel(self) -> None:
+        self._is_cancelled = True
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._is_cancelled
+
+    def run(self) -> None:
+        try:
+            def _on_prog(cur: int, tot: int, msg: str) -> None:
+                self.progress.emit(cur, tot, msg)
+
+            res = self.builder.build(
+                self.scan_result,
+                progress_callback=_on_prog,
+                cancel_token=self,
+            )
+            self.finished.emit(res)
+        except InterruptedError:
+            pass
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class AIProgramListerPanel(QWidget):
     """Main panel for project intelligence analysis, file ranking, and AI bundle creation."""
 
@@ -42,6 +84,8 @@ class AIProgramListerPanel(QWidget):
         self.scan_result: Optional[ScanResult] = None
         self._pinned_files: Set[str] = set()
         self._excluded_files: Set[str] = set()
+        self._bundle_worker: Optional[BundleGenerationWorker] = None
+        self._bundle_progress_dlg: Optional[QProgressDialog] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -199,11 +243,13 @@ class AIProgramListerPanel(QWidget):
         self._rebuild_tree()
 
     def _rebuild_tree(self) -> None:
+        self.tree.setUpdatesEnabled(False)
         self.tree.blockSignals(True)
         self.tree.clear()
 
         if not self.scan_result:
             self.tree.blockSignals(False)
+            self.tree.setUpdatesEnabled(True)
             return
 
         cfg = self.options_widget.get_config()
@@ -217,6 +263,7 @@ class AIProgramListerPanel(QWidget):
             )
         )
 
+        tree_items = []
         for f in sorted_files:
             item = QTreeWidgetItem()
             populate_ai_tree_item(item, f)
@@ -230,9 +277,11 @@ class AIProgramListerPanel(QWidget):
 
             item.setCheckState(0, Qt.Checked if is_included else Qt.Unchecked)
             item.setData(0, Qt.UserRole, f)
-            self.tree.addTopLevelItem(item)
+            tree_items.append(item)
 
+        self.tree.addTopLevelItems(tree_items)
         self.tree.blockSignals(False)
+        self.tree.setUpdatesEnabled(True)
         self._update_token_gauge()
 
     def _on_tree_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
@@ -275,17 +324,21 @@ class AIProgramListerPanel(QWidget):
         )
 
     def _apply_tree_filter(self, text: str) -> None:
-        query = text.strip().lower()
-        root = self.tree.invisibleRootItem()
-        for i in range(root.childCount()):
-            item = root.child(i)
-            matches = (
-                not query or
-                query in item.text(0).lower() or
-                query in item.text(1).lower() or
-                query in item.text(5).lower()
-            )
-            item.setHidden(not matches)
+        self.tree.setUpdatesEnabled(False)
+        try:
+            query = text.strip().lower()
+            root = self.tree.invisibleRootItem()
+            for i in range(root.childCount()):
+                item = root.child(i)
+                matches = (
+                    not query or
+                    query in item.text(0).lower() or
+                    query in item.text(1).lower() or
+                    query in item.text(5).lower()
+                )
+                item.setHidden(not matches)
+        finally:
+            self.tree.setUpdatesEnabled(True)
 
     def _on_generate_bundle(self) -> None:
         if not self.scan_result:
@@ -297,7 +350,46 @@ class AIProgramListerPanel(QWidget):
         cfg.excluded_files = set(self._excluded_files)
 
         builder = AIBundleBuilder(cfg)
-        result = builder.build(self.scan_result)
+
+        self._bundle_progress_dlg = QProgressDialog("Selecting priority files under context budget...", "Cancel", 0, 100, self)
+        self._bundle_progress_dlg.setWindowTitle("Generating AI Project Bundle")
+        self._bundle_progress_dlg.setWindowModality(Qt.WindowModal)
+        self._bundle_progress_dlg.setMinimumDuration(0)
+        self._bundle_progress_dlg.setValue(0)
+        self._bundle_progress_dlg.setAutoClose(True)
+        self._bundle_progress_dlg.setAutoReset(True)
+        self._bundle_progress_dlg.setStyleSheet(
+            "QProgressDialog { background-color: #1e1e1e; color: #e0e0e0; } "
+            "QLabel { color: #e0e0e0; font-size: 12px; } "
+            "QProgressBar { border: 1px solid #3e3e3e; border-radius: 4px; text-align: center; background: #252525; color: white; } "
+            "QProgressBar::chunk { background-color: #007acc; border-radius: 3px; } "
+            "QPushButton { background: #333; color: white; border: 1px solid #444; padding: 4px 12px; border-radius: 4px; }"
+        )
+
+        self._bundle_worker = BundleGenerationWorker(builder, self.scan_result, self)
+        self._bundle_worker.progress.connect(self._on_bundle_progress)
+        self._bundle_worker.finished.connect(self._on_bundle_success)
+        self._bundle_worker.failed.connect(self._on_bundle_failed)
+        self._bundle_progress_dlg.canceled.connect(self._bundle_worker.cancel)
+
+        self._bundle_worker.start()
+
+    def _on_bundle_progress(self, cur: int, tot: int, msg: str) -> None:
+        if self._bundle_progress_dlg and not self._bundle_progress_dlg.wasCanceled():
+            self._bundle_progress_dlg.setValue(cur)
+            self._bundle_progress_dlg.setLabelText(msg)
+
+    def _on_bundle_success(self, result: Any) -> None:
+        if self._bundle_progress_dlg:
+            self._bundle_progress_dlg.close()
+            self._bundle_progress_dlg = None
 
         dlg = BundlePreviewDialog(result, parent=self)
         dlg.exec_()
+
+    def _on_bundle_failed(self, err_msg: str) -> None:
+        if self._bundle_progress_dlg:
+            self._bundle_progress_dlg.close()
+            self._bundle_progress_dlg = None
+
+        QMessageBox.critical(self, "Bundle Generation Failed", f"Failed to generate AI bundle:\n{err_msg}")

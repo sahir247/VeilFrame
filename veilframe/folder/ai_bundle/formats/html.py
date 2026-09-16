@@ -69,7 +69,7 @@ def render_html_bundle(
     ex_rows = "".join(f"<tr><td>{html.escape(line)}</td></tr>" for line in ex_summary)
 
     # Security summary
-    sec_summary = render_security_section(scan_result, excluded_files)
+    sec_summary = render_security_section(scan_result, included_files, excluded_files)
     sec_rows = "".join(f"<tr><td>{html.escape(line)}</td></tr>" for line in sec_summary)
 
     html_doc = f"""<!DOCTYPE html>

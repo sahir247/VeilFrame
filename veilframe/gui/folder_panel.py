@@ -89,7 +89,8 @@ class FolderScanWorker(QThread):
                 self.progress.emit(files_c, fld_c, msg)
 
             def _on_file(f_rec: FileRecord):
-                self.fileDiscovered.emit(f_rec)
+                # Omit per-file Qt signal to prevent saturating the main UI event loop during large scans
+                pass
 
             def _on_folder(fld_rec: FolderRecord):
                 self.folderDiscovered.emit(fld_rec)
@@ -792,86 +793,94 @@ class FolderAnalyzerPanel(QWidget):
             self.ext_table.setItem(row, 3, QTableWidgetItem(f"{e.percentage_size:.1f}%"))
 
         # 3. Finalize directory tree with completed folder size rollups & hashes
-        self.tree_widget.clear()
-        folder_items: Dict[int, QTreeWidgetItem] = {}
+        self.tree_widget.setUpdatesEnabled(False)
+        try:
+            self.tree_widget.clear()
+            folder_items: Dict[int, QTreeWidgetItem] = {}
 
-        for fld in result.folders:
-            item = QTreeWidgetItem()
-            item.setText(0, fld.name)
-            item.setText(1, "Folder")
-            item.setText(2, fld.format_size())
-            item.setText(3, "")
-            item.setText(4, "")
-            item.setText(5, "")
-            item.setForeground(0, QColor("#60a5fa"))
-            item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
-            item.setData(0, Qt.UserRole, fld.path)
-            item.setData(0, Qt.UserRole + 1, fld.relative_path)
-            folder_items[fld.id] = item
+            for fld in result.folders:
+                item = QTreeWidgetItem()
+                item.setText(0, fld.name)
+                item.setText(1, "Folder")
+                item.setText(2, fld.format_size())
+                item.setText(3, "")
+                item.setText(4, "")
+                item.setText(5, "")
+                item.setForeground(0, QColor("#60a5fa"))
+                item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
+                item.setData(0, Qt.UserRole, fld.path)
+                item.setData(0, Qt.UserRole + 1, fld.relative_path)
+                folder_items[fld.id] = item
 
-            if fld.parent_id and fld.parent_id in folder_items:
-                folder_items[fld.parent_id].addChild(item)
-            else:
-                self.tree_widget.addTopLevelItem(item)
+                if fld.parent_id and fld.parent_id in folder_items:
+                    folder_items[fld.parent_id].addChild(item)
+                else:
+                    self.tree_widget.addTopLevelItem(item)
 
-        for f in result.files:
-            item = QTreeWidgetItem()
-            item.setText(0, f.name)
-            item.setText(1, "File")
-            item.setText(2, f.format_size())
-            item.setText(3, f.extension)
-            item.setText(4, f.modified_datetime.strftime("%Y-%m-%d %H:%M") if f.modified_datetime else "")
+            for f in result.files:
+                item = QTreeWidgetItem()
+                item.setText(0, f.name)
+                item.setText(1, "File")
+                item.setText(2, f.format_size())
+                item.setText(3, f.extension)
+                item.setText(4, f.modified_datetime.strftime("%Y-%m-%d %H:%M") if f.modified_datetime else "")
 
-            h_str = ""
-            if f.hash_value:
-                h_str = f"{f.hash_value[:10]}...{f.hash_value[-6:]}"
-                item.setToolTip(5, f"Click or double-click to copy full SHA-256:\n{f.hash_value}")
-                item.setData(5, Qt.UserRole, f.hash_value)
-            item.setText(5, h_str)
+                h_str = ""
+                if f.hash_value:
+                    h_str = f"{f.hash_value[:10]}...{f.hash_value[-6:]}"
+                    item.setToolTip(5, f"Click or double-click to copy full SHA-256:\n{f.hash_value}")
+                    item.setData(5, Qt.UserRole, f.hash_value)
+                item.setText(5, h_str)
 
-            item.setData(0, Qt.UserRole, f.path)
-            item.setData(0, Qt.UserRole + 1, f.relative_path)
+                item.setData(0, Qt.UserRole, f.path)
+                item.setData(0, Qt.UserRole + 1, f.relative_path)
 
-            if f.folder_id in folder_items:
-                folder_items[f.folder_id].addChild(item)
-            else:
-                self.tree_widget.addTopLevelItem(item)
+                if f.folder_id in folder_items:
+                    folder_items[f.folder_id].addChild(item)
+                else:
+                    self.tree_widget.addTopLevelItem(item)
 
-        # Expand top root node
-        if result.folders and result.folders[0].id in folder_items:
-            folder_items[result.folders[0].id].setExpanded(True)
+            # Expand top root node
+            if result.folders and result.folders[0].id in folder_items:
+                folder_items[result.folders[0].id].setExpanded(True)
+        finally:
+            self.tree_widget.setUpdatesEnabled(True)
 
         # 4. Populate duplicates tab
-        self.dupes_tree.clear()
-        if stats.duplicate_groups:
-            self.lbl_dupes_summary.setText(
-                f"Found {len(stats.duplicate_groups)} duplicate groups wasting {stats.format_wasted_size()}:"
-            )
-            for idx, g in enumerate(stats.duplicate_groups, 1):
-                grp_item = QTreeWidgetItem()
-                grp_item.setText(0, f"Group #{idx} ({g.file_count} copies)")
-                grp_item.setText(1, format_bytes(g.size))
-                grp_item.setText(2, str(g.file_count))
-                grp_item.setText(3, format_bytes(g.wasted_bytes))
-                grp_item.setText(4, f"{g.hash_value[:12]}...")
-                grp_item.setToolTip(4, f"Click or double-click to copy full SHA-256:\n{g.hash_value}")
-                grp_item.setData(4, Qt.UserRole, g.hash_value)
-                grp_item.setForeground(3, QColor("#f43f5e"))
-                grp_item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.dupes_tree.setUpdatesEnabled(False)
+        try:
+            self.dupes_tree.clear()
+            if stats.duplicate_groups:
+                self.lbl_dupes_summary.setText(
+                    f"Found {len(stats.duplicate_groups)} duplicate groups wasting {stats.format_wasted_size()}:"
+                )
+                for idx, g in enumerate(stats.duplicate_groups, 1):
+                    grp_item = QTreeWidgetItem()
+                    grp_item.setText(0, f"Group #{idx} ({g.file_count} copies)")
+                    grp_item.setText(1, format_bytes(g.size))
+                    grp_item.setText(2, str(g.file_count))
+                    grp_item.setText(3, format_bytes(g.wasted_bytes))
+                    grp_item.setText(4, f"{g.hash_value[:12]}...")
+                    grp_item.setToolTip(4, f"Click or double-click to copy full SHA-256:\n{g.hash_value}")
+                    grp_item.setData(4, Qt.UserRole, g.hash_value)
+                    grp_item.setForeground(3, QColor("#f43f5e"))
+                    grp_item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
 
-                for f in g.files:
-                    f_child = QTreeWidgetItem()
-                    f_child.setText(0, f.relative_path)
-                    f_child.setText(1, f.format_size())
-                    f_child.setText(4, f.hash_value or g.hash_value)
-                    f_child.setData(4, Qt.UserRole, f.hash_value or g.hash_value)
-                    f_child.setData(0, Qt.UserRole, f.path)
-                    grp_item.addChild(f_child)
+                    for f in g.files:
+                        f_child = QTreeWidgetItem()
+                        f_child.setText(0, f.relative_path)
+                        f_child.setText(1, f.format_size())
+                        f_child.setText(4, f.hash_value or g.hash_value)
+                        f_child.setData(4, Qt.UserRole, f.hash_value or g.hash_value)
+                        f_child.setData(0, Qt.UserRole, f.path)
+                        grp_item.addChild(f_child)
 
-                self.dupes_tree.addTopLevelItem(grp_item)
-                grp_item.setExpanded(True)
-        else:
-            self.lbl_dupes_summary.setText("No duplicate files detected.")
+                    self.dupes_tree.addTopLevelItem(grp_item)
+                    grp_item.setExpanded(True)
+            else:
+                self.lbl_dupes_summary.setText("No duplicate files detected.")
+        finally:
+            self.dupes_tree.setUpdatesEnabled(True)
 
         # 5. Populate AI Program Lister
         self.tab_ai.set_scan_result(result)

@@ -103,3 +103,15 @@ Thumbs.db
 *.swo
 *~
 resource_videos
+
+# Android & Gradle
+.gradle/
+**/android/.gradle/
+**/android/**/build/
+*.apk
+*.aab
+*.aar
+local.properties
+
+# AI Bundles
+*.aibundle

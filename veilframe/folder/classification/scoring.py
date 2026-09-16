@@ -13,10 +13,10 @@ from veilframe.folder.models.classification import FileCategory
 CATEGORY_BASE_SCORES = {
     FileCategory.MANIFEST: 95,
     FileCategory.SOURCE: 90,
-    FileCategory.TEST: 88,
     FileCategory.CI_CD: 85,
     FileCategory.DOCUMENTATION: 82,
     FileCategory.CONFIG: 80,
+    FileCategory.TEST: 78,
     FileCategory.SCRIPT: 75,
     FileCategory.IDE_CONFIG: 60,
     FileCategory.VCS_CONFIG: 50,
@@ -54,31 +54,57 @@ def calculate_file_priority(
     basename = os.path.basename(rel_path).lower()
     base_stem, _ = os.path.splitext(basename)
 
+    # 0. Media / graphic asset check (images, graphics, icons, videos)
+    if category == FileCategory.MEDIA or basename.endswith((".svg", ".png", ".jpg", ".jpeg", ".ico", ".gif", ".webp", ".bmp", ".mp4", ".mov")):
+        return 10
+
     # 1. Entry point check: highest priority (100)
     if is_entry_point:
         return 100
 
-    # 2. README check (98)
+    # 2. README check (98 for root README, lower for nested sub-readmes)
     if basename in ("readme.md", "readme.rst", "readme.txt", "readme"):
-        return 98
+        return 98 if depth <= 1 else max(80, 92 - depth * 2)
 
-    # 3. Architecture or design document (96)
-    if "architecture" in basename or "design" in basename or basename in ("contributing.md", "security.md"):
-        return 96
+    # 3. Architecture or design document (96 for root, lower for nested)
+    if basename.endswith((".md", ".rst", ".txt", ".adoc")) and (
+        "architecture" in basename or "design" in basename or basename in ("contributing.md", "security.md", "roadmap.md")
+    ):
+        return 96 if depth <= 1 else max(80, 90 - depth * 2)
 
-    # 4. Base score from category
+    # 4. Lockfiles (machine-generated dependency graphs): lower priority (65) so they don't starve source code
+    if basename.endswith((".lock", "-lock.json", "-lock.yaml")) or basename in (
+        "cargo.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "gemfile.lock"
+    ):
+        return 65
+
+    # 5. Manifests and primary project definition files (95)
+    if category == FileCategory.MANIFEST or basename in ("pyproject.toml", "package.json", "cargo.toml", "go.mod", "pom.xml", "build.gradle"):
+        return 95
+
+    # 6. Top-level build specifications and scripts (94)
+    if depth <= 1 and (basename in ("build.sh", "makefile", "dockerfile", "justfile") or basename.endswith(".spec")):
+        return 94
+
+    # 7. Package boilerplate check: small __init__.py files (< 300 bytes) get lower priority (75)
+    # so rich, substantive source files are prioritized ahead of empty package markers
+    if basename == "__init__.py" and size_bytes < 300:
+        return 75
+
+    # 8. Base score from category
     score = CATEGORY_BASE_SCORES.get(category, 50)
 
     # If it's zero (excluded category like cache or secret), keep at 0
     if score == 0:
         return 0
 
-    # 5. Core source vs supporting source: apply centrality bonus
+    # 9. Core source vs supporting source: apply centrality bonus
     score += centrality_bonus
 
-    # 6. Depth penalty (shallow files near root are generally more important)
+    # 10. Depth penalty (shallow files near root are generally more important, but source stays above tests)
     if depth > 3:
-        score -= min(10, (depth - 3) * 2)
+        penalty = min(6, (depth - 3) * 2) if category == FileCategory.SOURCE else min(10, (depth - 3) * 2)
+        score -= penalty
 
     # 7. Size penalty for oversized files
     if size_bytes > 500_000:  # > 500 KB

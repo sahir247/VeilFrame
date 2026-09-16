@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Set
 
 from veilframe.folder.classification.classifier import Classifier
+from veilframe.folder.classification.scoring import calculate_file_priority
 from veilframe.folder.database.folder_db import FolderDatabase
 from veilframe.folder.duplicates.duplicate_finder import DuplicateFinder
 from veilframe.folder.duplicates.hasher import ParallelHashEngine
@@ -123,6 +124,11 @@ class FolderScanner:
         # ----------------------------------------------------
         # 3. Intelligence, Classification, & Graph Construction
         # ----------------------------------------------------
+        if self.config.enable_intelligence and files:
+            active_ecosystems.update(
+                detect_ecosystems(root_abs, file_rel_paths=[f.relative_path for f in files])
+            )
+
         classifier = Classifier(
             registry=RuleRegistry.get_default(),
             gitignore_parser=gitignore_parser,
@@ -133,7 +139,10 @@ class FolderScanner:
         # Step 3a: Register nodes & flag entry points in graph
         for f in files:
             norm_rel = f.relative_path.replace("\\", "/").strip("/")
-            is_ep = norm_rel in entry_points or f.name in ("main.py", "app.py", "index.ts", "index.js", "main.go", "main.rs")
+            is_ep = norm_rel in entry_points or (
+                f.name in ("run.py", "main.py", "app.py", "cli.py", "__main__.py", "manage.py", "index.ts", "index.js", "main.go", "main.rs")
+                and len(norm_rel.split("/")) <= 2
+            )
             f.is_entry_point = is_ep
             project_graph.add_file(norm_rel, is_entry_point=is_ep)
 
@@ -149,15 +158,17 @@ class FolderScanner:
 
             # Secret detection
             if secret_detector and not f.is_binary and f.size < 250_000:
-                alerts = secret_detector.scan_file(f.path)
+                alerts = secret_detector.scan_file(f)
                 if alerts:
-                    f.is_secret = True
+                    # Sensitive files (e.g. .env, id_rsa) are flagged is_secret = True.
+                    # Normal source files retain is_secret = False, with alerts preserved for auditing/redaction.
                     f.secret_alerts = [a.description for a in alerts]
                     secret_alerts_count += len(alerts)
 
             # Classification
             if self.config.classify_files:
-                classifier.classify_file(f, active_ecosystems=active_ecosystems, depth=0)
+                file_depth = len(norm_rel.split("/")) - 1
+                classifier.classify_file(f, active_ecosystems=active_ecosystems, depth=file_depth)
 
             # Token estimation heuristic (~4 chars/token for code/text)
             if self.config.estimate_tokens and not f.is_binary and f.size > 0:
@@ -178,6 +189,22 @@ class FolderScanner:
                                 project_graph.add_import(f.relative_path, imp)
                     except OSError:
                         pass
+
+            # Recalculate priority scores with real graph centrality bonus
+            for f in files:
+                if f.effective_action != AIAction.EXCLUDE:
+                    norm_rel = f.relative_path.replace("\\", "/").strip("/")
+                    file_depth = len(norm_rel.split("/")) - 1
+                    centrality = project_graph.get_centrality_score(norm_rel)
+                    f.priority_score = calculate_file_priority(
+                        rel_path=norm_rel,
+                        category=f.effective_category,
+                        is_entry_point=f.is_entry_point,
+                        centrality_bonus=centrality,
+                        size_bytes=f.size,
+                        depth=file_depth,
+                    )
+
 
         # ----------------------------------------------------
         # 4. Content Hashing & Duplicate Detection

@@ -93,11 +93,28 @@ def detect_file_type(path: str, max_read_bytes: int = 8192) -> Tuple[bool, Optio
         if chunk.startswith(magic):
             return is_bin, mime
 
-    # 2. Check for null bytes (canonical binary indicator)
+    # 2. Check for UTF-16 text with or without BOM
+    if chunk.startswith(b"\xff\xfe") or chunk.startswith(b"\xfe\xff"):
+        try:
+            d = chunk.decode("utf-16")
+            if d.count("\x00") <= len(d) * 0.05:
+                return False, inferred_mime or "text/plain"
+        except UnicodeDecodeError:
+            pass
+
+    # 3. Check for null bytes (canonical binary indicator)
     if b"\x00" in chunk:
+        # Check if decodeable as UTF-16 even without BOM
+        if len(chunk) % 2 == 0:
+            try:
+                d = chunk.decode("utf-16")
+                if d.count("\x00") <= len(d) * 0.05:
+                    return False, inferred_mime or "text/plain"
+            except UnicodeDecodeError:
+                pass
         return True, inferred_mime or "application/octet-stream"
 
-    # 3. Check decodability as UTF-8
+    # 4. Check decodability as UTF-8
     try:
         chunk.decode("utf-8")
     except UnicodeDecodeError:

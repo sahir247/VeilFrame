@@ -90,6 +90,10 @@ jobs:
         run: |
           pytest -v
 
+      - name: Run 3-Layer Blackbox & Invariants Suite
+        run: |
+          pytest tests/blackbox/test_blackbox_release.py -v
+
       - name: Test Independent Manifest Verifier Example
         run: |
           python -c "
@@ -156,6 +160,10 @@ jobs:
       - name: Run Test Suite
         run: |
           pytest -v
+
+      - name: Run 3-Layer Blackbox & Invariants Suite
+        run: |
+          pytest tests/blackbox/test_blackbox_release.py -v
 
   # ------------------------------------------------------------------ #
   # 3a. Build Standalone Windows Executable (x86_64)                   #
@@ -501,12 +509,64 @@ jobs:
           path: dist/*
 
   # ------------------------------------------------------------------ #
+  # 3e. Build Android Release Packages (APK & AAB ARM64)               #
+  # ------------------------------------------------------------------ #
+  build-android:
+    name: Build Android (APK & AAB)
+    runs-on: ubuntu-latest
+    needs: [test, release-gate]
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Build Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+          pip install -e .
+
+      - name: Build Android Release Packages
+        run: |
+          chmod +x build.sh
+          ./build.sh android-apk
+          ./build.sh android-aab
+
+      - name: Stage Android Artifacts
+        run: |
+          mkdir -p android_artifacts
+          cp dist/VeilFrame-android-arm64.apk android_artifacts/ || true
+          cp dist/VeilFrame-release.aab android_artifacts/ || true
+          ls -lh android_artifacts/
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VeilFrame-android-packages
+          path: android_artifacts/*
+
+  # ------------------------------------------------------------------ #
   # 4. Release Aggregator: Checksums & GitHub Release Publishing       #
   # ------------------------------------------------------------------ #
   publish-release:
     name: Aggregate & Publish Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux, build-macos, build-python]
+    needs: [build-windows, build-linux, build-macos, build-python, build-android]
     if: always() && (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
@@ -514,7 +574,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v5
 
-      - name: Download All Binary & Python Artifacts
+      - name: Download All Binary, Android & Python Artifacts
         uses: actions/download-artifact@v4
         with:
           path: downloaded_artifacts
@@ -523,8 +583,8 @@ jobs:
         run: |
           mkdir -p final_release
           
-          # Find and copy all distribution files (.exe, .deb, .dmg, .tar.gz, .whl) into final_release
-          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.whl" \) -exec cp {} final_release/ \;
+          # Find and copy all distribution files (.exe, .deb, .dmg, .tar.gz, .whl, .apk, .aab) into final_release
+          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.whl" -o -name "*.apk" -o -name "*.aab" \) -exec cp {} final_release/ \;
           
           cd final_release
           sha256sum * > SHA256SUMS.txt

@@ -59,9 +59,5 @@ SECRET_PATTERNS: List[Tuple[str, str, Pattern[str]]] = [
         "Database Connection URL with Password",
         re.compile(r"(?:postgres|mysql|mongodb|redis)://[^:\s]+:([^@\s]+)@"),
     ),
-    (
-        "sec.generic_api_secret",
-        "Generic API Secret Assignment",
-        re.compile(r"(?i)\b(?:api_key|apikey|secret_key|client_secret|auth_token|access_token)\s*[:=]\s*['\"]([0-9a-zA-Z_\-\.]{16,})['\"]"),
-    ),
 ]
+

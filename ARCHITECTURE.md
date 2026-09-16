@@ -375,30 +375,125 @@ All probes implement Level-3 Fingerprint-Distinct Independence (distinct algorit
 
 ### 1. Two-Layer Context Package Architecture
 Designed to maximize **information density per token** while eliminating AI hallucination:
-- **Layer A (Project Index)**: Small, highly structured metadata layer containing:
-  - Project Manifest (primary language, frameworks, package manager, build system)
-  - Logical Tree (with collapsed exclusions: `node_modules/ [EXCLUDED: dependency]`)
+- **Layer A (Project Index)**: Highly structured metadata layer containing:
+  - Project Manifest (primary language, ecosystems, frameworks, libraries, package manager, build system)
+  - Logical Tree (with collapsed exclusions accurately labeled: `node_modules/ [EXCLUDED: dependency]`, `veilframe/ [EXCLUDED: Context budget exhausted]`)
   - Dependency manifests (runtime, development, standard library)
-  - Module import relationships graph
-  - Master file index mapping IDs (`F001`, `F002`) to paths and roles
+  - Module import relationships graph with `[INTERNAL]` vs `[EXTERNAL]` classification
+  - Master file index mapping IDs (`F001`, `F002`) to paths, roles, and token counts
 - **Layer B (File Contents)**: Complete, untruncated source, test, config, and doc files wrapped in unambiguous boundaries:
   ```text
-  <<< FILE_START >>>
-  PATH: src/services/attendance.py
-  LANGUAGE: python
-  <<< CONTENT >>>
+  @FILE id="F001" path="veilframe/core/pipeline.py" type="source" language="python"
+  <<<
   ...
-  <<< FILE_END >>>
+  >>>
   ```
 
-### 2. Extensible Rule Registry & GitIgnore Engine
-- Declarative YAML rules (`veilframe/folder/rules/builtin/`) dynamically categorize files into `SOURCE`, `CONFIG`, `TEST`, `DOCUMENTATION`, `DEPENDENCY`, `BUILD_OUTPUT`, `MEDIA`, `DATABASE`, and `SECRET`.
-- Full Git-compliant path matching via `pathspec.GitIgnoreSpec`, preserving `.gitignore` semantics across multi-nested repositories.
+### 2. Language-Family Modular Secret Detectors
+Rather than relying on a fragile, universal assignment regex that introduces false positives or corrupts syntax, VeilFrame utilizes a modular hierarchy of language-aware detectors:
+- **Generic Token Formats (`generic.py`)**: Identifies high-entropy signatures (AWS access keys, GitHub PATs, Slack tokens, Stripe keys, OpenAI/Anthropic keys, private key blocks, JWT tokens).
+- **Language-Family Assignment Detectors**:
+  - `python.py`: Evaluates Python variable assignments and type annotations (`api_key: str = "..."`).
+  - `javascript.py`: TypeScript / JavaScript declarations (`const apiKey: string = "..."`, `let secret = "..."`).
+  - `go.py`: Go declarations (`var stripeKey string = "..."`, `apiKey := "..."`).
+  - `rust.py`: Rust constants and let bindings (`const API_KEY: &str = "..."`).
+  - `jvm.py`: Java and Kotlin declarations (`val secretToken: String = "..."`, `private static final String API_KEY = "..."`).
+  - `c_family.py`: C, C++, C#, Dart, and Swift (`let signingKey: String = "..."`, `final String token = "..."`).
+  - `php.py`: PHP variable assignments (`$apiPassword = "..."`).
+  - `shell.py`: Bash / Shell environment exports (`export PRIVATE_KEY="..."`).
+  - `config.py`: Key-value configuration formats (YAML, JSON, TOML, `.env`).
+- **Syntax-Preserving Redaction Guarantee**: Inline redaction replaces only the secret payload while preserving 100% of surrounding declarations, type annotations, sigils, and semicolons.
 
-### 3. Zero-Truncation Principle
-- Included files are never arbitrarily cut in half or truncated to save small token amounts.
-- Complete source code, test suites, and configuration files are delivered verbatim.
-- Large binary databases (SQLite) and ML weights are summarized structurally with schema definitions and tensor metadata without bloating token budgets.
+### 3. Resilient Multi-Encoding Reader (`TextReadResult`)
+- Evaluates text files through a strict decoding hierarchy:
+  1. Byte Order Mark (BOM) sniffing (`UTF-8-SIG`, `UTF-16-LE`, `UTF-16-BE`).
+  2. Strict UTF-8 decoding.
+  3. Validated UTF-16 with null-rate heuristics (differentiating valid PowerShell/Windows UTF-16 text from binary streams).
+  4. CP1252 / Latin-1 fallback with strict non-silent binary discrimination: files with high rates of unprintable control characters are identified as `is_binary=True`, preventing binary blobs from being decoded into corrupt pseudo-source.
+
+### 4. The 10 Invariants of `.aibundle` v1
+Every generated `.aibundle` adheres to a strict formal contract:
+1. **Invariant 1 (Credential Shield)**: Dedicated credential files (`.env`, `id_rsa`, `*.pem`) are never included in context.
+2. **Invariant 2 (Zero Secret Leaks)**: Detected inline secret tokens are 100% masked/redacted.
+3. **Invariant 3 (Token Budget Ceiling)**: Total estimated tokens never exceed the configured budget.
+4. **Invariant 4 (Deterministic Paths)**: Every `@FILE` entry has a normalized relative path.
+5. **Invariant 5 (One-to-One File Mapping)**: Every included file has exactly one corresponding `@FILE` block.
+6. **Invariant 6 (Mandatory File Survival)**: Core architecture files (`README.md`, `ARCHITECTURE.md`, `pyproject.toml`, `main.py`) survive under extreme budget pressure.
+7. **Invariant 7 (No Binary Serialization)**: Binary executables, images, and compiled data are never serialized into code blocks.
+8. **Invariant 8 (Security Segregation)**: `@SECURITY` contains security findings only.
+9. **Invariant 9 (Context Segregation)**: `@EXCLUDED` contains context-selection explanations only.
+10. **Invariant 10 (UTF-8 Integrity)**: The bundle output is 100% valid, decodable UTF-8 text.
+
+---
+
+## Multi-Platform & Android Architecture
+
+VeilFrame decouples the core media processing and intelligence engines from desktop GUI assumptions, enabling native execution across Desktop (Windows, Linux, macOS) and Mobile (Android):
+
+```
+                   VEILFRAME SYSTEM
+                          │
+          ┌───────────────┴───────────────┐
+          │                               │
+     CORE ENGINE                  PLATFORM ADAPTERS
+          │                               │
+   ┌──────┼──────┐                 ┌──────┴──────┐
+   │      │      │                 │             │
+ Video  Image  Folder           Desktop       Android
+Engine Engine Intelligence       (Qt)        (Chaquopy)
+   │      │      │                 │             │
+Media  Raster  Security         PySide6       Native UI
+Backend Graph  Detectors         Desktop     Activity/SAF
+```
+
+### 1. `MediaBackend` & `MediaSource` Abstraction
+- **`MediaSource`**: Exposes a uniform interface across raw filesystem paths, Android `content://` URIs, file descriptors, and materialized scratch files via `open_read()`, `open_write()`, and `as_path()`.
+- **`MediaBackend`**: Isolates FFmpeg and platform codec invocation:
+  - `DesktopFFmpegBackend`: Orchestrates native CLI FFmpeg executables with GPU hardware encoders (NVENC, QSV, AMF, VideoToolbox).
+  - `AndroidMediaBackend`: Bridges to FFmpegKit JNI, bundled `libffmpeg.so`, or Android MediaCodec APIs.
+  - `get_media_backend()`: Dynamically selects the runtime backend based on platform detection.
+
+### 2. Android Scoped Storage & Least-Privilege Permissions
+- Operates under modern Android Scoped Storage (API 26 to 34+):
+  - Uses the Android Storage Access Framework (SAF) and system file pickers to access media.
+  - Eliminates deprecated, overbroad permissions (`WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`).
+  - Restricts media reads to granular `READ_MEDIA_VIDEO` and `READ_MEDIA_IMAGES` (API 33+).
+
+### 3. Chaquopy Native Android Bridge
+- The Android host application (`android/app/src/main/java/com/veilframe/app/MainActivity.kt`) runs the core Python engine directly on-device via Chaquopy.
+- Native background processing routes video sanitization, image scrubbing, and AI bundle compilation through local Android services without external cloud dependencies.
+
+---
+
+## CI/CD & Automated Release Pipeline Topology
+
+VeilFrame utilizes a comprehensive multi-stage GitHub Actions release pipeline (`.github/workflows/ci.yml`):
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            GITHUB ACTIONS WORKFLOW                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. TEST MATRIX                                                              │
+│    • Ubuntu (Python 3.10, 3.11, 3.12)                                       │
+│    • Windows (Python 3.10, 3.11, 3.12)                                      │
+│    • macOS (Python 3.10, 3.11, 3.12)                                        │
+│    • 3-Layer Blackbox & 10-Invariant Test Gate                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 2. RELEASE GATE                                                             │
+│    • Full regression gate on Linux, Windows, macOS                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 3. MULTI-PLATFORM PACKAGING                                                 │
+│    • Windows: PyInstaller Standalone (VeilFrame-windows-x86_64.exe)         │
+│    • Linux: Debian Package (.deb) & Portable Tarball (.tar.gz)              │
+│    • macOS: Apple Silicon DMG (.dmg) & Portable Tarball (.tar.gz)           │
+│    • Android: Release APK (arm64-v8a) & Release AAB (Universal)             │
+│    • Python: Universal Wheel (.whl) & Source Dist (.tar.gz)                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 4. AGGREGATE & PUBLISH                                                      │
+│    • Compute SHA256SUMS.txt across all 7 platform distribution packages     │
+│    • Create GitHub Release with signed artifacts and release notes          │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 

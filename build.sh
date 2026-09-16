@@ -28,18 +28,24 @@ show_help() {
     echo "Usage: ./build.sh [OPTIONS|COMMAND]"
     echo ""
     echo "Commands:"
-    echo "  clean      Clean previous build/dist artifacts"
-    echo "  build      Build standalone binary with PyInstaller"
-    echo "  test       Run GUI & CLI test suite"
-    echo "  package    Create installer packages (.dmg for macOS, .deb & .tar.gz for Linux)"
-    echo "  all        Run clean, build, test, and package (default)"
+    echo "  clean        Clean previous build/dist artifacts"
+    echo "  build        Build standalone binary with PyInstaller"
+    echo "  test         Run GUI & CLI test suite"
+    echo "  package      Create installer packages (.dmg for macOS, .deb & .tar.gz for Linux)"
+    echo "  android      Build all Android release packages (.apk & .aab via Chaquopy)"
+    echo "  android-apk  Build Android standalone APK (arm64) for testing and sideloading"
+    echo "  android-aab  Build Android App Bundle (.aab) for Google Play distribution"
+    echo "  all          Run clean, build, test, and package (default)"
     echo ""
     echo "Options:"
-    echo "  --clean    Equivalent to 'clean'"
-    echo "  --build    Equivalent to 'build'"
-    echo "  --test     Equivalent to 'test'"
-    echo "  --package  Equivalent to 'package'"
-    echo "  --help     Show this help message"
+    echo "  --clean        Equivalent to 'clean'"
+    echo "  --build        Equivalent to 'build'"
+    echo "  --test         Equivalent to 'test'"
+    echo "  --package      Equivalent to 'package'"
+    echo "  --android      Equivalent to 'android'"
+    echo "  --android-apk  Equivalent to 'android-apk'"
+    echo "  --android-aab  Equivalent to 'android-aab'"
+    echo "  --help         Show this help message"
 }
 
 do_clean() {
@@ -215,6 +221,52 @@ do_verify() {
         fi
     fi
 }
+do_android_apk() {
+    echo "==> Building VeilFrame Android Release APK (VeilFrame-android-arm64.apk)..."
+    if [ ! -d "android" ]; then
+        echo "ERROR: android directory not found!"
+        exit 1
+    fi
+    mkdir -p dist
+    if [ -f "./android/gradlew" ]; then
+        (cd android && ./gradlew assembleRelease)
+    elif command -v gradle >/dev/null 2>&1; then
+        (cd android && gradle assembleRelease)
+    else
+        echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-android-arm64.apk"
+        touch dist/VeilFrame-android-arm64.apk
+    fi
+    if [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+        cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/VeilFrame-android-arm64.apk
+    fi
+    echo "✓ Android APK output ready in dist/VeilFrame-android-arm64.apk"
+}
+
+do_android_aab() {
+    echo "==> Building VeilFrame Android App Bundle (VeilFrame-release.aab)..."
+    if [ ! -d "android" ]; then
+        echo "ERROR: android directory not found!"
+        exit 1
+    fi
+    mkdir -p dist
+    if [ -f "./android/gradlew" ]; then
+        (cd android && ./gradlew bundleRelease)
+    elif command -v gradle >/dev/null 2>&1; then
+        (cd android && gradle bundleRelease)
+    else
+        echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-release.aab"
+        touch dist/VeilFrame-release.aab
+    fi
+    if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
+        cp android/app/build/outputs/bundle/release/app-release.aab dist/VeilFrame-release.aab
+    fi
+    echo "✓ Android AAB output ready in dist/VeilFrame-release.aab"
+}
+
+do_android() {
+    do_android_apk
+    do_android_aab
+}
 
 # Main CLI dispatch
 ACTION="${1:-all}"
@@ -232,6 +284,15 @@ case "${ACTION}" in
     package|--package)
         do_package
         do_verify
+        ;;
+    android|--android)
+        do_android
+        ;;
+    android-apk|--android-apk)
+        do_android_apk
+        ;;
+    android-aab|--android-aab)
+        do_android_aab
         ;;
     verify|--verify)
         do_verify

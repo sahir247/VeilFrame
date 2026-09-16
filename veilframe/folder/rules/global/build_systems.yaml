@@ -62,3 +62,46 @@ rules:
     confidence: 0.9
     reason: "Temporary and backup files"
     priority: "TOOL_IDE"
+
+  - id: "global.build.specs"
+    ecosystems: ["*"]
+    patterns:
+      - "*.spec"
+      - "Makefile"
+      - "makefile"
+      - "CMakeLists.txt"
+      - "Dockerfile*"
+      - "Containerfile*"
+      - "build.sh"
+      - "build.bat"
+      - "build.cmd"
+      - "justfile"
+    classification: "CONFIG"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Build specifications, automation scripts, and packaging recipes"
+    priority: "ECOSYSTEM"
+
+  - id: "global.media.assets"
+    ecosystems: ["*"]
+    patterns:
+      - "*.svg"
+      - "*.png"
+      - "*.jpg"
+      - "*.jpeg"
+      - "*.gif"
+      - "*.ico"
+      - "*.webp"
+      - "*.bmp"
+      - "*.tiff"
+      - "*.mp4"
+      - "*.mov"
+      - "*.avi"
+      - "*.webm"
+    classification: "MEDIA"
+    action: "DESCRIBE"
+    confidence: 0.95
+    reason: "Media graphic asset or video file"
+    priority: "TOOL_IDE"
+
+

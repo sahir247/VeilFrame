@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.0.2-blue.svg" alt="Version" /></a>
-  <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue.svg" alt="Platform" /></a>
+  <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
   <a href="https://pyside.org/"><img src="https://img.shields.io/badge/GUI-PySide6%20%2F%20Qt-brightgreen.svg" alt="GUI" /></a>
@@ -23,7 +23,7 @@
 1. **Video Domain:** Applies bounded, orthogonal signal perturbations across spatial geometry, temporal cadence, physical sensor noise (Bayer CFA PRNU), transform-domain perceptual hashes (2D DCT), ISP chrominance drift, and acoustic Electrical Network Frequency (ENF) hums within strict **5% or 10% transformation policy budgets**, guarded by an **independent read-only three-tier visual fidelity gate**.
 2. **Image Domain:** Compiles images through a deterministic multi-layer privacy compiler (Layer A Container Stripping, Layer B Representation Normalization, Layer C Isolated Solid Redaction), audited against **7 Level-3 Fingerprint-Distinct independent red-team probes** and enforced by a normative **5-Contract QualityGate** (Privacy, Geometry, Fidelity, Integrity, Completeness).
 3. **Folder & Storage Domain:** High-performance selective directory analyzer, parallel cryptographic hasher, SQLite indexing engine, and staged duplicate candidate detector with **full uncut 64-character SHA-256 reporting** across interactive HTML dashboards, Markdown inventory tables, CSV, JSON, and text reports.
-4. **AI Project Intelligence & Bundle Domain:** High-fidelity project intelligence and LLM context compiler. Uses multi-ecosystem heuristics, PathSpec GitIgnore parsing, AST structural analysis, and topological module dependency graph modeling to compile codebases into the native, deterministic `.aibundle` v1 format (alongside Markdown, JSON, HTML, and ZIP) under strict context budgets with a **zero-truncation guarantee** on all included files.
+4. **AI Project Intelligence & Bundle Domain:** High-fidelity project intelligence and LLM context compiler. Uses polyglot heuristics across 14 languages, language-family modular secret redaction, PathSpec GitIgnore parsing, AST/syntax outlining, and internal vs external dependency modeling to compile codebases into the native, deterministic `.aibundle` v1 format (alongside Markdown, JSON, HTML, and ZIP) under strict context budgets with a **zero-truncation guarantee** and a strict **10-Invariant Contract**.
 5. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
 
 ---
@@ -67,7 +67,7 @@ veilframe-gui
 ```
 
 ### Standalone Pre-Built Cross-Platform Packages:
-Download pre-compiled native binaries, installers, and `SHA256SUMS.txt` from the [Latest Release](https://github.com/sahir247/VeilFrame/releases/latest):
+Download pre-compiled native binaries, installers, mobile packages, and `SHA256SUMS.txt` from the [Latest Release](https://github.com/sahir247/VeilFrame/releases/latest):
 
 | OS / Platform | Artifact | Architecture | Instructions |
 |---|---|---|---|
@@ -76,6 +76,8 @@ Download pre-compiled native binaries, installers, and `SHA256SUMS.txt` from the
 | **Linux (Portable)** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
+| **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` |
+| **Android (AAB)** | `VeilFrame-release.aab` | Universal (API 26+) | Google Play Store distribution app bundle |
 | **Python (Any OS)** | `veilframe-2.0.2-py3-none-any.whl` | Universal | `pip install veilframe-2.0.2-py3-none-any.whl` |
 
 ```powershell
@@ -300,14 +302,26 @@ veilframe folder stats ./my_directory --json
 
 #### AI Context Bundling & Program Lister
 ```bash
-# Compile codebase into official native .aibundle v1 context package
+# Compile codebase into official native .aibundle v1 context package (default: 128k tokens)
 veilframe folder ai ./my_project -o ./my_project.aibundle
 
-# Compile into Markdown format under a 128,000 token budget
-veilframe folder ai ./my_project -f markdown -t 128000 -o ./my_project.md
+# Compile into Markdown format under an explicit 200,000 token budget
+veilframe folder ai ./my_project -f markdown -t 200000 -o ./my_project.md
 
 # Compile into interactive self-contained HTML context viewer
 veilframe folder ai ./my_project -f html -o ./my_project_bundle.html
+
+# Exclude test files or disable inline secret redaction if desired
+veilframe folder ai ./my_project -t 200000 --no-tests -o ./my_project.aibundle
+```
+
+#### Android Release Packaging & Distribution
+```bash
+# Build standalone Android ARM64 APK (for testing, sideloading, or GitHub Releases)
+./build.sh android-apk
+
+# Build universal Android App Bundle (AAB for Google Play Console distribution)
+./build.sh android-aab
 ```
 
 #### Desktop GUI

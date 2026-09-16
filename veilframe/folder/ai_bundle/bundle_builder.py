@@ -5,7 +5,7 @@ veilframe.folder.ai_bundle.bundle_builder — Orchestrates AI context selection,
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from veilframe.folder.ai_bundle.bundle_config import BundleConfig, BundleFormat
 from veilframe.folder.ai_bundle.bundle_writer import write_bundle_to_disk
@@ -19,6 +19,9 @@ from veilframe.folder.ai_bundle.formats.text import render_text_bundle
 from veilframe.folder.ai_bundle.formats.zip import render_zip_bundle
 from veilframe.folder.models.file_record import FileRecord
 from veilframe.folder.models.scan_result import ScanResult
+
+# Backward compatibility alias
+AIBundleConfig = BundleConfig
 
 
 @dataclass
@@ -54,19 +57,37 @@ class AIBundleBuilder:
         self,
         scan_result: ScanResult,
         output_path: Optional[str] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        cancel_token: Optional[Any] = None,
     ) -> AIBundleResult:
         """
         Execute file selection, compression/redaction, and formatting.
+        Supports cooperative cancellation and real-time progress updates.
         """
+        if progress_callback:
+            progress_callback(2, 100, "Selecting priority files under context budget...")
+
         # 1. Select files under token budget
         selector = FileSelector(self.config)
         included_records, excluded_records, _ = selector.select_files(scan_result.files)
 
+        if cancel_token and getattr(cancel_token, "is_cancelled", False):
+            raise InterruptedError("AI Bundle generation cancelled by user.")
+
         # 2. Prepare file contents and calculate precise token count
         prepared_files: List[Tuple[FileRecord, str, int]] = []
         total_tokens = 0
+        total_to_prep = len(included_records)
 
-        for f in included_records:
+        for idx, f in enumerate(included_records, 1):
+            if cancel_token and getattr(cancel_token, "is_cancelled", False):
+                raise InterruptedError("AI Bundle generation cancelled by user.")
+
+            if progress_callback:
+                pct = 5 + int(80 * (idx / max(total_to_prep, 1)))
+                rel_disp = f.relative_path.replace("\\", "/")
+                progress_callback(pct, 100, f"Preparing ({idx}/{total_to_prep}): {rel_disp}")
+
             content, tokens = prepare_file_content(
                 f,
                 max_tokens=self.config.max_single_file_tokens,
@@ -76,9 +97,15 @@ class AIBundleBuilder:
             prepared_files.append((f, content, tokens))
             total_tokens += tokens
 
+        if cancel_token and getattr(cancel_token, "is_cancelled", False):
+            raise InterruptedError("AI Bundle generation cancelled by user.")
+
         # 3. Render according to requested format
         fmt = self.config.format
         content: Union[str, bytes]
+
+        if progress_callback:
+            progress_callback(88, 100, f"Rendering {fmt.value} project bundle...")
 
         if fmt == BundleFormat.AIBUNDLE:
             content = render_native_aibundle(scan_result, self.config, prepared_files, excluded_records, total_tokens)
@@ -110,6 +137,11 @@ class AIBundleBuilder:
 
         # 4. Optional disk write
         if output_path:
+            if progress_callback:
+                progress_callback(97, 100, "Writing bundle to disk...")
             result.write(output_path)
+
+        if progress_callback:
+            progress_callback(100, 100, "AI Bundle complete!")
 
         return result

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VeilFrame" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- Primary Brand Colors -->
+        <item name="colorPrimary">@color/vf_primary</item>
+        <item name="colorOnPrimary">@color/vf_on_primary</item>
+        <item name="colorPrimaryContainer">@color/vf_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/vf_text_primary</item>
+
+        <!-- Secondary Accents -->
+        <item name="colorSecondary">@color/vf_secondary</item>
+        <item name="colorOnSecondary">@color/vf_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/vf_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/vf_text_primary</item>
+
+        <!-- Surfaces & Backgrounds -->
+        <item name="android:windowBackground">@color/vf_bg_dark</item>
+        <item name="colorSurface">@color/vf_surface</item>
+        <item name="colorSurfaceVariant">@color/vf_surface_variant</item>
+        <item name="colorOnSurface">@color/vf_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
+
+        <!-- Status & Navigation Bars -->
+        <item name="android:statusBarColor">@color/vf_bg_dark</item>
+        <item name="android:navigationBarColor">@color/vf_bg_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

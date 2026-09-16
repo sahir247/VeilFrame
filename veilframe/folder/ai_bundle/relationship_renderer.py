@@ -48,7 +48,11 @@ def render_project_relationships(
         if node.imports:
             internal_imports = [imp for imp in sorted(node.imports) if imp in graph.nodes]
             if internal_imports:
-                lines.append(f"  {path} -> {', '.join(internal_imports[:6])}")
+                lines.append(f"  {path}")
+                for idx, imp in enumerate(internal_imports[:6]):
+                    is_last = (idx == len(internal_imports[:6]) - 1)
+                    branch = "└──" if is_last else "├──"
+                    lines.append(f"   {branch} {imp} [INTERNAL]")
                 link_count += 1
                 if link_count >= max_links:
                     lines.append(f"  ... ({len(graph.nodes) - link_count} additional module links omitted)")

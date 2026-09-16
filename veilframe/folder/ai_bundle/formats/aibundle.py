@@ -6,6 +6,7 @@ Plain UTF-8 text underneath with deterministic two-layer protocol.
 
 from __future__ import annotations
 
+from collections import Counter
 import datetime
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,12 +28,13 @@ def aggregate_excluded_summary(excluded_files: List[Tuple[FileRecord, str]]) -> 
     node_modules/ | 23,418 files | dependency
     .venv/ | 4,200 files | environment
     assets/*.mp4 | 15 files | media
-    .env | excluded | sensitive
+    ROADMAP.md | excluded | Context budget exhausted (file requires ~966 tokens, budget remaining: 0 tokens)
     """
     if not excluded_files:
         return ["(no files excluded)"]
 
-    dir_counts: Dict[str, Tuple[int, str]] = {}
+    from collections import Counter, defaultdict
+    dir_files: Dict[str, List[str]] = defaultdict(list)
     loose_files: List[Tuple[str, str]] = []
 
     for f, reason in excluded_files:
@@ -40,18 +42,24 @@ def aggregate_excluded_summary(excluded_files: List[Tuple[FileRecord, str]]) -> 
         parts = norm.split("/")
         if len(parts) > 1:
             top_dir = parts[0] + "/"
-            if top_dir in dir_counts:
-                count, r = dir_counts[top_dir]
-                dir_counts[top_dir] = (count + 1, r or reason)
-            else:
-                dir_counts[top_dir] = (1, reason)
+            dir_files[top_dir].append(reason)
         else:
             loose_files.append((norm, reason))
 
     lines: List[str] = []
     # Add directories sorted by file count descending
-    for dir_name, (count, reason) in sorted(dir_counts.items(), key=lambda x: -x[1][0]):
-        lines.append(f"{dir_name} | {count:,} files | {reason}")
+    for dir_name, reasons in sorted(dir_files.items(), key=lambda x: -len(x[1])):
+        count = len(reasons)
+        budget_reasons = [r for r in reasons if "budget" in r.lower()]
+        security_reasons = [r for r in reasons if "security" in r.lower()]
+        if budget_reasons:
+            rep_reason = f"Context budget exhausted ({len(budget_reasons)} files)"
+        elif security_reasons:
+            rep_reason = f"Security exclusion ({len(security_reasons)} files)"
+        else:
+            rep_reason = Counter(reasons).most_common(1)[0][0]
+
+        lines.append(f"{dir_name} | {count:,} files | {rep_reason}")
 
     # Add loose files
     for file_name, reason in loose_files:
@@ -62,26 +70,50 @@ def aggregate_excluded_summary(excluded_files: List[Tuple[FileRecord, str]]) -> 
 
 def render_security_section(
     scan_result: ScanResult,
-    excluded_files: List[Tuple[FileRecord, str]],
+    included_files: Any,
+    excluded_files: Optional[List[Tuple[FileRecord, str]]] = None,
 ) -> List[str]:
-    """Render security audit summary of sensitive files and alerts."""
+    """
+    Render structured security audit findings:
+    1. Dedicated sensitive credential files excluded from context.
+    2. Redacted secrets in included source files.
+    """
+    if excluded_files is None and isinstance(included_files, list):
+        # Backward compatibility: called as render_security_section(scan_result, excluded_files)
+        actual_excluded: List[Tuple[FileRecord, str]] = included_files
+        actual_included: List[Tuple[FileRecord, str, int]] = []
+    else:
+        actual_included = included_files or []
+        actual_excluded = excluded_files or []
+
     lines: List[str] = []
 
-    # 1. Any secret files excluded
-    secret_files = [
-        (f, reason) for f, reason in excluded_files
-        if f.is_secret or "secret" in reason.lower() or "sensitive" in reason.lower() or f.effective_category == FileCategory.SECRET
+    # 1. Dedicated sensitive credential files excluded from context
+    from veilframe.folder.security.sensitive_files import is_sensitive_filepath
+    excluded_cred_files = [
+        (f, reason) for f, reason in actual_excluded
+        if is_sensitive_filepath(f.path)[0] or f.effective_category in (FileCategory.SECRET, FileCategory.CREDENTIAL, FileCategory.PRIVATE_KEY)
     ]
-    for sf, reason in secret_files:
-        lines.append(f"{sf.relative_path.replace(chr(92), '/')} | excluded | {reason or 'sensitive'}")
+    if excluded_cred_files:
+        lines.append("EXCLUDED CREDENTIAL FILES:")
+        for sf, reason in excluded_cred_files:
+            rel_p = sf.relative_path.replace("\\", "/")
+            lines.append(f"  • {rel_p} | excluded | {reason}")
 
-    # 2. Any security alerts from scan
-    if scan_result.security_alerts:
-        for alert in scan_result.security_alerts:
-            lines.append(f"{alert.relative_path.replace(chr(92), '/')} | {alert.rule_id} | {alert.description}")
+    # 2. Redacted secrets / inline alerts in included context files
+    included_with_alerts = [
+        f for f, _, _ in included_files
+        if getattr(f, "secret_alerts", None)
+    ]
+    if included_with_alerts:
+        lines.append("REDACTED INLINE SECRETS (included with safe mask):")
+        for f in included_with_alerts:
+            rel_p = f.relative_path.replace("\\", "/")
+            for alert_desc in f.secret_alerts:
+                lines.append(f"  • {rel_p} | redacted | {alert_desc}")
 
-    if not lines:
-        lines.append("clean | 0 secrets or security vulnerabilities detected in bundle")
+    if not excluded_cred_files and not included_with_alerts:
+        lines.append("STATUS: CLEAN | 0 sensitive credentials or security leaks detected in bundle")
 
     return lines
 
@@ -132,23 +164,32 @@ def render_native_aibundle(
     sections.append("\n".join(header_lines))
 
     # 1. @PROJECT
+    inc_cat_counts: Counter[FileCategory] = Counter()
+    for f, _, _ in included_files:
+        inc_cat_counts[f.effective_category] += 1
+
     project_body = [
         f"Name: {meta['name']}",
         f"Root: {meta['root']}",
         f"Detected Languages: {', '.join(meta['languages']) if meta['languages'] else 'None'}",
         f"Detected Ecosystems: {', '.join(meta['ecosystems']) if meta['ecosystems'] else 'Generic'}",
-        f"Frameworks: {', '.join(sorted([e for e in meta['ecosystems'] if e in ('react', 'next', 'vue', 'angular', 'svelte', 'django', 'flask', 'fastapi', 'laravel', 'rails', 'spring', 'dotnet')])) or 'None detected'}",
-        f"Build Systems: {', '.join(sorted([e for e in meta['ecosystems'] if e in ('cmake', 'make', 'gradle', 'maven', 'cargo', 'webpack', 'vite', 'turborepo')])) or 'Standard'}",
-        f"Package Managers: {', '.join(sorted([e for e in meta['ecosystems'] if e in ('npm', 'yarn', 'pnpm', 'pip', 'poetry', 'uv', 'cargo', 'composer', 'bundler', 'nuget')])) or 'Standard'}",
-        f"Total Files on Disk: {meta['total_files']:,}",
-        f"Included in Context: {len(included_files):,}",
-        f"Excluded from Context: {len(excluded_files):,}",
-        f"Source Files: {meta['source_count']:,}",
-        f"Test Files: {meta['test_count']:,}",
-        f"Config Files: {meta['config_count']:,}",
-        f"Doc Files: {meta['doc_count']:,}",
-        f"Dependencies Excluded: {meta['dependency_count']:,}",
-        f"Caches/Build Excluded: {meta['cache_count']:,}",
+        f"Frameworks: {', '.join(meta['frameworks']) if meta.get('frameworks') else 'None detected'}",
+        f"Libraries: {', '.join(meta['libraries']) if meta.get('libraries') else 'None detected'}",
+        f"Build Systems: {', '.join(meta['build_systems']) if meta.get('build_systems') else 'Standard'}",
+        f"Package Managers: {', '.join(meta['package_managers']) if meta.get('package_managers') else 'Standard'}",
+        f"Total Files on Disk: {meta['total_files']:,} ({meta['total_size_formatted']})",
+        f"  - Discovered Source Files: {meta['source_count']:,}",
+        f"  - Discovered Test Files: {meta['test_count']:,}",
+        f"  - Discovered Doc Files: {meta['doc_count']:,}",
+        f"  - Discovered Config / Manifest: {meta['config_count']:,}",
+        f"Included in Context: {len(included_files):,} files (~{total_tokens:,} tokens)",
+        f"  - Included Source: {inc_cat_counts[FileCategory.SOURCE]:,}",
+        f"  - Included Docs: {inc_cat_counts[FileCategory.DOCUMENTATION]:,}",
+        f"  - Included Manifests / Config: {inc_cat_counts[FileCategory.MANIFEST] + inc_cat_counts[FileCategory.CONFIG]:,}",
+        f"  - Included Tests: {inc_cat_counts[FileCategory.TEST]:,}",
+        f"Excluded from Context: {len(excluded_files):,} files",
+        f"  - Dependencies Excluded: {meta['dependency_count']:,}",
+        f"  - Caches/Build Excluded: {meta['cache_count']:,}",
         f"Estimated Context Tokens: {total_tokens:,} tokens",
     ]
     sections.append(f"@PROJECT\n" + "\n".join(project_body))
@@ -227,7 +268,7 @@ def render_native_aibundle(
         sections.append(f"@EXCLUDED\n" + "\n".join(ex_lines))
 
     # 11. @SECURITY
-    sec_lines = render_security_section(scan_result, excluded_files)
+    sec_lines = render_security_section(scan_result, included_files, excluded_files)
     sections.append(f"@SECURITY\n" + "\n".join(sec_lines))
 
     # 12. @END

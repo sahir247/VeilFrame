@@ -14,7 +14,7 @@ from veilframe.folder.models.scan_result import ScanResult
 
 
 def generate_project_metadata(scan_result: ScanResult) -> Dict[str, Any]:
-    """Compile high-level metadata from scan result and project context."""
+    """Compile high-level metadata from scan result, manifests, and project context."""
     root_name = os.path.basename(os.path.abspath(scan_result.root_path)) or scan_result.root_path
     
     # 1. Languages breakdown
@@ -38,15 +38,156 @@ def generate_project_metadata(scan_result: ScanResult) -> Dict[str, Any]:
         if f.is_entry_point or (f.priority_score and f.priority_score >= 99)
     ]
 
+    # 5. Extract Project Intelligence from Manifests & Lockfiles
+    manifest_name: Optional[str] = None
+    manifest_version: Optional[str] = None
+    frameworks: Set[str] = set()
+    libraries: Set[str] = set()
+    build_systems: Set[str] = set()
+    pkg_managers: Set[str] = set()
+
+    all_filenames = {f.name.lower(): f for f in scan_result.files}
+
+    # Check lockfiles/tools for package managers
+    if "uv.lock" in all_filenames:
+        pkg_managers.add("uv")
+    if "poetry.lock" in all_filenames:
+        pkg_managers.add("poetry")
+    if "pipfile" in all_filenames or "pipfile.lock" in all_filenames:
+        pkg_managers.add("pipenv")
+    if "requirements.txt" in all_filenames:
+        pkg_managers.add("pip")
+    if "package-lock.json" in all_filenames:
+        pkg_managers.add("npm")
+    if "pnpm-lock.yaml" in all_filenames:
+        pkg_managers.add("pnpm")
+    if "yarn.lock" in all_filenames:
+        pkg_managers.add("yarn")
+    if "bun.lockb" in all_filenames or "bun.lock" in all_filenames:
+        pkg_managers.add("bun")
+    if "cargo.lock" in all_filenames:
+        pkg_managers.add("cargo")
+    if "gemfile.lock" in all_filenames:
+        pkg_managers.add("bundler")
+    if "composer.lock" in all_filenames:
+        pkg_managers.add("composer")
+
+    # Check common build systems
+    if "cmakelists.txt" in all_filenames:
+        build_systems.add("CMake")
+    if "makefile" in all_filenames:
+        build_systems.add("Make")
+    if any(k.startswith("vite.config") for k in all_filenames):
+        build_systems.add("Vite")
+    if any(k.startswith("webpack.config") for k in all_filenames):
+        build_systems.add("Webpack")
+    if "cargo.toml" in all_filenames:
+        build_systems.add("Cargo")
+    if "pom.xml" in all_filenames:
+        build_systems.add("Maven")
+    if "build.gradle" in all_filenames or "build.gradle.kts" in all_filenames:
+        build_systems.add("Gradle")
+
+    # Parse primary manifests
+    from veilframe.folder.project_context.manifest_parser import parse_manifest
+    manifest_candidates = [
+        "pyproject.toml", "package.json", "cargo.toml", "go.mod", "pom.xml"
+    ]
+    for mf_name in manifest_candidates:
+        if mf_name in all_filenames:
+            mf_record = all_filenames[mf_name]
+            info = parse_manifest(mf_record.path)
+            if info:
+                if not manifest_name and info.project_name:
+                    manifest_name = info.project_name
+                if not manifest_version and info.version:
+                    manifest_version = info.version
+
+                all_deps = {k.lower(): k for k in {**info.dependencies, **info.dev_dependencies}.keys()}
+
+                # Frameworks (Application skeletons / architectures)
+                if "pyside6" in all_deps or "pyside2" in all_deps:
+                    frameworks.add("PySide6")
+                if "pyqt6" in all_deps or "pyqt5" in all_deps:
+                    frameworks.add("PyQt")
+                if "fastapi" in all_deps:
+                    frameworks.add("FastAPI")
+                if "flask" in all_deps:
+                    frameworks.add("Flask")
+                if "django" in all_deps:
+                    frameworks.add("Django")
+                if "react" in all_deps:
+                    frameworks.add("React")
+                if "next" in all_deps:
+                    frameworks.add("Next.js")
+                if "vue" in all_deps:
+                    frameworks.add("Vue")
+                if "express" in all_deps:
+                    frameworks.add("Express")
+                if "svelte" in all_deps:
+                    frameworks.add("Svelte")
+                if "flutter" in all_deps:
+                    frameworks.add("Flutter")
+
+                # Libraries & Toolkits
+                if "opencv-python" in all_deps or "opencv-python-headless" in all_deps or "cv2" in all_deps:
+                    libraries.add("OpenCV")
+                if "numpy" in all_deps:
+                    libraries.add("NumPy")
+                if "pillow" in all_deps or "pil" in all_deps:
+                    libraries.add("Pillow")
+                if "cryptography" in all_deps:
+                    libraries.add("cryptography")
+                if "pyyaml" in all_deps:
+                    libraries.add("PyYAML")
+                if "pathspec" in all_deps:
+                    libraries.add("pathspec")
+                if "torch" in all_deps or "pytorch" in all_deps:
+                    libraries.add("PyTorch")
+                if "pandas" in all_deps:
+                    libraries.add("pandas")
+                if "requests" in all_deps:
+                    libraries.add("requests")
+                if "pytest" in all_deps:
+                    libraries.add("pytest")
+
+                if mf_name == "pyproject.toml":
+                    try:
+                        with open(mf_record.path, "r", encoding="utf-8", errors="ignore") as mf_f:
+                            mf_text = mf_f.read()
+                            if "setuptools" in mf_text:
+                                build_systems.add("setuptools")
+                            if "poetry-core" in mf_text or "poetry.core" in mf_text:
+                                build_systems.add("poetry-core")
+                            if "hatchling" in mf_text:
+                                build_systems.add("hatchling")
+                            if "flit_core" in mf_text:
+                                build_systems.add("flit")
+                    except Exception:
+                        pass
+
+    if manifest_name and manifest_version:
+        project_display_name = f"{manifest_name} v{manifest_version}"
+    elif manifest_name:
+        project_display_name = manifest_name
+    else:
+        project_display_name = root_name
+
     return {
-        "name": root_name,
+        "name": project_display_name,
+        "raw_name": manifest_name or root_name,
+        "version": manifest_version,
         "root": scan_result.root_path,
         "languages": top_languages,
         "ecosystems": ecosystems,
+        "frameworks": sorted(list(frameworks)),
+        "libraries": sorted(list(libraries)),
+        "build_systems": sorted(list(build_systems)),
+        "package_managers": sorted(list(pkg_managers)),
         "entry_points": sorted(entry_points),
-        "total_files": scan_result.stats.total_files,
-        "total_size": scan_result.stats.total_size_bytes,
-        "total_size_formatted": format_bytes(scan_result.stats.total_size_bytes),
+        "total_files": scan_result.stats.total_files if scan_result.stats else len(scan_result.files),
+        "total_size": scan_result.stats.total_size_bytes if scan_result.stats else sum(f.size for f in scan_result.files),
+        "total_size_formatted": format_bytes(scan_result.stats.total_size_bytes if scan_result.stats else sum(f.size for f in scan_result.files)),
         "source_count": cat_counts[FileCategory.SOURCE],
         "test_count": cat_counts[FileCategory.TEST],
         "config_count": cat_counts[FileCategory.CONFIG] + cat_counts[FileCategory.MANIFEST],

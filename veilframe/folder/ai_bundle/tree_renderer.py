@@ -92,7 +92,8 @@ def build_project_tree(
 
     # 2. Add collapsed excluded directories and loose excluded files
     if excluded_files:
-        excluded_dirs: Dict[str, str] = {}
+        from collections import Counter, defaultdict
+        dir_reasons: Dict[str, List[str]] = defaultdict(list)
         loose_excluded: List[Tuple[FileRecord, str]] = []
 
         for f, reason in excluded_files:
@@ -100,16 +101,14 @@ def build_project_tree(
             if len(parts) > 1:
                 top_part = parts[0]
                 if top_part not in included_dir_prefixes:
-                    if top_part not in excluded_dirs:
-                        excluded_dirs[top_part] = reason
+                    dir_reasons[top_part].append(reason)
                 else:
                     accum = parts[0]
                     found = False
                     for p in parts[1:-1]:
                         accum = f"{accum}/{p}"
                         if accum not in included_dir_prefixes:
-                            if accum not in excluded_dirs:
-                                excluded_dirs[accum] = reason
+                            dir_reasons[accum].append(reason)
                             found = True
                             break
                     if not found and len(loose_excluded) < 20:
@@ -118,10 +117,19 @@ def build_project_tree(
                 if len(loose_excluded) < 20:
                     loose_excluded.append((f, reason))
 
-        # Add collapsed directory nodes
-        for dir_path, reason in excluded_dirs.items():
+        # Add collapsed directory nodes with dominant / representative reason
+        for dir_path, reasons in dir_reasons.items():
+            budget_reasons = [r for r in reasons if "budget" in r.lower()]
+            security_reasons = [r for r in reasons if "security" in r.lower()]
+            if budget_reasons:
+                rep_reason = "Context budget exhausted"
+            elif security_reasons:
+                rep_reason = "Security exclusion"
+            else:
+                rep_reason = Counter(reasons).most_common(1)[0][0]
+
             parts = dir_path.split("/")
-            root.add_child(parts, is_collapsed_dir=True, exclusion_reason=reason)
+            root.add_child(parts, is_collapsed_dir=True, exclusion_reason=rep_reason)
 
         # Add loose excluded files (e.g. .env)
         for f, reason in loose_excluded:

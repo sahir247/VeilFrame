@@ -11,6 +11,7 @@ from veilframe.folder.ai_bundle.priority_engine import rank_files_by_priority
 from veilframe.folder.ai_bundle.token_estimator import estimate_tokens
 from veilframe.folder.models.classification import AIAction, FileCategory
 from veilframe.folder.models.file_record import FileRecord
+from veilframe.folder.security.sensitive_files import is_sensitive_filepath
 
 
 class FileSelector:
@@ -51,9 +52,11 @@ class FileSelector:
                 eligible.append(f)
                 continue
 
-            # Hard security exclude
-            if f.is_secret or f.effective_category in (FileCategory.SECRET, FileCategory.CREDENTIAL, FileCategory.PRIVATE_KEY):
-                excluded.append((f, f"Security exclusion: {f.classification.reason or 'Potentially sensitive secret'}"))
+            # Hard security exclude for dedicated sensitive credential files (e.g. .env, private keys, certificates)
+            is_sens, sens_reason = is_sensitive_filepath(f.path)
+            if (f.is_secret and is_sens) or is_sens or f.effective_category in (FileCategory.SECRET, FileCategory.CREDENTIAL, FileCategory.PRIVATE_KEY):
+                sec_reason = sens_reason or (f.classification.reason if f.effective_category == FileCategory.SECRET else "Dedicated credential or secret file")
+                excluded.append((f, f"Security exclusion: {sec_reason}"))
                 continue
 
             # Check default action
@@ -82,14 +85,39 @@ class FileSelector:
 
         # 2. Second Pass: Greedy selection under token budget
         for f in eligible:
+            # Machine-generated lockfiles should not bypass the budget as mandatory manifests
+            is_lockfile = (
+                f.name.lower().endswith((".lock", "-lock.json", "-lock.yaml"))
+                or f.name.lower() in ("cargo.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "gemfile.lock")
+            )
+
             file_tokens = f.token_count or max(1, f.size // 4)
+            if is_lockfile:
+                # Lockfiles are summarized into concise dependency lists (~300-500 tokens)
+                file_tokens = min(file_tokens, 500)
 
-            # Mandatory files: Entry points, manifests, READMEs always fit if under max limit
-            is_mandatory = f.is_entry_point or f.effective_category == FileCategory.MANIFEST or f.name.lower().startswith("readme")
+            # Mandatory / core files: Entry points, primary root manifests, root README, architecture docs, and build specs
+            is_shallow = len(f.relative_path.replace("\\", "/").split("/")) <= 2
+            is_root_manifest = (f.effective_category == FileCategory.MANIFEST and not is_lockfile and is_shallow)
+            is_root_readme = (f.name.lower().startswith("readme") and is_shallow)
 
-            if budget is not None and not is_mandatory:
-                if accumulated_tokens + file_tokens > budget:
-                    excluded.append((f, f"Excluded: Exceeds target token ceiling ({budget:,} tokens)"))
+            is_mandatory = (
+                f.is_entry_point
+                or is_root_manifest
+                or is_root_readme
+                or f.name.lower().startswith("architecture")
+                or f.name.endswith(".spec")
+                or f.name in ("build.sh", "Makefile", "Dockerfile", "run.py")
+            ) and (f.size < 200_000)
+
+            if budget is not None:
+                hard_cap = int(budget * 1.10) if is_mandatory else budget
+                if accumulated_tokens + file_tokens > hard_cap:
+                    remaining_budget = max(0, budget - accumulated_tokens)
+                    excluded.append((
+                        f,
+                        f"Context budget exhausted (file requires ~{file_tokens:,} tokens, budget remaining: {remaining_budget:,} tokens)"
+                    ))
                     continue
 
             included.append(f)

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VeilFrame Mobile Palette: Obsidian & Cyan Cyber-Forensics Theme -->
+    <color name="vf_bg_dark">#0B0F19</color>
+    <color name="vf_surface">#151C2C</color>
+    <color name="vf_surface_variant">#1E293B</color>
+    <color name="vf_surface_stroke">#2C3E55</color>
+    
+    <color name="vf_primary">#38BDF8</color>
+    <color name="vf_primary_container">#0369A1</color>
+    <color name="vf_on_primary">#0B0F19</color>
+    
+    <color name="vf_secondary">#818CF8</color>
+    <color name="vf_secondary_container">#3730A3</color>
+    <color name="vf_on_secondary">#FFFFFF</color>
+    
+    <color name="vf_accent_green">#22C55E</color>
+    <color name="vf_accent_amber">#F59E0B</color>
+    <color name="vf_accent_red">#F43F5E</color>
+    
+    <color name="vf_text_primary">#F8FAFC</color>
+    <color name="vf_text_secondary">#94A3B8</color>
+    <color name="vf_text_muted">#64748B</color>
+    
+    <color name="vf_console_bg">#06080E</color>
+    <color name="vf_console_text">#38BDF8</color>
+</resources>
