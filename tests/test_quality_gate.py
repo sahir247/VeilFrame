@@ -858,9 +858,9 @@ class TestV11HardeningAndProvenance(unittest.TestCase):
         import os
         from veilframe.core.validator import evaluate_visual_quality, generate_ed25519_signed_manifest
         from veilframe.gui.report_view import _ManifestTab
-        from PySide6.QtWidgets import QApplication
+        from tests.conftest import get_or_create_test_qapp
 
-        app = QApplication.instance() or QApplication([])
+        app = get_or_create_test_qapp()
 
         report = evaluate_visual_quality(self.ref_video, self.ref_video, canonical_w=160, canonical_h=120)
         out_dir = self.temp_dir / "ui_manifest_test"

@@ -23,7 +23,12 @@ from veilframe.models.video_info import VideoInfo, VideoStreamInfo
 class TestGUIControlsAndUX(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = QApplication.instance() or QApplication([])
+        from tests.conftest import get_or_create_test_qapp
+        cls.app = get_or_create_test_qapp()
+
+    def setUp(self):
+        from tests.conftest import get_or_create_test_qapp
+        self.app = get_or_create_test_qapp()
 
     def _create_wheel_event(self, delta: int = 120) -> QWheelEvent:
         return QWheelEvent(

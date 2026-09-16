@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Callable
 
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QWidget,
     QVBoxLayout,
@@ -25,6 +26,21 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QIcon, QPixmap, QDesktopServices, QColor
+
+_dialog_qapp_holder = None
+
+
+def _ensure_active_qapp() -> Optional[QApplication]:
+    """Ensure an active QApplication exists before any QWidget/QDialog is constructed."""
+    global _dialog_qapp_holder
+    app = QApplication.instance()
+    if app is None:
+        try:
+            _dialog_qapp_holder = QApplication(["veilframe", "-platform", "offscreen"])
+            app = _dialog_qapp_holder
+        except Exception:
+            pass
+    return app
 
 from ..core.deps_manager import (
     audit_environment,
@@ -63,6 +79,7 @@ class DependencyInstallerDialog(QDialog):
     """Progress dialog for downloading and setting up missing external binaries."""
 
     def __init__(self, dependency_name: str = "FFmpeg", parent: Optional[QWidget] = None, auto_start: bool = True):
+        _ensure_active_qapp()
         super().__init__(parent)
         self.setWindowTitle(f"Installing {dependency_name} — VeilFrame")
         self.resize(520, 220)
@@ -237,6 +254,7 @@ class EnvironmentDoctorDialog(QDialog):
     """Comprehensive environment diagnostics and hardware capabilities dialog."""
 
     def __init__(self, parent: Optional[QWidget] = None, auto_scan: bool = True):
+        _ensure_active_qapp()
         super().__init__(parent)
         self.setWindowTitle("Environment Doctor & Hardware Diagnostics — VeilFrame")
         self.resize(740, 580)
@@ -453,6 +471,7 @@ class AboutDialog(QDialog):
     REPO_URL = "https://github.com/sahir247/VeilFrame"
 
     def __init__(self, parent: Optional[QWidget] = None):
+        _ensure_active_qapp()
         super().__init__(parent)
         self.setWindowTitle("About VeilFrame v2.0")
         self.resize(580, 520)

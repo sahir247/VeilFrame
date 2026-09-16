@@ -13,11 +13,20 @@ class TestGuiSmoke(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
-            cls.app = QApplication.instance() or QApplication(["veilframe-smoke-test", "-platform", "offscreen"])
+            from tests.conftest import get_or_create_test_qapp
+            cls.app = get_or_create_test_qapp()
         except Exception as e:
             cls.app = None
             cls.init_error = e
+
+    def setUp(self):
+        if not getattr(self, "app", None):
+            try:
+                from tests.conftest import get_or_create_test_qapp
+                self.app = get_or_create_test_qapp()
+            except Exception as e:
+                self.app = None
+                self.init_error = e
 
     def test_gui_and_panels_smoke(self):
         if not self.app:

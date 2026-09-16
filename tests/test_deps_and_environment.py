@@ -25,7 +25,12 @@ from veilframe.gui.dialogs import (
 class TestDepsAndEnvironment(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = QApplication.instance() or QApplication([])
+        from tests.conftest import get_or_create_test_qapp
+        cls.app = get_or_create_test_qapp()
+
+    def setUp(self):
+        from tests.conftest import get_or_create_test_qapp
+        self.app = get_or_create_test_qapp()
 
     def test_audit_environment(self):
         """audit_environment should return a populated EnvironmentReport."""
