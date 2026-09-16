@@ -319,13 +319,97 @@ All probes implement Level-3 Fingerprint-Distinct Independence (distinct algorit
 
 ---
 
-## Developer Interfaces: 3-Mode GUI & CLI
+## AI Project Intelligence & LLM Context Subsystem
 
-VeilFrame offers both a modern terminal CLI and a 3-mode desktop GUI built on PySide6 / Qt:
+```
+                    PROJECT DIRECTORY
+                           │
+                           ▼
+                    FAST INVENTORY
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+           PROJECT CONTEXT    FILE CLASSIFIER
+                 │                   │
+                 ▼                   ▼
+           ECOSYSTEM ENGINE    RULE REGISTRY (YAML)
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                    SECURITY ENGINE
+                           │
+                           ▼
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+      LOGICAL TREE   DEPENDENCIES   RELATIONSHIPS
+           │               │               │
+           └───────────────┼───────────────┘
+                           ▼
+                    PRIORITY ENGINE
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+           CONTENT SELECTOR    TOKEN BUDGET
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                    CONTENT READER
+                 (Zero-Truncation Guarantee)
+                           │
+                           ▼
+                   CONTEXT ASSEMBLER
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+              INDEX                FILES
+           (IDs F001..)     (Complete Source)
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                     AI BUNDLE
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+          .aibundle       .md         .html
+```
+
+### 1. Two-Layer Context Package Architecture
+Designed to maximize **information density per token** while eliminating AI hallucination:
+- **Layer A (Project Index)**: Small, highly structured metadata layer containing:
+  - Project Manifest (primary language, frameworks, package manager, build system)
+  - Logical Tree (with collapsed exclusions: `node_modules/ [EXCLUDED: dependency]`)
+  - Dependency manifests (runtime, development, standard library)
+  - Module import relationships graph
+  - Master file index mapping IDs (`F001`, `F002`) to paths and roles
+- **Layer B (File Contents)**: Complete, untruncated source, test, config, and doc files wrapped in unambiguous boundaries:
+  ```text
+  <<< FILE_START >>>
+  PATH: src/services/attendance.py
+  LANGUAGE: python
+  <<< CONTENT >>>
+  ...
+  <<< FILE_END >>>
+  ```
+
+### 2. Extensible Rule Registry & GitIgnore Engine
+- Declarative YAML rules (`veilframe/folder/rules/builtin/`) dynamically categorize files into `SOURCE`, `CONFIG`, `TEST`, `DOCUMENTATION`, `DEPENDENCY`, `BUILD_OUTPUT`, `MEDIA`, `DATABASE`, and `SECRET`.
+- Full Git-compliant path matching via `pathspec.GitIgnoreSpec`, preserving `.gitignore` semantics across multi-nested repositories.
+
+### 3. Zero-Truncation Principle
+- Included files are never arbitrarily cut in half or truncated to save small token amounts.
+- Complete source code, test suites, and configuration files are delivered verbatim.
+- Large binary databases (SQLite) and ML weights are summarized structurally with schema definitions and tensor metadata without bloating token budgets.
+
+---
+
+## Developer Interfaces: 4-Mode GUI & CLI
+
+VeilFrame offers both a modern terminal CLI and a 4-mode desktop GUI built on PySide6 / Qt:
 
 ### Desktop GUI (`veilframe-gui` / `veilframe gui`)
-- **3-Mode Segmented Switcher:** Instant toggling between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer`.
-- **Drag-and-Drop Auto-Detection:** Automatically switches pipelines based on file extension (`.mp4`, `.mov`, `.mkv` vs `.png`, `.jpg`, `.webp`).
+- **4-Mode Segmented Switcher:** Instant toggling between `Video Sanitizer`, `Image Privacy`, `Folder Analyzer`, and the dedicated `AI Project Lister`.
+- **Dedicated AI Project Lister:** Features upfront tab priority, real-time token gauge, file inclusion/exclusion policies, and one-click export to native `.aibundle` v1, Markdown, HTML, JSON, and ZIP.
+- **Drag-and-Drop Auto-Detection:** Automatically switches pipelines based on file extension (`.mp4`, `.mov`, `.mkv` vs `.png`, `.jpg`, `.webp`) or directory drop.
 - **Live Progressive Tree:** Animated directory tree rendering during active folder scans.
 - **Pulsing Telemetry:** Animated gradient progress bar with items/sec throughput and millisecond timers.
 - **Semantic Detector Toggles:** Individual switches for Face, Plate, Text, and QR/Barcode detectors with safety margin controls.
@@ -344,6 +428,7 @@ VeilFrame offers both a modern terminal CLI and a 3-mode desktop GUI built on Py
 - `veilframe folder dupes <dir>`: 3-stage duplicate file detection with wasted space calculations.
 - `veilframe folder stats <dir>`: Summary size rollups, file type distributions, and directory depth.
 - `veilframe folder export <dir> -o <out>`: Export comprehensive reports to interactive HTML, MD, JSON, CSV, TXT.
+- `veilframe folder ai <dir> -o <out>`: Compile codebases into native `.aibundle` or Markdown AI context packages.
 - `veilframe inspect <video>`: Elementary stream and container atom inspection.
 - `veilframe audit <ref> <trans>`: Independent 3-tier visual fidelity audit.
 - `veilframe verify <manifest.json>`: Standalone Ed25519 signature and SHA-256 bitstream verification.

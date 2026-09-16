@@ -1,0 +1,54 @@
+# C# and .NET Ecosystem Rules
+rules:
+  - id: "csharp.build_output"
+    ecosystems: ["csharp", "dotnet"]
+    patterns:
+      - "bin/"
+      - "obj/"
+      - "TestResults/"
+      - "packages/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: ".NET binary output or local package cache"
+    priority: "ECOSYSTEM"
+
+  - id: "csharp.packages"
+    ecosystems: ["csharp", "dotnet", "nuget"]
+    patterns:
+      - "*.nupkg"
+      - "*.snupkg"
+    classification: "COMPILED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "NuGet package archive"
+    priority: "ECOSYSTEM"
+
+  - id: "csharp.manifests_configs"
+    ecosystems: ["csharp", "dotnet"]
+    patterns:
+      - "*.sln"
+      - "*.csproj"
+      - "*.fsproj"
+      - "*.vbproj"
+      - "Directory.Build.props"
+      - "Directory.Build.targets"
+      - "Directory.Packages.props"
+      - "global.json"
+      - "NuGet.config"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: ".NET solution, project, or package management specification"
+    priority: "ECOSYSTEM"
+
+  - id: "csharp.source"
+    ecosystems: ["csharp", "dotnet"]
+    patterns:
+      - "*.cs"
+      - "*.csx"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "C# source code or script"
+    priority: "ECOSYSTEM"

@@ -1,3 +1,53 @@
+# VeilFrame v2.1.0 Release Notes
+
+## Major Release: AI Project Intelligence Subsystem, Native `.aibundle` v1 Text Protocol & Dedicated 4-Mode GUI
+
+VeilFrame v2.1.0 introduces the **AI Project Intelligence & LLM Context Subsystem**, the official **native `.aibundle` v1 plain-text protocol**, the **4-mode segmented GUI switcher**, **PathSpec GitIgnore compliance**, and a strict **Zero-Truncation Guarantee** on all included project files.
+
+---
+
+### Key Highlights in v2.1.0
+
+#### 1. Dedicated AI Project Lister GUI Mode & Tab Prioritization
+- **4-Mode Segmented Control**: `AI Project Lister` is now a primary first-class mode in the desktop application alongside `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer`.
+- **First-Tab Priority**: Selecting AI Project Lister mode or choosing the `AI-Ready Project Scan` profile automatically positions `AI Program Lister` as Tab 0 and focuses it upfront.
+- **Project Intelligence Dashboard**: Displays detected ecosystems, primary languages, entry points, dependency manifests, security warnings, and live token usage gauges.
+
+#### 2. Native `.aibundle` v1 Plain-Text Protocol
+- **Two-Layer Architecture**:
+  - **Layer A (Project Index)**: `@INDEX`, `@PROJECT`, `@TREE`, `@ECOSYSTEMS`, `@DEPENDENCIES`, `@ENTRY_POINTS`, `@RELATIONSHIPS`.
+  - **Layer B (File Contents)**: Complete, untruncated source files mapped by ID (`F001`, `F002`) with unambiguous block fences:
+    ```text
+    @FILE id="F001" path="src/main.py" type="source" language="python"
+    <<<
+    [Complete Source Content]
+    >>>
+    ```
+- **High Information Density**: Eliminates repeated metadata headers before every file, saving thousands of tokens while maximizing structural comprehension for consuming AI models.
+
+#### 3. Strict Zero-Truncation Guarantee on Included Files
+- **No Arbitrary Snippets**: Included source, test, doc, and config files are never chopped in half or truncated by default.
+- **Intelligent Summarization for Binaries**: SQLite databases are summarized with live schema definitions and row counts; ML models and binary artifacts are summarized via tensor metadata and MIME types.
+
+#### 4. Collapsed Logical Project Tree
+- Summarizes vast dependency trees (`node_modules/ [EXCLUDED: dependency]`, `.venv/ [EXCLUDED: environment]`, `.git/ [EXCLUDED: VCS internals]`) in a single line, reducing tree tokens from 50,000+ to under 200 tokens.
+
+#### 5. Multi-Ecosystem Rule Registry & PathSpec Engine
+- Fully decoupled, extensible YAML rules under `veilframe/folder/rules/builtin/` (Python, Web/JS, Rust, Go, C/C++, Docker, Java, and general development).
+- Native `.gitignore` compliance using `pathspec.GitIgnoreSpec` with fallback pattern matching.
+
+#### 6. CLI Command: `veilframe folder ai`
+- Compile any repository into `.aibundle`, Markdown, interactive HTML, JSON, or ZIP:
+  ```bash
+  veilframe folder ai ./my_project -o project.aibundle
+  ```
+
+#### 7. CI & Build Hardening
+- PyInstaller bundling updated in `VeilFrame.spec` to package ecosystem YAML rules and include `pathspec` and `yaml` in hidden imports.
+- GitHub Actions CI workflow updated to run `pytest -v` across Ubuntu, macOS, and Windows runners.
+
+---
+
 # VeilFrame v2.0.2 Release Notes
 
 ## Major Release: High-Performance Folder Analyzer, Staged Duplicate Finder & Full SHA-256 Reporting

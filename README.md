@@ -18,12 +18,13 @@
 
 ---
 
-**VeilFrame** is an advanced local multimedia sanitization, bounded forensic signal transformation, privacy compiler, and high-performance folder analyzer system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers or paint superficial blur filters, **VeilFrame** operates across three core domains:
+**VeilFrame** is an advanced local multimedia sanitization, bounded forensic signal transformation, privacy compiler, and high-performance folder analyzer system with independent visual-fidelity verification and cryptographic provenance. Unlike standard metadata strippers that only modify container headers or paint superficial blur filters, **VeilFrame** operates across four core domains:
 
 1. **Video Domain:** Applies bounded, orthogonal signal perturbations across spatial geometry, temporal cadence, physical sensor noise (Bayer CFA PRNU), transform-domain perceptual hashes (2D DCT), ISP chrominance drift, and acoustic Electrical Network Frequency (ENF) hums within strict **5% or 10% transformation policy budgets**, guarded by an **independent read-only three-tier visual fidelity gate**.
 2. **Image Domain:** Compiles images through a deterministic multi-layer privacy compiler (Layer A Container Stripping, Layer B Representation Normalization, Layer C Isolated Solid Redaction), audited against **7 Level-3 Fingerprint-Distinct independent red-team probes** and enforced by a normative **5-Contract QualityGate** (Privacy, Geometry, Fidelity, Integrity, Completeness).
 3. **Folder & Storage Domain:** High-performance selective directory analyzer, parallel cryptographic hasher, SQLite indexing engine, and staged duplicate candidate detector with **full uncut 64-character SHA-256 reporting** across interactive HTML dashboards, Markdown inventory tables, CSV, JSON, and text reports.
-4. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
+4. **AI Project Intelligence & Bundle Domain:** High-fidelity project intelligence and LLM context compiler. Uses multi-ecosystem heuristics, PathSpec GitIgnore parsing, AST structural analysis, and topological module dependency graph modeling to compile codebases into the native, deterministic `.aibundle` v1 format (alongside Markdown, JSON, HTML, and ZIP) under strict context budgets with a **zero-truncation guarantee** on all included files.
+5. **Cryptographic Provenance:** Every output is sealed with **RFC 8785 canonical JSON manifests** and **Ed25519 asymmetric digital signatures**.
 
 ---
 
@@ -39,12 +40,15 @@ VeilFrame is built upon the permanent architectural invariant:
 
 ## <img src="docs/images/icons/gui.svg" width="22" height="22" alt="" /> Desktop Graphical Interface (GUI)
 
-VeilFrame includes a modern desktop application built on PySide6 / Qt supporting Video, Image, and Folder analysis workflows with real-time feedback:
+VeilFrame includes a modern desktop application built on PySide6 / Qt supporting Video, Image, Folder, and AI project analysis workflows with real-time feedback:
 
 ![VeilFrame GUI Overview](docs/images/veilframe_gui_overview.svg)
 
 ### GUI Key Capabilities:
-- **3-Mode Segmented Switcher:** Seamlessly toggle between `Video Sanitizer`, `Image Privacy`, and `Folder Analyzer` with exclusive state management.
+- **4-Mode Segmented Switcher:** Seamlessly toggle between `Video Sanitizer`, `Image Privacy`, `Folder Analyzer`, and the dedicated `AI Project Lister` with automatic tab priority ordering and state management.
+- **Dedicated AI Project Lister:** Elevates AI context generation to a primary GUI mode. Features live token budgeting, file inclusion/exclusion policies, secret redaction, and one-click export to native `.aibundle` v1, Markdown, HTML, JSON, and ZIP.
+- **Zero-Truncation Guarantee:** Never chops or truncates included files into arbitrary snippets; delivers complete, uncompromised source files, tests, configs, and docs.
+- **Logical Collapsed Tree:** Intelligently collapses noisy dependency, build, and VCS directories into compact summaries (`node_modules/ [EXCLUDED: dependency]`) to maximize token density.
 - **Hardware GPU Acceleration:** Auto-detects NVIDIA NVENC, Intel QuickSync, AMD AMF, and Apple VideoToolbox with graceful deterministic CPU fallback.
 - **Universal Format Conversion:** Real-time transcoding and re-muxing across video (MP4, MKV, WebM, MOV, AVI, TS) and image (JPEG, PNG, WebP, TIFF, BMP, GIF, ICO, PPM) formats.
 - **Forensic EXIF Metadata Inspector:** Live audit of device serials, camera models, capture timestamps, lens optics, and GPS geolocation alerts.
@@ -103,6 +107,7 @@ VeilFrame provides a unified developer terminal interface styled with structured
 | `veilframe folder dupes <dir>` | 3-stage duplicate file detection with wasted space calculations |
 | `veilframe folder stats <dir>` | Summary size rollups, file type distributions, and directory depth |
 | `veilframe folder export <dir> -o <out>` | Export comprehensive reports to interactive HTML, MD, JSON, CSV, TXT |
+| `veilframe folder ai <dir> -o <out>` | Compile codebases into native `.aibundle` or Markdown AI context packages |
 | `veilframe inspect <video>` | Deep inspection of container atoms, elementary streams, and GPS tags |
 | `veilframe audit <ref> <trans>` | Independent visual-fidelity audit of reference vs transformed media |
 | `veilframe verify <manifest>` | Standalone Ed25519 signature and SHA-256 bitstream verification |
@@ -291,6 +296,18 @@ veilframe folder dupes ./my_directory -e ./duplicates_report.html
 
 # Quick statistical overview of file types and size rollups
 veilframe folder stats ./my_directory --json
+```
+
+#### AI Context Bundling & Program Lister
+```bash
+# Compile codebase into official native .aibundle v1 context package
+veilframe folder ai ./my_project -o ./my_project.aibundle
+
+# Compile into Markdown format under a 128,000 token budget
+veilframe folder ai ./my_project -f markdown -t 128000 -o ./my_project.md
+
+# Compile into interactive self-contained HTML context viewer
+veilframe folder ai ./my_project -f html -o ./my_project_bundle.html
 ```
 
 #### Desktop GUI

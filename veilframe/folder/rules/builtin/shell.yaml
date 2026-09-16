@@ -1,0 +1,14 @@
+# Shell Scripting Ecosystem Rules
+rules:
+  - id: "shell.source"
+    ecosystems: ["shell", "bash", "sh"]
+    patterns:
+      - "*.sh"
+      - "*.bash"
+      - "*.zsh"
+      - "*.fish"
+    classification: "SCRIPT"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Shell command script"
+    priority: "ECOSYSTEM"

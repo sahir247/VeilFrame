@@ -1,0 +1,63 @@
+# Global IDE and Editor Rules
+rules:
+  - id: "global.editor.vscode_useful"
+    ecosystems: ["*"]
+    patterns:
+      - ".vscode/settings.json"
+      - ".vscode/launch.json"
+      - ".vscode/tasks.json"
+      - ".vscode/extensions.json"
+    classification: "IDE_CONFIG"
+    action: "SELECTIVE_INCLUDE"
+    confidence: 0.95
+    reason: "VS Code project settings and launch definitions"
+    priority: "TOOL_IDE"
+
+  - id: "global.editor.vscode_cache"
+    ecosystems: ["*"]
+    patterns:
+      - ".vscode/"
+    classification: "IDE_CONFIG"
+    action: "EXCLUDE"
+    confidence: 0.85
+    reason: "VS Code internal workspace cache"
+    priority: "TOOL_IDE"
+
+  - id: "global.editor.idea_useful"
+    ecosystems: ["*"]
+    patterns:
+      - ".idea/runConfigurations/"
+      - ".idea/codeStyles/"
+      - ".idea/inspectionProfiles/"
+    classification: "IDE_CONFIG"
+    action: "SELECTIVE_INCLUDE"
+    confidence: 0.95
+    reason: "IntelliJ code styles and run configurations"
+    priority: "TOOL_IDE"
+
+  - id: "global.editor.idea_cache"
+    ecosystems: ["*"]
+    patterns:
+      - ".idea/"
+      - "*.iml"
+      - "*.ipr"
+      - "*.iws"
+    classification: "IDE_CONFIG"
+    action: "EXCLUDE"
+    confidence: 0.9
+    reason: "IntelliJ workspace cache and index files"
+    priority: "TOOL_IDE"
+
+  - id: "global.editor.vim_emacs_swaps"
+    ecosystems: ["*"]
+    patterns:
+      - "*.swp"
+      - "*.swo"
+      - "*~"
+      - ".#*"
+      - "#*#"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 0.98
+    reason: "Editor temporary swap and backup files"
+    priority: "TOOL_IDE"

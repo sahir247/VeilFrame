@@ -28,6 +28,7 @@ def collect_application_resources():
     collected_datas = [
         ('veilframe/presets/profiles.json', 'veilframe/presets'),
         ('veilframe/resources', 'veilframe/resources'),
+        ('veilframe/folder/rules', 'veilframe/folder/rules'),
     ]
     return collected_datas
 
@@ -108,6 +109,8 @@ def collect_hidden_imports():
         'PySide6.QtCore',
         'PySide6.QtGui',
         'PySide6.QtWidgets',
+        'pathspec',
+        'yaml',
     ]
 
 

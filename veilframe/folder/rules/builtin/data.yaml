@@ -1,0 +1,38 @@
+# Data and Database Rules
+rules:
+  - id: "data.databases"
+    ecosystems: ["data", "*"]
+    patterns:
+      - "*.sqlite"
+      - "*.sqlite3"
+      - "*.db"
+      - "*.duckdb"
+    classification: "DATABASE"
+    action: "DESCRIBE"
+    confidence: 0.95
+    reason: "Relational or embedded database file (schema extracted without raw binary dump)"
+    priority: "ECOSYSTEM"
+
+  - id: "data.tabular"
+    ecosystems: ["data", "*"]
+    patterns:
+      - "*.parquet"
+      - "*.arrow"
+      - "*.feather"
+    classification: "DATASET"
+    action: "DESCRIBE"
+    confidence: 0.95
+    reason: "Columnar dataset file (schema summarized)"
+    priority: "ECOSYSTEM"
+
+  - id: "data.sql_scripts"
+    ecosystems: ["sql", "data", "*"]
+    patterns:
+      - "*.sql"
+      - "*.cql"
+      - "*.pgsql"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.9
+    reason: "SQL migration, query, or schema definition"
+    priority: "ECOSYSTEM"

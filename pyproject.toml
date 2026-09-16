@@ -29,6 +29,8 @@ dependencies = [
     "cryptography>=42.0.0,<51.0.0",
     "numpy>=1.26.0,<3.0.0",
     "opencv-python>=4.8.0,<5.0.0",
+    "pathspec>=1.1.1",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
@@ -39,7 +41,7 @@ veilframe-gui = "veilframe.app:main"
 include = ["veilframe*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json", "*.png", "*.svg", "*.ico"]
+"*" = ["*.json", "*.png", "*.svg", "*.ico", "*.yaml", "*.yml"]
 
 [project.optional-dependencies]
 test = [

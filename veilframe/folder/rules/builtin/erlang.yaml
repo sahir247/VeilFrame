@@ -1,0 +1,36 @@
+# Erlang Ecosystem Rules
+rules:
+  - id: "erlang.artifacts"
+    ecosystems: ["erlang", "rebar3"]
+    patterns:
+      - "_build/"
+      - "deps/"
+      - "*.beam"
+      - "erl_crash.dump"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Erlang compiled BEAM bytecode, dependencies, or crash dump"
+    priority: "ECOSYSTEM"
+
+  - id: "erlang.manifests"
+    ecosystems: ["erlang", "rebar3"]
+    patterns:
+      - "rebar.config"
+      - "rebar.lock"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Erlang rebar3 project configuration"
+    priority: "ECOSYSTEM"
+
+  - id: "erlang.source"
+    ecosystems: ["erlang"]
+    patterns:
+      - "*.erl"
+      - "*.hrl"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Erlang source code or header"
+    priority: "ECOSYSTEM"

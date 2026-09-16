@@ -67,6 +67,19 @@ def add_folder_subparsers(subparsers: argparse._SubParsersAction) -> None:
     p_exp.add_argument("-p", "--profile", default="quick", choices=["quick", "full_meta", "integrity", "duplicates", "custom"], help="Scan profile")
     p_exp.set_defaults(func=cmd_folder_export)
 
+    # 5. ai / aibundle
+    p_ai = folder_sub.add_parser("ai", help="Generate AI Program Context Bundle (.aibundle, .md, .json, .zip)")
+    p_ai.add_argument("target", help="Directory path to bundle")
+    p_ai.add_argument("-o", "--output", help="Destination bundle file (e.g. project.aibundle, context.md, project.zip)")
+    p_ai.add_argument("-t", "--tokens", type=int, default=128000, help="Target token budget ceiling (default: 128000)")
+    p_ai.add_argument("-f", "--format", default="aibundle", choices=["aibundle", "markdown", "text", "json", "zip", "html"], help="Output bundle format")
+    p_ai.add_argument("--no-tests", action="store_true", help="Exclude test files from bundle")
+    p_ai.add_argument("--no-docs", action="store_true", help="Exclude documentation files from bundle")
+    p_ai.add_argument("--no-configs", action="store_true", help="Exclude configuration files from bundle")
+    p_ai.add_argument("--no-redact", action="store_true", help="Disable automatic credential/secret redaction")
+    p_ai.add_argument("--stdout", action="store_true", help="Print bundle content directly to stdout")
+    p_ai.set_defaults(func=cmd_folder_ai)
+
 
 def _build_config_from_args(args: argparse.Namespace) -> ScanConfig:
     profile_name = getattr(args, "profile", "quick")
@@ -206,6 +219,68 @@ def cmd_folder_export(args: argparse.Namespace) -> None:
     exporter = FolderExporter(res)
     out_file = exporter.export(args.output)
     print(f"Successfully exported {os.path.basename(out_file)} ({format_bytes(os.path.getsize(out_file))})")
+
+
+def cmd_folder_ai(args: argparse.Namespace) -> None:
+    """Scan project folder and build AI Program Bundle."""
+    target_path = os.path.abspath(args.target)
+    if not os.path.isdir(target_path):
+        print(f"Error: Target path '{target_path}' is not a valid directory.", file=sys.stderr)
+        sys.exit(1)
+
+    from veilframe.folder.ai_bundle.bundle_builder import AIBundleBuilder
+    from veilframe.folder.ai_bundle.bundle_config import BundleConfig, BundleFormat
+
+    fmt_map = {
+        "aibundle": BundleFormat.AIBUNDLE,
+        "markdown": BundleFormat.MARKDOWN,
+        "text": BundleFormat.TEXT,
+        "json": BundleFormat.JSON,
+        "zip": BundleFormat.ZIP,
+        "html": BundleFormat.HTML,
+    }
+    fmt = fmt_map.get(args.format.lower(), BundleFormat.AIBUNDLE)
+
+    bundle_cfg = BundleConfig(
+        target_tokens=args.tokens if args.tokens > 0 else None,
+        format=fmt,
+        include_tests=not args.no_tests,
+        include_documentation=not args.no_docs,
+        include_configs=not args.no_configs,
+        redact_secrets=not args.no_redact,
+    )
+
+    scan_cfg = ScanConfig.from_profile(ScanProfile.AI_READY)
+    scanner = FolderScanner(config=scan_cfg)
+    scan_res = scanner.scan(target_path)
+
+    builder = AIBundleBuilder(bundle_cfg)
+    bundle_res = builder.build(scan_res, output_path=args.output)
+
+    if getattr(args, "stdout", False) and not bundle_res.is_binary:
+        print(bundle_res.content)
+        return
+
+    # Print summary card
+    print_section_header("VEILFRAME AI PROGRAM BUNDLE GENERATED")
+    card_data = {
+        "Format": bundle_res.format.value.upper(),
+        "Included Files": f"{bundle_res.included_count:,} files",
+        "Excluded Files": f"{bundle_res.excluded_count:,} files",
+        "Estimated Tokens": f"{bundle_res.total_tokens:,} tokens",
+        "Ecosystems": ", ".join(scan_res.ecosystems) if scan_res.ecosystems else "Generic",
+        "Primary Languages": ", ".join(scan_res.languages) if scan_res.languages else "Unknown",
+    }
+    if scan_res.security_alerts:
+        card_data["Security Alerts"] = f"⚠️ {len(scan_res.security_alerts)} potential secrets detected & masked"
+    if bundle_res.output_path:
+        card_data["Saved To"] = bundle_res.output_path
+        if os.path.exists(bundle_res.output_path):
+            card_data["Output Size"] = format_bytes(os.path.getsize(bundle_res.output_path))
+    else:
+        card_data["Note"] = "Specify -o <filepath> to save or --stdout to view full context"
+
+    print_card("AI Bundle Summary", card_data)
 
 
 def _display_scan_summary(res) -> None:

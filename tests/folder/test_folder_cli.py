@@ -85,6 +85,27 @@ class TestFolderCLI(unittest.TestCase):
             sys.stdout = old_stdout
             sys.argv = old_argv
 
+    def test_cli_folder_ai_aibundle(self):
+        out_bundle = os.path.join(self.temp_dir, "test.aibundle")
+        old_stdout = sys.stdout
+        old_argv = sys.argv
+        try:
+            sys.stdout = io.StringIO()
+            sys.argv = ["veilframe", "folder", "ai", self.temp_dir, "-o", out_bundle, "-f", "aibundle"]
+            main()
+            self.assertTrue(os.path.exists(out_bundle))
+            with open(out_bundle, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("@VEILFRAME_BUNDLE", content)
+            self.assertIn("version=1", content)
+            self.assertIn("@PROJECT", content)
+            self.assertIn("@TREE", content)
+            self.assertIn("@FILES", content)
+            self.assertIn("@END", content)
+        finally:
+            sys.stdout = old_stdout
+            sys.argv = old_argv
+
 
 if __name__ == "__main__":
     unittest.main()

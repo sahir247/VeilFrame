@@ -1,0 +1,66 @@
+# JavaScript / Node.js Ecosystem Rules
+rules:
+  - id: "js.node_modules"
+    ecosystems: ["javascript", "node", "npm"]
+    patterns:
+      - "node_modules/"
+    classification: "DEPENDENCY"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Node.js package dependencies directory"
+    priority: "ECOSYSTEM"
+
+  - id: "js.pkg_caches"
+    ecosystems: ["javascript", "node", "npm", "yarn", "pnpm"]
+    patterns:
+      - ".npm/"
+      - ".pnpm-store/"
+      - ".yarn/cache/"
+      - ".yarn/unplugged/"
+      - ".yarn/install-state.gz"
+      - ".yarn/build-state.yml"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Node package manager cache and state"
+    priority: "ECOSYSTEM"
+
+  - id: "js.logs"
+    ecosystems: ["javascript", "node"]
+    patterns:
+      - "npm-debug.log*"
+      - "yarn-debug.log*"
+      - "yarn-error.log*"
+      - "pnpm-debug.log*"
+    classification: "RUNTIME_DATA"
+    action: "EXCLUDE"
+    confidence: 0.95
+    reason: "Package manager execution and error log"
+    priority: "ECOSYSTEM"
+
+  - id: "js.manifests"
+    ecosystems: ["javascript", "node"]
+    patterns:
+      - "package.json"
+      - "package-lock.json"
+      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - ".yarnrc.yml"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "JavaScript package manifest or lockfile"
+    priority: "ECOSYSTEM"
+
+  - id: "js.source"
+    ecosystems: ["javascript", "node"]
+    patterns:
+      - "*.js"
+      - "*.mjs"
+      - "*.cjs"
+      - "*.jsx"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "JavaScript source code"
+    priority: "ECOSYSTEM"

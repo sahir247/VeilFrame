@@ -9,7 +9,7 @@ import sys
 import os
 import shutil
 import time
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 
 # Ensure UTF-8 output streams safely cross-platform
 if hasattr(sys.stdout, "reconfigure"):
@@ -177,15 +177,12 @@ def print_banner(version: str = "1.1.0", subtitle: str = "PRIVACY-PRESERVING MED
 # --------------------------------------------------------------------------- #
 # Box-Drawing Cards & Containers                                              #
 # --------------------------------------------------------------------------- #
-def print_card(title: str, items: List[Tuple[str, str]], color: str = Style.BRIGHT_CYAN):
+def print_card(title: str, items: Union[Dict[str, str], List[Tuple[str, str]]], color: str = Style.BRIGHT_CYAN):
     """
     Print an elegant key-value card container.
-    Example:
-    ╭─ Video Analysis ────────────────────────────────────────────────────────╮
-    │  Resolution   1920x1080 (16:9)                                          │
-    │  Codec        H.264 / AVC                                               │
-    ╰─────────────────────────────────────────────────────────────────────────╯
     """
+    if isinstance(items, dict):
+        items = list(items.items())
     w = get_terminal_width()
     inner_w = w - 4
 

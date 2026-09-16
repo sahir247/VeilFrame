@@ -1,0 +1,40 @@
+# R Ecosystem Rules
+rules:
+  - id: "r.history_data"
+    ecosystems: ["r"]
+    patterns:
+      - ".Rhistory"
+      - ".RData"
+      - ".Ruserdata"
+      - ".Rproj.user/"
+      - "renv/library/"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "R workspace session history, RData snapshot, or local renv library"
+    priority: "ECOSYSTEM"
+
+  - id: "r.manifests"
+    ecosystems: ["r"]
+    patterns:
+      - "DESCRIPTION"
+      - "NAMESPACE"
+      - "renv.lock"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "R package specification or renv lockfile"
+    priority: "ECOSYSTEM"
+
+  - id: "r.source"
+    ecosystems: ["r"]
+    patterns:
+      - "*.r"
+      - "*.R"
+      - "*.rmd"
+      - "*.Rmd"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "R script or R Markdown document"
+    priority: "ECOSYSTEM"

@@ -31,12 +31,23 @@ class TestGuiSmoke(unittest.TestCase):
         self.assertIsNotNone(window.processing_panel)
         self.assertIsNotNone(window.image_processing_panel)
 
-        # Verify 3-mode switcher state machine
+        # Verify 4-mode switcher state machine
+        window._set_mode("ai")
+        self.assertEqual(window.current_mode, "ai")
+        self.assertFalse(window.folder_panel.isHidden())
+        self.assertTrue(window.processing_panel.isHidden())
+        self.assertTrue(window.image_processing_panel.isHidden())
+        self.assertTrue(window.folder_panel._is_ai_mode)
+        self.assertEqual(window.folder_panel.tabs.currentIndex(), 0)
+        self.assertEqual(window.folder_panel.tabs.tabText(0), "AI Program Lister")
+
         window._set_mode("folder")
         self.assertEqual(window.current_mode, "folder")
         self.assertFalse(window.folder_panel.isHidden())
         self.assertTrue(window.processing_panel.isHidden())
         self.assertTrue(window.image_processing_panel.isHidden())
+        self.assertFalse(window.folder_panel._is_ai_mode)
+        self.assertEqual(window.folder_panel.tabs.tabText(0), "Directory Explorer")
 
         window._set_mode("image")
         self.assertEqual(window.current_mode, "image")

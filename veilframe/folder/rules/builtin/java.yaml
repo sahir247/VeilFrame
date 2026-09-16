@@ -1,0 +1,63 @@
+# Java and JVM Ecosystem Rules
+rules:
+  - id: "java.build_output"
+    ecosystems: ["java", "jvm", "maven", "gradle"]
+    patterns:
+      - "target/"
+      - ".gradle/"
+      - "build/"
+      - "out/"
+      - ".m2/repository/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Java build artifact directory or Maven repository cache"
+    priority: "ECOSYSTEM"
+
+  - id: "java.compiled_classes"
+    ecosystems: ["java", "jvm"]
+    patterns:
+      - "*.class"
+    classification: "COMPILED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Compiled Java class file"
+    priority: "ECOSYSTEM"
+
+  - id: "java.archives"
+    ecosystems: ["java", "jvm"]
+    patterns:
+      - "*.jar"
+      - "*.war"
+      - "*.ear"
+    classification: "BINARY"
+    action: "DESCRIBE"
+    confidence: 0.85
+    reason: "Java archive bundle (described rather than excluded blindly)"
+    priority: "ECOSYSTEM"
+
+  - id: "java.manifests"
+    ecosystems: ["java", "jvm", "maven", "gradle"]
+    patterns:
+      - "pom.xml"
+      - "build.gradle"
+      - "build.gradle.kts"
+      - "settings.gradle"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/libs.versions.toml"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Maven or Gradle project build configuration"
+    priority: "ECOSYSTEM"
+
+  - id: "java.source"
+    ecosystems: ["java"]
+    patterns:
+      - "*.java"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Java source code"
+    priority: "ECOSYSTEM"

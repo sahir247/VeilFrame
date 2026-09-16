@@ -62,6 +62,7 @@ from ..folder.models import (
     format_bytes,
 )
 from ..folder.scanner import FolderScanner
+from .folder.ai_program_lister_panel import AIProgramListerPanel
 
 
 class FolderScanWorker(QThread):
@@ -124,6 +125,7 @@ class FolderAnalyzerPanel(QWidget):
         self._files_count_live: int = 0
         self._folders_count_live: int = 0
         self._last_status_msg: str = ""
+        self._is_ai_mode: bool = False
 
         self._init_ui()
         self._apply_profile(ScanProfile.QUICK)
@@ -202,6 +204,7 @@ class FolderAnalyzerPanel(QWidget):
             "Full Metadata (All File Attributes)",
             "Integrity Scan (Metadata + SHA-256)",
             "Duplicate Finder (Staged Hash)",
+            "AI-Ready Project Scan",
             "Custom Configuration",
         ])
         self.combo_profile.setStyleSheet(
@@ -459,6 +462,10 @@ class FolderAnalyzerPanel(QWidget):
 
         self.tabs.addTab(self.tab_dupes, "Duplicate Groups")
 
+        # Tab 4: AI Program Lister & Bundle Generator
+        self.tab_ai = AIProgramListerPanel()
+        self.tabs.addTab(self.tab_ai, "AI Program Lister")
+
         main_lay.addWidget(self.tabs, 1)
 
     def _build_stats_view(self, layout: QVBoxLayout):
@@ -522,16 +529,81 @@ class FolderAnalyzerPanel(QWidget):
     def set_folder_path(self, folder_path: str):
         self.txt_folder_path.setText(folder_path)
 
+    def set_ai_mode(self, is_ai: bool):
+        """Switch view configuration and tab focus between general folder analytics and dedicated AI Project Lister."""
+        self._is_ai_mode = is_ai
+        if is_ai:
+            # Move AI Program Lister tab to position 0 so it appears first when user selects it
+            idx = self.tabs.indexOf(self.tab_ai)
+            if idx != 0 and idx != -1:
+                self.tabs.removeTab(idx)
+                self.tabs.insertTab(0, self.tab_ai, "AI Program Lister")
+            self.tabs.setCurrentIndex(0)
+
+            # Switch profile to AI-Ready Project Scan
+            ai_idx = self.combo_profile.findText("AI-Ready Project Scan")
+            if ai_idx >= 0 and self.combo_profile.currentIndex() != ai_idx:
+                self.combo_profile.setCurrentIndex(ai_idx)
+
+            self.btn_start_scan.setText("SCAN FOR AI BUNDLE")
+            self.btn_start_scan.setStyleSheet(
+                "background: #10b981; color: #ffffff; border: none; "
+                "padding: 6px 20px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;"
+            )
+        else:
+            # Move AI Program Lister back to last tab if it's currently at index 0
+            idx = self.tabs.indexOf(self.tab_ai)
+            if idx == 0:
+                self.tabs.removeTab(0)
+                self.tabs.addTab(self.tab_ai, "AI Program Lister")
+                self.tabs.setCurrentIndex(0)
+
+            # If current profile was AI-Ready, switch back to Quick Scan
+            if self.combo_profile.currentIndex() == 4:
+                self.combo_profile.setCurrentIndex(0)
+
+            self.btn_start_scan.setText("START SCAN")
+            self.btn_start_scan.setStyleSheet(
+                "background: #2563eb; color: #ffffff; border: none; "
+                "padding: 6px 20px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;"
+            )
+
     def _on_profile_changed(self, idx: int):
         profiles = [
             ScanProfile.QUICK,
             ScanProfile.FULL_METADATA,
             ScanProfile.INTEGRITY,
             ScanProfile.DUPLICATES,
+            ScanProfile.AI_READY,
             ScanProfile.CUSTOM,
         ]
         if idx < len(profiles):
-            self._apply_profile(profiles[idx])
+            prof = profiles[idx]
+            self._apply_profile(prof)
+            if prof == ScanProfile.AI_READY:
+                # User selected AI-Ready scan: move AI Program Lister to tab 0 and focus it
+                idx_ai = self.tabs.indexOf(self.tab_ai)
+                if idx_ai != 0 and idx_ai != -1:
+                    self.tabs.removeTab(idx_ai)
+                    self.tabs.insertTab(0, self.tab_ai, "AI Program Lister")
+                self.tabs.setCurrentIndex(0)
+                self.btn_start_scan.setText("SCAN FOR AI BUNDLE")
+                self.btn_start_scan.setStyleSheet(
+                    "background: #10b981; color: #ffffff; border: none; "
+                    "padding: 6px 20px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;"
+                )
+            elif not getattr(self, "_is_ai_mode", False):
+                # Restore AI tab to the end if not in dedicated AI mode
+                idx_ai = self.tabs.indexOf(self.tab_ai)
+                if idx_ai == 0:
+                    self.tabs.removeTab(0)
+                    self.tabs.addTab(self.tab_ai, "AI Program Lister")
+                    self.tabs.setCurrentIndex(0)
+                self.btn_start_scan.setText("START SCAN")
+                self.btn_start_scan.setStyleSheet(
+                    "background: #2563eb; color: #ffffff; border: none; "
+                    "padding: 6px 20px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;"
+                )
 
     def _apply_profile(self, profile: ScanProfile):
         cfg = ScanConfig.from_profile(profile)
@@ -589,8 +661,11 @@ class FolderAnalyzerPanel(QWidget):
         self.lbl_progress_phase.setText("TRAVERSING DIRECTORY TREE")
         self.lbl_progress_status.setText("Discovering entries...")
 
-        # Switch to Directory Explorer tab for live animated tree rendering
-        self.tabs.setCurrentIndex(0)
+        # Switch tab focus
+        if getattr(self, "_is_ai_mode", False) or self.combo_profile.currentIndex() == 4:
+            self.tabs.setCurrentWidget(self.tab_ai)
+        else:
+            self.tabs.setCurrentWidget(self.tab_tree)
         self.tree_widget.clear()
         self._tree_folder_items.clear()
 
@@ -651,7 +726,7 @@ class FolderAnalyzerPanel(QWidget):
         item.setText(1, "Folder")
         item.setText(2, "...")
         item.setForeground(0, QColor("#60a5fa"))
-        item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+        item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
 
         self._tree_folder_items[fld.id] = item
 
@@ -729,7 +804,7 @@ class FolderAnalyzerPanel(QWidget):
             item.setText(4, "")
             item.setText(5, "")
             item.setForeground(0, QColor("#60a5fa"))
-            item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+            item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
             item.setData(0, Qt.UserRole, fld.path)
             item.setData(0, Qt.UserRole + 1, fld.relative_path)
             folder_items[fld.id] = item
@@ -782,7 +857,7 @@ class FolderAnalyzerPanel(QWidget):
                 grp_item.setToolTip(4, f"Click or double-click to copy full SHA-256:\n{g.hash_value}")
                 grp_item.setData(4, Qt.UserRole, g.hash_value)
                 grp_item.setForeground(3, QColor("#f43f5e"))
-                grp_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+                grp_item.setFont(0, QFont("Segoe UI", 9, QFont.Weight.Bold))
 
                 for f in g.files:
                     f_child = QTreeWidgetItem()
@@ -797,6 +872,11 @@ class FolderAnalyzerPanel(QWidget):
                 grp_item.setExpanded(True)
         else:
             self.lbl_dupes_summary.setText("No duplicate files detected.")
+
+        # 5. Populate AI Program Lister
+        self.tab_ai.set_scan_result(result)
+        if getattr(self, "_is_ai_mode", False) or self.combo_profile.currentIndex() == 4:
+            self.tabs.setCurrentWidget(self.tab_ai)
 
     def _on_search_text_changed(self, text: str):
         """Filter tree items based on search query with parent auto-expansion."""

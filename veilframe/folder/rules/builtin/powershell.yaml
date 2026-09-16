@@ -1,0 +1,13 @@
+# PowerShell Ecosystem Rules
+rules:
+  - id: "powershell.source"
+    ecosystems: ["powershell", "pwsh"]
+    patterns:
+      - "*.ps1"
+      - "*.psm1"
+      - "*.psd1"
+    classification: "SCRIPT"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "PowerShell script, module, or manifest"
+    priority: "ECOSYSTEM"

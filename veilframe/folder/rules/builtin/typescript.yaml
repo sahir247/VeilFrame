@@ -1,0 +1,36 @@
+# TypeScript Ecosystem Rules
+rules:
+  - id: "ts.build_info"
+    ecosystems: ["typescript", "javascript", "node"]
+    patterns:
+      - "*.tsbuildinfo"
+    classification: "GENERATED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "TypeScript incremental compilation cache"
+    priority: "ECOSYSTEM"
+
+  - id: "ts.config"
+    ecosystems: ["typescript", "javascript"]
+    patterns:
+      - "tsconfig.json"
+      - "tsconfig.*.json"
+    classification: "CONFIG"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "TypeScript compiler configuration"
+    priority: "ECOSYSTEM"
+
+  - id: "ts.source"
+    ecosystems: ["typescript"]
+    patterns:
+      - "*.ts"
+      - "*.mts"
+      - "*.cts"
+      - "*.tsx"
+      - "*.d.ts"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "TypeScript source code or type declaration"
+    priority: "ECOSYSTEM"

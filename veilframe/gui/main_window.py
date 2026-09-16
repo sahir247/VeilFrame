@@ -365,12 +365,19 @@ class MainWindow(QMainWindow):
         self.btn_mode_folder.clicked.connect(lambda: self._set_mode("folder"))
         mode_lay.addWidget(self.btn_mode_folder)
 
+        self.btn_mode_ai = QPushButton("AI Project Lister")
+        self.btn_mode_ai.setCheckable(True)
+        self.btn_mode_ai.setChecked(False)
+        self.btn_mode_ai.clicked.connect(lambda: self._set_mode("ai"))
+        mode_lay.addWidget(self.btn_mode_ai)
+
         # Exclusive button group
         self._mode_btn_group = QButtonGroup(self)
         self._mode_btn_group.setExclusive(True)
         self._mode_btn_group.addButton(self.btn_mode_video)
         self._mode_btn_group.addButton(self.btn_mode_image)
         self._mode_btn_group.addButton(self.btn_mode_folder)
+        self._mode_btn_group.addButton(self.btn_mode_ai)
 
         hdr.addWidget(mode_box)
         hdr.addSpacing(10)
@@ -512,6 +519,7 @@ class MainWindow(QMainWindow):
         self.btn_mode_video.setChecked(mode == "video")
         self.btn_mode_image.setChecked(mode == "image")
         self.btn_mode_folder.setChecked(mode == "folder")
+        self.btn_mode_ai.setChecked(mode == "ai")
 
         _active_style = (
             "background-color: #2563eb; color: #ffffff; font-weight: 700; "
@@ -525,8 +533,9 @@ class MainWindow(QMainWindow):
         self.btn_mode_video.setStyleSheet(_active_style if mode == "video" else _inactive_style)
         self.btn_mode_image.setStyleSheet(_active_style if mode == "image" else _inactive_style)
         self.btn_mode_folder.setStyleSheet(_active_style if mode == "folder" else _inactive_style)
+        self.btn_mode_ai.setStyleSheet(_active_style if mode == "ai" else _inactive_style)
 
-        if mode == "folder":
+        if mode in ("folder", "ai"):
             self.drop_zone.hide()
             self.provider_bar.hide()
             self.video_info_widget.hide()
@@ -538,7 +547,12 @@ class MainWindow(QMainWindow):
             self.btn_process.hide()
             self.btn_cancel.hide()
             self.progress_bar.hide()
-            self.lbl_status.setText("Folder Analyzer mode active — select a directory to scan.")
+            if mode == "ai":
+                self.folder_panel.set_ai_mode(True)
+                self.lbl_status.setText("AI Project Lister active — select a project directory to scan and generate AI bundles.")
+            else:
+                self.folder_panel.set_ai_mode(False)
+                self.lbl_status.setText("Folder Analyzer mode active — select a directory to scan.")
         elif mode == "image":
             self.folder_panel.hide()
             self.drop_zone.show()
@@ -599,7 +613,8 @@ class MainWindow(QMainWindow):
             return
 
         if path.is_dir():
-            self._set_mode("folder")
+            target_mode = "ai" if self.current_mode == "ai" else "folder"
+            self._set_mode(target_mode)
             self.folder_panel.set_folder_path(str(path.resolve()))
             return
 

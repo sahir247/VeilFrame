@@ -1,0 +1,20 @@
+# C++ Ecosystem Rules
+rules:
+  - id: "cpp.source"
+    ecosystems: ["cpp"]
+    patterns:
+      - "*.cpp"
+      - "*.cxx"
+      - "*.cc"
+      - "*.c++"
+      - "*.hpp"
+      - "*.hxx"
+      - "*.hh"
+      - "*.h++"
+      - "*.inl"
+      - "*.tpp"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "C++ source code, header, or template implementation"
+    priority: "ECOSYSTEM"

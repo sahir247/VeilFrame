@@ -1,0 +1,47 @@
+# Go Ecosystem Rules
+rules:
+  - id: "go.vendor"
+    ecosystems: ["go"]
+    patterns:
+      - "vendor/"
+    classification: "VENDOR"
+    action: "EXCLUDE"
+    confidence: 0.85
+    reason: "Go vendored dependencies (excluded by default, user-overridable)"
+    priority: "ECOSYSTEM"
+
+  - id: "go.build_artifacts"
+    ecosystems: ["go"]
+    patterns:
+      - "bin/"
+      - "*.test"
+      - "*.out"
+      - "coverage.out"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 0.95
+    reason: "Go test binaries, coverage profiles, or binary output"
+    priority: "ECOSYSTEM"
+
+  - id: "go.manifests"
+    ecosystems: ["go"]
+    patterns:
+      - "go.mod"
+      - "go.sum"
+      - "go.work"
+      - "go.work.sum"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Go module and workspace specification"
+    priority: "ECOSYSTEM"
+
+  - id: "go.source"
+    ecosystems: ["go"]
+    patterns:
+      - "*.go"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Go source code"
+    priority: "ECOSYSTEM"
