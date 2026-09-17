@@ -6,8 +6,6 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
-  release:
-    types: [ published ]
   workflow_dispatch:
 
 permissions:
@@ -698,7 +696,6 @@ jobs:
         !failure() &&
         !cancelled() &&
         (
-          github.event_name == 'release' ||
           github.event_name == 'workflow_dispatch' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
           startsWith(github.ref, 'refs/tags/v')
@@ -751,7 +748,7 @@ jobs:
           path: final_release/*
 
       - name: Publish GitHub Release Assets
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -760,19 +757,29 @@ jobs:
 
           TAG="${GITHUB_REF_NAME}"
 
-          # For a release event, use the existing release.
-          # For a tag push, create the release if it does not exist.
+          echo "==> Publishing release: ${TAG}"
+
+          # The release should already exist for a release/tag build.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release does not exist. Creating it..."
             gh release create "$TAG" \
               --title "$TAG" \
               --notes-file RELEASE_NOTES.md
           fi
 
-          # Upload only release assets, not the release-notes file.
-          find final_release -maxdepth 1 -type f \
-            ! -name 'SHA256SUMS.txt' \
-            -print0 |
-            xargs -0 -r gh release upload "$TAG" --clobber
+          echo "==> Uploading release assets..."
 
-          # Upload the checksum manifest as well.
-          gh release upload "$TAG" final_release/SHA256SUMS.txt --clobber
+          shopt -s nullglob
+          assets=(final_release/*)
+
+          if ((${#assets[@]} == 0)); then
+            echo "ERROR: No release assets found."
+            exit 1
+          fi
+
+          # Upload all assets in one gh invocation.
+          gh release upload "$TAG" \
+            --clobber \
+            "${assets[@]}"
+
+          echo "==> Release ${TAG} published successfully."
