@@ -41,6 +41,9 @@
                 android:paddingBottom="10dp">
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnImgStudioMenu"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="44dp"
@@ -77,6 +80,9 @@
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnImgStudioFavorite"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="44dp"
@@ -132,6 +138,9 @@
                         android:text="Clear all"
                         android:textColor="@color/vf_text_muted"
                         android:textSize="12sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false" />
                 </LinearLayout>
 
@@ -162,6 +171,9 @@
                         android:text="Select image to edit"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="13sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:icon="@drawable/ic_file_pick"
                         app:iconTint="@color/vf_primary" />
@@ -200,6 +212,9 @@
                             android:text="Add more"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="12sp"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end"
                             app:backgroundTint="@color/vf_surface_variant"
                             app:icon="@drawable/ic_add"
                             app:iconTint="@color/vf_primary"
@@ -259,6 +274,9 @@
                             </LinearLayout>
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnImgRemoveFile"
                                 style="@style/Widget.Material3.Button.IconButton"
                                 android:layout_width="36dp"
@@ -318,6 +336,9 @@
                         android:text="Reset"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="12sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         app:icon="@drawable/ic_reset"
                         app:iconTint="@color/vf_text_secondary"
                         app:iconSize="14dp" />
@@ -340,6 +361,9 @@
                         android:text="Crop"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -358,6 +382,9 @@
                         android:text="Resize"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -375,6 +402,9 @@
                         android:text="Rotate"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -400,6 +430,9 @@
                         android:text="Filter"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -418,6 +451,9 @@
                         android:text="EXIF"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -435,6 +471,9 @@
                         android:text="Text"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end"
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
@@ -542,7 +581,130 @@
                             android:textSize="10sp"
                             android:textStyle="bold"
                             android:layout_marginTop="4dp" />
+
+                        <TextView
+                            android:id="@+id/tvImgActualStats"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textColor="@color/vf_primary"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="2dp"
+                            android:visibility="gone" />
                     </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ============================================================= -->
+        <!-- 3B. EDIT SUMMARY CARD                                         -->
+        <!-- ============================================================= -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardImgEditSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/vf_surface"
+            app:cardCornerRadius="12dp"
+            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="EDIT SUMMARY"
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnImgResetAllEdits"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="Reset all edits"
+                        android:textColor="@color/vf_secondary"
+                        android:textSize="12sp"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvImgSummaryEmpty"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="No edits applied"
+                    android:textColor="@color/vf_text_secondary"
+                    android:textSize="12sp"
+                    android:visibility="visible" />
+
+                <LinearLayout
+                    android:id="@+id/layoutImgSummaryDetails"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryCrop"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="✓ Crop       Free"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryResize"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="✓ Resize     100%"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryRotate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="✓ Rotate     0°"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryFilter"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="✓ Filter     Default"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvImgSummaryExif"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="✓ EXIF       Original"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -617,44 +779,185 @@
                         android:text="WebP" />
                 </com.google.android.material.chip.ChipGroup>
 
-                <!-- Quality Slider -->
-                <LinearLayout
+                <!-- Compression Goal Selection -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="COMPRESSION GOAL"
+                    android:textColor="@color/vf_text_muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupImgGoal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginBottom="4dp">
+                    android:layout_marginBottom="12dp"
+                    app:singleSelection="true">
 
-                    <TextView
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipGoalPercent"
+                        style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Quality:"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        android:text="Quality (%)"
+                        android:checked="true" />
 
-                    <TextView
-                        android:id="@+id/tvImgQualityValue"
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipGoalTargetSize"
+                        style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:text="85%"
-                        android:textColor="@color/vf_primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
+                        android:text="Target Size (KB)" />
+                </com.google.android.material.chip.ChipGroup>
+
+                <!-- Quality / Compression Slider Container -->
+                <LinearLayout
+                    android:id="@+id/layoutQualityContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="4dp">
+
+                        <TextView
+                            android:id="@+id/tvImgQualityLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Quality:"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvImgQualityValue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="85%"
+                            android:textColor="@color/vf_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderImgQuality"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="10"
+                        android:valueTo="100"
+                        android:value="85"
+                        android:stepSize="5"
+                        app:thumbColor="@color/vf_primary"
+                        app:trackColorActive="@color/vf_primary"
+                        app:trackColorInactive="@color/vf_surface_variant" />
                 </LinearLayout>
 
-                <com.google.android.material.slider.Slider
-                    android:id="@+id/sliderImgQuality"
+                <!-- Target File Size Container (Iterative Quality Solver) -->
+                <LinearLayout
+                    android:id="@+id/layoutTargetSizeContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:valueFrom="10"
-                    android:valueTo="100"
-                    android:value="85"
-                    android:stepSize="5"
-                    app:thumbColor="@color/vf_primary"
-                    app:trackColorActive="@color/vf_primary"
-                    app:trackColorInactive="@color/vf_surface_variant" />
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="4dp">
+
+                        <TextView
+                            android:id="@+id/tvImgTargetSizeLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Target Size:"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvImgTargetSizeValue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="250 KB"
+                            android:textColor="@color/vf_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Quick Target Size Presets -->
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:layout_marginBottom="6dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupTargetPresets"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipTarget50k"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="50 KB" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipTarget100k"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="100 KB" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipTarget250k"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="250 KB"
+                                android:checked="true" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipTarget500k"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="500 KB" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipTarget1m"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="1 MB" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/sliderImgTargetSize"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="20"
+                        android:valueTo="2048"
+                        android:value="250"
+                        android:stepSize="10"
+                        app:thumbColor="@color/vf_primary"
+                        app:trackColorActive="@color/vf_primary"
+                        app:trackColorInactive="@color/vf_surface_variant" />
+                </LinearLayout>
 
                 <!-- Destination Folder -->
                 <TextView
@@ -693,14 +996,28 @@
 
                         <TextView
                             android:id="@+id/tvImgDestinationPath"
-                            android:layout_width="wrap_content"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
+                            android:layout_weight="1"
                             android:layout_marginStart="10dp"
+                            android:layout_marginEnd="8dp"
                             android:text="Pictures / VeilFrame"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="12sp"
                             android:maxLines="1"
                             android:ellipsize="middle" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnImgChangeDestination"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Change"
+                            android:textColor="@color/vf_primary"
+                            android:textSize="12sp"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -735,6 +1052,9 @@
             android:textSize="14sp"
             android:textStyle="bold"
             android:letterSpacing="0.06"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             app:backgroundTint="@color/vf_primary"
             app:cornerRadius="10dp"
             app:icon="@drawable/ic_compress"
@@ -786,6 +1106,9 @@
                 android:layout_marginEnd="4dp"
                 android:text="Save Image"
                 android:textColor="@color/vf_text_primary"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:ellipsize="end"
                 app:backgroundTint="@color/vf_surface_variant"
                 app:icon="@drawable/ic_action_save"
                 app:iconTint="@color/vf_primary" />
@@ -799,6 +1122,9 @@
                 android:layout_marginStart="4dp"
                 android:text="Share"
                 android:textColor="@color/vf_text_primary"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:ellipsize="end"
                 app:backgroundTint="@color/vf_surface_variant"
                 app:icon="@drawable/ic_action_share"
                 app:iconTint="@color/vf_primary" />

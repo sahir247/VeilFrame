@@ -42,6 +42,7 @@ env.bak/
 
 # Scratch & temporary artifacts
 scratch/
+examples/
 venv.bak/
 calibration_corpus/**/*.mp4
 calibration_corpus/**/*.y4m

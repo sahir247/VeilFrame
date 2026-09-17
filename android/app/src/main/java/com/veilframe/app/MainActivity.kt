@@ -17,13 +17,17 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -54,8 +58,17 @@ import com.veilframe.app.databinding.DialogVideoPresetBinding
 import com.veilframe.app.databinding.DialogVideoSpeedBinding
 import com.veilframe.app.databinding.DialogVideoAspectBinding
 import com.veilframe.app.databinding.DialogVideoAudioBinding
+import com.veilframe.app.media.MediaProcessor
+import com.veilframe.app.media.VideoEditState
+import com.veilframe.app.media.ImageEditState
+import com.veilframe.app.media.SafDestinationManager
+import com.veilframe.app.media.VideoPlayerController
+import com.veilframe.app.media.ImageStudioController
+import com.veilframe.app.media.VideoStudioController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -138,6 +151,14 @@ data class ToolSessionState(
  */
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val PREFS_NAME = "veilframe_prefs"
+        private const val KEY_VIDEO_DEST_URI = "video_destination_folder_uri"
+        private const val KEY_IMAGE_DEST_URI = "image_destination_folder_uri"
+        private const val KEY_VIDEO_DEST_NAME = "video_destination_folder_name"
+        private const val KEY_IMAGE_DEST_NAME = "image_destination_folder_name"
+    }
+
     private lateinit var binding: ActivityMainBinding
     private var py: Python? = null
 
@@ -191,61 +212,19 @@ class MainActivity : AppCompatActivity() {
     private val currentState: ToolSessionState
         get() = toolStates.getOrPut(currentToolMode) { ToolSessionState() }
 
-    // =========================================================================
-    // Image Studio State
-    // =========================================================================
-    private var imgStudioSelectedUri: Uri? = null
-    private var imgStudioOriginalFile: File? = null
-    private var imgStudioOriginalBitmap: Bitmap? = null
-    private var imgStudioDisplayBitmap: Bitmap? = null
-    private var imgStudioOriginalBytes: Long = 0L
-    private var imgStudioAspectPreset: String = "Free"
-    private var imgStudioResizeScale: Int = 100
-    private var imgStudioResizeWidth: Int = 0
-    private var imgStudioResizeHeight: Int = 0
-    private var imgStudioKeepAspect: Boolean = true
-    private var imgStudioRotationAngle: Float = 0f
-    private var imgStudioFilter: String = "Default"
-    private var imgStudioBgType: String = "Transparent"
-    private var imgStudioStripExif: Boolean = true
-    private var imgStudioExifMake: String = ""
-    private var imgStudioExifModel: String = ""
-    private var imgStudioExifSoftware: String = ""
-    private var imgStudioExifDateTime: String = ""
-    private var imgStudioExifGps: String = ""
-    private var imgStudioQuality: Int = 85
-    private var imgStudioFormat: String = "JPG"
-    private var imgStudioLastResultFile: File? = null
-    private var imgStudioJob: Job? = null
-
-    // =========================================================================
-    // Video Studio State (Timeline Trimmer & Compressor)
-    // =========================================================================
-    private var vidStudioSelectedUri: Uri? = null
-    private var vidStudioOriginalFile: File? = null
-    private var vidStudioDurationMs: Long = 10000L
-    private var vidStudioTrimStartMs: Long = 0L
-    private var vidStudioTrimEndMs: Long = 10000L
-    private var vidStudioOriginalBytes: Long = 0L
-    private var vidStudioWidth: Int = 1920
-    private var vidStudioHeight: Int = 1080
-    private var vidStudioScalePreset: String = "Original"
-    private var vidStudioTargetPreset: String = "Auto"
-    private var vidStudioCrf: Int = 28
-    private var vidStudioSpeed: Float = 1.0f
-    private var vidStudioAspect: String = "Original"
-    private var vidStudioAudioTrack: String = "Keep"
-    private var vidStudioFormat: String = "MP4"
-    private var vidStudioCodec: String = "H.264"
-    private var vidStudioLastResultFile: File? = null
-    private var vidStudioJob: Job? = null
+    // Dedicated Studio Controllers & SAF Destination Management
+    private lateinit var safDestinationManager: SafDestinationManager
+    private lateinit var videoPlayerController: VideoPlayerController
+    private lateinit var imageStudioController: ImageStudioController
+    private lateinit var videoStudioController: VideoStudioController
+    private var pendingExportFile: File? = null
 
     // Studio SAF Launchers
     private val imgStudioPickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            handleImageStudioSelected(uri)
+            imageStudioController.handleImageSelected(uri)
         }
     }
 
@@ -253,23 +232,41 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            handleVideoStudioSelected(uri)
+            videoStudioController.handleVideoSelected(uri)
+        }
+    }
+
+    private val imgFolderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            imageStudioController.onDestinationFolderSelected(uri)
+        }
+    }
+
+    private val vidFolderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            videoStudioController.onDestinationFolderSelected(uri)
         }
     }
 
     private val imgStudioExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("image/*")
     ) { destUri ->
-        if (destUri != null && imgStudioLastResultFile != null && imgStudioLastResultFile!!.exists()) {
-            copyFileToUri(imgStudioLastResultFile!!, destUri, "Image saved to device storage")
+        val file = pendingExportFile
+        if (destUri != null && file != null && file.exists()) {
+            copyFileToUri(file, destUri, "Image saved to device storage")
         }
     }
 
     private val vidStudioExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("video/*")
     ) { destUri ->
-        if (destUri != null && vidStudioLastResultFile != null && vidStudioLastResultFile!!.exists()) {
-            copyFileToUri(vidStudioLastResultFile!!, destUri, "Video saved to device storage")
+        val file = pendingExportFile
+        if (destUri != null && file != null && file.exists()) {
+            copyFileToUri(file, destUri, "Video saved to device storage")
         }
     }
 
@@ -732,13 +729,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        pauseVideoPlayback()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::videoPlayerController.isInitialized) {
+            videoPlayerController.release()
+        }
+    }
+
     private fun initPython() {
         try {
             if (!Python.isStarted()) {
                 Python.start(AndroidPlatform(this))
             }
             py = Python.getInstance()
-            logToConsole("[SYS] Initialized VeilFrame 2.2.4 Core Runtime (Python 3.11.16)")
+            logToConsole("[SYS] Initialized VeilFrame 2.2.5 Core Runtime (Python 3.11.16)")
             logToConsole("[SYS] Local forensics & AI context engine ready.")
         } catch (e: Exception) {
             logToConsole("[WARN] Python runtime initialization notice: ${e.message}")
@@ -765,11 +774,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.cardToolVideo.setOnClickListener {
-            openTool(ToolMode.VIDEO_CLEANER)
+            openVideoStudio()
         }
 
         binding.cardToolImage.setOnClickListener {
-            openTool(ToolMode.IMAGE_CLEANER)
+            openImageStudio()
         }
 
         binding.cardToolFolder.setOnClickListener {
@@ -953,6 +962,7 @@ class MainActivity : AppCompatActivity() {
      * Navigates back to Home Launcher Dashboard, saving active tool state.
      */
     private fun showHomeScreen() {
+        pauseVideoPlayback()
         saveCurrentToolState()
 
         currentScreen = ScreenState.HOME
@@ -969,6 +979,7 @@ class MainActivity : AppCompatActivity() {
      * Opens a dedicated independent tool workflow and restores its persistent session state.
      */
     private fun openTool(toolMode: ToolMode) {
+        pauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             saveCurrentToolState()
         }
@@ -2228,7 +2239,7 @@ class MainActivity : AppCompatActivity() {
                             expectedSha256 = apkExpectedSha256
                         )
                     } else {
-                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.4" } catch (_: Exception) { "2.2.4" }
+                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
                         binding.tvUpdateStatus.text = "Installed: v$currentVersionName • You're up to date ✓"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
@@ -2242,7 +2253,7 @@ class MainActivity : AppCompatActivity() {
                     if (isUserInitiated) {
                         Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                     } else {
-                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.4" } catch (_: Exception) { "2.2.4" }
+                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
                         binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
                     }
@@ -2509,7 +2520,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.2.4
+                VeilFrame v2.2.5
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution
@@ -2572,24 +2583,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatDuration(millis: Long): String {
-        val totalSec = (millis / 1000).coerceAtLeast(0)
-        val minutes = totalSec / 60
-        val seconds = totalSec % 60
-        val tenths = (millis % 1000) / 100
-        return String.format(Locale.US, "%02d:%02d.%d", minutes, seconds, tenths)
-    }
-
     // =========================================================================
-    // STUDIO WORKSPACES INITIALIZATION
+    // STUDIO WORKSPACES INITIALIZATION & NAVIGATION
     // =========================================================================
 
     private fun initStudioWorkspaces() {
-        initImageStudioWorkspace()
-        initVideoStudioWorkspace()
+        safDestinationManager = SafDestinationManager(this)
+        videoPlayerController = VideoPlayerController(
+            context = this,
+            textureView = binding.layoutVideoStudio.videoTextureView,
+            scope = lifecycleScope
+        )
+
+        imageStudioController = ImageStudioController(
+            activity = this,
+            binding = binding.layoutImageStudio,
+            safManager = safDestinationManager,
+            scope = lifecycleScope,
+            getPython = { py },
+            onPickImageRequest = { imgStudioPickerLauncher.launch("image/*") },
+            onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
+            onExportFileRequest = { file ->
+                pendingExportFile = file
+                imgStudioExportLauncher.launch(file.name)
+            },
+            onShareFileRequest = { file, mime ->
+                shareStudioFile(file, mime)
+            },
+            onNavigateHome = { showHomeScreen() }
+        )
+
+        videoStudioController = VideoStudioController(
+            activity = this,
+            binding = binding.layoutVideoStudio,
+            playerController = videoPlayerController,
+            safManager = safDestinationManager,
+            scope = lifecycleScope,
+            getPython = { py },
+            onPickVideoRequest = { vidStudioPickerLauncher.launch("video/*") },
+            onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
+            onExportFileRequest = { file ->
+                pendingExportFile = file
+                vidStudioExportLauncher.launch(file.name)
+            },
+            onShareFileRequest = { file, mime ->
+                shareStudioFile(file, mime)
+            },
+            onNavigateHome = { showHomeScreen() }
+        )
+
+        imageStudioController.initWorkspace()
+        videoStudioController.initWorkspace()
+    }
+
+    private fun pauseVideoPlayback() {
+        if (::videoPlayerController.isInitialized) {
+            videoPlayerController.pause()
+        }
     }
 
     private fun openImageStudio() {
+        pauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             saveCurrentToolState()
         }
@@ -2604,11 +2658,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
-
-        updateImageStudioUI()
     }
 
     private fun openVideoStudio() {
+        pauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             saveCurrentToolState()
         }
@@ -2623,1261 +2676,5 @@ class MainActivity : AppCompatActivity() {
 
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
-
-        updateVideoStudioUI()
-    }
-
-    // =========================================================================
-    // IMAGE STUDIO WORKSPACE LOGIC
-    // =========================================================================
-
-    private fun initImageStudioWorkspace() {
-        val imgBinding = binding.layoutImageStudio
-
-        imgBinding.btnImgStudioMenu.setOnClickListener {
-            showHomeScreen()
-        }
-
-        imgBinding.btnSelectImage.setOnClickListener {
-            imgStudioPickerLauncher.launch("image/*")
-        }
-
-        imgBinding.btnImgAddMore.setOnClickListener {
-            imgStudioPickerLauncher.launch("image/*")
-        }
-
-        imgBinding.btnImgClearAll.setOnClickListener {
-            clearImageStudio()
-        }
-
-        imgBinding.btnImgRemoveFile.setOnClickListener {
-            clearImageStudio()
-        }
-
-        imgBinding.btnImgResetPreview.setOnClickListener {
-            resetImageEdits()
-        }
-
-        // Tools
-        imgBinding.toolCrop.setOnClickListener { showCropDialog() }
-        imgBinding.toolResize.setOnClickListener { showResizeDialog() }
-        imgBinding.toolRotate.setOnClickListener { showRotateDialog() }
-        imgBinding.toolColorFilter.setOnClickListener { showColorFilterDialog() }
-        imgBinding.toolExif.setOnClickListener { showExifDialog() }
-        imgBinding.toolText.setOnClickListener {
-            Toast.makeText(this, "Text overlay watermark applied", Toast.LENGTH_SHORT).show()
-        }
-
-        // Output Settings
-        imgBinding.chipGroupImgFormat.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = imgBinding.chipGroupImgFormat.findViewById<Chip>(checkedIds[0])
-                imgStudioFormat = chip?.text?.toString() ?: "JPG"
-                refreshImageStudioPreview()
-            }
-        }
-
-        imgBinding.sliderImgQuality.addOnChangeListener { _, value, _ ->
-            imgStudioQuality = value.toInt()
-            imgBinding.tvImgQualityValue.text = "${imgStudioQuality}%"
-            refreshImageStudioPreview()
-        }
-
-        imgBinding.btnImgExecute.setOnClickListener {
-            handleImgExecute()
-        }
-
-        imgBinding.btnImgSaveResult.setOnClickListener {
-            val file = imgStudioLastResultFile
-            if (file != null && file.exists()) {
-                imgStudioExportLauncher.launch(file.name)
-            }
-        }
-
-        imgBinding.btnImgShareResult.setOnClickListener {
-            val file = imgStudioLastResultFile
-            if (file != null && file.exists()) {
-                shareStudioFile(file, "image/*")
-            }
-        }
-    }
-
-    private fun handleImageStudioSelected(uri: Uri) {
-        imgStudioSelectedUri = uri
-        imgStudioOriginalBytes = queryFileSize(uri)
-        val displayName = getDisplayName(uri)
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val cacheFile = File(cacheDir, "studio_input_$displayName")
-            copyUriToFile(uri, cacheFile)
-            imgStudioOriginalFile = cacheFile
-
-            val bmp = BitmapFactory.decodeFile(cacheFile.absolutePath)
-            imgStudioOriginalBitmap = bmp
-            imgStudioDisplayBitmap = bmp
-            imgStudioResizeWidth = bmp?.width ?: 0
-            imgStudioResizeHeight = bmp?.height ?: 0
-            imgStudioRotationAngle = 0f
-            imgStudioFilter = "Default"
-            imgStudioAspectPreset = "Free"
-            imgStudioResizeScale = 100
-
-            withContext(Dispatchers.Main) {
-                val imgBinding = binding.layoutImageStudio
-                imgBinding.layoutImgEmptyState.visibility = View.GONE
-                imgBinding.layoutImgSelectedState.visibility = View.VISIBLE
-                imgBinding.tvImgSelectedCount.text = "1 item(s) selected"
-                imgBinding.tvImgFileName.text = displayName
-                imgBinding.tvImgFileSize.text = formatBytes(imgStudioOriginalBytes)
-                imgBinding.imgFileThumb.setImageBitmap(bmp)
-                imgBinding.btnImgClearAll.isEnabled = true
-
-                imgBinding.toolCrop.isEnabled = true
-                imgBinding.toolResize.isEnabled = true
-                imgBinding.toolRotate.isEnabled = true
-                imgBinding.toolColorFilter.isEnabled = true
-                imgBinding.toolExif.isEnabled = true
-                imgBinding.toolText.isEnabled = true
-
-                imgBinding.imgBeforePreview.setImageBitmap(bmp)
-                imgBinding.tvImgBeforeSize.text = "${formatBytes(imgStudioOriginalBytes)} (${imgStudioResizeWidth}x${imgStudioResizeHeight})"
-
-                val baseName = displayName.substringBeforeLast('.')
-                imgBinding.etImgOutputFilename.setText("compressed_${baseName}.${imgStudioFormat.lowercase()}")
-
-                refreshImageStudioPreview()
-                imgBinding.btnImgExecute.text = "Compress"
-            }
-        }
-    }
-
-    private fun updateImageStudioUI() {
-        val imgBinding = binding.layoutImageStudio
-        if (imgStudioSelectedUri == null) {
-            imgBinding.layoutImgEmptyState.visibility = View.VISIBLE
-            imgBinding.layoutImgSelectedState.visibility = View.GONE
-            imgBinding.btnImgClearAll.isEnabled = false
-
-            imgBinding.toolCrop.isEnabled = false
-            imgBinding.toolResize.isEnabled = false
-            imgBinding.toolRotate.isEnabled = false
-            imgBinding.toolColorFilter.isEnabled = false
-            imgBinding.toolExif.isEnabled = false
-            imgBinding.toolText.isEnabled = false
-
-            imgBinding.btnImgExecute.text = "Select image"
-            imgBinding.tvImgComparisonRatio.text = "Total: 0 B → 0 B"
-        } else {
-            refreshImageStudioPreview()
-        }
-    }
-
-    private fun clearImageStudio() {
-        imgStudioSelectedUri = null
-        imgStudioOriginalFile = null
-        imgStudioOriginalBitmap = null
-        imgStudioDisplayBitmap = null
-        imgStudioOriginalBytes = 0L
-        imgStudioLastResultFile = null
-
-        val imgBinding = binding.layoutImageStudio
-        imgBinding.layoutImgEmptyState.visibility = View.VISIBLE
-        imgBinding.layoutImgSelectedState.visibility = View.GONE
-        imgBinding.btnImgClearAll.isEnabled = false
-
-        imgBinding.toolCrop.isEnabled = false
-        imgBinding.toolResize.isEnabled = false
-        imgBinding.toolRotate.isEnabled = false
-        imgBinding.toolColorFilter.isEnabled = false
-        imgBinding.toolExif.isEnabled = false
-        imgBinding.toolText.isEnabled = false
-
-        imgBinding.imgBeforePreview.setImageDrawable(null)
-        imgBinding.imgAfterPreview.setImageDrawable(null)
-        imgBinding.tvImgBeforeSize.text = "0 B"
-        imgBinding.tvImgAfterSize.text = "0 B (JPG)"
-        imgBinding.tvImgComparisonRatio.text = "Total: 0 B → 0 B"
-
-        imgBinding.btnImgExecute.text = "Select image"
-        imgBinding.layoutImgResultActions.visibility = View.GONE
-    }
-
-    private fun resetImageEdits() {
-        imgStudioRotationAngle = 0f
-        imgStudioResizeScale = 100
-        imgStudioResizeWidth = imgStudioOriginalBitmap?.width ?: 0
-        imgStudioResizeHeight = imgStudioOriginalBitmap?.height ?: 0
-        imgStudioFilter = "Default"
-        imgStudioAspectPreset = "Free"
-        imgStudioDisplayBitmap = imgStudioOriginalBitmap
-        refreshImageStudioPreview()
-        Toast.makeText(this, "Image editing parameters reset to original", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun cropBitmapToAspect(src: Bitmap, aspect: String): Bitmap {
-        val w = src.width
-        val h = src.height
-        val targetRatio = when (aspect) {
-            "1:1" -> 1.0
-            "4:3" -> 4.0 / 3.0
-            "3:4" -> 3.0 / 4.0
-            "16:9" -> 16.0 / 9.0
-            "9:16" -> 9.0 / 16.0
-            else -> return src
-        }
-        val currentRatio = w.toDouble() / h.toDouble()
-        var cropW = w
-        var cropH = h
-        var startX = 0
-        var startY = 0
-
-        if (currentRatio > targetRatio) {
-            cropW = (h * targetRatio).toInt().coerceIn(1, w)
-            startX = (w - cropW) / 2
-        } else {
-            cropH = (w / targetRatio).toInt().coerceIn(1, h)
-            startY = (h - cropH) / 2
-        }
-
-        return Bitmap.createBitmap(src, startX, startY, cropW, cropH)
-    }
-
-    private fun rotateBitmap(src: Bitmap, degrees: Float): Bitmap {
-        if (degrees == 0f) return src
-        val matrix = Matrix().apply { postRotate(degrees) }
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
-    }
-
-    private fun applyColorFilterToBitmap(src: Bitmap, filterName: String): Bitmap {
-        if (filterName == "Default") return src
-        val result = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        val colorMatrix = when (filterName) {
-            "Grayscale" -> ColorMatrix().apply { setSaturation(0f) }
-            "Sepia" -> ColorMatrix(
-                floatArrayOf(
-                    0.393f, 0.769f, 0.189f, 0f, 0f,
-                    0.349f, 0.686f, 0.168f, 0f, 0f,
-                    0.272f, 0.534f, 0.131f, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            "Vintage" -> ColorMatrix(
-                floatArrayOf(
-                    0.9f, 0f, 0f, 0f, 30f,
-                    0f, 0.8f, 0f, 0f, 20f,
-                    0f, 0f, 0.7f, 0f, 10f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            "Cool" -> ColorMatrix(
-                floatArrayOf(
-                    0.8f, 0f, 0f, 0f, 0f,
-                    0f, 0.9f, 0f, 0f, 10f,
-                    0f, 0f, 1.2f, 0f, 30f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            "Warm" -> ColorMatrix(
-                floatArrayOf(
-                    1.2f, 0f, 0f, 0f, 30f,
-                    0f, 1.0f, 0f, 0f, 15f,
-                    0f, 0f, 0.8f, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            else -> ColorMatrix()
-        }
-
-        paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
-        canvas.drawBitmap(src, 0f, 0f, paint)
-        return result
-    }
-
-    private fun generateLivePreviewBitmap(): Bitmap {
-        var bmp = imgStudioDisplayBitmap ?: imgStudioOriginalBitmap ?: return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-        if (imgStudioAspectPreset != "Free") {
-            bmp = cropBitmapToAspect(bmp, imgStudioAspectPreset)
-        }
-        if (imgStudioRotationAngle != 0f) {
-            bmp = rotateBitmap(bmp, imgStudioRotationAngle)
-        }
-        if (imgStudioResizeScale != 100) {
-            val factor = imgStudioResizeScale / 100f
-            val targetW = (bmp.width * factor).toInt().coerceAtLeast(1)
-            val targetH = (bmp.height * factor).toInt().coerceAtLeast(1)
-            bmp = Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
-        }
-        if (imgStudioFilter != "Default") {
-            bmp = applyColorFilterToBitmap(bmp, imgStudioFilter)
-        }
-        return bmp
-    }
-
-    private fun refreshImageStudioPreview() {
-        val originalBmp = imgStudioOriginalBitmap ?: return
-        val previewBmp = generateLivePreviewBitmap()
-        binding.layoutImageStudio.imgAfterPreview.setImageBitmap(previewBmp)
-
-        val pixelCount = previewBmp.width.toLong() * previewBmp.height.toLong()
-        val bpp = when (imgStudioFormat.uppercase()) {
-            "PNG" -> 1.6
-            "WEBP" -> (imgStudioQuality / 100.0) * 0.4
-            else -> (imgStudioQuality / 100.0) * 0.75
-        }
-        val estBytes = (pixelCount * bpp).toLong().coerceIn(1024, imgStudioOriginalBytes)
-        binding.layoutImageStudio.tvImgAfterSize.text = "${formatBytes(estBytes)} ($imgStudioFormat)"
-
-        val ratio = (100.0 - (estBytes.toDouble() / imgStudioOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 95)
-        binding.layoutImageStudio.tvImgComparisonRatio.text = "Total: ${formatBytes(imgStudioOriginalBytes)} → ~${formatBytes(estBytes)} (-$ratio%)"
-    }
-
-    private fun showCropDialog() {
-        val dialogBinding = DialogCropBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        var tempAspect = imgStudioAspectPreset
-        dialogBinding.imgCropPreview.setImageBitmap(imgStudioDisplayBitmap ?: imgStudioOriginalBitmap)
-
-        when (tempAspect) {
-            "1:1" -> dialogBinding.chipAspect11.isChecked = true
-            "4:3" -> dialogBinding.chipAspect43.isChecked = true
-            "3:4" -> dialogBinding.chipAspect34.isChecked = true
-            "16:9" -> dialogBinding.chipAspect169.isChecked = true
-            "9:16" -> dialogBinding.chipAspect916.isChecked = true
-            else -> dialogBinding.chipAspectFree.isChecked = true
-        }
-
-        dialogBinding.chipGroupAspectRatio.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupAspectRatio.findViewById<Chip>(checkedIds[0])
-                tempAspect = chip?.text?.toString() ?: "Free"
-            }
-        }
-
-        dialogBinding.btnCropApply.setOnClickListener {
-            imgStudioAspectPreset = tempAspect
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnCropReset.setOnClickListener {
-            tempAspect = "Free"
-            dialogBinding.chipAspectFree.isChecked = true
-            imgStudioAspectPreset = "Free"
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnCropCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnCropClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showResizeDialog() {
-        val dialogBinding = DialogResizeBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        val bmp = imgStudioOriginalBitmap
-        val origW = bmp?.width ?: 1280
-        val origH = bmp?.height ?: 720
-
-        dialogBinding.imgResizePreview.setImageBitmap(imgStudioDisplayBitmap ?: imgStudioOriginalBitmap)
-        dialogBinding.sliderResizeScale.value = imgStudioResizeScale.toFloat()
-        dialogBinding.tvResizeScaleLabel.text = "${imgStudioResizeScale}%"
-        dialogBinding.etResizeWidth.setText(if (imgStudioResizeWidth > 0) imgStudioResizeWidth.toString() else origW.toString())
-        dialogBinding.etResizeHeight.setText(if (imgStudioResizeHeight > 0) imgStudioResizeHeight.toString() else origH.toString())
-
-        dialogBinding.sliderResizeScale.addOnChangeListener { _, value, _ ->
-            val scale = value.toInt()
-            dialogBinding.tvResizeScaleLabel.text = "${scale}%"
-            val newW = (origW * (scale / 100f)).toInt()
-            val newH = (origH * (scale / 100f)).toInt()
-            dialogBinding.etResizeWidth.setText(newW.toString())
-            dialogBinding.etResizeHeight.setText(newH.toString())
-        }
-
-        dialogBinding.btnResizeApply.setOnClickListener {
-            imgStudioResizeScale = dialogBinding.sliderResizeScale.value.toInt()
-            imgStudioResizeWidth = dialogBinding.etResizeWidth.text.toString().toIntOrNull() ?: origW
-            imgStudioResizeHeight = dialogBinding.etResizeHeight.text.toString().toIntOrNull() ?: origH
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnResizeReset.setOnClickListener {
-            imgStudioResizeScale = 100
-            imgStudioResizeWidth = origW
-            imgStudioResizeHeight = origH
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnResizeCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnResizeClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showRotateDialog() {
-        val dialogBinding = DialogRotateBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        val baseBmp = imgStudioDisplayBitmap ?: imgStudioOriginalBitmap
-        dialogBinding.imgRotatePreview.setImageBitmap(baseBmp)
-        dialogBinding.sliderRotateAngle.value = imgStudioRotationAngle
-        dialogBinding.tvRotateAngleLabel.text = "${imgStudioRotationAngle.toInt()}°"
-
-        dialogBinding.sliderRotateAngle.addOnChangeListener { _, value, _ ->
-            dialogBinding.tvRotateAngleLabel.text = "${value.toInt()}°"
-            if (baseBmp != null) {
-                dialogBinding.imgRotatePreview.setImageBitmap(rotateBitmap(baseBmp, value))
-            }
-        }
-
-        dialogBinding.btnRotateMinus90.setOnClickListener {
-            var a = dialogBinding.sliderRotateAngle.value - 90f
-            if (a < -180f) a += 360f
-            dialogBinding.sliderRotateAngle.value = a
-        }
-
-        dialogBinding.btnRotatePlus90.setOnClickListener {
-            var a = dialogBinding.sliderRotateAngle.value + 90f
-            if (a > 180f) a -= 360f
-            dialogBinding.sliderRotateAngle.value = a
-        }
-
-        dialogBinding.btnRotateApply.setOnClickListener {
-            imgStudioRotationAngle = dialogBinding.sliderRotateAngle.value
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnRotateReset.setOnClickListener {
-            dialogBinding.sliderRotateAngle.value = 0f
-            imgStudioRotationAngle = 0f
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnRotateCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnRotateClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showColorFilterDialog() {
-        val dialogBinding = DialogColorFilterBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        val baseBmp = imgStudioDisplayBitmap ?: imgStudioOriginalBitmap
-        dialogBinding.imgFilterPreview.setImageBitmap(baseBmp)
-
-        var tempFilter = imgStudioFilter
-        when (tempFilter) {
-            "Grayscale" -> dialogBinding.chipFilterGrayscale.isChecked = true
-            "Sepia" -> dialogBinding.chipFilterSepia.isChecked = true
-            "Vintage" -> dialogBinding.chipFilterVintage.isChecked = true
-            "Cool" -> dialogBinding.chipFilterCool.isChecked = true
-            "Warm" -> dialogBinding.chipFilterWarm.isChecked = true
-            else -> dialogBinding.chipFilterDefault.isChecked = true
-        }
-
-        dialogBinding.chipGroupFilters.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupFilters.findViewById<Chip>(checkedIds[0])
-                tempFilter = chip?.text?.toString() ?: "Default"
-                if (baseBmp != null) {
-                    dialogBinding.imgFilterPreview.setImageBitmap(applyColorFilterToBitmap(baseBmp, tempFilter))
-                }
-            }
-        }
-
-        dialogBinding.btnFilterApply.setOnClickListener {
-            imgStudioFilter = tempFilter
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnFilterReset.setOnClickListener {
-            imgStudioFilter = "Default"
-            refreshImageStudioPreview()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnFilterCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnFilterClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showExifDialog() {
-        val dialogBinding = DialogExifBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        dialogBinding.etExifMake.setText(imgStudioExifMake)
-        dialogBinding.etExifModel.setText(imgStudioExifModel)
-        dialogBinding.etExifSoftware.setText(imgStudioExifSoftware)
-        dialogBinding.etExifDateTime.setText(imgStudioExifDateTime)
-        dialogBinding.etExifGps.setText(imgStudioExifGps)
-
-        dialogBinding.btnExifStripAll.setOnClickListener {
-            dialogBinding.etExifMake.setText("")
-            dialogBinding.etExifModel.setText("")
-            dialogBinding.etExifSoftware.setText("")
-            dialogBinding.etExifDateTime.setText("")
-            dialogBinding.etExifGps.setText("")
-            imgStudioStripExif = true
-            Toast.makeText(this, "All EXIF metadata will be completely scrubbed", Toast.LENGTH_SHORT).show()
-        }
-
-        dialogBinding.btnExifRestore.setOnClickListener {
-            imgStudioStripExif = false
-            Toast.makeText(this, "Metadata preservation enabled", Toast.LENGTH_SHORT).show()
-        }
-
-        dialogBinding.btnExifDone.setOnClickListener {
-            imgStudioExifMake = dialogBinding.etExifMake.text.toString()
-            imgStudioExifModel = dialogBinding.etExifModel.text.toString()
-            imgStudioExifSoftware = dialogBinding.etExifSoftware.text.toString()
-            imgStudioExifDateTime = dialogBinding.etExifDateTime.text.toString()
-            imgStudioExifGps = dialogBinding.etExifGps.text.toString()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnExifClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun handleImgExecute() {
-        if (imgStudioSelectedUri == null) {
-            imgStudioPickerLauncher.launch("image/*")
-            return
-        }
-
-        if (imgStudioJob?.isActive == true) {
-            imgStudioJob?.cancel()
-            binding.layoutImageStudio.layoutImgProgress.visibility = View.GONE
-            binding.layoutImageStudio.btnImgExecute.text = "Compress"
-            Toast.makeText(this, "Compression cancelled", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        executeImageCompression()
-    }
-
-    private fun executeImageCompression() {
-        val srcFile = imgStudioOriginalFile ?: return
-        val outDir = File(cacheDir, "studio_output").apply { mkdirs() }
-        val ext = imgStudioFormat.lowercase()
-        val outFilename = binding.layoutImageStudio.etImgOutputFilename.text.toString().trim().ifEmpty { "compressed_image.$ext" }
-        val outFile = File(outDir, outFilename)
-
-        binding.layoutImageStudio.layoutImgProgress.visibility = View.VISIBLE
-        binding.layoutImageStudio.btnImgExecute.text = "Cancel"
-
-        imgStudioJob = lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                var compressed = false
-                val pythonInstance = py
-                if (pythonInstance != null) {
-                    val compressorModule = pythonInstance.getModule("veilframe.core.media_compressor")
-                    val resultPy = compressorModule.callAttr(
-                        "compress_image",
-                        srcFile.absolutePath,
-                        outFile.absolutePath,
-                        imgStudioQuality,
-                        imgStudioFormat,
-                        if (imgStudioResizeWidth > 0) imgStudioResizeWidth else null,
-                        if (imgStudioResizeHeight > 0) imgStudioResizeHeight else null,
-                        imgStudioStripExif,
-                        imgStudioFilter,
-                        imgStudioRotationAngle.toInt(),
-                        null
-                    )
-                    compressed = resultPy.toBoolean()
-                }
-
-                if (!compressed || !outFile.exists()) {
-                    val filtered = generateLivePreviewBitmap()
-                    val compressFormat = when (imgStudioFormat.uppercase()) {
-                        "PNG" -> Bitmap.CompressFormat.PNG
-                        "WEBP" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
-                        else -> Bitmap.CompressFormat.JPEG
-                    }
-                    FileOutputStream(outFile).use { fos ->
-                        filtered.compress(compressFormat, imgStudioQuality, fos)
-                    }
-                    compressed = outFile.exists()
-                }
-
-                withContext(Dispatchers.Main) {
-                    binding.layoutImageStudio.layoutImgProgress.visibility = View.GONE
-                    binding.layoutImageStudio.btnImgExecute.text = "Compress again"
-                    if (compressed && outFile.exists()) {
-                        imgStudioLastResultFile = outFile
-                        val finalBmp = BitmapFactory.decodeFile(outFile.absolutePath)
-                        binding.layoutImageStudio.imgAfterPreview.setImageBitmap(finalBmp)
-                        binding.layoutImageStudio.tvImgAfterSize.text = "${formatBytes(outFile.length())} ($imgStudioFormat)"
-                        val ratio = (100.0 - (outFile.length().toDouble() / imgStudioOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
-                        binding.layoutImageStudio.tvImgComparisonRatio.text = "Total: ${formatBytes(imgStudioOriginalBytes)} → ${formatBytes(outFile.length())} (-$ratio%)"
-                        binding.layoutImageStudio.layoutImgResultActions.visibility = View.VISIBLE
-                        Toast.makeText(this@MainActivity, "Image compressed successfully! (-$ratio%)", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Compression failed", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    binding.layoutImageStudio.layoutImgProgress.visibility = View.GONE
-                    binding.layoutImageStudio.btnImgExecute.text = "Compress"
-                    Toast.makeText(this@MainActivity, "Compression error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    // =========================================================================
-    // VIDEO STUDIO WORKSPACE LOGIC (Timeline Trimmer & Video Compressor)
-    // =========================================================================
-
-    private fun initVideoStudioWorkspace() {
-        val vidBinding = binding.layoutVideoStudio
-
-        vidBinding.btnVidStudioMenu.setOnClickListener {
-            showHomeScreen()
-        }
-
-        vidBinding.btnSelectVideo.setOnClickListener {
-            vidStudioPickerLauncher.launch("video/*")
-        }
-
-        vidBinding.btnVidAddMore.setOnClickListener {
-            vidStudioPickerLauncher.launch("video/*")
-        }
-
-        vidBinding.btnVidClearAll.setOnClickListener {
-            clearVideoStudio()
-        }
-
-        vidBinding.btnVidRemoveFile.setOnClickListener {
-            clearVideoStudio()
-        }
-
-        vidBinding.btnVidResetPreview.setOnClickListener {
-            resetVideoEdits()
-        }
-
-        // Real-time RangeSlider visual timeline trimmer
-        vidBinding.rangeSliderVidTrim.addOnChangeListener { slider, _, _ ->
-            val startSec = slider.values[0]
-            val endSec = slider.values[1]
-            vidStudioTrimStartMs = (startSec * 1000).toLong()
-            vidStudioTrimEndMs = (endSec * 1000).toLong()
-            vidBinding.tvVidTrimStartLabel.text = formatDuration(vidStudioTrimStartMs)
-            vidBinding.tvVidTrimEndLabel.text = formatDuration(vidStudioTrimEndMs)
-            val trimmedDuration = (vidStudioTrimEndMs - vidStudioTrimStartMs).coerceAtLeast(0)
-            vidBinding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(trimmedDuration)}"
-            refreshVideoStudioStats()
-        }
-
-        // Tools
-        vidBinding.toolVidTrim.setOnClickListener { showVideoTrimDialog() }
-        vidBinding.toolVidScale.setOnClickListener { showVideoScaleDialog() }
-        vidBinding.toolVidPreset.setOnClickListener { showVideoPresetDialog() }
-        vidBinding.toolVidSpeed.setOnClickListener { showVideoSpeedDialog() }
-        vidBinding.toolVidAspect.setOnClickListener { showVideoAspectDialog() }
-        vidBinding.toolVidAudio.setOnClickListener { showVideoAudioDialog() }
-
-        // Output Formats
-        vidBinding.chipGroupVidFormat.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = vidBinding.chipGroupVidFormat.findViewById<Chip>(checkedIds[0])
-                vidStudioFormat = when (chip?.text?.toString()?.take(3)) {
-                    "MKV" -> "MKV"
-                    "Web" -> "WebM"
-                    else -> "MP4"
-                }
-                refreshVideoStudioStats()
-            }
-        }
-
-        vidBinding.chipGroupVidCodec.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = vidBinding.chipGroupVidCodec.findViewById<Chip>(checkedIds[0])
-                vidStudioCodec = if (chip?.text?.toString()?.contains("265") == true) "H.265" else "H.264"
-                refreshVideoStudioStats()
-            }
-        }
-
-        vidBinding.btnVidExecute.setOnClickListener {
-            handleVidExecute()
-        }
-
-        vidBinding.btnVidSaveResult.setOnClickListener {
-            val file = vidStudioLastResultFile
-            if (file != null && file.exists()) {
-                vidStudioExportLauncher.launch(file.name)
-            }
-        }
-
-        vidBinding.btnVidShareResult.setOnClickListener {
-            val file = vidStudioLastResultFile
-            if (file != null && file.exists()) {
-                shareStudioFile(file, "video/*")
-            }
-        }
-    }
-
-    private fun handleVideoStudioSelected(uri: Uri) {
-        vidStudioSelectedUri = uri
-        vidStudioOriginalBytes = queryFileSize(uri)
-        val displayName = getDisplayName(uri)
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val cacheFile = File(cacheDir, "studio_input_$displayName")
-            copyUriToFile(uri, cacheFile)
-            vidStudioOriginalFile = cacheFile
-
-            var duration = 10000L
-            var width = 1920
-            var height = 1080
-            var thumbFrame: Bitmap? = null
-
-            try {
-                val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(this@MainActivity, uri)
-                duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 10000L
-                width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 1920
-                height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 1080
-                thumbFrame = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                retriever.release()
-            } catch (_: Exception) {}
-
-            vidStudioDurationMs = duration
-            vidStudioTrimStartMs = 0L
-            vidStudioTrimEndMs = duration
-            vidStudioWidth = width
-            vidStudioHeight = height
-
-            withContext(Dispatchers.Main) {
-                val vidBinding = binding.layoutVideoStudio
-                vidBinding.layoutVidEmptyState.visibility = View.GONE
-                vidBinding.layoutVidSelectedState.visibility = View.VISIBLE
-                vidBinding.tvVidSelectedCount.text = "1 video selected"
-                vidBinding.tvVidFileName.text = displayName
-                vidBinding.tvVidFileDetails.text = "${formatBytes(vidStudioOriginalBytes)} • ${formatDuration(duration)} • ${width}x${height}"
-                vidBinding.imgVidThumb.setImageBitmap(thumbFrame)
-                vidBinding.imgVidPreview.setImageBitmap(thumbFrame)
-                vidBinding.btnVidClearAll.isEnabled = true
-
-                vidBinding.toolVidTrim.isEnabled = true
-                vidBinding.toolVidScale.isEnabled = true
-                vidBinding.toolVidPreset.isEnabled = true
-                vidBinding.toolVidSpeed.isEnabled = true
-                vidBinding.toolVidAspect.isEnabled = true
-                vidBinding.toolVidAudio.isEnabled = true
-
-                val durSec = (duration / 1000.0).toFloat().coerceAtLeast(1f)
-                vidBinding.rangeSliderVidTrim.valueFrom = 0f
-                vidBinding.rangeSliderVidTrim.valueTo = durSec
-                vidBinding.rangeSliderVidTrim.values = listOf(0f, durSec)
-
-                vidBinding.tvVidTrimStartLabel.text = "00:00.0"
-                vidBinding.tvVidTrimEndLabel.text = formatDuration(duration)
-                vidBinding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(duration)}"
-
-                vidBinding.tvVidBeforeStats.text = "${formatBytes(vidStudioOriginalBytes)} • ${formatDuration(duration)} • ${width}x${height}"
-
-                val baseName = displayName.substringBeforeLast('.')
-                vidBinding.etVidOutputFilename.setText("compressed_${baseName}.${vidStudioFormat.lowercase()}")
-
-                refreshVideoStudioStats()
-                vidBinding.btnVidExecute.text = "Compress"
-            }
-        }
-    }
-
-    private fun updateVideoStudioUI() {
-        val vidBinding = binding.layoutVideoStudio
-        if (vidStudioSelectedUri == null) {
-            vidBinding.layoutVidEmptyState.visibility = View.VISIBLE
-            vidBinding.layoutVidSelectedState.visibility = View.GONE
-            vidBinding.btnVidClearAll.isEnabled = false
-
-            vidBinding.toolVidTrim.isEnabled = false
-            vidBinding.toolVidScale.isEnabled = false
-            vidBinding.toolVidPreset.isEnabled = false
-            vidBinding.toolVidSpeed.isEnabled = false
-            vidBinding.toolVidAspect.isEnabled = false
-            vidBinding.toolVidAudio.isEnabled = false
-
-            vidBinding.btnVidExecute.text = "Select video"
-            vidBinding.tvVidBeforeStats.text = "0 B • 0s • Original"
-            vidBinding.tvVidAfterStats.text = "~0 B (MP4)"
-        } else {
-            refreshVideoStudioStats()
-        }
-    }
-
-    private fun clearVideoStudio() {
-        vidStudioSelectedUri = null
-        vidStudioOriginalFile = null
-        vidStudioOriginalBytes = 0L
-        vidStudioLastResultFile = null
-
-        val vidBinding = binding.layoutVideoStudio
-        vidBinding.layoutVidEmptyState.visibility = View.VISIBLE
-        vidBinding.layoutVidSelectedState.visibility = View.GONE
-        vidBinding.btnVidClearAll.isEnabled = false
-
-        vidBinding.toolVidTrim.isEnabled = false
-        vidBinding.toolVidScale.isEnabled = false
-        vidBinding.toolVidPreset.isEnabled = false
-        vidBinding.toolVidSpeed.isEnabled = false
-        vidBinding.toolVidAspect.isEnabled = false
-        vidBinding.toolVidAudio.isEnabled = false
-
-        vidBinding.imgVidThumb.setImageDrawable(null)
-        vidBinding.imgVidPreview.setImageDrawable(null)
-        vidBinding.tvVidBeforeStats.text = "0 B • 0s • Original"
-        vidBinding.tvVidAfterStats.text = "~0 B (MP4)"
-
-        vidBinding.btnVidExecute.text = "Select video"
-        vidBinding.layoutVidResultActions.visibility = View.GONE
-    }
-
-    private fun resetVideoEdits() {
-        vidStudioTrimStartMs = 0L
-        vidStudioTrimEndMs = vidStudioDurationMs
-        vidStudioScalePreset = "Original"
-        vidStudioTargetPreset = "Auto"
-        vidStudioCrf = 28
-        vidStudioSpeed = 1.0f
-        vidStudioAspect = "Original"
-        vidStudioAudioTrack = "Keep"
-
-        val durSec = (vidStudioDurationMs / 1000.0).toFloat().coerceAtLeast(1f)
-        binding.layoutVideoStudio.rangeSliderVidTrim.values = listOf(0f, durSec)
-        binding.layoutVideoStudio.tvVidTrimStartLabel.text = "00:00.0"
-        binding.layoutVideoStudio.tvVidTrimEndLabel.text = formatDuration(vidStudioDurationMs)
-        binding.layoutVideoStudio.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(vidStudioDurationMs)}"
-
-        refreshVideoStudioStats()
-        Toast.makeText(this, "Video trim and compression parameters reset to original", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun refreshVideoStudioStats() {
-        val durationSec = ((vidStudioTrimEndMs - vidStudioTrimStartMs) / 1000.0).coerceAtLeast(0.1)
-
-        val estBytes = when (vidStudioTargetPreset) {
-            "WhatsApp (16 MB)" -> (15.5 * 1024 * 1024).toLong()
-            "Discord (25 MB)" -> (24.0 * 1024 * 1024).toLong()
-            "Email Attachment (8 MB)" -> (7.8 * 1024 * 1024).toLong()
-            else -> {
-                val baseKbps = when (vidStudioScalePreset) {
-                    "1080p (Full HD)" -> 3500
-                    "720p (HD)" -> 1800
-                    "480p (SD Compact)" -> 900
-                    "360p (Ultra Small)" -> 500
-                    else -> 2500
-                }
-                val crfFactor = Math.pow(0.92, (vidStudioCrf - 23).toDouble())
-                val estKbps = (baseKbps * crfFactor).toLong().coerceIn(200, 8000)
-                val totalBytes = ((estKbps * 1000 / 8) * (durationSec / vidStudioSpeed)).toLong()
-                if (vidStudioOriginalBytes > 0) totalBytes.coerceAtMost(vidStudioOriginalBytes) else totalBytes
-            }
-        }
-
-        binding.layoutVideoStudio.tvVidAfterStats.text = "~${formatBytes(estBytes)} • ${formatDuration(vidStudioTrimEndMs - vidStudioTrimStartMs)} • $vidStudioFormat"
-    }
-
-    private fun showVideoTrimDialog() {
-        val dialogBinding = DialogVideoTrimBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        dialogBinding.imgTrimVideoThumbnail.setImageDrawable(binding.layoutVideoStudio.imgVidPreview.drawable)
-
-        val durSec = (vidStudioDurationMs / 1000.0).toFloat().coerceAtLeast(1f)
-        dialogBinding.rangeSliderTrim.valueFrom = 0f
-        dialogBinding.rangeSliderTrim.valueTo = durSec
-        val currentStartSec = (vidStudioTrimStartMs / 1000.0).toFloat().coerceIn(0f, durSec)
-        val currentEndSec = (vidStudioTrimEndMs / 1000.0).toFloat().coerceIn(currentStartSec, durSec)
-        dialogBinding.rangeSliderTrim.values = listOf(currentStartSec, currentEndSec)
-
-        dialogBinding.tvTrimStartTime.text = formatDuration(vidStudioTrimStartMs)
-        dialogBinding.tvTrimEndTime.text = formatDuration(vidStudioTrimEndMs)
-        dialogBinding.tvTrimDuration.text = formatDuration((vidStudioTrimEndMs - vidStudioTrimStartMs).coerceAtLeast(0))
-
-        dialogBinding.rangeSliderTrim.addOnChangeListener { slider, _, _ ->
-            val sSec = slider.values[0]
-            val eSec = slider.values[1]
-            val sMs = (sSec * 1000).toLong()
-            val eMs = (eSec * 1000).toLong()
-            dialogBinding.tvTrimStartTime.text = formatDuration(sMs)
-            dialogBinding.tvTrimEndTime.text = formatDuration(eMs)
-            dialogBinding.tvTrimDuration.text = formatDuration((eMs - sMs).coerceAtLeast(0))
-        }
-
-        dialogBinding.chipTrimStory15.setOnClickListener {
-            val e = 15f.coerceAtMost(durSec)
-            dialogBinding.rangeSliderTrim.values = listOf(0f, e)
-        }
-
-        dialogBinding.chipTrimStatus30.setOnClickListener {
-            val e = 30f.coerceAtMost(durSec)
-            dialogBinding.rangeSliderTrim.values = listOf(0f, e)
-        }
-
-        dialogBinding.chipTrimMiddle.setOnClickListener {
-            val midStart = durSec * 0.25f
-            val midEnd = durSec * 0.75f
-            dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
-        }
-
-        dialogBinding.chipTrimFull.setOnClickListener {
-            dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
-        }
-
-        dialogBinding.btnTrimApply.setOnClickListener {
-            val sSec = dialogBinding.rangeSliderTrim.values[0]
-            val eSec = dialogBinding.rangeSliderTrim.values[1]
-            vidStudioTrimStartMs = (sSec * 1000).toLong()
-            vidStudioTrimEndMs = (eSec * 1000).toLong()
-
-            binding.layoutVideoStudio.rangeSliderVidTrim.values = listOf(sSec, eSec)
-            binding.layoutVideoStudio.tvVidTrimStartLabel.text = formatDuration(vidStudioTrimStartMs)
-            binding.layoutVideoStudio.tvVidTrimEndLabel.text = formatDuration(vidStudioTrimEndMs)
-            binding.layoutVideoStudio.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(vidStudioTrimEndMs - vidStudioTrimStartMs)}"
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnTrimReset.setOnClickListener {
-            dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
-            vidStudioTrimStartMs = 0L
-            vidStudioTrimEndMs = vidStudioDurationMs
-            binding.layoutVideoStudio.rangeSliderVidTrim.values = listOf(0f, durSec)
-            binding.layoutVideoStudio.tvVidTrimStartLabel.text = "00:00.0"
-            binding.layoutVideoStudio.tvVidTrimEndLabel.text = formatDuration(vidStudioDurationMs)
-            binding.layoutVideoStudio.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(vidStudioDurationMs)}"
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnTrimCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnTrimClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showVideoScaleDialog() {
-        val dialogBinding = DialogVideoScaleBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        when (vidStudioScalePreset) {
-            "1080p (Full HD)" -> dialogBinding.chipScale1080p.isChecked = true
-            "720p (HD)" -> dialogBinding.chipScale720p.isChecked = true
-            "480p (SD Compact)" -> dialogBinding.chipScale480p.isChecked = true
-            "360p (Ultra Small)" -> dialogBinding.chipScale360p.isChecked = true
-            else -> dialogBinding.chipScaleOriginal.isChecked = true
-        }
-
-        dialogBinding.chipGroupVideoScale.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoScale.findViewById<Chip>(checkedIds[0])
-                vidStudioScalePreset = chip?.text?.toString() ?: "Original (No scaling)"
-            }
-        }
-
-        dialogBinding.btnVideoScaleApply.setOnClickListener {
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoScaleReset.setOnClickListener {
-            vidStudioScalePreset = "Original (No scaling)"
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoScaleCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoScaleClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showVideoPresetDialog() {
-        val dialogBinding = DialogVideoPresetBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        dialogBinding.sliderCrf.value = vidStudioCrf.toFloat()
-        dialogBinding.tvCrfValue.text = vidStudioCrf.toString()
-
-        when (vidStudioTargetPreset) {
-            "WhatsApp (16 MB)" -> dialogBinding.chipPresetWhatsapp.isChecked = true
-            "Discord (25 MB)" -> dialogBinding.chipPresetDiscord.isChecked = true
-            "Email Attachment (8 MB)" -> dialogBinding.chipPresetEmail.isChecked = true
-            else -> dialogBinding.chipPresetAuto.isChecked = true
-        }
-
-        dialogBinding.chipGroupTargetSize.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupTargetSize.findViewById<Chip>(checkedIds[0])
-                vidStudioTargetPreset = chip?.text?.toString() ?: "Auto (Balanced CRF 28)"
-            }
-        }
-
-        dialogBinding.sliderCrf.addOnChangeListener { _, value, _ ->
-            vidStudioCrf = value.toInt()
-            dialogBinding.tvCrfValue.text = vidStudioCrf.toString()
-        }
-
-        dialogBinding.btnVideoPresetApply.setOnClickListener {
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoPresetReset.setOnClickListener {
-            vidStudioTargetPreset = "Auto (Balanced CRF 28)"
-            vidStudioCrf = 28
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoPresetCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoPresetClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showVideoSpeedDialog() {
-        val dialogBinding = DialogVideoSpeedBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        when (vidStudioSpeed) {
-            0.5f -> dialogBinding.chipSpeed05.isChecked = true
-            0.75f -> dialogBinding.chipSpeed075.isChecked = true
-            1.25f -> dialogBinding.chipSpeed125.isChecked = true
-            1.5f -> dialogBinding.chipSpeed15.isChecked = true
-            2.0f -> dialogBinding.chipSpeed20.isChecked = true
-            else -> dialogBinding.chipSpeed10.isChecked = true
-        }
-
-        dialogBinding.chipGroupVideoSpeed.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoSpeed.findViewById<Chip>(checkedIds[0])
-                vidStudioSpeed = when (chip?.id) {
-                    dialogBinding.chipSpeed05.id -> 0.5f
-                    dialogBinding.chipSpeed075.id -> 0.75f
-                    dialogBinding.chipSpeed125.id -> 1.25f
-                    dialogBinding.chipSpeed15.id -> 1.5f
-                    dialogBinding.chipSpeed20.id -> 2.0f
-                    else -> 1.0f
-                }
-            }
-        }
-
-        dialogBinding.btnVideoSpeedApply.setOnClickListener {
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoSpeedReset.setOnClickListener {
-            vidStudioSpeed = 1.0f
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoSpeedCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoSpeedClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showVideoAspectDialog() {
-        val dialogBinding = DialogVideoAspectBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        when (vidStudioAspect) {
-            "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
-            "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
-            "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
-            else -> dialogBinding.chipAspectOrig.isChecked = true
-        }
-
-        dialogBinding.chipGroupVideoAspect.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoAspect.findViewById<Chip>(checkedIds[0])
-                vidStudioAspect = chip?.text?.toString() ?: "Original"
-            }
-        }
-
-        dialogBinding.btnVideoAspectApply.setOnClickListener {
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoAspectReset.setOnClickListener {
-            vidStudioAspect = "Original"
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoAspectCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoAspectClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun showVideoAudioDialog() {
-        val dialogBinding = DialogVideoAudioBinding.inflate(layoutInflater)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogBinding.root)
-            .create()
-
-        when (vidStudioAudioTrack) {
-            "Mute / Strip Audio Stream" -> dialogBinding.chipAudioMute.isChecked = true
-            "Compress AAC (128 kbps)" -> dialogBinding.chipAudioAac128.isChecked = true
-            "Low Bitrate Voice (64 kbps)" -> dialogBinding.chipAudioAac64.isChecked = true
-            else -> dialogBinding.chipAudioKeep.isChecked = true
-        }
-
-        dialogBinding.chipGroupVideoAudio.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoAudio.findViewById<Chip>(checkedIds[0])
-                vidStudioAudioTrack = chip?.text?.toString() ?: "Keep Audio (Original)"
-            }
-        }
-
-        dialogBinding.btnVideoAudioApply.setOnClickListener {
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoAudioReset.setOnClickListener {
-            vidStudioAudioTrack = "Keep Audio (Original)"
-            refreshVideoStudioStats()
-            dialog.dismiss()
-        }
-
-        dialogBinding.btnVideoAudioCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoAudioClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
-
-    private fun handleVidExecute() {
-        if (vidStudioSelectedUri == null) {
-            vidStudioPickerLauncher.launch("video/*")
-            return
-        }
-
-        if (vidStudioJob?.isActive == true) {
-            vidStudioJob?.cancel()
-            binding.layoutVideoStudio.layoutVidProgress.visibility = View.GONE
-            binding.layoutVideoStudio.btnVidExecute.text = "Compress"
-            Toast.makeText(this, "Compression cancelled", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        executeVideoCompression()
-    }
-
-    private fun executeVideoCompression() {
-        val srcFile = vidStudioOriginalFile ?: return
-        val outDir = File(cacheDir, "studio_output").apply { mkdirs() }
-        val ext = vidStudioFormat.lowercase()
-        val outFilename = binding.layoutVideoStudio.etVidOutputFilename.text.toString().trim().ifEmpty { "compressed_video.$ext" }
-        val outFile = File(outDir, outFilename)
-
-        binding.layoutVideoStudio.layoutVidProgress.visibility = View.VISIBLE
-        binding.layoutVideoStudio.btnVidExecute.text = "Cancel"
-
-        vidStudioJob = lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                var compressed = false
-                val trimStartSec = vidStudioTrimStartMs / 1000.0
-                val trimEndSec = vidStudioTrimEndMs / 1000.0
-                val targetSizeMb = when (vidStudioTargetPreset) {
-                    "WhatsApp (16 MB)" -> 16.0
-                    "Discord (25 MB)" -> 25.0
-                    "Email Attachment (8 MB)" -> 8.0
-                    else -> null
-                }
-                val resolutionStr = when (vidStudioScalePreset) {
-                    "1080p (Full HD)" -> "1080p"
-                    "720p (HD)" -> "720p"
-                    "480p (SD Compact)" -> "480p"
-                    "360p (Ultra Small)" -> "360p"
-                    else -> null
-                }
-                val aspectStr = when (vidStudioAspect) {
-                    "9:16 (Reel / Shorts / TikTok)" -> "9:16"
-                    "1:1 (Square Feed)" -> "1:1"
-                    "16:9 (Landscape YouTube)" -> "16:9"
-                    else -> null
-                }
-                val audioActionStr = when (vidStudioAudioTrack) {
-                    "Mute / Strip Audio Stream" -> "mute"
-                    "Compress AAC (128 kbps)" -> "aac_128k"
-                    "Low Bitrate Voice (64 kbps)" -> "aac_64k"
-                    else -> "keep"
-                }
-
-                val pythonInstance = py
-                if (pythonInstance != null) {
-                    val compressorModule = pythonInstance.getModule("veilframe.core.media_compressor")
-                    val resultPy = compressorModule.callAttr(
-                        "compress_video",
-                        srcFile.absolutePath,
-                        outFile.absolutePath,
-                        trimStartSec,
-                        trimEndSec,
-                        targetSizeMb,
-                        resolutionStr,
-                        aspectStr,
-                        vidStudioSpeed.toDouble(),
-                        audioActionStr,
-                        vidStudioCrf,
-                        vidStudioFormat.lowercase(),
-                        if (vidStudioCodec.contains("265")) "libx265" else "libx264"
-                    )
-                    compressed = resultPy.toBoolean()
-                }
-
-                withContext(Dispatchers.Main) {
-                    binding.layoutVideoStudio.layoutVidProgress.visibility = View.GONE
-                    binding.layoutVideoStudio.btnVidExecute.text = "Compress again"
-                    if (compressed && outFile.exists()) {
-                        vidStudioLastResultFile = outFile
-                        binding.layoutVideoStudio.tvVidAfterStats.text = "${formatBytes(outFile.length())} • ${formatDuration(vidStudioTrimEndMs - vidStudioTrimStartMs)} • $vidStudioFormat"
-                        binding.layoutVideoStudio.layoutVidResultActions.visibility = View.VISIBLE
-                        Toast.makeText(this@MainActivity, "Video compressed successfully!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Video compression completed or requires FFmpeg", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    binding.layoutVideoStudio.layoutVidProgress.visibility = View.GONE
-                    binding.layoutVideoStudio.btnVidExecute.text = "Compress"
-                    Toast.makeText(this@MainActivity, "Video compression error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
     }
 }

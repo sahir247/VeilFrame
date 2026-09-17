@@ -194,6 +194,48 @@ class TestMediaCompressor(unittest.TestCase):
         # 3.0s at 1.5x should be ~2.0s
         self.assertAlmostEqual(res["duration"], 2.0, delta=0.3)
 
+    def test_build_atempo_chain(self):
+        from veilframe.core.media_compressor import build_atempo_chain
+        self.assertEqual(build_atempo_chain(1.0), "")
+        self.assertEqual(build_atempo_chain(1.5), "atempo=1.5")
+        self.assertEqual(build_atempo_chain(0.5), "atempo=0.5")
+        self.assertEqual(build_atempo_chain(0.25), "atempo=0.5,atempo=0.5")
+        self.assertEqual(build_atempo_chain(4.0), "atempo=2,atempo=2")
+
+    def test_video_copy_codec_with_filter_promotion(self):
+        """Stream copy ('copy') must auto-promote to re-encode when filters are present."""
+        if not self.test_video.exists():
+            self.skipTest("FFmpeg test video not available")
+
+        out_file = self.temp_dir / "out_copy_flipped.mp4"
+        res = compress_video(
+            input_path=self.test_video,
+            output_path=out_file,
+            codec="copy",
+            flip_h=True,
+            crf=28,
+        )
+        self.assertTrue(res["success"], f"Failed with error: {res.get('error')}")
+        self.assertTrue(out_file.exists())
+        self.assertGreater(out_file.stat().st_size, 0)
+
+    def test_video_gif_animation_mode(self):
+        """Exporting to GIF should use palette generation and strip audio cleanly."""
+        if not self.test_video.exists():
+            self.skipTest("FFmpeg test video not available")
+
+        out_file = self.temp_dir / "out_animation.gif"
+        res = compress_video(
+            input_path=self.test_video,
+            output_path=out_file,
+            format="gif",
+            resolution="360p",
+            fps=10,
+        )
+        self.assertTrue(res["success"], f"Failed with error: {res.get('error')}")
+        self.assertTrue(out_file.exists())
+        self.assertGreater(out_file.stat().st_size, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

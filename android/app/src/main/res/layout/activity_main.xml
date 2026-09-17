@@ -72,12 +72,15 @@
                     android:paddingEnd="8dp"
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
-                    android:text="v2.2.4"
+                    android:text="v2.2.5"
                     android:textColor="@color/vf_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnToggleTheme"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="38dp"
@@ -108,6 +111,9 @@
                 android:gravity="center_vertical">
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnBackToHome"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="44dp"
@@ -159,6 +165,9 @@
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnToolToggleTheme"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="38dp"
@@ -752,12 +761,15 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Installed: v2.2.4 • Local Engine"
+                                android:text="Installed: v2.2.5 • Local Engine"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>
 
                         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                             android:id="@+id/btnCheckUpdates"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="wrap_content"
@@ -790,7 +802,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.4"
+                android:text="WHAT'S NEW IN v2.2.5"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
@@ -815,7 +827,7 @@
                         android:id="@+id/tvWhatsNewContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Pure V2/V3 APK Signing: Compliant Android Signature Scheme v2/v3\n• Mobile Image Studio: Smart compression, crop, resize &amp; EXIF scrub\n• Mobile Video Compressor: Timeline visual range trimmer &amp; presets\n• Target Profiles: Web, Discord, Email &amp; WhatsApp compression targets\n• Release Integrity: Zero unsigned fallbacks and verified minSdk 26"
+                        android:text="• Target File Size Solver: Iterative quality optimizer for exact KB/MB limits\n• Text Watermark Studio: Custom overlays with color, size &amp; 9-point anchoring\n• Canvas Transform Tools: Horizontal &amp; vertical flips and alpha background fills\n• Multi-Container Video Engine: MP4, MOV, MKV, WebM, AVI &amp; animated GIF\n• Multi-Codec &amp; Audio Studio: H.264/H.265/VP9/AV1, volume scaling &amp; channel remixing"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:lineSpacingExtra="5dp" />
@@ -840,6 +852,9 @@
                 android:weightSum="4">
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnLinkGithub"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
@@ -854,6 +869,9 @@
                     app:strokeColor="@color/vf_surface_stroke" />
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnLinkDocs"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
@@ -868,6 +886,9 @@
                     app:strokeColor="@color/vf_surface_stroke" />
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnLinkChangelog"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
@@ -882,6 +903,9 @@
                     app:strokeColor="@color/vf_surface_stroke" />
 
                 <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                     android:id="@+id/btnLinkAbout"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
@@ -978,6 +1002,9 @@
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnPickFolder"
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
@@ -999,6 +1026,9 @@
                                 app:iconTint="@color/vf_primary" />
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnPickFile"
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
@@ -1097,6 +1127,9 @@
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnChangeTarget"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
@@ -1116,6 +1149,9 @@
                                 app:iconTint="@color/vf_primary" />
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnClearTarget"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
@@ -1519,6 +1555,9 @@
 
                     <!-- Collapsible Accordion Header for Technical Logs -->
                     <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                         android:id="@+id/btnToggleConsole"
                         style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="match_parent"
@@ -1557,6 +1596,9 @@
                                 android:fontFamily="monospace" />
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnCopyLogs"
                                 style="@style/Widget.Material3.Button.IconButton"
                                 android:layout_width="28dp"
@@ -1567,6 +1609,9 @@
                                 app:iconSize="13dp" />
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnClearLogs"
                                 style="@style/Widget.Material3.Button.IconButton"
                                 android:layout_width="28dp"
@@ -1577,6 +1622,9 @@
                                 app:iconSize="13dp" />
 
                             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                                 android:id="@+id/btnExpandLogs"
                                 style="@style/Widget.Material3.Button.IconButton"
                                 android:layout_width="28dp"
@@ -1680,6 +1728,9 @@
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                             android:id="@+id/btnResultSave"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
@@ -1696,6 +1747,9 @@
                             app:iconSize="14dp" />
 
                         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                             android:id="@+id/btnResultShare"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
@@ -1749,6 +1803,9 @@
 
         <!-- Tier 1: Primary Execution Action (Full Width, Bold) -->
         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
             android:id="@+id/btnExecute"
             style="@style/Widget.Material3.Button"
             android:layout_width="match_parent"
@@ -1772,6 +1829,9 @@
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                 android:id="@+id/btnExportResult"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
@@ -1789,6 +1849,9 @@
                 app:iconGravity="textStart" />
 
             <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
                 android:id="@+id/btnShareResult"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"

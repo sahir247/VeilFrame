@@ -26,6 +26,9 @@
             android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
             android:id="@+id/btnVideoAudioClose"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="40dp"
@@ -93,6 +96,86 @@
                     android:layout_height="wrap_content"
                     android:text="Low Bitrate Voice (64 kbps)" />
             </com.google.android.material.chip.ChipGroup>
+
+            <!-- Audio Channels -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="AUDIO CHANNELS"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupAudioChannels"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAudioChanKeep"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Keep Original"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAudioChanStereo"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Stereo" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAudioChanMono"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Mono" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Volume Scaling Slider -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Volume Scaling:"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvAudioVolumeLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="100%"
+                    android:textColor="@color/vf_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderAudioVolume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="0"
+                android:valueTo="200"
+                android:value="100"
+                android:stepSize="5"
+                app:thumbColor="@color/vf_primary"
+                app:trackColorActive="@color/vf_primary"
+                app:trackColorInactive="@color/vf_surface_variant" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -109,6 +192,9 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Reset"
             android:textColor="@color/vf_text_secondary" />
 
@@ -123,6 +209,9 @@
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginEnd="8dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Cancel"
             android:textColor="@color/vf_text_secondary" />
 
@@ -131,6 +220,9 @@
             style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Apply"
             android:textColor="@color/vf_on_primary"
             app:backgroundTint="@color/vf_primary" />

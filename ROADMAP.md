@@ -10,7 +10,21 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.4 CURRENT (Production Release)
+### v2.2.5 CURRENT (Production Release)
+- **Target File Size Quality Solver**: Automated iterative binary search optimizer (5–95% quality range, $\le 7$ iterations) for target file size budgets (KB/MB) without quality degradation guesswork.
+- **Mobile & Desktop Image Studio Enhancements**:
+  - Text Watermark & Overlay Studio: Custom overlay text, presets, 9-point spatial anchoring, font size slider, color palette selection, and drop-shadow contrast protection.
+  - Canvas Orientation & Alpha Fill: Lossless horizontal & vertical flipping, and alpha background replacement for transparent images (White, Black, Transparent).
+  - High-Fidelity Comparative Inspection: Real-time side-by-side before/after comparison with live file size badges and percentage savings calculations.
+- **Expanded Video Engine & Formats**:
+  - Multi-Container Output Support: Export to MP4, MOV, MKV, WebM, AVI, and animated GIF.
+  - Multi-Codec Video Encoding: Support for H.264 (`libx264`), H.265 (`libx265`), VP9 (`libvpx-vp9`), and AV1 (`libsvtav1`).
+  - Audio Studio Processing: Audio volume gain scaling (0%–200%), channel remixing (Keep, Stereo, Mono), and codec encoding (AAC, MP3, Opus, FLAC, Mute).
+  - Video Spatial & Temporal Transforms: Horizontal & vertical flip filters, 90°/180°/270° rotation, customizable framerates (15, 24, 30, 60 fps), and playback speed multiplier chaining (0.25x–4.0x).
+- **Desktop GUI Modernization**: Modernized dark-mode cards (`#0f172a`), drag-and-drop file ingestion drop-zone, and comparative inspection cards with one-click folder reveal and system media player launching.
+- **Android UI Hardening**: Strict single-line button constraints across all layouts, eliminating label clipping or wrapping across diverse device screen densities.
+
+### v2.2.4 (Previous Release)
 - **APK Signature Scheme V2/V3**: Exclusively uses V2/V3 block-level signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification failures.
 - **Strict Release Pipeline Integrity**: Build pipeline rejects unsigned APK fallbacks and validates release signatures against actual `minSdkVersion 26`.
 - **Mobile Image Studio**: Comprehensive mobile image editing studio with smart compression, aspect-ratio cropping, custom scaling, EXIF scrubbing, artistic color grading, and lossless rotation.
@@ -81,3 +95,14 @@
 - **ExifTool Deep Forensic Audit**: Optional deep-inspection pass for proprietary vendor metadata blocks.
 - **Hardware Security Module (HSM) Integration**: Direct PKCS#11 HSM support for enterprise cryptographic audit signing.
 - **Audit Reproducibility CLI**: `veilframe audit-reproduce <audit_bundle_dir>` for 1-click deterministic re-verification.
+
+---
+
+## Desktop Evolution & Native Architecture Planning
+
+### Cross-Platform Desktop UI Complete Redesign (Windows, macOS, Linux)
+- **Complete Client Re-architecture in a Native/Systems Language**:
+  - Planning an end-to-end rewrite of the desktop user interface and core runtime in a dedicated systems language (such as Rust / Swift / C++ / Flutter) to replace Python/PySide6.
+  - **Native OS Integration**: Native titlebars, Mica/Fluent design on Windows 11, Liquid Glass/Cocoa integration on macOS, and native Wayland/GTK4 client decorations on Linux.
+  - **Zero-Copy Native Media Pipelines**: Direct GPU-accelerated video decoding/encoding pipelines (DirectX 12 / VideoToolbox / VA-API) with zero intermediate memory copying.
+  - **Minimal Distribution Footprint**: Self-contained, statically-linked native executables with near-instant startup time and ultra-low RAM footprint.

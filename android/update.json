@@ -1,16 +1,16 @@
 {
-  "versionCode": 224,
-  "versionName": "2.2.4",
-  "tag": "v2.2.4",
+  "versionCode": 225,
+  "versionName": "2.2.5",
+  "tag": "v2.2.5",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "APK Signature Scheme V2/V3: Enforced clean V2/V3 signatures and disabled legacy V1 JAR signing",
-    "Release Pipeline Integrity: Eliminated unsigned APK fallbacks and strictly verified min-SDK 26 compliance",
-    "Mobile Image Studio: Full interactive studio with smart compression, aspect cropping, EXIF scrubbing, and filters",
-    "Mobile Video Compressor: Timeline visual range trimmer, platform target presets, resolution scaling, and speed controls",
-    "Cross-Platform CLI Parity: Unified media compression and editing engine for desktop, server, and mobile runtimes",
-    "UI/UX Consistency: Complete audit removing deprecated identifiers and ensuring vector icon visual standards"
+    "Target File Size Quality Solver: Iterative binary-search quality solver strictly hitting desired KB ceilings for image outputs",
+    "Watermark & Text Overlay: Full customizable text watermarks with position anchoring, size scaling, and color presets",
+    "Canvas Orientation & Alpha Fill: Horizontal/Vertical flip transforms and solid background composites for alpha channels",
+    "Expanded Video Containers & Codecs: Full support for MP4, MOV, MKV, WebM, AVI, and GIF across H.264, H.265, VP9, and AV1",
+    "Audio Stream Remixing & Volume: 0-200% volume scaling, mono/stereo downmixing, and multi-codec support (AAC, MP3, Opus, FLAC)",
+    "Desktop Studio Modernization: Drag-and-drop ingestion cards, comparative inspection badges, and instant file reveal actions"
   ]
 }

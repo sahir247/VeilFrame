@@ -1,0 +1,589 @@
+package com.veilframe.app.media
+
+import android.graphics.Bitmap
+import android.os.Build
+import android.util.Log
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
+import com.chaquo.python.PyObject
+import com.chaquo.python.Python
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.util.Locale
+
+/**
+ * Central MediaProcessor coordinating ImageProcessor and VideoProcessor.
+ */
+object MediaProcessor {
+
+    private const val TAG = "VeilFrame.MediaProcessor"
+
+    val video = VideoProcessor
+    val image = ImageProcessor
+
+    /**
+     * Safely extract Python result dictionary using explicit key lookups.
+     * Prevents TypeError: Cannot convert dict object to boolean.
+     */
+    fun extractPyResult(resultPy: PyObject?, fallbackOutFile: File): CompressionResult {
+        if (resultPy == null) {
+            return CompressionResult(
+                success = false,
+                outputPath = fallbackOutFile.absolutePath,
+                sizeBytes = 0L,
+                error = "Python returned null object"
+            )
+        }
+
+        return try {
+            val success = resultPy.callAttr("get", "success")?.toBoolean() == true
+            val outPath = resultPy.callAttr("get", "output_path")?.toString() ?: fallbackOutFile.absolutePath
+            val sizeBytes = resultPy.callAttr("get", "size_bytes")?.toLong()
+                ?: if (fallbackOutFile.exists()) fallbackOutFile.length() else 0L
+            val savings = resultPy.callAttr("get", "savings_percent")?.toDouble()
+                ?: resultPy.callAttr("get", "savings_pct")?.toDouble()
+                ?: 0.0
+            val duration = resultPy.callAttr("get", "duration")?.toDouble() ?: 0.0
+            val error = resultPy.callAttr("get", "error")?.toString()
+
+            CompressionResult(
+                success = success,
+                outputPath = outPath,
+                sizeBytes = sizeBytes,
+                savingsPercent = savings,
+                duration = duration,
+                error = error
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse Python result dict: ${e.message}", e)
+            CompressionResult(
+                success = false,
+                outputPath = fallbackOutFile.absolutePath,
+                sizeBytes = 0L,
+                error = "Boundary parse error: ${e.message}"
+            )
+        }
+    }
+}
+
+/**
+ * Authoritative Video Processor for Android.
+ * Never assumes ffmpeg exists in Android system PATH.
+ * Uses Android FFmpeg execution layer (FFmpegKit) directly with duration-based trimming (-t).
+ */
+object VideoProcessor {
+
+    private const val TAG = "VeilFrame.VideoProcessor"
+
+    /**
+     * Builds a chained FFmpeg atempo filter string for arbitrary speed multipliers (0.25x to 4.0x).
+     * FFmpeg atempo filter is strictly bounded to [0.5, 2.0] per filter instance.
+     */
+    fun buildAtempoChain(speed: Float): String {
+        if (Math.abs(speed - 1.0f) < 0.01f || speed <= 0f) return ""
+        val factors = mutableListOf<Float>()
+        var current = speed
+        while (current > 2.0f) {
+            factors.add(2.0f)
+            current /= 2.0f
+        }
+        while (current < 0.5f) {
+            factors.add(0.5f)
+            current /= 0.5f
+        }
+        if (Math.abs(current - 1.0f) >= 0.01f) {
+            factors.add(current)
+        }
+        return factors.joinToString(",") { String.format(Locale.US, "atempo=%.3f", it).trimEnd('0').trimEnd('.') }
+    }
+
+    /**
+     * Direct Android video processing using the native FFmpegKit engine.
+     * Does not call desktop Python subprocess, eliminating Android PATH FileNotFoundError.
+     */
+    fun process(
+        srcFile: File,
+        outFile: File,
+        editState: VideoEditState,
+        outputConfig: VideoOutputConfig,
+        py: Python? = null
+    ): CompressionResult {
+        val trimStartSec = editState.trimStartSeconds
+        val trimDurationSec = editState.trimmedDurationSeconds
+
+        val targetSizeMb = outputConfig.targetMb ?: when (outputConfig.targetPreset) {
+            "WhatsApp (16 MB)" -> 16.0
+            "Discord (25 MB)" -> 25.0
+            "Discord Nitro (50 MB)" -> 50.0
+            "Email Attachment (8 MB)" -> 8.0
+            "Web Stream (10 MB)" -> 10.0
+            else -> null
+        }
+        val resolutionStr = when (editState.scalePreset) {
+            "1080p (Full HD)" -> "1080p"
+            "720p (HD)" -> "720p"
+            "480p (SD Compact)" -> "480p"
+            "360p (Ultra Small)" -> "360p"
+            else -> null
+        }
+        val aspectStr = when (editState.aspect) {
+            "9:16 (Reel / Shorts / TikTok)", "9:16" -> "9:16"
+            "1:1 (Square Feed)", "1:1" -> "1:1"
+            "16:9 (Landscape YouTube)", "16:9" -> "16:9"
+            "4:3 (Classic)", "4:3" -> "4:3"
+            else -> null
+        }
+        val audioActionStr = when (editState.audioMode) {
+            AudioMode.MUTE -> "mute"
+            AudioMode.COMPRESS_AAC_128K -> "aac_128k"
+            AudioMode.VOICE_64K -> "aac_64k"
+            AudioMode.HIGH_FIDELITY_256K -> "aac_256k"
+            AudioMode.KEEP -> "keep"
+        }
+        val codecParam = when {
+            outputConfig.codec.contains("265", ignoreCase = true) || outputConfig.codec.contains("hevc", ignoreCase = true) -> "libx265"
+            outputConfig.codec.contains("vp9", ignoreCase = true) -> "libvpx-vp9"
+            outputConfig.codec.contains("av1", ignoreCase = true) -> "libsvtav1"
+            outputConfig.codec.contains("copy", ignoreCase = true) -> "copy"
+            else -> "libx264"
+        }
+
+        val isGifMode = outputConfig.outputMode == VideoOutputMode.GIF ||
+                outputConfig.format.equals("gif", ignoreCase = true) ||
+                outFile.name.endsWith(".gif", ignoreCase = true)
+
+        // Authoritative Android FFmpegKit direct execution layer
+        return executeNativeFFmpeg(
+            srcFile = srcFile,
+            outFile = outFile,
+            trimStartSec = trimStartSec,
+            trimDurationSec = trimDurationSec,
+            resolutionStr = resolutionStr,
+            aspectStr = aspectStr,
+            speed = editState.speed,
+            audioAction = audioActionStr,
+            audioVolume = editState.audioVolume,
+            audioChannels = editState.audioChannels,
+            audioCodec = outputConfig.audioCodec,
+            codec = codecParam,
+            crf = outputConfig.crf,
+            flipH = editState.flipH,
+            flipV = editState.flipV,
+            rotate = editState.rotationAngle,
+            fps = editState.fps,
+            targetSizeMb = targetSizeMb,
+            isGifMode = isGifMode
+        )
+    }
+
+    /**
+     * Backward-compatible overload accepting single VideoEditState.
+     */
+    fun process(
+        srcFile: File,
+        outFile: File,
+        state: VideoEditState,
+        py: Python?
+    ): CompressionResult {
+        val outputConfig = VideoOutputConfig(
+            format = "MP4",
+            codec = "H.264",
+            crf = 28,
+            targetPreset = "Auto (Balanced CRF 28)",
+            outputFileName = outFile.name
+        )
+        return process(srcFile, outFile, state, outputConfig, py)
+    }
+
+    private fun executeNativeFFmpeg(
+        srcFile: File,
+        outFile: File,
+        trimStartSec: Double,
+        trimDurationSec: Double,
+        resolutionStr: String?,
+        aspectStr: String?,
+        speed: Float,
+        audioAction: String,
+        audioVolume: Float,
+        audioChannels: String,
+        audioCodec: String,
+        codec: String,
+        crf: Int,
+        flipH: Boolean,
+        flipV: Boolean,
+        rotate: Int,
+        fps: Int?,
+        targetSizeMb: Double?,
+        isGifMode: Boolean = false
+    ): CompressionResult {
+        return try {
+            val cmd = mutableListOf<String>()
+            cmd.add("-y")
+
+            if (trimStartSec > 0.05) {
+                cmd.add("-ss")
+                cmd.add(String.format(Locale.US, "%.3f", trimStartSec))
+            }
+            // Explicit duration trimming (-t) rather than -to
+            if (trimDurationSec > 0.05) {
+                cmd.add("-t")
+                cmd.add(String.format(Locale.US, "%.3f", trimDurationSec))
+            }
+
+            cmd.add("-i")
+            cmd.add("\"${srcFile.absolutePath}\"")
+
+            // Strip metadata tags for privacy
+            cmd.add("-map_metadata")
+            cmd.add("-1")
+            cmd.add("-map_chapters")
+            cmd.add("-1")
+
+            // Video filters
+            val vfFilters = mutableListOf<String>()
+
+            if (aspectStr != null) {
+                when (aspectStr) {
+                    "9:16" -> vfFilters.add("crop=ih*(9/16):ih")
+                    "1:1" -> vfFilters.add("crop=min(iw\\,ih):min(iw\\,ih)")
+                    "16:9" -> vfFilters.add("crop=iw:iw*(9/16)")
+                    "4:3" -> vfFilters.add("crop=ih*4/3:ih")
+                }
+            }
+
+            if (flipH) vfFilters.add("hflip")
+            if (flipV) vfFilters.add("vflip")
+
+            when (rotate) {
+                90 -> vfFilters.add("transpose=1")
+                180 -> vfFilters.add("hflip,vflip")
+                270 -> vfFilters.add("transpose=2")
+            }
+
+            if (resolutionStr != null) {
+                when (resolutionStr) {
+                    "1080p" -> vfFilters.add("scale=-2:1080")
+                    "720p" -> vfFilters.add("scale=-2:720")
+                    "480p" -> vfFilters.add("scale=-2:480")
+                    "360p" -> vfFilters.add("scale=-2:360")
+                }
+            }
+
+            if (speed != 1.0f && speed > 0.1f) {
+                val ptsMultiplier = 1.0 / speed
+                vfFilters.add(String.format(Locale.US, "setpts=%.4f*PTS", ptsMultiplier))
+            }
+
+            // Audio configuration & filters
+            val afFilters = mutableListOf<String>()
+            val isMuted = isGifMode || audioAction == "mute" || audioCodec.equals("mute", ignoreCase = true)
+
+            if (!isMuted) {
+                if (Math.abs(audioVolume - 1.0f) > 0.01f && audioVolume >= 0f) {
+                    afFilters.add(String.format(Locale.US, "volume=%.2f", audioVolume))
+                }
+                if (audioChannels.equals("mono", ignoreCase = true)) {
+                    afFilters.add("pan=mono|c0=0.5*c0+0.5*c1")
+                }
+                if (speed != 1.0f && speed > 0.1f) {
+                    val tempoChain = buildAtempoChain(speed)
+                    if (tempoChain.isNotEmpty()) {
+                        afFilters.add(tempoChain)
+                    }
+                }
+            }
+
+            if (isMuted) {
+                cmd.add("-an")
+            } else {
+                var resolvedACodec = when {
+                    audioCodec.contains("mp3", ignoreCase = true) -> "libmp3lame"
+                    audioCodec.contains("opus", ignoreCase = true) -> "libopus"
+                    audioCodec.contains("flac", ignoreCase = true) -> "flac"
+                    audioCodec.contains("copy", ignoreCase = true) -> if (afFilters.isNotEmpty()) "aac" else "copy"
+                    else -> "aac"
+                }
+
+                // Container compatibility validation
+                if (outFile.name.endsWith(".webm", ignoreCase = true) && resolvedACodec != "libopus") {
+                    resolvedACodec = "libopus"
+                } else if ((outFile.name.endsWith(".mp4", ignoreCase = true) || outFile.name.endsWith(".mov", ignoreCase = true)) && resolvedACodec == "libopus") {
+                    resolvedACodec = "aac"
+                }
+
+                if (afFilters.isNotEmpty() && resolvedACodec != "copy") {
+                    cmd.add("-af")
+                    cmd.add("\"${afFilters.joinToString(",")}\"")
+                }
+
+                cmd.add("-c:a")
+                cmd.add(resolvedACodec)
+                if (resolvedACodec != "copy" && resolvedACodec != "flac") {
+                    val bitrateStr = when (audioAction) {
+                        "aac_64k" -> "64k"
+                        "aac_256k" -> "256k"
+                        else -> "128k"
+                    }
+                    cmd.add("-b:a")
+                    cmd.add(bitrateStr)
+                }
+            }
+
+            // Video codec, GIF Animation mode, & CRF / Target Bitrate
+            if (isGifMode) {
+                val gifFps = if (fps != null && fps > 0) fps else 15
+                val baseVf = listOf("fps=$gifFps") + vfFilters.filterNot { it.startsWith("setpts") }
+                val baseChain = baseVf.joinToString(",")
+                val gifVf = "$baseChain,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+                cmd.add("-vf")
+                cmd.add("\"$gifVf\"")
+                cmd.add("-c:v")
+                cmd.add("gif")
+                cmd.add("-loop")
+                cmd.add("0")
+            } else {
+                // Enforce copy codec incompatibility rule:
+                // Stream copy cannot coexist with spatial or temporal video filter graphs
+                val hasVideoTransforms = vfFilters.isNotEmpty() || (fps != null && fps > 0)
+                val resolvedCodec = if (codec.contains("copy", ignoreCase = true) && hasVideoTransforms) {
+                    Log.w(TAG, "Stream copy ('copy') is incompatible with video filtering; auto-promoting to libx264 re-encode.")
+                    "libx264"
+                } else {
+                    codec
+                }
+
+                if (vfFilters.isNotEmpty()) {
+                    cmd.add("-vf")
+                    cmd.add("\"${vfFilters.joinToString(",")}\"")
+                }
+
+                if (fps != null && fps > 0) {
+                    cmd.add("-r")
+                    cmd.add(fps.toString())
+                }
+
+                cmd.add("-c:v")
+                cmd.add(resolvedCodec)
+
+                if (resolvedCodec != "copy") {
+                    if (targetSizeMb != null && targetSizeMb > 0 && trimDurationSec > 0.2) {
+                        val targetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0 * 0.95
+                        val audioBits = if (isMuted) 0.0 else 128.0 * 1024.0 * trimDurationSec
+                        val videoBits = Math.max(50.0 * 1024.0 * trimDurationSec, targetBits - audioBits)
+                        val targetBitrateKbps = (videoBits / (trimDurationSec * 1024.0)).toInt()
+                        cmd.add("-b:v")
+                        cmd.add("${targetBitrateKbps}k")
+                        cmd.add("-maxrate")
+                        cmd.add("${(targetBitrateKbps * 1.3).toInt()}k")
+                        cmd.add("-bufsize")
+                        cmd.add("${targetBitrateKbps * 2}k")
+                    } else {
+                        cmd.add("-crf")
+                        cmd.add(crf.toString())
+                        cmd.add("-preset")
+                        cmd.add("ultrafast")
+                    }
+                }
+            }
+
+            // Container-specific flags
+            if (outFile.name.endsWith(".mp4", ignoreCase = true) || outFile.name.endsWith(".mov", ignoreCase = true)) {
+                cmd.add("-movflags")
+                cmd.add("+faststart")
+            }
+
+            cmd.add("\"${outFile.absolutePath}\"")
+
+            val fullCmdString = cmd.joinToString(" ")
+            Log.d(TAG, "Executing native FFmpegKit: $fullCmdString")
+
+            val session = FFmpegKit.execute(fullCmdString)
+            val returnCode = session.returnCode
+
+            if (ReturnCode.isSuccess(returnCode) && outFile.exists() && outFile.length() > 0L) {
+                val outSize = outFile.length()
+                val origSize = srcFile.length()
+                val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
+                CompressionResult(
+                    success = true,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = outSize,
+                    savingsPercent = savings,
+                    duration = trimDurationSec,
+                    error = null
+                )
+            } else {
+                val logs = session.allLogsAsString ?: "Execution failed"
+                Log.e(TAG, "FFmpegKit execution failed (code $returnCode): $logs")
+                CompressionResult(
+                    success = false,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = 0L,
+                    error = "FFmpeg execution failed (code $returnCode)"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Native FFmpeg execution exception: ${e.message}", e)
+            CompressionResult(
+                success = false,
+                outputPath = outFile.absolutePath,
+                sizeBytes = 0L,
+                error = e.message
+            )
+        }
+    }
+}
+
+/**
+ * Authoritative Image Processor for Android.
+ * Performs non-destructive preview rendering and final encoded output.
+ */
+object ImageProcessor {
+
+    private const val TAG = "VeilFrame.ImageProcessor"
+
+    fun process(
+        srcFile: File,
+        outFile: File,
+        editState: ImageEditState,
+        outputConfig: ImageOutputConfig,
+        previewBitmap: Bitmap?,
+        py: Python?
+    ): CompressionResult {
+        val formatStr = outputConfig.format.lowercase()
+        val scaleVal = if (editState.resizeScale != 100) editState.resizeScale / 100.0 else 1.0
+        val targetSizeKbVal = if (outputConfig.compressionMode == "target_size") outputConfig.targetSizeKb else null
+
+        // 1. Try Python compressor module if available
+        if (py != null) {
+            try {
+                val compressorModule = py.getModule("veilframe.core.media_compressor")
+                val resultPy = compressorModule.callAttr(
+                    "compress_image",
+                    srcFile.absolutePath,
+                    outFile.absolutePath,
+                    outputConfig.quality,
+                    formatStr,
+                    scaleVal,
+                    editState.rotationAngle.toDouble(),
+                    if (editState.filter != "Default" && editState.filter != "None") editState.filter.lowercase() else null,
+                    editState.stripExif,
+                    targetSizeKbVal,
+                    outputConfig.compressionMode,
+                    editState.flipH,
+                    editState.flipV,
+                    null, // Watermark applied directly on previewBitmap
+                    if (editState.bgType != "Transparent") editState.bgType.lowercase() else null
+                )
+                val parsed = MediaProcessor.extractPyResult(resultPy, outFile)
+                if (parsed.success && outFile.exists() && outFile.length() > 0L) {
+                    return parsed
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Python image compression threw exception: ${e.message}. Using native Bitmap encoder.")
+            }
+        }
+
+        // 2. In-memory Native Bitmap encoding fallback with Target Size solver
+        return try {
+            val bmp = previewBitmap ?: return CompressionResult(
+                success = false,
+                outputPath = outFile.absolutePath,
+                sizeBytes = 0L,
+                error = "No valid preview bitmap to encode"
+            )
+
+            val compressFormat = when (outputConfig.format.uppercase()) {
+                "PNG" -> Bitmap.CompressFormat.PNG
+                "WEBP" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
+                else -> Bitmap.CompressFormat.JPEG
+            }
+
+            if (outputConfig.compressionMode == "target_size" && targetSizeKbVal != null && targetSizeKbVal > 0 && compressFormat != Bitmap.CompressFormat.PNG) {
+                val targetBytes = targetSizeKbVal.toLong() * 1024L
+                var low = 5
+                var high = 95
+                var bestQuality = 85
+                var bestBytes: ByteArray? = null
+
+                for (iter in 0 until 6) {
+                    val mid = (low + high) / 2
+                    val stream = ByteArrayOutputStream()
+                    bmp.compress(compressFormat, mid, stream)
+                    val data = stream.toByteArray()
+                    bestBytes = data
+                    bestQuality = mid
+
+                    if (data.size <= targetBytes) {
+                        low = mid + 1
+                    } else {
+                        high = mid - 1
+                    }
+                    if (low > high) break
+                }
+
+                if (bestBytes != null) {
+                    FileOutputStream(outFile).use { fos ->
+                        fos.write(bestBytes)
+                    }
+                } else {
+                    FileOutputStream(outFile).use { fos ->
+                        bmp.compress(compressFormat, outputConfig.quality, fos)
+                    }
+                }
+            } else {
+                FileOutputStream(outFile).use { fos ->
+                    bmp.compress(compressFormat, outputConfig.quality, fos)
+                }
+            }
+
+            val isSuccess = outFile.exists() && outFile.length() > 0L
+            if (isSuccess) {
+                val outSize = outFile.length()
+                val origSize = srcFile.length()
+                val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
+                CompressionResult(
+                    success = true,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = outSize,
+                    savingsPercent = savings,
+                    error = null
+                )
+            } else {
+                CompressionResult(
+                    success = false,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = 0L,
+                    error = "Failed to write encoded image file"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Image compression exception: ${e.message}", e)
+            CompressionResult(
+                success = false,
+                outputPath = outFile.absolutePath,
+                sizeBytes = 0L,
+                error = e.message
+            )
+        }
+    }
+
+    /**
+     * Backward-compatible overload accepting single ImageEditState.
+     */
+    fun process(
+        srcFile: File,
+        outFile: File,
+        state: ImageEditState,
+        previewBitmap: Bitmap?,
+        py: Python?
+    ): CompressionResult {
+        val outputConfig = ImageOutputConfig(
+            format = "JPG",
+            quality = 85,
+            outputFileName = outFile.name
+        )
+        return process(srcFile, outFile, state, outputConfig, previewBitmap, py)
+    }
+}

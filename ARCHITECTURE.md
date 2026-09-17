@@ -534,9 +534,9 @@ VeilFrame offers both a modern terminal CLI and a 4-mode desktop GUI built on Py
 
 ---
 
-## Media Compression & Studio Subsystems (v2.2.4 Architecture)
+## Media Compression & Studio Subsystems (v2.2.5 Architecture)
 
-The media compression subsystem (`veilframe.core.media_compressor`) exposes high-performance compression and editing pipelines with 100% unified parity across Desktop GUI, CLI, and Android Chaquopy runtime:
+The media compression subsystem (`veilframe.core.media_compressor`) exposes high-performance compression and editing pipelines with 100% unified parity across Desktop GUI, CLI, and Android Chaquopy/native runtime:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -544,22 +544,32 @@ The media compression subsystem (`veilframe.core.media_compressor`) exposes high
 ├──────────────────────────────────────┬─────────────────────────────────────┤
 │        VIDEO COMPRESSOR STUDIO       │        IMAGE COMPRESSOR STUDIO      │
 │                                      │                                     │
-│ • Precision Timeline Range Trimmer   │ • Continuous Quality Slider (1-100%)│
-│   Fast-seek arbitrary start/end      │ • Dimension Lanczos Grid Resampling │
-│ • Platform Target Bitrate Allocators │ • Aspect Ratio Center Cropping      │
-│   (WhatsApp 16MB, Discord 25MB,      │ • Vectorized NumPy Color Grading    │
-│    Email 8MB, Web 10MB)              │ • Zero-Leakage EXIF/GPS Scrubbing   │
-│ • Lanczos Resolution Resampling      │ • Lossless 90°/180°/270° Rotation   │
-│ • 9:16 Vertical Reel/Shorts Cropping │ • Multi-Format Encoding             │
-│ • 0.5x–2.0x Synchronized Speed/Pitch │   (JPEG, PNG, WebP)                 │
-│ • Audio Track Stripping / AAC 128k   │                                     │
+│ • Precision Timeline Range Trimmer   │ • Target File Size Solver (KB/MB)   │
+│   Fast-seek arbitrary start/end      │   Iterative binary search (5-95)    │
+│ • Multi-Container Output Engine      │ • Quality Percentage Slider (1-100%)│
+│   (MP4, MOV, MKV, WebM, AVI, GIF)    │ • Dimension Lanczos Grid Resampling │
+│ • Multi-Codec Video Encoding         │ • Aspect Ratio Center Cropping      │
+│   (H.264, H.265, VP9, AV1, Copy)     │ • Text Watermark / Overlay Studio   │
+│ • Audio Studio Processing            │   9-point anchor, size, color & drop│
+│   Volume (0–200%), Channels          │ • Horizontal & Vertical Flips       │
+│   (Stereo/Mono/Keep), Codecs (AAC,   │ • Alpha Background Fill Compositing │
+│   MP3, Opus, FLAC, Mute)             │   (White, Black, Transparent)       │
+│ • Platform Target Bitrate Allocators │ • Vectorized NumPy Color Grading    │
+│   (WhatsApp 16MB, Discord 25MB/50MB, │ • Zero-Leakage EXIF/GPS Scrubbing   │
+│    Email 8MB, Web 10MB)              │ • Lossless 90°/180°/270° Rotation   │
+│ • Lanczos Resolution Resampling      │ • Multi-Format Output Encoding      │
+│ • 0.25x–4.0x Speed/Pitch Chaining    │   (JPEG, PNG, WebP)                 │
 └──────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
-1. **Precision Range Trimming:** Employs two-phase fast keyframe seeking (`-ss` before `-i`) combined with exact output clamping (`-to`), eliminating decode lag and drift.
-2. **Target Bitrate Allocation:** Calculates video bitrates using explicit audio overhead budgets and byte safety margins:
+1. **Target File Size Solver:** Employs an iterative binary search optimizer (5–95% quality range, $\le 7$ iterations) to compress images directly to a bounded maximum file size budget without manual trial and error.
+2. **Watermark & Alpha Fill Engine:** Non-destructive overlay rendering featuring 9-point spatial anchoring, font scaling, drop-shadow contrast protection, and alpha background replacement for transparent graphics.
+3. **Multi-Container & Codec Pipeline:** Transmuxes and re-encodes video streams across MP4, MOV, MKV, WebM, AVI, and animated GIF formats utilizing H.264 (`libx264`), H.265 (`libx265`), VP9 (`libvpx-vp9`), and AV1 (`libsvtav1`).
+4. **Audio Matrix Processor:** Dynamic audio gain adjustment (0% to 200%), downmixing/upmixing (mono, stereo, channel pass-through), and resampling across AAC, MP3, Opus, and FLAC codecs.
+5. **Precision Range Trimming:** Employs two-phase fast keyframe seeking (`-ss` before `-i`) combined with exact output clamping (`-to`), eliminating decode lag and drift.
+6. **Target Bitrate Allocation:** Calculates video bitrates using explicit audio overhead budgets and byte safety margins:
    $$\text{Bitrate}_{\text{target}} = \frac{\text{TargetBytes} \times 8 \times \text{SafetyMargin}}{\text{Duration}} - \text{AudioBitrate}$$
-3. **Android APK Signature Scheme V2/V3:** Release packaging enforces pure block-level APK Signature Scheme v2/v3, eliminating obsolete V1 JAR signing and verifying clean against `minSdkVersion 26`.
+7. **Android APK Signature Scheme V2/V3:** Release packaging enforces pure block-level APK Signature Scheme v2/v3, eliminating obsolete V1 JAR signing and verifying clean against `minSdkVersion 26`.
 
 ---
 

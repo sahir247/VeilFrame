@@ -164,7 +164,7 @@ EOF
 
             cat << 'EOF' > deb_root/DEBIAN/control
 Package: veilframe
-Version: 2.2.4
+Version: 2.2.5
 Section: utils
 Priority: optional
 Architecture: amd64

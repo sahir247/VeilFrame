@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veilframe"
-version = "2.2.4"
+version = "2.2.5"
 description = "Privacy-focused media sanitization with independent visual-fidelity verification and cryptographically signed audit manifests."
 readme = "README.md"
 authors = [{ name = "VeilFrame Contributors" }]

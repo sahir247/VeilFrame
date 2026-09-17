@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.4-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.5-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -82,7 +82,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` or direct install |
-| **Python (Any OS)** | `veilframe-2.2.4-py3-none-any.whl` | Universal | `pip install veilframe-2.2.4-py3-none-any.whl` |
+| **Python (Any OS)** | `veilframe-2.2.5-py3-none-any.whl` | Universal | `pip install veilframe-2.2.5-py3-none-any.whl` |
 
 ```powershell
 # Windows Checksum Verification:
@@ -507,15 +507,15 @@ veilframe gui
 The desktop application features 5 dedicated operational modes:
 - **Video Sanitizer:** Multi-pass elementary stream extraction, Bayer CFA PRNU perturbation, 2D DCT median shift, and audio ENF notch filtration with live preview.
 - **Image Privacy Compiler:** Multi-layer container scrubbing, linear sRGB normalization, isolated ConstantFill semantic redaction, and 7-probe adversarial red-team verification.
-- **Media Compressor (New in v2.2.4):** Interactive image and video editing studio supporting visual timeline trimming, platform target size calculators (WhatsApp, Discord, Email, Web), resolution downscaling, color grading, and EXIF control.
+- **Media Compressor (New in v2.2.5):** Interactive image and video editing studio supporting iterative target size quality solver (KB/MB), text watermark overlays, canvas flip/background fill, multi-container video export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec support (H.264, H.265, VP9, AV1), audio volume scaling & channel remixing, visual timeline trimming, and EXIF control.
 - **Folder Analyzer:** High-performance directory tree scanning, SQLite indexing, and 3-stage duplicate file detection with interactive HTML export.
 - **AI Project Lister:** Token-bounded `.aibundle` v1 compiler and security audit analyzer for feeding full project context into LLMs.
 
 #### Android Native Mobile Application (`com.veilframe.app`)
 VeilFrame provides a complete on-device Android application (API 26+ / Android 8.0 through Android 15, Target SDK 35):
 - **Pure APK Signature Scheme V2/V3:** Release APKs strictly enforce V2/V3 block signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification issues.
-- **Mobile Image Studio:** Responsive single-page studio featuring live comparative before/after rendering, continuous quality slider (1%–100%), aspect cropping (Free, 1:1, 4:3, 16:9, 9:16), custom resizing, rotation, and EXIF control.
-- **Mobile Video Studio:** Real-time dual-thumb visual timeline trimmer (`RangeSlider`) allowing trimming anywhere in the timeline (e.g. 4–6s out of a 10s clip), quick interval presets (Story 15s, Status 30s, Middle Half), platform size presets (WhatsApp 16MB, Discord 25MB, Email 8MB), and playback speed adjustments.
+- **Mobile Image Studio:** Responsive studio featuring target file size solver (KB/MB), text watermark overlays with color and 9-point anchoring, horizontal/vertical flipping, alpha background fill compositing, live comparative before/after rendering, continuous quality slider (1%–100%), aspect cropping, custom resizing, rotation, and EXIF control.
+- **Mobile Video Studio:** Real-time dual-thumb visual timeline trimmer, multi-container export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec encoding (H.264, H.265, VP9, AV1), audio studio (volume 0–200%, stereo/mono remixing), quick interval presets (Story 15s, Status 30s, Middle Half), platform size presets (Discord 50MB, WhatsApp 16MB, Web 10MB, Email 8MB), and playback speed adjustments.
 - **Cryptographic In-App Updates:** Automatic updates powered by `android/update.json`, monotonic integer `versionCode` checks, multi-hop S3 CDN redirect resolution, streaming SHA-256 validation, and auto-resuming unknown sources install.
 - **Status Bar & Notch Handling:** Edge-to-edge window inset handling ensuring zero clipping under camera cutouts and system bars.
 

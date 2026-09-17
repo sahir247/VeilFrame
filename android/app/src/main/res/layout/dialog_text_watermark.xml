@@ -17,24 +17,24 @@
         android:background="@color/vf_surface_variant">
 
         <TextView
-            android:id="@+id/tvFilterDialogTitle"
+            android:id="@+id/tvWatermarkDialogTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Color Filter"
+            android:text="Text Watermark &amp; Overlay"
             android:textColor="@color/vf_text_primary"
             android:textSize="15sp"
             android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-            android:id="@+id/btnFilterClose"
+            android:id="@+id/btnWatermarkClose"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:contentDescription="Close Filter Dialog"
+            android:contentDescription="Close Watermark Dialog"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
     </LinearLayout>
@@ -44,7 +44,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:maxHeight="460dp"
+        android:maxHeight="480dp"
         android:fillViewport="true">
 
         <LinearLayout
@@ -53,135 +53,231 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Large Preview -->
+            <!-- Live Preview of Watermark -->
             <FrameLayout
-                android:id="@+id/filterPreviewContainer"
+                android:id="@+id/watermarkPreviewContainer"
                 android:layout_width="match_parent"
                 android:layout_height="180dp"
                 android:background="@color/vf_bg_dark"
                 android:layout_marginBottom="16dp">
 
                 <ImageView
-                    android:id="@+id/imgFilterPreview"
+                    android:id="@+id/imgWatermarkPreview"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:scaleType="fitCenter"
-                    android:contentDescription="Color Filter Preview" />
+                    android:contentDescription="Watermark Preview" />
             </FrameLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
+            <!-- Watermark Text Input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilWatermarkText"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:text="SELECT FILTER"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:hint="Watermark Text"
+                app:boxStrokeColor="@color/vf_primary"
+                app:hintTextColor="@color/vf_primary">
 
-            <!-- Horizontally Scrollable Filter List -->
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etWatermarkText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Quick Text Presets -->
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:scrollbars="none"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="12dp">
 
                 <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupFilters"
+                    android:id="@+id/chipGroupWatermarkPresets"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     app:singleSelection="true">
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterDefault"
+                        android:id="@+id/chipWmConfidential"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Default"
-                        android:checked="true" />
+                        android:text="CONFIDENTIAL" />
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterGrayscale"
+                        android:id="@+id/chipWmDraft"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Grayscale" />
+                        android:text="DRAFT" />
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterSepia"
+                        android:id="@+id/chipWmCopy"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Sepia" />
+                        android:text="COPY" />
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterVintage"
+                        android:id="@+id/chipWmDoNotShare"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Vintage" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterCool"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Cool" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipFilterWarm"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Warm" />
+                        android:text="DO NOT SHARE" />
                 </com.google.android.material.chip.ChipGroup>
             </HorizontalScrollView>
 
+            <!-- Position Selection -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="CANVAS BACKGROUND"
+                android:layout_marginBottom="6dp"
+                android:text="POSITION"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
-            <!-- Background Type Presets -->
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:layout_marginBottom="12dp">
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupWatermarkPosition"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosBottomRight"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom-Right"
+                        android:checked="true" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosBottomLeft"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom-Left" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosTopRight"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Top-Right" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosTopLeft"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Top-Left" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosCenter"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Center" />
+                </com.google.android.material.chip.ChipGroup>
+            </HorizontalScrollView>
+
+            <!-- Font Size -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Font Size:"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvWatermarkSizeLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="32 sp"
+                    android:textColor="@color/vf_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderWatermarkSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="14"
+                android:valueTo="72"
+                android:value="32"
+                android:stepSize="2"
+                app:thumbColor="@color/vf_primary"
+                app:trackColorActive="@color/vf_primary"
+                app:trackColorInactive="@color/vf_surface_variant" />
+
+            <!-- Color Selection -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="6dp"
+                android:text="TEXT COLOR"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
             <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupBackgroundType"
+                android:id="@+id/chipGroupWatermarkColor"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipBgTrans"
+                    android:id="@+id/chipWmColorWhite"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Transparent"
+                    android:text="White"
                     android:checked="true" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipBgBlack"
+                    android:id="@+id/chipWmColorBlack"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Black" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipBgWhite"
+                    android:id="@+id/chipWmColorRed"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="White" />
+                    android:text="Red" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipBgBlur"
+                    android:id="@+id/chipWmColorYellow"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Blurred Fill" />
+                    android:text="Yellow" />
             </com.google.android.material.chip.ChipGroup>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
@@ -195,14 +291,14 @@
         android:background="@color/vf_surface_variant">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnFilterReset"
+            android:id="@+id/btnWatermarkReset"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="Reset"
+            android:text="Clear"
             android:textColor="@color/vf_text_secondary" />
 
         <View
@@ -211,7 +307,7 @@
             android:layout_weight="1" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnFilterCancel"
+            android:id="@+id/btnWatermarkCancel"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
@@ -223,14 +319,14 @@
             android:textColor="@color/vf_text_secondary" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnFilterApply"
+            android:id="@+id/btnWatermarkApply"
             style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="OK"
+            android:text="Apply"
             android:textColor="@color/vf_on_primary"
             app:backgroundTint="@color/vf_primary" />
     </LinearLayout>

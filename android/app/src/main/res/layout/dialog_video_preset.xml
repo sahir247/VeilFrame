@@ -26,6 +26,9 @@
             android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:maxLines="1"
             android:id="@+id/btnVideoPresetClose"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="40dp"
@@ -98,11 +101,142 @@
                     android:text="Discord (25 MB)" />
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPresetNitro"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Discord Nitro (50 MB)" />
+
+                <com.google.android.material.chip.Chip
                     android:id="@+id/chipPresetEmail"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Email Attachment (8 MB)" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPresetWeb"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Web Stream (10 MB)" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Video Codecs -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="VIDEO CODEC"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupVideoCodecDialog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCodecH264"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="H.264 (Universal)"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCodecH265"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="H.265 / HEVC" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCodecVp9"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="VP9" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCodecAv1"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="AV1" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipCodecCopy"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Copy Stream" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Container Format -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="OUTPUT CONTAINER"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupVideoContainerDialog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerMp4"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MP4"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerMov"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MOV" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerMkv"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MKV" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerWebm"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="WebM" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerAvi"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="AVI" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipContainerGif"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="GIF" />
             </com.google.android.material.chip.ChipGroup>
 
             <LinearLayout
@@ -165,6 +299,9 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Reset"
             android:textColor="@color/vf_text_secondary" />
 
@@ -179,6 +316,9 @@
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginEnd="8dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Cancel"
             android:textColor="@color/vf_text_secondary" />
 
@@ -187,6 +327,9 @@
             style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Apply"
             android:textColor="@color/vf_on_primary"
             app:backgroundTint="@color/vf_primary" />
