@@ -289,7 +289,7 @@ class MainActivity : AppCompatActivity() {
         binding.progressIndicator.progress = 0
         binding.progressIndicator.visibility = View.INVISIBLE
         binding.tvPhaseBadge.text = "IDLE"
-        binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_primary))
+        binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
         binding.tvStatusText.text = "Ready for execution."
         if (logMessage) {
             logToConsole("[SYS] Target selection and staging buffer cleared.")
@@ -491,7 +491,7 @@ class MainActivity : AppCompatActivity() {
         binding.progressIndicator.isIndeterminate = true
         binding.progressIndicator.visibility = View.VISIBLE
         binding.tvPhaseBadge.text = "RUNNING"
-        binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_primary))
+        binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {

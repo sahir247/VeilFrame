@@ -1,28 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- VeilFrame Mobile Palette: Obsidian & Cyan Cyber-Forensics Theme -->
-    <color name="vf_bg_dark">#0B0F19</color>
-    <color name="vf_surface">#151C2C</color>
-    <color name="vf_surface_variant">#1E293B</color>
-    <color name="vf_surface_stroke">#2C3E55</color>
+    <!-- VeilFrame Minimal Monochrome Dark Theme Palette -->
+    <!-- Base Surfaces (Deep matte obsidian & subtle graphite) -->
+    <color name="vf_bg_dark">#101012</color>
+    <color name="vf_surface">#18181C</color>
+    <color name="vf_surface_variant">#222228</color>
+    <color name="vf_surface_stroke">#2E2E36</color>
     
-    <color name="vf_primary">#38BDF8</color>
-    <color name="vf_primary_container">#0369A1</color>
-    <color name="vf_on_primary">#0B0F19</color>
+    <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
+    <color name="vf_primary">#E4E4E7</color>
+    <color name="vf_primary_container">#27272A</color>
+    <color name="vf_on_primary">#121214</color>
     
-    <color name="vf_secondary">#818CF8</color>
-    <color name="vf_secondary_container">#3730A3</color>
-    <color name="vf_on_secondary">#FFFFFF</color>
+    <color name="vf_secondary">#A1A1AA</color>
+    <color name="vf_secondary_container">#27272A</color>
+    <color name="vf_on_secondary">#F4F4F5</color>
     
-    <color name="vf_accent_green">#22C55E</color>
-    <color name="vf_accent_amber">#F59E0B</color>
-    <color name="vf_accent_red">#F43F5E</color>
+    <!-- Less Saturated Matte Status Colors (Muted Characteristic Tones) -->
+    <!-- Pass / Success: Desaturated matte sage green -->
+    <color name="vf_accent_green">#6AA878</color>
+    <color name="vf_status_pass_bg">#18261D</color>
     
-    <color name="vf_text_primary">#F8FAFC</color>
-    <color name="vf_text_secondary">#94A3B8</color>
-    <color name="vf_text_muted">#64748B</color>
+    <!-- Warning / In-Progress: Desaturated matte warm ochre / amber -->
+    <color name="vf_accent_amber">#C9944D</color>
+    <color name="vf_status_warn_bg">#292014</color>
     
-    <color name="vf_console_bg">#06080E</color>
-    <color name="vf_console_text">#38BDF8</color>
-    <color name="ic_launcher_background">#0B0F19</color>
+    <!-- Error / Fail: Desaturated matte terracotta / brick red -->
+    <color name="vf_accent_red">#BA5D60</color>
+    <color name="vf_status_fail_bg">#291617</color>
+    
+    <!-- Info / Neutral: Desaturated matte steel blue -->
+    <color name="vf_status_info">#7E95AC</color>
+    <color name="vf_status_info_bg">#16202A</color>
+    
+    <!-- Text Hierarchy -->
+    <color name="vf_text_primary">#F4F4F5</color>
+    <color name="vf_text_secondary">#A1A1AA</color>
+    <color name="vf_text_muted">#71717A</color>
+    
+    <!-- Console / Telemetry (Deep matte background & calm monospace text) -->
+    <color name="vf_console_bg">#0C0C0E</color>
+    <color name="vf_console_text">#D4D4D8</color>
+    <color name="ic_launcher_background">#101012</color>
+
+    <!-- Brand Emblem Vectors -->
+    <color name="vf_brand_shield">#E4E4E7</color>
+    <color name="vf_brand_inner">#1E1E24</color>
 </resources>

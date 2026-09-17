@@ -73,9 +73,10 @@ cover/
 *.y4m
 calibration/data/raw/
 calibration/data/distorted/
-temp_test_videos/
-*_veilframe*
-*_sanitized*
+# Scratch test outputs (scoped to extension to prevent ignoring code/assets)
+*_veilframe.*
+*_sanitized.*
+!android/app/src/main/res/drawable/ic_veilframe_brand.xml
 
 # Bundled binaries
 resources/ffmpeg/
