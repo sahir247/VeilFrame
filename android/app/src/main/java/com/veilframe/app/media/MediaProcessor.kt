@@ -115,7 +115,7 @@ object VideoProcessor {
         val trimStartSec = editState.trimStartSeconds
         val trimDurationSec = editState.trimmedDurationSeconds
 
-        val targetSizeMb = outputConfig.targetMb ?: when (outputConfig.targetPreset) {
+        val targetSizeMb: Double? = outputConfig.targetMb?.toDouble() ?: when (outputConfig.targetPreset) {
             "WhatsApp (16 MB)" -> 16.0
             "Discord (25 MB)" -> 25.0
             "Discord Nitro (50 MB)" -> 50.0

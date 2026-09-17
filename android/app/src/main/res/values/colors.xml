@@ -32,6 +32,7 @@
     <!-- Info / Neutral: Steel blue -->
     <color name="vf_status_info">#2B6CB0</color>
     <color name="vf_status_info_bg">#EBF8FF</color>
+    <color name="vf_accent_blue">#2B6CB0</color>
     
     <!-- Text Hierarchy -->
     <color name="vf_text_primary">#09090B</color>
