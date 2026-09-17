@@ -13,12 +13,13 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/vf_surface"
-        app:elevation="4dp">
+        android:fitsSystemWindows="true"
+        app:elevation="2dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="56dp"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
             app:contentInsetStart="0dp"
@@ -32,11 +33,11 @@
 
                 <ImageView
                     android:id="@+id/imgBrandLogo"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
                     android:layout_marginEnd="12dp"
                     android:src="@drawable/ic_veilframe_brand"
-                    android:contentDescription="VeilFrame Shield Logo" />
+                    android:contentDescription="VeilFrame Brand Logo" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -47,19 +48,18 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="VEILFRAME"
+                        android:text="VeilFrame"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:letterSpacing="0.08" />
+                        android:letterSpacing="0.04" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="PRIVACY FORENSICS &amp; AI BUNDLER"
-                        android:textColor="@color/vf_primary"
-                        android:textSize="9sp"
-                        android:letterSpacing="0.06" />
+                        android:text="Privacy Forensics &amp; AI Bundler"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="10sp" />
                 </LinearLayout>
 
                 <TextView
@@ -79,13 +79,13 @@
         </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Scrollable Vertical Content -->
+    <!-- Scrollable Vertical Content with Safe Area Bottom Inset -->
     <androidx.core.widget.NestedScrollView
         android:id="@+id/nestedScrollMain"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true"
-        android:paddingBottom="100dp"
+        android:paddingBottom="160dp"
         android:clipToPadding="false"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
@@ -95,70 +95,67 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- 1. Engine Mode Selector (SVG Icons, No Emojis) -->
+            <!-- 1. Mode Selector -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="SELECT ENGINE MODE"
-                android:textColor="@color/vf_primary"
-                android:textSize="11sp"
+                android:text="Engine Mode"
+                android:textColor="@color/vf_text_secondary"
+                android:textSize="12sp"
                 android:textStyle="bold"
-                android:letterSpacing="0.08"
-                android:layout_marginBottom="6dp" />
+                android:letterSpacing="0.04"
+                android:layout_marginBottom="8dp" />
 
-            <HorizontalScrollView
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupMode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:scrollbars="none"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="14dp"
+                app:singleLine="false"
+                app:chipSpacingHorizontal="8dp"
+                app:chipSpacingVertical="6dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupMode"
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipModeAi"
+                    style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:singleSelection="true"
-                    app:selectionRequired="true">
+                    android:checked="true"
+                    android:text="AI Bundle"
+                    app:chipIcon="@drawable/ic_tab_bundle"
+                    app:chipIconTint="@color/vf_text_primary" />
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeAi"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="AI Bundle"
-                        app:chipIcon="@drawable/ic_tab_bundle"
-                        app:chipIconTint="@color/vf_primary" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipModeVideo"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Video Cleaner"
+                    app:chipIcon="@drawable/ic_tab_video"
+                    app:chipIconTint="@color/vf_text_primary" />
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeVideo"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Video Cleaner"
-                        app:chipIcon="@drawable/ic_tab_video"
-                        app:chipIconTint="@color/vf_primary" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipModeImage"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Image Cleaner"
+                    app:chipIcon="@drawable/ic_tab_image"
+                    app:chipIconTint="@color/vf_text_primary" />
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeImage"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Image Cleaner"
-                        app:chipIcon="@drawable/ic_tab_image"
-                        app:chipIconTint="@color/vf_primary" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipModeFolder"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Folder Scanner"
+                    app:chipIcon="@drawable/ic_tab_folder"
+                    app:chipIconTint="@color/vf_text_primary" />
+            </com.google.android.material.chip.ChipGroup>
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeFolder"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Folder Scanner"
-                        app:chipIcon="@drawable/ic_tab_folder"
-                        app:chipIconTint="@color/vf_primary" />
-                </com.google.android.material.chip.ChipGroup>
-            </HorizontalScrollView>
-
-            <!-- 2. Target File / Directory Picker Card -->
+            <!-- 2. Target Selection Card -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -178,18 +175,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
 
                         <TextView
                             android:id="@+id/tvTargetHeader"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="TARGET SELECTION"
+                            android:text="Target Selection"
                             android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.05" />
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnClearTarget"
@@ -198,29 +195,47 @@
                             android:layout_height="32dp"
                             android:paddingStart="8dp"
                             android:paddingEnd="8dp"
-                            android:text="CLEAR"
+                            android:text="Clear"
                             android:textColor="@color/vf_text_muted"
                             android:textSize="11sp"
+                            android:enabled="false"
                             app:icon="@drawable/ic_action_clear"
                             app:iconSize="14dp"
                             app:iconTint="@color/vf_text_muted" />
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/tvSelectedPath"
+                    <!-- Selected Target Details Box -->
+                    <LinearLayout
+                        android:id="@+id/layoutTargetBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:layout_marginBottom="12dp"
+                        android:orientation="vertical"
                         android:background="@color/vf_surface_variant"
                         android:padding="10dp"
-                        android:text="No file or folder selected"
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="12sp"
-                        android:fontFamily="monospace"
-                        android:maxLines="2"
-                        android:ellipsize="middle" />
+                        android:layout_marginBottom="10dp">
 
+                        <TextView
+                            android:id="@+id/tvSelectedPath"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="No file or folder selected"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="13sp"
+                            android:fontFamily="monospace"
+                            android:maxLines="2"
+                            android:ellipsize="middle" />
+
+                        <TextView
+                            android:id="@+id/tvTargetDetails"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Select a target to begin processing"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <!-- Pick Buttons (Standardized Terminology) -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -229,10 +244,10 @@
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnPickFolder"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                            android:layout_height="44dp"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
-                            android:text="SELECT FOLDER"
+                            android:text="Select Folder"
                             android:textSize="12sp"
                             android:textColor="@color/vf_on_primary"
                             app:icon="@drawable/ic_folder_pick"
@@ -245,22 +260,31 @@
                             android:id="@+id/btnPickFile"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                            android:layout_height="44dp"
                             android:layout_weight="1"
                             android:layout_marginStart="6dp"
-                            android:text="SELECT FILE"
+                            android:text="Select File"
                             android:textSize="12sp"
-                            android:textColor="@color/vf_primary"
+                            android:textColor="@color/vf_text_primary"
                             app:icon="@drawable/ic_file_pick"
-                            app:iconTint="@color/vf_primary"
+                            app:iconTint="@color/vf_text_primary"
                             app:iconSize="16dp"
-                            app:strokeColor="@color/vf_primary"
+                            app:strokeColor="@color/vf_surface_stroke"
                             app:cornerRadius="8dp" />
                     </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvPickerHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="All supported files in this folder will be processed."
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="10sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 3. Engine Parameters Card (Adapts to Selected Mode) -->
+            <!-- 3. Adaptive Configuration Card -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -280,175 +304,279 @@
                         android:id="@+id/tvParamHeader"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="BUNDLE CONFIGURATION"
+                        android:text="Configuration"
                         android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
+                        android:textSize="12sp"
                         android:textStyle="bold"
-                        android:letterSpacing="0.05"
-                        android:layout_marginBottom="8dp" />
+                        android:layout_marginBottom="10dp" />
 
-                    <!-- Section A: Primary Selector (Budget in AI mode, Noise in Video, Format in Image, Mode in Folder) -->
+                    <!-- Section A: Primary Option Group -->
                     <TextView
                         android:id="@+id/tvPrimaryOptionLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Token Budget Limit:"
+                        android:text="Token Budget Ceiling"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
-                        android:layout_marginBottom="4dp" />
+                        android:textStyle="bold" />
 
-                    <HorizontalScrollView
-                        android:id="@+id/scrollPrimaryOptions"
+                    <TextView
+                        android:id="@+id/tvPrimaryOptionDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Controls maximum context capacity for LLM consumption."
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="6dp" />
+
+                    <!-- Wrapping ChipGroup: Eliminates Horizontal Overflow -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupPrimaryOptions"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:scrollbars="none"
-                        android:layout_marginBottom="10dp">
+                        android:layout_marginBottom="14dp"
+                        app:singleLine="false"
+                        app:chipSpacingHorizontal="8dp"
+                        app:chipSpacingVertical="6dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
 
-                        <com.google.android.material.chip.ChipGroup
-                            android:id="@+id/chipGroupPrimaryOptions"
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipOption1"
+                            style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:singleSelection="true"
-                            app:selectionRequired="true">
+                            android:text="32K" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipOption1"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="32,000" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipOption2"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="64K" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipOption2"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="64,000" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipOption3"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="128K" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipOption3"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="128,000" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipOption4"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="200K" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipOption4"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text="200,000" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipOption5"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Unlimited" />
+                    </com.google.android.material.chip.ChipGroup>
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipOption5"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Unlimited" />
-                        </com.google.android.material.chip.ChipGroup>
-                    </HorizontalScrollView>
-
-                    <!-- Section B: Export Format Selector (Multiformat Export) -->
+                    <!-- Section B: Format Selector -->
                     <TextView
                         android:id="@+id/tvFormatLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Export Format Target:"
+                        android:text="Output Format"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
-                        android:layout_marginBottom="4dp" />
+                        android:textStyle="bold" />
 
-                    <HorizontalScrollView
-                        android:id="@+id/scrollFormatOptions"
+                    <TextView
+                        android:id="@+id/tvFormatDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Choose the artifact format to produce."
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="6dp" />
+
+                    <!-- Wrapping ChipGroup: Eliminates Horizontal Overflow -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupFormat"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:scrollbars="none"
-                        android:layout_marginBottom="12dp">
+                        android:layout_marginBottom="14dp"
+                        app:singleLine="false"
+                        app:chipSpacingHorizontal="8dp"
+                        app:chipSpacingVertical="6dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
 
-                        <com.google.android.material.chip.ChipGroup
-                            android:id="@+id/chipGroupFormat"
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat1"
+                            style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:singleSelection="true"
-                            app:selectionRequired="true">
+                            android:checked="true"
+                            android:text=".aibundle" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat1"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text=".aibundle" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat2"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Markdown" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat2"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Markdown (.md)" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat3"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="JSON" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat3"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="JSON (.json)" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat4"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ZIP Archive" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat4"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="ZIP Archive (.zip)" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat5"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="HTML Report" />
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat5"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="HTML (.html)" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormat6"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Plain Text" />
+                    </com.google.android.material.chip.ChipGroup>
 
-                            <com.google.android.material.chip.Chip
-                                android:id="@+id/chipFormat6"
-                                style="@style/Widget.Material3.Chip.Filter"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Plain Text (.txt)" />
-                        </com.google.android.material.chip.ChipGroup>
-                    </HorizontalScrollView>
-
-                    <!-- Section C: Feature Switches -->
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switchParam1"
+                    <!-- Section C: Granular Feature Switches with Descriptions -->
+                    <LinearLayout
+                        android:id="@+id/rowSwitch1"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="Mask potential secrets &amp; tokens"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="12sp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switchParam2"
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvSwitch1Title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Mask potential secrets &amp; tokens"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvSwitch1Desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Redacts API keys, credentials, and tokens"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switchParam1"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/rowSwitch2"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:checked="false"
-                        android:text="Exclude automated test suites"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="12sp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switchParam3"
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvSwitch2Title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Exclude automated test suites"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvSwitch2Desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Conserves budget by omitting unit and mock tests"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switchParam2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/rowSwitch3"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="Strip camera model &amp; GPS location"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="12sp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvSwitch3Title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Compress dependency lockfiles"
+                                android:textColor="@color/vf_text_primary"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvSwitch3Desc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Summarizes lockfiles without raw checksum noise"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switchParam3"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 4. Interactive Execution Telemetry & Console -->
+            <!-- 4. Interactive Execution Telemetry & Forensic Console -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -475,13 +603,11 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="EXECUTION TELEMETRY"
+                            android:text="Execution Telemetry"
                             android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.05" />
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
 
-                        <!-- Interactive Toolbar for Telemetry -->
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnCopyLogs"
                             style="@style/Widget.Material3.Button.TextButton"
@@ -490,8 +616,9 @@
                             android:padding="0dp"
                             app:icon="@drawable/ic_action_copy"
                             app:iconSize="16dp"
-                            app:iconTint="@color/vf_text_muted"
-                            android:contentDescription="Copy Logs" />
+                            app:iconTint="@color/vf_text_secondary"
+                            android:contentDescription="Copy Logs to Clipboard"
+                            android:tooltipText="Copy Logs" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnClearLogs"
@@ -501,8 +628,9 @@
                             android:padding="0dp"
                             app:icon="@drawable/ic_action_clear"
                             app:iconSize="16dp"
-                            app:iconTint="@color/vf_text_muted"
-                            android:contentDescription="Clear Console" />
+                            app:iconTint="@color/vf_text_secondary"
+                            android:contentDescription="Clear Console Logs"
+                            android:tooltipText="Clear Logs" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnExpandLogs"
@@ -512,8 +640,9 @@
                             android:padding="0dp"
                             app:icon="@drawable/ic_action_expand"
                             app:iconSize="16dp"
-                            app:iconTint="@color/vf_text_muted"
-                            android:contentDescription="Toggle Full Height" />
+                            app:iconTint="@color/vf_text_secondary"
+                            android:contentDescription="Toggle Terminal Height"
+                            android:tooltipText="Toggle Height" />
 
                         <TextView
                             android:id="@+id/tvPhaseBadge"
@@ -526,7 +655,7 @@
                             android:paddingTop="2dp"
                             android:paddingBottom="2dp"
                             android:text="IDLE"
-                            android:textColor="@color/vf_primary"
+                            android:textColor="@color/vf_secondary"
                             android:textSize="10sp"
                             android:textStyle="bold" />
                     </LinearLayout>
@@ -549,7 +678,7 @@
                         android:textSize="12sp"
                         android:layout_marginBottom="8dp" />
 
-                    <!-- Scrollable Telemetry Container -->
+                    <!-- Detailed Forensic Terminal -->
                     <androidx.core.widget.NestedScrollView
                         android:id="@+id/scrollConsole"
                         android:layout_width="match_parent"
@@ -563,7 +692,7 @@
                             android:layout_height="wrap_content"
                             android:fontFamily="monospace"
                             android:padding="10dp"
-                            android:text="[INFO] VeilFrame Mobile Engine initialized.\n[INFO] Ready for execution."
+                            android:text="[SYS] VeilFrame Core 2.2.1 initialized\n[SYS] Ready."
                             android:textColor="@color/vf_console_text"
                             android:textSize="10sp" />
                     </androidx.core.widget.NestedScrollView>
@@ -573,7 +702,7 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
-    <!-- Bottom Sticky Action Dock (Portrait Optimized) -->
+    <!-- 2-Tier Sticky Bottom Action Dock: Guaranteed No Text Wrap -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottomActionDock"
         android:layout_width="match_parent"
@@ -588,57 +717,68 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="12dp">
+            android:orientation="vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="12dp">
 
+            <!-- Tier 1: Full-Width Primary Action Button (Never wraps or clips!) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnExecute"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_weight="1.8"
-                android:layout_marginEnd="6dp"
-                android:text="GENERATE BUNDLE"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginBottom="8dp"
+                android:text="Generate AI Bundle"
                 android:textColor="@color/vf_on_primary"
-                android:textSize="12sp"
+                android:textSize="13sp"
                 android:textStyle="bold"
                 app:icon="@drawable/ic_action_play"
                 app:iconTint="@color/vf_on_primary"
                 app:iconSize="16dp"
                 app:backgroundTint="@color/vf_primary"
-                app:cornerRadius="10dp" />
+                app:cornerRadius="8dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnExportResult"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_weight="1.2"
-                android:layout_marginEnd="6dp"
-                android:text="EXPORT"
-                android:textColor="@color/vf_primary"
-                android:textSize="12sp"
-                android:enabled="false"
-                app:icon="@drawable/ic_action_save"
-                app:iconTint="@color/vf_primary"
-                app:iconSize="16dp"
-                app:strokeColor="@color/vf_primary"
-                app:cornerRadius="10dp" />
+            <!-- Tier 2: 50/50 Balanced Secondary Actions Row (Ample ~170dp width each!) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnShareResult"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_weight="1"
-                android:text="SHARE"
-                android:textColor="@color/vf_text_primary"
-                android:textSize="12sp"
-                android:enabled="false"
-                app:icon="@drawable/ic_action_share"
-                app:iconTint="@color/vf_text_primary"
-                app:iconSize="16dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:cornerRadius="10dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnExportResult"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="5dp"
+                    android:text="Save Result"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="12sp"
+                    android:enabled="false"
+                    app:icon="@drawable/ic_action_save"
+                    app:iconTint="@color/vf_text_primary"
+                    app:iconSize="16dp"
+                    app:strokeColor="@color/vf_surface_stroke"
+                    app:cornerRadius="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnShareResult"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="5dp"
+                    android:text="Share"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="12sp"
+                    android:enabled="false"
+                    app:icon="@drawable/ic_action_share"
+                    app:iconTint="@color/vf_text_primary"
+                    app:iconSize="16dp"
+                    app:strokeColor="@color/vf_surface_stroke"
+                    app:cornerRadius="8dp" />
+            </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
