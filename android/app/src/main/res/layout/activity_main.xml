@@ -1002,9 +1002,6 @@
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                                 android:id="@+id/btnPickFolder"
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
@@ -1017,7 +1014,9 @@
                                 android:text="Select Folder"
                                 android:textColor="@color/vf_primary"
                                 android:textSize="11sp"
-                                android:maxLines="2"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
                                 app:backgroundTint="@color/vf_surface_variant"
                                 app:cornerRadius="8dp"
                                 app:icon="@drawable/ic_folder_pick"
@@ -1026,9 +1025,6 @@
                                 app:iconTint="@color/vf_primary" />
 
                             <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                                 android:id="@+id/btnPickFile"
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
@@ -1041,7 +1037,9 @@
                                 android:text="Select File"
                                 android:textColor="@color/vf_primary"
                                 android:textSize="11sp"
-                                android:maxLines="2"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
                                 app:backgroundTint="@color/vf_surface_variant"
                                 app:cornerRadius="8dp"
                                 app:icon="@drawable/ic_file_pick"
