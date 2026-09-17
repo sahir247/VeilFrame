@@ -81,9 +81,18 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
     // Full Mobile FFmpegKit with all audio/video codecs
-    implementation("com.arthenica.ffmpegkit:ffmpeg-kit-full:6.0-2")
+    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if ((requested.group == "com.arthenica" || requested.group == "com.arthenica.ffmpegkit") && requested.name.startsWith("ffmpeg-kit")) {
+            useTarget("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
+            because("com.arthenica artifacts were sunset on Maven Central and migrated to dev.ffmpegkit-maintained")
+        }
+    }
 }
