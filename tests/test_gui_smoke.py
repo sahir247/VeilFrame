@@ -39,10 +39,19 @@ class TestGuiSmoke(unittest.TestCase):
         self.assertIsNotNone(window.folder_panel)
         self.assertIsNotNone(window.processing_panel)
         self.assertIsNotNone(window.image_processing_panel)
+        self.assertIsNotNone(window.compressor_panel)
 
-        # Verify 4-mode switcher state machine
+        # Verify 5-mode switcher state machine
+        window._set_mode("compress")
+        self.assertEqual(window.current_mode, "compress")
+        self.assertFalse(window.compressor_panel.isHidden())
+        self.assertTrue(window.folder_panel.isHidden())
+        self.assertTrue(window.processing_panel.isHidden())
+        self.assertTrue(window.image_processing_panel.isHidden())
+
         window._set_mode("ai")
         self.assertEqual(window.current_mode, "ai")
+        self.assertTrue(window.compressor_panel.isHidden())
         self.assertFalse(window.folder_panel.isHidden())
         self.assertTrue(window.processing_panel.isHidden())
         self.assertTrue(window.image_processing_panel.isHidden())
@@ -52,6 +61,7 @@ class TestGuiSmoke(unittest.TestCase):
 
         window._set_mode("folder")
         self.assertEqual(window.current_mode, "folder")
+        self.assertTrue(window.compressor_panel.isHidden())
         self.assertFalse(window.folder_panel.isHidden())
         self.assertTrue(window.processing_panel.isHidden())
         self.assertTrue(window.image_processing_panel.isHidden())
@@ -60,12 +70,14 @@ class TestGuiSmoke(unittest.TestCase):
 
         window._set_mode("image")
         self.assertEqual(window.current_mode, "image")
+        self.assertTrue(window.compressor_panel.isHidden())
         self.assertTrue(window.folder_panel.isHidden())
         self.assertTrue(window.processing_panel.isHidden())
         self.assertFalse(window.image_processing_panel.isHidden())
 
         window._set_mode("video")
         self.assertEqual(window.current_mode, "video")
+        self.assertTrue(window.compressor_panel.isHidden())
         self.assertTrue(window.folder_panel.isHidden())
         self.assertFalse(window.processing_panel.isHidden())
         self.assertTrue(window.image_processing_panel.isHidden())

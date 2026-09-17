@@ -159,6 +159,43 @@ class TestVeilFrameCLI(unittest.TestCase):
         with patch("builtins.input", return_value="n"):
             self.assertFalse(prompt_confirm("Confirm operation"))
 
+    def test_cli_image_compress_json(self):
+        import sys
+        from PIL import Image
+        img_p = self.temp_dir / "cli_sample.jpg"
+        Image.new("RGB", (100, 100), color="blue").save(img_p)
+
+        out_img = self.temp_dir / "cli_out.jpg"
+        res = subprocess.run(
+            [
+                sys.executable, "-m", "veilframe.cli", "image", "compress",
+                str(img_p), "-o", str(out_img), "-q", "70", "--json"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res.returncode, 0)
+        data = json.loads(res.stdout)
+        self.assertIn("savings_percent", data)
+        self.assertTrue(out_img.exists())
+
+    def test_cli_video_compress_trim_json(self):
+        import sys
+        out_vid = self.temp_dir / "cli_out_trimmed.mp4"
+        res = subprocess.run(
+            [
+                sys.executable, "-m", "veilframe.cli", "video", "compress",
+                str(self.ref_video), "-o", str(out_vid), "--trim-start", "0.2", "--trim-end", "0.8", "--json"
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(res.returncode, 0)
+        data = json.loads(res.stdout)
+        self.assertIn("duration", data)
+        self.assertTrue(out_vid.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
+

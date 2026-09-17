@@ -72,7 +72,7 @@
                     android:paddingEnd="8dp"
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
-                    android:text="v2.2.3"
+                    android:text="v2.2.4"
                     android:textColor="@color/vf_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
@@ -486,6 +486,130 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Tool 5: Image Studio & Compressor -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolImageStudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="12dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_crop"
+                        android:contentDescription="Image Studio Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IMAGE STUDIO &amp; COMPRESSOR"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Crop, resize, rotate, color filter presets, EXIF editing, and deep compression."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Image Studio"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 6: Video Studio & Visual Trimmer -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolVideoStudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="12dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_trim"
+                        android:contentDescription="Video Studio Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="VIDEO STUDIO &amp; TRIMMER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Visual timeline trimmer (anywhere in video), resolution scaling, speed, and size constraints."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Video Studio"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Core Capabilities -->
             <TextView
                 android:layout_width="wrap_content"
@@ -628,7 +752,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Installed: v2.2.3 • Local Engine"
+                                android:text="Installed: v2.2.4 • Local Engine"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>
@@ -666,7 +790,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.3"
+                android:text="WHAT'S NEW IN v2.2.4"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
@@ -691,7 +815,7 @@
                         android:id="@+id/tvWhatsNewContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Adaptive Mobile Reports: Responsive tables &amp; directories on Android\n• Real Target Path: User folder displayed without cache leakage\n• State-Aware Affordance: High contrast feedback for selected options\n• Zero-Clipping Buttons: Responsive wrapping action controls\n• Light/Dark Mode: Dynamic DayNight theme toggle\n• Dynamic Changelog: Real-time update notes fetched from GitHub"
+                        android:text="• Pure V2/V3 APK Signing: Compliant Android Signature Scheme v2/v3\n• Mobile Image Studio: Smart compression, crop, resize &amp; EXIF scrub\n• Mobile Video Compressor: Timeline visual range trimmer &amp; presets\n• Target Profiles: Web, Discord, Email &amp; WhatsApp compression targets\n• Release Integrity: Zero unsigned fallbacks and verified minSdk 26"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:lineSpacingExtra="5dp" />
@@ -1591,6 +1715,20 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- ================================================================= -->
+    <!-- 4. IMAGE STUDIO WORKSPACE                                         -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutImageStudio"
+        layout="@layout/layout_image_studio" />
+
+    <!-- ================================================================= -->
+    <!-- 5. VIDEO STUDIO WORKSPACE (Visual Trimmer & Video Compressor)     -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutVideoStudio"
+        layout="@layout/layout_video_studio" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->

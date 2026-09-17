@@ -32,9 +32,11 @@ from ..image.pipeline import ImagePrivacyPipeline, ImageSanitizationResult
 from ..image.models.policy import ImagePrivacyPolicy
 from ..image.models.status import CheckStatus
 
+from .. import __version__
 from .video_info import VideoInfoWidget
 from .image_panel import ImageInfoWidget, ImageProcessingPanel
 from .folder_panel import FolderAnalyzerPanel
+from .compressor_panel import MediaCompressorPanel
 from .processing_panel import ProcessingPanel
 from .report_view import ReportViewWidget
 from .preview_dialog import PreviewDialog
@@ -290,7 +292,7 @@ class ProviderStatusBar(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VeilFrame v2.0 — Auditable Multimedia Privacy Compiler")
+        self.setWindowTitle(f"VeilFrame v{__version__} — Auditable Multimedia Privacy Compiler & Media Studio")
         self.resize(1000, 960)
         self.setMinimumSize(840, 720)
 
@@ -331,7 +333,7 @@ class MainWindow(QMainWindow):
             "font-size: 18px; font-weight: 900; letter-spacing: 3px;"
             " color: #d8d8d8; background: transparent;"
         )
-        subtitle_lbl = QLabel("Auditable Multimedia Privacy Compiler  v2.0")
+        subtitle_lbl = QLabel(f"Auditable Multimedia Privacy Compiler & Media Studio  v{__version__}")
         subtitle_lbl.setStyleSheet(
             "font-size: 11px; color: #555555; letter-spacing: 0.3px; background: transparent;"
         )
@@ -359,6 +361,12 @@ class MainWindow(QMainWindow):
         self.btn_mode_image.clicked.connect(lambda: self._set_mode("image"))
         mode_lay.addWidget(self.btn_mode_image)
 
+        self.btn_mode_compress = QPushButton("Media Compressor")
+        self.btn_mode_compress.setCheckable(True)
+        self.btn_mode_compress.setChecked(False)
+        self.btn_mode_compress.clicked.connect(lambda: self._set_mode("compress"))
+        mode_lay.addWidget(self.btn_mode_compress)
+
         self.btn_mode_folder = QPushButton("Folder Analyzer")
         self.btn_mode_folder.setCheckable(True)
         self.btn_mode_folder.setChecked(False)
@@ -376,6 +384,7 @@ class MainWindow(QMainWindow):
         self._mode_btn_group.setExclusive(True)
         self._mode_btn_group.addButton(self.btn_mode_video)
         self._mode_btn_group.addButton(self.btn_mode_image)
+        self._mode_btn_group.addButton(self.btn_mode_compress)
         self._mode_btn_group.addButton(self.btn_mode_folder)
         self._mode_btn_group.addButton(self.btn_mode_ai)
 
@@ -438,7 +447,12 @@ class MainWindow(QMainWindow):
         self.folder_panel.hide()
         content_lay.addWidget(self.folder_panel)
 
-        # 6. Report view
+        # 6. Media Compressor Panel
+        self.compressor_panel = MediaCompressorPanel()
+        self.compressor_panel.hide()
+        content_lay.addWidget(self.compressor_panel)
+
+        # 7. Report view
         self.report_widget = ReportViewWidget()
         content_lay.addWidget(self.report_widget)
 
@@ -518,6 +532,7 @@ class MainWindow(QMainWindow):
 
         self.btn_mode_video.setChecked(mode == "video")
         self.btn_mode_image.setChecked(mode == "image")
+        self.btn_mode_compress.setChecked(mode == "compress")
         self.btn_mode_folder.setChecked(mode == "folder")
         self.btn_mode_ai.setChecked(mode == "ai")
 
@@ -532,10 +547,26 @@ class MainWindow(QMainWindow):
 
         self.btn_mode_video.setStyleSheet(_active_style if mode == "video" else _inactive_style)
         self.btn_mode_image.setStyleSheet(_active_style if mode == "image" else _inactive_style)
+        self.btn_mode_compress.setStyleSheet(_active_style if mode == "compress" else _inactive_style)
         self.btn_mode_folder.setStyleSheet(_active_style if mode == "folder" else _inactive_style)
         self.btn_mode_ai.setStyleSheet(_active_style if mode == "ai" else _inactive_style)
 
-        if mode in ("folder", "ai"):
+        if mode == "compress":
+            self.drop_zone.hide()
+            self.provider_bar.hide()
+            self.video_info_widget.hide()
+            self.processing_panel.hide()
+            self.image_info_widget.hide()
+            self.image_processing_panel.hide()
+            self.report_widget.hide()
+            self.folder_panel.hide()
+            self.compressor_panel.show()
+            self.btn_process.hide()
+            self.btn_cancel.hide()
+            self.progress_bar.hide()
+            self.lbl_status.setText("Media Compressor active — select a video or image file to compress, trim, or downscale.")
+        elif mode in ("folder", "ai"):
+            self.compressor_panel.hide()
             self.drop_zone.hide()
             self.provider_bar.hide()
             self.video_info_widget.hide()
@@ -554,6 +585,7 @@ class MainWindow(QMainWindow):
                 self.folder_panel.set_ai_mode(False)
                 self.lbl_status.setText("Folder Analyzer mode active — select a directory to scan.")
         elif mode == "image":
+            self.compressor_panel.hide()
             self.folder_panel.hide()
             self.drop_zone.show()
             self.drop_zone.set_mode_hint(True)
@@ -567,6 +599,7 @@ class MainWindow(QMainWindow):
             self.btn_process.setText("SANITIZE IMAGE & VERIFY")
             self.lbl_status.setText("Ready — load an image file to begin.")
         else:  # video
+            self.compressor_panel.hide()
             self.folder_panel.hide()
             self.drop_zone.show()
             self.drop_zone.set_mode_hint(False)

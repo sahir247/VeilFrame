@@ -515,7 +515,9 @@ VeilFrame offers both a modern terminal CLI and a 4-mode desktop GUI built on Py
 
 ### Command-Line Interface (`veilframe`)
 - `veilframe sanitize <video> -o <output>`: Multi-pass video sanitization with quality gate audit.
+- `veilframe video compress <video> [opts]`: Precision video compression, visual range timeline trimmer, and platform size presets.
 - `veilframe image sanitize <image> -o <output>`: Deterministic image privacy compilation.
+- `veilframe image compress <image> [opts]`: Smart image quality compression, Lanczos resize, EXIF scrub, rotation, and color filters.
 - `veilframe image verify <image> <manifest.json>`: Cryptographic image provenance verification.
 - `veilframe image inspect <image>`: Deep inspection of container tags, thumbnails, and bit depths.
 - `veilframe image doctor`: System diagnostics for image backends, neural detectors, and OCR engines.
@@ -529,6 +531,35 @@ VeilFrame offers both a modern terminal CLI and a 4-mode desktop GUI built on Py
 - `veilframe verify <manifest.json>`: Standalone Ed25519 signature and SHA-256 bitstream verification.
 - `veilframe doctor`: Video environment and hardware encoder diagnostics.
 - `veilframe presets`: Inspection of transformation presets and policy budgets.
+
+---
+
+## Media Compression & Studio Subsystems (v2.2.4 Architecture)
+
+The media compression subsystem (`veilframe.core.media_compressor`) exposes high-performance compression and editing pipelines with 100% unified parity across Desktop GUI, CLI, and Android Chaquopy runtime:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    MEDIA COMPRESSION & STUDIO SUBSYSTEM                    │
+├──────────────────────────────────────┬─────────────────────────────────────┤
+│        VIDEO COMPRESSOR STUDIO       │        IMAGE COMPRESSOR STUDIO      │
+│                                      │                                     │
+│ • Precision Timeline Range Trimmer   │ • Continuous Quality Slider (1-100%)│
+│   Fast-seek arbitrary start/end      │ • Dimension Lanczos Grid Resampling │
+│ • Platform Target Bitrate Allocators │ • Aspect Ratio Center Cropping      │
+│   (WhatsApp 16MB, Discord 25MB,      │ • Vectorized NumPy Color Grading    │
+│    Email 8MB, Web 10MB)              │ • Zero-Leakage EXIF/GPS Scrubbing   │
+│ • Lanczos Resolution Resampling      │ • Lossless 90°/180°/270° Rotation   │
+│ • 9:16 Vertical Reel/Shorts Cropping │ • Multi-Format Encoding             │
+│ • 0.5x–2.0x Synchronized Speed/Pitch │   (JPEG, PNG, WebP)                 │
+│ • Audio Track Stripping / AAC 128k   │                                     │
+└──────────────────────────────────────┴─────────────────────────────────────┘
+```
+
+1. **Precision Range Trimming:** Employs two-phase fast keyframe seeking (`-ss` before `-i`) combined with exact output clamping (`-to`), eliminating decode lag and drift.
+2. **Target Bitrate Allocation:** Calculates video bitrates using explicit audio overhead budgets and byte safety margins:
+   $$\text{Bitrate}_{\text{target}} = \frac{\text{TargetBytes} \times 8 \times \text{SafetyMargin}}{\text{Duration}} - \text{AudioBitrate}$$
+3. **Android APK Signature Scheme V2/V3:** Release packaging enforces pure block-level APK Signature Scheme v2/v3, eliminating obsolete V1 JAR signing and verifying clean against `minSdkVersion 26`.
 
 ---
 

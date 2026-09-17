@@ -190,5 +190,105 @@
       "psnr_mean_min_db": 30.0,
       "psnr_worst_min_db": 25.0
     }
+  },
+  "WhatsApp (16 MB Target)": {
+    "description": "Optimizes video bitrate, audio stream, and resolution downscaling to guarantee compressed output fits within WhatsApp's 16 MB limit.",
+    "crop": { "enabled": false, "mode": "manual", "left": 0, "right": 0, "top": 0, "bottom": 0 },
+    "resize": { "enabled": true, "mode": "manual", "width": 1280, "height": 720, "maintain_aspect": true },
+    "fps": { "enabled": true, "mode": "manual", "fps": 30.0 },
+    "trim": { "enabled": false, "mode": "manual", "start": 0.0 },
+    "noise": { "enabled": false, "mode": "manual", "strength": 0 },
+    "color": { "enabled": false, "mode": "manual" },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": false, "micro_pitch": false },
+    "quantization": { "forced_gop": true, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "crf", "crf": 28, "bitrate_kbps": 2000 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": false,
+      "enforce_strict": false
+    }
+  },
+  "Discord (25 MB Target)": {
+    "description": "Optimizes video bitrate, audio, and resolution to fit within Discord's 25 MB limit.",
+    "crop": { "enabled": false, "mode": "manual", "left": 0, "right": 0, "top": 0, "bottom": 0 },
+    "resize": { "enabled": true, "mode": "manual", "width": 1920, "height": 1080, "maintain_aspect": true },
+    "fps": { "enabled": true, "mode": "manual", "fps": 30.0 },
+    "trim": { "enabled": false, "mode": "manual", "start": 0.0 },
+    "noise": { "enabled": false, "mode": "manual", "strength": 0 },
+    "color": { "enabled": false, "mode": "manual" },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": false, "micro_pitch": false },
+    "quantization": { "forced_gop": true, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "crf", "crf": 26, "bitrate_kbps": 3500 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": false,
+      "enforce_strict": false
+    }
+  },
+  "Email Attachment (8 MB Target)": {
+    "description": "Downscales to 480p and compresses video and audio stream to stay strictly under standard 8 MB email attachment limits.",
+    "crop": { "enabled": false, "mode": "manual", "left": 0, "right": 0, "top": 0, "bottom": 0 },
+    "resize": { "enabled": true, "mode": "manual", "width": 854, "height": 480, "maintain_aspect": true },
+    "fps": { "enabled": true, "mode": "manual", "fps": 25.0 },
+    "trim": { "enabled": false, "mode": "manual", "start": 0.0 },
+    "noise": { "enabled": false, "mode": "manual", "strength": 0 },
+    "color": { "enabled": false, "mode": "manual" },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": false, "micro_pitch": false },
+    "quantization": { "forced_gop": true, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "crf", "crf": 30, "bitrate_kbps": 1000 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": false,
+      "enforce_strict": false
+    }
+  },
+  "Social Reel / Shorts (9:16 Crop)": {
+    "description": "Crops video to 9:16 vertical aspect ratio for Instagram Reels, YouTube Shorts, and TikTok with audio privacy and metadata stripping.",
+    "crop": { "enabled": true, "mode": "manual", "left": 0, "right": 0, "top": 0, "bottom": 0, "aspect": "9:16" },
+    "resize": { "enabled": true, "mode": "manual", "width": 1080, "height": 1920, "maintain_aspect": true },
+    "fps": { "enabled": true, "mode": "manual", "fps": 30.0 },
+    "trim": { "enabled": false, "mode": "manual", "start": 0.0 },
+    "noise": { "enabled": false, "mode": "manual", "strength": 0 },
+    "color": { "enabled": false, "mode": "manual" },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": false, "micro_pitch": false },
+    "quantization": { "forced_gop": true, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "crf", "crf": 23, "bitrate_kbps": 6000 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": false,
+      "enforce_strict": false
+    }
   }
 }

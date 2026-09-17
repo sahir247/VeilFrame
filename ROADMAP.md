@@ -10,7 +10,15 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.3 CURRENT (Production Release)
+### v2.2.4 CURRENT (Production Release)
+- **APK Signature Scheme V2/V3**: Exclusively uses V2/V3 block-level signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification failures.
+- **Strict Release Pipeline Integrity**: Build pipeline rejects unsigned APK fallbacks and validates release signatures against actual `minSdkVersion 26`.
+- **Mobile Image Studio**: Comprehensive mobile image editing studio with smart compression, aspect-ratio cropping, custom scaling, EXIF scrubbing, artistic color grading, and lossless rotation.
+- **Mobile Video Compressor**: Interactive video compression suite featuring visual timeline range trimming (with dual-thumb controls for arbitrary span selection), platform target presets, resolution scaling, and playback speed adjustment.
+- **Target Compression Profiles**: Preconfigured compression targets for Web, Discord, Email, and WhatsApp with real-time target estimation.
+- **Unified Cross-Platform Core Engine**: Complete parity across Android Chaquopy runtime, desktop PySide6, and terminal CLI.
+
+### v2.2.3 (Previous Release)
 - **Status Bar Window Inset Handling**: Zero toolbar clipping under system status bars, camera cutouts, and display notches.
 - **Dedicated Release Signing Identity**: Configurable release keystore preventing package update conflicts on manual and in-app updates.
 - **In-App Updater CDN Redirect Following**: Follows multi-hop AWS S3 CDN redirects and automatically resumes install upon unknown sources authorization.

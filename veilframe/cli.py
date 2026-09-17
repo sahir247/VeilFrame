@@ -671,9 +671,66 @@ def cmd_doctor(args):
         print(f"{badge_fail('ATTENTION')} Critical prerequisites are missing. Review table above.\n")
 
 
-
 # --------------------------------------------------------------------------- #
-# Interactive TUI Wizard                                                      #
+# Command: Compress Video                                                     #
+# --------------------------------------------------------------------------- #
+def cmd_compress_video(args):
+    """Run VeilFrame video compression with timeline trimming and target presets."""
+    from veilframe.core.media_compressor import compress_video
+
+    src = Path(args.input).resolve()
+    if not src.exists():
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "FAIL", "error": f"Input file not found: {src}"}))
+        else:
+            print(f"{badge_fail()} Input video file not found: {src}")
+        sys.exit(1)
+
+    ext = (args.format or src.suffix.lstrip(".") or "mp4").lower()
+    if ext == "m4v":
+        ext = "mp4"
+    dst = Path(args.output).resolve() if args.output else src.parent / f"{src.stem}_compressed.{ext}"
+
+    try:
+        res = compress_video(
+            input_path=src,
+            output_path=dst,
+            start_time=args.trim_start,
+            end_time=args.trim_end,
+            target_size_mb=args.target_mb,
+            resolution=args.resolution,
+            crop_aspect=args.aspect,
+            speed=args.speed or 1.0,
+            audio_action=args.audio or "keep",
+            crf=args.crf if args.crf is not None else 28,
+            container_format=args.format,
+            codec=args.codec or "libx264",
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print_banner(subtitle="VeilFrame Video Studio Compression")
+            print_card(
+                "Compression Summary",
+                [
+                    ("Source File", str(src.name)),
+                    ("Output File", str(dst.name)),
+                    ("Original Size", f"{res['input_size']:,} bytes"),
+                    ("Compressed Size", f"{res['output_size']:,} bytes"),
+                    ("Data Reduction", f"-{res['savings_percent']}%"),
+                    ("Final Duration", f"{res['duration']:.2f} seconds"),
+                ],
+                color=Style.BRIGHT_GREEN,
+            )
+    except Exception as e:
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "FAIL", "error": str(e)}))
+        else:
+            print(f"{badge_fail()} Video compression failed: {e}")
+        sys.exit(1)
+
+
+
 # --------------------------------------------------------------------------- #
 # --------------------------------------------------------------------------- #
 # Interactive TUI Dashboard & Application Loop                                #
@@ -987,6 +1044,79 @@ Examples:
     try:
         from veilframe.folder.cli import add_folder_subparsers
         add_folder_subparsers(subparsers)
+    except ImportError:
+        pass
+
+    # 12. Video Compressor Studio Subsystem
+    p_vid_grp = subparsers.add_parser(
+        "video",
+        help="Video compression, precision range trimming, and dimension scaling",
+        description="Compress, trim, and optimize videos for target destinations (WhatsApp, Discord, Email).",
+    )
+    vid_sub = p_vid_grp.add_subparsers(dest="video_subcommand", required=True)
+
+    p_vid_comp = vid_sub.add_parser("compress", help="Compress video with timeline trimming, aspect ratio crop, and CRF controls")
+    p_vid_comp.add_argument("input", help="Path to input video file")
+    p_vid_comp.add_argument("-o", "--output", help="Path to output video file")
+    p_vid_comp.add_argument("--trim-start", type=float, help="Start time in seconds (e.g. 4.0)")
+    p_vid_comp.add_argument("--trim-end", type=float, help="End time in seconds (e.g. 6.0)")
+    p_vid_comp.add_argument("--target-mb", type=float, help="Target file size in MB (e.g. 16 for WhatsApp, 25 for Discord)")
+    p_vid_comp.add_argument(
+        "--resolution",
+        choices=["1080p", "720p", "480p", "360p"],
+        help="Downscale resolution preset",
+    )
+    p_vid_comp.add_argument(
+        "--aspect",
+        choices=["1:1", "9:16", "16:9", "4:3"],
+        help="Target aspect ratio crop",
+    )
+    p_vid_comp.add_argument("--speed", type=float, default=1.0, help="Playback speed multiplier (0.5 to 2.0)")
+    p_vid_comp.add_argument(
+        "--audio",
+        choices=["keep", "mute", "aac_128k", "aac_64k"],
+        default="keep",
+        help="Audio stream handling",
+    )
+    p_vid_comp.add_argument("--crf", type=int, default=28, help="Constant Rate Factor (0-51, default 28)")
+    p_vid_comp.add_argument("-f", "--format", choices=["mp4", "mkv", "webm"], default="mp4", help="Container format")
+    p_vid_comp.add_argument("--codec", choices=["libx264", "libx265"], default="libx264", help="Video codec")
+    p_vid_comp.add_argument("--json", action="store_true", help="Output results in JSON format")
+    p_vid_comp.set_defaults(func=cmd_compress_video)
+
+    # Top-level direct shortcuts
+    p_cv = subparsers.add_parser("compress-video", help="Direct shortcut: compress and trim video")
+    p_cv.add_argument("input", help="Path to input video file")
+    p_cv.add_argument("-o", "--output", help="Path to output video file")
+    p_cv.add_argument("--trim-start", type=float, help="Start time in seconds (e.g. 4.0)")
+    p_cv.add_argument("--trim-end", type=float, help="End time in seconds (e.g. 6.0)")
+    p_cv.add_argument("--target-mb", type=float, help="Target file size in MB")
+    p_cv.add_argument("--resolution", choices=["1080p", "720p", "480p", "360p"], help="Downscale resolution")
+    p_cv.add_argument("--aspect", choices=["1:1", "9:16", "16:9", "4:3"], help="Aspect ratio crop")
+    p_cv.add_argument("--speed", type=float, default=1.0, help="Speed multiplier")
+    p_cv.add_argument("--audio", choices=["keep", "mute", "aac_128k", "aac_64k"], default="keep", help="Audio mode")
+    p_cv.add_argument("--crf", type=int, default=28, help="CRF quality (default 28)")
+    p_cv.add_argument("-f", "--format", choices=["mp4", "mkv", "webm"], default="mp4", help="Container format")
+    p_cv.add_argument("--codec", choices=["libx264", "libx265"], default="libx264", help="Video codec")
+    p_cv.add_argument("--json", action="store_true", help="Output results in JSON format")
+    p_cv.set_defaults(func=cmd_compress_video)
+
+    try:
+        from veilframe.image.cli import cmd_image_compress
+        p_ci = subparsers.add_parser("compress-image", help="Direct shortcut: compress and edit image")
+        p_ci.add_argument("input", help="Path to input image file")
+        p_ci.add_argument("-o", "--output", help="Path to output image file")
+        p_ci.add_argument("-q", "--quality", type=int, default=80, help="Compression quality (1-100)")
+        p_ci.add_argument("-f", "--format", choices=["JPG", "JPEG", "PNG", "WEBP"], help="Target format")
+        p_ci.add_argument("--width", type=int, help="Target width in pixels")
+        p_ci.add_argument("--height", type=int, help="Target height in pixels")
+        p_ci.add_argument("--scale", type=float, default=1.0, help="Scaling factor")
+        p_ci.add_argument("--rotate", type=float, default=0.0, help="Rotation angle")
+        p_ci.add_argument("--filter", choices=["Default", "Grayscale", "Sepia", "Vintage", "Cool", "Warm"], default="Default")
+        p_ci.add_argument("--crop", help="Crop box as 'left,top,right,bottom'")
+        p_ci.add_argument("--keep-exif", action="store_true", help="Preserve EXIF metadata")
+        p_ci.add_argument("--json", action="store_true", help="Output in machine-readable JSON")
+        p_ci.set_defaults(func=cmd_image_compress)
     except ImportError:
         pass
 

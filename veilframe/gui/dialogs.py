@@ -42,6 +42,7 @@ def _ensure_active_qapp() -> Optional[QApplication]:
             pass
     return app
 
+from .. import __version__
 from ..core.deps_manager import (
     audit_environment,
     download_and_install_ffmpeg,
@@ -473,8 +474,8 @@ class AboutDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         _ensure_active_qapp()
         super().__init__(parent)
-        self.setWindowTitle("About VeilFrame v2.0")
-        self.resize(580, 520)
+        self.setWindowTitle(f"About VeilFrame v{__version__}")
+        self.resize(580, 540)
         self.setModal(True)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
@@ -505,7 +506,7 @@ class AboutDialog(QDialog):
         lbl_app_name.setStyleSheet("font-size: 20px; font-weight: 900; letter-spacing: 2px; color: #ffffff;")
         title_col.addWidget(lbl_app_name)
 
-        lbl_version = QLabel("Version 2.0.0 — Auditable Multimedia Privacy Compiler")
+        lbl_version = QLabel(f"Version {__version__} — Auditable Multimedia Privacy Compiler & Media Studio")
         lbl_version.setStyleSheet("font-size: 11px; color: #38bdf8; font-weight: 600;")
         title_col.addWidget(lbl_version)
 
@@ -525,9 +526,9 @@ class AboutDialog(QDialog):
 
         # Summary Description
         lbl_desc = QLabel(
-            "VeilFrame is a zero-leakage, cryptographically auditable multimedia privacy sanitizer. "
+            "VeilFrame is a zero-leakage, cryptographically auditable multimedia privacy sanitizer and media compression studio. "
             "It strips forensic metadata, destroys tracking artifacts, applies irreversible constant-fill "
-            "redactions, runs 7 adversarial red-team attack probes, and signs every output with Ed25519 digital signatures."
+            "redactions, runs 7 adversarial red-team attack probes, provides precision timeline trimming and platform presets, and signs every output with Ed25519 digital signatures."
         )
         lbl_desc.setStyleSheet("color: #cccccc; font-size: 12px; line-height: 1.4;")
         lbl_desc.setWordWrap(True)
@@ -548,6 +549,8 @@ class AboutDialog(QDialog):
             "Fail-Closed QualityGate — UNKNOWN or partial verification == QUARANTINED.",
             "Deterministic Video Pipeline — Bayer CFA PRNU dither, DCT noise, audio ENF notch.",
             "Image Privacy Compiler — Multi-layer container scrubbing & red-team probe verification.",
+            "Media Studio & Compression — Visual range trimmer, platform target presets, Lanczos scaling, and EXIF control.",
+            "Android Release Security — Verified APK Signature Scheme v2/v3 and automated multi-hop in-app updater.",
             "Cryptographic Provenance — RFC 8785 JSON manifest with Ed25519 signatures.",
         ]
         for item in items:

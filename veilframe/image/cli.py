@@ -343,3 +343,83 @@ def add_image_subparsers(subparsers) -> None:
     p_doc = img_sub.add_parser("doctor", help="Check image processing runtime dependencies")
     p_doc.add_argument("--json", action="store_true", help="Output in machine-readable JSON")
     p_doc.set_defaults(func=cmd_image_doctor)
+
+    # compress
+    p_comp = img_sub.add_parser("compress", help="Compress and edit image (crop, resize, rotate, filter, EXIF strip)")
+    p_comp.add_argument("input", help="Path to input image file")
+    p_comp.add_argument("-o", "--output", help="Path to output image file")
+    p_comp.add_argument("-q", "--quality", type=int, default=80, help="Compression quality (1-100, default 80)")
+    p_comp.add_argument("-f", "--format", choices=["JPG", "JPEG", "PNG", "WEBP"], help="Target format (JPG/PNG/WEBP)")
+    p_comp.add_argument("--width", type=int, help="Target width in pixels")
+    p_comp.add_argument("--height", type=int, help="Target height in pixels")
+    p_comp.add_argument("--scale", type=float, default=1.0, help="Scaling factor (e.g. 0.5 for 50%%)")
+    p_comp.add_argument("--rotate", type=float, default=0.0, help="Rotation angle in degrees (-180 to 180)")
+    p_comp.add_argument(
+        "--filter",
+        choices=["Default", "Grayscale", "Sepia", "Vintage", "Cool", "Warm"],
+        default="Default",
+        help="Color filter to apply",
+    )
+    p_comp.add_argument("--crop", help="Crop box as 'left,top,right,bottom'")
+    p_comp.add_argument("--keep-exif", action="store_true", help="Preserve EXIF metadata instead of scrubbing")
+    p_comp.add_argument("--json", action="store_true", help="Output in machine-readable JSON")
+    p_comp.set_defaults(func=cmd_image_compress)
+
+
+def cmd_image_compress(args) -> int:
+    """Execute image compression and editing."""
+    from ..core.media_compressor import compress_image
+    input_path = Path(args.input).resolve()
+    if not input_path.exists():
+        if args.json:
+            print(json.dumps({"status": "FAIL", "error": f"Input file not found: {input_path}"}))
+        else:
+            print(f"{CLR_RED}[ERROR]{CLR_RESET} Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    ext = (args.format or input_path.suffix.lstrip(".") or "jpg").lower()
+    if ext == "jpeg":
+        ext = "jpg"
+    if args.output:
+        output_path = Path(args.output).resolve()
+    else:
+        output_path = input_path.parent / f"{input_path.stem}_compressed.{ext}"
+
+    crop_box = None
+    if getattr(args, "crop", None):
+        try:
+            parts = [int(x.strip()) for x in args.crop.split(",")]
+            if len(parts) == 4:
+                crop_box = tuple(parts)
+        except Exception:
+            pass
+
+    try:
+        res = compress_image(
+            input_path=input_path,
+            output_path=output_path,
+            quality=args.quality,
+            format=args.format,
+            width=args.width,
+            height=args.height,
+            strip_exif=not args.keep_exif,
+            filter_name=args.filter or "default",
+            rotate_deg=args.rotate or 0.0,
+            crop_box=crop_box,
+            scale=args.scale or 1.0,
+        )
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"{CLR_GREEN}[SUCCESS]{CLR_RESET} Image compressed: {output_path}")
+            print(f"  Dimensions:  {res['dimensions'][0]}x{res['dimensions'][1]}")
+            print(f"  Input size:  {res['input_size']:,} bytes")
+            print(f"  Output size: {res['output_size']:,} bytes (-{res['savings_percent']}%)")
+        return 0
+    except Exception as e:
+        if args.json:
+            print(json.dumps({"status": "FAIL", "error": str(e)}))
+        else:
+            print(f"{CLR_RED}[ERROR]{CLR_RESET} Compression failed: {e}", file=sys.stderr)
+        return 1
+

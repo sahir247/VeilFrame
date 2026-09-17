@@ -1,23 +1,25 @@
 # VeilFrame Release Notes
 
-## v2.2.3 — September 2026
+## v2.2.4 — September 2026
 
-VeilFrame v2.2.3 is a stability, security, and usability release focused on reliable Android updates, clearer workflows, and format-preserving media sanitization.
+VeilFrame v2.2.4 introduces dedicated Mobile Image & Video Studios, visual timeline range trimming, platform-targeted compression presets, and strict APK Signature Scheme V2/V3 enforcement.
 
 ### Highlights
 
-- **Android UI reliability:** Applies edge-to-edge status-bar insets so headers, titles, and navigation controls do not clip under system UI.
-- **Reliable in-app updates:** Follows multi-hop GitHub/CDN redirects, resumes installation after the user grants install permission, and grants package-installer URI access explicitly.
-- **Safe release upgrades:** Android release builds use a dedicated signing configuration and CI-managed keystore secrets, preventing signature mismatches during updates.
-- **Format-aware batch processing:** The new **Original / Auto** option detects source containers and preserves formats across mixed video and image batches. Batch output is packaged as a structured ZIP archive.
-- **Refined workflows:** Adds a command-center launcher, three-step workflow presentation, clearer empty/mounted target states, context-aware actions, privacy-impact previews, a collapsible telemetry console, and persistent per-tool preferences.
-- **Version consistency:** Synchronizes the Python package, embedded engine, build metadata, lockfile, and Android update manifest at version `2.2.3`.
+- **Pure APK Signature Scheme V2/V3:** Release builds disable legacy V1 JAR signatures and sign exclusively with APK Signature Scheme V2/V3, resolving `META-INF/MANIFEST.MF` verification failures while maintaining full compatibility with Android 8.0+ (API 26+).
+- **Release pipeline integrity:** Eliminates unsigned APK fallbacks in build scripts and adds automated `apksigner` cryptographic verification enforcing `--min-sdk-version 26` in CI.
+- **Mobile Image Studio:** Introduces a comprehensive editing studio featuring smart quality-targeted compression, aspect-ratio cropping, dimensional scaling, complete EXIF/metadata scrubbing, artistic color grading filters, and lossless rotation.
+- **Mobile Video Compressor & Visual Trimmer:** Adds interactive visual timeline range trimming with dual-thumb controls allowing user-defined cut points anywhere in the video (e.g. trimming 4–6s out of a 10s video), target platform presets (Discord 8MB/25MB/50MB, WhatsApp 16MB, Email 25MB, Web 10MB), resolution scaling, audio stripping/transcoding, and playback speed adjustment.
+- **Target compression profiles:** Adds multi-pass bitrate calculation and dimension scaling profiles for web and social platforms with real-time target size estimation.
+- **Cross-platform CLI & core parity:** Unified `veilframe-compress` engine across desktop GUI, terminal CLI, and embedded Android Chaquopy runtime with full batch processing support.
+- **Zero deprecated identifiers:** Completely audited codebase and layouts removing legacy references and ensuring strict compliance with vector drawable standards.
+- **Version consistency:** Synchronizes all platform packaging, update manifests, build metadata, lockfiles, and core engines at version `2.2.4`.
 
 ### Upgrade notes
 
-- Existing Android installations can update in place when the APK is signed with the same production release key.
-- If Android blocks installation, enable **Install unknown apps** for the app performing the installation, then return to VeilFrame; the pending installation will resume.
-- The **Original / Auto** format option is recommended when processing individual files or directories containing mixed formats.
+- Existing Android installations upgrade seamlessly in place using the production release key with APK Signature Scheme V2/V3.
+- In-app updates automatically check `update.json` for version `2.2.4` and verify package integrity before prompting for installation.
+- Visual video trimming uses stream-copying for fast, lossless cutting or re-encodes when combined with bitrate and resolution scaling.
 
 ### Downloads and installation
 
@@ -27,7 +29,7 @@ Download the appropriate artifact from the [GitHub Releases page](https://github
 - Windows: `VeilFrame-windows-x86_64.exe`
 - Linux: `VeilFrame-linux-x86_64.deb` or `VeilFrame-linux-x86_64.tar.gz`
 - macOS Apple Silicon: `VeilFrame-macos-arm64.dmg` or `VeilFrame-macos-arm64.tar.gz`
-- Python: `veilframe-2.2.3-py3-none-any.whl`
+- Python: `veilframe-2.2.4-py3-none-any.whl`
 
 For Android sideloading:
 
@@ -38,7 +40,7 @@ adb install -r VeilFrame-android-arm64.apk
 For Python installation:
 
 ```bash
-pip install veilframe-2.2.3-py3-none-any.whl
+pip install veilframe-2.2.4-py3-none-any.whl
 ```
 
 ### Verification
@@ -54,6 +56,14 @@ Verify downloaded artifacts against the SHA-256 checksums published with the rel
 - Python 3.10+
 
 ## Previous releases
+
+### v2.2.3 — September 2026
+
+- Applied edge-to-edge status-bar insets so headers, titles, and navigation controls do not clip under system UI.
+- Improved in-app updates to follow multi-hop GitHub/CDN redirects and resume installation after permissions are granted.
+- Configured dedicated release signing identity and CI-managed keystore secrets.
+- Added format-aware batch processing preserving source containers and packaging output into structured ZIP archives.
+- Refined workflows with a command-center launcher, 3-step workflow presentation, clearer target states, context-aware actions, and collapsible telemetry console.
 
 ### v2.2.2 — September 2026
 

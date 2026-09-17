@@ -164,7 +164,7 @@ EOF
 
             cat << 'EOF' > deb_root/DEBIAN/control
 Package: veilframe
-Version: 2.2.3
+Version: 2.2.4
 Section: utils
 Priority: optional
 Architecture: amd64
@@ -244,20 +244,26 @@ do_android_apk() {
         fi
     fi
 
-    (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --console=plain assembleRelease)
+    (
+        cd "${ANDROID_DIR}"
+        ./gradlew --no-daemon --stacktrace --console=plain clean assembleRelease
+    )
 
     APK="${ANDROID_DIR}/app/build/outputs/apk/release/app-release.apk"
-    if [ ! -f "${APK}" ]; then
-        APK="${ANDROID_DIR}/app/build/outputs/apk/release/app-release-unsigned.apk"
+    UNSIGNED_APK="${ANDROID_DIR}/app/build/outputs/apk/release/app-release-unsigned.apk"
+
+    if [ -e "${UNSIGNED_APK}" ]; then
+        echo "ERROR: Gradle produced an unsigned APK instead of a signed release APK"
+        exit 1
     fi
 
     if [ ! -s "${APK}" ]; then
-        echo "ERROR: APK was not produced or is empty: ${APK}"
+        echo "ERROR: Signed release APK was not produced: ${APK}"
         exit 1
     fi
 
     cp "${APK}" dist/VeilFrame-android-arm64.apk
-    echo "✓ Android APK output ready in dist/VeilFrame-android-arm64.apk"
+    echo "✓ Android V2/V3-signed APK output ready"
 }
 
 do_android_aab() {

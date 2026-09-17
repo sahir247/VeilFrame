@@ -599,15 +599,19 @@ jobs:
       - name: Verify APK release signature
         shell: bash
         run: |
+          set -euo pipefail
+
           APK="dist/VeilFrame-android-arm64.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          if [ ! -x "$APKSIGNER" ]; then
-            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -n 1)
-          fi
 
-          echo "==> Verifying cryptographic signature with $APKSIGNER..."
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-          "$APKSIGNER" verify --verbose --min-sdk-version 23 "$APK"
+          test -s "$APK"
+          test -x "$APKSIGNER"
+
+          "$APKSIGNER" verify \
+            --verbose \
+            --print-certs \
+            --min-sdk-version 26 \
+            "$APK"
 
       - name: Stage Android Artifacts
         run: |

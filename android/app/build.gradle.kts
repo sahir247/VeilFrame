@@ -12,8 +12,8 @@ android {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 223
-        versionName = "2.2.3"
+        versionCode = 224
+        versionName = "2.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -56,6 +56,11 @@ android {
                 keyAlias = debugConfig.keyAlias
                 keyPassword = debugConfig.keyPassword
             }
+
+            // V1 is intentionally disabled.
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
