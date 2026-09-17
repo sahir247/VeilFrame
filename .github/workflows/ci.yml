@@ -596,6 +596,19 @@ jobs:
 
           exit 1
 
+      - name: Verify APK release signature
+        shell: bash
+        run: |
+          APK="dist/VeilFrame-android-arm64.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          if [ ! -x "$APKSIGNER" ]; then
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -n 1)
+          fi
+
+          echo "==> Verifying cryptographic signature with $APKSIGNER..."
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$APKSIGNER" verify --verbose --min-sdk-version 23 "$APK"
+
       - name: Stage Android Artifacts
         run: |
           mkdir -p android_artifacts
