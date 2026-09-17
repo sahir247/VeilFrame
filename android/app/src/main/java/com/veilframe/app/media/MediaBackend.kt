@@ -59,7 +59,7 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
             val py = Python.getInstance()
             val imgModule = py.getModule("veilframe.image.cleaner")
             val cleanerClass = imgModule.get("ImageCleaner")
-            val cleaner = cleanerClass?.callAttr()
+            val cleaner = cleanerClass?.call(*emptyArray())
             cleaner?.callAttr("clean_image", inputPath, outputPath)
             Log.i(tag, "Image cleaned successfully: $outputPath")
             true

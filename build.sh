@@ -285,7 +285,6 @@ do_android_aab() {
 
 do_android() {
     do_android_apk
-    do_android_aab
 }
 
 # Main CLI dispatch

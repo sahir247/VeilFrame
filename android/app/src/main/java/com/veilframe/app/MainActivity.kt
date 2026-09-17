@@ -126,8 +126,7 @@ class MainActivity : AppCompatActivity() {
             val modeId = binding.chipGroupMode.checkedChipId
             when (modeId) {
                 R.id.chipModeVideo -> {
-                    if (androidx.activity.result.PickVisualMediaRequest.Builder != null &&
-                        ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
+                    if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
                         visualMediaPickerLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest.Builder()
                                 .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
@@ -265,18 +264,24 @@ class MainActivity : AppCompatActivity() {
             try {
                 val bridgeModule = py?.getModule("veilframe.folder.ai_bundle.bundle_builder")
                 val configClass = bridgeModule?.get("AIBundleConfig")
-                val config = configClass?.callAttr()
+                val config = configClass?.call(*emptyArray())
+
                 if (targetBudget > 0) {
                     config?.put("target_tokens", targetBudget)
                 }
                 config?.put("mask_secrets", maskSecrets)
 
-                // Run builder
-                val builder = bridgeModule?.get("AIBundleBuilder")?.callAttr(config)
+                // Instantiate the Python builder class.
+                val builderClass = bridgeModule?.get("AIBundleBuilder")
+                val builder = builderClass?.call(config)
+
                 val scannerModule = py?.getModule("veilframe.folder.scanner")
                 val scannerConfigClass = scannerModule?.get("ScanConfig")
-                val scannerConfig = scannerConfigClass?.callAttr()
-                val scanner = scannerModule?.get("FolderScanner")?.callAttr(scannerConfig)
+                val scannerConfig = scannerConfigClass?.call(*emptyArray())
+
+                // Instantiate the scanner class.
+                val scannerClass = scannerModule?.get("FolderScanner")
+                val scanner = scannerClass?.call(scannerConfig)
 
                 val scanResult = scanner?.callAttr("scan", workingDir.absolutePath)
                 val bundleResult = builder?.callAttr("build", scanResult)
