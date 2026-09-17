@@ -526,6 +526,11 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -565,8 +570,18 @@ jobs:
         shell: bash
         run: |
           chmod +x build.sh
-          ./build.sh android-apk
-          ./build.sh android-aab
+
+          for attempt in 1 2 3; do
+            if ./build.sh android-apk && ./build.sh android-aab; then
+              exit 0
+            fi
+
+            echo "Android build attempt ${attempt} failed"
+            rm -rf "$HOME/.gradle/.tmp"
+            sleep $((attempt * 15))
+          done
+
+          exit 1
 
       - name: Stage Android Artifacts
         run: |

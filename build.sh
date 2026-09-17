@@ -231,9 +231,9 @@ do_android_apk() {
     ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
     if [ -f "${ANDROID_DIR}/gradlew" ]; then
         chmod +x "${ANDROID_DIR}/gradlew"
-        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --info assembleRelease)
+        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --console=plain assembleRelease)
     elif command -v gradle >/dev/null 2>&1; then
-        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --info assembleRelease)
+        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --console=plain assembleRelease)
     else
         echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-android-arm64.apk"
         touch dist/VeilFrame-android-arm64.apk
@@ -256,9 +256,9 @@ do_android_aab() {
     ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
     if [ -f "${ANDROID_DIR}/gradlew" ]; then
         chmod +x "${ANDROID_DIR}/gradlew"
-        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --info bundleRelease)
+        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --console=plain bundleRelease)
     elif command -v gradle >/dev/null 2>&1; then
-        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --info bundleRelease)
+        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --console=plain bundleRelease)
     else
         echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-release.aab"
         touch dist/VeilFrame-release.aab
