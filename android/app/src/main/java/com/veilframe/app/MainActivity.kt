@@ -519,7 +519,15 @@ class MainActivity : AppCompatActivity() {
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Recursive directory traversal across all subprojects" else "○ Top-level directory only"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ SHA-256 cryptographic hashing active" else "○ SHA-256 calculation skipped (low CPU/battery)"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ High-entropy secret & API key scanner active" else "○ Secret detection inactive"
+            }
+            ToolMode.IMAGE_COMPRESSOR,
+            ToolMode.VIDEO_COMPRESSOR -> {
+                binding.tvPrivacyProfileBadge.text = "MEDIA STUDIO"
+                binding.tvPrivacyProfileBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyImpact1.text = "✓ Visual optimization & size reduction"
+                binding.tvPrivacyImpact2.text = "✓ Metadata scrubbing & privacy protection"
+                binding.tvPrivacyImpact3.text = "✓ Target platform profile matching"
             }
         }
     }
@@ -1198,6 +1206,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
             }
+            ToolMode.IMAGE_COMPRESSOR,
+            ToolMode.VIDEO_COMPRESSOR -> {
+                // Media Studio workspaces use dedicated layouts (layout_image_studio, layout_video_studio)
+            }
         }
     }
 
@@ -1467,6 +1479,8 @@ class MainActivity : AppCompatActivity() {
                 ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
                 ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
                 ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
+                ToolMode.IMAGE_COMPRESSOR -> executeImageCompression()
+                ToolMode.VIDEO_COMPRESSOR -> executeVideoCompression()
             }
             updatePrimaryActionDock(currentState)
         }
@@ -2930,11 +2944,11 @@ class MainActivity : AppCompatActivity() {
         dialogBinding.imgCropPreview.setImageBitmap(imgStudioDisplayBitmap ?: imgStudioOriginalBitmap)
 
         when (tempAspect) {
-            "1:1" -> dialogBinding.chipAspect1_1.isChecked = true
-            "4:3" -> dialogBinding.chipAspect4_3.isChecked = true
-            "3:4" -> dialogBinding.chipAspect3_4.isChecked = true
-            "16:9" -> dialogBinding.chipAspect16_9.isChecked = true
-            "9:16" -> dialogBinding.chipAspect9_16.isChecked = true
+            "1:1" -> dialogBinding.chipAspect11.isChecked = true
+            "4:3" -> dialogBinding.chipAspect43.isChecked = true
+            "3:4" -> dialogBinding.chipAspect34.isChecked = true
+            "16:9" -> dialogBinding.chipAspect169.isChecked = true
+            "9:16" -> dialogBinding.chipAspect916.isChecked = true
             else -> dialogBinding.chipAspectFree.isChecked = true
         }
 

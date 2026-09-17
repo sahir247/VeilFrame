@@ -452,23 +452,66 @@ jobs:
           fi
 
       - name: Verify macOS .dmg and .tar.gz Packages
+        shell: bash
         run: |
-          echo "==> Verifying portable .tar.gz extraction & execution..."
+          set -Eeuo pipefail
+
+          MOUNT_POINT="/tmp/dmg_mount"
+          DMG="artifacts/VeilFrame-macos-arm64.dmg"
+
+          cleanup() {
+            set +e
+
+            # The executable may leave a child process or helper alive.
+            pkill -f "$MOUNT_POINT/VeilFrame.app" 2>/dev/null || true
+
+            if mount | grep -Fq "on ${MOUNT_POINT} "; then
+              for attempt in 1 2 3 4 5; do
+                hdiutil detach "$MOUNT_POINT" -force 2>/dev/null && return 0
+                sleep 2
+              done
+
+              # Last-resort cleanup for a busy volume.
+              diskutil unmount force "$MOUNT_POINT" 2>/dev/null || true
+            fi
+          }
+
+          trap cleanup EXIT
+
+          rm -rf "$MOUNT_POINT"
+          mkdir -p "$MOUNT_POINT"
+
+          echo "==> Verifying portable .tar.gz extraction and execution..."
+          rm -rf /tmp/test_macos_tar
           mkdir -p /tmp/test_macos_tar
-          tar -xzf artifacts/VeilFrame-macos-arm64.tar.gz -C /tmp/test_macos_tar/
-          test -d /tmp/test_macos_tar/VeilFrame.app
-          test -x /tmp/test_macos_tar/VeilFrame.app/Contents/MacOS/VeilFrame
-          /tmp/test_macos_tar/VeilFrame.app/Contents/MacOS/VeilFrame doctor --json
+          tar -xzf artifacts/VeilFrame-macos-arm64.tar.gz \
+            -C /tmp/test_macos_tar/
+
+          APP="/tmp/test_macos_tar/VeilFrame.app"
+          BIN="$APP/Contents/MacOS/VeilFrame"
+
+          test -d "$APP"
+          test -x "$BIN"
+          "$BIN" doctor --json
+          "$BIN" presets
 
           echo "==> Verifying .dmg mounting, structure, and execution..."
-          mkdir -p /tmp/dmg_mount
-          hdiutil attach artifacts/VeilFrame-macos-arm64.dmg -mountpoint /tmp/dmg_mount -nobrowse -readonly
-          test -d "/tmp/dmg_mount/VeilFrame.app"
-          test -L "/tmp/dmg_mount/Applications"
-          test -x "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame"
-          "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame" doctor --json
-          "/tmp/dmg_mount/VeilFrame.app/Contents/MacOS/VeilFrame" presets
-          hdiutil detach /tmp/dmg_mount
+          hdiutil attach "$DMG" \
+            -mountpoint "$MOUNT_POINT" \
+            -nobrowse \
+            -readonly
+
+          test -d "$MOUNT_POINT/VeilFrame.app"
+          test -L "$MOUNT_POINT/Applications"
+          test -x "$MOUNT_POINT/VeilFrame.app/Contents/MacOS/VeilFrame"
+
+          "$MOUNT_POINT/VeilFrame.app/Contents/MacOS/VeilFrame" doctor --json
+          "$MOUNT_POINT/VeilFrame.app/Contents/MacOS/VeilFrame" presets
+
+          # Give macOS background filesystem activity time to finish.
+          sync
+          sleep 2
+
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
