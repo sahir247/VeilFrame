@@ -73,10 +73,21 @@
                     android:paddingEnd="8dp"
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
-                    android:text="v2.2.1"
+                    android:text="v2.2.2"
                     android:textColor="@color/vf_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToggleTheme"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="Toggle Light/Dark Theme"
+                    app:icon="@drawable/ic_theme_toggle"
+                    app:iconSize="18dp"
+                    app:iconTint="@color/vf_primary" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
 
@@ -147,6 +158,17 @@
                     android:textColor="@color/vf_accent_green"
                     android:textSize="10sp"
                     android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToolToggleTheme"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="Toggle Light/Dark Theme"
+                    app:icon="@drawable/ic_theme_toggle"
+                    app:iconSize="18dp"
+                    app:iconTint="@color/vf_primary" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
@@ -607,7 +629,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Installed: v2.2.1 • Local Engine"
+                                android:text="Installed: v2.2.2 • Local Engine"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>
@@ -641,10 +663,11 @@
 
             <!-- What's New -->
             <TextView
+                android:id="@+id/tvWhatsNewHeader"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.1"
+                android:text="WHAT'S NEW IN v2.2.2"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
@@ -666,35 +689,13 @@
                     android:padding="16dp">
 
                     <TextView
-                        android:layout_width="wrap_content"
+                        android:id="@+id/tvWhatsNewContent"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Independent Tool Workflows: Dedicated workflows for each engine with back navigation"
+                        android:text="• Adaptive Mobile Reports: Responsive tables &amp; directories on Android\n• Real Target Path: User folder displayed without cache leakage\n• State-Aware Affordance: High contrast feedback for selected options\n• Zero-Clipping Buttons: Responsive wrapping action controls\n• Light/Dark Mode: Dynamic DayNight theme toggle\n• Dynamic Changelog: Real-time update notes fetched from GitHub"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
-                        android:layout_marginBottom="6dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="• Built-in Update System: In-app update checks and downloads directly via GitHub Releases"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
-                        android:layout_marginBottom="6dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="• True SAF Directory Traversal: Recursive document reading and real file extraction"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
-                        android:layout_marginBottom="6dp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="• Responsive Wrapping Controls: Zero horizontal clipping across chips and 2-tier sticky dock"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:lineSpacingExtra="5dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -892,30 +893,42 @@
                             android:id="@+id/btnPickFolder"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="wrap_content"
+                            android:minHeight="42dp"
                             android:layout_weight="1"
-                            android:layout_marginEnd="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
                             android:text="Select Folder"
                             android:textColor="@color/vf_primary"
-                            android:textSize="12sp"
+                            android:textSize="11sp"
+                            android:maxLines="2"
                             app:backgroundTint="@color/vf_surface_variant"
                             app:cornerRadius="8dp"
                             app:icon="@drawable/ic_folder_pick"
+                            app:iconSize="16dp"
+                            app:iconPadding="6dp"
                             app:iconTint="@color/vf_primary" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnPickFile"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="wrap_content"
+                            android:minHeight="42dp"
                             android:layout_weight="1"
-                            android:layout_marginStart="6dp"
+                            android:layout_marginStart="4dp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
                             android:text="Select File"
                             android:textColor="@color/vf_primary"
-                            android:textSize="12sp"
+                            android:textSize="11sp"
+                            android:maxLines="2"
                             app:backgroundTint="@color/vf_surface_variant"
                             app:cornerRadius="8dp"
                             app:icon="@drawable/ic_file_pick"
+                            app:iconSize="16dp"
+                            app:iconPadding="6dp"
                             app:iconTint="@color/vf_primary" />
                     </LinearLayout>
                 </LinearLayout>

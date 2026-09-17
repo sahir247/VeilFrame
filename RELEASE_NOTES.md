@@ -1,5 +1,41 @@
 # VeilFrame Release Notes
 
+## VeilFrame v2.2.2
+
+> **Release Date:** September 2026  
+> **Target SDK / Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 35, ARM64 APK), Python 3.10+
+
+VeilFrame v2.2.2 is a focused usability and polish release delivering adaptive mobile HTML scan reports, real target path preservation, unmistakable high-contrast selection affordances, zero-clipping action buttons, dynamic GitHub changelog sync, and a system-wide Light/Dark theme toggle.
+
+---
+
+### 🌟 Top Features of v2.2.2
+
+1. **Adaptive Mobile HTML Scan Reports**
+   - **Responsive Breakpoints**: Added `@media (max-width: 768px)` and `@media (max-width: 420px)` CSS to eliminate viewport overflow on Android browsers. 2-column tables collapse cleanly to a single column on small screens.
+   - **Table Touch-Scrolling**: All data tables (File Types, Top Largest Files, Scanned Files Inventory) wrapped in touch-scrolling `.table-responsive` containers (`overflow-x: auto; -webkit-overflow-scrolling: touch`).
+   - **Copyable Hash Mobile Truncation**: SHA-256 hashes gracefully truncate with ellipsis on mobile viewports while preserving 1-click copying of the full 64-character hash to clipboard.
+   - **Directory Tree Padding Tuning**: Compact indentation on narrow viewports prevents deeply nested folders from being pushed off-screen.
+
+2. **Real Target Path Reporting & Privacy Guard**
+   - Scanned folder names (`display_root_path`) are passed cleanly to `FolderScanner` and `FolderExporter`. Reports and interactive trees now accurately display the user's selected directory (e.g. `Camera/` or `Downloads/`) instead of leaking internal Android sandbox cache paths (`/data/user/0/com.veilframe.app/cache/scan_workspace`).
+
+3. **High-Contrast State Affordances**
+   - **Luminous Active Chips**: Replaced static single-color chip backgrounds with dynamic `ColorStateList`. Checked chips feature a luminous platinum background, high-contrast dark text, bold stroke, and visible checkmark icon.
+   - **State-Aware Switches**: `MaterialSwitch` thumb and track dynamically reflect checked state so ON vs OFF is unmistakable at a glance.
+
+4. **Zero Button Clipping on Action Docks**
+   - Optimized button labels (`"Batch Folder"` / `"Single Video"`, `"Batch Folder"` / `"Single Image"`) and changed button height to `wrap_content` with `minHeight="42dp"`, 8dp horizontal padding, and 16dp icons, eliminating horizontal and vertical text clipping across all device resolutions.
+
+5. **Dynamic GitHub Changelog Sync**
+   - The Home Dashboard's "What's New" section now dynamically fetches release notes from GitHub (`android/update.json` and GitHub Releases API) during update checks and caches them locally for seamless offline rendering.
+
+6. **System-Wide Light / Dark Theme Toggle**
+   - Full Material 3 `DayNight` theme support with dedicated light and dark color palettes.
+   - Convenient theme toggle icon button in top toolbars with `SharedPreferences` persistence.
+
+---
+
 ## VeilFrame v2.2.1
 
 > **Release Date:** September 2026  

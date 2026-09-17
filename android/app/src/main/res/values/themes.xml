@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VeilFrame" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.VeilFrame" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Primary Brand Colors -->
         <item name="colorPrimary">@color/vf_primary</item>
         <item name="colorOnPrimary">@color/vf_on_primary</item>

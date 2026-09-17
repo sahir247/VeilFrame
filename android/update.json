@@ -1,19 +1,17 @@
 {
-  "versionCode": 221,
-  "versionName": "2.2.1",
-  "tag": "v2.2.1",
-  "apk": "VeilFrame-v2.2.1-release.apk",
+  "versionCode": 222,
+  "versionName": "2.2.2",
+  "tag": "v2.2.2",
+  "apk": "VeilFrame-v2.2.2-release.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "App Shell: Home launcher dashboard with 4 dedicated tool workflows",
-    "Built-in in-app updates via GitHub Releases with monotonic versionCode comparison",
-    "Cryptographic SHA-256 integrity and package archive inspection prior to install",
-    "Interactive download progress dialog with live byte counts and cancellation",
-    "True SAF DocumentFile recursive traversal for directories and genuine file extraction",
-    "JobState machine with universal 4-step lifecycle (Target -> Configure -> Execute -> Result)",
-    "Persistent per-tool session state across Home navigation",
-    "Refined Folder Scanner task modes (Quick Audit, Deep Forensic, Duplicate Hunt)",
-    "Responsive wrapping controls and 2-tier sticky action dock with zero label clipping"
+    "Adaptive Mobile Reports: Fully responsive tables & collapsible directories for Android browsers",
+    "Real Target Path Display: Scanned folder name preserved without internal cache leakage",
+    "State-Aware Affordance: High-contrast luminous feedback for selected chips and switches",
+    "Zero Button Clipping: Responsive wrapping action controls across narrow viewports",
+    "Light / Dark Theme: Dynamic DayNight mode toggle with persistent preferences",
+    "Dynamic Changelog: Real-time update notes fetched directly from GitHub with offline cache",
+    "In-App Update Engine: Monotonic versionCode verification & cryptographic SHA-256 validation"
   ]
 }

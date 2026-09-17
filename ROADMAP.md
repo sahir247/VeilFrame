@@ -10,7 +10,19 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.0 CURRENT (Production Release)
+### v2.2.2 CURRENT (Production Release)
+- **Mobile Usability & UX Refinements (v2.2.2)**:
+  - **Adaptive Mobile HTML Reports**: CSS `@media` breakpoints, `.table-responsive` touch-scroll wrappers, compact directory tree padding, and mobile hash truncation.
+  - **Real Target Path Reporting**: Scanned directory display path preserved end-to-end without internal Android sandbox cache leakage.
+  - **High-Contrast State Affordances**: Dynamic `ColorStateList` with luminous checked chip highlights, high-contrast text, checkmark icons, and clear switch states.
+  - **Zero-Clipping Action Buttons**: Responsive wrapping action controls and compact padding across all mobile device viewports.
+  - **Dynamic GitHub Changelog Sync**: Automatic release notes sync from repository manifests and GitHub Releases with offline caching.
+  - **System-Wide Light / Dark Mode**: Full Material 3 `DayNight` theme toggle with persistent preferences.
+- **Mobile Architecture & In-App Updates (v2.2.1)**:
+  - **App Shell & 4 Dedicated Tool Workflows**: Home launcher dashboard with isolated workflows for AI Bundle, Video Cleaner, Image Cleaner, and Folder Scanner.
+  - **In-App Update Engine**: Monotonic integer `versionCode` comparison, streaming SHA-256 integrity verification, and package archive inspection.
+  - **JobState Machine & Persistent Sessions**: 8-phase state machine with session preservation across Home navigation.
+  - **True SAF Recursive Directory Traversal**: Recursive document streaming into local staging workspace.
 - **Quad-Domain Architecture (Video, Image, Storage, AI Context)**:
   - **Video Sanitization Pipeline**: Multi-pass container atom stripping, SEI NAL removal, Bayer CFA PRNU dither, 2D DCT block perturbation, and acoustic ENF mains notch filtration.
   - **Image Privacy Compiler**: Multi-layer deterministic compilation pipeline (Layer A Container Sanitization, Layer B Representation Normalization, Layer C Isolated Semantic Redaction).

@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatDelegate
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -382,9 +384,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+        val isDarkMode = prefs.getBoolean("dark_theme", true)
+        AppCompatDelegate.setDefaultNightMode(
+            if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
+
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Restore cached changelog if available
+        val cachedTag = prefs.getString("cached_changelog_tag", null)
+        val cachedChangelog = prefs.getString("cached_changelog", null)
+        if (!cachedTag.isNullOrEmpty() && !cachedChangelog.isNullOrEmpty()) {
+            binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $cachedTag"
+            binding.tvWhatsNewContent.text = cachedChangelog
+        }
 
         // Respect bottom navigation gesture safe area
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
@@ -424,7 +440,7 @@ class MainActivity : AppCompatActivity() {
                 Python.start(AndroidPlatform(this))
             }
             py = Python.getInstance()
-            logToConsole("[SYS] Initialized VeilFrame 2.2.1 Core Runtime (Python 3.11.16)")
+            logToConsole("[SYS] Initialized VeilFrame 2.2.2 Core Runtime (Python 3.11.16)")
             logToConsole("[SYS] Local forensics & AI context engine ready.")
         } catch (e: Exception) {
             logToConsole("[WARN] Python runtime initialization notice: ${e.message}")
@@ -432,6 +448,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
+        // Theme toggle actions
+        binding.btnToggleTheme.setOnClickListener {
+            toggleTheme()
+        }
+        binding.btnToolToggleTheme.setOnClickListener {
+            toggleTheme()
+        }
+
         // Back navigation button from tool header to Home
         binding.btnBackToHome.setOnClickListener {
             showHomeScreen()
@@ -573,6 +597,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleTheme() {
+        val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+        val currentNightMode = AppCompatDelegate.getDefaultNightMode()
+        val isDark = if (currentNightMode == AppCompatDelegate.MODE_NIGHT_UNSPECIFIED) {
+            (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        } else {
+            currentNightMode == AppCompatDelegate.MODE_NIGHT_YES
+        }
+        val newDark = !isDark
+        prefs.edit().putBoolean("dark_theme", newDark).apply()
+        AppCompatDelegate.setDefaultNightMode(
+            if (newDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
+    }
+
     /**
      * Navigates back to Home Launcher Dashboard, saving active tool state.
      */
@@ -688,8 +727,8 @@ class MainActivity : AppCompatActivity() {
             ToolMode.AI_BUNDLE -> {
                 binding.tvToolTitle.text = "AI BUNDLE"
                 binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
-                binding.btnPickFolder.text = "Select Folder"
-                binding.btnPickFile.text = "Select File"
+                binding.btnPickFolder.text = "Project Folder"
+                binding.btnPickFile.text = "Single File"
 
                 configureOptions(
                     paramHeader = "AI BUNDLE CONFIGURATION",
@@ -716,8 +755,8 @@ class MainActivity : AppCompatActivity() {
             ToolMode.VIDEO_CLEANER -> {
                 binding.tvToolTitle.text = "VIDEO CLEANER"
                 binding.tvToolSubtitle.text = "Remove forensic identifiers & camera sensor noise"
-                binding.btnPickFolder.text = "Select Batch Folder"
-                binding.btnPickFile.text = "Select Video"
+                binding.btnPickFolder.text = "Batch Folder"
+                binding.btnPickFile.text = "Single Video"
 
                 configureOptions(
                     paramHeader = "VIDEO PRIVACY PARAMETERS",
@@ -744,8 +783,8 @@ class MainActivity : AppCompatActivity() {
             ToolMode.IMAGE_CLEANER -> {
                 binding.tvToolTitle.text = "IMAGE CLEANER"
                 binding.tvToolSubtitle.text = "Strip metadata, camera maker notes, and trace artifacts"
-                binding.btnPickFolder.text = "Select Batch Folder"
-                binding.btnPickFile.text = "Select Image"
+                binding.btnPickFolder.text = "Batch Folder"
+                binding.btnPickFile.text = "Single Image"
 
                 configureOptions(
                     paramHeader = "IMAGE PRIVACY PARAMETERS",
@@ -820,6 +859,71 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createChipBackgroundStateList(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked)
+            ),
+            intArrayOf(
+                getColor(R.color.vf_primary),
+                getColor(R.color.vf_surface_variant)
+            )
+        )
+    }
+
+    private fun createChipTextStateList(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked)
+            ),
+            intArrayOf(
+                getColor(R.color.vf_on_primary),
+                getColor(R.color.vf_text_primary)
+            )
+        )
+    }
+
+    private fun createChipStrokeStateList(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked)
+            ),
+            intArrayOf(
+                getColor(R.color.vf_primary),
+                getColor(R.color.vf_surface_stroke)
+            )
+        )
+    }
+
+    private fun createSwitchThumbStateList(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked)
+            ),
+            intArrayOf(
+                getColor(R.color.vf_primary),
+                getColor(R.color.vf_text_muted)
+            )
+        )
+    }
+
+    private fun createSwitchTrackStateList(): ColorStateList {
+        return ColorStateList(
+            arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked)
+            ),
+            intArrayOf(
+                getColor(R.color.vf_primary_container),
+                getColor(R.color.vf_surface_variant)
+            )
+        )
+    }
+
     private fun configureOptions(
         paramHeader: String,
         primaryLabel: String,
@@ -852,10 +956,12 @@ class MainActivity : AppCompatActivity() {
                 text = title
                 isCheckable = true
                 isChecked = (index == primaryDefaultIndex)
-                chipBackgroundColor = ColorStateList.valueOf(getColor(R.color.vf_surface_variant))
-                setTextColor(getColor(R.color.vf_text_primary))
-                chipStrokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
-                chipStrokeWidth = 1f
+                chipBackgroundColor = createChipBackgroundStateList()
+                setTextColor(createChipTextStateList())
+                chipStrokeColor = createChipStrokeStateList()
+                chipStrokeWidth = resources.displayMetrics.density * 1.5f
+                isCheckedIconVisible = true
+                checkedIconTint = createChipTextStateList()
                 textSize = 12f
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) {
@@ -875,10 +981,12 @@ class MainActivity : AppCompatActivity() {
                 text = format
                 isCheckable = true
                 isChecked = (index == formatDefaultIndex)
-                chipBackgroundColor = ColorStateList.valueOf(getColor(R.color.vf_surface_variant))
-                setTextColor(getColor(R.color.vf_text_primary))
-                chipStrokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
-                chipStrokeWidth = 1f
+                chipBackgroundColor = createChipBackgroundStateList()
+                setTextColor(createChipTextStateList())
+                chipStrokeColor = createChipStrokeStateList()
+                chipStrokeWidth = resources.displayMetrics.density * 1.5f
+                isCheckedIconVisible = true
+                checkedIconTint = createChipTextStateList()
                 textSize = 12f
             }
             binding.chipGroupFormat.addView(chip)
@@ -887,14 +995,20 @@ class MainActivity : AppCompatActivity() {
         binding.tvSwitch1Title.text = switch1Title
         binding.tvSwitch1Desc.text = switch1Desc
         binding.switchOption1.isChecked = switch1Checked
+        binding.switchOption1.thumbTintList = createSwitchThumbStateList()
+        binding.switchOption1.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch2Title.text = switch2Title
         binding.tvSwitch2Desc.text = switch2Desc
         binding.switchOption2.isChecked = switch2Checked
+        binding.switchOption2.thumbTintList = createSwitchThumbStateList()
+        binding.switchOption2.trackTintList = createSwitchTrackStateList()
 
         binding.tvSwitch3Title.text = switch3Title
         binding.tvSwitch3Desc.text = switch3Desc
         binding.switchOption3.isChecked = switch3Checked
+        binding.switchOption3.thumbTintList = createSwitchThumbStateList()
+        binding.switchOption3.trackTintList = createSwitchTrackStateList()
 
         binding.btnExecute.text = executeText
     }
@@ -1319,12 +1433,15 @@ class MainActivity : AppCompatActivity() {
                 val scanner = scannerClass?.call(scannerConfig)
                 val scanResult = scanner?.callAttr("scan", workingDir.absolutePath)
 
+                // Inject user display path into scanResult for truthful target reporting
+                scanResult?.put("root_path", state.selectedPathDisplay)
+
                 val count = scanResult?.get("total_files")?.toString() ?: copiedCount.toString()
                 scanSummary = "$count files analyzed in target."
 
                 val exporterModule = py?.getModule("veilframe.folder.exporter")
                 val exporterClass = exporterModule?.get("FolderExporter")
-                val exporter = exporterClass?.call(scanResult)
+                val exporter = exporterClass?.call(scanResult, state.selectedPathDisplay)
                 exporter?.callAttr("export", outputFile.absolutePath, formatExt)
 
                 isSuccess = outputFile.exists() && outputFile.length() > 0
@@ -1497,6 +1614,20 @@ class MainActivity : AppCompatActivity() {
 
                 val isUpdateAvailable = remoteVersionCode > installedVersionCode
 
+                // Update dynamic changelog if available
+                if (releaseChangelog.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        val headerTag = if (remoteTagName.isNotEmpty()) remoteTagName else "v$remoteVersionName"
+                        binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $headerTag"
+                        binding.tvWhatsNewContent.text = releaseChangelog
+                    }
+                    val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("cached_changelog_tag", remoteTagName)
+                        .putString("cached_changelog", releaseChangelog)
+                        .apply()
+                }
+
                 withContext(Dispatchers.Main) {
                     binding.progressUpdateCheck.visibility = View.GONE
                     if (isUpdateAvailable && apkDownloadUrl.isNotEmpty()) {
@@ -1511,10 +1642,10 @@ class MainActivity : AppCompatActivity() {
                             expectedSha256 = apkExpectedSha256
                         )
                     } else {
-                        binding.tvUpdateStatus.text = "Installed: v2.2.1 • You're up to date ✓"
+                        binding.tvUpdateStatus.text = "Installed: v2.2.2 • You're up to date ✓"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
-                            Toast.makeText(this@MainActivity, "You have the latest version (v2.2.1)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "You have the latest version (v2.2.2)", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -1525,7 +1656,7 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                     } else {
                         // Silent fallback for local-first architecture
-                        binding.tvUpdateStatus.text = "Installed: v2.2.1 • Local Engine"
+                        binding.tvUpdateStatus.text = "Installed: v2.2.2 • Local Engine"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
                     }
                 }

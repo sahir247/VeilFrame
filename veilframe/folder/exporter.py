@@ -24,8 +24,9 @@ from veilframe.folder.models import (
 class FolderExporter:
     """Multi-format report generator for scan results."""
 
-    def __init__(self, result: ScanResult) -> None:
+    def __init__(self, result: ScanResult, display_root_path: Optional[str] = None) -> None:
         self.result = result
+        self.display_root_path = display_root_path or result.root_path
         self.stats = result.stats
         self.files = result.files
         self.folders = result.folders
@@ -110,7 +111,10 @@ class FolderExporter:
 
         lines: List[str] = []
         root_fld = self.folders[0]
-        lines.append(f"{root_fld.name}/ ({root_fld.format_size()}, {root_fld.total_files:,} files, {root_fld.total_folders:,} subfolders)")
+        root_display_name = os.path.basename(str(self.display_root_path).replace("\\", "/").rstrip("/")) if self.display_root_path else root_fld.name
+        if not root_display_name:
+            root_display_name = root_fld.name
+        lines.append(f"{root_display_name}/ ({root_fld.format_size()}, {root_fld.total_files:,} files, {root_fld.total_folders:,} subfolders)")
 
         def _render_node(folder_id: int, prefix: str, current_depth: int):
             if current_depth > max_depth:
@@ -200,7 +204,7 @@ class FolderExporter:
         lines.append("=" * 80)
         lines.append(" VEILFRAME FOLDER ANALYSIS REPORT")
         lines.append("=" * 80)
-        lines.append(f"Root Directory : {self.result.root_path}")
+        lines.append(f"Root Directory : {self.display_root_path}")
         if self.stats:
             lines.append(f"Total Files    : {self.stats.total_files:,}")
             lines.append(f"Total Folders  : {self.stats.total_folders:,}")
@@ -275,7 +279,7 @@ class FolderExporter:
     def to_json(self) -> str:
         """Generate JSON export of scan metadata, statistics, and records."""
         payload: Dict[str, Any] = {
-            "root_path": self.result.root_path,
+            "root_path": self.display_root_path,
             "config": self.result.config.to_dict() if hasattr(self.result.config, "to_dict") else str(self.result.config),
             "stats": self.stats.to_dict() if self.stats else None,
             "folders": [f.to_dict() for f in self.folders],
@@ -286,10 +290,10 @@ class FolderExporter:
 
     def to_markdown(self) -> str:
         """Generate Markdown document with tables, summary metrics, directory tree, and full file inventory."""
-        folder_name = os.path.basename(os.path.normpath(self.result.root_path)) or "Folder"
+        folder_name = os.path.basename(str(self.display_root_path).replace("\\", "/").rstrip("/")) or "Folder"
         lines: List[str] = []
         lines.append(f"# VeilFrame Folder Analysis: `{folder_name}`\n")
-        lines.append(f"**Root Path**: `{self.result.root_path}`  ")
+        lines.append(f"**Root Path**: `{self.display_root_path}`  ")
         if self.stats:
             lines.append(f"**Total Files**: {self.stats.total_files:,} | **Total Folders**: {self.stats.total_folders:,} | **Total Size**: {self.stats.format_total_size()}  ")
             lines.append(f"**Duration**: {self.stats.duration_seconds:.2f}s ({self.stats.scan_speed_files_per_sec:.1f} items/s) | **Errors**: {self.stats.error_count}\n")
@@ -374,9 +378,9 @@ class FolderExporter:
 
     def to_html(self) -> str:
         """Generate interactive, responsive HTML report with collapsible folder tree and copyable full hashes."""
-        folder_name = os.path.basename(os.path.normpath(self.result.root_path)) or "Folder"
+        folder_name = os.path.basename(str(self.display_root_path).replace("\\", "/").rstrip("/")) or "Folder"
         title = html.escape(f"VeilFrame Analysis - {folder_name}")
-        root_esc = html.escape(self.result.root_path)
+        root_esc = html.escape(str(self.display_root_path))
 
         total_files = f"{self.stats.total_files:,}" if self.stats else str(len(self.files))
         total_folders = f"{self.stats.total_folders:,}" if self.stats else str(len(self.folders))
@@ -448,10 +452,15 @@ class FolderExporter:
             flist = sorted(files_by_folder.get(folder_id, []), key=lambda x: (-x.size, x.name.lower()))
 
             open_attr = "open" if depth < 2 else ""
+            if depth == 0 and self.display_root_path:
+                node_name = os.path.basename(str(self.display_root_path).replace("\\", "/").rstrip("/")) or fld.name
+            else:
+                node_name = fld.name
+
             res_html = f"""
             <details class="tree-dir" {open_attr}>
                 <summary>
-                    <span class="folder-name">{html.escape(fld.name)}/</span>
+                    <span class="folder-name">{html.escape(node_name)}/</span>
                     <span class="tree-meta">{fld.format_size()} &bull; {fld.total_files} files</span>
                 </summary>
                 <div class="tree-children">
@@ -517,7 +526,7 @@ class FolderExporter:
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>{title}</title>
     <style>
         :root {{
@@ -531,6 +540,9 @@ class FolderExporter:
             --warn: #f43f5e;
             --success: #10b981;
         }}
+        *, *:before, *:after {{
+            box-sizing: border-box;
+        }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--bg);
@@ -538,10 +550,12 @@ class FolderExporter:
             margin: 0;
             padding: 24px;
             line-height: 1.5;
+            -webkit-text-size-adjust: 100%;
         }}
         .container {{
             max-width: 1250px;
             margin: 0 auto;
+            width: 100%;
         }}
         h1, h2, h3, h4 {{
             margin-top: 0;
@@ -549,9 +563,10 @@ class FolderExporter:
             letter-spacing: -0.02em;
         }}
         .header {{
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             border-bottom: 1px solid var(--border);
             padding-bottom: 16px;
+            word-break: break-word;
         }}
         .badge {{
             background: #2563eb;
@@ -560,6 +575,7 @@ class FolderExporter:
             border-radius: 999px;
             font-size: 0.75rem;
             font-weight: 600;
+            display: inline-block;
         }}
         .badge-warn {{
             background: var(--warn);
@@ -568,50 +584,65 @@ class FolderExporter:
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 14px;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
+        }}
+        .grid-two-col {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
         }}
         .card {{
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 14px;
+            min-width: 0;
         }}
         .stat-value {{
             font-size: 1.6rem;
             font-weight: 700;
             color: var(--accent);
             margin-top: 4px;
+            word-break: break-word;
         }}
         .stat-label {{
             color: var(--text-dim);
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+        }}
+        .table-responsive {{
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-top: 8px;
         }}
         table {{
             width: 100%;
             border-collapse: collapse;
-            margin-top: 8px;
+            font-size: 0.88rem;
         }}
         th, td {{
             text-align: left;
             padding: 8px 10px;
             border-bottom: 1px solid var(--border);
-            font-size: 0.88rem;
+            vertical-align: middle;
         }}
         th {{
             color: var(--text-dim);
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+            white-space: nowrap;
         }}
         code {{
-            font-family: Consolas, monospace;
+            font-family: Consolas, SFMono-Regular, "Liberation Mono", Menlo, Courier, monospace;
             background: rgba(0,0,0,0.3);
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 0.85rem;
             color: var(--accent);
+            word-break: break-all;
         }}
         .copyable-hash {{
             cursor: pointer;
@@ -620,8 +651,10 @@ class FolderExporter:
             transition: all 0.15s ease;
             user-select: all;
             border: 1px solid rgba(56, 189, 248, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
         }}
-        .copyable-hash:hover {{
+        .copyable-hash:hover, .copyable-hash:active {{
             background: rgba(56, 189, 248, 0.2);
             border-color: var(--accent);
             color: #ffffff;
@@ -634,7 +667,8 @@ class FolderExporter:
             margin: 8px 0 0 0;
             padding-left: 20px;
             color: var(--text-dim);
-            font-size: 0.9rem;
+            font-size: 0.88rem;
+            word-break: break-all;
         }}
         .search-bar {{
             margin-bottom: 12px;
@@ -643,9 +677,9 @@ class FolderExporter:
             width: 100%;
             background: #0d1117;
             border: 1px solid var(--border);
-            border-radius: 4px;
+            border-radius: 6px;
             color: #fff;
-            padding: 8px 12px;
+            padding: 10px 12px;
             box-sizing: border-box;
             font-size: 0.9rem;
         }}
@@ -657,25 +691,27 @@ class FolderExporter:
         .tree-container {{
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 16px;
-            margin-top: 24px;
-            font-family: Consolas, monospace;
+            margin-top: 20px;
+            font-family: Consolas, SFMono-Regular, "Liberation Mono", Menlo, Courier, monospace;
             font-size: 0.88rem;
+            overflow-x: auto;
         }}
         details.tree-dir {{
             margin: 4px 0;
-            padding-left: 12px;
+            padding-left: 14px;
             border-left: 1px solid rgba(255,255,255,0.08);
         }}
         details.tree-dir > summary {{
             cursor: pointer;
-            padding: 3px 6px;
+            padding: 4px 6px;
             border-radius: 4px;
             list-style: none;
             user-select: none;
+            word-break: break-all;
         }}
-        details.tree-dir > summary:hover {{
+        details.tree-dir > summary:hover, details.tree-dir > summary:active {{
             background: rgba(255,255,255,0.05);
         }}
         .folder-name {{
@@ -686,20 +722,23 @@ class FolderExporter:
             color: var(--text-dim);
             font-size: 0.78rem;
             margin-left: 8px;
+            white-space: nowrap;
         }}
         .tree-files {{
             list-style: none;
-            padding-left: 24px;
+            padding-left: 20px;
             margin: 4px 0;
         }}
         .tree-files li {{
-            padding: 2px 0;
+            padding: 3px 0;
             color: #cbd5e1;
+            word-break: break-all;
         }}
         .file-size {{
             color: var(--text-dim);
             font-size: 0.8rem;
             margin-left: 6px;
+            white-space: nowrap;
         }}
         .tree-hash {{
             font-size: 0.75rem;
@@ -713,20 +752,21 @@ class FolderExporter:
         /* Toast notification */
         #toast {{
             visibility: hidden;
-            min-width: 250px;
+            min-width: 240px;
             background-color: #1e293b;
             color: #fff;
             text-align: center;
-            border-radius: 6px;
+            border-radius: 8px;
             border: 1px solid var(--accent);
-            padding: 12px 16px;
+            padding: 12px 18px;
             position: fixed;
             z-index: 1000;
             left: 50%;
             bottom: 30px;
             transform: translateX(-50%);
             font-size: 0.88rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+            pointer-events: none;
         }}
         #toast.show {{
             visibility: visible;
@@ -739,6 +779,68 @@ class FolderExporter:
         @keyframes fadeout {{
             from {{ bottom: 30px; opacity: 1; }}
             to {{ bottom: 10px; opacity: 0; }}
+        }}
+
+        /* Responsive Mobile Breakpoints */
+        @media (max-width: 768px) {{
+            body {{
+                padding: 12px 10px;
+            }}
+            .header {{
+                margin-bottom: 14px;
+                padding-bottom: 12px;
+            }}
+            .header h1 {{
+                font-size: 1.35rem;
+            }}
+            .grid {{
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 14px;
+            }}
+            .grid-two-col {{
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }}
+            .card {{
+                padding: 10px;
+            }}
+            .stat-value {{
+                font-size: 1.3rem;
+            }}
+            .stat-label {{
+                font-size: 0.72rem;
+            }}
+            table {{
+                font-size: 0.8rem;
+                min-width: 480px;
+            }}
+            th, td {{
+                padding: 6px 8px;
+            }}
+            .copyable-hash {{
+                max-width: 140px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                vertical-align: middle;
+            }}
+            details.tree-dir {{
+                padding-left: 8px;
+            }}
+            .tree-files {{
+                padding-left: 12px;
+            }}
+            .tree-container {{
+                padding: 12px;
+            }}
+        }}
+
+        @media (max-width: 420px) {{
+            .grid {{
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }}
         }}
     </style>
 </head>
@@ -768,51 +870,55 @@ class FolderExporter:
             </div>
         </div>
 
-        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="grid-two-col">
             <div class="card">
                 <h3>File Types</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Count</th>
-                            <th>Size</th>
-                            <th>Share</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {ext_rows}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th>Size</th>
+                                <th>Share</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {ext_rows}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="card">
                 <h3>Top Largest Files</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Name</th>
-                            <th>Size</th>
-                            <th>Path</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {largest_rows}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Name</th>
+                                <th>Size</th>
+                                <th>Path</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {largest_rows}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        {f'<div style="margin-top: 24px;"><h3>Duplicate File Groups</h3>{dupe_sections}</div>' if dupe_sections else ''}
+        {f'<div style="margin-top: 20px;"><h3>Duplicate File Groups</h3>{dupe_sections}</div>' if dupe_sections else ''}
 
-        <div class="card" style="margin-top: 24px;">
+        <div class="card" style="margin-top: 20px;">
             <h3>Scanned Files Inventory</h3>
             <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: -4px;">Click on any SHA-256 hash to copy the full 64-character hash to your clipboard.</p>
             <div class="search-bar">
                 <input type="text" id="inventorySearch" placeholder="Filter files by name, path, extension, or hash..." onkeyup="filterInventoryTable()">
             </div>
-            <div style="overflow-x: auto; max-height: 480px;">
+            <div class="table-responsive" style="max-height: 480px;">
                 <table id="inventoryTable">
                     <thead>
                         <tr>

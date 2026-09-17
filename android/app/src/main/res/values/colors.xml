@@ -1,49 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- VeilFrame Minimal Monochrome Dark Theme Palette -->
-    <!-- Base Surfaces (Deep matte obsidian & subtle graphite) -->
-    <color name="vf_bg_dark">#101012</color>
-    <color name="vf_surface">#18181C</color>
-    <color name="vf_surface_variant">#222228</color>
-    <color name="vf_surface_stroke">#2E2E36</color>
+    <!-- VeilFrame Minimal Monochrome Light Theme Palette -->
+    <!-- Base Surfaces (Clean crisp light gray & white) -->
+    <color name="vf_bg_dark">#F4F4F6</color>
+    <color name="vf_surface">#FFFFFF</color>
+    <color name="vf_surface_variant">#EAEAEA</color>
+    <color name="vf_surface_stroke">#D4D4D8</color>
     
-    <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
-    <color name="vf_primary">#E4E4E7</color>
-    <color name="vf_primary_container">#27272A</color>
-    <color name="vf_on_primary">#121214</color>
+    <!-- Monochrome Core (Deep matte black & crisp contrast) -->
+    <color name="vf_primary">#18181B</color>
+    <color name="vf_primary_container">#E4E4E7</color>
+    <color name="vf_on_primary">#FFFFFF</color>
     
-    <color name="vf_secondary">#A1A1AA</color>
-    <color name="vf_secondary_container">#27272A</color>
-    <color name="vf_on_secondary">#F4F4F5</color>
+    <color name="vf_secondary">#52525B</color>
+    <color name="vf_secondary_container">#E4E4E7</color>
+    <color name="vf_on_secondary">#18181B</color>
     
-    <!-- Less Saturated Matte Status Colors (Muted Characteristic Tones) -->
-    <!-- Pass / Success: Desaturated matte sage green -->
-    <color name="vf_accent_green">#6AA878</color>
-    <color name="vf_status_pass_bg">#18261D</color>
+    <!-- Less Saturated Status Colors -->
+    <!-- Pass / Success: Clean sage green -->
+    <color name="vf_accent_green">#2E7D32</color>
+    <color name="vf_status_pass_bg">#E8F5E9</color>
     
-    <!-- Warning / In-Progress: Desaturated matte warm ochre / amber -->
-    <color name="vf_accent_amber">#C9944D</color>
-    <color name="vf_status_warn_bg">#292014</color>
+    <!-- Warning / In-Progress: Warm amber -->
+    <color name="vf_accent_amber">#B45309</color>
+    <color name="vf_status_warn_bg">#FEF3C7</color>
     
-    <!-- Error / Fail: Desaturated matte terracotta / brick red -->
-    <color name="vf_accent_red">#BA5D60</color>
-    <color name="vf_status_fail_bg">#291617</color>
+    <!-- Error / Fail: Terracotta red -->
+    <color name="vf_accent_red">#C53030</color>
+    <color name="vf_status_fail_bg">#FED7D7</color>
     
-    <!-- Info / Neutral: Desaturated matte steel blue -->
-    <color name="vf_status_info">#7E95AC</color>
-    <color name="vf_status_info_bg">#16202A</color>
+    <!-- Info / Neutral: Steel blue -->
+    <color name="vf_status_info">#2B6CB0</color>
+    <color name="vf_status_info_bg">#EBF8FF</color>
     
     <!-- Text Hierarchy -->
-    <color name="vf_text_primary">#F4F4F5</color>
-    <color name="vf_text_secondary">#A1A1AA</color>
+    <color name="vf_text_primary">#09090B</color>
+    <color name="vf_text_secondary">#52525B</color>
     <color name="vf_text_muted">#71717A</color>
     
-    <!-- Console / Telemetry (Deep matte background & calm monospace text) -->
-    <color name="vf_console_bg">#0C0C0E</color>
-    <color name="vf_console_text">#D4D4D8</color>
+    <!-- Console / Telemetry (Retain terminal dark aesthetic for telemetry) -->
+    <color name="vf_console_bg">#18181B</color>
+    <color name="vf_console_text">#F4F4F5</color>
     <color name="ic_launcher_background">#101012</color>
 
     <!-- Brand Emblem Vectors -->
-    <color name="vf_brand_shield">#E4E4E7</color>
-    <color name="vf_brand_inner">#1E1E24</color>
+    <color name="vf_brand_shield">#18181B</color>
+    <color name="vf_brand_inner">#E4E4E7</color>
 </resources>
