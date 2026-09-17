@@ -568,8 +568,21 @@ jobs:
 
       - name: Build Android Release Packages
         shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x build.sh
+
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Release signing secrets are missing in GitHub Actions! Please configure KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD in repository secrets."
+            exit 1
+          fi
+
+          echo "==> Restoring release keystore from secrets..."
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
 
           for attempt in 1 2 3; do
             if ./build.sh android-apk; then

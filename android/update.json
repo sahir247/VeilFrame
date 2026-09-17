@@ -1,17 +1,20 @@
 {
-  "versionCode": 222,
-  "versionName": "2.2.2",
-  "tag": "v2.2.2",
-  "apk": "VeilFrame-v2.2.2-release.apk",
+  "versionCode": 223,
+  "versionName": "2.2.3",
+  "tag": "v2.2.3",
+  "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "Adaptive Mobile Reports: Fully responsive tables & collapsible directories for Android browsers",
-    "Real Target Path Display: Scanned folder name preserved without internal cache leakage",
-    "State-Aware Affordance: High-contrast luminous feedback for selected chips and switches",
-    "Zero Button Clipping: Responsive wrapping action controls across narrow viewports",
-    "Light / Dark Theme: Dynamic DayNight mode toggle with persistent preferences",
-    "Dynamic Changelog: Real-time update notes fetched directly from GitHub with offline cache",
-    "In-App Update Engine: Monotonic versionCode verification & cryptographic SHA-256 validation"
+    "Status Bar Inset Handling: Zero header clipping under system status bars and camera notches",
+    "Release Signing Identity: Dedicated release keystore configuration eliminating package update conflicts",
+    "In-App Updater CDN Redirects: Multi-hop S3 redirect following and auto-resuming unknown source install",
+    "Dynamic Format Auto-Selection: Video and image format chips dynamically match input file extensions",
+    "Batch Folder Processing: Cleans folders with mixed media formats and packages results into ZIP archives",
+    "Dynamic Privacy Impact Card: Real-time privacy profile and sanitization preview before execution",
+    "Target Card UI Overhaul: Clean empty state and mounted details with active Change/Clear controls",
+    "Collapsible Execution Monitor: Clean telemetry progress metrics with expandable monospace console",
+    "Context-Aware Action Dock: Transitions through Select Target, Execute, Cancel, and Run Another",
+    "Persistent Tool Preferences: Remembers configured options per engine across sessions"
   ]
 }

@@ -37,13 +37,64 @@ class AndroidMediaBackend(private val context: Context) : IMediaBackend {
         scrubAudio: Boolean
     ): Boolean {
         return try {
-            val py = Python.getInstance()
-            val coreModule = py.getModule("veilframe.core.pipeline")
-            val pipelineClass = coreModule.get("Pipeline")
-            val pipeline = pipelineClass?.callAttr("create_default")
-            pipeline?.callAttr("clean_video", inputPath, outputPath)
-            Log.i(tag, "Video cleaned successfully: $outputPath")
-            true
+            val cmd = mutableListOf<String>()
+            cmd.add("-y")
+            cmd.add("-i")
+            cmd.add(inputPath)
+            cmd.add("-map_metadata")
+            cmd.add("-1")
+            cmd.add("-map_chapters")
+            cmd.add("-1")
+
+            if (scrubAudio) {
+                cmd.add("-an")
+            } else {
+                cmd.add("-c:a")
+                cmd.add("copy")
+            }
+
+            when (noiseLevel.lowercase()) {
+                "high", "stealth" -> {
+                    cmd.add("-vf")
+                    cmd.add("noise=alls=8:allf=t+u")
+                    cmd.add("-c:v")
+                    cmd.add("libx264")
+                    cmd.add("-preset")
+                    cmd.add("veryfast")
+                    cmd.add("-crf")
+                    cmd.add("23")
+                }
+                "medium" -> {
+                    cmd.add("-vf")
+                    cmd.add("noise=alls=4:allf=t")
+                    cmd.add("-c:v")
+                    cmd.add("libx264")
+                    cmd.add("-preset")
+                    cmd.add("veryfast")
+                    cmd.add("-crf")
+                    cmd.add("22")
+                }
+                else -> {
+                    cmd.add("-c:v")
+                    cmd.add("copy")
+                }
+            }
+
+            cmd.add(outputPath)
+
+            val cmdString = cmd.joinToString(" ") { if (it.contains(" ")) "\"$it\"" else it }
+            val session = com.arthenica.ffmpegkit.FFmpegKit.execute(cmdString)
+            val returnCode = session.returnCode
+            val success = com.arthenica.ffmpegkit.ReturnCode.isSuccess(returnCode)
+
+            if (success) {
+                Log.i(tag, "Video cleaned successfully with FFmpegKit: $outputPath")
+                true
+            } else {
+                Log.w(tag, "Transcode pass exited with code $returnCode. Retrying fast remux pass...")
+                val fallbackSession = com.arthenica.ffmpegkit.FFmpegKit.execute("-y -i \"$inputPath\" -map_metadata -1 -c copy \"$outputPath\"")
+                com.arthenica.ffmpegkit.ReturnCode.isSuccess(fallbackSession.returnCode)
+            }
         } catch (e: Exception) {
             Log.e(tag, "Video processing failed: ${e.message}", e)
             false

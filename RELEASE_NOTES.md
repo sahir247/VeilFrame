@@ -1,6 +1,166 @@
 # VeilFrame Release Notes
 
-## VeilFrame v2.2.2
+## VeilFrame v2.2.3
+
+> **Release Date:** September 2026  
+> **Target Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 26+, Target API 35), Python 3.10+
+
+VeilFrame v2.2.3 is a major stability, security, and usability release delivering edge-to-edge status bar insets, production release keystore signing for smooth in-place GitHub APK upgrades, resilient multi-hop CDN in-app update downloading, dynamic container format matching, automatic batch folder ZIP packaging, and a complete 10-point UX overhaul with engine personalities and collapsible execution telemetry.
+
+---
+
+### 🌟 Top Features
+
+1. **Edge-to-Edge System Bar Insets (Zero Header Clipping)**
+   - Applied `WindowInsetsCompat.Type.statusBars()` directly to `binding.appBarLayout` to ensure workflow headers, tool titles, and navigation buttons never clip underneath Android's status bar or camera notch.
+   - Retained edge-to-edge navigation bar padding on the bottom action dock for seamless full-screen interaction across gesture and 3-button navigation.
+
+2. **Deterministic Release APK Signing & GitHub CI Pipeline**
+   - Configured dedicated `signingConfigs.release` in `android/app/build.gradle.kts` reading release keystore credentials from environment variables (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`).
+   - Updated GitHub Actions CI workflow to decode base64 release keystore secrets on release builds, completely eliminating Android's `INSTALL_FAILED_UPDATE_INCOMPATIBLE` signature mismatch error when updating APKs.
+
+3. **Multi-Hop CDN In-App Updater Resiliency**
+   - Overhauled `downloadAndInstallUpdateWithProgress` to dynamically follow up to 7 cross-domain HTTP 302/307 redirects (seamlessly resolving GitHub Release CDN assets hosted on AWS S3 / `objects.githubusercontent.com`).
+   - Implemented `pendingInstallApk` resumption in `onResume()`, automatically re-triggering the package installer once the user grants `REQUEST_INSTALL_PACKAGES` permission without requiring a re-download.
+   - Added explicit `grantUriPermission` loops across all package installer intent targets to prevent `FileProvider` permission denial crashes.
+
+4. **Dynamic Container Auto-Matching & Batch ZIP Packaging**
+   - Added `"Original / Auto"` container format chip (Index 0) for both Video and Image cleaners. Selecting a single media file dynamically detects and matches its container format (`.mp4`, `.mkv`, `.webm`, `.mov`, `.avi`, `.jpg`, `.png`, `.webp`).
+   - Batch folder processing preserves individual file formats across mixed-format directories and automatically packages sanitized assets into structured ZIP archives (`VeilFrame_Batch_Videos_...zip`, `VeilFrame_Batch_Images_...zip`).
+
+5. **10-Point UX Overhaul & Engine Personalities**
+   - **Command Center Launcher**: Distinct visual identity cards for AI Bundler (Emerald), Video Cleaner (Azure), Image Cleaner (Amber), and Folder Scanner (Indigo).
+   - **3-Step Visual Workflow Pipeline**: Clear visual progression across Input Mount, Processing Engine, and Export Delivery.
+   - **Context-Aware Primary Action Button**: Dynamic multi-state action bar transitioning smoothly through `SELECT TARGET TO BEGIN`, `EXECUTE`, `CANCEL PROCESSING`, and `RUN ANOTHER TASK`.
+   - **Mount State Separation**: Clean empty target state (`layoutTargetEmpty`) versus mounted target state (`layoutTargetMounted`) with dedicated `[ Change ]` and `[ Clear ]` actions.
+   - **Dynamic Privacy Impact Summary**: Real-time pre-execution summary card detailing exact metadata tags to be scrubbed and protection levels applied before running.
+   - **Collapsible Telemetry Console**: Accordion console monitor (`btnToggleConsole`) with real-time log streaming and compact folding.
+   - **Persistent Preferences**: Per-engine options and toggles automatically saved to `veilframe_tool_prefs` and restored on relaunch.
+
+---
+
+### 📋 Changelog from v2.2.2 (Previous Version)
+
+#### 📱 Android Application
+- **Fixed Status Bar Clipping**: Bound system status bar insets to `appBarLayout` so tool titles and headers never collide with status bar clocks, battery icons, or camera cutouts.
+- **Fixed In-App Update Engine Failures**:
+  - Implemented multi-hop redirect resolution (up to 7 hops) to handle CDN 302/307 redirects to Amazon S3 asset URLs.
+  - Implemented lifecycle-aware `pendingInstallApk` auto-resumption in `onResume()` when returning from system "Install unknown apps" settings.
+  - Added explicit `grantUriPermission` loop across all matching package installer handler components.
+- **Production APK Signing Identity**:
+  - Replaced debug keystore signing in release builds with dedicated `signingConfigs.release` reading environment secrets (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) or falling back to local `release.keystore`.
+  - Updated GitHub Actions workflow to decode `KEYSTORE_BASE64` during release compilation, fixing `INSTALL_FAILED_UPDATE_INCOMPATIBLE` signature mismatch errors.
+- **Dynamic File Formats & Batch ZIP Packaging**:
+  - Added `"Original / Auto"` as index 0 for Video and Image format options. Single file mounts auto-detect and select the matching chip.
+  - Batch Video Cleaner and Batch Image Cleaner process folders containing mixed media extensions without forced transcoding, automatically packaging sanitized results into a ZIP archive (`VeilFrame_Batch_Videos_*.zip`, `VeilFrame_Batch_Images_*.zip`).
+- **10-Point UX System**:
+  - Home Command Center with 4 engine personality cards.
+  - 3-step visual workflow pipeline (Mount Target → Engine Configuration → Export Delivery).
+  - Clean separation of target state: `layoutTargetEmpty` (empty) and `layoutTargetMounted` (details with `[ Change ]` and `[ Clear ]`).
+  - Pre-execution `cardPrivacySummary` displaying real-time metadata tags to be scrubbed.
+  - Collapsible monospace console monitor (`btnToggleConsole`) for inspecting background telemetry.
+  - Context-aware primary dock action button with 4 distinct operating states.
+  - Persistent user tool preferences via `SharedPreferences`.
+
+#### 🐍 Python Core, CLI & Packaging
+- Synchronized package version to `2.2.3` across `pyproject.toml`, `veilframe/__init__.py`, and Chaquopy embedded Python engine.
+- Synced `uv.lock` dependency manifest for reproducible virtual environment builds.
+- Updated `VeilFrame.spec` (PyInstaller) and `build.sh` (Debian packaging) to `2.2.3`.
+- Updated in-app update registry `android/update.json` (`versionCode: 223`, `versionName: "2.2.3"`).
+
+---
+
+### 💻 Installation Guide
+
+#### Android (APK & In-App)
+- **Direct APK Download**: Download `VeilFrame-android-arm64.apk` from GitHub Releases.
+- **Sideload via ADB**:
+  ```bash
+  adb install -r VeilFrame-android-arm64.apk
+  ```
+- **In-App Update**: Open VeilFrame on Android, tap **Check for Updates** on the Home Dashboard, and tap **Download & Install**.
+
+#### Windows (x86_64)
+- **Download**: `VeilFrame-windows-x86_64.exe`
+- **Installation**: Standalone portable binary. Double-click to launch the GUI or run from PowerShell/CMD.
+
+#### Linux (Debian / Ubuntu & Portable)
+- **Debian / Ubuntu Package**:
+  ```bash
+  sudo dpkg -i VeilFrame-linux-x86_64.deb
+  sudo apt-get install -f  # resolve any missing system dependencies
+  veilframe gui            # launch GUI
+  ```
+- **Portable Tarball**:
+  ```bash
+  tar -xzf VeilFrame-linux-x86_64.tar.gz
+  ./VeilFrame gui
+  ```
+
+#### macOS (Apple Silicon ARM64)
+- **Installer (DMG)**:
+  - Open `VeilFrame-macos-arm64.dmg` and drag `VeilFrame.app` into `/Applications`.
+- **Portable Tarball**:
+  ```bash
+  tar -xzf VeilFrame-macos-arm64.tar.gz
+  open VeilFrame.app
+  ```
+
+#### Python Package (Universal Wheel / PyPI)
+- **Installation via pip / uv**:
+  ```bash
+  pip install veilframe-2.2.3-py3-none-any.whl
+  # or from source:
+  pip install veilframe
+  ```
+
+---
+
+### 📖 Usage Guide
+
+#### 📱 Android Mobile App
+1. **Launch a Tool from Home**:
+   - **AI Bundler**: Select any project directory to generate token-bounded `.aibundle`, `.md`, `.json`, or `.txt` context files with secret redaction.
+   - **Video Cleaner**: Select a single video or a batch folder. Strip location/device metadata, optionally strip audio, and preserve original container formats.
+   - **Image Cleaner**: Sanitize photos or photo folders. Strip EXIF/GPS tags, normalize color profiles, and export to `.jpg`, `.png`, `.webp`, or a unified ZIP archive.
+   - **Folder Scanner**: Select any folder for comprehensive privacy forensics. Generates adaptive mobile-responsive HTML audit reports with SHA-256 integrity trees.
+2. **Review Privacy Impact**: Check the dynamic summary card for exact metadata tags scheduled for scrubbing.
+3. **Execute & Monitor**: Tap the primary action button to execute. Tap the accordion chevron (`v` / `^`) to toggle real-time terminal output.
+4. **Save & Share**: Tap **Save to Device** or **Share** to dispatch sanitized files or reports immediately.
+
+#### 🖥️ Desktop GUI (Windows, Linux, macOS)
+- Launch the application:
+  ```bash
+  veilframe gui
+  ```
+- Use the left navigation panel to switch between **Video Sanitizer**, **Image Privacy**, **Folder Analyzer**, and **AI Project Lister**.
+- Drag and drop source files or folders directly into the workspace.
+- Customize quality gates, noise dithering, and acoustic notch filtration thresholds.
+- Click **Start Sanitization** / **Generate Report**.
+
+#### ⌨️ Command-Line Interface (CLI)
+- **Sanitize a Video**:
+  ```bash
+  veilframe sanitize input.mp4 -o sanitized.mp4 --strip-audio
+  ```
+- **Sanitize an Image**:
+  ```bash
+  veilframe image sanitize photo.jpg -o clean.png --noise-level medium
+  ```
+- **Folder Privacy Forensics & Adaptive HTML Report**:
+  ```bash
+  veilframe folder scan ./Documents --report html -o scan_report.html
+  ```
+- **AI Context Bundler with Secret Redaction**:
+  ```bash
+  veilframe folder ai ./my_project -t 128000 -o project_context.aibundle --redact-secrets
+  ```
+
+---
+
+## 📜 Previous Releases
+
+### VeilFrame v2.2.2
 
 > **Release Date:** September 2026  
 > **Target SDK / Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 35, ARM64 APK), Python 3.10+
@@ -145,67 +305,6 @@ VeilFrame v2.2.0 introduces native **Android packaging (APK & AAB)**, **modular 
 - Integrated automated GitHub Actions release workflow building Windows, macOS, Linux, Android, and Python packages.
 
 ---
-
-### 💻 Platform-Specific Installation & Usage
-
-#### Windows (x86_64)
-- **Download**: `VeilFrame-windows-x86_64.exe`
-- **Usage**:
-  - Double-click `VeilFrame-windows-x86_64.exe` to launch the Desktop GUI.
-  - Or run from Command Prompt / PowerShell:
-    ```powershell
-    .\VeilFrame-windows-x86_64.exe gui
-    .\VeilFrame-windows-x86_64.exe folder ai .\my_project -t 128000 -o bundle.aibundle
-    ```
-
-#### Linux (Debian / Ubuntu & Portable)
-- **Debian / Ubuntu Package**:
-  ```bash
-  sudo dpkg -i VeilFrame-linux-x86_64.deb
-  sudo apt-get install -f  # resolve any missing system dependencies
-  veilframe gui            # launch GUI from terminal or application launcher
-  ```
-- **Portable Tarball**:
-  ```bash
-  tar -xzf VeilFrame-linux-x86_64.tar.gz
-  ./VeilFrame gui
-  ```
-
-#### macOS (Apple Silicon ARM64)
-- **Installer (DMG)**:
-  - Open `VeilFrame-macos-arm64.dmg` and drag `VeilFrame.app` to `/Applications`.
-- **Portable Tarball**:
-  ```bash
-  tar -xzf VeilFrame-macos-arm64.tar.gz
-  open VeilFrame.app
-  ```
-
-#### Android (API 26+, Target API 35)
-- **Testing & Sideloading (APK)**:
-  ```bash
-  adb install -r VeilFrame-android-arm64.apk
-  ```
-- **Google Play Distribution (AAB)**:
-  - Upload `VeilFrame-release.aab` directly to the Google Play Console Release Track.
-
-#### Python Package (Universal Wheel)
-- **Installation via pip**:
-  ```bash
-  pip install veilframe-2.2.0-py3-none-any.whl
-  # or from source:
-  pip install veilframe
-  ```
-- **CLI Commands**:
-  ```bash
-  veilframe sanitize input.mp4 -o output.mp4
-  veilframe image sanitize photo.jpg -o clean.png
-  veilframe folder ai ./my_project -t 128000 -o context.aibundle
-  veilframe gui
-  ```
-
----
-
-## 📜 Previous Releases
 
 <details>
 <summary><b>VeilFrame v2.0.2</b> — High-Performance Folder Analyzer, Staged Duplicate Finder & SHA-256 Reporting</summary>

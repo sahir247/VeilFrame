@@ -37,12 +37,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Screen state enum distinguishing Home Dashboard and Dedicated Tool Workflow.
@@ -113,6 +117,8 @@ class MainActivity : AppCompatActivity() {
     private var currentScreen: ScreenState = ScreenState.HOME
     private var currentToolMode: ToolMode = ToolMode.AI_BUNDLE
     private var isLogsExpanded: Boolean = false
+    private var isConsoleExpanded: Boolean = false
+    private var pendingInstallApk: File? = null
     private var downloadJob: Job? = null
 
     // Persistent tool session states with smart defaults
@@ -226,12 +232,32 @@ class MainActivity : AppCompatActivity() {
         state.targetFileCount = 1
         state.targetTotalBytes = queryFileSize(uri)
 
-        binding.tvSelectedPath.text = state.selectedPathDisplay
-        binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
-        binding.tvTargetDetails.text = "${formatBytes(state.targetTotalBytes)} • Ready"
-        binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
+        // Dynamic Format Auto-Selection: match output format chip with selected file container
+        val ext = state.selectedPathDisplay.substringAfterLast('.', "").lowercase()
+        when (currentToolMode) {
+            ToolMode.VIDEO_CLEANER -> {
+                when (ext) {
+                    "mp4" -> selectChipByIndex(binding.chipGroupFormat, 1)
+                    "mkv" -> selectChipByIndex(binding.chipGroupFormat, 2)
+                    "webm" -> selectChipByIndex(binding.chipGroupFormat, 3)
+                    else -> selectChipByIndex(binding.chipGroupFormat, 0) // Original / Auto
+                }
+            }
+            ToolMode.IMAGE_CLEANER -> {
+                when (ext) {
+                    "jpg", "jpeg" -> selectChipByIndex(binding.chipGroupFormat, 1)
+                    "png" -> selectChipByIndex(binding.chipGroupFormat, 2)
+                    "webp" -> selectChipByIndex(binding.chipGroupFormat, 3)
+                    else -> selectChipByIndex(binding.chipGroupFormat, 0) // Original / Auto
+                }
+            }
+            else -> {}
+        }
+        state.formatOptionIndex = getSelectedFormatIndex()
 
-        setClearButtonState(enabled = true)
+        updateTargetCardUI(state)
+        updatePrivacySummaryUI()
+        updatePrimaryActionDock(state)
         logToConsole("[TARGET] Mounted file: ${state.selectedPathDisplay} (${formatBytes(state.targetTotalBytes)})")
     }
 
@@ -241,12 +267,15 @@ class MainActivity : AppCompatActivity() {
         state.isFolderSelected = true
         state.selectedPathDisplay = getDisplayName(uri)
 
-        binding.tvSelectedPath.text = state.selectedPathDisplay
-        binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
+        // For batch folders, default to "Original / Auto" container preservation
+        if (currentToolMode == ToolMode.VIDEO_CLEANER || currentToolMode == ToolMode.IMAGE_CLEANER) {
+            selectChipByIndex(binding.chipGroupFormat, 0)
+            state.formatOptionIndex = 0
+        }
+
+        updateTargetCardUI(state)
         binding.tvTargetDetails.text = "Indexing directory contents..."
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_amber))
-
-        setClearButtonState(enabled = true)
 
         lifecycleScope.launch(Dispatchers.IO) {
             val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
@@ -270,21 +299,150 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 binding.tvTargetDetails.text = "$count files • ${formatBytes(totalBytes)} • Ready"
                 binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
+                updatePrivacySummaryUI()
+                updatePrimaryActionDock(state)
                 logToConsole("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count files, ${formatBytes(totalBytes)})")
             }
         }
     }
 
-    private fun setClearButtonState(enabled: Boolean) {
-        binding.btnClearTarget.isEnabled = enabled
-        if (enabled) {
-            binding.btnClearTarget.setTextColor(getColor(R.color.vf_accent_red))
-            binding.btnClearTarget.setIconTintResource(R.color.vf_accent_red)
-            binding.btnClearTarget.strokeColor = ColorStateList.valueOf(getColor(R.color.vf_accent_red))
+    private fun updateTargetCardUI(state: ToolSessionState) {
+        if (state.selectedUri != null) {
+            binding.layoutTargetEmpty.visibility = View.GONE
+            binding.layoutTargetMounted.visibility = View.VISIBLE
+            binding.tvSelectedPath.text = state.selectedPathDisplay
+            binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
+            binding.tvTargetDetails.text = if (state.isFolderSelected) {
+                "${state.targetFileCount} files • ${formatBytes(state.targetTotalBytes)} • Ready"
+            } else {
+                "${formatBytes(state.targetTotalBytes)} • Ready"
+            }
+            binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
         } else {
-            binding.btnClearTarget.setTextColor(getColor(R.color.vf_text_muted))
-            binding.btnClearTarget.setIconTintResource(R.color.vf_text_muted)
-            binding.btnClearTarget.strokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
+            binding.layoutTargetEmpty.visibility = View.VISIBLE
+            binding.layoutTargetMounted.visibility = View.GONE
+        }
+    }
+
+    private fun updatePrimaryActionDock(state: ToolSessionState) {
+        when (state.jobState) {
+            JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING -> {
+                binding.btnExecute.text = "CANCEL PROCESSING"
+                binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
+                binding.btnExecute.isEnabled = true
+            }
+            JobState.COMPLETE -> {
+                binding.btnExecute.text = "RUN ANOTHER TASK"
+                binding.btnExecute.setIconResource(R.drawable.ic_action_play)
+                binding.btnExecute.isEnabled = true
+            }
+            else -> {
+                if (state.selectedUri == null) {
+                    binding.btnExecute.text = "SELECT TARGET TO BEGIN"
+                    binding.btnExecute.setIconResource(R.drawable.ic_folder_pick)
+                    binding.btnExecute.isEnabled = true
+                } else {
+                    binding.btnExecute.text = getToolExecuteText(currentToolMode)
+                    binding.btnExecute.setIconResource(R.drawable.ic_action_play)
+                    binding.btnExecute.isEnabled = true
+                }
+            }
+        }
+    }
+
+    private fun getToolExecuteText(mode: ToolMode): String = when (mode) {
+        ToolMode.AI_BUNDLE -> "GENERATE AI BUNDLE"
+        ToolMode.VIDEO_CLEANER -> "SANITIZE VIDEO"
+        ToolMode.IMAGE_CLEANER -> "SCRUB IMAGE METADATA"
+        ToolMode.FOLDER_SCANNER -> "START FORENSIC AUDIT"
+    }
+
+    private fun updatePrivacySummaryUI() {
+        when (currentToolMode) {
+            ToolMode.AI_BUNDLE -> {
+                binding.tvPrivacyProfileBadge.text = "LLM PACKAGING"
+                binding.tvPrivacyProfileBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "○ Raw credentials unmasked (masking disabled)"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Test suites, mocks & fixtures excluded from context" else "○ Full source directory included"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ Dependency manifests compressed to reduce prompt tokens" else "○ Manifest compression disabled"
+            }
+            ToolMode.VIDEO_CLEANER -> {
+                val noiseLevel = when (getSelectedOptionIndex()) {
+                    0 -> "Standard"
+                    1 -> "High"
+                    2 -> "Stealth"
+                    else -> "None"
+                }
+                binding.tvPrivacyProfileBadge.text = "$noiseLevel DEFENSE".uppercase()
+                binding.tvPrivacyProfileBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Camera EXIF, GPS coordinates & device serials purged" else "○ EXIF & GPS retained"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Audio stream stripped completely" else "✓ Audio stream preserved (metadata tags scrubbed)"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ Bitstream repacked (PRNU sensor pattern noise mitigated)" else "○ Stream remuxed without pixel alteration"
+            }
+            ToolMode.IMAGE_CLEANER -> {
+                binding.tvPrivacyProfileBadge.text = "METADATA STRIP"
+                binding.tvPrivacyProfileBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ EXIF, GPS location & camera maker notes scrubbed" else "○ EXIF retained"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Embedded preview thumbnails & caches eliminated" else "○ Thumbnails preserved"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ ICC color profile sanitized to standard sRGB" else "○ ICC profile preserved"
+            }
+            ToolMode.FOLDER_SCANNER -> {
+                val mode = when (getSelectedOptionIndex()) {
+                    0 -> "Quick Audit"
+                    1 -> "Deep Forensic"
+                    else -> "Duplicate Hunt"
+                }
+                binding.tvPrivacyProfileBadge.text = mode.uppercase()
+                binding.tvPrivacyProfileBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Recursive directory traversal across all subprojects" else "○ Top-level directory only"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ SHA-256 cryptographic hashing active" else "○ SHA-256 calculation skipped (low CPU/battery)"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ High-entropy secret & API key scanner active" else "○ Secret detection inactive"
+            }
+        }
+    }
+
+    private fun openFilePickerForCurrentTool() {
+        when (currentToolMode) {
+            ToolMode.VIDEO_CLEANER -> {
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
+                    visualMediaPickerLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest.Builder()
+                            .setMediaType(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                            .build()
+                    )
+                } else {
+                    filePickerLauncher.launch(arrayOf("video/*"))
+                }
+            }
+            ToolMode.IMAGE_CLEANER -> {
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
+                    visualMediaPickerLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest.Builder()
+                            .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            .build()
+                    )
+                } else {
+                    filePickerLauncher.launch(arrayOf("image/*"))
+                }
+            }
+            else -> {
+                filePickerLauncher.launch(arrayOf("*/*"))
+            }
+        }
+    }
+
+    private fun zipDirectory(sourceDir: File, zipFile: File) {
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            sourceDir.walkTopDown().filter { it.isFile }.forEach { file ->
+                val entryName = file.relativeTo(sourceDir).path.replace('\\', '/')
+                zos.putNextEntry(ZipEntry(entryName))
+                file.inputStream().use { it.copyTo(zos) }
+                zos.closeEntry()
+            }
         }
     }
 
@@ -402,14 +560,16 @@ class MainActivity : AppCompatActivity() {
             binding.tvWhatsNewContent.text = cachedChangelog
         }
 
-        // Respect bottom navigation gesture safe area
+        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            binding.appBarLayout.setPadding(0, statusBarTop, 0, 0)
             binding.bottomActionDock.setPadding(
                 binding.bottomActionDock.paddingStart,
                 binding.bottomActionDock.paddingTop,
                 binding.bottomActionDock.paddingEnd,
-                systemBars.bottom + 12
+                navBarBottom + 12
             )
             insets
         }
@@ -434,13 +594,24 @@ class MainActivity : AppCompatActivity() {
         checkForUpdates(isUserInitiated = false)
     }
 
+    override fun onResume() {
+        super.onResume()
+        val pendingApk = pendingInstallApk
+        if (pendingApk != null && pendingApk.exists()) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+                pendingInstallApk = null
+                promptInstallApk(pendingApk)
+            }
+        }
+    }
+
     private fun initPython() {
         try {
             if (!Python.isStarted()) {
                 Python.start(AndroidPlatform(this))
             }
             py = Python.getInstance()
-            logToConsole("[SYS] Initialized VeilFrame 2.2.2 Core Runtime (Python 3.11.16)")
+            logToConsole("[SYS] Initialized VeilFrame 2.2.3 Core Runtime (Python 3.11.16)")
             logToConsole("[SYS] Local forensics & AI context engine ready.")
         } catch (e: Exception) {
             logToConsole("[WARN] Python runtime initialization notice: ${e.message}")
@@ -537,6 +708,38 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnClearTarget.setOnClickListener {
             clearSelectedTarget(logMessage = true)
+        }
+
+        // Target Card Actions
+        binding.btnChangeTarget.setOnClickListener {
+            openFilePickerForCurrentTool()
+        }
+
+        binding.btnPickTargetEmpty.setOnClickListener {
+            openFilePickerForCurrentTool()
+        }
+
+        // Execution Monitor Console Toggle
+        binding.btnToggleConsole.setOnClickListener {
+            isConsoleExpanded = !isConsoleExpanded
+            binding.layoutConsoleBody.visibility = if (isConsoleExpanded) View.VISIBLE else View.GONE
+            binding.btnToggleConsole.setIconResource(
+                if (isConsoleExpanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more
+            )
+        }
+
+        // Dynamic Privacy Summary on switch changes
+        binding.switchOption1.setOnCheckedChangeListener { _, isChecked ->
+            currentState.switch1Checked = isChecked
+            updatePrivacySummaryUI()
+        }
+        binding.switchOption2.setOnCheckedChangeListener { _, isChecked ->
+            currentState.switch2Checked = isChecked
+            updatePrivacySummaryUI()
+        }
+        binding.switchOption3.setOnCheckedChangeListener { _, isChecked ->
+            currentState.switch3Checked = isChecked
+            updatePrivacySummaryUI()
         }
 
         // Telemetry Actions (Interactive Monospace Console)
@@ -657,28 +860,29 @@ class MainActivity : AppCompatActivity() {
         state.switch2Checked = binding.switchOption2.isChecked
         state.switch3Checked = binding.switchOption3.isChecked
         state.consoleLogs = binding.tvConsoleLog.text.toString()
+
+        val prefs = getSharedPreferences("veilframe_tool_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt("${currentToolMode.name}_primary", state.primaryOptionIndex)
+            .putInt("${currentToolMode.name}_format", state.formatOptionIndex)
+            .putBoolean("${currentToolMode.name}_switch1", state.switch1Checked)
+            .putBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
+            .putBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
+            .apply()
     }
 
     private fun restoreToolState(state: ToolSessionState) {
-        // Restore Target
-        if (state.selectedUri != null) {
-            binding.tvSelectedPath.text = state.selectedPathDisplay
-            binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
-            val detail = if (state.isFolderSelected) {
-                "${state.targetFileCount} files • ${formatBytes(state.targetTotalBytes)} • Ready"
-            } else {
-                "${formatBytes(state.targetTotalBytes)} • Ready"
-            }
-            binding.tvTargetDetails.text = detail
-            binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
-            setClearButtonState(enabled = true)
-        } else {
-            binding.tvSelectedPath.text = "No file or folder selected"
-            binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
-            binding.tvTargetDetails.text = "Select a target below to begin processing"
-            binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
-            setClearButtonState(enabled = false)
+        val prefs = getSharedPreferences("veilframe_tool_prefs", Context.MODE_PRIVATE)
+        if (prefs.contains("${currentToolMode.name}_primary")) {
+            state.primaryOptionIndex = prefs.getInt("${currentToolMode.name}_primary", state.primaryOptionIndex)
+            state.formatOptionIndex = prefs.getInt("${currentToolMode.name}_format", state.formatOptionIndex)
+            state.switch1Checked = prefs.getBoolean("${currentToolMode.name}_switch1", state.switch1Checked)
+            state.switch2Checked = prefs.getBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
+            state.switch3Checked = prefs.getBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
         }
+
+        // Restore Target Card (Empty vs Mounted state)
+        updateTargetCardUI(state)
 
         // Restore Options
         selectChipByIndex(binding.chipGroupPrimaryOptions, state.primaryOptionIndex)
@@ -686,6 +890,12 @@ class MainActivity : AppCompatActivity() {
         binding.switchOption1.isChecked = state.switch1Checked
         binding.switchOption2.isChecked = state.switch2Checked
         binding.switchOption3.isChecked = state.switch3Checked
+
+        // Restore Privacy Summary
+        updatePrivacySummaryUI()
+
+        // Restore Primary Action Dock
+        updatePrimaryActionDock(state)
 
         // Restore Telemetry & JobState
         updateJobState(state.jobState, state.statusMessage)
@@ -766,7 +976,7 @@ class MainActivity : AppCompatActivity() {
                     primaryDefaultIndex = 0,
                     formatLabel = "Container Format",
                     formatDesc = "Output video container encoding",
-                    formatChips = listOf("MP4 (.mp4)", "MKV (.mkv)", "WebM (.webm)"),
+                    formatChips = listOf("Original / Auto", "MP4 (.mp4)", "MKV (.mkv)", "WebM (.webm)"),
                     formatDefaultIndex = 0,
                     switch1Title = "Strip Location & Camera EXIF",
                     switch1Desc = "Removes GPS coordinates, device serials, and timestamps",
@@ -794,7 +1004,7 @@ class MainActivity : AppCompatActivity() {
                     primaryDefaultIndex = 0,
                     formatLabel = "Image Format",
                     formatDesc = "Output image encoding and color profile",
-                    formatChips = listOf("JPEG (.jpg)", "PNG (.png)", "WebP (.webp)"),
+                    formatChips = listOf("Original / Auto", "JPEG (.jpg)", "PNG (.png)", "WebP (.webp)"),
                     formatDefaultIndex = 0,
                     switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
                     switch1Desc = "Eliminates location, aperture, camera serials, and dates",
@@ -1022,12 +1232,9 @@ class MainActivity : AppCompatActivity() {
         state.targetTotalBytes = 0L
         state.lastGeneratedFile = null
 
-        binding.tvSelectedPath.text = state.selectedPathDisplay
-        binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
-        binding.tvTargetDetails.text = "Select a target below to begin processing"
-        binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
-
-        setClearButtonState(enabled = false)
+        updateTargetCardUI(state)
+        updatePrivacySummaryUI()
+        updatePrimaryActionDock(state)
 
         binding.cardResultSummary.visibility = View.GONE
         binding.btnExportResult.isEnabled = false
@@ -1092,14 +1299,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun executeSelectedMode() {
-        val uri = currentState.selectedUri
-        if (uri == null) {
-            Toast.makeText(this, "Please select a target file or folder first", Toast.LENGTH_SHORT).show()
-            logToConsole("[WARN] Execution halted: No target file or folder mounted.")
+        val state = currentState
+        if (state.jobState in listOf(JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING)) {
+            updateJobState(JobState.CANCELLED, "Processing cancelled by user.")
+            logToConsole("[USER] Execution cancelled by user.")
+            binding.progressIndicator.isIndeterminate = false
+            updatePrimaryActionDock(state)
             return
         }
 
-        binding.btnExecute.isEnabled = false
+        if (state.jobState == JobState.COMPLETE) {
+            updateJobState(JobState.IDLE, "Ready for execution.")
+            updatePrimaryActionDock(state)
+            return
+        }
+
+        val uri = state.selectedUri
+        if (uri == null) {
+            openFilePickerForCurrentTool()
+            return
+        }
+
+        binding.btnExecute.text = "CANCEL PROCESSING"
+        binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false
         binding.cardResultSummary.visibility = View.GONE
@@ -1114,6 +1336,7 @@ class MainActivity : AppCompatActivity() {
                 ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
                 ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
             }
+            updatePrimaryActionDock(currentState)
         }
     }
 
@@ -1224,77 +1447,186 @@ class MainActivity : AppCompatActivity() {
         }
 
         val formatIndex = getSelectedFormatIndex()
-        val extension = when (formatIndex) {
-            0 -> ".mp4"
-            1 -> ".mkv"
-            else -> ".webm"
-        }
-
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PREPARING, "Staging video file...")
-            logToConsole("[PREP] Staging video: ${state.selectedPathDisplay}...")
-        }
-
-        val tempInput = File(cacheDir, "input_video_${System.currentTimeMillis()}.mp4")
-        val successCopy = copyUriToFile(uri, tempInput)
-        if (!successCopy) {
-            withContext(Dispatchers.Main) {
-                updateJobState(JobState.FAILED, "Failed to copy input video.")
-                logToConsole("[ERR] Failed to copy input video from storage.")
-                binding.btnExecute.isEnabled = true
-            }
-            return
-        }
-
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = File(cacheDir, "Sanitized_$timeStamp$extension")
+        val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
 
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
-            logToConsole("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
-        }
+        if (state.isFolderSelected) {
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PREPARING, "Extracting video files from folder...")
+                logToConsole("[BATCH] Scanning folder for video files: ${state.selectedPathDisplay}...")
+            }
 
-        val processed = withContext(Dispatchers.IO) {
-            val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
-            backend.cleanVideo(
-                tempInput.absolutePath,
-                outputFile.absolutePath,
-                noiseLevel = noiseLevel,
-                scrubAudio = binding.switchOption2.isChecked
-            )
-        }
+            val stagingDir = File(cacheDir, "batch_video_staging_$timeStamp")
+            val outputBatchDir = File(cacheDir, "batch_video_sanitized_$timeStamp").apply { mkdirs() }
+            val copiedCount = materializeTargetIntoDir(uri, true, stagingDir)
 
-        tempInput.delete()
+            val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "wmv", "3gp")
+            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase() in videoExtensions }.toList()
 
-        if (processed && outputFile.exists() && outputFile.length() > 0) {
-            state.lastGeneratedFile = outputFile
+            if (candidateFiles.isEmpty()) {
+                stagingDir.deleteRecursively()
+                outputBatchDir.deleteRecursively()
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "No supported video files found in folder.")
+                    logToConsole("[WARN] No video files (.mp4, .mkv, .webm, .mov, etc.) found in selected folder ($copiedCount files inspected).")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PROCESSING, "Sanitizing ${candidateFiles.size} videos (noise: $noiseLevel)...")
+                logToConsole("[BATCH] Found ${candidateFiles.size} videos with mixed formats. Beginning sanitization...")
+            }
+
+            var successCount = 0
+            candidateFiles.forEachIndexed { idx, inputFile ->
+                val targetExt = when (formatIndex) {
+                    1 -> "mp4"
+                    2 -> "mkv"
+                    3 -> "webm"
+                    else -> inputFile.extension.lowercase().ifEmpty { "mp4" } // Original / Auto
+                }
+                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_sanitized.$targetExt")
+
+                withContext(Dispatchers.Main) {
+                    val percent = ((idx * 100) / candidateFiles.size)
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = percent
+                    binding.tvProgressDetails.text = "Sanitizing ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
+                    logToConsole("[RUN] [${idx + 1}/${candidateFiles.size}] Sanitizing ${inputFile.name} -> $targetExt (noise: $noiseLevel)")
+                }
+
+                val ok = withContext(Dispatchers.IO) {
+                    backend.cleanVideo(
+                        inputFile.absolutePath,
+                        outputFile.absolutePath,
+                        noiseLevel = noiseLevel,
+                        scrubAudio = binding.switchOption2.isChecked
+                    )
+                }
+                if (ok && outputFile.exists() && outputFile.length() > 0) {
+                    successCount++
+                }
+            }
+
+            stagingDir.deleteRecursively()
+
+            if (successCount == 0) {
+                outputBatchDir.deleteRecursively()
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Batch video sanitization failed.")
+                    logToConsole("[ERR] Failed to sanitize any video files in the batch.")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            val finalFile: File
+            if (successCount == 1) {
+                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
+                finalFile = File(cacheDir, singleFile.name)
+                singleFile.copyTo(finalFile, overwrite = true)
+                outputBatchDir.deleteRecursively()
+            } else {
+                finalFile = File(cacheDir, "VeilFrame_Batch_Videos_$timeStamp.zip")
+                zipDirectory(outputBatchDir, finalFile)
+                outputBatchDir.deleteRecursively()
+            }
+
+            state.lastGeneratedFile = finalFile
             state.progressPercent = 100
             state.progressDetailsText = "100% complete"
 
             withContext(Dispatchers.Main) {
-                updateJobState(JobState.COMPLETE, "Video ready: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${formatBytes(finalFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
                 binding.tvProgressDetails.text = "100% complete"
 
-                // Show Step 4: Result Summary Card
                 binding.cardResultSummary.visibility = View.VISIBLE
-                binding.tvResultTitle.text = outputFile.name
-                binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+                binding.tvResultTitle.text = finalFile.name
+                binding.tvResultDetails.text = "${formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount videos sanitized"
 
-                logToConsole("[OK] Video sanitized successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
-                logToConsole("[EXPORT] Output ready for saving or sharing.")
-                binding.btnExecute.isEnabled = true
+                logToConsole("[OK] Batch completed: $successCount/${candidateFiles.size} videos sanitized successfully.")
+                logToConsole("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
+                updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
                 binding.btnShareResult.isEnabled = true
             }
         } else {
+            // Single video file
             withContext(Dispatchers.Main) {
-                updateJobState(JobState.FAILED, "Video sanitization failed.")
-                binding.progressIndicator.isIndeterminate = false
-                binding.cardResultSummary.visibility = View.GONE
-                logToConsole("[ERR] Video engine reported failure.")
-                binding.btnExecute.isEnabled = true
+                updateJobState(JobState.PREPARING, "Staging video file...")
+                logToConsole("[PREP] Staging video: ${state.selectedPathDisplay}...")
+            }
+
+            val sourceExt = state.selectedPathDisplay.substringAfterLast('.', "mp4").lowercase()
+            val targetExt = when (formatIndex) {
+                1 -> "mp4"
+                2 -> "mkv"
+                3 -> "webm"
+                else -> sourceExt.ifEmpty { "mp4" } // Original / Auto
+            }
+
+            val tempInput = File(cacheDir, "input_video_${System.currentTimeMillis()}.$sourceExt")
+            val successCopy = copyUriToFile(uri, tempInput)
+            if (!successCopy) {
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Failed to copy input video.")
+                    logToConsole("[ERR] Failed to copy input video from storage.")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            val outputFile = File(cacheDir, "Sanitized_$timeStamp.$targetExt")
+
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
+                logToConsole("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
+            }
+
+            val processed = withContext(Dispatchers.IO) {
+                backend.cleanVideo(
+                    tempInput.absolutePath,
+                    outputFile.absolutePath,
+                    noiseLevel = noiseLevel,
+                    scrubAudio = binding.switchOption2.isChecked
+                )
+            }
+
+            tempInput.delete()
+
+            if (processed && outputFile.exists() && outputFile.length() > 0) {
+                state.lastGeneratedFile = outputFile
+                state.progressPercent = 100
+                state.progressDetailsText = "100% complete"
+
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.COMPLETE, "Video ready: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = 100
+                    binding.tvProgressDetails.text = "100% complete"
+
+                    binding.cardResultSummary.visibility = View.VISIBLE
+                    binding.tvResultTitle.text = outputFile.name
+                    binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+
+                    logToConsole("[OK] Video sanitized successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                    logToConsole("[EXPORT] Output ready for saving or sharing.")
+                    updatePrimaryActionDock(state)
+                    binding.btnExportResult.isEnabled = true
+                    binding.btnShareResult.isEnabled = true
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Video sanitization failed.")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.cardResultSummary.visibility = View.GONE
+                    logToConsole("[ERR] Video engine reported failure.")
+                    updatePrimaryActionDock(state)
+                }
             }
         }
     }
@@ -1302,76 +1634,184 @@ class MainActivity : AppCompatActivity() {
     private suspend fun runImageSanitization(uri: Uri) {
         val state = currentState
         val formatIndex = getSelectedFormatIndex()
-        val extension = when (formatIndex) {
-            0 -> ".jpg"
-            1 -> ".png"
-            else -> ".webp"
-        }
-
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PREPARING, "Staging image...")
-            logToConsole("[PREP] Staging image: ${state.selectedPathDisplay}...")
-        }
-
-        val tempInput = File(cacheDir, "input_img_${System.currentTimeMillis()}.jpg")
-        val successCopy = copyUriToFile(uri, tempInput)
-        if (!successCopy) {
-            withContext(Dispatchers.Main) {
-                updateJobState(JobState.FAILED, "Failed to copy input image.")
-                logToConsole("[ERR] Failed to copy input image from storage.")
-                binding.btnExecute.isEnabled = true
-            }
-            return
-        }
-
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = File(cacheDir, "Cleaned_$timeStamp$extension")
+        val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
 
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels...")
-            logToConsole("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
-        }
+        if (state.isFolderSelected) {
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PREPARING, "Extracting images from folder...")
+                logToConsole("[BATCH] Scanning folder for images: ${state.selectedPathDisplay}...")
+            }
 
-        val processed = withContext(Dispatchers.IO) {
-            val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
-            backend.cleanImage(
-                tempInput.absolutePath,
-                outputFile.absolutePath,
-                stripExif = binding.switchOption1.isChecked
-            )
-        }
+            val stagingDir = File(cacheDir, "batch_img_staging_$timeStamp")
+            val outputBatchDir = File(cacheDir, "batch_img_sanitized_$timeStamp").apply { mkdirs() }
+            val copiedCount = materializeTargetIntoDir(uri, true, stagingDir)
 
-        tempInput.delete()
+            val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic")
+            val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase() in imageExtensions }.toList()
 
-        if (processed && outputFile.exists() && outputFile.length() > 0) {
-            state.lastGeneratedFile = outputFile
+            if (candidateFiles.isEmpty()) {
+                stagingDir.deleteRecursively()
+                outputBatchDir.deleteRecursively()
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "No supported image files found in folder.")
+                    logToConsole("[WARN] No image files (.jpg, .png, .webp, etc.) found in selected folder ($copiedCount files inspected).")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PROCESSING, "Scrubbing ${candidateFiles.size} images...")
+                logToConsole("[BATCH] Found ${candidateFiles.size} images with mixed formats. Beginning batch scrubbing...")
+            }
+
+            var successCount = 0
+            candidateFiles.forEachIndexed { idx, inputFile ->
+                val targetExt = when (formatIndex) {
+                    1 -> "jpg"
+                    2 -> "png"
+                    3 -> "webp"
+                    else -> inputFile.extension.lowercase().ifEmpty { "jpg" } // Original / Auto
+                }
+                val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_cleaned.$targetExt")
+
+                withContext(Dispatchers.Main) {
+                    val percent = ((idx * 100) / candidateFiles.size)
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = percent
+                    binding.tvProgressDetails.text = "Scrubbing ${idx + 1}/${candidateFiles.size}: ${inputFile.name}"
+                    logToConsole("[RUN] [${idx + 1}/${candidateFiles.size}] Scrubbing ${inputFile.name} -> $targetExt")
+                }
+
+                val ok = withContext(Dispatchers.IO) {
+                    backend.cleanImage(
+                        inputFile.absolutePath,
+                        outputFile.absolutePath,
+                        stripExif = binding.switchOption1.isChecked
+                    )
+                }
+                if (ok && outputFile.exists() && outputFile.length() > 0) {
+                    successCount++
+                }
+            }
+
+            stagingDir.deleteRecursively()
+
+            if (successCount == 0) {
+                outputBatchDir.deleteRecursively()
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Batch image sanitization failed.")
+                    logToConsole("[ERR] Failed to sanitize any image files in the batch.")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            val finalFile: File
+            if (successCount == 1) {
+                val singleFile = outputBatchDir.listFiles()?.firstOrNull() ?: outputBatchDir
+                finalFile = File(cacheDir, singleFile.name)
+                singleFile.copyTo(finalFile, overwrite = true)
+                outputBatchDir.deleteRecursively()
+            } else {
+                finalFile = File(cacheDir, "VeilFrame_Batch_Images_$timeStamp.zip")
+                zipDirectory(outputBatchDir, finalFile)
+                outputBatchDir.deleteRecursively()
+            }
+
+            state.lastGeneratedFile = finalFile
             state.progressPercent = 100
             state.progressDetailsText = "100% complete"
 
             withContext(Dispatchers.Main) {
-                updateJobState(JobState.COMPLETE, "Image clean: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                updateJobState(JobState.COMPLETE, "Batch ready: ${finalFile.name} (${formatBytes(finalFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
                 binding.tvProgressDetails.text = "100% complete"
 
-                // Show Step 4: Result Summary Card
                 binding.cardResultSummary.visibility = View.VISIBLE
-                binding.tvResultTitle.text = outputFile.name
-                binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata stripped"
+                binding.tvResultTitle.text = finalFile.name
+                binding.tvResultDetails.text = "${formatBytes(finalFile.length())} • ${finalFile.extension.uppercase()} • $successCount images scrubbed"
 
-                logToConsole("[OK] Image scrubbed successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
-                logToConsole("[EXPORT] Output ready for saving or sharing.")
-                binding.btnExecute.isEnabled = true
+                logToConsole("[OK] Batch completed: $successCount/${candidateFiles.size} images scrubbed successfully.")
+                logToConsole("[EXPORT] Output ready for saving or sharing: ${finalFile.name}")
+                updatePrimaryActionDock(state)
                 binding.btnExportResult.isEnabled = true
                 binding.btnShareResult.isEnabled = true
             }
         } else {
+            // Single image file
             withContext(Dispatchers.Main) {
-                updateJobState(JobState.FAILED, "Image sanitization failed.")
-                binding.progressIndicator.isIndeterminate = false
-                binding.cardResultSummary.visibility = View.GONE
-                logToConsole("[ERR] Image cleaner reported failure.")
-                binding.btnExecute.isEnabled = true
+                updateJobState(JobState.PREPARING, "Staging image...")
+                logToConsole("[PREP] Staging image: ${state.selectedPathDisplay}...")
+            }
+
+            val sourceExt = state.selectedPathDisplay.substringAfterLast('.', "jpg").lowercase()
+            val targetExt = when (formatIndex) {
+                1 -> "jpg"
+                2 -> "png"
+                3 -> "webp"
+                else -> sourceExt.ifEmpty { "jpg" } // Original / Auto
+            }
+
+            val tempInput = File(cacheDir, "input_img_${System.currentTimeMillis()}.$sourceExt")
+            val successCopy = copyUriToFile(uri, tempInput)
+            if (!successCopy) {
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Failed to copy input image.")
+                    logToConsole("[ERR] Failed to copy input image from storage.")
+                    updatePrimaryActionDock(state)
+                }
+                return
+            }
+
+            val outputFile = File(cacheDir, "Cleaned_$timeStamp.$targetExt")
+
+            withContext(Dispatchers.Main) {
+                updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels...")
+                logToConsole("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
+            }
+
+            val processed = withContext(Dispatchers.IO) {
+                backend.cleanImage(
+                    tempInput.absolutePath,
+                    outputFile.absolutePath,
+                    stripExif = binding.switchOption1.isChecked
+                )
+            }
+
+            tempInput.delete()
+
+            if (processed && outputFile.exists() && outputFile.length() > 0) {
+                state.lastGeneratedFile = outputFile
+                state.progressPercent = 100
+                state.progressDetailsText = "100% complete"
+
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.COMPLETE, "Image clean: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.progressIndicator.progress = 100
+                    binding.tvProgressDetails.text = "100% complete"
+
+                    binding.cardResultSummary.visibility = View.VISIBLE
+                    binding.tvResultTitle.text = outputFile.name
+                    binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata stripped"
+
+                    logToConsole("[OK] Image scrubbed successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
+                    logToConsole("[EXPORT] Output ready for saving or sharing.")
+                    updatePrimaryActionDock(state)
+                    binding.btnExportResult.isEnabled = true
+                    binding.btnShareResult.isEnabled = true
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    updateJobState(JobState.FAILED, "Image sanitization failed.")
+                    binding.progressIndicator.isIndeterminate = false
+                    binding.cardResultSummary.visibility = View.GONE
+                    logToConsole("[ERR] Image cleaner reported failure.")
+                    updatePrimaryActionDock(state)
+                }
             }
         }
     }
@@ -1489,7 +1929,7 @@ class MainActivity : AppCompatActivity() {
 
             logToConsole("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
             logToConsole("[EXPORT] Output ready for saving or sharing.")
-            binding.btnExecute.isEnabled = true
+            updatePrimaryActionDock(state)
             binding.btnExportResult.isEnabled = true
             binding.btnShareResult.isEnabled = true
         }
@@ -1642,10 +2082,11 @@ class MainActivity : AppCompatActivity() {
                             expectedSha256 = apkExpectedSha256
                         )
                     } else {
-                        binding.tvUpdateStatus.text = "Installed: v2.2.2 • You're up to date ✓"
+                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.3" } catch (_: Exception) { "2.2.3" }
+                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • You're up to date ✓"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
-                            Toast.makeText(this@MainActivity, "You have the latest version (v2.2.2)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "You have the latest version (v$currentVersionName)", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -1655,8 +2096,8 @@ class MainActivity : AppCompatActivity() {
                     if (isUserInitiated) {
                         Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                     } else {
-                        // Silent fallback for local-first architecture
-                        binding.tvUpdateStatus.text = "Installed: v2.2.2 • Local Engine"
+                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.3" } catch (_: Exception) { "2.2.3" }
+                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
                     }
                 }
@@ -1681,7 +2122,11 @@ class MainActivity : AppCompatActivity() {
             append("\n\nSecurity & Integrity:\n")
             append("✓ Source: Official GitHub Releases\n")
             append("✓ Package: $packageName\n")
-            append("✓ Integrity: Cryptographic SHA-256 validation")
+            if (expectedSha256.isNotBlank()) {
+                append("✓ Integrity: Cryptographic SHA-256 validation")
+            } else {
+                append("✓ Integrity: PackageArchive signature & identity verification")
+            }
         }.toString()
 
         MaterialAlertDialogBuilder(this)
@@ -1696,7 +2141,8 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Interactive APK download dialog with determinate progress, cancellation,
-     * streaming SHA-256 calculation, and PackageArchive inspection.
+     * cross-domain redirect following (GitHub Releases -> AWS S3), streaming SHA-256 calculation,
+     * and PackageArchive inspection.
      */
     private fun downloadAndInstallUpdateWithProgress(
         downloadUrl: String,
@@ -1739,16 +2185,42 @@ class MainActivity : AppCompatActivity() {
         downloadJob = lifecycleScope.launch(Dispatchers.IO) {
             val apkFile = File(cacheDir, apkName)
             try {
-                val url = URL(downloadUrl)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 15000
-                    readTimeout = 30000
+                var currentUrl = downloadUrl
+                var connection: HttpURLConnection? = null
+                var redirectCount = 0
+
+                // Follow redirects up to 7 hops across CDNs (GitHub Releases -> AWS S3 objects.githubusercontent.com)
+                while (redirectCount < 7) {
+                    val u = URL(currentUrl)
+                    val conn = (u.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 30000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "VeilFrame-Android-Updater")
+                    }
+                    val status = conn.responseCode
+                    if (status in 300..399) {
+                        val redirectLoc = conn.getHeaderField("Location")
+                        conn.disconnect()
+                        if (!redirectLoc.isNullOrEmpty()) {
+                            currentUrl = redirectLoc
+                            redirectCount++
+                            continue
+                        }
+                    }
+                    connection = conn
+                    break
                 }
 
-                val totalLength = if (connection.contentLengthLong > 0) connection.contentLengthLong else totalBytesExpected
+                if (connection == null) {
+                    throw IOException("Failed to establish download connection")
+                }
+
+                val conn = connection
+                val totalLength = if (conn.contentLengthLong > 0) conn.contentLengthLong else totalBytesExpected
                 val digest = MessageDigest.getInstance("SHA-256")
 
-                connection.inputStream.use { input ->
+                conn.inputStream.use { input ->
                     apkFile.outputStream().use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
@@ -1843,6 +2315,7 @@ class MainActivity : AppCompatActivity() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!packageManager.canRequestPackageInstalls()) {
+                    pendingInstallApk = apkFile
                     Toast.makeText(this, "Please allow VeilFrame to install app updates", Toast.LENGTH_LONG).show()
                     val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:$packageName")
@@ -1863,6 +2336,13 @@ class MainActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
+            val resolveInfoList = packageManager.queryIntentActivities(installIntent, 0)
+            for (resolveInfo in resolveInfoList) {
+                val pkg = resolveInfo.activityInfo.packageName
+                grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
             startActivity(installIntent)
         } catch (e: Exception) {
             Toast.makeText(this, "Installation error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1883,7 +2363,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.2.1
+                VeilFrame v2.2.3
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution

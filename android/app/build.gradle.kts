@@ -12,13 +12,50 @@ android {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 222
-        versionName = "2.2.2"
+        versionCode = 223
+        versionName = "2.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val isCi = System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true"
+            val keystorePath = System.getenv("KEYSTORE_PATH") ?: project.findProperty("KEYSTORE_PATH") as String?
+            val storePass = System.getenv("KEYSTORE_PASSWORD") ?: project.findProperty("KEYSTORE_PASSWORD") as String?
+            val keyAl = System.getenv("KEY_ALIAS") ?: project.findProperty("KEY_ALIAS") as String?
+            val keyPass = System.getenv("KEY_PASSWORD") ?: project.findProperty("KEY_PASSWORD") as String?
+
+            val rootKeystore = rootProject.file("../release.keystore")
+            if (!keystorePath.isNullOrEmpty() && file(keystorePath).exists() && !storePass.isNullOrEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = storePass
+                keyAlias = keyAl
+                keyPassword = keyPass
+            } else if (file("release.keystore").exists() && !storePass.isNullOrEmpty()) {
+                storeFile = file("release.keystore")
+                storePassword = storePass
+                keyAlias = keyAl
+                keyPassword = keyPass
+            } else if (rootKeystore.exists() && !storePass.isNullOrEmpty()) {
+                storeFile = rootKeystore
+                storePassword = storePass
+                keyAlias = keyAl
+                keyPassword = keyPass
+            } else if (isCi) {
+                error("Release keystore is missing in CI environment! Production release build requires valid keystore credentials.")
+            } else {
+                // Fallback for local dev builds without signing credentials
+                val debugConfig = getByName("debug")
+                storeFile = debugConfig.storeFile
+                storePassword = debugConfig.storePassword
+                keyAlias = debugConfig.keyAlias
+                keyPassword = debugConfig.keyPassword
+            }
         }
     }
 
@@ -30,7 +67,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug") // Configurable for production release key
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             applicationIdSuffix = ".debug"

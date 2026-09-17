@@ -10,7 +10,19 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.2 CURRENT (Production Release)
+### v2.2.3 CURRENT (Production Release)
+- **Status Bar Window Inset Handling**: Zero toolbar clipping under system status bars, camera cutouts, and display notches.
+- **Dedicated Release Signing Identity**: Configurable release keystore preventing package update conflicts on manual and in-app updates.
+- **In-App Updater CDN Redirect Following**: Follows multi-hop AWS S3 CDN redirects and automatically resumes install upon unknown sources authorization.
+- **Dynamic Container Format Matching**: Format chips dynamically match selected video (.mp4, .mkv, .webm) and image (.jpg, .png, .webp) extensions.
+- **Batch Folder Processing**: Cleans folders with mixed media formats and packages results into organized ZIP archives.
+- **Dynamic Privacy Impact Card**: Real-time privacy profile and sanitization preview before execution.
+- **Empty vs. Mounted Target UI**: Clean empty state and mounted details with active Change/Clear controls (no disabled Clear buttons).
+- **Collapsible Execution Monitor**: Clean telemetry progress metrics with expandable monospace console.
+- **Context-Aware Action Dock**: Transitions through Select Target, Execute, Cancel, and Run Another.
+- **Persistent Tool Preferences**: Remembers configured options per engine across app launches.
+
+### v2.2.2 (Previous Release)
 - **Mobile Usability & UX Refinements (v2.2.2)**:
   - **Adaptive Mobile HTML Reports**: CSS `@media` breakpoints, `.table-responsive` touch-scroll wrappers, compact directory tree padding, and mobile hash truncation.
   - **Real Target Path Reporting**: Scanned directory display path preserved end-to-end without internal Android sandbox cache leakage.

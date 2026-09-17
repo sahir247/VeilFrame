@@ -116,3 +116,5 @@ local.properties
 
 # AI Bundles
 *.aibundle
+release.keystore
+keystore_base64.txt
