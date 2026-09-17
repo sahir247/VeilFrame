@@ -81,8 +81,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **Linux (Portable)** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
-| **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` |
-| **Android (AAB)** | `VeilFrame-release.aab` | Universal (API 26+) | Google Play Store distribution app bundle |
+| **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` or direct install |
 | **Python (Any OS)** | `veilframe-2.2.1-py3-none-any.whl` | Universal | `pip install veilframe-2.2.1-py3-none-any.whl` |
 
 ```powershell
