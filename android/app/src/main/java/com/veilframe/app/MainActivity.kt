@@ -943,7 +943,6 @@ class MainActivity : AppCompatActivity() {
                 """.trimIndent(),
                 Charsets.UTF_8
             )
-            isSuccess = true
         }
 
         lastGeneratedFile = outputFile
