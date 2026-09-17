@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.0-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.1-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -83,7 +83,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` |
 | **Android (AAB)** | `VeilFrame-release.aab` | Universal (API 26+) | Google Play Store distribution app bundle |
-| **Python (Any OS)** | `veilframe-2.2.0-py3-none-any.whl` | Universal | `pip install veilframe-2.2.0-py3-none-any.whl` |
+| **Python (Any OS)** | `veilframe-2.2.1-py3-none-any.whl` | Universal | `pip install veilframe-2.2.1-py3-none-any.whl` |
 
 ```powershell
 # Windows Checksum Verification:

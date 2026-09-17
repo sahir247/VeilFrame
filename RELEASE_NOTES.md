@@ -1,5 +1,39 @@
 # VeilFrame Release Notes
 
+## VeilFrame v2.2.1
+
+> **Release Date:** September 2026  
+> **Target SDK / Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 35, ARM64 APK), Python 3.10+
+
+VeilFrame v2.2.1 delivers a major mobile UX modernization, solving notification panel overlap with proper window insets, replacing all emojis with precision vector SVGs, bringing desktop-grade multi-format export via Android Scoped Storage (SAF), adding per-tab state isolation, and making execution telemetry interactive and scrollable.
+
+---
+
+### 🌟 Top Features of v2.2.1
+
+1. **Window Insets & Vector Brand Logo**
+   - **Zero Notification Overlap**: Integrated `ViewCompat.setOnApplyWindowInsetsListener` with dynamic system bars padding, preventing status bar, camera notch, or gesture bar clipping.
+   - **Vector Brand Header**: Replaced raw text with the crisp, scalable official VeilFrame cyber-shield SVG logo and version pill badge (`v2.2.1`).
+
+2. **Clean Vector Design System (No Emojis)**
+   - Replaced all emojis across tabs, chips, buttons, badges, and telemetry with 12 handcrafted Material 3 vector XML drawables.
+   - Clean, auditable textual tags (`[INFO]`, `[OK]`, `[WARN]`, `[ERR]`, `[SYS]`) in console logs.
+
+3. **Multi-Format Scoped Storage (SAF) Export**
+   - Direct "Save As" / Export to any device location via `ActivityResultContracts.CreateDocument`.
+   - Supports `.aibundle`, `.md`, `.json`, `.zip`, `.html`, `.txt`, `.mp4`, `.jpg`, `.png`, and `.csv`.
+   - Unified action dock providing both direct storage saving and system share sheet dispatch.
+
+4. **Isolated Mode State & Dedicated Clear Button**
+   - Switching between the 4 primary tabs (`AI Bundle`, `Video Cleaner`, `Image Cleaner`, `Folder Scanner`) automatically resets target and staging buffers to prevent cross-contamination.
+   - Dedicated `CLEAR` button to instantly wipe active selections.
+
+5. **Desktop Feature Parity & Interactive Telemetry**
+   - **Adaptive Parameter Cards**: Dynamically updates controls per mode (Token Budgets, PRNU Noise Intensity, Scrub Quality, Scan Depth, and Feature Switches).
+   - **Interactive Telemetry Console**: Fully scrollable `NestedScrollView` with auto-scroll to bottom, one-tap clipboard copy, clear buffer, and vertical expand/collapse (140dp ⇄ 320dp).
+
+---
+
 ## VeilFrame v2.2.0
 
 > **Release Date:** September 2026  

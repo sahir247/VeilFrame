@@ -12,8 +12,8 @@ android {
         applicationId = "com.veilframe.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 220
-        versionName = "2.2.0"
+        versionCode = 221
+        versionName = "2.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
