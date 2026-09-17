@@ -17,3 +17,10 @@
 # AndroidX & ViewBinding
 -keep class androidx.lifecycle.** { *; }
 -keep class * implements androidx.viewbinding.ViewBinding { *; }
+
+# FFmpegKit and its Smart Exception dependency
+-keep class com.arthenica.ffmpegkit.** { *; }
+-keep class com.arthenica.smartexception.** { *; }
+-dontwarn com.arthenica.ffmpegkit.**
+-dontwarn com.arthenica.smartexception.**
+

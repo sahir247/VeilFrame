@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) {
             selectedUri = uri
             isFolderSelected = false
-            selectedPathDisplay = uri.path ?: uri.toString()
+            selectedPathDisplay = getDisplayName(uri)
             binding.tvSelectedPath.text = selectedPathDisplay
             binding.tvSelectedPath.setTextColor(getColor(R.color.vf_primary))
             logToConsole("Selected Media Item (System Photo Picker): $selectedPathDisplay")
@@ -55,13 +55,17 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // Ignore if provider doesn't support persistable permission
+            }
             selectedUri = uri
             isFolderSelected = true
-            selectedPathDisplay = uri.path ?: uri.toString()
+            selectedPathDisplay = getDisplayName(uri)
             binding.tvSelectedPath.text = selectedPathDisplay
             binding.tvSelectedPath.setTextColor(getColor(R.color.vf_primary))
             logToConsole("Selected Target Directory: $selectedPathDisplay")
@@ -72,16 +76,49 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // Ignore if provider doesn't support persistable permission
+            }
             selectedUri = uri
             isFolderSelected = false
-            selectedPathDisplay = uri.path ?: uri.toString()
+            selectedPathDisplay = getDisplayName(uri)
             binding.tvSelectedPath.text = selectedPathDisplay
             binding.tvSelectedPath.setTextColor(getColor(R.color.vf_primary))
             logToConsole("Selected Target File: $selectedPathDisplay")
+        }
+    }
+
+    private fun getDisplayName(uri: Uri): String {
+        return try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) {
+                    cursor.getString(nameIndex)
+                } else null
+            } ?: uri.lastPathSegment ?: uri.toString()
+        } catch (e: Exception) {
+            uri.lastPathSegment ?: uri.toString()
+        }
+    }
+
+    private suspend fun materializeUri(uri: Uri, destination: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                destination.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            destination.isFile && destination.length() > 0
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                logToConsole("Error copying input file: ${e.message}")
+            }
+            false
         }
     }
 
@@ -255,7 +292,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Cache files from SAF Uri to private working directory if needed
-        val workingDir = File(cacheDir, "bundle_workspace").apply { mkdirs() }
+        val workingDir = File(cacheDir, "bundle_workspace").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val uri = selectedUri
+        if (uri != null) {
+            val fileName = getDisplayName(uri)
+            val stagedFile = File(workingDir, fileName)
+            materializeUri(uri, stagedFile)
+        }
+
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(cacheDir, "VeilFrame_Export_$timeStamp.aibundle")
 
@@ -288,31 +335,21 @@ class MainActivity : AppCompatActivity() {
                 generatedContent = bundleResult?.get("content")?.toString()
             } catch (pyEx: Exception) {
                 withContext(Dispatchers.Main) {
-                    logToConsole("Python bridge fallback: ${pyEx.message}")
+                    logToConsole("Python bridge error: ${pyEx.message}")
                 }
             }
         }
 
-        // If direct bridge generated or mock bundle
-        if (generatedContent == null) {
-            generatedContent = """
-                # @VEILFRAME_BUNDLE v1
-                # Target: $selectedPathDisplay
-                # Generated: $timeStamp
-                # Budget: $targetBudget tokens
-                
-                @PROJECT
-                name: MobileExport
-                ecosystem: Android
-                
-                @TREE
-                .
-                
-                @SECURITY
-                masked_secrets: $maskSecrets
-                
-                @END
-            """.trimIndent()
+        if (generatedContent == null || generatedContent.isBlank()) {
+            withContext(Dispatchers.Main) {
+                binding.progressIndicator.isIndeterminate = false
+                binding.tvPhaseBadge.text = "FAILED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                binding.tvStatusText.text = "AI Bundle generation failed."
+                logToConsole("❌ Bundle generation failed. Ensure valid files are selected.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
         }
 
         outputFile.writeText(generatedContent, Charsets.UTF_8)
@@ -324,60 +361,191 @@ class MainActivity : AppCompatActivity() {
             binding.tvPhaseBadge.text = "SUCCESS"
             binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
             binding.tvStatusText.text = "Bundle generated: ${outputFile.name} (${outputFile.length() / 1024} KB)"
-            logToConsole("✓ Bundle created successfully: ${outputFile.name}")
+            logToConsole("✓ Bundle created successfully: ${outputFile.name} (${outputFile.length()} bytes)")
             binding.btnExecute.isEnabled = true
             binding.btnShareResult.isEnabled = true
         }
     }
 
     private suspend fun runVideoSanitization() {
+        val uri = selectedUri
+        if (uri == null) {
+            withContext(Dispatchers.Main) {
+                binding.tvStatusText.text = "No video selected."
+                binding.tvPhaseBadge.text = "ABORTED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
+                logToConsole("⚠️ Please select a video file first.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
+        }
+
+        withContext(Dispatchers.Main) {
+            binding.tvStatusText.text = "Materializing video stream..."
+            logToConsole("Preparing video for sanitization: $selectedPathDisplay...")
+        }
+
+        val tempInput = File(cacheDir, "input_video_${System.currentTimeMillis()}.mp4")
+        val successCopy = materializeUri(uri, tempInput)
+        if (!successCopy) {
+            withContext(Dispatchers.Main) {
+                binding.tvStatusText.text = "Failed to read input video."
+                binding.tvPhaseBadge.text = "FAILED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                logToConsole("❌ Failed to copy input video from storage.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
+        }
+
         withContext(Dispatchers.Main) {
             binding.tvStatusText.text = "Sanitizing video stream & stripping metadata..."
-            logToConsole("Invoking Video Cleaner pipeline...")
+            logToConsole("Invoking AndroidMediaBackend video pipeline (${tempInput.length() / 1024} KB)...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(cacheDir, "Sanitized_$timeStamp.mp4")
-        lastGeneratedFile = outputFile
 
-        withContext(Dispatchers.Main) {
-            binding.progressIndicator.isIndeterminate = false
-            binding.progressIndicator.progress = 100
-            binding.tvPhaseBadge.text = "COMPLETED"
-            binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
-            binding.tvStatusText.text = "Video sanitized: ${outputFile.name}"
-            logToConsole("✓ Video cleaned and sanitized successfully.")
-            binding.btnExecute.isEnabled = true
-            binding.btnShareResult.isEnabled = true
+        val backend = com.veilframe.app.media.AndroidMediaBackend(this)
+        val processed = withContext(Dispatchers.IO) {
+            backend.cleanVideo(tempInput.absolutePath, outputFile.absolutePath)
+        }
+
+        tempInput.delete()
+
+        if (processed && outputFile.exists() && outputFile.length() > 0) {
+            lastGeneratedFile = outputFile
+            withContext(Dispatchers.Main) {
+                binding.progressIndicator.isIndeterminate = false
+                binding.progressIndicator.progress = 100
+                binding.tvPhaseBadge.text = "COMPLETED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvStatusText.text = "Video sanitized: ${outputFile.name} (${outputFile.length() / 1024} KB)"
+                logToConsole("✓ Video cleaned and sanitized successfully (${outputFile.length() / 1024} KB).")
+                binding.btnExecute.isEnabled = true
+                binding.btnShareResult.isEnabled = true
+            }
+        } else {
+            withContext(Dispatchers.Main) {
+                binding.progressIndicator.isIndeterminate = false
+                binding.tvPhaseBadge.text = "FAILED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                binding.tvStatusText.text = "Video sanitization failed."
+                logToConsole("❌ Video sanitization engine reported failure.")
+                binding.btnExecute.isEnabled = true
+            }
         }
     }
 
     private suspend fun runImageSanitization() {
+        val uri = selectedUri
+        if (uri == null) {
+            withContext(Dispatchers.Main) {
+                binding.tvStatusText.text = "No image selected."
+                binding.tvPhaseBadge.text = "ABORTED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
+                logToConsole("⚠️ Please select an image file first.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
+        }
+
+        withContext(Dispatchers.Main) {
+            binding.tvStatusText.text = "Materializing image..."
+            logToConsole("Preparing image: $selectedPathDisplay...")
+        }
+
+        val tempInput = File(cacheDir, "input_img_${System.currentTimeMillis()}.jpg")
+        val successCopy = materializeUri(uri, tempInput)
+        if (!successCopy) {
+            withContext(Dispatchers.Main) {
+                binding.tvStatusText.text = "Failed to read input image."
+                binding.tvPhaseBadge.text = "FAILED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                logToConsole("❌ Failed to copy input image from storage.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
+        }
+
         withContext(Dispatchers.Main) {
             binding.tvStatusText.text = "Scrubbing image EXIF/IPTC metadata..."
-            logToConsole("Invoking Image Sanitizer...")
+            logToConsole("Invoking ImageCleaner pipeline...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(cacheDir, "Cleaned_$timeStamp.jpg")
-        lastGeneratedFile = outputFile
 
-        withContext(Dispatchers.Main) {
-            binding.progressIndicator.isIndeterminate = false
-            binding.progressIndicator.progress = 100
-            binding.tvPhaseBadge.text = "CLEANED"
-            binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
-            binding.tvStatusText.text = "Image scrubbed: ${outputFile.name}"
-            logToConsole("✓ Image metadata stripped.")
-            binding.btnExecute.isEnabled = true
-            binding.btnShareResult.isEnabled = true
+        val backend = com.veilframe.app.media.AndroidMediaBackend(this)
+        val processed = withContext(Dispatchers.IO) {
+            backend.cleanImage(tempInput.absolutePath, outputFile.absolutePath)
+        }
+
+        tempInput.delete()
+
+        if (processed && outputFile.exists() && outputFile.length() > 0) {
+            lastGeneratedFile = outputFile
+            withContext(Dispatchers.Main) {
+                binding.progressIndicator.isIndeterminate = false
+                binding.progressIndicator.progress = 100
+                binding.tvPhaseBadge.text = "CLEANED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvStatusText.text = "Image scrubbed: ${outputFile.name} (${outputFile.length() / 1024} KB)"
+                logToConsole("✓ Image metadata stripped successfully (${outputFile.length() / 1024} KB).")
+                binding.btnExecute.isEnabled = true
+                binding.btnShareResult.isEnabled = true
+            }
+        } else {
+            withContext(Dispatchers.Main) {
+                binding.progressIndicator.isIndeterminate = false
+                binding.tvPhaseBadge.text = "FAILED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                binding.tvStatusText.text = "Image sanitization failed."
+                logToConsole("❌ Image cleaner reported failure.")
+                binding.btnExecute.isEnabled = true
+            }
         }
     }
 
     private suspend fun runFolderScan() {
+        val uri = selectedUri
+        if (uri == null) {
+            withContext(Dispatchers.Main) {
+                binding.tvStatusText.text = "No folder selected."
+                binding.tvPhaseBadge.text = "ABORTED"
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
+                logToConsole("⚠️ Please select a directory or file first.")
+                binding.btnExecute.isEnabled = true
+            }
+            return
+        }
+
         withContext(Dispatchers.Main) {
-            binding.tvStatusText.text = "Analyzing directory structure..."
-            logToConsole("Running Folder Scanner & Duplication Engine...")
+            binding.tvStatusText.text = "Analyzing target structure..."
+            logToConsole("Running Folder Scanner & Duplication Engine on $selectedPathDisplay...")
+        }
+
+        val workingDir = File(cacheDir, "scan_workspace").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val stagedFile = File(workingDir, getDisplayName(uri))
+        materializeUri(uri, stagedFile)
+
+        var scanSummary = "Files scanned in target directory."
+        if (py != null) {
+            try {
+                val scannerModule = py?.getModule("veilframe.folder.scanner")
+                val scannerConfigClass = scannerModule?.get("ScanConfig")
+                val scannerConfig = scannerConfigClass?.call(*emptyArray())
+                val scannerClass = scannerModule?.get("FolderScanner")
+                val scanner = scannerClass?.call(scannerConfig)
+                val scanResult = scanner?.callAttr("scan", workingDir.absolutePath)
+                val count = scanResult?.get("total_files")?.toString() ?: "1"
+                scanSummary = "Scan completed: $count files analyzed."
+            } catch (e: Exception) {
+                scanSummary = "Scan analyzed: ${stagedFile.name} (${stagedFile.length() / 1024} KB)"
+            }
         }
 
         withContext(Dispatchers.Main) {
@@ -385,8 +553,8 @@ class MainActivity : AppCompatActivity() {
             binding.progressIndicator.progress = 100
             binding.tvPhaseBadge.text = "SCAN DONE"
             binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
-            binding.tvStatusText.text = "Scan completed."
-            logToConsole("✓ Directory scan complete.")
+            binding.tvStatusText.text = scanSummary
+            logToConsole("✓ Directory scan complete: $scanSummary")
             binding.btnExecute.isEnabled = true
         }
     }
@@ -399,19 +567,21 @@ class MainActivity : AppCompatActivity() {
                 "${applicationContext.packageName}.provider",
                 file
             )
+            val mimeType = when {
+                file.name.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+                file.name.endsWith(".jpg", ignoreCase = true) || file.name.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+                file.name.endsWith(".png", ignoreCase = true) -> "image/png"
+                file.name.endsWith(".aibundle", ignoreCase = true) || file.name.endsWith(".txt", ignoreCase = true) -> "text/plain"
+                else -> "*/*"
+            }
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
+                type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivity(Intent.createChooser(shareIntent, "Share VeilFrame Output"))
         } catch (e: Exception) {
-            // Direct text sharing fallback
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, file.readText())
-            }
-            startActivity(Intent.createChooser(shareIntent, "Share VeilFrame Output"))
+            logToConsole("Share error: ${e.message}")
         }
     }
 

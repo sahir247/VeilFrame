@@ -235,20 +235,28 @@ do_android_apk() {
         find android/app/src/main/python/veilframe -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
     }
     ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
-    if [ -f "${ANDROID_DIR}/gradlew" ]; then
-        chmod +x "${ANDROID_DIR}/gradlew"
-        (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --console=plain assembleRelease)
-    elif command -v gradle >/dev/null 2>&1; then
-        (cd "${ANDROID_DIR}" && gradle --no-daemon --stacktrace --console=plain assembleRelease)
-    else
-        echo "NOTE: Gradle toolchain not found on PATH. Creating reproducible distribution stub at dist/VeilFrame-android-arm64.apk"
-        touch dist/VeilFrame-android-arm64.apk
+    if [ ! -x "${ANDROID_DIR}/gradlew" ]; then
+        if [ -f "${ANDROID_DIR}/gradlew" ]; then
+            chmod +x "${ANDROID_DIR}/gradlew"
+        else
+            echo "ERROR: Android Gradle wrapper (gradlew) is missing in ${ANDROID_DIR}!"
+            exit 1
+        fi
     fi
-    if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-        cp android/app/build/outputs/apk/release/app-release.apk dist/VeilFrame-android-arm64.apk
-    elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-        cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/VeilFrame-android-arm64.apk
+
+    (cd "${ANDROID_DIR}" && ./gradlew --no-daemon --stacktrace --console=plain assembleRelease)
+
+    APK="${ANDROID_DIR}/app/build/outputs/apk/release/app-release.apk"
+    if [ ! -f "${APK}" ]; then
+        APK="${ANDROID_DIR}/app/build/outputs/apk/release/app-release-unsigned.apk"
     fi
+
+    if [ ! -s "${APK}" ]; then
+        echo "ERROR: APK was not produced or is empty: ${APK}"
+        exit 1
+    fi
+
+    cp "${APK}" dist/VeilFrame-android-arm64.apk
     echo "✓ Android APK output ready in dist/VeilFrame-android-arm64.apk"
 }
 

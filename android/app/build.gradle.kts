@@ -82,6 +82,7 @@ dependencies {
 
     // Full Mobile FFmpegKit with all audio/video codecs
     implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

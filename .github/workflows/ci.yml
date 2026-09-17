@@ -586,6 +586,10 @@ jobs:
       - name: Stage Android Artifacts
         run: |
           mkdir -p android_artifacts
+          if [ ! -s dist/VeilFrame-android-arm64.apk ]; then
+            echo "ERROR: dist/VeilFrame-android-arm64.apk was not produced or is 0 bytes!"
+            exit 1
+          fi
           cp dist/VeilFrame-android-arm64.apk android_artifacts/
           ls -lh android_artifacts/
 
