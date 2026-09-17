@@ -715,10 +715,6 @@ class MainActivity : AppCompatActivity() {
             openFilePickerForCurrentTool()
         }
 
-        binding.btnPickTargetEmpty.setOnClickListener {
-            openFilePickerForCurrentTool()
-        }
-
         // Execution Monitor Console Toggle
         binding.btnToggleConsole.setOnClickListener {
             isConsoleExpanded = !isConsoleExpanded
