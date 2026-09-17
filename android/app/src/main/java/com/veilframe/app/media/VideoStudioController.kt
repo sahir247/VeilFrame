@@ -88,6 +88,11 @@ class VideoStudioController(
             binding.btnPlayerPlayPause.setIconResource(if (isPlaying) R.drawable.ic_action_pause else R.drawable.ic_action_play)
         }
 
+        playerController.onErrorListener = { _, _ ->
+            binding.playerBufferingBar.visibility = View.GONE
+            Toast.makeText(activity, "Playback warning: video preview format partially supported", Toast.LENGTH_SHORT).show()
+        }
+
         playerController.onProgressUpdate = { posMs ->
             if (!isScrubbing) {
                 val sec = posMs / 1000f
@@ -226,19 +231,91 @@ class VideoStudioController(
         binding.tvVidDestinationPath.text = name
     }
 
+    private fun updateRangeSliderSafely(
+        slider: com.google.android.material.slider.RangeSlider,
+        from: Float,
+        to: Float,
+        start: Float,
+        end: Float
+    ) {
+        val safeFrom = from
+        val safeTo = if (to <= safeFrom) safeFrom + 1f else to
+        val safeStart = start.coerceIn(safeFrom, safeTo)
+        val safeEnd = end.coerceIn(safeStart, safeTo)
+
+        try {
+            val curMin = slider.valueFrom
+            slider.values = listOf(curMin, curMin)
+        } catch (_: Exception) {}
+
+        slider.valueFrom = safeFrom
+        slider.valueTo = safeTo
+        slider.values = listOf(safeStart, safeEnd)
+    }
+
+    private fun updateSliderSafely(
+        slider: com.google.android.material.slider.Slider,
+        from: Float,
+        to: Float,
+        value: Float
+    ) {
+        val safeFrom = from
+        val safeTo = if (to <= safeFrom) safeFrom + 1f else to
+        val safeVal = value.coerceIn(safeFrom, safeTo)
+
+        try {
+            slider.value = slider.valueFrom
+        } catch (_: Exception) {}
+
+        slider.valueFrom = safeFrom
+        slider.valueTo = safeTo
+        slider.value = safeVal
+    }
+
     fun handleVideoSelected(uri: Uri) {
+        val mimeType = activity.contentResolver.getType(uri) ?: ""
+        val displayName = getDisplayName(uri)
+        val ext = displayName.substringAfterLast('.', "").lowercase(Locale.US)
+
+        val supportedExts = setOf("mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "flv", "ts", "wmv")
+        val isVideoMime = mimeType.startsWith("video/") || mimeType.contains("matroska") || mimeType == "application/octet-stream"
+
+        if (!supportedExts.contains(ext) && !isVideoMime && mimeType.isNotEmpty()) {
+            MaterialAlertDialogBuilder(activity)
+                .setTitle("Unsupported video format")
+                .setMessage("Please select a supported video file (MP4, MOV, WEBM, MKV, AVI, etc.).")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
         selectedUri = uri
         originalBytes = queryFileSize(uri)
-        val displayName = getDisplayName(uri)
+
+        // Clear previous temporary studio cache files to prevent memory/storage leaks
+        try {
+            activity.cacheDir.listFiles()?.filter { it.name.startsWith("studio_input_") }?.forEach { it.delete() }
+        } catch (_: Exception) {}
 
         scope.launch(Dispatchers.IO) {
             val cacheFile = File(activity.cacheDir, "studio_input_$displayName")
-            copyUriToFile(uri, cacheFile)
+            try {
+                copyUriToFile(uri, cacheFile)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    MaterialAlertDialogBuilder(activity)
+                        .setTitle("Unable to access this video")
+                        .setMessage("Please grant file access and try again.\n${e.message}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                return@launch
+            }
             originalFile = cacheFile
 
-            var duration = 10000L
-            var width = 1920
-            var height = 1080
+            var duration = 0L
+            var width = 0
+            var height = 0
             var thumbFrame: Bitmap? = null
 
             try {
@@ -252,7 +329,24 @@ class VideoStudioController(
                 if (hStr != null) height = hStr.toInt()
                 thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 retriever.release()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
+            }
+
+            if (duration <= 0L && thumbFrame == null) {
+                withContext(Dispatchers.Main) {
+                    MaterialAlertDialogBuilder(activity)
+                        .setTitle("Unable to read this video")
+                        .setMessage("The file may be corrupted or unsupported.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                return@launch
+            }
+
+            if (duration <= 0L) duration = 1000L
+            if (width <= 0) width = 1280
+            if (height <= 0) height = 720
 
             withContext(Dispatchers.Main) {
                 editState.reset(duration)
@@ -277,13 +371,8 @@ class VideoStudioController(
                 binding.toolVidAudio.isEnabled = true
 
                 val durSec = (duration / 1000.0).toFloat().coerceAtLeast(1f)
-                binding.rangeSliderVidTrim.valueFrom = 0f
-                binding.rangeSliderVidTrim.valueTo = durSec
-                binding.rangeSliderVidTrim.values = listOf(0f, durSec)
-
-                binding.playerScrubber.valueFrom = 0f
-                binding.playerScrubber.valueTo = durSec
-                binding.playerScrubber.value = 0f
+                updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
+                updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
 
                 binding.tvVidTrimStartLabel.text = "00:00.0"
                 binding.tvVidTrimEndLabel.text = formatDuration(duration)
@@ -295,18 +384,22 @@ class VideoStudioController(
                 binding.tvVidBeforeStats.text = "${formatBytes(originalBytes)} • ${formatDuration(duration)} • ${width}x${height}"
 
                 val baseName = displayName.substringBeforeLast('.')
-                binding.etVidOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase()}")
+                binding.etVidOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase(Locale.US)}")
 
                 binding.tvVidActualStats.visibility = View.GONE
                 binding.layoutVidResultActions.visibility = View.GONE
 
-                // Set data source on dedicated VideoPlayerController
+                // Set data source on dedicated VideoPlayerController using seekable local cache file
                 binding.playerBufferingBar.visibility = View.VISIBLE
                 playerController.onPreparedListener = { durMs, w, h ->
                     binding.playerBufferingBar.visibility = View.GONE
                     binding.imgVidPreview.visibility = View.GONE
                 }
-                playerController.setDataSource(uri)
+                playerController.onErrorListener = { what, extra ->
+                    binding.playerBufferingBar.visibility = View.GONE
+                    Log.w("VeilFrame.VideoStudio", "MediaPlayer warning/error: what=$what extra=$extra")
+                }
+                playerController.setDataSource(Uri.fromFile(cacheFile))
 
                 applyAspectRatioPreview()
                 refreshStats()
@@ -467,7 +560,8 @@ class VideoStudioController(
         outputConfig.codec = "H.264"
 
         val durSec = (totalDur / 1000.0).toFloat().coerceAtLeast(1f)
-        binding.rangeSliderVidTrim.values = listOf(0f, durSec)
+        updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
+        updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
         binding.tvVidTrimStartLabel.text = "00:00.0"
         binding.tvVidTrimEndLabel.text = formatDuration(totalDur)
         binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(totalDur)}"
@@ -624,11 +718,9 @@ class VideoStudioController(
         dialogBinding.imgTrimVideoThumbnail.setImageDrawable(binding.imgVidPreview.drawable)
 
         val durSec = (editState.durationMs / 1000.0).toFloat().coerceAtLeast(1f)
-        dialogBinding.rangeSliderTrim.valueFrom = 0f
-        dialogBinding.rangeSliderTrim.valueTo = durSec
         val currentStartSec = (editState.trimStartMs / 1000.0).toFloat().coerceIn(0f, durSec)
         val currentEndSec = (editState.trimEndMs / 1000.0).toFloat().coerceIn(currentStartSec, durSec)
-        dialogBinding.rangeSliderTrim.values = listOf(currentStartSec, currentEndSec)
+        updateRangeSliderSafely(dialogBinding.rangeSliderTrim, 0f, durSec, currentStartSec, currentEndSec)
 
         dialogBinding.tvTrimStartTime.text = formatDuration(editState.trimStartMs)
         dialogBinding.tvTrimEndTime.text = formatDuration(editState.trimEndMs)
@@ -667,7 +759,7 @@ class VideoStudioController(
             editState.trimStartMs = (sSec * 1000).toLong()
             editState.trimEndMs = (eSec * 1000).toLong()
 
-            binding.rangeSliderVidTrim.values = listOf(sSec, eSec)
+            updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, sSec, eSec)
             binding.tvVidTrimStartLabel.text = formatDuration(editState.trimStartMs)
             binding.tvVidTrimEndLabel.text = formatDuration(editState.trimEndMs)
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
@@ -682,7 +774,7 @@ class VideoStudioController(
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
             editState.trimStartMs = 0L
             editState.trimEndMs = editState.durationMs
-            binding.rangeSliderVidTrim.values = listOf(0f, durSec)
+            updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
             binding.tvVidTrimStartLabel.text = "00:00.0"
             binding.tvVidTrimEndLabel.text = formatDuration(editState.durationMs)
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.durationMs)}"
@@ -702,7 +794,9 @@ class VideoStudioController(
         val dialogBinding = DialogVideoScaleBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        when (editState.scalePreset) {
+        var draftScale = editState.scalePreset
+
+        when (draftScale) {
             "1080p (Full HD)" -> dialogBinding.chipScale1080p.isChecked = true
             "720p (HD)" -> dialogBinding.chipScale720p.isChecked = true
             "480p (SD Compact)" -> dialogBinding.chipScale480p.isChecked = true
@@ -713,11 +807,12 @@ class VideoStudioController(
         dialogBinding.chipGroupVideoScale.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoScale.findViewById<Chip>(checkedIds[0])
-                editState.scalePreset = chip?.text?.toString() ?: "Original (No scaling)"
+                draftScale = chip?.text?.toString() ?: "Original (No scaling)"
             }
         }
 
         dialogBinding.btnVideoScaleApply.setOnClickListener {
+            editState.scalePreset = draftScale
             when (editState.scalePreset) {
                 "1080p (Full HD)" -> binding.chipVidRes1080p.isChecked = true
                 "720p (HD)" -> binding.chipVidRes720p.isChecked = true
@@ -731,11 +826,8 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoScaleReset.setOnClickListener {
-            editState.scalePreset = "Original (No scaling)"
-            binding.chipVidResOriginal.isChecked = true
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            draftScale = "Original (No scaling)"
+            dialogBinding.chipScaleOriginal.isChecked = true
         }
 
         dialogBinding.btnVideoScaleCancel.setOnClickListener { dialog.dismiss() }
@@ -747,10 +839,16 @@ class VideoStudioController(
         val dialogBinding = DialogVideoPresetBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        dialogBinding.sliderCrf.value = outputConfig.crf.toFloat()
-        dialogBinding.tvCrfValue.text = outputConfig.crf.toString()
+        var draftCrf = outputConfig.crf
+        var draftTargetPreset = outputConfig.targetPreset
+        var draftFormat = outputConfig.format
+        var draftMode = outputConfig.outputMode
+        var draftCodec = outputConfig.codec
 
-        when (outputConfig.targetPreset) {
+        dialogBinding.sliderCrf.value = draftCrf.toFloat()
+        dialogBinding.tvCrfValue.text = draftCrf.toString()
+
+        when (draftTargetPreset) {
             "WhatsApp (16 MB)" -> dialogBinding.chipPresetWhatsapp.isChecked = true
             "Discord (25 MB)" -> dialogBinding.chipPresetDiscord.isChecked = true
             "Discord Nitro (50 MB)" -> dialogBinding.chipPresetNitro.isChecked = true
@@ -762,23 +860,23 @@ class VideoStudioController(
         dialogBinding.chipGroupTargetSize.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupTargetSize.findViewById<Chip>(checkedIds[0])
-                outputConfig.targetPreset = chip?.text?.toString() ?: "Auto (Balanced CRF 28)"
+                draftTargetPreset = chip?.text?.toString() ?: "Auto (Balanced CRF 28)"
             }
         }
 
         // Codec selection
         when {
-            outputConfig.codec.contains("265", ignoreCase = true) || outputConfig.codec.contains("hevc", ignoreCase = true) -> dialogBinding.chipCodecH265.isChecked = true
-            outputConfig.codec.contains("vp9", ignoreCase = true) -> dialogBinding.chipCodecVp9.isChecked = true
-            outputConfig.codec.contains("av1", ignoreCase = true) -> dialogBinding.chipCodecAv1.isChecked = true
-            outputConfig.codec.contains("copy", ignoreCase = true) -> dialogBinding.chipCodecCopy.isChecked = true
+            draftCodec.contains("265", ignoreCase = true) || draftCodec.contains("hevc", ignoreCase = true) -> dialogBinding.chipCodecH265.isChecked = true
+            draftCodec.contains("vp9", ignoreCase = true) -> dialogBinding.chipCodecVp9.isChecked = true
+            draftCodec.contains("av1", ignoreCase = true) -> dialogBinding.chipCodecAv1.isChecked = true
+            draftCodec.contains("copy", ignoreCase = true) -> dialogBinding.chipCodecCopy.isChecked = true
             else -> dialogBinding.chipCodecH264.isChecked = true
         }
 
         dialogBinding.chipGroupVideoCodecDialog.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoCodecDialog.findViewById<Chip>(checkedIds[0])
-                outputConfig.codec = when (chip?.id) {
+                draftCodec = when (chip?.id) {
                     dialogBinding.chipCodecH265.id -> "H.265"
                     dialogBinding.chipCodecVp9.id -> "VP9"
                     dialogBinding.chipCodecAv1.id -> "AV1"
@@ -789,10 +887,10 @@ class VideoStudioController(
         }
 
         // Container format selection
-        val isCurrentGif = outputConfig.format.equals("GIF", ignoreCase = true)
+        val isCurrentGif = draftFormat.equals("GIF", ignoreCase = true)
         dialogBinding.chipGroupVideoCodecDialog.visibility = if (isCurrentGif) View.GONE else View.VISIBLE
 
-        when (outputConfig.format.uppercase()) {
+        when (draftFormat.uppercase()) {
             "MOV" -> dialogBinding.chipContainerMov.isChecked = true
             "MKV" -> dialogBinding.chipContainerMkv.isChecked = true
             "WEBM" -> dialogBinding.chipContainerWebm.isChecked = true
@@ -806,23 +904,29 @@ class VideoStudioController(
                 val chip = dialogBinding.chipGroupVideoContainerDialog.findViewById<Chip>(checkedIds[0])
                 val text = chip?.text?.toString() ?: "MP4"
                 if (text.equals("GIF", ignoreCase = true)) {
-                    outputConfig.format = "GIF"
-                    outputConfig.outputMode = VideoOutputMode.GIF
+                    draftFormat = "GIF"
+                    draftMode = VideoOutputMode.GIF
                     dialogBinding.chipGroupVideoCodecDialog.visibility = View.GONE
                 } else {
-                    outputConfig.outputMode = VideoOutputMode.VIDEO
-                    outputConfig.format = text
+                    draftMode = VideoOutputMode.VIDEO
+                    draftFormat = text
                     dialogBinding.chipGroupVideoCodecDialog.visibility = View.VISIBLE
                 }
             }
         }
 
         dialogBinding.sliderCrf.addOnChangeListener { _, value, _ ->
-            outputConfig.crf = value.toInt()
-            dialogBinding.tvCrfValue.text = outputConfig.crf.toString()
+            draftCrf = value.toInt()
+            dialogBinding.tvCrfValue.text = draftCrf.toString()
         }
 
         dialogBinding.btnVideoPresetApply.setOnClickListener {
+            outputConfig.crf = draftCrf
+            outputConfig.targetPreset = draftTargetPreset
+            outputConfig.format = draftFormat
+            outputConfig.outputMode = draftMode
+            outputConfig.codec = draftCodec
+
             binding.sliderVidQuality.value = outputConfig.crf.toFloat()
             binding.tvVidQualityValue.text = "CRF ${outputConfig.crf}"
 
@@ -845,20 +949,16 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoPresetReset.setOnClickListener {
-            outputConfig.targetPreset = "Auto (Balanced CRF 28)"
-            outputConfig.crf = 28
-            outputConfig.format = "MP4"
-            outputConfig.outputMode = VideoOutputMode.VIDEO
-            outputConfig.codec = "H.264"
-            binding.chipVidMp4.isChecked = true
-            binding.chipVidCodecH264.isChecked = true
-            binding.sliderVidQuality.value = 28f
-            binding.tvVidQualityValue.text = "CRF 28"
-            updateUiForOutputMode()
-            updateOutputFilenameExtension()
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            draftTargetPreset = "Auto (Balanced CRF 28)"
+            draftCrf = 28
+            draftFormat = "MP4"
+            draftMode = VideoOutputMode.VIDEO
+            draftCodec = "H.264"
+            dialogBinding.chipPresetAuto.isChecked = true
+            dialogBinding.chipCodecH264.isChecked = true
+            dialogBinding.chipContainerMp4.isChecked = true
+            dialogBinding.sliderCrf.value = 28f
+            dialogBinding.tvCrfValue.text = "28"
         }
 
         dialogBinding.btnVideoPresetCancel.setOnClickListener { dialog.dismiss() }
@@ -870,7 +970,9 @@ class VideoStudioController(
         val dialogBinding = DialogVideoSpeedBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        when (editState.speed) {
+        var draftSpeed = editState.speed
+
+        when (draftSpeed) {
             0.5f -> dialogBinding.chipSpeed05.isChecked = true
             0.75f -> dialogBinding.chipSpeed075.isChecked = true
             1.25f -> dialogBinding.chipSpeed125.isChecked = true
@@ -882,7 +984,7 @@ class VideoStudioController(
         dialogBinding.chipGroupVideoSpeed.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoSpeed.findViewById<Chip>(checkedIds[0])
-                editState.speed = when (chip?.id) {
+                draftSpeed = when (chip?.id) {
                     dialogBinding.chipSpeed05.id -> 0.5f
                     dialogBinding.chipSpeed075.id -> 0.75f
                     dialogBinding.chipSpeed125.id -> 1.25f
@@ -894,6 +996,7 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoSpeedApply.setOnClickListener {
+            editState.speed = draftSpeed
             binding.tvPlayerSpeedBadge.text = "${editState.speed}×"
             playerController.setSpeed(editState.speed)
             refreshStats()
@@ -902,12 +1005,8 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoSpeedReset.setOnClickListener {
-            editState.speed = 1.0f
-            binding.tvPlayerSpeedBadge.text = "1.0×"
-            playerController.setSpeed(1.0f)
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            draftSpeed = 1.0f
+            dialogBinding.chipSpeed10.isChecked = true
         }
 
         dialogBinding.btnVideoSpeedCancel.setOnClickListener { dialog.dismiss() }
@@ -919,7 +1018,9 @@ class VideoStudioController(
         val dialogBinding = DialogVideoAspectBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        when (editState.aspect) {
+        var draftAspect = editState.aspect
+
+        when (draftAspect) {
             "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
             "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
             "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
@@ -929,11 +1030,12 @@ class VideoStudioController(
         dialogBinding.chipGroupVideoAspect.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoAspect.findViewById<Chip>(checkedIds[0])
-                editState.aspect = chip?.text?.toString() ?: "Original"
+                draftAspect = chip?.text?.toString() ?: "Original"
             }
         }
 
         dialogBinding.btnVideoAspectApply.setOnClickListener {
+            editState.aspect = draftAspect
             applyAspectRatioPreview()
             refreshStats()
             updateEditSummary()
@@ -941,11 +1043,8 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoAspectReset.setOnClickListener {
-            editState.aspect = "Original"
-            applyAspectRatioPreview()
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            draftAspect = "Original"
+            dialogBinding.chipAspectOrig.isChecked = true
         }
 
         dialogBinding.btnVideoAspectCancel.setOnClickListener { dialog.dismiss() }
@@ -957,7 +1056,11 @@ class VideoStudioController(
         val dialogBinding = DialogVideoAudioBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        when (editState.audioMode) {
+        var draftAudioMode = editState.audioMode
+        var draftChannels = editState.audioChannels
+        var draftVolume = editState.audioVolume
+
+        when (draftAudioMode) {
             AudioMode.MUTE -> dialogBinding.chipAudioMute.isChecked = true
             AudioMode.COMPRESS_AAC_128K -> dialogBinding.chipAudioAac128.isChecked = true
             AudioMode.VOICE_64K -> dialogBinding.chipAudioAac64.isChecked = true
@@ -967,12 +1070,12 @@ class VideoStudioController(
         dialogBinding.chipGroupVideoAudio.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoAudio.findViewById<Chip>(checkedIds[0])
-                editState.audioMode = AudioMode.fromLabel(chip?.text?.toString() ?: "Keep")
+                draftAudioMode = AudioMode.fromLabel(chip?.text?.toString() ?: "Keep")
             }
         }
 
         // Channels
-        when (editState.audioChannels.lowercase()) {
+        when (draftChannels.lowercase()) {
             "mono" -> dialogBinding.chipAudioChanMono.isChecked = true
             "stereo" -> dialogBinding.chipAudioChanStereo.isChecked = true
             else -> dialogBinding.chipAudioChanKeep.isChecked = true
@@ -981,7 +1084,7 @@ class VideoStudioController(
         dialogBinding.chipGroupAudioChannels.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupAudioChannels.findViewById<Chip>(checkedIds[0])
-                editState.audioChannels = when (chip?.id) {
+                draftChannels = when (chip?.id) {
                     dialogBinding.chipAudioChanMono.id -> "mono"
                     dialogBinding.chipAudioChanStereo.id -> "stereo"
                     else -> "keep"
@@ -990,14 +1093,18 @@ class VideoStudioController(
         }
 
         // Volume
-        dialogBinding.sliderAudioVolume.value = (editState.audioVolume * 100f).coerceIn(0f, 200f)
-        dialogBinding.tvAudioVolumeLabel.text = "${(editState.audioVolume * 100).toInt()}%"
+        dialogBinding.sliderAudioVolume.value = (draftVolume * 100f).coerceIn(0f, 200f)
+        dialogBinding.tvAudioVolumeLabel.text = "${(draftVolume * 100).toInt()}%"
         dialogBinding.sliderAudioVolume.addOnChangeListener { _, value, _ ->
-            editState.audioVolume = value / 100f
+            draftVolume = value / 100f
             dialogBinding.tvAudioVolumeLabel.text = "${value.toInt()}%"
         }
 
         dialogBinding.btnVideoAudioApply.setOnClickListener {
+            editState.audioMode = draftAudioMode
+            editState.audioChannels = draftChannels
+            editState.audioVolume = draftVolume
+
             val shouldMute = editState.audioMode == AudioMode.MUTE
             playerController.setMute(shouldMute)
             binding.btnPlayerMute.setIconResource(if (shouldMute) R.drawable.ic_audio_volume_off else R.drawable.ic_audio_volume)
@@ -1012,15 +1119,13 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoAudioReset.setOnClickListener {
-            editState.audioMode = AudioMode.KEEP
-            editState.audioVolume = 1.0f
-            editState.audioChannels = "keep"
-            playerController.setMute(false)
-            binding.btnPlayerMute.setIconResource(R.drawable.ic_audio_volume)
-            binding.chipVidAudioKeep.isChecked = true
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            draftAudioMode = AudioMode.KEEP
+            draftVolume = 1.0f
+            draftChannels = "keep"
+            dialogBinding.chipAudioKeep.isChecked = true
+            dialogBinding.chipAudioChanKeep.isChecked = true
+            dialogBinding.sliderAudioVolume.value = 100f
+            dialogBinding.tvAudioVolumeLabel.text = "100%"
         }
 
         dialogBinding.btnVideoAudioCancel.setOnClickListener { dialog.dismiss() }

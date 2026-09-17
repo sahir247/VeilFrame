@@ -454,30 +454,80 @@ object ImageProcessor {
         previewBitmap: Bitmap?,
         py: Python?
     ): CompressionResult {
-        val formatStr = outputConfig.format.lowercase()
+        val formatStr = outputConfig.format.lowercase(Locale.US)
         val scaleVal = if (editState.resizeScale != 100) editState.resizeScale / 100.0 else 1.0
         val targetSizeKbVal = if (outputConfig.compressionMode == "target_size") outputConfig.targetSizeKb else null
 
-        // 1. Try Python compressor module if available
+        // 0. Built-in Lossless Metadata Stripping
+        // If the user enabled EXIF scrubbing and no other geometric/filter edits are applied:
+        if (editState.stripExif && !editState.hasEdits() && outputConfig.quality >= 95 && outputConfig.compressionMode != "target_size") {
+            if (py != null) {
+                try {
+                    val cleanerModule = py.getModule("veilframe.image.cleaner")
+                    val cleanerClass = cleanerModule.get("ImageCleaner")
+                    val cleaner = cleanerClass?.call()
+                    val cleaned = cleaner?.callAttr("clean_image", srcFile.absolutePath, outFile.absolutePath)?.toBoolean() ?: false
+                    if (cleaned && outFile.exists() && outFile.length() > 0L) {
+                        val outSize = outFile.length()
+                        val inSize = srcFile.length()
+                        val savings = if (inSize > 0) ((inSize - outSize).toDouble() / inSize.toDouble() * 100.0) else 0.0
+                        return CompressionResult(
+                            success = true,
+                            outputPath = outFile.absolutePath,
+                            sizeBytes = outSize,
+                            savingsPercent = savings,
+                            duration = 0.0,
+                            error = null
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lossless ImageCleaner failed: ${e.message}. Falling back to compressor pipeline.")
+                }
+            }
+        }
+
+        // 1. Try Python compressor module if available with aligned parameter signature:
+        // def compress_image(input_path, output_path, quality=85, format=None, width=None, height=None,
+        //                    strip_exif=True, filter_name="default", rotate_deg=0.0, crop_box=None,
+        //                    scale=1.0, keep_aspect=True, goal="percentage", target_size_kb=None,
+        //                    flip_h=False, flip_v=False, text_watermark=None, bg_color=None)
         if (py != null) {
             try {
                 val compressorModule = py.getModule("veilframe.core.media_compressor")
+                val targetW = if (editState.targetWidth > 0 && editState.targetWidth != editState.originalWidth) editState.targetWidth else null
+                val targetH = if (editState.targetHeight > 0 && editState.targetHeight != editState.originalHeight) editState.targetHeight else null
+
+                val cropBox = if (editState.isCropped() && editState.originalWidth > 0 && editState.originalHeight > 0) {
+                    val l = (editState.cropLeft * editState.originalWidth).toInt().coerceAtLeast(0)
+                    val t = (editState.cropTop * editState.originalHeight).toInt().coerceAtLeast(0)
+                    val r = (editState.cropRight * editState.originalWidth).toInt().coerceAtMost(editState.originalWidth)
+                    val b = (editState.cropBottom * editState.originalHeight).toInt().coerceAtMost(editState.originalHeight)
+                    arrayOf(l, t, r, b)
+                } else null
+
+                val filterName = if (editState.filter != "Default" && editState.filter != "None") editState.filter.lowercase(Locale.US) else "default"
+                val bgColor = if (editState.bgType != "Transparent") editState.bgType.lowercase(Locale.US) else null
+
                 val resultPy = compressorModule.callAttr(
                     "compress_image",
                     srcFile.absolutePath,
                     outFile.absolutePath,
                     outputConfig.quality,
                     formatStr,
-                    scaleVal,
-                    editState.rotationAngle.toDouble(),
-                    if (editState.filter != "Default" && editState.filter != "None") editState.filter.lowercase() else null,
+                    targetW,
+                    targetH,
                     editState.stripExif,
-                    targetSizeKbVal,
+                    filterName,
+                    editState.rotationAngle.toDouble(),
+                    cropBox,
+                    scaleVal,
+                    editState.keepAspectRatio,
                     outputConfig.compressionMode,
+                    targetSizeKbVal,
                     editState.flipH,
                     editState.flipV,
-                    null, // Watermark applied directly on previewBitmap
-                    if (editState.bgType != "Transparent") editState.bgType.lowercase() else null
+                    null,
+                    bgColor
                 )
                 val parsed = MediaProcessor.extractPyResult(resultPy, outFile)
                 if (parsed.success && outFile.exists() && outFile.length() > 0L) {

@@ -62,6 +62,8 @@ class ImageStudioController(
 
     // Immutable original bitmap source — never modified or accumulated onto directly
     private var originalBitmap: Bitmap? = null
+    // Fast downscaled copy (max 1280px) for smooth 60fps live preview & modal interactions
+    private var previewSourceBitmap: Bitmap? = null
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
@@ -179,7 +181,17 @@ class ImageStudioController(
             originalFile = cacheFile
 
             val bmp = BitmapFactory.decodeFile(cacheFile.absolutePath)
-            originalBitmap = bmp // Set immutable source
+            originalBitmap = bmp // Set immutable full-resolution source
+
+            // Generate low-memory fast preview source (max 1280px) for smooth 60fps interaction
+            previewSourceBitmap = if (bmp != null && (bmp.width > 1280 || bmp.height > 1280)) {
+                val scale = 1280f / maxOf(bmp.width, bmp.height).toFloat()
+                val targetW = (bmp.width * scale).toInt().coerceAtLeast(1)
+                val targetH = (bmp.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(bmp, targetW, targetH, true)
+            } else {
+                bmp
+            }
 
             withContext(Dispatchers.Main) {
                 if (bmp == null) {
@@ -192,8 +204,8 @@ class ImageStudioController(
                 binding.tvImgSelectedCount.text = "1 image selected"
                 binding.tvImgFileName.text = displayName
                 binding.tvImgFileSize.text = "${formatBytes(originalBytes)} • ${bmp.width}x${bmp.height}"
-                binding.imgFileThumb.setImageBitmap(bmp)
-                binding.imgBeforePreview.setImageBitmap(bmp)
+                binding.imgFileThumb.setImageBitmap(previewSourceBitmap ?: bmp)
+                binding.imgBeforePreview.setImageBitmap(previewSourceBitmap ?: bmp)
                 binding.tvImgBeforeSize.text = "${formatBytes(originalBytes)} (${bmp.width} × ${bmp.height} px)"
                 binding.btnImgClearAll.isEnabled = true
 
@@ -203,6 +215,7 @@ class ImageStudioController(
                 binding.toolRotate.isEnabled = true
                 binding.toolColorFilter.isEnabled = true
                 binding.toolExif.isEnabled = true
+                binding.toolText.isEnabled = true
 
                 val baseName = displayName.substringBeforeLast('.')
                 binding.etImgOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase()}")
@@ -219,17 +232,27 @@ class ImageStudioController(
     }
 
     /**
-     * Non-destructive live preview renderer.
-     * Always starts from the immutable originalBitmap to eliminate cumulative drift.
+     * Authoritative non-destructive image transformation pipeline.
+     * Consumes an explicit ImageEditState (either the global authoritative editState or a modal's draftState).
+     * Order of operations is deterministic and identical between preview and export:
+     * Crop -> Rotate/Flip -> Resize -> Background Fill -> Color Filter -> Text Watermark
      */
-    fun renderLivePreview(): Bitmap? {
-        val src = originalBitmap ?: return null
+    fun renderLivePreview(state: ImageEditState = editState, useFullRes: Boolean = false): Bitmap? {
+        val src = (if (useFullRes) originalBitmap else (previewSourceBitmap ?: originalBitmap)) ?: return null
 
         var result = src
 
         // 1. Crop
-        if (editState.cropAspect != "Free" && editState.cropAspect != "Original") {
-            val ratio = when (editState.cropAspect) {
+        if (state.isCropped()) {
+            val cropL = (state.cropLeft * result.width).toInt().coerceIn(0, result.width - 1)
+            val cropT = (state.cropTop * result.height).toInt().coerceIn(0, result.height - 1)
+            val cropR = (state.cropRight * result.width).toInt().coerceIn(cropL + 1, result.width)
+            val cropB = (state.cropBottom * result.height).toInt().coerceIn(cropT + 1, result.height)
+            try {
+                result = Bitmap.createBitmap(result, cropL, cropT, cropR - cropL, cropB - cropT)
+            } catch (_: Exception) {}
+        } else if (state.cropAspect != "Free" && state.cropAspect != "Original") {
+            val ratio = when (state.cropAspect) {
                 "1:1" -> 1.0f
                 "4:3" -> 4f / 3f
                 "3:4" -> 3f / 4f
@@ -257,15 +280,15 @@ class ImageStudioController(
         }
 
         // 2. Rotate & Flip
-        if (editState.rotationAngle != 0f || editState.flipH || editState.flipV) {
+        if (state.rotationAngle != 0f || state.flipH || state.flipV) {
             try {
                 val matrix = Matrix()
-                if (editState.rotationAngle != 0f) {
-                    matrix.postRotate(editState.rotationAngle)
+                if (state.rotationAngle != 0f) {
+                    matrix.postRotate(state.rotationAngle)
                 }
-                if (editState.flipH || editState.flipV) {
-                    val sx = if (editState.flipH) -1f else 1f
-                    val sy = if (editState.flipV) -1f else 1f
+                if (state.flipH || state.flipV) {
+                    val sx = if (state.flipH) -1f else 1f
+                    val sy = if (state.flipV) -1f else 1f
                     matrix.postScale(sx, sy)
                 }
                 result = Bitmap.createBitmap(result, 0, 0, result.width, result.height, matrix, true)
@@ -273,15 +296,26 @@ class ImageStudioController(
         }
 
         // 3. Resize
-        val targetWidth = when {
-            editState.resizeWidth > 0 -> editState.resizeWidth
-            editState.resizeScale != 100 -> ((result.width * editState.resizeScale) / 100).coerceAtLeast(1)
-            else -> result.width
-        }
-        val targetHeight = when {
-            editState.resizeHeight > 0 -> editState.resizeHeight
-            editState.resizeScale != 100 -> ((result.height * editState.resizeScale) / 100).coerceAtLeast(1)
-            else -> result.height
+        val origFullW = originalBitmap?.width ?: result.width
+        val origFullH = originalBitmap?.height ?: result.height
+        val targetWidth: Int
+        val targetHeight: Int
+        if (state.resizeWidth > 0 && state.resizeHeight > 0) {
+            if (useFullRes) {
+                targetWidth = state.resizeWidth
+                targetHeight = state.resizeHeight
+            } else {
+                val ratioW = result.width.toFloat() / origFullW.toFloat()
+                val ratioH = result.height.toFloat() / origFullH.toFloat()
+                targetWidth = (state.resizeWidth * ratioW).toInt().coerceAtLeast(1)
+                targetHeight = (state.resizeHeight * ratioH).toInt().coerceAtLeast(1)
+            }
+        } else if (state.resizeScale != 100) {
+            targetWidth = ((result.width * state.resizeScale) / 100).coerceAtLeast(1)
+            targetHeight = ((result.height * state.resizeScale) / 100).coerceAtLeast(1)
+        } else {
+            targetWidth = result.width
+            targetHeight = result.height
         }
         if (targetWidth != result.width || targetHeight != result.height) {
             try {
@@ -290,12 +324,12 @@ class ImageStudioController(
         }
 
         // 4. Background Fill (for alpha transparency)
-        if (editState.bgType != "Transparent") {
+        if (state.bgType != "Transparent") {
             try {
                 val bgBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bgBmp)
                 val bgPaint = Paint().apply {
-                    color = if (editState.bgType.contains("White", ignoreCase = true)) {
+                    color = if (state.bgType.contains("White", ignoreCase = true)) {
                         android.graphics.Color.WHITE
                     } else {
                         android.graphics.Color.BLACK
@@ -309,14 +343,14 @@ class ImageStudioController(
         }
 
         // 5. Color filter
-        if (editState.filter != "Default" && editState.filter != "None") {
+        if (state.filter != "Default" && state.filter != "None") {
             try {
                 val filteredBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(filteredBmp)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
                 val colorMatrix = ColorMatrix()
-                when (editState.filter) {
+                when (state.filter) {
                     "Grayscale" -> colorMatrix.setSaturation(0f)
                     "Sepia" -> {
                         val sepia = ColorMatrix(
@@ -370,15 +404,15 @@ class ImageStudioController(
         }
 
         // 6. Text Watermark Overlay
-        if (editState.watermarkText.isNotEmpty()) {
+        if (state.watermarkText.isNotEmpty()) {
             try {
                 val wmBmp = result.copy(Bitmap.Config.ARGB_8888, true)
                 val canvas = Canvas(wmBmp)
                 val scale = (result.width.toFloat() / 1080f).coerceIn(0.5f, 3.0f)
-                val textSizePx = (editState.watermarkSize.toFloat() * scale).coerceAtLeast(16f)
+                val textSizePx = (state.watermarkSize.toFloat() * scale).coerceAtLeast(16f)
 
                 val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = when (editState.watermarkColor.uppercase()) {
+                    color = when (state.watermarkColor.uppercase()) {
                         "BLACK", "#000000" -> android.graphics.Color.BLACK
                         "RED", "#EF4444" -> android.graphics.Color.RED
                         "YELLOW", "#EAB308" -> android.graphics.Color.YELLOW
@@ -389,14 +423,14 @@ class ImageStudioController(
                     setShadowLayer(4f * scale, 2f * scale, 2f * scale, android.graphics.Color.argb(160, 0, 0, 0))
                 }
 
-                val text = editState.watermarkText
+                val text = state.watermarkText
                 val textWidth = textPaint.measureText(text)
                 val textBounds = android.graphics.Rect()
                 textPaint.getTextBounds(text, 0, text.length, textBounds)
                 val textHeight = textBounds.height().toFloat()
 
                 val margin = 32f * scale
-                val (x, y) = when (editState.watermarkPosition.lowercase()) {
+                val (x, y) = when (state.watermarkPosition.lowercase()) {
                     "top-left" -> margin to (margin + textHeight)
                     "top-right" -> (result.width - textWidth - margin) to (margin + textHeight)
                     "bottom-left" -> margin to (result.height - margin)
@@ -413,31 +447,50 @@ class ImageStudioController(
     }
 
     fun refreshPreview() {
-        val previewBmp = renderLivePreview() ?: return
+        val previewBmp = renderLivePreview(editState) ?: return
         binding.imgAfterPreview.setImageBitmap(previewBmp)
+
+        val origFullW = originalBitmap?.width ?: previewBmp.width
+        val origFullH = originalBitmap?.height ?: previewBmp.height
+
+        val targetW = when {
+            editState.resizeWidth > 0 -> editState.resizeWidth
+            editState.resizeScale != 100 -> ((origFullW * editState.resizeScale) / 100).coerceAtLeast(1)
+            else -> origFullW
+        }
+        val targetH = when {
+            editState.resizeHeight > 0 -> editState.resizeHeight
+            editState.resizeScale != 100 -> ((origFullH * editState.resizeScale) / 100).coerceAtLeast(1)
+            else -> origFullH
+        }
 
         val isPng = outputConfig.format.equals("PNG", ignoreCase = true)
         if (outputConfig.compressionMode == "target_size") {
             val targetKb = outputConfig.targetSizeKb ?: 250
             val targetBytes = targetKb.toLong() * 1024L
-            binding.tvImgQualityLabel.text = "Target Ceiling: $targetKb KB"
-            binding.tvImgAfterSize.text = "~${formatBytes(targetBytes)} (${previewBmp.width} × ${previewBmp.height} px • ${outputConfig.format})"
+            binding.tvImgQualityLabel.text = "Target Ceiling:"
+            binding.tvImgQualityValue.text = "$targetKb KB"
+            binding.tvImgAfterSize.text = "~${formatBytes(targetBytes)} ($targetW × $targetH px • ${outputConfig.format})"
             val ratio = if (originalBytes > 0) {
                 (100.0 - (targetBytes.toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
             } else 0
             binding.tvImgComparisonRatio.text = "Total: ${formatBytes(originalBytes)} → ~${formatBytes(targetBytes)} (-$ratio%)"
         } else if (isPng) {
-            binding.tvImgQualityLabel.text = "Compression Level: (Deflate 1-9)"
-            binding.tvImgAfterSize.text = "${previewBmp.width} × ${previewBmp.height} px • Deflate"
+            binding.tvImgQualityLabel.text = "Compression:"
+            binding.tvImgQualityValue.text = "Deflate (Lossless)"
+            binding.tvImgAfterSize.text = "$targetW × $targetH px • Deflate"
             binding.tvImgComparisonRatio.text = "PNG is lossless • Size determined by image complexity"
         } else {
-            binding.tvImgQualityLabel.text = "Quality: ${outputConfig.quality}%"
-            val scaleFactor = (previewBmp.width.toDouble() * previewBmp.height.toDouble()) /
-                    ((originalBitmap?.width ?: 1920).toDouble() * (originalBitmap?.height ?: 1080).toDouble())
+            // Strict single source of truth for quality label — never duplicate "Quality: 50% 50%"
+            binding.tvImgQualityLabel.text = "Quality:"
+            binding.tvImgQualityValue.text = "${outputConfig.quality}%"
+
+            val scaleFactor = (targetW.toDouble() * targetH.toDouble()) /
+                    (origFullW.toDouble() * origFullH.toDouble()).coerceAtLeast(1.0)
             val qualityFactor = outputConfig.quality.toDouble() / 100.0
             val estBytes = (originalBytes.toDouble() * scaleFactor * qualityFactor * 0.4).toLong().coerceAtLeast(1024L)
 
-            binding.tvImgAfterSize.text = "~${formatBytes(estBytes)} (${previewBmp.width} × ${previewBmp.height} px • ${outputConfig.format})"
+            binding.tvImgAfterSize.text = "~${formatBytes(estBytes)} ($targetW × $targetH px • ${outputConfig.format})"
             val ratio = if (originalBytes > 0) {
                 (100.0 - (estBytes.toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
             } else 0
@@ -456,7 +509,7 @@ class ImageStudioController(
             binding.tvImgSummaryEmpty.visibility = View.GONE
             binding.layoutImgSummaryDetails.visibility = View.VISIBLE
 
-            if (editState.cropAspect != "Free" && editState.cropAspect != "Original") {
+            if (editState.isCropped() || (editState.cropAspect != "Free" && editState.cropAspect != "Original")) {
                 binding.tvImgSummaryCrop.visibility = View.VISIBLE
                 binding.tvImgSummaryCrop.text = "✓ Crop: ${editState.cropAspect}"
             } else {
@@ -477,7 +530,7 @@ class ImageStudioController(
 
             if (editState.watermarkText.isNotEmpty()) {
                 binding.tvImgSummaryCrop.visibility = View.VISIBLE
-                val curCrop = if (editState.cropAspect != "Free" && editState.cropAspect != "Original") "Crop ${editState.cropAspect} • " else ""
+                val curCrop = if (editState.isCropped()) "Crop ${editState.cropAspect} • " else ""
                 binding.tvImgSummaryCrop.text = "✓ ${curCrop}Watermark: \"${editState.watermarkText}\""
             }
 
@@ -563,13 +616,14 @@ class ImageStudioController(
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
-                val previewBmp = renderLivePreview()
+                // High-fidelity full-resolution render for final output
+                val fullResBmp = renderLivePreview(editState, useFullRes = true)
                 val result = MediaProcessor.image.process(
                     srcFile = srcFile,
                     outFile = outFile,
                     editState = editState,
                     outputConfig = outputConfig,
-                    previewBitmap = previewBmp,
+                    previewBitmap = fullResBmp,
                     py = getPython()
                 )
 
@@ -589,7 +643,7 @@ class ImageStudioController(
                     binding.btnImgExecute.text = "Compress again"
                     if (result.success && outFile.exists()) {
                         lastResultFile = outFile
-                        val finalBmp = BitmapFactory.decodeFile(outFile.absolutePath) ?: previewBmp
+                        val finalBmp = BitmapFactory.decodeFile(outFile.absolutePath) ?: fullResBmp
                         binding.imgAfterPreview.setImageBitmap(finalBmp)
                         binding.tvImgAfterSize.text = "${formatBytes(outFile.length())} (${outputConfig.format})"
                         val ratio = if (originalBytes > 0) {
@@ -619,6 +673,7 @@ class ImageStudioController(
         originalFile = null
         originalBytes = 0L
         originalBitmap = null
+        previewSourceBitmap = null
         lastResultFile = null
         compressionJob?.cancel()
 
@@ -630,6 +685,7 @@ class ImageStudioController(
         binding.toolRotate.isEnabled = false
         binding.toolColorFilter.isEnabled = false
         binding.toolExif.isEnabled = false
+        binding.toolText.isEnabled = false
 
         binding.imgFileThumb.setImageDrawable(null)
         binding.imgBeforePreview.setImageDrawable(null)
@@ -643,13 +699,36 @@ class ImageStudioController(
         updateEditSummary()
     }
 
-    // Tool Dialogs
+    // =========================================================================
+    // Tool Dialogs with Isolated Draft States & Non-destructive Live Previews
+    // =========================================================================
+
     private fun showCropDialog() {
         val dialogBinding = DialogCropBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
-        dialogBinding.imgCropPreview.setImageBitmap(originalBitmap)
 
-        when (editState.cropAspect) {
+        // Draft state isolated from authoritative editState until Apply
+        val draftState = editState.deepCopy()
+        val baseBmp = previewSourceBitmap ?: originalBitmap
+        dialogBinding.imgCropPreview.setImageBitmap(baseBmp)
+
+        if (baseBmp != null) {
+            val initialNorm = if (draftState.isCropped()) {
+                android.graphics.RectF(draftState.cropLeft, draftState.cropTop, draftState.cropRight, draftState.cropBottom)
+            } else null
+            dialogBinding.cropOverlayView.setImageDimensions(baseBmp.width, baseBmp.height, initialNorm)
+            dialogBinding.cropOverlayView.setCropAspect(draftState.cropAspect)
+        }
+
+        // Live interactive crop handle dragging
+        dialogBinding.cropOverlayView.onCropChanged = { normRect ->
+            draftState.cropLeft = normRect.left
+            draftState.cropTop = normRect.top
+            draftState.cropRight = normRect.right
+            draftState.cropBottom = normRect.bottom
+        }
+
+        when (draftState.cropAspect) {
             "1:1" -> dialogBinding.chipAspect11.isChecked = true
             "4:3" -> dialogBinding.chipAspect43.isChecked = true
             "3:4" -> dialogBinding.chipAspect34.isChecked = true
@@ -661,7 +740,7 @@ class ImageStudioController(
         dialogBinding.chipGroupAspectRatio.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupAspectRatio.findViewById<Chip>(checkedIds[0])
-                editState.cropAspect = when (chip?.id) {
+                draftState.cropAspect = when (chip?.id) {
                     R.id.chipAspect11 -> "1:1"
                     R.id.chipAspect43 -> "4:3"
                     R.id.chipAspect34 -> "3:4"
@@ -669,17 +748,28 @@ class ImageStudioController(
                     R.id.chipAspect916 -> "9:16"
                     else -> "Free"
                 }
+                dialogBinding.cropOverlayView.setCropAspect(draftState.cropAspect)
             }
         }
 
         dialogBinding.btnCropApply.setOnClickListener {
+            val normRect = dialogBinding.cropOverlayView.getCropNormalized()
+            editState.cropLeft = normRect.left
+            editState.cropTop = normRect.top
+            editState.cropRight = normRect.right
+            editState.cropBottom = normRect.bottom
+            editState.cropAspect = draftState.cropAspect
             refreshPreview()
             dialog.dismiss()
         }
         dialogBinding.btnCropReset.setOnClickListener {
-            editState.cropAspect = "Free"
-            refreshPreview()
-            dialog.dismiss()
+            draftState.cropLeft = 0f
+            draftState.cropTop = 0f
+            draftState.cropRight = 1f
+            draftState.cropBottom = 1f
+            draftState.cropAspect = "Free"
+            dialogBinding.cropOverlayView.setCropAspect("Free")
+            dialogBinding.chipAspectFree.isChecked = true
         }
         dialogBinding.btnCropCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnCropClose.setOnClickListener { dialog.dismiss() }
@@ -692,37 +782,116 @@ class ImageStudioController(
 
         val origW = originalBitmap?.width ?: 1920
         val origH = originalBitmap?.height ?: 1080
-        dialogBinding.imgResizePreview.setImageBitmap(originalBitmap)
-        dialogBinding.sliderResizeScale.value = editState.resizeScale.toFloat()
-        dialogBinding.tvResizeScaleLabel.text = "${editState.resizeScale}%"
-        dialogBinding.etResizeWidth.setText(if (editState.resizeWidth > 0) editState.resizeWidth.toString() else origW.toString())
-        dialogBinding.etResizeHeight.setText(if (editState.resizeHeight > 0) editState.resizeHeight.toString() else origH.toString())
+        val origAspect = origW.toDouble() / origH.toDouble()
 
-        dialogBinding.sliderResizeScale.addOnChangeListener { _, value, _ ->
-            editState.resizeScale = value.toInt()
-            dialogBinding.tvResizeScaleLabel.text = "${editState.resizeScale}%"
-            val newW = (origW * editState.resizeScale) / 100
-            val newH = (origH * editState.resizeScale) / 100
-            dialogBinding.etResizeWidth.setText(newW.toString())
-            dialogBinding.etResizeHeight.setText(newH.toString())
+        var draftScale = editState.resizeScale
+        var draftW = if (editState.resizeWidth > 0) editState.resizeWidth else origW
+        var draftH = if (editState.resizeHeight > 0) editState.resizeHeight else origH
+        var draftKeepAspect = editState.keepAspect
+        var isUpdatingText = false
+
+        fun updateResizePreview() {
+            val previewDraft = editState.deepCopy().apply {
+                resizeScale = draftScale
+                resizeWidth = draftW
+                resizeHeight = draftH
+                keepAspect = draftKeepAspect
+            }
+            dialogBinding.imgResizePreview.setImageBitmap(renderLivePreview(previewDraft))
+        }
+
+        dialogBinding.sliderResizeScale.value = draftScale.toFloat().coerceIn(10f, 200f)
+        dialogBinding.tvResizeScaleLabel.text = "$draftScale%"
+        dialogBinding.etResizeWidth.setText(draftW.toString())
+        dialogBinding.etResizeHeight.setText(draftH.toString())
+        dialogBinding.cbResizeKeepAspect.isChecked = draftKeepAspect
+        updateResizePreview()
+
+        dialogBinding.cbResizeKeepAspect.setOnCheckedChangeListener { _, isChecked ->
+            draftKeepAspect = isChecked
+        }
+
+        // Two-way aspect ratio calculation: width updates height, height updates width
+        dialogBinding.etResizeWidth.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (isUpdatingText) return
+                val newW = s?.toString()?.toIntOrNull()
+                if (newW != null && newW > 0) {
+                    isUpdatingText = true
+                    draftW = newW
+                    if (draftKeepAspect) {
+                        draftH = Math.round(newW / origAspect).toInt().coerceAtLeast(1)
+                        dialogBinding.etResizeHeight.setText(draftH.toString())
+                    }
+                    val scale = Math.round((draftW.toDouble() / origW.toDouble()) * 100).toInt().coerceIn(10, 200)
+                    draftScale = scale
+                    dialogBinding.sliderResizeScale.value = scale.toFloat()
+                    dialogBinding.tvResizeScaleLabel.text = "$scale%"
+                    updateResizePreview()
+                    isUpdatingText = false
+                }
+            }
+        })
+
+        dialogBinding.etResizeHeight.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (isUpdatingText) return
+                val newH = s?.toString()?.toIntOrNull()
+                if (newH != null && newH > 0) {
+                    isUpdatingText = true
+                    draftH = newH
+                    if (draftKeepAspect) {
+                        draftW = Math.round(newH * origAspect).toInt().coerceAtLeast(1)
+                        dialogBinding.etResizeWidth.setText(draftW.toString())
+                    }
+                    val scale = Math.round((draftH.toDouble() / origH.toDouble()) * 100).toInt().coerceIn(10, 200)
+                    draftScale = scale
+                    dialogBinding.sliderResizeScale.value = scale.toFloat()
+                    dialogBinding.tvResizeScaleLabel.text = "$scale%"
+                    updateResizePreview()
+                    isUpdatingText = false
+                }
+            }
+        })
+
+        dialogBinding.sliderResizeScale.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser || isUpdatingText) return@addOnChangeListener
+            isUpdatingText = true
+            draftScale = value.toInt()
+            dialogBinding.tvResizeScaleLabel.text = "$draftScale%"
+            draftW = ((origW * draftScale) / 100).coerceAtLeast(1)
+            draftH = ((origH * draftScale) / 100).coerceAtLeast(1)
+            dialogBinding.etResizeWidth.setText(draftW.toString())
+            dialogBinding.etResizeHeight.setText(draftH.toString())
+            updateResizePreview()
+            isUpdatingText = false
         }
 
         dialogBinding.btnResizeApply.setOnClickListener {
-            val customW = dialogBinding.etResizeWidth.text.toString().toIntOrNull()
-            val customH = dialogBinding.etResizeHeight.text.toString().toIntOrNull()
-            if (customW != null && customH != null && customW > 0 && customH > 0) {
-                editState.resizeWidth = customW
-                editState.resizeHeight = customH
-            }
+            editState.resizeScale = draftScale
+            editState.resizeWidth = draftW
+            editState.resizeHeight = draftH
+            editState.keepAspect = draftKeepAspect
             refreshPreview()
             dialog.dismiss()
         }
         dialogBinding.btnResizeReset.setOnClickListener {
-            editState.resizeScale = 100
-            editState.resizeWidth = 0
-            editState.resizeHeight = 0
-            refreshPreview()
-            dialog.dismiss()
+            isUpdatingText = true
+            draftScale = 100
+            draftW = origW
+            draftH = origH
+            draftKeepAspect = true
+            dialogBinding.sliderResizeScale.value = 100f
+            dialogBinding.tvResizeScaleLabel.text = "100%"
+            dialogBinding.etResizeWidth.setText(origW.toString())
+            dialogBinding.etResizeHeight.setText(origH.toString())
+            dialogBinding.cbResizeKeepAspect.isChecked = true
+            updateResizePreview()
+            isUpdatingText = false
         }
         dialogBinding.btnResizeCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnResizeClose.setOnClickListener { dialog.dismiss() }
@@ -733,66 +902,71 @@ class ImageStudioController(
         val dialogBinding = DialogRotateBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        val baseBmp = originalBitmap
-        dialogBinding.imgRotatePreview.setImageBitmap(baseBmp)
-        dialogBinding.sliderRotateAngle.value = editState.rotationAngle
-        dialogBinding.tvRotateAngleLabel.text = "${editState.rotationAngle.toInt()}°"
+        var draftAngle = editState.rotationAngle
+        var draftFlipH = editState.flipH
+        var draftFlipV = editState.flipV
 
-        var tempFlipH = editState.flipH
-        var tempFlipV = editState.flipV
-
-        fun updateFlipButtons() {
-            dialogBinding.btnFlipHorizontal.text = if (tempFlipH) "Flip H (On)" else "Flip Horizontal"
-            dialogBinding.btnFlipVertical.text = if (tempFlipV) "Flip V (On)" else "Flip Vertical"
-            dialogBinding.imgRotatePreview.scaleX = if (tempFlipH) -1f else 1f
-            dialogBinding.imgRotatePreview.scaleY = if (tempFlipV) -1f else 1f
+        fun updateRotatePreview() {
+            val draft = editState.deepCopy().apply {
+                rotationAngle = draftAngle
+                flipH = draftFlipH
+                flipV = draftFlipV
+            }
+            dialogBinding.imgRotatePreview.setImageBitmap(renderLivePreview(draft))
+            dialogBinding.btnFlipHorizontal.text = if (draftFlipH) "Flip H (On)" else "Flip Horizontal"
+            dialogBinding.btnFlipVertical.text = if (draftFlipV) "Flip V (On)" else "Flip Vertical"
+            dialogBinding.tvRotateAngleLabel.text = "${draftAngle.toInt()}°"
         }
-        updateFlipButtons()
+
+        dialogBinding.sliderRotateAngle.value = draftAngle
+        updateRotatePreview()
 
         dialogBinding.btnFlipHorizontal.setOnClickListener {
-            tempFlipH = !tempFlipH
-            updateFlipButtons()
+            draftFlipH = !draftFlipH
+            updateRotatePreview()
         }
 
         dialogBinding.btnFlipVertical.setOnClickListener {
-            tempFlipV = !tempFlipV
-            updateFlipButtons()
+            draftFlipV = !draftFlipV
+            updateRotatePreview()
         }
 
-        dialogBinding.sliderRotateAngle.addOnChangeListener { _, value, _ ->
-            dialogBinding.tvRotateAngleLabel.text = "${value.toInt()}°"
-            dialogBinding.imgRotatePreview.rotation = value
+        dialogBinding.sliderRotateAngle.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                draftAngle = value
+                updateRotatePreview()
+            }
         }
 
         dialogBinding.btnRotateMinus90.setOnClickListener {
-            var a = dialogBinding.sliderRotateAngle.value - 90f
+            var a = draftAngle - 90f
             if (a < -180f) a += 360f
-            dialogBinding.sliderRotateAngle.value = a
+            draftAngle = a
+            dialogBinding.sliderRotateAngle.value = draftAngle
+            updateRotatePreview()
         }
 
         dialogBinding.btnRotatePlus90.setOnClickListener {
-            var a = dialogBinding.sliderRotateAngle.value + 90f
+            var a = draftAngle + 90f
             if (a > 180f) a -= 360f
-            dialogBinding.sliderRotateAngle.value = a
+            draftAngle = a
+            dialogBinding.sliderRotateAngle.value = draftAngle
+            updateRotatePreview()
         }
 
         dialogBinding.btnRotateApply.setOnClickListener {
-            editState.rotationAngle = dialogBinding.sliderRotateAngle.value
-            editState.flipH = tempFlipH
-            editState.flipV = tempFlipV
+            editState.rotationAngle = draftAngle
+            editState.flipH = draftFlipH
+            editState.flipV = draftFlipV
             refreshPreview()
             dialog.dismiss()
         }
         dialogBinding.btnRotateReset.setOnClickListener {
-            editState.rotationAngle = 0f
-            editState.flipH = false
-            editState.flipV = false
-            tempFlipH = false
-            tempFlipV = false
+            draftAngle = 0f
+            draftFlipH = false
+            draftFlipV = false
             dialogBinding.sliderRotateAngle.value = 0f
-            updateFlipButtons()
-            refreshPreview()
-            dialog.dismiss()
+            updateRotatePreview()
         }
         dialogBinding.btnRotateCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnRotateClose.setOnClickListener { dialog.dismiss() }
@@ -803,12 +977,27 @@ class ImageStudioController(
         val dialogBinding = DialogTextWatermarkBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        dialogBinding.imgWatermarkPreview.setImageBitmap(renderLivePreview())
-        dialogBinding.etWatermarkText.setText(editState.watermarkText)
-        dialogBinding.sliderWatermarkSize.value = editState.watermarkSize.toFloat()
-        dialogBinding.tvWatermarkSizeLabel.text = "${editState.watermarkSize} sp"
+        var draftText = editState.watermarkText
+        var draftSize = editState.watermarkSize
+        var draftPosition = editState.watermarkPosition
+        var draftColor = editState.watermarkColor
 
-        when (editState.watermarkPosition.lowercase()) {
+        fun updateWatermarkPreview() {
+            val draft = editState.deepCopy().apply {
+                watermarkText = draftText
+                watermarkSize = draftSize
+                watermarkPosition = draftPosition
+                watermarkColor = draftColor
+            }
+            dialogBinding.imgWatermarkPreview.setImageBitmap(renderLivePreview(draft))
+        }
+
+        dialogBinding.etWatermarkText.setText(draftText)
+        dialogBinding.sliderWatermarkSize.value = draftSize.toFloat().coerceIn(12f, 72f)
+        dialogBinding.tvWatermarkSizeLabel.text = "$draftSize sp"
+        updateWatermarkPreview()
+
+        when (draftPosition.lowercase()) {
             "top-left" -> dialogBinding.chipPosTopLeft.isChecked = true
             "top-right" -> dialogBinding.chipPosTopRight.isChecked = true
             "bottom-left" -> dialogBinding.chipPosBottomLeft.isChecked = true
@@ -816,49 +1005,91 @@ class ImageStudioController(
             else -> dialogBinding.chipPosBottomRight.isChecked = true
         }
 
-        when (editState.watermarkColor.uppercase()) {
+        when (draftColor.uppercase()) {
             "BLACK", "#000000" -> dialogBinding.chipWmColorBlack.isChecked = true
             "RED", "#EF4444" -> dialogBinding.chipWmColorRed.isChecked = true
             "YELLOW", "#EAB308" -> dialogBinding.chipWmColorYellow.isChecked = true
             else -> dialogBinding.chipWmColorWhite.isChecked = true
         }
 
-        // Presets
-        dialogBinding.chipWmConfidential.setOnClickListener { dialogBinding.etWatermarkText.setText("CONFIDENTIAL") }
-        dialogBinding.chipWmDraft.setOnClickListener { dialogBinding.etWatermarkText.setText("DRAFT") }
-        dialogBinding.chipWmCopy.setOnClickListener { dialogBinding.etWatermarkText.setText("COPY") }
-        dialogBinding.chipWmDoNotShare.setOnClickListener { dialogBinding.etWatermarkText.setText("DO NOT SHARE") }
+        dialogBinding.chipWmConfidential.setOnClickListener {
+            dialogBinding.etWatermarkText.setText("CONFIDENTIAL")
+            draftText = "CONFIDENTIAL"
+            updateWatermarkPreview()
+        }
+        dialogBinding.chipWmDraft.setOnClickListener {
+            dialogBinding.etWatermarkText.setText("DRAFT")
+            draftText = "DRAFT"
+            updateWatermarkPreview()
+        }
+        dialogBinding.chipWmCopy.setOnClickListener {
+            dialogBinding.etWatermarkText.setText("COPY")
+            draftText = "COPY"
+            updateWatermarkPreview()
+        }
+        dialogBinding.chipWmDoNotShare.setOnClickListener {
+            dialogBinding.etWatermarkText.setText("DO NOT SHARE")
+            draftText = "DO NOT SHARE"
+            updateWatermarkPreview()
+        }
 
-        dialogBinding.sliderWatermarkSize.addOnChangeListener { _, value, _ ->
-            dialogBinding.tvWatermarkSizeLabel.text = "${value.toInt()} sp"
+        dialogBinding.etWatermarkText.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                draftText = s?.toString()?.trim() ?: ""
+                updateWatermarkPreview()
+            }
+        })
+
+        dialogBinding.sliderWatermarkSize.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                draftSize = value.toInt()
+                dialogBinding.tvWatermarkSizeLabel.text = "$draftSize sp"
+                updateWatermarkPreview()
+            }
+        }
+
+        dialogBinding.chipGroupWatermarkColor.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupWatermarkColor.findViewById<Chip>(checkedIds[0])
+                draftColor = when (chip?.id) {
+                    R.id.chipWmColorBlack -> "#000000"
+                    R.id.chipWmColorRed -> "#EF4444"
+                    R.id.chipWmColorYellow -> "#EAB308"
+                    else -> "#FFFFFF"
+                }
+                updateWatermarkPreview()
+            }
+        }
+
+        dialogBinding.chipGroupPosition.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupPosition.findViewById<Chip>(checkedIds[0])
+                draftPosition = when (chip?.id) {
+                    R.id.chipPosTopLeft -> "top-left"
+                    R.id.chipPosTopRight -> "top-right"
+                    R.id.chipPosBottomLeft -> "bottom-left"
+                    R.id.chipPosCenter -> "center"
+                    else -> "bottom-right"
+                }
+                updateWatermarkPreview()
+            }
         }
 
         dialogBinding.btnWatermarkApply.setOnClickListener {
-            editState.watermarkText = dialogBinding.etWatermarkText.text?.toString()?.trim() ?: ""
-            editState.watermarkSize = dialogBinding.sliderWatermarkSize.value.toInt()
-            editState.watermarkPosition = when {
-                dialogBinding.chipPosTopLeft.isChecked -> "top-left"
-                dialogBinding.chipPosTopRight.isChecked -> "top-right"
-                dialogBinding.chipPosBottomLeft.isChecked -> "bottom-left"
-                dialogBinding.chipPosCenter.isChecked -> "center"
-                else -> "bottom-right"
-            }
-            editState.watermarkColor = when {
-                dialogBinding.chipWmColorBlack.isChecked -> "#000000"
-                dialogBinding.chipWmColorRed.isChecked -> "#EF4444"
-                dialogBinding.chipWmColorYellow.isChecked -> "#EAB308"
-                else -> "#FFFFFF"
-            }
+            editState.watermarkText = draftText
+            editState.watermarkSize = draftSize
+            editState.watermarkPosition = draftPosition
+            editState.watermarkColor = draftColor
             refreshPreview()
             dialog.dismiss()
         }
-
         dialogBinding.btnWatermarkReset.setOnClickListener {
-            editState.watermarkText = ""
-            refreshPreview()
-            dialog.dismiss()
+            draftText = ""
+            dialogBinding.etWatermarkText.setText("")
+            updateWatermarkPreview()
         }
-
         dialogBinding.btnWatermarkCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnWatermarkClose.setOnClickListener { dialog.dismiss() }
         dialog.show()
@@ -867,9 +1098,22 @@ class ImageStudioController(
     private fun showColorFilterDialog() {
         val dialogBinding = DialogColorFilterBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
-        dialogBinding.imgFilterPreview.setImageBitmap(originalBitmap)
 
-        when (editState.filter) {
+        var draftFilter = editState.filter
+        var draftBgType = editState.bgType
+
+        // Live preview preserves all previous edits (crop, resize, rotation, etc.)
+        fun updateFilterPreview() {
+            val draft = editState.deepCopy().apply {
+                filter = draftFilter
+                bgType = draftBgType
+            }
+            dialogBinding.imgFilterPreview.setImageBitmap(renderLivePreview(draft))
+        }
+
+        updateFilterPreview()
+
+        when (draftFilter) {
             "Grayscale" -> dialogBinding.chipFilterGrayscale.isChecked = true
             "Sepia" -> dialogBinding.chipFilterSepia.isChecked = true
             "Vintage" -> dialogBinding.chipFilterVintage.isChecked = true
@@ -878,10 +1122,17 @@ class ImageStudioController(
             else -> dialogBinding.chipFilterDefault.isChecked = true
         }
 
+        when (draftBgType) {
+            "Black" -> dialogBinding.chipBgBlack.isChecked = true
+            "White" -> dialogBinding.chipBgWhite.isChecked = true
+            "Blurred Fill" -> dialogBinding.chipBgBlur.isChecked = true
+            else -> dialogBinding.chipBgTrans.isChecked = true
+        }
+
         dialogBinding.chipGroupFilters.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupFilters.findViewById<Chip>(checkedIds[0])
-                editState.filter = when (chip?.id) {
+                draftFilter = when (chip?.id) {
                     R.id.chipFilterGrayscale -> "Grayscale"
                     R.id.chipFilterSepia -> "Sepia"
                     R.id.chipFilterVintage -> "Vintage"
@@ -889,17 +1140,35 @@ class ImageStudioController(
                     R.id.chipFilterWarm -> "Warm"
                     else -> "Default"
                 }
+                updateFilterPreview()
+            }
+        }
+
+        dialogBinding.chipGroupBackgroundType.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupBackgroundType.findViewById<Chip>(checkedIds[0])
+                draftBgType = when (chip?.id) {
+                    R.id.chipBgBlack -> "Black"
+                    R.id.chipBgWhite -> "White"
+                    R.id.chipBgBlur -> "Blurred Fill"
+                    else -> "Transparent"
+                }
+                updateFilterPreview()
             }
         }
 
         dialogBinding.btnFilterApply.setOnClickListener {
+            editState.filter = draftFilter
+            editState.bgType = draftBgType
             refreshPreview()
             dialog.dismiss()
         }
         dialogBinding.btnFilterReset.setOnClickListener {
-            editState.filter = "Default"
-            refreshPreview()
-            dialog.dismiss()
+            draftFilter = "Default"
+            draftBgType = "Transparent"
+            dialogBinding.chipFilterDefault.isChecked = true
+            dialogBinding.chipBgTrans.isChecked = true
+            updateFilterPreview()
         }
         dialogBinding.btnFilterCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnFilterClose.setOnClickListener { dialog.dismiss() }
@@ -910,11 +1179,18 @@ class ImageStudioController(
         val dialogBinding = DialogExifBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        dialogBinding.etExifMake.setText(editState.exifMake)
-        dialogBinding.etExifModel.setText(editState.exifModel)
-        dialogBinding.etExifSoftware.setText(editState.exifSoftware)
-        dialogBinding.etExifDateTime.setText(editState.exifDateTime)
-        dialogBinding.etExifGps.setText(editState.exifGps)
+        var draftStripExif = editState.stripExif
+        var draftMake = editState.exifMake
+        var draftModel = editState.exifModel
+        var draftSoftware = editState.exifSoftware
+        var draftDateTime = editState.exifDateTime
+        var draftGps = editState.exifGps
+
+        dialogBinding.etExifMake.setText(draftMake)
+        dialogBinding.etExifModel.setText(draftModel)
+        dialogBinding.etExifSoftware.setText(draftSoftware)
+        dialogBinding.etExifDateTime.setText(draftDateTime)
+        dialogBinding.etExifGps.setText(draftGps)
 
         dialogBinding.btnExifStripAll.setOnClickListener {
             dialogBinding.etExifMake.setText("")
@@ -922,16 +1198,22 @@ class ImageStudioController(
             dialogBinding.etExifSoftware.setText("")
             dialogBinding.etExifDateTime.setText("")
             dialogBinding.etExifGps.setText("")
-            editState.stripExif = true
-            Toast.makeText(activity, "All EXIF metadata will be completely scrubbed", Toast.LENGTH_SHORT).show()
+            draftStripExif = true
+            draftMake = ""
+            draftModel = ""
+            draftSoftware = ""
+            draftDateTime = ""
+            draftGps = ""
+            Toast.makeText(activity, "All EXIF metadata will be scrubbed (Lossless)", Toast.LENGTH_SHORT).show()
         }
 
         dialogBinding.btnExifRestore.setOnClickListener {
-            editState.stripExif = false
+            draftStripExif = false
             Toast.makeText(activity, "Metadata preservation enabled", Toast.LENGTH_SHORT).show()
         }
 
         dialogBinding.btnExifDone.setOnClickListener {
+            editState.stripExif = draftStripExif
             editState.exifMake = dialogBinding.etExifMake.text.toString().trim()
             editState.exifModel = dialogBinding.etExifModel.text.toString().trim()
             editState.exifSoftware = dialogBinding.etExifSoftware.text.toString().trim()

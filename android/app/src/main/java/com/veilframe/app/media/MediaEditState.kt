@@ -92,6 +92,10 @@ enum class AudioMode {
  */
 data class ImageEditState(
     var cropAspect: String = "Free",
+    var cropLeft: Float = 0f,
+    var cropTop: Float = 0f,
+    var cropRight: Float = 1f,
+    var cropBottom: Float = 1f,
     var resizeScale: Int = 100,
     var resizeWidth: Int = 0,
     var resizeHeight: Int = 0,
@@ -112,9 +116,15 @@ data class ImageEditState(
     var exifDateTime: String = "",
     var exifGps: String = ""
 ) {
-    fun hasEdits(): Boolean {
+    fun isCropped(): Boolean {
         return (cropAspect != "Free" && cropAspect != "Original") ||
+                (cropLeft > 0.001f || cropTop > 0.001f || cropRight < 0.999f || cropBottom < 0.999f)
+    }
+
+    fun hasEdits(): Boolean {
+        return isCropped() ||
                 (resizeScale != 100) ||
+                (resizeWidth > 0 && resizeHeight > 0) ||
                 (rotationAngle != 0f) ||
                 flipH ||
                 flipV ||
@@ -131,6 +141,10 @@ data class ImageEditState(
 
     fun reset() {
         cropAspect = "Free"
+        cropLeft = 0f
+        cropTop = 0f
+        cropRight = 1f
+        cropBottom = 1f
         resizeScale = 100
         resizeWidth = 0
         resizeHeight = 0
@@ -150,6 +164,10 @@ data class ImageEditState(
         exifSoftware = ""
         exifDateTime = ""
         exifGps = ""
+    }
+
+    fun deepCopy(): ImageEditState {
+        return this.copy()
     }
 }
 
