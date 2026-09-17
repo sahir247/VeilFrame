@@ -625,7 +625,21 @@ jobs:
           fi
 
           echo "==> Restoring release keystore from secrets..."
-          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+
+          test -s android/app/release.keystore || {
+            echo "::error::Decoded release keystore is empty!"
+            exit 1
+          }
+
+          keytool -list \
+            -keystore android/app/release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null || {
+            echo "::error::Failed to validate release keystore with alias $KEY_ALIAS!"
+            exit 1
+          }
 
           for attempt in 1 2 3; do
             if ./build.sh android-apk; then
@@ -697,6 +711,25 @@ jobs:
           
           # Find and copy all distribution files (.exe, .deb, .dmg, .tar.gz, .whl, .apk, .aab) into final_release
           find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.whl" -o -name "*.apk" -o -name "*.aab" \) -exec cp {} final_release/ \;
+          
+          # Inject authentic computed SHA-256 into update.json and bundle into release assets
+          if [ -f "final_release/VeilFrame-android-arm64.apk" ]; then
+            APK_SHA256=$(sha256sum final_release/VeilFrame-android-arm64.apk | awk '{print $1}')
+            echo "Calculated VeilFrame-android-arm64.apk SHA-256: $APK_SHA256"
+            python3 -c "
+import json
+with open('android/update.json', 'r') as f:
+    data = json.load(f)
+data['sha256'] = '$APK_SHA256'
+with open('final_release/update.json', 'w') as f:
+    json.dump(data, f, indent=2)
+"
+            echo "Generated final_release/update.json with verified APK SHA-256:"
+            cat final_release/update.json
+          else
+            echo "Notice: VeilFrame-android-arm64.apk not present in downloaded artifacts, copying template update.json"
+            cp android/update.json final_release/update.json
+          fi
           
           cd final_release
           sha256sum * > SHA256SUMS.txt

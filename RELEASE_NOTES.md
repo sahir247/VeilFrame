@@ -17,11 +17,12 @@ VeilFrame v2.2.5 delivers extensive image and video studio advancements across m
 - **Desktop GUI Modernization:** Revamped dark-mode studio interface (`#0f172a`), drag-and-drop file ingestion drop-zone, comparative before/after inspection card with instant "Reveal in File Explorer" and "Play / View Media" system integrations.
 - **Android UI Hardening:** Enforces strict single-line button constraints (`android:maxLines="1"`, `android:singleLine="true"`, `android:ellipsize="end"`) across all mobile layouts, eliminating text clipping or awkward wrapping across varying display densities.
 - **High-Fidelity Comparative Preview:** Real-time before vs. after comparison cards with dynamic file size badges and percentage savings calculations across mobile and desktop, strictly following an immutable pristine-source preview architecture.
+- **Cryptographic In-App Update Hardening:** Mandatory zero-bypass SHA-256 verification (via `update.json` or `SHA256SUMS.txt`), HTTPS-only origin pinning (`github.com`, `raw.githubusercontent.com`, `api.github.com`, `objects.githubusercontent.com`, and official AWS S3 asset endpoints), atomic staging `.tmp` downloads, download length & disk space preflight checks, and publisher signing certificate verification against the running app before triggering installation.
 - **Synchronized Multi-Platform Parity:** Full algorithmic parity between the desktop core engine, terminal CLI (`veilframe compress`), and Android native FFmpegKit and Chaquopy pipelines.
 
 ### Upgrade notes
 
-- Existing Android installations upgrade cleanly via the in-app updater verifying against `update.json` version `2.2.5` (`versionCode = 225`).
+- Existing Android installations upgrade cleanly via the in-app updater verifying against `update.json` version `2.2.5` (`versionCode = 225`) with mandatory SHA-256 and signing certificate validation.
 - Image target size compression automatically maximizes quality under the target ceiling in $\le 7$ binary search passes.
 - Android video processing directly invokes native FFmpegKit without Python subprocess reliance.
 - Video exports to non-MP4 formats (MOV, MKV, WebM, AVI, GIF) in Android utilize direct SAF tree document creation for seamless gallery and file manager access.

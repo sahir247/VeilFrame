@@ -492,6 +492,15 @@ class VideoStudioController(
         Toast.makeText(activity, "Video trim and compression parameters reset to original", Toast.LENGTH_SHORT).show()
     }
 
+    fun execute() {
+        handleExecute()
+    }
+
+    fun release() {
+        compressionJob?.cancel()
+        compressionJob = null
+    }
+
     private fun handleExecute() {
         if (selectedUri == null) {
             onPickVideoRequest()
@@ -512,8 +521,10 @@ class VideoStudioController(
     private fun executeCompression() {
         val srcFile = originalFile ?: return
         val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
-        val ext = if (outputConfig.outputMode == VideoOutputMode.GIF) "gif" else outputConfig.format.lowercase()
-        val outFilename = binding.etVidOutputFilename.text.toString().trim().ifEmpty { "compressed_video.$ext" }
+        val ext = if (outputConfig.outputMode == VideoOutputMode.GIF) "gif" else outputConfig.format.lowercase(Locale.US)
+        val rawName = binding.etVidOutputFilename.text.toString().trim()
+        val base = rawName.substringBeforeLast('.', rawName).ifBlank { "compressed_video" }
+        val outFilename = "$base.$ext"
         val outFile = File(outDir, outFilename)
 
         if (outputConfig.codec.equals("copy", ignoreCase = true) && editState.hasVideoTransforms()) {

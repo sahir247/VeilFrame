@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import androidx.appcompat.app.AppCompatDelegate
@@ -168,6 +169,10 @@ class MainActivity : AppCompatActivity() {
     private var isConsoleExpanded: Boolean = false
     private var pendingInstallApk: File? = null
     private var downloadJob: Job? = null
+    @Volatile private var isCheckingUpdates: Boolean = false
+    private var activeUpdateDialog: AlertDialog? = null
+    private var activeDownloadDialog: AlertDialog? = null
+    private var lastVerifiedUpdateApk: File? = null
 
     // Persistent tool session states with smart defaults
     private val toolStates = mutableMapOf(
@@ -720,7 +725,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val pendingApk = pendingInstallApk
+        val pendingApk = pendingInstallApk ?: lastVerifiedUpdateApk
         if (pendingApk != null && pendingApk.exists()) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
                 pendingInstallApk = null
@@ -736,6 +741,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        activeUpdateDialog?.dismiss()
+        activeUpdateDialog = null
+        activeDownloadDialog?.dismiss()
+        activeDownloadDialog = null
+        downloadJob?.cancel()
+        downloadJob = null
+        if (::imageStudioController.isInitialized) {
+            imageStudioController.release()
+        }
+        if (::videoStudioController.isInitialized) {
+            videoStudioController.release()
+        }
         if (::videoPlayerController.isInitialized) {
             videoPlayerController.release()
         }
@@ -1497,6 +1514,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun executeImageCompression() {
+        if (::imageStudioController.isInitialized) {
+            imageStudioController.execute()
+        }
+    }
+
+    private fun executeVideoCompression() {
+        if (::videoStudioController.isInitialized) {
+            videoStudioController.execute()
+        }
+    }
+
     private suspend fun runAiBundle(uri: Uri) {
         val state = currentState
         val tokenIndex = getSelectedOptionIndex()
@@ -2125,10 +2154,142 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Strict origin validation for in-app updates:
+     * Enforces HTTPS-only and pins allowable hosts to official GitHub and AWS S3 release asset endpoints.
+     */
+    private fun isAllowedUpdateUrl(urlString: String): Boolean {
+        val url = try { URL(urlString) } catch (_: Exception) { return false }
+        if (!url.protocol.equals("https", ignoreCase = true)) {
+            return false
+        }
+        val host = url.host.lowercase(Locale.ROOT)
+        return host == "raw.githubusercontent.com" ||
+               host == "api.github.com" ||
+               host == "github.com" ||
+               host == "objects.githubusercontent.com" ||
+               host.endsWith(".githubusercontent.com") ||
+               host.endsWith(".amazonaws.com")
+    }
+
+    /**
+     * Sanitizes APK filenames to prevent path traversal vulnerabilities.
+     */
+    private fun sanitizeApkFilename(rawName: String): String {
+        val clean = File(rawName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        return if (clean.endsWith(".apk", ignoreCase = true) && !clean.contains("..")) clean else "VeilFrame-update.apk"
+    }
+
+    /**
+     * Cryptographically verifies that the downloaded APK:
+     * 1. Is a valid Android package archive readable by PackageManager.
+     * 2. Matches the exact application package name identity (`com.veilframe.app`).
+     * 3. Was signed by the exact same publisher signing certificate as the currently running app.
+     */
+    private fun verifyApkSignatureAndIdentity(archiveFile: File): String? {
+        val pm = packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+
+        val archiveInfo = pm.getPackageArchiveInfo(archiveFile.absolutePath, flags)
+            ?: return "The downloaded file could not be parsed as a valid Android package archive."
+
+        if (archiveInfo.packageName != packageName) {
+            return "Package identity mismatch: Expected '$packageName', found '${archiveInfo.packageName}'."
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+
+        // 1. Extract installed app signing certificate fingerprints
+        val installedCerts = mutableSetOf<String>()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val appInfo = pm.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                val signingInfo = appInfo.signingInfo
+                if (signingInfo != null) {
+                    val sigs = if (signingInfo.hasMultipleSigners()) {
+                        signingInfo.apkContentsSigners
+                    } else {
+                        signingInfo.signingCertificateHistory
+                    }
+                    sigs?.forEach { sig ->
+                        installedCerts.add(digest.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) })
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val appInfo = pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                appInfo.signatures?.forEach { sig ->
+                    installedCerts.add(digest.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) })
+                }
+            }
+        } catch (e: Exception) {
+            return "Failed to inspect installed app signing certificates: ${e.message}"
+        }
+
+        // 2. Extract archive signing certificate fingerprints
+        val archiveCerts = mutableSetOf<String>()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val signingInfo = archiveInfo.signingInfo
+                if (signingInfo != null) {
+                    val sigs = if (signingInfo.hasMultipleSigners()) {
+                        signingInfo.apkContentsSigners
+                    } else {
+                        signingInfo.signingCertificateHistory
+                    }
+                    sigs?.forEach { sig ->
+                        archiveCerts.add(digest.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) })
+                    }
+                }
+            }
+            if (archiveCerts.isEmpty()) {
+                @Suppress("DEPRECATION")
+                archiveInfo.signatures?.forEach { sig ->
+                    archiveCerts.add(digest.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) })
+                }
+            }
+        } catch (e: Exception) {
+            return "Failed to inspect APK archive signing certificates: ${e.message}"
+        }
+
+        // 3. Cryptographic comparison
+        if (installedCerts.isNotEmpty()) {
+            if (archiveCerts.isEmpty()) {
+                return "APK archive does not contain verifiable signing certificates."
+            }
+            val match = installedCerts.intersect(archiveCerts)
+            if (match.isEmpty()) {
+                return "Publisher certificate mismatch! The update was not signed by the authentic VeilFrame release key."
+            }
+        }
+
+        return null // Null means verified!
+    }
+
+    /**
      * Built-in GitHub Releases In-App Update Engine.
-     * Uses monotonic integer versionCode comparison and cryptographic SHA-256 + package verification.
+     * Features:
+     * - Monotonic integer versionCode bounds checking
+     * - Pinned HTTPS origins only
+     * - Zero-bypass mandatory SHA-256 validation (via update.json or SHA256SUMS.txt)
+     * - Atomic staging download
+     * - Preflight storage space check
+     * - Publisher certificate identity verification
+     * - Lifecycle & concurrency safety
      */
     private fun checkForUpdates(isUserInitiated: Boolean) {
+        if (isCheckingUpdates) {
+            if (isUserInitiated) {
+                Toast.makeText(this, "Update check already in progress...", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        isCheckingUpdates = true
         binding.progressUpdateCheck.visibility = View.VISIBLE
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -2144,81 +2305,167 @@ class MainActivity : AppCompatActivity() {
                 var remoteVersionCode = 0L
                 var remoteVersionName = ""
                 var remoteTagName = ""
+                var manifestApkName = ""
                 var apkDownloadUrl = ""
                 var apkExpectedSha256 = ""
                 var releaseChangelog = ""
                 var assetSizeBytes = 0L
+                var sha256SumsUrl = ""
 
-                val manifestUrl = URL("https://raw.githubusercontent.com/sahir247/VeilFrame/main/android/update.json")
-                val manifestConn = (manifestUrl.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                }
-
-                var manifestParsed = false
-                if (manifestConn.responseCode == 200) {
-                    val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
-                    val manifestJson = JSONObject(jsonStr)
-                    remoteVersionCode = manifestJson.optLong("versionCode", 0L)
-                    remoteVersionName = manifestJson.optString("versionName", "")
-                    remoteTagName = manifestJson.optString("tag", "v$remoteVersionName")
-                    apkExpectedSha256 = manifestJson.optString("sha256", "")
-                    val changelogArr = manifestJson.optJSONArray("changelog")
-                    releaseChangelog = if (changelogArr != null) {
-                        (0 until changelogArr.length()).joinToString("\n") { "• ${changelogArr.getString(it)}" }
-                    } else {
-                        "Performance improvements and stability updates."
-                    }
-                    manifestParsed = true
-                }
-
-                // 2. Fetch latest GitHub release to obtain binary asset URL & size
-                val releaseUrl = URL("https://api.github.com/repos/sahir247/VeilFrame/releases/latest")
-                val releaseConn = (releaseUrl.openConnection() as HttpURLConnection).apply {
-                    setRequestProperty("User-Agent", "VeilFrame-Android")
-                    setRequestProperty("Accept", "application/vnd.github.v3+json")
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                }
-
-                if (releaseConn.responseCode == 200) {
-                    val releaseStr = releaseConn.inputStream.bufferedReader().use { it.readText() }
-                    val releaseJson = JSONObject(releaseStr)
-                    if (!manifestParsed) {
-                        remoteTagName = releaseJson.optString("tag_name", "")
-                        remoteVersionName = remoteTagName.removePrefix("v")
-                        releaseChangelog = releaseJson.optString("body", "Bug fixes and performance improvements.")
-                        // Derive versionCode if not in manifest (e.g. 2.2.1 -> 221)
-                        val parts = remoteVersionName.split(".")
-                        if (parts.size >= 3) {
-                            remoteVersionCode = (parts[0].toLongOrNull() ?: 0) * 100 + (parts[1].toLongOrNull() ?: 0) * 10 + (parts[2].toLongOrNull() ?: 0)
+                val manifestUrlStr = "https://raw.githubusercontent.com/sahir247/VeilFrame/main/android/update.json"
+                if (isAllowedUpdateUrl(manifestUrlStr)) {
+                    try {
+                        val manifestConn = (URL(manifestUrlStr).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 10000
+                            readTimeout = 10000
+                            setRequestProperty("User-Agent", "VeilFrame-Android")
                         }
+                        if (manifestConn.responseCode in 200..299) {
+                            val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
+                            val manifestJson = JSONObject(jsonStr)
+                            remoteVersionCode = manifestJson.optLong("versionCode", 0L)
+                            remoteVersionName = manifestJson.optString("versionName", "").trim()
+                            remoteTagName = manifestJson.optString("tag", if (remoteVersionName.isNotEmpty()) "v$remoteVersionName" else "").trim()
+                            manifestApkName = manifestJson.optString("apk", "").trim()
+                            apkExpectedSha256 = manifestJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
+                            val changelogArr = manifestJson.optJSONArray("changelog")
+                            if (changelogArr != null) {
+                                releaseChangelog = (0 until changelogArr.length()).joinToString("\n") { "• ${changelogArr.getString(it)}" }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logToConsole("[WARN] Manifest fetch notice: ${e.message}")
+                    }
+                }
+
+                // 2. Query latest GitHub release for binary asset URL, size, and fallback SHA256SUMS
+                val releaseApiUrl = "https://api.github.com/repos/sahir247/VeilFrame/releases/latest"
+                if (isAllowedUpdateUrl(releaseApiUrl)) {
+                    val releaseConn = (URL(releaseApiUrl).openConnection() as HttpURLConnection).apply {
+                        setRequestProperty("User-Agent", "VeilFrame-Android")
+                        setRequestProperty("Accept", "application/vnd.github.v3+json")
+                        connectTimeout = 10000
+                        readTimeout = 10000
                     }
 
-                    val assets = releaseJson.optJSONArray("assets")
-                    if (assets != null) {
-                        for (i in 0 until assets.length()) {
-                            val asset = assets.getJSONObject(i)
-                            val name = asset.optString("name", "")
-                            if (name.endsWith(".apk", ignoreCase = true)) {
-                                apkDownloadUrl = asset.optString("browser_download_url", "")
-                                assetSizeBytes = asset.optLong("size", 0L)
-                                break
+                    if (releaseConn.responseCode in 200..299) {
+                        val releaseStr = releaseConn.inputStream.bufferedReader().use { it.readText() }
+                        val releaseJson = JSONObject(releaseStr)
+                        val ghTagName = releaseJson.optString("tag_name", "").trim()
+                        if (remoteTagName.isEmpty()) {
+                            remoteTagName = ghTagName
+                        }
+                        if (remoteVersionName.isEmpty()) {
+                            remoteVersionName = ghTagName.removePrefix("v").trim()
+                        }
+                        if (releaseChangelog.isEmpty()) {
+                            releaseChangelog = releaseJson.optString("body", "Bug fixes and performance improvements.")
+                        }
+
+                        // Monotonic versionCode derivation fallback if missing
+                        if (remoteVersionCode <= 0L) {
+                            val parts = remoteVersionName.split(".")
+                            if (parts.size >= 3) {
+                                remoteVersionCode = (parts[0].toLongOrNull() ?: 0) * 100 + (parts[1].toLongOrNull() ?: 0) * 10 + (parts[2].toLongOrNull() ?: 0)
+                            }
+                        }
+
+                        val assets = releaseJson.optJSONArray("assets")
+                        if (assets != null) {
+                            for (i in 0 until assets.length()) {
+                                val asset = assets.getJSONObject(i)
+                                val name = asset.optString("name", "")
+                                val downloadUrl = asset.optString("browser_download_url", "")
+                                if (name.endsWith(".apk", ignoreCase = true)) {
+                                    apkDownloadUrl = downloadUrl
+                                    assetSizeBytes = asset.optLong("size", 0L)
+                                    if (manifestApkName.isEmpty()) {
+                                        manifestApkName = name
+                                    }
+                                } else if (name.equals("SHA256SUMS.txt", ignoreCase = true)) {
+                                    sha256SumsUrl = downloadUrl
+                                } else if (name.equals("update.json", ignoreCase = true) && apkExpectedSha256.isBlank()) {
+                                    try {
+                                        if (isAllowedUpdateUrl(downloadUrl)) {
+                                            val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                                                connectTimeout = 8000
+                                                readTimeout = 8000
+                                            }
+                                            if (conn.responseCode in 200..299) {
+                                                val rJson = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                                                val releaseAssetSha = rJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
+                                                if (releaseAssetSha.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                                                    apkExpectedSha256 = releaseAssetSha
+                                                }
+                                            }
+                                        }
+                                    } catch (_: Exception) {}
+                                }
                             }
                         }
                     }
                 }
 
+                // 3. Fallback resolution: If SHA-256 is still blank or invalid, query SHA256SUMS.txt
+                if ((apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) && sha256SumsUrl.isNotEmpty()) {
+                    try {
+                        if (isAllowedUpdateUrl(sha256SumsUrl)) {
+                            val shaConn = (URL(sha256SumsUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 8000
+                                readTimeout = 8000
+                            }
+                            if (shaConn.responseCode in 200..299) {
+                                val sumsText = shaConn.inputStream.bufferedReader().use { it.readText() }
+                                for (line in sumsText.lines()) {
+                                    val trimmed = line.trim()
+                                    if (trimmed.isEmpty()) continue
+                                    val parts = trimmed.split(Regex("\\s+"))
+                                    if (parts.size >= 2) {
+                                        val hash = parts[0].trim().lowercase(Locale.ROOT)
+                                        val filePart = parts[1].trim()
+                                        if (filePart.equals(manifestApkName, ignoreCase = true) || filePart.endsWith(".apk", ignoreCase = true)) {
+                                            if (hash.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                                                apkExpectedSha256 = hash
+                                                logToConsole("[SEC] Resolved authentic APK SHA-256 from SHA256SUMS.txt: $apkExpectedSha256")
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logToConsole("[WARN] SHA256SUMS.txt fallback notice: ${e.message}")
+                    }
+                }
+
+                // 4. Manifest Sanity Bounds Checking
                 val isUpdateAvailable = remoteVersionCode > installedVersionCode
 
-                // Update dynamic changelog if available
+                if (isUpdateAvailable && (remoteVersionCode > installedVersionCode + 100000 || remoteVersionCode <= 0)) {
+                    logToConsole("[SEC] Update rejected: Malformed or nonsensical remote versionCode ($remoteVersionCode)")
+                    withContext(Dispatchers.Main) {
+                        if (isFinishing || isDestroyed) return@withContext
+                        binding.progressUpdateCheck.visibility = View.GONE
+                        binding.tvUpdateStatus.text = "Update check blocked: Invalid remote build version"
+                        binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
+                        if (isUserInitiated) {
+                            showSecurityAlertDialog("Update Blocked: The remote release contains an invalid or nonsensical version code ($remoteVersionCode).")
+                        }
+                    }
+                    return@launch
+                }
+
+                // 5. Update dynamic changelog if available
                 if (releaseChangelog.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
-                        val headerTag = if (remoteTagName.isNotEmpty()) remoteTagName else "v$remoteVersionName"
-                        binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $headerTag"
-                        binding.tvWhatsNewContent.text = releaseChangelog
+                        if (!isFinishing && !isDestroyed) {
+                            val headerTag = if (remoteTagName.isNotEmpty()) remoteTagName else "v$remoteVersionName"
+                            binding.tvWhatsNewHeader.text = "WHAT'S NEW IN $headerTag"
+                            binding.tvWhatsNewContent.text = releaseChangelog
+                        }
                     }
-                    val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit()
                         .putString("cached_changelog_tag", remoteTagName)
                         .putString("cached_changelog", releaseChangelog)
@@ -2226,8 +2473,33 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (isFinishing || isDestroyed) return@withContext
                     binding.progressUpdateCheck.visibility = View.GONE
+
                     if (isUpdateAvailable && apkDownloadUrl.isNotEmpty()) {
+                        // Strict check: Is the download URL HTTPS and on an allowed domain?
+                        if (!isAllowedUpdateUrl(apkDownloadUrl)) {
+                            binding.tvUpdateStatus.text = "Update blocked: Untrusted download origin"
+                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
+                            showSecurityAlertDialog("Update Blocked: The APK download URL points to an unverified origin:\n$apkDownloadUrl")
+                            return@withContext
+                        }
+
+                        // Strict check: Is there a valid SHA-256 digest? ZERO BYPASS POLICY!
+                        if (apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                            binding.tvUpdateStatus.text = "Update Available: v$remoteVersionName (Integrity Hash Missing)"
+                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
+                            if (isUserInitiated) {
+                                showSecurityAlertDialog(
+                                    "Update Blocked: Missing Cryptographic Digest\n\n" +
+                                    "VeilFrame v$remoteVersionName is available, but the release publisher has not attached a valid 64-character SHA-256 checksum in update.json or SHA256SUMS.txt.\n\n" +
+                                    "For your privacy and device security, VeilFrame strictly refuses to download or install packages without mandatory cryptographic hash verification."
+                                )
+                            }
+                            return@withContext
+                        }
+
+                        val targetName = if (manifestApkName.isNotEmpty()) sanitizeApkFilename(manifestApkName) else "VeilFrame-v$remoteVersionName.apk"
                         binding.tvUpdateStatus.text = "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
                         binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
                         showUpdateAvailableDialog(
@@ -2235,6 +2507,7 @@ class MainActivity : AppCompatActivity() {
                             versionCode = remoteVersionCode,
                             changelog = releaseChangelog,
                             downloadUrl = apkDownloadUrl,
+                            apkFileName = targetName,
                             sizeBytes = assetSizeBytes,
                             expectedSha256 = apkExpectedSha256
                         )
@@ -2249,15 +2522,19 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    binding.progressUpdateCheck.visibility = View.GONE
-                    if (isUserInitiated) {
-                        Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                    } else {
-                        val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
-                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
-                        binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
+                    if (!isFinishing && !isDestroyed) {
+                        binding.progressUpdateCheck.visibility = View.GONE
+                        if (isUserInitiated) {
+                            Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val currentVersionName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
+                            binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
+                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
+                        }
                     }
                 }
+            } finally {
+                isCheckingUpdates = false
             }
         }
     }
@@ -2267,30 +2544,31 @@ class MainActivity : AppCompatActivity() {
         versionCode: Long,
         changelog: String,
         downloadUrl: String,
+        apkFileName: String,
         sizeBytes: Long,
         expectedSha256: String
     ) {
+        if (isFinishing || isDestroyed) return
+
         val sizeFormatted = if (sizeBytes > 0) " (${formatBytes(sizeBytes)})" else ""
 
         val message = StringBuilder().apply {
             append("Version: $versionName (Build $versionCode)$sizeFormatted\n\n")
             append("What's new:\n")
             append(if (changelog.length > 350) changelog.take(350) + "..." else changelog)
-            append("\n\nSecurity & Integrity:\n")
-            append("✓ Source: Official GitHub Releases\n")
-            append("✓ Package: $packageName\n")
-            if (expectedSha256.isNotBlank()) {
-                append("✓ Integrity: Cryptographic SHA-256 validation")
-            } else {
-                append("✓ Integrity: PackageArchive signature & identity verification")
-            }
+            append("\n\nSecurity & Cryptographic Verification:\n")
+            append("✓ Origin: Pinned HTTPS GitHub Releases\n")
+            append("✓ Package Identity: $packageName\n")
+            append("✓ Mandatory SHA-256: ${expectedSha256.take(16)}...${expectedSha256.takeLast(8)}\n")
+            append("✓ Authenticity: Publisher signing certificate pinning")
         }.toString()
 
-        MaterialAlertDialogBuilder(this)
+        activeUpdateDialog?.dismiss()
+        activeUpdateDialog = MaterialAlertDialogBuilder(this)
             .setTitle("Update Available")
             .setMessage(message)
             .setPositiveButton("Download & Install") { _, _ ->
-                downloadAndInstallUpdateWithProgress(downloadUrl, "VeilFrame-v$versionName.apk", sizeBytes, expectedSha256)
+                downloadAndInstallUpdateWithProgress(downloadUrl, apkFileName, sizeBytes, expectedSha256)
             }
             .setNegativeButton("Later", null)
             .show()
@@ -2307,11 +2585,44 @@ class MainActivity : AppCompatActivity() {
         totalBytesExpected: Long,
         expectedSha256: String
     ) {
+        if (isFinishing || isDestroyed) return
+
+        // 1. Mandatory SHA-256 validation preflight (Zero-bypass policy)
+        val cleanExpectedSha256 = expectedSha256.trim().lowercase(Locale.ROOT)
+        if (!cleanExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+            showSecurityAlertDialog(
+                "Update Aborted: Missing or Malformed SHA-256 Digest!\n\n" +
+                "VeilFrame refuses to download unverified binary packages."
+            )
+            return
+        }
+
+        // 2. URL origin preflight
+        if (!isAllowedUpdateUrl(downloadUrl)) {
+            showSecurityAlertDialog("Update Aborted: Download URL does not match pinned HTTPS repository origins.")
+            return
+        }
+
+        // 3. Storage preflight check: ensure at least size + 50MB (or 120MB) free in cacheDir
+        val requiredBytes = if (totalBytesExpected > 0) totalBytesExpected + (50 * 1024 * 1024) else (120 * 1024 * 1024)
+        if (cacheDir.usableSpace < requiredBytes) {
+            Toast.makeText(
+                this,
+                "Insufficient storage: Need ${formatBytes(requiredBytes)}, available ${formatBytes(cacheDir.usableSpace)}",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val safeApkName = sanitizeApkFilename(apkName)
+        val targetApkFile = File(cacheDir, safeApkName)
+        val stagingFile = File(cacheDir, "update_staging_${System.currentTimeMillis()}.tmp")
+
         val dialogView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_2, null)
         val text1 = dialogView.findViewById<TextView>(android.R.id.text1)
         val text2 = dialogView.findViewById<TextView>(android.R.id.text2)
-        text1.text = "Downloading update: $apkName"
-        text2.text = "Connecting to GitHub Releases..."
+        text1.text = "Downloading update: $safeApkName"
+        text2.text = "Connecting securely to GitHub Releases..."
 
         val progressIndicator = LinearProgressIndicator(this).apply {
             isIndeterminate = (totalBytesExpected <= 0L)
@@ -2326,33 +2637,39 @@ class MainActivity : AppCompatActivity() {
         }
 
         var isCancelled = false
+        activeDownloadDialog?.dismiss()
         val downloadDialog = MaterialAlertDialogBuilder(this)
             .setTitle("Downloading Update")
             .setView(container)
             .setNegativeButton("Cancel") { _, _ ->
                 isCancelled = true
                 downloadJob?.cancel()
+                stagingFile.delete()
                 Toast.makeText(this@MainActivity, "Download cancelled", Toast.LENGTH_SHORT).show()
             }
             .setCancelable(false)
             .create()
 
+        activeDownloadDialog = downloadDialog
         downloadDialog.show()
 
         downloadJob = lifecycleScope.launch(Dispatchers.IO) {
-            val apkFile = File(cacheDir, apkName)
             try {
                 var currentUrl = downloadUrl
                 var connection: HttpURLConnection? = null
                 var redirectCount = 0
 
-                // Follow redirects up to 7 hops across CDNs (GitHub Releases -> AWS S3 objects.githubusercontent.com)
-                while (redirectCount < 7) {
+                // Follow redirects up to 5 hops across official CDNs (GitHub Releases -> AWS S3 objects.githubusercontent.com)
+                while (redirectCount < 5) {
+                    if (!isAllowedUpdateUrl(currentUrl)) {
+                        throw SecurityException("Untrusted download redirect destination: $currentUrl")
+                    }
+
                     val u = URL(currentUrl)
                     val conn = (u.openConnection() as HttpURLConnection).apply {
                         connectTimeout = 15000
                         readTimeout = 30000
-                        instanceFollowRedirects = true
+                        instanceFollowRedirects = false
                         setRequestProperty("User-Agent", "VeilFrame-Android-Updater")
                     }
                     val status = conn.responseCode
@@ -2370,21 +2687,25 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (connection == null) {
-                    throw IOException("Failed to establish download connection")
+                    throw IOException("Failed to establish secure download connection")
                 }
 
                 val conn = connection
+                if (conn.responseCode !in 200..299) {
+                    throw IOException("Server returned HTTP ${conn.responseCode}: ${conn.responseMessage}")
+                }
+
                 val totalLength = if (conn.contentLengthLong > 0) conn.contentLengthLong else totalBytesExpected
                 val digest = MessageDigest.getInstance("SHA-256")
 
                 conn.inputStream.use { input ->
-                    apkFile.outputStream().use { output ->
+                    stagingFile.outputStream().use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
                         var downloaded = 0L
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             if (isCancelled) {
-                                apkFile.delete()
+                                stagingFile.delete()
                                 return@use
                             }
                             output.write(buffer, 0, bytesRead)
@@ -2392,15 +2713,19 @@ class MainActivity : AppCompatActivity() {
                             downloaded += bytesRead
 
                             if (totalLength > 0) {
-                                val percent = ((downloaded * 100) / totalLength).toInt()
+                                val percent = ((downloaded * 100) / totalLength).toInt().coerceIn(0, 100)
                                 withContext(Dispatchers.Main) {
-                                    progressIndicator.isIndeterminate = false
-                                    progressIndicator.progress = percent
-                                    text2.text = "${formatBytes(downloaded)} / ${formatBytes(totalLength)} ($percent%)"
+                                    if (!isFinishing && !isDestroyed) {
+                                        progressIndicator.isIndeterminate = false
+                                        progressIndicator.progress = percent
+                                        text2.text = "${formatBytes(downloaded)} / ${formatBytes(totalLength)} ($percent%)"
+                                    }
                                 }
                             } else {
                                 withContext(Dispatchers.Main) {
-                                    text2.text = "${formatBytes(downloaded)} downloaded..."
+                                    if (!isFinishing && !isDestroyed) {
+                                        text2.text = "${formatBytes(downloaded)} downloaded..."
+                                    }
                                 }
                             }
                         }
@@ -2408,61 +2733,97 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (isCancelled) {
-                    apkFile.delete()
-                    withContext(Dispatchers.Main) { downloadDialog.dismiss() }
+                    stagingFile.delete()
+                    withContext(Dispatchers.Main) {
+                        activeDownloadDialog?.dismiss()
+                        activeDownloadDialog = null
+                    }
                     return@launch
                 }
 
-                withContext(Dispatchers.Main) {
-                    downloadDialog.dismiss()
+                // 4. Complete download length check
+                if (totalLength > 0 && stagingFile.length() != totalLength) {
+                    val actualLen = stagingFile.length()
+                    stagingFile.delete()
+                    throw IOException("Truncated download: received $actualLen bytes, expected $totalLength bytes")
                 }
 
-                // 1. Verify SHA-256 if expected hash was provided
+                withContext(Dispatchers.Main) {
+                    activeDownloadDialog?.dismiss()
+                    activeDownloadDialog = null
+                }
+
+                // 5. Cryptographic SHA-256 verification against expected manifest hash
                 val computedSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-                if (expectedSha256.isNotBlank() && !computedSha256.equals(expectedSha256.trim(), ignoreCase = true)) {
-                    apkFile.delete()
+                if (!computedSha256.equals(cleanExpectedSha256, ignoreCase = true)) {
+                    stagingFile.delete()
                     withContext(Dispatchers.Main) {
-                        showSecurityAlertDialog(
-                            "SHA-256 Integrity Verification Failed!\n\n" +
-                            "Expected: $expectedSha256\n" +
-                            "Computed: $computedSha256\n\n" +
-                            "The downloaded package could not be cryptographically verified. Installation aborted."
-                        )
+                        if (!isFinishing && !isDestroyed) {
+                            showSecurityAlertDialog(
+                                "SHA-256 Integrity Verification Failed!\n\n" +
+                                "Expected: $cleanExpectedSha256\n" +
+                                "Computed: $computedSha256\n\n" +
+                                "The downloaded package does not match the cryptographic digest. Installation aborted."
+                            )
+                        }
                     }
                     return@launch
                 }
 
-                // 2. Inspect Package Archive to verify valid APK & package name matches com.veilframe.app
-                val archiveInfo = packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-                if (archiveInfo == null || archiveInfo.packageName != packageName) {
-                    apkFile.delete()
+                // 6. Inspect Package Archive to verify valid APK, package identity, and publisher signing certificate
+                val sigError = verifyApkSignatureAndIdentity(stagingFile)
+                if (sigError != null) {
+                    stagingFile.delete()
                     withContext(Dispatchers.Main) {
-                        showSecurityAlertDialog(
-                            "Package Identity Verification Failed!\n\n" +
-                            "Expected: $packageName\n" +
-                            "Found: ${archiveInfo?.packageName ?: "Unknown"}\n\n" +
-                            "Package archive does not match VeilFrame application identity. Installation aborted."
-                        )
+                        if (!isFinishing && !isDestroyed) {
+                            showSecurityAlertDialog(
+                                "Publisher Security Verification Failed!\n\n" +
+                                "$sigError\n\n" +
+                                "The downloaded package failed authenticity checks. Installation aborted."
+                            )
+                        }
                     }
                     return@launch
                 }
+
+                // 7. Atomic rename: Staging .tmp -> Target .apk
+                if (targetApkFile.exists()) {
+                    targetApkFile.delete()
+                }
+                val renameSuccess = stagingFile.renameTo(targetApkFile)
+                val finalApk = if (renameSuccess) {
+                    targetApkFile
+                } else {
+                    stagingFile.copyTo(targetApkFile, overwrite = true)
+                    stagingFile.delete()
+                    targetApkFile
+                }
+
+                lastVerifiedUpdateApk = finalApk
+                logToConsole("[SEC] Verified and finalized update package: ${finalApk.name} (${formatBytes(finalApk.length())})")
 
                 withContext(Dispatchers.Main) {
-                    promptInstallApk(apkFile)
+                    if (!isFinishing && !isDestroyed) {
+                        promptInstallApk(finalApk)
+                    }
                 }
             } catch (e: Exception) {
-                apkFile.delete()
+                stagingFile.delete()
                 withContext(Dispatchers.Main) {
-                    downloadDialog.dismiss()
-                    Toast.makeText(this@MainActivity, "Download error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    if (!isFinishing && !isDestroyed) {
+                        activeDownloadDialog?.dismiss()
+                        activeDownloadDialog = null
+                        Toast.makeText(this@MainActivity, "Download error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
     private fun showSecurityAlertDialog(reason: String) {
+        if (isFinishing || isDestroyed) return
         MaterialAlertDialogBuilder(this)
-            .setTitle("Security Alert: Update Aborted")
+            .setTitle("Security Alert: Update Blocked")
             .setMessage(reason)
             .setPositiveButton("OK", null)
             .show()
@@ -2470,9 +2831,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun promptInstallApk(apkFile: File) {
         try {
+            if (!apkFile.exists()) {
+                Toast.makeText(this, "Update package not found. Please check for updates again.", Toast.LENGTH_SHORT).show()
+                return
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!packageManager.canRequestPackageInstalls()) {
                     pendingInstallApk = apkFile
+                    binding.tvUpdateStatus.text = "Update downloaded • Tap to Install"
+                    binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
+                    binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
                     Toast.makeText(this, "Please allow VeilFrame to install app updates", Toast.LENGTH_LONG).show()
                     val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:$packageName")
@@ -2500,8 +2869,14 @@ class MainActivity : AppCompatActivity() {
                 grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
+            binding.tvUpdateStatus.text = "Installing update... (Tap to retry if interrupted)"
+            binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
+            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_blue))
+
             startActivity(installIntent)
         } catch (e: Exception) {
+            binding.tvUpdateStatus.text = "Install interrupted • Tap to retry"
+            binding.tvUpdateStatus.setOnClickListener { promptInstallApk(apkFile) }
             Toast.makeText(this, "Installation error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

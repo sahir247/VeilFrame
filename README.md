@@ -515,8 +515,7 @@ The desktop application features 5 dedicated operational modes:
 VeilFrame provides a complete on-device Android application (API 26+ / Android 8.0 through Android 15, Target SDK 35):
 - **Pure APK Signature Scheme V2/V3:** Release APKs strictly enforce V2/V3 block signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification issues.
 - **Mobile Image Studio:** Responsive studio featuring target file size solver (KB/MB), text watermark overlays with color and 9-point anchoring, horizontal/vertical flipping, alpha background fill compositing, live comparative before/after rendering, continuous quality slider (1%–100%), aspect cropping, custom resizing, rotation, and EXIF control.
-- **Mobile Video Studio:** Real-time dual-thumb visual timeline trimmer, multi-container export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec encoding (H.264, H.265, VP9, AV1), audio studio (volume 0–200%, stereo/mono remixing), quick interval presets (Story 15s, Status 30s, Middle Half), platform size presets (Discord 50MB, WhatsApp 16MB, Web 10MB, Email 8MB), and playback speed adjustments.
-- **Cryptographic In-App Updates:** Automatic updates powered by `android/update.json`, monotonic integer `versionCode` checks, multi-hop S3 CDN redirect resolution, streaming SHA-256 validation, and auto-resuming unknown sources install.
+- **Cryptographic In-App Updates:** Automatic updates powered by `android/update.json` and release assets, monotonic integer `versionCode` bounds checks, HTTPS pinned origin enforcement (GitHub + AWS S3 CDN), atomic staging `.tmp` downloads, storage preflight checks, zero-bypass mandatory SHA-256 validation, and publisher signing certificate verification against the running app before triggering installation.
 - **Status Bar & Notch Handling:** Edge-to-edge window inset handling ensuring zero clipping under camera cutouts and system bars.
 
 ```bash

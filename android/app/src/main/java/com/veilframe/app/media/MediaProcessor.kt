@@ -12,6 +12,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
+private fun quoteForShell(value: String): String =
+    "\"${value.replace("\"", "\\\"")}\""
+
 /**
  * Central MediaProcessor coordinating ImageProcessor and VideoProcessor.
  */
@@ -232,7 +235,7 @@ object VideoProcessor {
             }
 
             cmd.add("-i")
-            cmd.add("\"${srcFile.absolutePath}\"")
+            cmd.add(quoteForShell(srcFile.absolutePath))
 
             // Strip metadata tags for privacy
             cmd.add("-map_metadata")
@@ -245,10 +248,10 @@ object VideoProcessor {
 
             if (aspectStr != null) {
                 when (aspectStr) {
-                    "9:16" -> vfFilters.add("crop=ih*(9/16):ih")
-                    "1:1" -> vfFilters.add("crop=min(iw\\,ih):min(iw\\,ih)")
-                    "16:9" -> vfFilters.add("crop=iw:iw*(9/16)")
-                    "4:3" -> vfFilters.add("crop=ih*4/3:ih")
+                    "9:16" -> vfFilters.add("crop=trunc(min(iw\\,ih*9/16)/2)*2:trunc(min(ih\\,iw*16/9)/2)*2")
+                    "1:1" -> vfFilters.add("crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2")
+                    "16:9" -> vfFilters.add("crop=trunc(min(iw\\,ih*16/9)/2)*2:trunc(min(ih\\,iw*9/16)/2)*2")
+                    "4:3" -> vfFilters.add("crop=trunc(min(iw\\,ih*4/3)/2)*2:trunc(min(ih\\,iw*3/4)/2)*2")
                 }
             }
 
@@ -393,7 +396,7 @@ object VideoProcessor {
                 cmd.add("+faststart")
             }
 
-            cmd.add("\"${outFile.absolutePath}\"")
+            cmd.add(quoteForShell(outFile.absolutePath))
 
             val fullCmdString = cmd.joinToString(" ")
             Log.d(TAG, "Executing native FFmpegKit: $fullCmdString")

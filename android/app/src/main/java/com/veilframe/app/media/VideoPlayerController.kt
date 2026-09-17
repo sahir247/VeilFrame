@@ -113,27 +113,32 @@ class VideoPlayerController(
                 setDataSource(context, uri)
 
                 setOnPreparedListener { mp ->
-                    durationMs = mp.duration.toLong()
-                    videoWidth = mp.videoWidth
-                    videoHeight = mp.videoHeight
-                    if (trimEndMs <= 0L || trimEndMs > durationMs) {
-                        trimEndMs = durationMs
+                    this@VideoPlayerController.durationMs = mp.duration.toLong()
+                    this@VideoPlayerController.videoWidth = mp.videoWidth
+                    this@VideoPlayerController.videoHeight = mp.videoHeight
+
+                    if (this@VideoPlayerController.trimEndMs <= 0L || this@VideoPlayerController.trimEndMs > this@VideoPlayerController.durationMs) {
+                        this@VideoPlayerController.trimEndMs = this@VideoPlayerController.durationMs
                     }
 
-                    applySpeed(currentSpeed)
-                    applyMute(isMuted)
+                    this@VideoPlayerController.applySpeed(this@VideoPlayerController.currentSpeed)
+                    this@VideoPlayerController.applyMute(this@VideoPlayerController.isMuted)
 
-                    onPreparedListener?.invoke(durationMs, videoWidth, videoHeight)
+                    this@VideoPlayerController.onPreparedListener?.invoke(
+                        this@VideoPlayerController.durationMs,
+                        this@VideoPlayerController.videoWidth,
+                        this@VideoPlayerController.videoHeight
+                    )
                 }
 
                 setOnCompletionListener {
-                    pause()
-                    seekTo(trimStartMs)
+                    this@VideoPlayerController.pause()
+                    seekTo(this@VideoPlayerController.trimStartMs.toInt())
                 }
 
                 setOnErrorListener { _, what, extra ->
                     Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                    onErrorListener?.invoke(what, extra)
+                    this@VideoPlayerController.onErrorListener?.invoke(what, extra)
                     true
                 }
 

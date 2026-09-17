@@ -24,3 +24,9 @@
 -dontwarn com.arthenica.ffmpegkit.**
 -dontwarn com.arthenica.smartexception.**
 
+# Attributes & Reflection
+-keep class com.veilframe.app.BuildConfig { *; }
+-keepattributes *Annotation*
+-keepattributes Signature
+
+

@@ -254,7 +254,9 @@ class ImageStudioController(
                     result = Bitmap.createBitmap(result, left, top, w, h)
                 } catch (_: Exception) {}
             }
-              // 2. Rotate & Flip
+        }
+
+        // 2. Rotate & Flip
         if (editState.rotationAngle != 0f || editState.flipH || editState.flipV) {
             try {
                 val matrix = Matrix()
@@ -521,6 +523,15 @@ class ImageStudioController(
         Toast.makeText(activity, "Image edits reset to original", Toast.LENGTH_SHORT).show()
     }
 
+    fun execute() {
+        handleExecute()
+    }
+
+    fun release() {
+        compressionJob?.cancel()
+        compressionJob = null
+    }
+
     private fun handleExecute() {
         if (selectedUri == null) {
             onPickImageRequest()
@@ -541,8 +552,10 @@ class ImageStudioController(
     private fun executeCompression() {
         val srcFile = originalFile ?: return
         val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
-        val ext = outputConfig.format.lowercase()
-        val outFilename = binding.etImgOutputFilename.text.toString().trim().ifEmpty { "compressed_image.$ext" }
+        val ext = outputConfig.format.lowercase(Locale.US)
+        val rawName = binding.etImgOutputFilename.text.toString().trim()
+        val base = rawName.substringBeforeLast('.', rawName).ifBlank { "compressed_image" }
+        val outFilename = "$base.$ext"
         val outFile = File(outDir, outFilename)
 
         binding.layoutImgProgress.visibility = View.VISIBLE
