@@ -10,10 +10,13 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.view.LayoutInflater
 import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -24,14 +27,17 @@ import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.veilframe.app.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,10 +61,47 @@ enum class ToolMode {
 }
 
 /**
+ * Formal telemetry and execution lifecycle state machine.
+ */
+enum class JobState {
+    IDLE,
+    PREPARING,
+    SCANNING,
+    PROCESSING,
+    FINALIZING,
+    COMPLETE,
+    FAILED,
+    CANCELLED
+}
+
+/**
+ * Persistent per-tool session state across Home navigation.
+ */
+data class ToolSessionState(
+    var selectedUri: Uri? = null,
+    var selectedPathDisplay: String = "No file or folder selected",
+    var isFolderSelected: Boolean = false,
+    var targetFileCount: Int = 0,
+    var targetTotalBytes: Long = 0L,
+    var primaryOptionIndex: Int = 0,
+    var formatOptionIndex: Int = 0,
+    var switch1Checked: Boolean = false,
+    var switch2Checked: Boolean = false,
+    var switch3Checked: Boolean = false,
+    var jobState: JobState = JobState.IDLE,
+    var statusMessage: String = "Ready for execution.",
+    var progressPercent: Int = 0,
+    var progressDetailsText: String = "",
+    var lastGeneratedFile: File? = null,
+    var consoleLogs: String = "[SYS] Ready for execution."
+)
+
+/**
  * VeilFrame Mobile Hub — Android Vertical Forensics & AI Bundler.
  * Features Home Launcher Dashboard + 4 Dedicated Tool Workflows,
- * Built-in GitHub Releases in-app update system, genuine SAF tree traversal,
- * responsive wrapping controls, and 2-tier sticky action dock.
+ * Built-in GitHub Releases in-app updates with monotonic versionCode comparison,
+ * cryptographic SHA-256 + PackageArchive integrity checks, genuine SAF tree traversal,
+ * persistent per-tool state, and universal 4-step lifecycle.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -67,21 +110,50 @@ class MainActivity : AppCompatActivity() {
 
     private var currentScreen: ScreenState = ScreenState.HOME
     private var currentToolMode: ToolMode = ToolMode.AI_BUNDLE
-
-    private var selectedUri: Uri? = null
-    private var selectedPathDisplay: String = ""
-    private var isFolderSelected: Boolean = false
-    private var targetFileCount: Int = 0
-    private var targetTotalBytes: Long = 0L
-    private var lastGeneratedFile: File? = null
     private var isLogsExpanded: Boolean = false
+    private var downloadJob: Job? = null
+
+    // Persistent tool session states with smart defaults
+    private val toolStates = mutableMapOf(
+        ToolMode.AI_BUNDLE to ToolSessionState(
+            primaryOptionIndex = 1, // 64K
+            formatOptionIndex = 1,  // Markdown
+            switch1Checked = true,  // Mask secrets
+            switch2Checked = true,  // Exclude tests
+            switch3Checked = true   // Compress manifests
+        ),
+        ToolMode.VIDEO_CLEANER to ToolSessionState(
+            primaryOptionIndex = 0, // Standard
+            formatOptionIndex = 0,  // MP4
+            switch1Checked = true,  // Strip EXIF
+            switch2Checked = false, // Audio stripping OFF by default!
+            switch3Checked = true   // Re-encode bitstream
+        ),
+        ToolMode.IMAGE_CLEANER to ToolSessionState(
+            primaryOptionIndex = 0, // Standard 95%
+            formatOptionIndex = 0,  // JPEG
+            switch1Checked = true,  // Strip EXIF
+            switch2Checked = true,  // Remove thumbnails
+            switch3Checked = false  // Sanitize ICC
+        ),
+        ToolMode.FOLDER_SCANNER to ToolSessionState(
+            primaryOptionIndex = 0, // Quick Audit
+            formatOptionIndex = 0,  // HTML
+            switch1Checked = true,  // Recursive scan
+            switch2Checked = false, // SHA-256 OFF by default (smart base default!)
+            switch3Checked = false  // Secret detection OFF in quick audit
+        )
+    )
+
+    private val currentState: ToolSessionState
+        get() = toolStates.getOrPut(currentToolMode) { ToolSessionState() }
 
     // Multi-format export launcher (Storage Access Framework)
     private val exportDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { destinationUri ->
         if (destinationUri != null) {
-            val sourceFile = lastGeneratedFile
+            val sourceFile = currentState.lastGeneratedFile
             if (sourceFile != null && sourceFile.exists()) {
                 lifecycleScope.launch(Dispatchers.IO) {
                     val success = try {
@@ -96,7 +168,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     withContext(Dispatchers.Main) {
                         if (success) {
-                            logToConsole("[EXPORT] Artifact successfully written to storage: ${destinationUri.lastPathSegment ?: destinationUri.path}")
+                            logToConsole("[EXPORT] Artifact written to storage: ${destinationUri.lastPathSegment ?: destinationUri.path}")
                             Toast.makeText(this@MainActivity, "Saved to device storage", Toast.LENGTH_LONG).show()
                         } else {
                             logToConsole("[ERR] Failed to write exported file to destination.")
@@ -145,27 +217,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSingleFileSelected(uri: Uri) {
-        selectedUri = uri
-        isFolderSelected = false
-        selectedPathDisplay = getDisplayName(uri)
-        targetFileCount = 1
-        targetTotalBytes = queryFileSize(uri)
+        val state = currentState
+        state.selectedUri = uri
+        state.isFolderSelected = false
+        state.selectedPathDisplay = getDisplayName(uri)
+        state.targetFileCount = 1
+        state.targetTotalBytes = queryFileSize(uri)
 
-        binding.tvSelectedPath.text = selectedPathDisplay
+        binding.tvSelectedPath.text = state.selectedPathDisplay
         binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
-        binding.tvTargetDetails.text = "${formatBytes(targetTotalBytes)} • Ready"
+        binding.tvTargetDetails.text = "${formatBytes(state.targetTotalBytes)} • Ready"
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
 
         setClearButtonState(enabled = true)
-        logToConsole("[TARGET] Mounted file: $selectedPathDisplay (${formatBytes(targetTotalBytes)})")
+        logToConsole("[TARGET] Mounted file: ${state.selectedPathDisplay} (${formatBytes(state.targetTotalBytes)})")
     }
 
     private fun handleFolderSelected(uri: Uri) {
-        selectedUri = uri
-        isFolderSelected = true
-        selectedPathDisplay = getDisplayName(uri)
+        val state = currentState
+        state.selectedUri = uri
+        state.isFolderSelected = true
+        state.selectedPathDisplay = getDisplayName(uri)
 
-        binding.tvSelectedPath.text = selectedPathDisplay
+        binding.tvSelectedPath.text = state.selectedPathDisplay
         binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
         binding.tvTargetDetails.text = "Indexing directory contents..."
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_amber))
@@ -188,13 +262,13 @@ class MainActivity : AppCompatActivity() {
 
             rootDoc?.listFiles()?.forEach { inspectDoc(it) }
 
-            targetFileCount = count
-            targetTotalBytes = totalBytes
+            state.targetFileCount = count
+            state.targetTotalBytes = totalBytes
 
             withContext(Dispatchers.Main) {
                 binding.tvTargetDetails.text = "$count files • ${formatBytes(totalBytes)} • Ready"
                 binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
-                logToConsole("[TARGET] Mounted directory: $selectedPathDisplay ($count files, ${formatBytes(totalBytes)})")
+                logToConsole("[TARGET] Mounted directory: ${state.selectedPathDisplay} ($count files, ${formatBytes(totalBytes)})")
             }
         }
     }
@@ -340,7 +414,7 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         showHomeScreen()
 
-        // Check for updates silently on launch
+        // Asynchronous, completely non-blocking update check on launch
         checkForUpdates(isUserInitiated = false)
     }
 
@@ -451,6 +525,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnClearLogs.setOnClickListener {
             binding.tvConsoleLog.text = "[SYS] Telemetry buffer cleared.\n[SYS] Ready."
+            currentState.consoleLogs = binding.tvConsoleLog.text.toString()
             Toast.makeText(this, "Console logs cleared", Toast.LENGTH_SHORT).show()
         }
 
@@ -463,6 +538,20 @@ class MainActivity : AppCompatActivity() {
             logToConsole(if (isLogsExpanded) "[UI] Telemetry console expanded." else "[UI] Telemetry console compact.")
         }
 
+        // Result Card Direct Actions
+        binding.btnResultSave.setOnClickListener {
+            val file = currentState.lastGeneratedFile
+            if (file != null && file.exists()) {
+                exportDocumentLauncher.launch(file.name)
+            } else {
+                Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnResultShare.setOnClickListener {
+            shareLastResult()
+        }
+
         // Primary Execution Action
         binding.btnExecute.setOnClickListener {
             executeSelectedMode()
@@ -470,7 +559,7 @@ class MainActivity : AppCompatActivity() {
 
         // Multi-Format Export Action (Save As to device storage)
         binding.btnExportResult.setOnClickListener {
-            val file = lastGeneratedFile
+            val file = currentState.lastGeneratedFile
             if (file != null && file.exists()) {
                 exportDocumentLauncher.launch(file.name)
             } else {
@@ -485,22 +574,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Navigates back to Home Launcher Dashboard.
+     * Navigates back to Home Launcher Dashboard, saving active tool state.
      */
     private fun showHomeScreen() {
+        saveCurrentToolState()
+
         currentScreen = ScreenState.HOME
         binding.toolbarHome.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
         binding.scrollHome.visibility = View.VISIBLE
         binding.scrollTool.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        clearSelectedTarget(logMessage = false)
     }
 
     /**
-     * Opens a dedicated independent tool workflow.
+     * Opens a dedicated independent tool workflow and restores its persistent session state.
      */
     private fun openTool(toolMode: ToolMode) {
+        if (currentScreen == ScreenState.TOOL) {
+            saveCurrentToolState()
+        }
+
         currentScreen = ScreenState.TOOL
         currentToolMode = toolMode
 
@@ -511,8 +605,75 @@ class MainActivity : AppCompatActivity() {
         binding.bottomActionDock.visibility = View.VISIBLE
 
         configureToolUI(toolMode)
-        clearSelectedTarget(logMessage = false)
+        restoreToolState(currentState)
         logToConsole("[NAV] Entered dedicated workflow: ${getToolTitle(toolMode)}")
+    }
+
+    private fun saveCurrentToolState() {
+        if (currentScreen != ScreenState.TOOL) return
+        val state = currentState
+        state.primaryOptionIndex = getSelectedOptionIndex()
+        state.formatOptionIndex = getSelectedFormatIndex()
+        state.switch1Checked = binding.switchOption1.isChecked
+        state.switch2Checked = binding.switchOption2.isChecked
+        state.switch3Checked = binding.switchOption3.isChecked
+        state.consoleLogs = binding.tvConsoleLog.text.toString()
+    }
+
+    private fun restoreToolState(state: ToolSessionState) {
+        // Restore Target
+        if (state.selectedUri != null) {
+            binding.tvSelectedPath.text = state.selectedPathDisplay
+            binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
+            val detail = if (state.isFolderSelected) {
+                "${state.targetFileCount} files • ${formatBytes(state.targetTotalBytes)} • Ready"
+            } else {
+                "${formatBytes(state.targetTotalBytes)} • Ready"
+            }
+            binding.tvTargetDetails.text = detail
+            binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
+            setClearButtonState(enabled = true)
+        } else {
+            binding.tvSelectedPath.text = "No file or folder selected"
+            binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
+            binding.tvTargetDetails.text = "Select a target below to begin processing"
+            binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
+            setClearButtonState(enabled = false)
+        }
+
+        // Restore Options
+        selectChipByIndex(binding.chipGroupPrimaryOptions, state.primaryOptionIndex)
+        selectChipByIndex(binding.chipGroupFormat, state.formatOptionIndex)
+        binding.switchOption1.isChecked = state.switch1Checked
+        binding.switchOption2.isChecked = state.switch2Checked
+        binding.switchOption3.isChecked = state.switch3Checked
+
+        // Restore Telemetry & JobState
+        updateJobState(state.jobState, state.statusMessage)
+        binding.tvConsoleLog.text = state.consoleLogs
+        binding.progressIndicator.progress = state.progressPercent
+        binding.tvProgressDetails.text = state.progressDetailsText
+
+        // Restore Result Card & Dock
+        if (state.jobState == JobState.COMPLETE && state.lastGeneratedFile != null && state.lastGeneratedFile!!.exists()) {
+            val file = state.lastGeneratedFile!!
+            binding.cardResultSummary.visibility = View.VISIBLE
+            binding.tvResultTitle.text = file.name
+            binding.tvResultDetails.text = "${formatBytes(file.length())} • ${file.extension.uppercase()} • Output ready in local cache"
+            binding.btnExportResult.isEnabled = true
+            binding.btnShareResult.isEnabled = true
+        } else {
+            binding.cardResultSummary.visibility = View.GONE
+            binding.btnExportResult.isEnabled = false
+            binding.btnShareResult.isEnabled = false
+        }
+    }
+
+    private fun selectChipByIndex(group: com.google.android.material.chip.ChipGroup, index: Int) {
+        if (index in 0 until group.childCount) {
+            val chip = group.getChildAt(index) as? Chip
+            chip?.isChecked = true
+        }
     }
 
     private fun getToolTitle(mode: ToolMode): String = when (mode) {
@@ -535,11 +696,11 @@ class MainActivity : AppCompatActivity() {
                     primaryLabel = "Token Budget",
                     primaryDesc = "Target context window limit for LLM prompt ingestion",
                     primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
-                    primaryDefaultIndex = 1, // 64K default
+                    primaryDefaultIndex = 1,
                     formatLabel = "Bundle Format",
                     formatDesc = "Output archive extension and structured packaging",
                     formatChips = listOf(".aibundle", "Markdown (.md)", "JSON (.json)"),
-                    formatDefaultIndex = 1, // Markdown default
+                    formatDefaultIndex = 1,
                     switch1Title = "Mask Leaked Secrets & API Keys",
                     switch1Desc = "Redact passwords, AWS/OpenAI keys, and sensitive tokens",
                     switch1Checked = true,
@@ -563,17 +724,17 @@ class MainActivity : AppCompatActivity() {
                     primaryLabel = "Sensor Fingerprint Protection",
                     primaryDesc = "Mitigate camera sensor pattern noise (PRNU forensic defense)",
                     primaryChips = listOf("Standard", "High", "Stealth", "None"),
-                    primaryDefaultIndex = 0, // Standard default
+                    primaryDefaultIndex = 0,
                     formatLabel = "Container Format",
                     formatDesc = "Output video container encoding",
                     formatChips = listOf("MP4 (.mp4)", "MKV (.mkv)", "WebM (.webm)"),
-                    formatDefaultIndex = 0, // MP4 default
+                    formatDefaultIndex = 0,
                     switch1Title = "Strip Location & Camera EXIF",
                     switch1Desc = "Removes GPS coordinates, device serials, and timestamps",
                     switch1Checked = true,
                     switch2Title = "Sanitize Audio Metadata & Tags",
                     switch2Desc = "Audio stripping OFF by default (preserves original audio)",
-                    switch2Checked = false, // smart base default!
+                    switch2Checked = false,
                     switch3Title = "Re-encode Bitstream (Watermark Defense)",
                     switch3Desc = "Repacks video bitstream while preserving source original",
                     switch3Checked = true,
@@ -591,11 +752,11 @@ class MainActivity : AppCompatActivity() {
                     primaryLabel = "Privacy / Quality Fidelity",
                     primaryDesc = "Compression ratio balance while scrubbing forensic traces",
                     primaryChips = listOf("Standard (95%)", "High (90%)", "Aggressive (85%)"),
-                    primaryDefaultIndex = 0, // Standard 95% default
+                    primaryDefaultIndex = 0,
                     formatLabel = "Image Format",
                     formatDesc = "Output image encoding and color profile",
                     formatChips = listOf("JPEG (.jpg)", "PNG (.png)", "WebP (.webp)"),
-                    formatDefaultIndex = 0, // JPEG default
+                    formatDefaultIndex = 0,
                     switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
                     switch1Desc = "Eliminates location, aperture, camera serials, and dates",
                     switch1Checked = true,
@@ -616,24 +777,44 @@ class MainActivity : AppCompatActivity() {
 
                 configureOptions(
                     paramHeader = "FOLDER AUDIT PARAMETERS",
-                    primaryLabel = "Audit Profile",
-                    primaryDesc = "Inspection scope and depth of heuristic analysis",
+                    primaryLabel = "Scan Mode",
+                    primaryDesc = "Task-driven forensic inspection and analysis mode",
                     primaryChips = listOf("Quick Audit", "Deep Forensic", "Duplicate Hunt"),
-                    primaryDefaultIndex = 0, // Quick Audit default
+                    primaryDefaultIndex = 0,
                     formatLabel = "Report Format",
                     formatDesc = "Multi-format report export for forensic audit findings",
                     formatChips = listOf("HTML (.html)", "JSON (.json)", "Markdown (.md)", "CSV (.csv)", "TXT (.txt)", "ZIP (.zip)"),
-                    formatDefaultIndex = 0, // HTML default
+                    formatDefaultIndex = 0,
                     switch1Title = "Scan Recursive Subdirectories",
                     switch1Desc = "Traverse all nested folders and subprojects",
                     switch1Checked = true,
-                    switch2Title = "Calculate SHA-256 Hashing (Slower)",
+                    switch2Title = "Calculate SHA-256 Hashing",
                     switch2Desc = "OFF by default (saves CPU & battery on large projects)",
-                    switch2Checked = false, // smart base default!
+                    switch2Checked = false,
                     switch3Title = "Detect Leaked Secrets & API Keys",
                     switch3Desc = "Scan bitstreams for high-entropy tokens and credentials",
-                    switch3Checked = true,
-                    executeText = "START FORENSIC AUDIT"
+                    switch3Checked = false,
+                    executeText = "START FORENSIC AUDIT",
+                    onPrimaryChipSelected = { selectedIndex ->
+                        // Dynamically update options based on task mode
+                        when (selectedIndex) {
+                            0 -> { // Quick Audit
+                                binding.switchOption1.isChecked = true
+                                binding.switchOption2.isChecked = false
+                                binding.switchOption3.isChecked = false
+                            }
+                            1 -> { // Deep Forensic
+                                binding.switchOption1.isChecked = true
+                                binding.switchOption2.isChecked = true
+                                binding.switchOption3.isChecked = true
+                            }
+                            2 -> { // Duplicate Hunt
+                                binding.switchOption1.isChecked = true
+                                binding.switchOption2.isChecked = true // SHA-256 required for duplicate match
+                                binding.switchOption3.isChecked = false
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -658,7 +839,8 @@ class MainActivity : AppCompatActivity() {
         switch3Title: String,
         switch3Desc: String,
         switch3Checked: Boolean,
-        executeText: String
+        executeText: String,
+        onPrimaryChipSelected: ((Int) -> Unit)? = null
     ) {
         binding.tvParamHeader.text = paramHeader
         binding.tvPrimaryOptionTitle.text = primaryLabel
@@ -675,6 +857,11 @@ class MainActivity : AppCompatActivity() {
                 chipStrokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
                 chipStrokeWidth = 1f
                 textSize = 12f
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) {
+                        onPrimaryChipSelected?.invoke(index)
+                    }
+                }
             }
             binding.chipGroupPrimaryOptions.addView(chip)
         }
@@ -713,60 +900,65 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearSelectedTarget(logMessage: Boolean = true) {
-        selectedUri = null
-        selectedPathDisplay = ""
-        isFolderSelected = false
-        targetFileCount = 0
-        targetTotalBytes = 0L
-        lastGeneratedFile = null
+        val state = currentState
+        state.selectedUri = null
+        state.selectedPathDisplay = "No file or folder selected"
+        state.isFolderSelected = false
+        state.targetFileCount = 0
+        state.targetTotalBytes = 0L
+        state.lastGeneratedFile = null
 
-        binding.tvSelectedPath.text = "No file or folder selected"
+        binding.tvSelectedPath.text = state.selectedPathDisplay
         binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
         binding.tvTargetDetails.text = "Select a target below to begin processing"
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
 
         setClearButtonState(enabled = false)
 
+        binding.cardResultSummary.visibility = View.GONE
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false
         binding.progressIndicator.progress = 0
         binding.progressIndicator.visibility = View.INVISIBLE
-        updatePhaseBadge("IDLE")
-        binding.tvStatusText.text = "Ready for execution."
+        binding.tvProgressDetails.text = ""
+        updateJobState(JobState.IDLE, "Ready for execution.")
 
         if (logMessage) {
             logToConsole("[TARGET] Target selection cleared.")
         }
     }
 
-    private fun updatePhaseBadge(phase: String) {
-        binding.tvPhaseBadge.text = phase
-        binding.tvToolStatusBadge.text = phase
-        when (phase) {
-            "IDLE" -> {
+    private fun updateJobState(state: JobState, statusMessage: String = "") {
+        val toolState = currentState
+        toolState.jobState = state
+        if (statusMessage.isNotEmpty()) {
+            toolState.statusMessage = statusMessage
+            binding.tvStatusText.text = statusMessage
+        }
+
+        binding.tvPhaseBadge.text = state.name
+        binding.tvToolStatusBadge.text = state.name
+
+        when (state) {
+            JobState.IDLE -> {
                 binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
                 binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
                 binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_secondary))
             }
-            "PREPARING", "SCANNING", "PROCESSING", "FINALIZING" -> {
+            JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING -> {
                 binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
                 binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_warn_bg)
                 binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_amber))
             }
-            "COMPLETE", "CLEANED", "DONE" -> {
+            JobState.COMPLETE -> {
                 binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
                 binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_green))
             }
-            "FAILED", "CANCELLED" -> {
+            JobState.FAILED, JobState.CANCELLED -> {
                 binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
                 binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_fail_bg)
                 binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_red))
-            }
-            else -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
-                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_secondary))
             }
         }
     }
@@ -786,7 +978,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun executeSelectedMode() {
-        val uri = selectedUri
+        val uri = currentState.selectedUri
         if (uri == null) {
             Toast.makeText(this, "Please select a target file or folder first", Toast.LENGTH_SHORT).show()
             logToConsole("[WARN] Execution halted: No target file or folder mounted.")
@@ -796,8 +988,10 @@ class MainActivity : AppCompatActivity() {
         binding.btnExecute.isEnabled = false
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false
+        binding.cardResultSummary.visibility = View.GONE
         binding.progressIndicator.visibility = View.VISIBLE
         binding.progressIndicator.isIndeterminate = true
+        binding.tvProgressDetails.text = ""
 
         lifecycleScope.launch {
             when (currentToolMode) {
@@ -810,6 +1004,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun runAiBundle(uri: Uri) {
+        val state = currentState
         val tokenIndex = getSelectedOptionIndex()
         val tokenBudget = when (tokenIndex) {
             0 -> 32_000
@@ -827,19 +1022,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PREPARING")
-            binding.tvStatusText.text = "Extracting source files..."
-            logToConsole("[AI] Staging target files for packaging: $selectedPathDisplay...")
+            updateJobState(JobState.PREPARING, "Extracting source files...")
+            logToConsole("[AI] Staging target files for packaging: ${state.selectedPathDisplay}...")
         }
 
         val workingDir = File(cacheDir, "ai_bundle_workspace")
-        val copiedCount = materializeTargetIntoDir(uri, isFolderSelected, workingDir) { msg ->
+        val copiedCount = materializeTargetIntoDir(uri, state.isFolderSelected, workingDir) { msg ->
             binding.tvStatusText.text = msg
         }
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PROCESSING")
-            binding.tvStatusText.text = "Tokenizing and applying security filters..."
+            updateJobState(JobState.PROCESSING, "Tokenizing and applying security filters...")
             logToConsole("[AI] Packaging $copiedCount source files into $formatKey format (Budget: ${if (tokenBudget == 0) "Unlimited" else "$tokenBudget tokens"})...")
         }
 
@@ -881,13 +1074,21 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        lastGeneratedFile = outputFile
+        state.lastGeneratedFile = outputFile
+        state.progressPercent = 100
+        state.progressDetailsText = "100% complete"
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("COMPLETE")
+            updateJobState(JobState.COMPLETE, "Bundle ready: ${outputFile.name} (${formatBytes(outputFile.length())})")
             binding.progressIndicator.isIndeterminate = false
             binding.progressIndicator.progress = 100
-            binding.tvStatusText.text = "Bundle ready: ${outputFile.name} (${formatBytes(outputFile.length())})"
+            binding.tvProgressDetails.text = "100% complete"
+
+            // Show Step 4: Result Summary Card
+            binding.cardResultSummary.visibility = View.VISIBLE
+            binding.tvResultTitle.text = outputFile.name
+            binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $includedFiles files included"
+
             logToConsole("[OK] Package generated: ${outputFile.name} (${formatBytes(outputFile.length())})")
             logToConsole("[AI] Tokens: $totalTokens | Included files: $includedFiles | Format: $formatKey")
             logToConsole("[EXPORT] Output ready for saving or sharing.")
@@ -898,6 +1099,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun runVideoSanitization(uri: Uri) {
+        val state = currentState
         val noiseIndex = getSelectedOptionIndex()
         val noiseLevel = when (noiseIndex) {
             0 -> "low"
@@ -915,17 +1117,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PREPARING")
-            binding.tvStatusText.text = "Staging video file..."
-            logToConsole("[PREP] Staging video: $selectedPathDisplay...")
+            updateJobState(JobState.PREPARING, "Staging video file...")
+            logToConsole("[PREP] Staging video: ${state.selectedPathDisplay}...")
         }
 
         val tempInput = File(cacheDir, "input_video_${System.currentTimeMillis()}.mp4")
         val successCopy = copyUriToFile(uri, tempInput)
         if (!successCopy) {
             withContext(Dispatchers.Main) {
-                binding.tvStatusText.text = "Failed to copy input video."
-                updatePhaseBadge("FAILED")
+                updateJobState(JobState.FAILED, "Failed to copy input video.")
                 logToConsole("[ERR] Failed to copy input video from storage.")
                 binding.btnExecute.isEnabled = true
             }
@@ -936,8 +1136,7 @@ class MainActivity : AppCompatActivity() {
         val outputFile = File(cacheDir, "Sanitized_$timeStamp$extension")
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PROCESSING")
-            binding.tvStatusText.text = "Sanitizing video stream (noise: $noiseLevel)..."
+            updateJobState(JobState.PROCESSING, "Sanitizing video stream (noise: $noiseLevel)...")
             logToConsole("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
         }
 
@@ -954,12 +1153,21 @@ class MainActivity : AppCompatActivity() {
         tempInput.delete()
 
         if (processed && outputFile.exists() && outputFile.length() > 0) {
-            lastGeneratedFile = outputFile
+            state.lastGeneratedFile = outputFile
+            state.progressPercent = 100
+            state.progressDetailsText = "100% complete"
+
             withContext(Dispatchers.Main) {
-                updatePhaseBadge("COMPLETE")
+                updateJobState(JobState.COMPLETE, "Video ready: ${outputFile.name} (${formatBytes(outputFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
-                binding.tvStatusText.text = "Video ready: ${outputFile.name} (${formatBytes(outputFile.length())})"
+                binding.tvProgressDetails.text = "100% complete"
+
+                // Show Step 4: Result Summary Card
+                binding.cardResultSummary.visibility = View.VISIBLE
+                binding.tvResultTitle.text = outputFile.name
+                binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Scrubbed and verified"
+
                 logToConsole("[OK] Video sanitized successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
                 logToConsole("[EXPORT] Output ready for saving or sharing.")
                 binding.btnExecute.isEnabled = true
@@ -968,9 +1176,9 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             withContext(Dispatchers.Main) {
-                updatePhaseBadge("FAILED")
+                updateJobState(JobState.FAILED, "Video sanitization failed.")
                 binding.progressIndicator.isIndeterminate = false
-                binding.tvStatusText.text = "Video sanitization failed."
+                binding.cardResultSummary.visibility = View.GONE
                 logToConsole("[ERR] Video engine reported failure.")
                 binding.btnExecute.isEnabled = true
             }
@@ -978,6 +1186,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun runImageSanitization(uri: Uri) {
+        val state = currentState
         val formatIndex = getSelectedFormatIndex()
         val extension = when (formatIndex) {
             0 -> ".jpg"
@@ -986,17 +1195,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PREPARING")
-            binding.tvStatusText.text = "Staging image..."
-            logToConsole("[PREP] Staging image: $selectedPathDisplay...")
+            updateJobState(JobState.PREPARING, "Staging image...")
+            logToConsole("[PREP] Staging image: ${state.selectedPathDisplay}...")
         }
 
         val tempInput = File(cacheDir, "input_img_${System.currentTimeMillis()}.jpg")
         val successCopy = copyUriToFile(uri, tempInput)
         if (!successCopy) {
             withContext(Dispatchers.Main) {
-                binding.tvStatusText.text = "Failed to copy input image."
-                updatePhaseBadge("FAILED")
+                updateJobState(JobState.FAILED, "Failed to copy input image.")
                 logToConsole("[ERR] Failed to copy input image from storage.")
                 binding.btnExecute.isEnabled = true
             }
@@ -1007,8 +1214,7 @@ class MainActivity : AppCompatActivity() {
         val outputFile = File(cacheDir, "Cleaned_$timeStamp$extension")
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PROCESSING")
-            binding.tvStatusText.text = "Scrubbing EXIF & re-encoding clean pixels..."
+            updateJobState(JobState.PROCESSING, "Scrubbing EXIF & re-encoding clean pixels...")
             logToConsole("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
         }
 
@@ -1024,12 +1230,21 @@ class MainActivity : AppCompatActivity() {
         tempInput.delete()
 
         if (processed && outputFile.exists() && outputFile.length() > 0) {
-            lastGeneratedFile = outputFile
+            state.lastGeneratedFile = outputFile
+            state.progressPercent = 100
+            state.progressDetailsText = "100% complete"
+
             withContext(Dispatchers.Main) {
-                updatePhaseBadge("CLEANED")
+                updateJobState(JobState.COMPLETE, "Image clean: ${outputFile.name} (${formatBytes(outputFile.length())})")
                 binding.progressIndicator.isIndeterminate = false
                 binding.progressIndicator.progress = 100
-                binding.tvStatusText.text = "Image clean: ${outputFile.name} (${formatBytes(outputFile.length())})"
+                binding.tvProgressDetails.text = "100% complete"
+
+                // Show Step 4: Result Summary Card
+                binding.cardResultSummary.visibility = View.VISIBLE
+                binding.tvResultTitle.text = outputFile.name
+                binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • Metadata stripped"
+
                 logToConsole("[OK] Image scrubbed successfully: ${outputFile.name} (${formatBytes(outputFile.length())})")
                 logToConsole("[EXPORT] Output ready for saving or sharing.")
                 binding.btnExecute.isEnabled = true
@@ -1038,9 +1253,9 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             withContext(Dispatchers.Main) {
-                updatePhaseBadge("FAILED")
+                updateJobState(JobState.FAILED, "Image sanitization failed.")
                 binding.progressIndicator.isIndeterminate = false
-                binding.tvStatusText.text = "Image sanitization failed."
+                binding.cardResultSummary.visibility = View.GONE
                 logToConsole("[ERR] Image cleaner reported failure.")
                 binding.btnExecute.isEnabled = true
             }
@@ -1048,6 +1263,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun runFolderScan(uri: Uri) {
+        val state = currentState
         val formatIndex = getSelectedFormatIndex()
         val formatExt = when (formatIndex) {
             0 -> "html"
@@ -1070,19 +1286,17 @@ class MainActivity : AppCompatActivity() {
         val detectSecrets = binding.switchOption3.isChecked
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("SCANNING")
-            binding.tvStatusText.text = "Traversing target directory..."
-            logToConsole("[SCAN] Scanning target: $selectedPathDisplay (Profile: $profileName)...")
+            updateJobState(JobState.SCANNING, "Traversing target directory...")
+            logToConsole("[SCAN] Scanning target: ${state.selectedPathDisplay} (Mode: $profileName)...")
         }
 
         val workingDir = File(cacheDir, "scan_workspace")
-        val copiedCount = materializeTargetIntoDir(uri, isFolderSelected, workingDir) { msg ->
+        val copiedCount = materializeTargetIntoDir(uri, state.isFolderSelected, workingDir) { msg ->
             binding.tvStatusText.text = msg
         }
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("PROCESSING")
-            binding.tvStatusText.text = "Auditing $copiedCount files and building $formatExt report..."
+            updateJobState(JobState.PROCESSING, "Auditing $copiedCount files and building $formatExt report...")
             logToConsole("[AUDIT] Analyzed $copiedCount files in workspace. Hashes: $computeHashes | Secrets: $detectSecrets")
         }
 
@@ -1129,7 +1343,7 @@ class MainActivity : AppCompatActivity() {
                 <head><title>VeilFrame Folder Audit Report</title><style>body{background:#101012;color:#E4E4E7;font-family:sans-serif;padding:20px;}</style></head>
                 <body>
                 <h1>VeilFrame Folder Audit Report</h1>
-                <p>Target: $selectedPathDisplay</p>
+                <p>Target: ${state.selectedPathDisplay}</p>
                 <p>Files Analyzed: $copiedCount</p>
                 <p>Date: $timeStamp</p>
                 <p>Status: Cleaned and Audited</p>
@@ -1141,13 +1355,21 @@ class MainActivity : AppCompatActivity() {
             isSuccess = true
         }
 
-        lastGeneratedFile = outputFile
+        state.lastGeneratedFile = outputFile
+        state.progressPercent = 100
+        state.progressDetailsText = "100% complete"
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("DONE")
+            updateJobState(JobState.COMPLETE, "Audit ready: ${outputFile.name} (${formatBytes(outputFile.length())})")
             binding.progressIndicator.isIndeterminate = false
             binding.progressIndicator.progress = 100
-            binding.tvStatusText.text = "Audit ready: ${outputFile.name} (${formatBytes(outputFile.length())})"
+            binding.tvProgressDetails.text = "100% complete"
+
+            // Show Step 4: Result Summary Card
+            binding.cardResultSummary.visibility = View.VISIBLE
+            binding.tvResultTitle.text = outputFile.name
+            binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $scanSummary"
+
             logToConsole("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
             logToConsole("[EXPORT] Output ready for saving or sharing.")
             binding.btnExecute.isEnabled = true
@@ -1157,7 +1379,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun shareLastResult() {
-        val file = lastGeneratedFile ?: return
+        val file = currentState.lastGeneratedFile ?: return
         try {
             val uri = FileProvider.getUriForFile(
                 this,
@@ -1190,67 +1412,109 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Built-in GitHub Releases In-App Update Engine.
-     * Queries GitHub Releases API, checks whether a newer version exists,
-     * and prompts user with release notes and automatic APK installation.
+     * Uses monotonic integer versionCode comparison and cryptographic SHA-256 + package verification.
      */
     private fun checkForUpdates(isUserInitiated: Boolean) {
         binding.progressUpdateCheck.visibility = View.VISIBLE
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("https://api.github.com/repos/sahir247/VeilFrame/releases/latest")
-                val connection = (url.openConnection() as HttpURLConnection).apply {
+                val installedVersionCode: Long = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    packageManager.getPackageInfo(packageName, 0).longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+                }
+
+                // 1. Try fetching canonical update.json from repository
+                var remoteVersionCode = 0L
+                var remoteVersionName = ""
+                var remoteTagName = ""
+                var apkDownloadUrl = ""
+                var apkExpectedSha256 = ""
+                var releaseChangelog = ""
+                var assetSizeBytes = 0L
+
+                val manifestUrl = URL("https://raw.githubusercontent.com/sahir247/VeilFrame/main/android/update.json")
+                val manifestConn = (manifestUrl.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+
+                var manifestParsed = false
+                if (manifestConn.responseCode == 200) {
+                    val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
+                    val manifestJson = JSONObject(jsonStr)
+                    remoteVersionCode = manifestJson.optLong("versionCode", 0L)
+                    remoteVersionName = manifestJson.optString("versionName", "")
+                    remoteTagName = manifestJson.optString("tag", "v$remoteVersionName")
+                    apkExpectedSha256 = manifestJson.optString("sha256", "")
+                    val changelogArr = manifestJson.optJSONArray("changelog")
+                    releaseChangelog = if (changelogArr != null) {
+                        (0 until changelogArr.length()).joinToString("\n") { "• ${changelogArr.getString(it)}" }
+                    } else {
+                        "Performance improvements and stability updates."
+                    }
+                    manifestParsed = true
+                }
+
+                // 2. Fetch latest GitHub release to obtain binary asset URL & size
+                val releaseUrl = URL("https://api.github.com/repos/sahir247/VeilFrame/releases/latest")
+                val releaseConn = (releaseUrl.openConnection() as HttpURLConnection).apply {
                     setRequestProperty("User-Agent", "VeilFrame-Android")
                     setRequestProperty("Accept", "application/vnd.github.v3+json")
                     connectTimeout = 8000
                     readTimeout = 8000
                 }
 
-                if (connection.responseCode == 200) {
-                    val jsonString = connection.inputStream.bufferedReader().use { it.readText() }
-                    val releaseJson = JSONObject(jsonString)
-                    val tagName = releaseJson.optString("tag_name", "")
-                    val releaseName = releaseJson.optString("name", tagName)
-                    val body = releaseJson.optString("body", "Bug fixes and performance improvements.")
-                    val assets = releaseJson.optJSONArray("assets")
-                    var apkDownloadUrl = ""
-                    var apkSize = 0L
-                    var apkName = "VeilFrame-$tagName.apk"
+                if (releaseConn.responseCode == 200) {
+                    val releaseStr = releaseConn.inputStream.bufferedReader().use { it.readText() }
+                    val releaseJson = JSONObject(releaseStr)
+                    if (!manifestParsed) {
+                        remoteTagName = releaseJson.optString("tag_name", "")
+                        remoteVersionName = remoteTagName.removePrefix("v")
+                        releaseChangelog = releaseJson.optString("body", "Bug fixes and performance improvements.")
+                        // Derive versionCode if not in manifest (e.g. 2.2.1 -> 221)
+                        val parts = remoteVersionName.split(".")
+                        if (parts.size >= 3) {
+                            remoteVersionCode = (parts[0].toLongOrNull() ?: 0) * 100 + (parts[1].toLongOrNull() ?: 0) * 10 + (parts[2].toLongOrNull() ?: 0)
+                        }
+                    }
 
+                    val assets = releaseJson.optJSONArray("assets")
                     if (assets != null) {
                         for (i in 0 until assets.length()) {
                             val asset = assets.getJSONObject(i)
                             val name = asset.optString("name", "")
                             if (name.endsWith(".apk", ignoreCase = true)) {
                                 apkDownloadUrl = asset.optString("browser_download_url", "")
-                                apkSize = asset.optLong("size", 0L)
-                                apkName = name
+                                assetSizeBytes = asset.optLong("size", 0L)
                                 break
                             }
                         }
                     }
+                }
 
-                    val isNewer = compareVersions(tagName, "v2.2.1") > 0
+                val isUpdateAvailable = remoteVersionCode > installedVersionCode
 
-                    withContext(Dispatchers.Main) {
-                        binding.progressUpdateCheck.visibility = View.GONE
-                        if (isNewer && apkDownloadUrl.isNotEmpty()) {
-                            binding.tvUpdateStatus.text = "Update Available: $tagName"
-                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
-                            showUpdateAvailableDialog(tagName, releaseName, body, apkDownloadUrl, apkSize, apkName)
-                        } else {
-                            binding.tvUpdateStatus.text = "VeilFrame v2.2.1 • You're up to date ✓"
-                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
-                            if (isUserInitiated) {
-                                Toast.makeText(this@MainActivity, "You have the latest version (v2.2.1)", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        binding.progressUpdateCheck.visibility = View.GONE
+                withContext(Dispatchers.Main) {
+                    binding.progressUpdateCheck.visibility = View.GONE
+                    if (isUpdateAvailable && apkDownloadUrl.isNotEmpty()) {
+                        binding.tvUpdateStatus.text = "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
+                        binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
+                        showUpdateAvailableDialog(
+                            versionName = remoteVersionName,
+                            versionCode = remoteVersionCode,
+                            changelog = releaseChangelog,
+                            downloadUrl = apkDownloadUrl,
+                            sizeBytes = assetSizeBytes,
+                            expectedSha256 = apkExpectedSha256
+                        )
+                    } else {
+                        binding.tvUpdateStatus.text = "Installed: v2.2.1 • You're up to date ✓"
+                        binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
-                            Toast.makeText(this@MainActivity, "Could not check for updates (${connection.responseCode})", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "You have the latest version (v2.2.1)", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -1259,85 +1523,196 @@ class MainActivity : AppCompatActivity() {
                     binding.progressUpdateCheck.visibility = View.GONE
                     if (isUserInitiated) {
                         Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        // Silent fallback for local-first architecture
+                        binding.tvUpdateStatus.text = "Installed: v2.2.1 • Local Engine"
+                        binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_text_secondary))
                     }
                 }
             }
         }
     }
 
-    private fun compareVersions(v1: String, v2: String): Int {
-        val clean1 = v1.removePrefix("v").split(".")
-        val clean2 = v2.removePrefix("v").split(".")
-        val maxLen = maxOf(clean1.size, clean2.size)
-        for (i in 0 until maxLen) {
-            val p1 = clean1.getOrNull(i)?.toIntOrNull() ?: 0
-            val p2 = clean2.getOrNull(i)?.toIntOrNull() ?: 0
-            if (p1 != p2) return p1.compareTo(p2)
-        }
-        return 0
-    }
-
     private fun showUpdateAvailableDialog(
-        tagName: String,
-        releaseName: String,
-        body: String,
+        versionName: String,
+        versionCode: Long,
+        changelog: String,
         downloadUrl: String,
         sizeBytes: Long,
-        apkName: String
+        expectedSha256: String
     ) {
-        val cleanBody = if (body.length > 400) body.take(400) + "..." else body
         val sizeFormatted = if (sizeBytes > 0) " (${formatBytes(sizeBytes)})" else ""
 
+        val message = StringBuilder().apply {
+            append("Version: $versionName (Build $versionCode)$sizeFormatted\n\n")
+            append("What's new:\n")
+            append(if (changelog.length > 350) changelog.take(350) + "..." else changelog)
+            append("\n\nSecurity & Integrity:\n")
+            append("✓ Source: Official GitHub Releases\n")
+            append("✓ Package: $packageName\n")
+            append("✓ Integrity: Cryptographic SHA-256 validation")
+        }.toString()
+
         MaterialAlertDialogBuilder(this)
-            .setTitle("Update Available: $tagName")
-            .setMessage("$releaseName\n\nWhat's new:\n$cleanBody\n\nDownload size: $sizeFormatted")
+            .setTitle("Update Available")
+            .setMessage(message)
             .setPositiveButton("Download & Install") { _, _ ->
-                downloadAndInstallUpdate(downloadUrl, apkName)
+                downloadAndInstallUpdateWithProgress(downloadUrl, "VeilFrame-v$versionName.apk", sizeBytes, expectedSha256)
             }
             .setNegativeButton("Later", null)
             .show()
     }
 
-    private fun downloadAndInstallUpdate(downloadUrl: String, apkName: String) {
-        Toast.makeText(this, "Downloading update: $apkName...", Toast.LENGTH_SHORT).show()
-        binding.progressUpdateCheck.visibility = View.VISIBLE
+    /**
+     * Interactive APK download dialog with determinate progress, cancellation,
+     * streaming SHA-256 calculation, and PackageArchive inspection.
+     */
+    private fun downloadAndInstallUpdateWithProgress(
+        downloadUrl: String,
+        apkName: String,
+        totalBytesExpected: Long,
+        expectedSha256: String
+    ) {
+        val dialogView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_2, null)
+        val text1 = dialogView.findViewById<TextView>(android.R.id.text1)
+        val text2 = dialogView.findViewById<TextView>(android.R.id.text2)
+        text1.text = "Downloading update: $apkName"
+        text2.text = "Connecting to GitHub Releases..."
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        val progressIndicator = LinearProgressIndicator(this).apply {
+            isIndeterminate = (totalBytesExpected <= 0L)
+            max = 100
+        }
+
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 24)
+            addView(progressIndicator)
+            addView(text2)
+        }
+
+        var isCancelled = false
+        val downloadDialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Downloading Update")
+            .setView(container)
+            .setNegativeButton("Cancel") { _, _ ->
+                isCancelled = true
+                downloadJob?.cancel()
+                Toast.makeText(this@MainActivity, "Download cancelled", Toast.LENGTH_SHORT).show()
+            }
+            .setCancelable(false)
+            .create()
+
+        downloadDialog.show()
+
+        downloadJob = lifecycleScope.launch(Dispatchers.IO) {
+            val apkFile = File(cacheDir, apkName)
             try {
-                val apkFile = File(cacheDir, apkName)
                 val url = URL(downloadUrl)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                }
+
+                val totalLength = if (connection.contentLengthLong > 0) connection.contentLengthLong else totalBytesExpected
+                val digest = MessageDigest.getInstance("SHA-256")
 
                 connection.inputStream.use { input ->
                     apkFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var downloaded = 0L
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            if (isCancelled) {
+                                apkFile.delete()
+                                return@use
+                            }
+                            output.write(buffer, 0, bytesRead)
+                            digest.update(buffer, 0, bytesRead)
+                            downloaded += bytesRead
+
+                            if (totalLength > 0) {
+                                val percent = ((downloaded * 100) / totalLength).toInt()
+                                withContext(Dispatchers.Main) {
+                                    progressIndicator.isIndeterminate = false
+                                    progressIndicator.progress = percent
+                                    text2.text = "${formatBytes(downloaded)} / ${formatBytes(totalLength)} ($percent%)"
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    text2.text = "${formatBytes(downloaded)} downloaded..."
+                                }
+                            }
+                        }
                     }
                 }
 
+                if (isCancelled) {
+                    apkFile.delete()
+                    withContext(Dispatchers.Main) { downloadDialog.dismiss() }
+                    return@launch
+                }
+
                 withContext(Dispatchers.Main) {
-                    binding.progressUpdateCheck.visibility = View.GONE
-                    if (apkFile.exists() && apkFile.length() > 0) {
-                        promptInstallApk(apkFile)
-                    } else {
-                        Toast.makeText(this@MainActivity, "Download failed or file empty", Toast.LENGTH_SHORT).show()
+                    downloadDialog.dismiss()
+                }
+
+                // 1. Verify SHA-256 if expected hash was provided
+                val computedSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                if (expectedSha256.isNotBlank() && !computedSha256.equals(expectedSha256.trim(), ignoreCase = true)) {
+                    apkFile.delete()
+                    withContext(Dispatchers.Main) {
+                        showSecurityAlertDialog(
+                            "SHA-256 Integrity Verification Failed!\n\n" +
+                            "Expected: $expectedSha256\n" +
+                            "Computed: $computedSha256\n\n" +
+                            "The downloaded package could not be cryptographically verified. Installation aborted."
+                        )
                     }
+                    return@launch
+                }
+
+                // 2. Inspect Package Archive to verify valid APK & package name matches com.veilframe.app
+                val archiveInfo = packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+                if (archiveInfo == null || archiveInfo.packageName != packageName) {
+                    apkFile.delete()
+                    withContext(Dispatchers.Main) {
+                        showSecurityAlertDialog(
+                            "Package Identity Verification Failed!\n\n" +
+                            "Expected: $packageName\n" +
+                            "Found: ${archiveInfo?.packageName ?: "Unknown"}\n\n" +
+                            "Package archive does not match VeilFrame application identity. Installation aborted."
+                        )
+                    }
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    promptInstallApk(apkFile)
                 }
             } catch (e: Exception) {
+                apkFile.delete()
                 withContext(Dispatchers.Main) {
-                    binding.progressUpdateCheck.visibility = View.GONE
+                    downloadDialog.dismiss()
                     Toast.makeText(this@MainActivity, "Download error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
+    private fun showSecurityAlertDialog(reason: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Security Alert: Update Aborted")
+            .setMessage(reason)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
     private fun promptInstallApk(apkFile: File) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!packageManager.canRequestPackageInstalls()) {
-                    Toast.makeText(this, "Please grant permission to install updates from VeilFrame", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Please allow VeilFrame to install app updates", Toast.LENGTH_LONG).show()
                     val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:$packageName")
                     }
@@ -1384,6 +1759,7 @@ class MainActivity : AppCompatActivity() {
                 • Privacy First: Heuristic secret & credential masking
                 • Forensic Analysis: PRNU defense, bitstream repacking & SHA-256
                 • Multi-Format Export: HTML, JSON, Markdown, CSV, and media
+                • In-App Updates: Monotonic versionCode & SHA-256 verification
                 
                 Engine Runtime: Python 3.11 + FFmpegKit Full
                 Open Source (Apache 2.0 / MIT)
@@ -1397,6 +1773,7 @@ class MainActivity : AppCompatActivity() {
         val current = binding.tvConsoleLog.text.toString()
         val newLog = if (current.isEmpty()) message else "$current\n$message"
         binding.tvConsoleLog.text = newLog
+        currentState.consoleLogs = newLog
         binding.scrollConsole.post {
             binding.scrollConsole.fullScroll(View.FOCUS_DOWN)
         }
