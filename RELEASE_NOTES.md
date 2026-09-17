@@ -5,32 +5,39 @@
 > **Release Date:** September 2026  
 > **Target SDK / Platforms:** Windows (x64), Linux (Debian/Ubuntu & Portable), macOS (Apple Silicon), Android (API 35, ARM64 APK), Python 3.10+
 
-VeilFrame v2.2.1 delivers a major mobile UX modernization, solving notification panel overlap with proper window insets, replacing all emojis with precision vector SVGs, bringing desktop-grade multi-format export via Android Scoped Storage (SAF), adding per-tab state isolation, and making execution telemetry interactive and scrollable.
+VeilFrame v2.2.1 delivers an extensive mobile architecture and UX redesign, replacing the single 4-tab screen with a modular **App Shell** comprising a product-grade **Home Dashboard / Launcher** and **4 independent dedicated tool workflows** (AI Bundle, Video Cleaner, Image Cleaner, Folder Scanner), a **built-in in-app update system** via GitHub Releases, true SAF recursive directory traversal, a non-clipping Clear button affordance, and a minimal monochrome dark theme with desaturated matte characteristic status colors.
 
 ---
 
 ### 🌟 Top Features of v2.2.1
 
-1. **Window Insets & Vector Brand Logo**
-   - **Zero Notification Overlap**: Integrated `ViewCompat.setOnApplyWindowInsetsListener` with dynamic system bars padding, preventing status bar, camera notch, or gesture bar clipping.
-   - **Vector Brand Header**: Replaced raw text with the crisp, scalable official VeilFrame cyber-shield SVG logo and version pill badge (`v2.2.1`).
+1. **Home Launcher & Dashboard Architecture**
+   - **Product Hub**: Replaced the cramped multi-tab layout with an ergonomic Home Dashboard featuring a hero brand card, interactive tool launchers, core capabilities overview, and a community resource footer.
+   - **4 Dedicated Tool Workflows**: AI Bundle, Video Cleaner, Image Cleaner, and Folder Scanner operate as standalone tools with dedicated back navigation (`← Back`), tailored headers, and scoped settings.
 
-2. **Clean Vector Design System (No Emojis)**
-   - Replaced all emojis across tabs, chips, buttons, badges, and telemetry with 12 handcrafted Material 3 vector XML drawables.
-   - Clean, auditable textual tags (`[INFO]`, `[OK]`, `[WARN]`, `[ERR]`, `[SYS]`) in console logs.
+2. **Built-in GitHub Releases In-App Updates**
+   - Direct integration with GitHub Releases API (`api.github.com/repos/sahir247/VeilFrame/releases/latest`).
+   - One-tap version verification against installed release tag (`v2.2.1`).
+   - Sideloaded APK downloading and user-confirmed update installation via Android's `PackageInstaller` and `FileProvider` without requiring Google Play Store services or dedicated update servers.
 
-3. **Multi-Format Scoped Storage (SAF) Export**
-   - Direct "Save As" / Export to any device location via `ActivityResultContracts.CreateDocument`.
-   - Supports `.aibundle`, `.md`, `.json`, `.zip`, `.html`, `.txt`, `.mp4`, `.jpg`, `.png`, and `.csv`.
-   - Unified action dock providing both direct storage saving and system share sheet dispatch.
+3. **True SAF Recursive Directory Traversal**
+   - Resolved the directory tree URI streaming failure using `DocumentFile.fromTreeUri`.
+   - Recursively traverses subdirectories, streams genuine file contents into local staging cache, and computes accurate file counts and cumulative byte sizes.
 
-4. **Isolated Mode State & Dedicated Clear Button**
-   - Switching between the 4 primary tabs (`AI Bundle`, `Video Cleaner`, `Image Cleaner`, `Folder Scanner`) automatically resets target and staging buffers to prevent cross-contamination.
-   - Dedicated `CLEAR` button to instantly wipe active selections.
+4. **Responsive Wrapping Controls & 2-Tier Sticky Action Dock**
+   - Multi-row wrapping chip groups (`app:singleLine="false"`) eliminate horizontal clipping across phone screen widths.
+   - 2-tier sticky action dock (Tier 1: full-width Primary execute button; Tier 2: 50/50 split Save Result and Share buttons) prevents text truncation or awkward wraps like `EXPO\nRT` or `SH\nAR\nE`.
+   - Prominent, non-clipping `Clear` target affordance with distinct active red outline and trash vector icon.
 
-5. **Desktop Feature Parity & Interactive Telemetry**
-   - **Adaptive Parameter Cards**: Dynamically updates controls per mode (Token Budgets, PRNU Noise Intensity, Scrub Quality, Scan Depth, and Feature Switches).
-   - **Interactive Telemetry Console**: Fully scrollable `NestedScrollView` with auto-scroll to bottom, one-tap clipboard copy, clear buffer, and vertical expand/collapse (140dp ⇄ 320dp).
+5. **Minimal Monochrome Dark Palette & Matte Characteristic Status Colors**
+   - Deep obsidian surfaces (`#101012`), matte surface cards (`#18181C`), input chips (`#222228`), and hairline strokes (`#2E2E36`).
+   - Matte platinum focal points (`#E4E4E7`) paired with soft, desaturated characteristic status tones: sage green (`#6AA878`), warm ochre amber (`#C9944D`), terracotta red (`#BA5D60`), and slate steel (`#7E95AC`).
+
+6. **Smart Base Defaults**
+   - **Folder Audit**: Quick Audit default with SHA-256 hashing **OFF** by default (saving battery & CPU on large projects).
+   - **Video Cleaner**: Audio stripping **OFF** by default (preserves audio unless explicitly muted).
+   - **Image Cleaner**: Standard 95% quality default.
+   - **AI Bundler**: Standard 64K token budget with Markdown format default.
 
 ---
 

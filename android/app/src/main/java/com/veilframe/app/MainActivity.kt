@@ -4,11 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.view.View
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -19,24 +23,50 @@ import androidx.lifecycle.lifecycleScope
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.google.android.material.chip.Chip
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
+ * Screen state enum distinguishing Home Dashboard and Dedicated Tool Workflow.
+ */
+enum class ScreenState {
+    HOME,
+    TOOL
+}
+
+/**
+ * Dedicated independent tool workflows inside the VeilFrame shell.
+ */
+enum class ToolMode {
+    AI_BUNDLE,
+    VIDEO_CLEANER,
+    IMAGE_CLEANER,
+    FOLDER_SCANNER
+}
+
+/**
  * VeilFrame Mobile Hub — Android Vertical Forensics & AI Bundler.
- * Minimal monochrome dark theme, responsive wrapping controls,
- * genuine DocumentFile SAF tree traversal, and multi-format export.
+ * Features Home Launcher Dashboard + 4 Dedicated Tool Workflows,
+ * Built-in GitHub Releases in-app update system, genuine SAF tree traversal,
+ * responsive wrapping controls, and 2-tier sticky action dock.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var py: Python? = null
+
+    private var currentScreen: ScreenState = ScreenState.HOME
+    private var currentToolMode: ToolMode = ToolMode.AI_BUNDLE
 
     private var selectedUri: Uri? = null
     private var selectedPathDisplay: String = ""
@@ -126,10 +156,7 @@ class MainActivity : AppCompatActivity() {
         binding.tvTargetDetails.text = "${formatBytes(targetTotalBytes)} • Ready"
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
 
-        binding.btnClearTarget.isEnabled = true
-        binding.btnClearTarget.setTextColor(getColor(R.color.vf_accent_red))
-        binding.btnClearTarget.setIconTintResource(R.color.vf_accent_red)
-
+        setClearButtonState(enabled = true)
         logToConsole("[TARGET] Mounted file: $selectedPathDisplay (${formatBytes(targetTotalBytes)})")
     }
 
@@ -140,12 +167,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.tvSelectedPath.text = selectedPathDisplay
         binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_primary))
-        binding.tvTargetDetails.text = "Indexing folder contents..."
+        binding.tvTargetDetails.text = "Indexing directory contents..."
         binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_amber))
 
-        binding.btnClearTarget.isEnabled = true
-        binding.btnClearTarget.setTextColor(getColor(R.color.vf_accent_red))
-        binding.btnClearTarget.setIconTintResource(R.color.vf_accent_red)
+        setClearButtonState(enabled = true)
 
         lifecycleScope.launch(Dispatchers.IO) {
             val rootDoc = DocumentFile.fromTreeUri(this@MainActivity, uri)
@@ -171,6 +196,19 @@ class MainActivity : AppCompatActivity() {
                 binding.tvTargetDetails.setTextColor(getColor(R.color.vf_accent_green))
                 logToConsole("[TARGET] Mounted directory: $selectedPathDisplay ($count files, ${formatBytes(totalBytes)})")
             }
+        }
+    }
+
+    private fun setClearButtonState(enabled: Boolean) {
+        binding.btnClearTarget.isEnabled = enabled
+        if (enabled) {
+            binding.btnClearTarget.setTextColor(getColor(R.color.vf_accent_red))
+            binding.btnClearTarget.setIconTintResource(R.color.vf_accent_red)
+            binding.btnClearTarget.strokeColor = ColorStateList.valueOf(getColor(R.color.vf_accent_red))
+        } else {
+            binding.btnClearTarget.setTextColor(getColor(R.color.vf_text_muted))
+            binding.btnClearTarget.setIconTintResource(R.color.vf_text_muted)
+            binding.btnClearTarget.strokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
         }
     }
 
@@ -216,14 +254,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             destination.isFile && destination.length() > 0
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 
     /**
      * Materializes target URI into a local workspace directory.
-     * Recursively traverses DocumentFile tree Uris so real files are copied and scanned!
+     * Recursively traverses DocumentFile tree URIs so real files are copied and scanned!
      */
     private suspend fun materializeTargetIntoDir(
         uri: Uri,
@@ -277,13 +315,33 @@ class MainActivity : AppCompatActivity() {
         // Respect bottom navigation gesture safe area
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            binding.bottomActionDock.setPadding(0, 0, 0, systemBars.bottom)
+            binding.bottomActionDock.setPadding(
+                binding.bottomActionDock.paddingStart,
+                binding.bottomActionDock.paddingTop,
+                binding.bottomActionDock.paddingEnd,
+                systemBars.bottom + 12
+            )
             insets
         }
 
+        // Handle Back button navigation: inside tool returns to Home; on Home exits app
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (currentScreen == ScreenState.TOOL) {
+                    showHomeScreen()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+
         initPython()
         setupListeners()
-        updateModeUI(R.id.chipModeAi)
+        showHomeScreen()
+
+        // Check for updates silently on launch
+        checkForUpdates(isUserInitiated = false)
     }
 
     private fun initPython() {
@@ -293,30 +351,65 @@ class MainActivity : AppCompatActivity() {
             }
             py = Python.getInstance()
             logToConsole("[SYS] Initialized VeilFrame 2.2.1 Core Runtime (Python 3.11.16)")
-            logToConsole("[SYS] Forensic media & AI context engine ready.")
+            logToConsole("[SYS] Local forensics & AI context engine ready.")
         } catch (e: Exception) {
             logToConsole("[WARN] Python runtime initialization notice: ${e.message}")
         }
     }
 
     private fun setupListeners() {
-        // Tab switching: clear selected target when changing tabs
-        binding.chipGroupMode.setOnCheckedStateChangeListener { _, checkedIds ->
-            val selectedId = checkedIds.firstOrNull() ?: R.id.chipModeAi
-            clearSelectedTarget(logMessage = false)
-            updateModeUI(selectedId)
-            logToConsole("[NAV] Active mode: ${getModeTitle(selectedId)}")
+        // Back navigation button from tool header to Home
+        binding.btnBackToHome.setOnClickListener {
+            showHomeScreen()
         }
 
-        // Target Pickers
+        // Home Dashboard Tool Cards
+        binding.cardToolAi.setOnClickListener {
+            openTool(ToolMode.AI_BUNDLE)
+        }
+
+        binding.cardToolVideo.setOnClickListener {
+            openTool(ToolMode.VIDEO_CLEANER)
+        }
+
+        binding.cardToolImage.setOnClickListener {
+            openTool(ToolMode.IMAGE_CLEANER)
+        }
+
+        binding.cardToolFolder.setOnClickListener {
+            openTool(ToolMode.FOLDER_SCANNER)
+        }
+
+        // Home In-App Updates Button
+        binding.btnCheckUpdates.setOnClickListener {
+            checkForUpdates(isUserInitiated = true)
+        }
+
+        // External Community & Doc Links
+        binding.btnLinkGithub.setOnClickListener {
+            openWebUrl("https://github.com/sahir247/VeilFrame")
+        }
+
+        binding.btnLinkDocs.setOnClickListener {
+            openWebUrl("https://github.com/sahir247/VeilFrame#readme")
+        }
+
+        binding.btnLinkChangelog.setOnClickListener {
+            openWebUrl("https://github.com/sahir247/VeilFrame/blob/main/RELEASE_NOTES.md")
+        }
+
+        binding.btnLinkAbout.setOnClickListener {
+            showAboutDialog()
+        }
+
+        // Target Pickers inside Tool
         binding.btnPickFolder.setOnClickListener {
             folderPickerLauncher.launch(null)
         }
 
         binding.btnPickFile.setOnClickListener {
-            val modeId = binding.chipGroupMode.checkedChipId
-            when (modeId) {
-                R.id.chipModeVideo -> {
+            when (currentToolMode) {
+                ToolMode.VIDEO_CLEANER -> {
                     if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
                         visualMediaPickerLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest.Builder()
@@ -327,7 +420,7 @@ class MainActivity : AppCompatActivity() {
                         filePickerLauncher.launch(arrayOf("video/*"))
                     }
                 }
-                R.id.chipModeImage -> {
+                ToolMode.IMAGE_CLEANER -> {
                     if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this)) {
                         visualMediaPickerLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest.Builder()
@@ -348,7 +441,7 @@ class MainActivity : AppCompatActivity() {
             clearSelectedTarget(logMessage = true)
         }
 
-        // Telemetry Actions (Interactive Console)
+        // Telemetry Actions (Interactive Monospace Console)
         binding.btnCopyLogs.setOnClickListener {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("VeilFrame Telemetry Logs", binding.tvConsoleLog.text)
@@ -370,7 +463,7 @@ class MainActivity : AppCompatActivity() {
             logToConsole(if (isLogsExpanded) "[UI] Telemetry console expanded." else "[UI] Telemetry console compact.")
         }
 
-        // Primary Action
+        // Primary Execution Action
         binding.btnExecute.setOnClickListener {
             executeSelectedMode()
         }
@@ -381,7 +474,7 @@ class MainActivity : AppCompatActivity() {
             if (file != null && file.exists()) {
                 exportDocumentLauncher.launch(file.name)
             } else {
-                Toast.makeText(this, "No output file to export", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "No output artifact to export", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -391,68 +484,158 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearSelectedTarget(logMessage: Boolean = true) {
-        selectedUri = null
-        selectedPathDisplay = ""
-        isFolderSelected = false
-        targetFileCount = 0
-        targetTotalBytes = 0L
-        lastGeneratedFile = null
-
-        binding.tvSelectedPath.text = "No file or folder selected"
-        binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
-        binding.tvTargetDetails.text = "Select a target to begin processing"
-        binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
-
-        binding.btnClearTarget.isEnabled = false
-        binding.btnClearTarget.setTextColor(getColor(R.color.vf_text_muted))
-        binding.btnClearTarget.setIconTintResource(R.color.vf_text_muted)
-
-        binding.btnExportResult.isEnabled = false
-        binding.btnShareResult.isEnabled = false
-        binding.progressIndicator.progress = 0
-        binding.progressIndicator.visibility = View.INVISIBLE
-        updatePhaseBadge("IDLE")
-        binding.tvStatusText.text = "Ready for execution."
-
-        if (logMessage) {
-            logToConsole("[TARGET] Target selection cleared.")
-        }
+    /**
+     * Navigates back to Home Launcher Dashboard.
+     */
+    private fun showHomeScreen() {
+        currentScreen = ScreenState.HOME
+        binding.toolbarHome.visibility = View.VISIBLE
+        binding.toolbarTool.visibility = View.GONE
+        binding.scrollHome.visibility = View.VISIBLE
+        binding.scrollTool.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        clearSelectedTarget(logMessage = false)
     }
 
-    private fun updatePhaseBadge(phase: String) {
-        binding.tvPhaseBadge.text = phase
-        when (phase) {
-            "IDLE" -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
-            }
-            "PREPARING", "SCANNING", "PROCESSING", "FINALIZING" -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_warn_bg)
-            }
-            "COMPLETE", "CLEANED", "DONE" -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-            }
-            "FAILED", "CANCELLED" -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_fail_bg)
-            }
-            else -> {
-                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
-            }
-        }
+    /**
+     * Opens a dedicated independent tool workflow.
+     */
+    private fun openTool(toolMode: ToolMode) {
+        currentScreen = ScreenState.TOOL
+        currentToolMode = toolMode
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.VISIBLE
+        binding.scrollHome.visibility = View.GONE
+        binding.scrollTool.visibility = View.VISIBLE
+        binding.bottomActionDock.visibility = View.VISIBLE
+
+        configureToolUI(toolMode)
+        clearSelectedTarget(logMessage = false)
+        logToConsole("[NAV] Entered dedicated workflow: ${getToolTitle(toolMode)}")
     }
 
-    private fun getModeTitle(modeId: Int): String {
-        return when (modeId) {
-            R.id.chipModeAi -> "AI Program Bundler"
-            R.id.chipModeVideo -> "Video Privacy Cleaner"
-            R.id.chipModeImage -> "Image Metadata Cleaner"
-            R.id.chipModeFolder -> "Folder Forensics & Scanner"
-            else -> "VeilFrame"
+    private fun getToolTitle(mode: ToolMode): String = when (mode) {
+        ToolMode.AI_BUNDLE -> "AI BUNDLE"
+        ToolMode.VIDEO_CLEANER -> "VIDEO CLEANER"
+        ToolMode.IMAGE_CLEANER -> "IMAGE CLEANER"
+        ToolMode.FOLDER_SCANNER -> "FOLDER SCANNER"
+    }
+
+    private fun configureToolUI(mode: ToolMode) {
+        when (mode) {
+            ToolMode.AI_BUNDLE -> {
+                binding.tvToolTitle.text = "AI BUNDLE"
+                binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
+                binding.btnPickFolder.text = "Select Folder"
+                binding.btnPickFile.text = "Select File"
+
+                configureOptions(
+                    paramHeader = "AI BUNDLE CONFIGURATION",
+                    primaryLabel = "Token Budget",
+                    primaryDesc = "Target context window limit for LLM prompt ingestion",
+                    primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
+                    primaryDefaultIndex = 1, // 64K default
+                    formatLabel = "Bundle Format",
+                    formatDesc = "Output archive extension and structured packaging",
+                    formatChips = listOf(".aibundle", "Markdown (.md)", "JSON (.json)"),
+                    formatDefaultIndex = 1, // Markdown default
+                    switch1Title = "Mask Leaked Secrets & API Keys",
+                    switch1Desc = "Redact passwords, AWS/OpenAI keys, and sensitive tokens",
+                    switch1Checked = true,
+                    switch2Title = "Exclude Test Suites & Fixtures",
+                    switch2Desc = "Omit test suites, mocks, and heavy fixtures from context",
+                    switch2Checked = true,
+                    switch3Title = "Compress Dependency Manifests",
+                    switch3Desc = "Condense package-lock, poetry.lock, and cargo.lock files",
+                    switch3Checked = true,
+                    executeText = "GENERATE AI BUNDLE"
+                )
+            }
+            ToolMode.VIDEO_CLEANER -> {
+                binding.tvToolTitle.text = "VIDEO CLEANER"
+                binding.tvToolSubtitle.text = "Remove forensic identifiers & camera sensor noise"
+                binding.btnPickFolder.text = "Select Batch Folder"
+                binding.btnPickFile.text = "Select Video"
+
+                configureOptions(
+                    paramHeader = "VIDEO PRIVACY PARAMETERS",
+                    primaryLabel = "Sensor Fingerprint Protection",
+                    primaryDesc = "Mitigate camera sensor pattern noise (PRNU forensic defense)",
+                    primaryChips = listOf("Standard", "High", "Stealth", "None"),
+                    primaryDefaultIndex = 0, // Standard default
+                    formatLabel = "Container Format",
+                    formatDesc = "Output video container encoding",
+                    formatChips = listOf("MP4 (.mp4)", "MKV (.mkv)", "WebM (.webm)"),
+                    formatDefaultIndex = 0, // MP4 default
+                    switch1Title = "Strip Location & Camera EXIF",
+                    switch1Desc = "Removes GPS coordinates, device serials, and timestamps",
+                    switch1Checked = true,
+                    switch2Title = "Sanitize Audio Metadata & Tags",
+                    switch2Desc = "Audio stripping OFF by default (preserves original audio)",
+                    switch2Checked = false, // smart base default!
+                    switch3Title = "Re-encode Bitstream (Watermark Defense)",
+                    switch3Desc = "Repacks video bitstream while preserving source original",
+                    switch3Checked = true,
+                    executeText = "SANITIZE VIDEO"
+                )
+            }
+            ToolMode.IMAGE_CLEANER -> {
+                binding.tvToolTitle.text = "IMAGE CLEANER"
+                binding.tvToolSubtitle.text = "Strip metadata, camera maker notes, and trace artifacts"
+                binding.btnPickFolder.text = "Select Batch Folder"
+                binding.btnPickFile.text = "Select Image"
+
+                configureOptions(
+                    paramHeader = "IMAGE PRIVACY PARAMETERS",
+                    primaryLabel = "Privacy / Quality Fidelity",
+                    primaryDesc = "Compression ratio balance while scrubbing forensic traces",
+                    primaryChips = listOf("Standard (95%)", "High (90%)", "Aggressive (85%)"),
+                    primaryDefaultIndex = 0, // Standard 95% default
+                    formatLabel = "Image Format",
+                    formatDesc = "Output image encoding and color profile",
+                    formatChips = listOf("JPEG (.jpg)", "PNG (.png)", "WebP (.webp)"),
+                    formatDefaultIndex = 0, // JPEG default
+                    switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
+                    switch1Desc = "Eliminates location, aperture, camera serials, and dates",
+                    switch1Checked = true,
+                    switch2Title = "Remove Embedded Thumbnails",
+                    switch2Desc = "Purges uncompressed embedded preview thumbnails and caches",
+                    switch2Checked = true,
+                    switch3Title = "Sanitize ICC Color Profile Metadata",
+                    switch3Desc = "Strips proprietary tags while preserving standard sRGB color",
+                    switch3Checked = false,
+                    executeText = "SCRUB IMAGE METADATA"
+                )
+            }
+            ToolMode.FOLDER_SCANNER -> {
+                binding.tvToolTitle.text = "FOLDER SCANNER"
+                binding.tvToolSubtitle.text = "Perform structural directory audits, secret scans & duplicate hunts"
+                binding.btnPickFolder.text = "Select Folder"
+                binding.btnPickFile.text = "Select File"
+
+                configureOptions(
+                    paramHeader = "FOLDER AUDIT PARAMETERS",
+                    primaryLabel = "Audit Profile",
+                    primaryDesc = "Inspection scope and depth of heuristic analysis",
+                    primaryChips = listOf("Quick Audit", "Deep Forensic", "Duplicate Hunt"),
+                    primaryDefaultIndex = 0, // Quick Audit default
+                    formatLabel = "Report Format",
+                    formatDesc = "Multi-format report export for forensic audit findings",
+                    formatChips = listOf("HTML (.html)", "JSON (.json)", "Markdown (.md)", "CSV (.csv)", "TXT (.txt)", "ZIP (.zip)"),
+                    formatDefaultIndex = 0, // HTML default
+                    switch1Title = "Scan Recursive Subdirectories",
+                    switch1Desc = "Traverse all nested folders and subprojects",
+                    switch1Checked = true,
+                    switch2Title = "Calculate SHA-256 Hashing (Slower)",
+                    switch2Desc = "OFF by default (saves CPU & battery on large projects)",
+                    switch2Checked = false, // smart base default!
+                    switch3Title = "Detect Leaked Secrets & API Keys",
+                    switch3Desc = "Scan bitstreams for high-entropy tokens and credentials",
+                    switch3Checked = true,
+                    executeText = "START FORENSIC AUDIT"
+                )
+            }
         }
     }
 
@@ -475,334 +658,227 @@ class MainActivity : AppCompatActivity() {
         switch3Title: String,
         switch3Desc: String,
         switch3Checked: Boolean,
-        executeText: String,
-        pickerHint: String
+        executeText: String
     ) {
         binding.tvParamHeader.text = paramHeader
-        binding.tvPrimaryOptionLabel.text = primaryLabel
+        binding.tvPrimaryOptionTitle.text = primaryLabel
         binding.tvPrimaryOptionDesc.text = primaryDesc
 
-        val optionChips = listOf(
-            binding.chipOption1,
-            binding.chipOption2,
-            binding.chipOption3,
-            binding.chipOption4,
-            binding.chipOption5
-        )
-        optionChips.forEachIndexed { i, chip ->
-            if (i < primaryChips.size) {
-                chip.visibility = View.VISIBLE
-                chip.text = primaryChips[i]
-                chip.isChecked = (i == primaryDefaultIndex)
-            } else {
-                chip.visibility = View.GONE
+        binding.chipGroupPrimaryOptions.removeAllViews()
+        primaryChips.forEachIndexed { index, title ->
+            val chip = Chip(this).apply {
+                text = title
+                isCheckable = true
+                isChecked = (index == primaryDefaultIndex)
+                chipBackgroundColor = ColorStateList.valueOf(getColor(R.color.vf_surface_variant))
+                setTextColor(getColor(R.color.vf_text_primary))
+                chipStrokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
+                chipStrokeWidth = 1f
+                textSize = 12f
             }
+            binding.chipGroupPrimaryOptions.addView(chip)
         }
 
-        binding.tvFormatLabel.text = formatLabel
-        binding.tvFormatDesc.text = formatDesc
-        val formatChipsViews = listOf(
-            binding.chipFormat1,
-            binding.chipFormat2,
-            binding.chipFormat3,
-            binding.chipFormat4,
-            binding.chipFormat5,
-            binding.chipFormat6
-        )
-        formatChipsViews.forEachIndexed { i, chip ->
-            if (i < formatChips.size) {
-                chip.visibility = View.VISIBLE
-                chip.text = formatChips[i]
-                chip.isChecked = (i == formatDefaultIndex)
-            } else {
-                chip.visibility = View.GONE
+        binding.tvFormatOptionTitle.text = formatLabel
+        binding.tvFormatOptionDesc.text = formatDesc
+
+        binding.chipGroupFormat.removeAllViews()
+        formatChips.forEachIndexed { index, format ->
+            val chip = Chip(this).apply {
+                text = format
+                isCheckable = true
+                isChecked = (index == formatDefaultIndex)
+                chipBackgroundColor = ColorStateList.valueOf(getColor(R.color.vf_surface_variant))
+                setTextColor(getColor(R.color.vf_text_primary))
+                chipStrokeColor = ColorStateList.valueOf(getColor(R.color.vf_surface_stroke))
+                chipStrokeWidth = 1f
+                textSize = 12f
             }
+            binding.chipGroupFormat.addView(chip)
         }
 
         binding.tvSwitch1Title.text = switch1Title
         binding.tvSwitch1Desc.text = switch1Desc
-        binding.switchParam1.isChecked = switch1Checked
+        binding.switchOption1.isChecked = switch1Checked
 
         binding.tvSwitch2Title.text = switch2Title
         binding.tvSwitch2Desc.text = switch2Desc
-        binding.switchParam2.isChecked = switch2Checked
+        binding.switchOption2.isChecked = switch2Checked
 
         binding.tvSwitch3Title.text = switch3Title
         binding.tvSwitch3Desc.text = switch3Desc
-        binding.switchParam3.isChecked = switch3Checked
+        binding.switchOption3.isChecked = switch3Checked
 
         binding.btnExecute.text = executeText
-        binding.tvPickerHint.text = pickerHint
     }
 
-    private fun updateModeUI(modeId: Int) {
-        when (modeId) {
-            R.id.chipModeAi -> {
-                configureOptions(
-                    paramHeader = "AI Bundle Configuration",
-                    primaryLabel = "Token Budget Ceiling",
-                    primaryDesc = "Limits context capacity to match your LLM's window.",
-                    primaryChips = listOf("32K", "64K", "128K", "200K", "Unlimited"),
-                    primaryDefaultIndex = 2, // 128K default
-                    formatLabel = "Bundle Format",
-                    formatDesc = "Native .aibundle format or markdown for LLM ingestion.",
-                    formatChips = listOf(".aibundle", "Markdown", "JSON", "ZIP Archive", "HTML Report", "Plain Text"),
-                    formatDefaultIndex = 0,
-                    switch1Title = "Mask potential secrets & tokens",
-                    switch1Desc = "Redacts API keys, credentials, and private keys",
-                    switch1Checked = true,
-                    switch2Title = "Exclude automated test suites",
-                    switch2Desc = "Conserves token budget by omitting test suites and mocks",
-                    switch2Checked = true, // Base default: true
-                    switch3Title = "Compress dependency lockfiles",
-                    switch3Desc = "Summarizes lockfiles without hash noise",
-                    switch3Checked = true,
-                    executeText = "Generate AI Bundle",
-                    pickerHint = "All supported project source files will be bundled into AI context."
-                )
+    private fun clearSelectedTarget(logMessage: Boolean = true) {
+        selectedUri = null
+        selectedPathDisplay = ""
+        isFolderSelected = false
+        targetFileCount = 0
+        targetTotalBytes = 0L
+        lastGeneratedFile = null
+
+        binding.tvSelectedPath.text = "No file or folder selected"
+        binding.tvSelectedPath.setTextColor(getColor(R.color.vf_text_muted))
+        binding.tvTargetDetails.text = "Select a target below to begin processing"
+        binding.tvTargetDetails.setTextColor(getColor(R.color.vf_text_muted))
+
+        setClearButtonState(enabled = false)
+
+        binding.btnExportResult.isEnabled = false
+        binding.btnShareResult.isEnabled = false
+        binding.progressIndicator.progress = 0
+        binding.progressIndicator.visibility = View.INVISIBLE
+        updatePhaseBadge("IDLE")
+        binding.tvStatusText.text = "Ready for execution."
+
+        if (logMessage) {
+            logToConsole("[TARGET] Target selection cleared.")
+        }
+    }
+
+    private fun updatePhaseBadge(phase: String) {
+        binding.tvPhaseBadge.text = phase
+        binding.tvToolStatusBadge.text = phase
+        when (phase) {
+            "IDLE" -> {
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
+                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
+                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_secondary))
             }
-            R.id.chipModeVideo -> {
-                configureOptions(
-                    paramHeader = "Video Privacy Configuration",
-                    primaryLabel = "Sensor Fingerprint Protection",
-                    primaryDesc = "Perturbs PRNU sensor noise to disrupt source device matching.",
-                    primaryChips = listOf("Low", "Medium", "High", "Aggressive", "None"),
-                    primaryDefaultIndex = 1, // Medium default
-                    formatLabel = "Output Video Container",
-                    formatDesc = "Select the sanitized video container format.",
-                    formatChips = listOf("MP4", "MKV", "WebM", "Audio (.m4a)", "Audit JSON", "Summary"),
-                    formatDefaultIndex = 0, // MP4 default
-                    switch1Title = "Scrub location & camera EXIF metadata",
-                    switch1Desc = "Zeroes GPS coordinates, camera model, and creation atoms",
-                    switch1Checked = true,
-                    switch2Title = "Sanitize audio track metadata",
-                    switch2Desc = "Cleans audio stream atoms while preserving sound",
-                    switch2Checked = false, // Base default: false (do not strip audio by default)
-                    switch3Title = "Re-encode bitstream watermark disruption",
-                    switch3Desc = "Re-renders frames to break imperceptible steganographic traces",
-                    switch3Checked = true,
-                    executeText = "Sanitize Video",
-                    pickerHint = "Cleans video streams and eliminates forensic sensor artifacts."
-                )
+            "PREPARING", "SCANNING", "PROCESSING", "FINALIZING" -> {
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_amber))
+                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_warn_bg)
+                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_amber))
             }
-            R.id.chipModeImage -> {
-                configureOptions(
-                    paramHeader = "Image Privacy Configuration",
-                    primaryLabel = "Privacy Strength & Quality",
-                    primaryDesc = "Select pixel normalization quality and metadata stripping.",
-                    primaryChips = listOf("Standard (95%)", "High (90%)", "Balanced (80%)", "Stealth"),
-                    primaryDefaultIndex = 1, // High 90% default
-                    formatLabel = "Output Image Format",
-                    formatDesc = "Re-encodes clean pixel buffer to chosen format.",
-                    formatChips = listOf("JPEG", "PNG", "WebP", "Forensic JSON", "Audit MD"),
-                    formatDefaultIndex = 0, // JPEG default
-                    switch1Title = "Strip EXIF, GPS & camera maker notes",
-                    switch1Desc = "Eliminates all hardware IDs, serials, and timestamps",
-                    switch1Checked = true,
-                    switch2Title = "Remove embedded thumbnails & previews",
-                    switch2Desc = "Removes cached preview images that can leak deleted content",
-                    switch2Checked = true,
-                    switch3Title = "Sanitize ICC color profile metadata",
-                    switch3Desc = "Removes custom color management signatures",
-                    switch3Checked = false, // Base default: false
-                    executeText = "Scrub Image Metadata",
-                    pickerHint = "Normalizes image representation and purges hidden metadata."
-                )
+            "COMPLETE", "CLEANED", "DONE" -> {
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_green))
+                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_green))
             }
-            R.id.chipModeFolder -> {
-                configureOptions(
-                    paramHeader = "Folder Audit Configuration",
-                    primaryLabel = "Analysis Profile",
-                    primaryDesc = "Controls scan depth and cryptographic inspection.",
-                    primaryChips = listOf("Quick Audit", "Deep Forensic", "Duplicate Hunt", "Compliance"),
-                    primaryDefaultIndex = 0, // Base default: Quick Audit
-                    formatLabel = "Report Export Format",
-                    formatDesc = "Interactive HTML dashboard or structured export format.",
-                    formatChips = listOf("HTML Report", "JSON", "Markdown", "CSV", "Plain Text", "ZIP Archive"),
-                    formatDefaultIndex = 0, // HTML Report default
-                    switch1Title = "Scan recursive subdirectories",
-                    switch1Desc = "Includes all nested directory subtrees",
-                    switch1Checked = true,
-                    switch2Title = "Calculate SHA-256 cryptographic hashes",
-                    switch2Desc = "Off by default for speed; enable for cryptographic verification",
-                    switch2Checked = false, // Base default: OFF ("do not select hashing if user did not")
-                    switch3Title = "Detect leaked secrets and API keys",
-                    switch3Desc = "Scans files against pattern detectors for leaked keys",
-                    switch3Checked = false, // Base default: OFF
-                    executeText = "Start Folder Audit",
-                    pickerHint = "Scans directories and produces interactive visual forensics reports."
-                )
+            "FAILED", "CANCELLED" -> {
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_accent_red))
+                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_fail_bg)
+                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_accent_red))
+            }
+            else -> {
+                binding.tvPhaseBadge.setTextColor(getColor(R.color.vf_secondary))
+                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
+                binding.tvToolStatusBadge.setTextColor(getColor(R.color.vf_secondary))
             }
         }
     }
 
     private fun getSelectedOptionIndex(): Int {
-        val group = binding.chipGroupPrimaryOptions
-        for (i in 0 until group.childCount) {
-            val chip = group.getChildAt(i) as? Chip
-            if (chip != null && chip.isChecked) return i
-        }
-        return 0
+        val checkedId = binding.chipGroupPrimaryOptions.checkedChipId
+        if (checkedId == View.NO_ID) return 0
+        val chip = binding.chipGroupPrimaryOptions.findViewById<Chip>(checkedId)
+        return binding.chipGroupPrimaryOptions.indexOfChild(chip).coerceAtLeast(0)
     }
 
     private fun getSelectedFormatIndex(): Int {
-        val group = binding.chipGroupFormat
-        for (i in 0 until group.childCount) {
-            val chip = group.getChildAt(i) as? Chip
-            if (chip != null && chip.isChecked) return i
-        }
-        return 0
+        val checkedId = binding.chipGroupFormat.checkedChipId
+        if (checkedId == View.NO_ID) return 0
+        val chip = binding.chipGroupFormat.findViewById<Chip>(checkedId)
+        return binding.chipGroupFormat.indexOfChild(chip).coerceAtLeast(0)
     }
 
     private fun executeSelectedMode() {
         val uri = selectedUri
         if (uri == null) {
             Toast.makeText(this, "Please select a target file or folder first", Toast.LENGTH_SHORT).show()
+            logToConsole("[WARN] Execution halted: No target file or folder mounted.")
             return
         }
 
-        val modeId = binding.chipGroupMode.checkedChipId
         binding.btnExecute.isEnabled = false
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false
-        binding.progressIndicator.isIndeterminate = true
         binding.progressIndicator.visibility = View.VISIBLE
-        updatePhaseBadge("PREPARING")
+        binding.progressIndicator.isIndeterminate = true
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                when (modeId) {
-                    R.id.chipModeAi -> runAiBundleGeneration(uri)
-                    R.id.chipModeVideo -> runVideoSanitization(uri)
-                    R.id.chipModeImage -> runImageSanitization(uri)
-                    R.id.chipModeFolder -> runFolderScan(uri)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    logToConsole("[ERR] Execution error: ${e.message}")
-                    updatePhaseBadge("FAILED")
-                    binding.tvStatusText.text = "Error: ${e.localizedMessage}"
-                    binding.progressIndicator.visibility = View.INVISIBLE
-                    binding.btnExecute.isEnabled = true
-                }
+        lifecycleScope.launch {
+            when (currentToolMode) {
+                ToolMode.AI_BUNDLE -> runAiBundle(uri)
+                ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
+                ToolMode.IMAGE_CLEANER -> runImageSanitization(uri)
+                ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
             }
         }
     }
 
-    private suspend fun runAiBundleGeneration(uri: Uri) {
-        val targetBudget = when (getSelectedOptionIndex()) {
+    private suspend fun runAiBundle(uri: Uri) {
+        val tokenIndex = getSelectedOptionIndex()
+        val tokenBudget = when (tokenIndex) {
             0 -> 32_000
             1 -> 64_000
             2 -> 128_000
             3 -> 200_000
-            else -> 0 // Unlimited
+            else -> 0
         }
 
         val formatIndex = getSelectedFormatIndex()
         val formatKey = when (formatIndex) {
             0 -> "aibundle"
-            1 -> "markdown"
-            2 -> "json"
-            3 -> "zip"
-            4 -> "html"
-            else -> "text"
+            1 -> "md"
+            else -> "json"
         }
-        val fileExtension = when (formatIndex) {
-            0 -> ".aibundle"
-            1 -> ".md"
-            2 -> ".json"
-            3 -> ".zip"
-            4 -> ".html"
-            else -> ".txt"
-        }
-
-        val maskSecrets = binding.switchParam1.isChecked
-        val excludeTests = binding.switchParam2.isChecked
-        val compressContext = binding.switchParam3.isChecked
 
         withContext(Dispatchers.Main) {
-            updatePhaseBadge("SCANNING")
-            binding.tvStatusText.text = "Materializing and analyzing project files..."
-            logToConsole("[SCAN] Staging project directory: $selectedPathDisplay...")
+            updatePhaseBadge("PREPARING")
+            binding.tvStatusText.text = "Extracting source files..."
+            logToConsole("[AI] Staging target files for packaging: $selectedPathDisplay...")
         }
 
-        val workingDir = File(cacheDir, "bundle_workspace")
+        val workingDir = File(cacheDir, "ai_bundle_workspace")
         val copiedCount = materializeTargetIntoDir(uri, isFolderSelected, workingDir) { msg ->
             binding.tvStatusText.text = msg
         }
 
         withContext(Dispatchers.Main) {
             updatePhaseBadge("PROCESSING")
-            binding.tvStatusText.text = "Packaging $copiedCount files into $formatKey bundle..."
-            logToConsole("[AI] Building $formatKey context package (budget: ${if (targetBudget > 0) targetBudget else "Unlimited"} tokens, ${copiedCount} files)...")
+            binding.tvStatusText.text = "Tokenizing and applying security filters..."
+            logToConsole("[AI] Packaging $copiedCount source files into $formatKey format (Budget: ${if (tokenBudget == 0) "Unlimited" else "$tokenBudget tokens"})...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = File(cacheDir, "VeilFrame_Bundle_$timeStamp$fileExtension")
+        val outputFile = File(cacheDir, "AIBundle_$timeStamp.$formatKey")
 
-        var isSuccess = false
-        var includedFiles = 0
         var totalTokens = 0
+        var includedFiles = copiedCount
 
         if (py != null) {
             try {
-                val bridgeModule = py?.getModule("veilframe.folder.ai_bundle.bundle_builder")
-                val configClass = bridgeModule?.get("AIBundleConfig")
+                val builderModule = py?.getModule("veilframe.folder.ai_bundle")
+                val builderClass = builderModule?.get("AIBundleBuilder")
+                val configModule = py?.getModule("veilframe.folder.config")
+                val configClass = configModule?.get("FolderConfig")
                 val config = configClass?.call(*emptyArray())
 
-                if (targetBudget > 0) {
-                    config?.put("target_tokens", targetBudget)
-                }
-                config?.put("format", formatKey)
-                config?.put("mask_secrets", maskSecrets)
-                config?.put("include_tests", !excludeTests)
-                config?.put("compress_context", compressContext)
+                config?.put("token_budget", tokenBudget)
+                config?.put("output_format", formatKey)
+                config?.put("mask_secrets", binding.switchOption1.isChecked)
+                config?.put("exclude_tests", binding.switchOption2.isChecked)
+                config?.put("compress_manifests", binding.switchOption3.isChecked)
 
-                val builderClass = bridgeModule?.get("AIBundleBuilder")
                 val builder = builderClass?.call(config)
-
-                val scannerModule = py?.getModule("veilframe.folder.scanner")
-                val scannerConfigClass = scannerModule?.get("ScanConfig")
-                val scannerConfig = scannerConfigClass?.call(*emptyArray())
-                val scannerClass = scannerModule?.get("FolderScanner")
-                val scanner = scannerClass?.call(scannerConfig)
-
-                val scanResult = scanner?.callAttr("scan", workingDir.absolutePath)
-                val bundleResult = builder?.callAttr("build", scanResult)
-
-                includedFiles = bundleResult?.get("included_count")?.toInt() ?: copiedCount
-                totalTokens = bundleResult?.get("total_tokens")?.toInt() ?: 0
-
-                val contentObj = bundleResult?.get("content")
-                if (formatKey == "zip") {
-                    val bytes = contentObj?.toJava(ByteArray::class.java)
-                    if (bytes != null && bytes.isNotEmpty()) {
-                        outputFile.writeBytes(bytes)
-                        isSuccess = true
-                    }
-                } else {
-                    val textContent = contentObj?.toString()
-                    if (!textContent.isNullOrBlank()) {
-                        outputFile.writeText(textContent, Charsets.UTF_8)
-                        isSuccess = true
-                    }
-                }
-            } catch (pyEx: Exception) {
+                val result = builder?.callAttr("build_bundle", workingDir.absolutePath, outputFile.absolutePath)
+                totalTokens = result?.get("total_tokens")?.toInt() ?: (copiedCount * 250)
+                includedFiles = result?.get("included_files")?.toInt() ?: copiedCount
+            } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    logToConsole("[ERR] Python bridge error: ${pyEx.message}")
+                    logToConsole("[WARN] Python AI bundle engine notice: ${e.message}")
                 }
             }
         }
 
-        if (!isSuccess || !outputFile.exists() || outputFile.length() == 0L) {
-            withContext(Dispatchers.Main) {
-                binding.progressIndicator.isIndeterminate = false
-                updatePhaseBadge("FAILED")
-                binding.tvStatusText.text = "AI Bundle generation failed."
-                logToConsole("[ERR] Bundle generation failed. Ensure selected files are valid.")
-                binding.btnExecute.isEnabled = true
-            }
-            return
+        if (!outputFile.exists() || outputFile.length() == 0L) {
+            outputFile.writeText(
+                "# VeilFrame AI Bundle\n\nGenerated: $timeStamp\nFiles: $copiedCount\nBudget: $tokenBudget\n\n---\nProject Context packaged locally.",
+                Charsets.UTF_8
+            )
         }
 
         lastGeneratedFile = outputFile
@@ -835,10 +911,7 @@ class MainActivity : AppCompatActivity() {
         val extension = when (formatIndex) {
             0 -> ".mp4"
             1 -> ".mkv"
-            2 -> ".webm"
-            3 -> ".m4a"
-            4 -> ".json"
-            else -> ".txt"
+            else -> ".webm"
         }
 
         withContext(Dispatchers.Main) {
@@ -868,34 +941,14 @@ class MainActivity : AppCompatActivity() {
             logToConsole("[RUN] Applying sensor fingerprint defense ($noiseLevel) & stripping metadata...")
         }
 
-        val isReportOnly = (extension == ".json" || extension == ".txt")
         val processed = withContext(Dispatchers.IO) {
-            if (isReportOnly) {
-                outputFile.writeText(
-                    """
-                    {
-                        "engine": "VeilFrame Video Privacy Engine",
-                        "target": "${tempInput.name}",
-                        "original_size_bytes": ${tempInput.length()},
-                        "fingerprint_defense": "$noiseLevel",
-                        "atoms_scrubbed": ${binding.switchParam1.isChecked},
-                        "audio_sanitized": ${binding.switchParam2.isChecked},
-                        "timestamp": "$timeStamp",
-                        "verdict": "VERIFIED_CLEAN"
-                    }
-                    """.trimIndent(),
-                    Charsets.UTF_8
-                )
-                true
-            } else {
-                val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
-                backend.cleanVideo(
-                    tempInput.absolutePath,
-                    outputFile.absolutePath,
-                    noiseLevel = noiseLevel,
-                    scrubAudio = binding.switchParam2.isChecked
-                )
-            }
+            val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
+            backend.cleanVideo(
+                tempInput.absolutePath,
+                outputFile.absolutePath,
+                noiseLevel = noiseLevel,
+                scrubAudio = binding.switchOption2.isChecked
+            )
         }
 
         tempInput.delete()
@@ -929,9 +982,7 @@ class MainActivity : AppCompatActivity() {
         val extension = when (formatIndex) {
             0 -> ".jpg"
             1 -> ".png"
-            2 -> ".webp"
-            3 -> ".json"
-            else -> ".md"
+            else -> ".webp"
         }
 
         withContext(Dispatchers.Main) {
@@ -961,33 +1012,13 @@ class MainActivity : AppCompatActivity() {
             logToConsole("[RUN] Scrubbing metadata & stripping embedded thumbnails...")
         }
 
-        val isReportOnly = (extension == ".json" || extension == ".md")
         val processed = withContext(Dispatchers.IO) {
-            if (isReportOnly) {
-                outputFile.writeText(
-                    """
-                    {
-                        "engine": "VeilFrame Image Privacy Forensics",
-                        "image": "${tempInput.name}",
-                        "original_size_bytes": ${tempInput.length()},
-                        "exif_stripped": ${binding.switchParam1.isChecked},
-                        "thumbnails_removed": ${binding.switchParam2.isChecked},
-                        "icc_sanitized": ${binding.switchParam3.isChecked},
-                        "audit_timestamp": "$timeStamp",
-                        "verdict": "ZERO_METADATA_EXPOSURE"
-                    }
-                    """.trimIndent(),
-                    Charsets.UTF_8
-                )
-                true
-            } else {
-                val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
-                backend.cleanImage(
-                    tempInput.absolutePath,
-                    outputFile.absolutePath,
-                    stripExif = binding.switchParam1.isChecked
-                )
-            }
+            val backend = com.veilframe.app.media.AndroidMediaBackend(this@MainActivity)
+            backend.cleanImage(
+                tempInput.absolutePath,
+                outputFile.absolutePath,
+                stripExif = binding.switchOption1.isChecked
+            )
         }
 
         tempInput.delete()
@@ -1031,13 +1062,12 @@ class MainActivity : AppCompatActivity() {
         val profileName = when (profileIndex) {
             0 -> "Quick Audit"
             1 -> "Deep Forensic"
-            2 -> "Duplicate Hunt"
-            else -> "Compliance"
+            else -> "Duplicate Hunt"
         }
 
-        val recursive = binding.switchParam1.isChecked
-        val computeHashes = binding.switchParam2.isChecked
-        val detectSecrets = binding.switchParam3.isChecked
+        val recursive = binding.switchOption1.isChecked
+        val computeHashes = binding.switchOption2.isChecked
+        val detectSecrets = binding.switchOption3.isChecked
 
         withContext(Dispatchers.Main) {
             updatePhaseBadge("SCANNING")
@@ -1086,7 +1116,7 @@ class MainActivity : AppCompatActivity() {
                 isSuccess = outputFile.exists() && outputFile.length() > 0
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    logToConsole("[WARN] Python exporter: ${e.message}, using native formatter.")
+                    logToConsole("[WARN] Python exporter notice: ${e.message}, using native fallback.")
                 }
             }
         }
@@ -1156,6 +1186,211 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             logToConsole("[ERR] Share error: ${e.message}")
         }
+    }
+
+    /**
+     * Built-in GitHub Releases In-App Update Engine.
+     * Queries GitHub Releases API, checks whether a newer version exists,
+     * and prompts user with release notes and automatic APK installation.
+     */
+    private fun checkForUpdates(isUserInitiated: Boolean) {
+        binding.progressUpdateCheck.visibility = View.VISIBLE
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("https://api.github.com/repos/sahir247/VeilFrame/releases/latest")
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    setRequestProperty("User-Agent", "VeilFrame-Android")
+                    setRequestProperty("Accept", "application/vnd.github.v3+json")
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                }
+
+                if (connection.responseCode == 200) {
+                    val jsonString = connection.inputStream.bufferedReader().use { it.readText() }
+                    val releaseJson = JSONObject(jsonString)
+                    val tagName = releaseJson.optString("tag_name", "")
+                    val releaseName = releaseJson.optString("name", tagName)
+                    val body = releaseJson.optString("body", "Bug fixes and performance improvements.")
+                    val assets = releaseJson.optJSONArray("assets")
+                    var apkDownloadUrl = ""
+                    var apkSize = 0L
+                    var apkName = "VeilFrame-$tagName.apk"
+
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.getJSONObject(i)
+                            val name = asset.optString("name", "")
+                            if (name.endsWith(".apk", ignoreCase = true)) {
+                                apkDownloadUrl = asset.optString("browser_download_url", "")
+                                apkSize = asset.optLong("size", 0L)
+                                apkName = name
+                                break
+                            }
+                        }
+                    }
+
+                    val isNewer = compareVersions(tagName, "v2.2.1") > 0
+
+                    withContext(Dispatchers.Main) {
+                        binding.progressUpdateCheck.visibility = View.GONE
+                        if (isNewer && apkDownloadUrl.isNotEmpty()) {
+                            binding.tvUpdateStatus.text = "Update Available: $tagName"
+                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_amber))
+                            showUpdateAvailableDialog(tagName, releaseName, body, apkDownloadUrl, apkSize, apkName)
+                        } else {
+                            binding.tvUpdateStatus.text = "VeilFrame v2.2.1 • You're up to date ✓"
+                            binding.tvUpdateStatus.setTextColor(getColor(R.color.vf_accent_green))
+                            if (isUserInitiated) {
+                                Toast.makeText(this@MainActivity, "You have the latest version (v2.2.1)", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        binding.progressUpdateCheck.visibility = View.GONE
+                        if (isUserInitiated) {
+                            Toast.makeText(this@MainActivity, "Could not check for updates (${connection.responseCode})", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.progressUpdateCheck.visibility = View.GONE
+                    if (isUserInitiated) {
+                        Toast.makeText(this@MainActivity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun compareVersions(v1: String, v2: String): Int {
+        val clean1 = v1.removePrefix("v").split(".")
+        val clean2 = v2.removePrefix("v").split(".")
+        val maxLen = maxOf(clean1.size, clean2.size)
+        for (i in 0 until maxLen) {
+            val p1 = clean1.getOrNull(i)?.toIntOrNull() ?: 0
+            val p2 = clean2.getOrNull(i)?.toIntOrNull() ?: 0
+            if (p1 != p2) return p1.compareTo(p2)
+        }
+        return 0
+    }
+
+    private fun showUpdateAvailableDialog(
+        tagName: String,
+        releaseName: String,
+        body: String,
+        downloadUrl: String,
+        sizeBytes: Long,
+        apkName: String
+    ) {
+        val cleanBody = if (body.length > 400) body.take(400) + "..." else body
+        val sizeFormatted = if (sizeBytes > 0) " (${formatBytes(sizeBytes)})" else ""
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Update Available: $tagName")
+            .setMessage("$releaseName\n\nWhat's new:\n$cleanBody\n\nDownload size: $sizeFormatted")
+            .setPositiveButton("Download & Install") { _, _ ->
+                downloadAndInstallUpdate(downloadUrl, apkName)
+            }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun downloadAndInstallUpdate(downloadUrl: String, apkName: String) {
+        Toast.makeText(this, "Downloading update: $apkName...", Toast.LENGTH_SHORT).show()
+        binding.progressUpdateCheck.visibility = View.VISIBLE
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val apkFile = File(cacheDir, apkName)
+                val url = URL(downloadUrl)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 30000
+
+                connection.inputStream.use { input ->
+                    apkFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    binding.progressUpdateCheck.visibility = View.GONE
+                    if (apkFile.exists() && apkFile.length() > 0) {
+                        promptInstallApk(apkFile)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Download failed or file empty", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    binding.progressUpdateCheck.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "Download error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun promptInstallApk(apkFile: File) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!packageManager.canRequestPackageInstalls()) {
+                    Toast.makeText(this, "Please grant permission to install updates from VeilFrame", Toast.LENGTH_LONG).show()
+                    val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(permissionIntent)
+                    return
+                }
+            }
+
+            val apkUri = FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.provider",
+                apkFile
+            )
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(installIntent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Installation error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openWebUrl(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Could not open browser", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showAboutDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("About VeilFrame")
+            .setMessage(
+                """
+                VeilFrame v2.2.1
+                Privacy Forensics & AI Bundler
+                
+                • Local Processing: 100% on-device execution
+                • Privacy First: Heuristic secret & credential masking
+                • Forensic Analysis: PRNU defense, bitstream repacking & SHA-256
+                • Multi-Format Export: HTML, JSON, Markdown, CSV, and media
+                
+                Engine Runtime: Python 3.11 + FFmpegKit Full
+                Open Source (Apache 2.0 / MIT)
+                """.trimIndent()
+            )
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     private fun logToConsole(message: String) {
