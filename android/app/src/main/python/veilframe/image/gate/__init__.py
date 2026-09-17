@@ -1,0 +1,1 @@
+"""veilframe.image.gate — QualityGate."""

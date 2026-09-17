@@ -1,0 +1,45 @@
+# Rust Ecosystem Rules
+rules:
+  - id: "rust.build_target"
+    ecosystems: ["rust", "cargo"]
+    patterns:
+      - "target/"
+      - ".rust-analyzer/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Cargo build target directory and rust-analyzer state"
+    priority: "ECOSYSTEM"
+
+  - id: "rust.compiled_artifacts"
+    ecosystems: ["rust", "cargo"]
+    patterns:
+      - "*.rlib"
+      - "*.rmeta"
+    classification: "COMPILED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Compiled Rust library metadata or archive"
+    priority: "ECOSYSTEM"
+
+  - id: "rust.manifests"
+    ecosystems: ["rust", "cargo"]
+    patterns:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Cargo package manifest, lockfile, or custom build script"
+    priority: "ECOSYSTEM"
+
+  - id: "rust.source"
+    ecosystems: ["rust"]
+    patterns:
+      - "*.rs"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Rust source code"
+    priority: "ECOSYSTEM"

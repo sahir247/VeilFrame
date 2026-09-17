@@ -1,0 +1,77 @@
+# Global Security and Credential Rules (Priority: SECURITY = 100)
+rules:
+  - id: "global.sec.env_files"
+    ecosystems: ["*"]
+    patterns:
+      - ".env"
+      - ".env.local"
+      - ".env.development.local"
+      - ".env.test.local"
+      - ".env.production.local"
+      - ".env.*"
+    classification: "SECRET"
+    action: "WARN"
+    confidence: 1.0
+    reason: "Environment configuration file frequently containing credentials"
+    priority: "SECURITY"
+
+  - id: "global.sec.env_examples"
+    ecosystems: ["*"]
+    patterns:
+      - ".env.example"
+      - ".env.sample"
+      - ".env.template"
+    classification: "CONFIG"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Template environment configuration without real secrets"
+    priority: "USER_OVERRIDE"
+
+  - id: "global.sec.keys_and_certs"
+    ecosystems: ["*"]
+    patterns:
+      - "*.pem"
+      - "*.key"
+      - "*.pkcs12"
+      - "*.p12"
+      - "*.pfx"
+      - "*.jks"
+      - "*.keystore"
+      - "id_rsa"
+      - "id_rsa.pub"
+      - "id_ed25519"
+      - "id_ecdsa"
+      - "id_dsa"
+    classification: "PRIVATE_KEY"
+    action: "WARN"
+    confidence: 1.0
+    reason: "Cryptographic private key, certificate, or keystore"
+    priority: "SECURITY"
+
+  - id: "global.sec.credentials_files"
+    ecosystems: ["*"]
+    patterns:
+      - "credentials.json"
+      - "credentials.yaml"
+      - "credentials.yml"
+      - "secrets.json"
+      - "secrets.yaml"
+      - "secrets.yml"
+      - "*.secret"
+      - "*.kdbx"
+    classification: "CREDENTIAL"
+    action: "WARN"
+    confidence: 1.0
+    reason: "Explicit credentials or secret vault file"
+    priority: "SECURITY"
+
+  - id: "global.sec.terraform_state"
+    ecosystems: ["*"]
+    patterns:
+      - "*.tfstate"
+      - "*.tfstate.*"
+    classification: "SECRET"
+    action: "WARN"
+    confidence: 1.0
+    reason: "Terraform state file containing cleartext infrastructure secrets"
+    priority: "SECURITY"

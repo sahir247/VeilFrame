@@ -228,6 +228,12 @@ do_android_apk() {
         exit 1
     fi
     mkdir -p dist
+    mkdir -p android/app/src/main/python/veilframe
+    rsync -a --delete --exclude="__pycache__" --exclude="*.pyc" veilframe/ android/app/src/main/python/veilframe/ 2>/dev/null || {
+        rm -rf android/app/src/main/python/veilframe
+        cp -r veilframe android/app/src/main/python/
+        find android/app/src/main/python/veilframe -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    }
     ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
     if [ -f "${ANDROID_DIR}/gradlew" ]; then
         chmod +x "${ANDROID_DIR}/gradlew"
@@ -253,6 +259,12 @@ do_android_aab() {
         exit 1
     fi
     mkdir -p dist
+    mkdir -p android/app/src/main/python/veilframe
+    rsync -a --delete --exclude="__pycache__" --exclude="*.pyc" veilframe/ android/app/src/main/python/veilframe/ 2>/dev/null || {
+        rm -rf android/app/src/main/python/veilframe
+        cp -r veilframe android/app/src/main/python/
+        find android/app/src/main/python/veilframe -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    }
     ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/android" && pwd)"
     if [ -f "${ANDROID_DIR}/gradlew" ]; then
         chmod +x "${ANDROID_DIR}/gradlew"

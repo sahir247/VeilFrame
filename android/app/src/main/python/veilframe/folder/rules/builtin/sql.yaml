@@ -1,0 +1,14 @@
+# SQL and Database Definition Rules
+rules:
+  - id: "sql.source"
+    ecosystems: ["sql", "database"]
+    patterns:
+      - "*.sql"
+      - "*.cql"
+      - "*.pgsql"
+      - "*.plsql"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "SQL query, schema, or stored procedure source"
+    priority: "ECOSYSTEM"

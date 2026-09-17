@@ -1,0 +1,39 @@
+# Swift and Apple Ecosystem Rules
+rules:
+  - id: "swift.xcode_artifacts"
+    ecosystems: ["swift", "xcode", "apple"]
+    patterns:
+      - ".build/"
+      - ".swiftpm/"
+      - "DerivedData/"
+      - "xcuserdata/"
+      - "*.xcuserstate"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Xcode or Swift Package Manager intermediate build artifacts"
+    priority: "ECOSYSTEM"
+
+  - id: "swift.manifests_projects"
+    ecosystems: ["swift", "xcode", "apple"]
+    patterns:
+      - "Package.swift"
+      - "Package.resolved"
+      - "*.xcodeproj"
+      - "*.xcworkspace"
+      - "project.pbxproj"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Apple Xcode project structure and Swift package manifest"
+    priority: "ECOSYSTEM"
+
+  - id: "swift.source"
+    ecosystems: ["swift", "apple"]
+    patterns:
+      - "*.swift"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Swift source code"
+    priority: "ECOSYSTEM"

@@ -24,4 +24,5 @@
     
     <color name="vf_console_bg">#06080E</color>
     <color name="vf_console_text">#38BDF8</color>
+    <color name="ic_launcher_background">#0B0F19</color>
 </resources>

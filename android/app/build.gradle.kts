@@ -67,7 +67,7 @@ chaquopy {
 
     sourceSets {
         getByName("main") {
-            srcDir("../../veilframe")
+            srcDir("src/main/python")
         }
     }
 }

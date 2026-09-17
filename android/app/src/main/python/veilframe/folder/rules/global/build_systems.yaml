@@ -1,0 +1,107 @@
+# Global Build Systems, Logs, and Test Artifact Rules
+rules:
+  - id: "global.build.logs"
+    ecosystems: ["*"]
+    patterns:
+      - "*.log"
+      - "*.log.*"
+      - "logs/"
+      - "log/"
+    classification: "RUNTIME_DATA"
+    action: "EXCLUDE"
+    confidence: 0.85
+    reason: "Runtime log files (can be user-overridden if debugging logs)"
+    priority: "TOOL_IDE"
+
+  - id: "global.build.coverage"
+    ecosystems: ["*"]
+    patterns:
+      - "coverage/"
+      - ".coverage"
+      - ".coverage.*"
+      - "htmlcov/"
+      - ".nyc_output/"
+      - "test-results/"
+      - "TestResults/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 0.95
+    reason: "Test coverage metrics and execution reports"
+    priority: "TOOL_IDE"
+
+  - id: "global.build.tests_source"
+    ecosystems: ["*"]
+    patterns:
+      - "tests/"
+      - "test/"
+      - "spec/"
+      - "specs/"
+      - "test_*.py"
+      - "*_test.py"
+      - "*.test.js"
+      - "*.test.ts"
+      - "*.spec.js"
+      - "*.spec.ts"
+      - "*_test.go"
+    classification: "TEST"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Automated test suites and verification cases"
+    priority: "ECOSYSTEM"
+
+  - id: "global.build.temp"
+    ecosystems: ["*"]
+    patterns:
+      - "tmp/"
+      - "temp/"
+      - "*.tmp"
+      - "*.bak"
+      - "*~"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 0.9
+    reason: "Temporary and backup files"
+    priority: "TOOL_IDE"
+
+  - id: "global.build.specs"
+    ecosystems: ["*"]
+    patterns:
+      - "*.spec"
+      - "Makefile"
+      - "makefile"
+      - "CMakeLists.txt"
+      - "Dockerfile*"
+      - "Containerfile*"
+      - "build.sh"
+      - "build.bat"
+      - "build.cmd"
+      - "justfile"
+    classification: "CONFIG"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Build specifications, automation scripts, and packaging recipes"
+    priority: "ECOSYSTEM"
+
+  - id: "global.media.assets"
+    ecosystems: ["*"]
+    patterns:
+      - "*.svg"
+      - "*.png"
+      - "*.jpg"
+      - "*.jpeg"
+      - "*.gif"
+      - "*.ico"
+      - "*.webp"
+      - "*.bmp"
+      - "*.tiff"
+      - "*.mp4"
+      - "*.mov"
+      - "*.avi"
+      - "*.webm"
+    classification: "MEDIA"
+    action: "DESCRIBE"
+    confidence: 0.95
+    reason: "Media graphic asset or video file"
+    priority: "TOOL_IDE"
+
+

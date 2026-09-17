@@ -1,0 +1,57 @@
+# Global Operating System Junk Rules
+rules:
+  - id: "global.os.windows_thumbs"
+    ecosystems: ["*"]
+    patterns:
+      - "Thumbs.db"
+      - "Thumbs.db:encryptable"
+      - "ehthumbs.db"
+      - "ehthumbs_vista.db"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Windows thumbnail database cache"
+    priority: "TOOL_IDE"
+
+  - id: "global.os.windows_system"
+    ecosystems: ["*"]
+    patterns:
+      - "Desktop.ini"
+      - "$RECYCLE.BIN/"
+      - "System Volume Information/"
+      - "*.lnk"
+    classification: "RUNTIME_DATA"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Windows system directory or metadata"
+    priority: "TOOL_IDE"
+
+  - id: "global.os.macos_junk"
+    ecosystems: ["*"]
+    patterns:
+      - ".DS_Store"
+      - ".AppleDouble"
+      - ".LSOverride"
+      - "._*"
+      - ".DocumentRevisions-V100/"
+      - ".fseventsd/"
+      - ".Spotlight-V100/"
+      - ".Trashes/"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "macOS metadata and index caches"
+    priority: "TOOL_IDE"
+
+  - id: "global.os.linux_junk"
+    ecosystems: ["*"]
+    patterns:
+      - ".nfs*"
+      - ".directory"
+      - ".Trash-*/"
+      - "lost+found/"
+    classification: "RUNTIME_DATA"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Linux filesystem artifacts and trash folders"
+    priority: "TOOL_IDE"

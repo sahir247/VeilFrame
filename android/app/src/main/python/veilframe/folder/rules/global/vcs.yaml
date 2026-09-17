@@ -1,0 +1,41 @@
+# Global Version Control System Rules
+rules:
+  - id: "global.vcs.git_metadata"
+    ecosystems: ["*"]
+    patterns:
+      - ".gitignore"
+      - ".gitattributes"
+      - ".gitmodules"
+      - ".git-blame-ignore-revs"
+    classification: "VCS_CONFIG"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Git project configuration and submodule manifest"
+    priority: "GITIGNORE"
+
+  - id: "global.vcs.github_meta"
+    ecosystems: ["*"]
+    patterns:
+      - ".github/workflows/"
+      - ".github/CODEOWNERS"
+      - ".github/dependabot.yml"
+      - ".github/ISSUE_TEMPLATE/"
+      - ".github/PULL_REQUEST_TEMPLATE/"
+    classification: "CI_CD"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "GitHub Actions CI/CD workflows and community health files"
+    priority: "TOOL_IDE"
+
+  - id: "global.vcs.repos"
+    ecosystems: ["*"]
+    patterns:
+      - ".git/"
+      - ".hg/"
+      - ".svn/"
+      - ".bzr/"
+    classification: "VCS_CONFIG"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Version control internal database and commit history"
+    priority: "TOOL_IDE"

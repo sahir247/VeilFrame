@@ -1,0 +1,21 @@
+# Lua Ecosystem Rules
+rules:
+  - id: "lua.bytecode"
+    ecosystems: ["lua"]
+    patterns:
+      - "*.luac"
+    classification: "COMPILED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Precompiled Lua bytecode"
+    priority: "ECOSYSTEM"
+
+  - id: "lua.source"
+    ecosystems: ["lua"]
+    patterns:
+      - "*.lua"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Lua script source code"
+    priority: "ECOSYSTEM"

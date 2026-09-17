@@ -1,0 +1,37 @@
+# Dart and Flutter Ecosystem Rules
+rules:
+  - id: "dart.flutter_caches"
+    ecosystems: ["dart", "flutter"]
+    patterns:
+      - ".dart_tool/"
+      - "build/"
+      - ".flutter-plugins"
+      - ".flutter-plugins-dependencies"
+      - ".packages"
+      - ".pub-cache/"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Flutter tool cache and local build directory"
+    priority: "ECOSYSTEM"
+
+  - id: "dart.manifests"
+    ecosystems: ["dart", "flutter"]
+    patterns:
+      - "pubspec.yaml"
+      - "pubspec.lock"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Dart pubspec package specification"
+    priority: "ECOSYSTEM"
+
+  - id: "dart.source"
+    ecosystems: ["dart", "flutter"]
+    patterns:
+      - "*.dart"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Dart source code"
+    priority: "ECOSYSTEM"

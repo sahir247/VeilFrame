@@ -1,0 +1,28 @@
+# Global Documentation and Architecture Rules
+rules:
+  - id: "global.docs.markdown"
+    ecosystems: ["*"]
+    patterns:
+      - "README*"
+      - "readme*"
+      - "ARCHITECTURE*"
+      - "architecture*"
+      - "CONTRIBUTING*"
+      - "ROADMAP*"
+      - "CHANGELOG*"
+      - "LICENSE*"
+      - "docs/**/*.md"
+      - "docs/**/*.rst"
+      - "docs/**/*.txt"
+      - "docs/**/*.adoc"
+      - "doc/**/*.md"
+      - "doc/**/*.rst"
+      - "doc/**/*.txt"
+      - "*.md"
+      - "*.rst"
+      - "*.adoc"
+    classification: "DOCUMENTATION"
+    action: "INCLUDE"
+    confidence: 0.90
+    reason: "Project documentation, architecture guidelines, and design manuals"
+    priority: "ECOSYSTEM"

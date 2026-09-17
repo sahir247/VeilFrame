@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.14"
+        android:scaleY="0.14"
+        android:translateX="18.16"
+        android:translateY="18.16">
+        <!-- Shield Outline -->
+        <path
+            android:fillColor="#0F172A"
+            android:strokeColor="#38BDF8"
+            android:strokeWidth="8"
+            android:strokeLineJoin="round"
+            android:pathData="M256,64 L396,112 V236 C396,332 334,398 256,448 C178,398 116,332 116,236 V112 Z" />
+        <!-- Inner Core -->
+        <path
+            android:fillColor="#38BDF8"
+            android:pathData="M256,160 L310,190 L256,256 Z" />
+        <path
+            android:fillColor="#6366F1"
+            android:pathData="M310,190 L330,250 L256,256 Z" />
+        <path
+            android:fillColor="#06B6D4"
+            android:pathData="M330,250 L290,300 L256,256 Z" />
+        <path
+            android:fillColor="#818CF8"
+            android:pathData="M290,300 L230,310 L256,256 Z" />
+        <path
+            android:fillColor="#3B82F6"
+            android:pathData="M230,310 L190,270 L256,256 Z" />
+        <path
+            android:fillColor="#6366F1"
+            android:pathData="M190,270 L200,200 L256,256 Z" />
+        <path
+            android:fillColor="#10B981"
+            android:pathData="M200,200 L256,160 L256,256 Z" />
+        <!-- Center Emblem -->
+        <path
+            android:fillColor="#030712"
+            android:strokeColor="#38BDF8"
+            android:strokeWidth="4"
+            android:pathData="M256,228 A28,28 0 1,0 256,284 A28,28 0 1,0 256,228 Z" />
+        <path
+            android:fillColor="#38BDF8"
+            android:pathData="M256,246 A10,10 0 1,0 256,266 A10,10 0 1,0 256,246 Z" />
+    </group>
+</vector>

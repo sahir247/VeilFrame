@@ -1,0 +1,48 @@
+# PHP Ecosystem Rules
+rules:
+  - id: "php.vendor"
+    ecosystems: ["php", "composer"]
+    patterns:
+      - "vendor/"
+    classification: "DEPENDENCY"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Composer package dependencies"
+    priority: "ECOSYSTEM"
+
+  - id: "php.framework_caches"
+    ecosystems: ["php", "laravel", "symfony"]
+    patterns:
+      - "storage/framework/cache/"
+      - "storage/framework/sessions/"
+      - "storage/framework/views/"
+      - "bootstrap/cache/"
+      - "var/cache/"
+      - "var/log/"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Laravel or Symfony framework compiled cache and sessions"
+    priority: "FRAMEWORK"
+
+  - id: "php.manifests"
+    ecosystems: ["php", "composer"]
+    patterns:
+      - "composer.json"
+      - "composer.lock"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Composer project package definition"
+    priority: "ECOSYSTEM"
+
+  - id: "php.source"
+    ecosystems: ["php"]
+    patterns:
+      - "*.php"
+      - "*.phtml"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "PHP source code or template"
+    priority: "ECOSYSTEM"

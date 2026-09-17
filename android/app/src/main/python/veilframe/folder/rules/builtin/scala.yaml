@@ -1,0 +1,37 @@
+# Scala Ecosystem Rules
+rules:
+  - id: "scala.build_artifacts"
+    ecosystems: ["scala", "sbt"]
+    patterns:
+      - "project/target/"
+      - "project/project/"
+      - ".bsp/"
+      - ".metals/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "SBT or Metals language server cache"
+    priority: "ECOSYSTEM"
+
+  - id: "scala.manifests"
+    ecosystems: ["scala", "sbt"]
+    patterns:
+      - "build.sbt"
+      - "project/*.scala"
+      - "project/build.properties"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "SBT project definition and build configuration"
+    priority: "ECOSYSTEM"
+
+  - id: "scala.source"
+    ecosystems: ["scala"]
+    patterns:
+      - "*.scala"
+      - "*.sc"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Scala source code or worksheet"
+    priority: "ECOSYSTEM"

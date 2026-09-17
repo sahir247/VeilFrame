@@ -1,0 +1,101 @@
+# Python Ecosystem Rules
+rules:
+  - id: "python.environments"
+    ecosystems: ["python"]
+    patterns:
+      - ".venv/"
+      - "venv/"
+      - "env/"
+      - "ENV/"
+      - "env.bak/"
+      - "venv.bak/"
+      - ".python-env/"
+      - "__pypackages__/"
+    classification: "DEPENDENCY"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Python virtual environment or PEP 582 packages"
+    priority: "ECOSYSTEM"
+
+  - id: "python.bytecode"
+    ecosystems: ["python"]
+    patterns:
+      - "__pycache__/"
+      - "*.pyc"
+      - "*.pyo"
+      - "*.pyd"
+      - "*$py.class"
+    classification: "COMPILED"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Compiled Python bytecode"
+    priority: "ECOSYSTEM"
+
+  - id: "python.build_packaging"
+    ecosystems: ["python"]
+    patterns:
+      - "build/"
+      - "dist/"
+      - ".eggs/"
+      - "*.egg-info/"
+      - "*.egg"
+      - ".pdm-build/"
+      - ".pixi/"
+    classification: "BUILD_OUTPUT"
+    action: "EXCLUDE"
+    confidence: 0.95
+    reason: "Python build and packaging distribution output"
+    priority: "ECOSYSTEM"
+
+  - id: "python.tool_caches"
+    ecosystems: ["python"]
+    patterns:
+      - ".pytest_cache/"
+      - ".tox/"
+      - ".nox/"
+      - ".hypothesis/"
+      - ".mypy_cache/"
+      - ".dmypy.json"
+      - "dmypy.json"
+      - ".pyre/"
+      - ".pytype/"
+      - ".ruff_cache/"
+      - "cython_debug/"
+      - ".ipynb_checkpoints/"
+    classification: "CACHE"
+    action: "EXCLUDE"
+    confidence: 1.0
+    reason: "Python linter, type checker, or testing cache"
+    priority: "ECOSYSTEM"
+
+  - id: "python.manifests"
+    ecosystems: ["python"]
+    patterns:
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "requirements-*.txt"
+      - "requirements/*.txt"
+      - "setup.py"
+      - "setup.cfg"
+      - "Pipfile"
+      - "Pipfile.lock"
+      - "poetry.lock"
+      - "pdm.lock"
+      - "uv.lock"
+    classification: "MANIFEST"
+    action: "INCLUDE"
+    confidence: 1.0
+    reason: "Python package and dependency specification"
+    priority: "ECOSYSTEM"
+
+  - id: "python.source"
+    ecosystems: ["python"]
+    patterns:
+      - "*.py"
+      - "*.pyi"
+      - "*.ipynb"
+    classification: "SOURCE"
+    action: "INCLUDE"
+    confidence: 0.95
+    reason: "Python source code or Jupyter notebook"
+    priority: "ECOSYSTEM"
