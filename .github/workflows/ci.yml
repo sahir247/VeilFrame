@@ -716,14 +716,7 @@ jobs:
           if [ -f "final_release/VeilFrame-android-arm64.apk" ]; then
             APK_SHA256=$(sha256sum final_release/VeilFrame-android-arm64.apk | awk '{print $1}')
             echo "Calculated VeilFrame-android-arm64.apk SHA-256: $APK_SHA256"
-            python3 -c "
-import json
-with open('android/update.json', 'r') as f:
-    data = json.load(f)
-data['sha256'] = '$APK_SHA256'
-with open('final_release/update.json', 'w') as f:
-    json.dump(data, f, indent=2)
-"
+            python3 -c "import json, sys; d = json.load(open('android/update.json')); d['sha256'] = sys.argv[1]; json.dump(d, open('final_release/update.json', 'w'), indent=2)" "$APK_SHA256"
             echo "Generated final_release/update.json with verified APK SHA-256:"
             cat final_release/update.json
           else
