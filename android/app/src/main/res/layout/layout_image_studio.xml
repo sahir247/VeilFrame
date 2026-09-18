@@ -987,7 +987,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:valueFrom="20"
-                        android:valueTo="2048"
+                        android:valueTo="2000"
                         android:value="250"
                         android:stepSize="10"
                         app:thumbColor="@color/vf_primary"

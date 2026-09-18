@@ -18,8 +18,10 @@
 # FFmpegKit and its Smart Exception dependency
 -keep class com.arthenica.ffmpegkit.** { *; }
 -keep class com.arthenica.smartexception.** { *; }
+-keep class dev.ffmpegkit.** { *; }
 -dontwarn com.arthenica.ffmpegkit.**
 -dontwarn com.arthenica.smartexception.**
+-dontwarn dev.ffmpegkit.**
 
 # Attributes & Reflection
 -keep class com.veilframe.app.BuildConfig { *; }

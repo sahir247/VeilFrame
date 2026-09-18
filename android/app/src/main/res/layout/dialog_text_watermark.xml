@@ -132,7 +132,7 @@
                 </com.google.android.material.chip.ChipGroup>
             </HorizontalScrollView>
 
-            <!-- Position Selection -->
+            <!-- Position Selection (All 9 Anchor Positions) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -156,19 +156,18 @@
                     app:singleSelection="true">
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipPosBottomRight"
+                        android:id="@+id/chipPosTopLeft"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bottom-Right"
-                        android:checked="true" />
+                        android:text="Top-Left" />
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipPosBottomLeft"
+                        android:id="@+id/chipPosTopCenter"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bottom-Left" />
+                        android:text="Top-Center" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipPosTopRight"
@@ -178,11 +177,11 @@
                         android:text="Top-Right" />
 
                     <com.google.android.material.chip.Chip
-                        android:id="@+id/chipPosTopLeft"
+                        android:id="@+id/chipPosCenterLeft"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Top-Left" />
+                        android:text="Center-Left" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chipPosCenter"
@@ -190,6 +189,35 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Center" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosCenterRight"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Center-Right" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosBottomLeft"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom-Left" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosBottomCenter"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom-Center" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipPosBottomRight"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bottom-Right"
+                        android:checked="true" />
                 </com.google.android.material.chip.ChipGroup>
             </HorizontalScrollView>
 
@@ -232,11 +260,100 @@
                 app:trackColorActive="@color/vf_primary"
                 app:trackColorInactive="@color/vf_surface_variant" />
 
-            <!-- Color Selection -->
+            <!-- Watermark Opacity -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Opacity:"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvWatermarkOpacityLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="100%"
+                    android:textColor="@color/vf_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderWatermarkOpacity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="10"
+                android:valueTo="100"
+                android:value="100"
+                android:stepSize="5"
+                app:thumbColor="@color/vf_primary"
+                app:trackColorActive="@color/vf_primary"
+                app:trackColorInactive="@color/vf_surface_variant" />
+
+            <!-- Font Family Selection -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
+                android:layout_marginBottom="6dp"
+                android:text="FONT STYLE"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupWatermarkFont"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontSans"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sans-Serif"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontBold"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Bold" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontSerif"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Serif" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontMono"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Monospace" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Color Selection -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:layout_marginBottom="6dp"
                 android:text="TEXT COLOR"
                 android:textColor="@color/vf_text_muted"
@@ -278,6 +395,20 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Yellow" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorBlue"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Blue" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorGreen"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Green" />
             </com.google.android.material.chip.ChipGroup>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

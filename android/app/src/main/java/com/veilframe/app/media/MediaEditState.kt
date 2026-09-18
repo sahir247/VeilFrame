@@ -109,6 +109,8 @@ data class ImageEditState(
     var watermarkPosition: String = "bottom-right",
     var watermarkSize: Int = 32,
     var watermarkColor: String = "#FFFFFF",
+    var watermarkOpacity: Float = 1.0f,
+    var watermarkFont: String = "Sans-Serif",
     var stripExif: Boolean = true,
     var exifMake: String = "",
     var exifModel: String = "",
@@ -158,6 +160,8 @@ data class ImageEditState(
         watermarkPosition = "bottom-right"
         watermarkSize = 32
         watermarkColor = "#FFFFFF"
+        watermarkOpacity = 1.0f
+        watermarkFont = "Sans-Serif"
         stripExif = true
         exifMake = ""
         exifModel = ""

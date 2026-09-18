@@ -5,6 +5,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContract
@@ -41,7 +42,7 @@ class CreateDocumentWithMime : ActivityResultContract<Pair<String, String>, Uri?
  */
 class SafStorageManager(private val context: Context) {
 
-    fun takePersistablePermission(uri: Uri) {
+    fun persistReadPermission(uri: Uri) {
         try {
             context.contentResolver.takePersistableUriPermission(
                 uri,
@@ -50,31 +51,73 @@ class SafStorageManager(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    fun persistReadWritePermission(uri: Uri) {
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+            // Provider may only grant read or already persisted
+            persistReadPermission(uri)
+        }
+    }
+
+    fun takePersistablePermission(uri: Uri) {
+        // Safe default: request read-write if possible, falling back to read
+        persistReadWritePermission(uri)
+    }
+
     fun getDisplayName(uri: Uri): String {
+        try {
+            if (DocumentsContract.isTreeUri(uri)) {
+                val doc = DocumentFile.fromTreeUri(context, uri)
+                val docName = doc?.name
+                if (!docName.isNullOrBlank()) return docName
+            }
+        } catch (_: Exception) {
+            // Provider-dependent Tree URI fallback
+        }
+
         var name = "unknown_file"
-        val cursor = context.contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) {
-                    name = it.getString(index) ?: name
+        try {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) {
+                        name = it.getString(index) ?: name
+                    }
                 }
             }
+        } catch (_: Exception) {
+            // SecurityException / provider failure
         }
         return name
     }
 
     fun queryFileSize(uri: Uri): Long {
-        var size = 0L
-        val cursor = context.contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val index = it.getColumnIndex(OpenableColumns.SIZE)
-                if (index >= 0) {
-                    size = it.getLong(index)
+        try {
+            if (DocumentsContract.isTreeUri(uri)) {
+                val doc = DocumentFile.fromTreeUri(context, uri)
+                if (doc != null && doc.isDirectory) {
+                    return 0L
                 }
             }
-        }
+        } catch (_: Exception) {}
+
+        var size = 0L
+        try {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val index = it.getColumnIndex(OpenableColumns.SIZE)
+                    if (index >= 0) {
+                        size = it.getLong(index)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
         return size
     }
 
@@ -128,24 +171,35 @@ class SafStorageManager(private val context: Context) {
             return@withContext destFile
         }
 
-        val rootDoc = DocumentFile.fromTreeUri(context, targetUri)
-            ?: throw IllegalStateException("Cannot access root directory via SAF.")
+        val rootDoc = try {
+            DocumentFile.fromTreeUri(context, targetUri)
+        } catch (e: Exception) {
+            null
+        } ?: throw IllegalStateException("Cannot access root directory via SAF: provider access failure.")
 
         suspend fun copyDocRecursive(doc: DocumentFile, currentDir: File) {
-            val children = doc.listFiles()
+            val children = try {
+                doc.listFiles()
+            } catch (e: Exception) {
+                emptyArray()
+            }
             for (child in children) {
                 val name = child.name ?: continue
-                if (child.isDirectory) {
-                    val sub = File(currentDir, name)
-                    sub.mkdirs()
-                    copyDocRecursive(child, sub)
-                } else if (child.isFile) {
-                    val target = File(currentDir, name)
-                    context.contentResolver.openInputStream(child.uri)?.use { input ->
-                        FileOutputStream(target).use { output ->
-                            input.copyTo(output)
+                try {
+                    if (child.isDirectory) {
+                        val sub = File(currentDir, name)
+                        sub.mkdirs()
+                        copyDocRecursive(child, sub)
+                    } else if (child.isFile) {
+                        val target = File(currentDir, name)
+                        context.contentResolver.openInputStream(child.uri)?.use { input ->
+                            FileOutputStream(target).use { output ->
+                                input.copyTo(output)
+                            }
                         }
                     }
+                } catch (_: Exception) {
+                    // Skip unreadable file or permission error on individual file
                 }
             }
         }

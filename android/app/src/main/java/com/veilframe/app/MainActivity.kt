@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -163,7 +164,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            safStorageManager.takePersistablePermission(uri)
+            safStorageManager.persistReadPermission(uri)
             handleSingleFileSelected(uri)
         }
     }
@@ -172,7 +173,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            safStorageManager.takePersistablePermission(uri)
+            safStorageManager.persistReadWritePermission(uri)
             handleFolderSelected(uri)
         }
     }
@@ -221,6 +222,39 @@ class MainActivity : AppCompatActivity() {
 
         // Asynchronous, non-blocking update check on launch
         appUpdateManager.checkForUpdates(isUserInitiated = false)
+
+        handleIncomingIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        val type = intent.type ?: ""
+        if (action == Intent.ACTION_SEND) {
+            val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            } ?: intent.data
+
+            if (uri != null) {
+                safStorageManager.persistReadPermission(uri)
+                if (type.startsWith("video/")) {
+                    openVideoStudio()
+                    videoStudioController.handleVideoSelected(uri)
+                } else if (type.startsWith("image/")) {
+                    openImageStudio()
+                    imageStudioController.handleImageSelected(uri)
+                }
+            }
+        }
     }
 
     override fun onResume() {

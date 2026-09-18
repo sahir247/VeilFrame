@@ -1,18 +1,13 @@
 package com.veilframe.app.media
 
 import android.graphics.Bitmap
-import android.os.Build
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.arthenica.ffmpegkit.Statistics
-import com.veilframe.app.privacy.ImageMetadataSanitizer
-import java.io.ByteArrayOutputStream
+import com.veilframe.app.media.compression.ImageCompressionEngine
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
-
-private fun quoteForShell(value: String): String = value
 
 /**
  * Central MediaProcessor coordinating ImageProcessor and VideoProcessor.
@@ -29,7 +24,8 @@ object MediaProcessor {
 /**
  * Authoritative Video Processor for Android.
  * Never assumes ffmpeg exists in Android system PATH.
- * Uses Android FFmpeg execution layer (FFmpegKit) directly with duration-based trimming (-t).
+ * Uses Android FFmpeg execution layer (FFmpegKit) directly via argument array execution.
+ * Shell string concatenation and shell escaping are completely eliminated.
  */
 object VideoProcessor {
 
@@ -113,7 +109,7 @@ object VideoProcessor {
                 outputConfig.format.equals("gif", ignoreCase = true) ||
                 outFile.name.endsWith(".gif", ignoreCase = true)
 
-        // Authoritative Android FFmpegKit direct execution layer
+        // Authoritative Android FFmpegKit direct argument-array execution layer
         return executeNativeFFmpeg(
             srcFile = srcFile,
             outFile = outFile,
@@ -138,7 +134,6 @@ object VideoProcessor {
             onSessionId = onSessionId
         )
     }
-
 
     /**
      * Backward-compatible overload accepting single VideoEditState.
@@ -199,7 +194,7 @@ object VideoProcessor {
             }
 
             cmd.add("-i")
-            cmd.add(quoteForShell(srcFile.absolutePath))
+            cmd.add(srcFile.absolutePath)
 
             // Strip metadata tags for privacy
             cmd.add("-map_metadata")
@@ -335,14 +330,25 @@ object VideoProcessor {
 
                 if (resolvedCodec != "copy") {
                     if (targetSizeMb != null && targetSizeMb > 0 && trimDurationSec > 0.2) {
-                        val targetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0 * 0.95
-                        val audioBits = if (isMuted) 0.0 else 128.0 * 1024.0 * trimDurationSec
-                        val videoBits = Math.max(50.0 * 1024.0 * trimDurationSec, targetBits - audioBits)
-                        val targetBitrateKbps = (videoBits / (trimDurationSec * 1024.0)).toInt()
+                        // Total target budget in bits
+                        val totalTargetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0
+                        // Reserve 6% for container/mux overhead
+                        val containerReserveBits = totalTargetBits * 0.06
+                        val audioBitrate = if (isMuted) 0.0 else when (audioAction) {
+                            "aac_64k" -> 64.0
+                            "aac_256k" -> 256.0
+                            else -> 128.0
+                        }
+                        val audioReserveBits = audioBitrate * 1024.0 * trimDurationSec
+                        val availableVideoBits = totalTargetBits - containerReserveBits - audioReserveBits
+
+                        // Minimum viable video bitrate is 120 kbps to avoid severe encoder crash or black frames
+                        val targetBitrateKbps = ((availableVideoBits / (trimDurationSec * 1024.0)).toInt()).coerceAtLeast(120)
+
                         cmd.add("-b:v")
                         cmd.add("${targetBitrateKbps}k")
                         cmd.add("-maxrate")
-                        cmd.add("${(targetBitrateKbps * 1.3).toInt()}k")
+                        cmd.add("${(targetBitrateKbps * 1.35).toInt()}k")
                         cmd.add("-bufsize")
                         cmd.add("${targetBitrateKbps * 2}k")
                     } else {
@@ -360,26 +366,24 @@ object VideoProcessor {
                 cmd.add("+faststart")
             }
 
-            cmd.add(quoteForShell(outFile.absolutePath))
+            cmd.add(outFile.absolutePath)
 
-            val fullCmdString = cmd.joinToString(" ")
-            Log.d(TAG, "Executing native FFmpegKit: $fullCmdString")
+            val cmdArray = cmd.toTypedArray()
+            Log.d(TAG, "Executing native FFmpegKit with ${cmdArray.size} arguments: ${cmdArray.joinToString(" ")}")
 
-            // Use synchronous blocking execute so the calling coroutine (Dispatchers.IO)
-            // naturally suspends. The session ID is surfaced immediately for cancellation.
             var activeSessionId = -1L
             val resultHolder = arrayOfNulls<com.arthenica.ffmpegkit.FFmpegSession>(1)
-
             val latch = java.util.concurrent.CountDownLatch(1)
-            val asyncSession = FFmpegKit.executeAsync(
-                fullCmdString,
+
+            // Direct argument array execution — zero shell string concatenation or shell escaping
+            val asyncSession = FFmpegKit.executeWithArgumentsAsync(
+                cmdArray,
                 { session ->
                     resultHolder[0] = session
                     latch.countDown()
                 },
-                null, // log callback – not needed; full logs available on session
+                null,
                 { stats: Statistics ->
-                    // Report encoded milliseconds to UI for progress display
                     val encMs = stats.time.toLong().coerceAtLeast(0L)
                     onStatistics?.invoke(encMs)
                 }
@@ -395,22 +399,46 @@ object VideoProcessor {
                 val outSize = outFile.length()
                 val origSize = srcFile.length()
                 val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
+
+                // Inspect actual output size against requested target
+                val warning: String? = if (targetSizeMb != null && targetSizeMb > 0) {
+                    val targetBytes = (targetSizeMb * 1024.0 * 1024.0).toLong()
+                    if (outSize > targetBytes * 1.05) {
+                        "Target ceiling not strictly achieved: Output is ${formatBytes(outSize)}, requested was <= ${formatBytes(targetBytes)}"
+                    } else null
+                } else null
+
                 CompressionResult(
                     success = true,
                     outputPath = outFile.absolutePath,
                     sizeBytes = outSize,
                     savingsPercent = savings,
                     duration = trimDurationSec,
-                    error = null
+                    error = warning
                 )
             } else {
-                val logs = session?.allLogsAsString ?: "Execution failed"
-                Log.e(TAG, "FFmpegKit execution failed (code $returnCode): $logs")
+                val allLogs = session?.allLogsAsString ?: "No session logs available"
+                val failTrace = session?.failStackTrace
+                val tailLogs = allLogs.lines().takeLast(15).joinToString("\n")
+
+                val diagnostic = StringBuilder()
+                    .append("Video compression failed: FFmpeg execution failed (code $returnCode)\n")
+                    .append("Details: Codec=$codec, Container=${outFile.extension.uppercase(Locale.US)}, Duration=${String.format(Locale.US, "%.2f", trimDurationSec)}s")
+                if (targetSizeMb != null) {
+                    diagnostic.append(", Target=${String.format(Locale.US, "%.1f", targetSizeMb)}MB")
+                }
+                diagnostic.append("\n\nFFmpeg Log:\n").append(tailLogs)
+                if (!failTrace.isNullOrBlank()) {
+                    diagnostic.append("\nStacktrace: ").append(failTrace)
+                }
+
+                val diagStr = diagnostic.toString()
+                Log.e(TAG, diagStr)
                 CompressionResult(
                     success = false,
                     outputPath = outFile.absolutePath,
                     sizeBytes = 0L,
-                    error = "FFmpeg execution failed (code $returnCode)"
+                    error = diagStr
                 )
             }
         } catch (e: Exception) {
@@ -423,15 +451,25 @@ object VideoProcessor {
             )
         }
     }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        var size = bytes.toDouble()
+        var unitIndex = 0
+        while (size >= 1024.0 && unitIndex < units.size - 1) {
+            size /= 1024.0
+            unitIndex++
+        }
+        return String.format(Locale.US, "%.1f %s", size, units[unitIndex])
+    }
 }
 
 /**
  * Authoritative Image Processor for Android.
- * Performs non-destructive preview rendering and final encoded output.
+ * Delegates cleanly to ImageCompressionEngine.
  */
 object ImageProcessor {
-
-    private const val TAG = "VeilFrame.ImageProcessor"
 
     fun process(
         srcFile: File,
@@ -440,117 +478,21 @@ object ImageProcessor {
         outputConfig: ImageOutputConfig,
         previewBitmap: Bitmap?
     ): CompressionResult {
-        val targetSizeKbVal = if (outputConfig.compressionMode == "target_size") outputConfig.targetSizeKb else null
-
-        // 0. Built-in Lossless Metadata Stripping
-        // If the user enabled EXIF scrubbing and no other geometric/filter edits are applied:
-        if (editState.stripExif && !editState.hasEdits() && outputConfig.quality >= 95 && outputConfig.compressionMode != "target_size") {
-            val stripped = ImageMetadataSanitizer.stripExifLossless(srcFile, outFile)
-            if (stripped && outFile.exists() && outFile.length() > 0L) {
-                val outSize = outFile.length()
-                val inSize = srcFile.length()
-                val savings = if (inSize > 0) ((inSize - outSize).toDouble() / inSize.toDouble() * 100.0) else 0.0
-                return CompressionResult(
-                    success = true,
-                    outputPath = outFile.absolutePath,
-                    sizeBytes = outSize,
-                    savingsPercent = savings,
-                    duration = 0.0,
-                    error = null
-                )
-            }
-        }
-
-        // 1. Direct Native Android Bitmap encoding with iterative Target Size quality solver
-        return try {
-            val bmp = previewBitmap ?: return CompressionResult(
-                success = false,
-                outputPath = outFile.absolutePath,
-                sizeBytes = 0L,
-                error = "No valid preview bitmap to encode"
-            )
-
-            val compressFormat = when (outputConfig.format.uppercase(Locale.US)) {
-                "PNG" -> Bitmap.CompressFormat.PNG
-                "WEBP" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
-                else -> Bitmap.CompressFormat.JPEG
-            }
-
-            if (outputConfig.compressionMode == "target_size" && targetSizeKbVal != null && targetSizeKbVal > 0 && compressFormat != Bitmap.CompressFormat.PNG) {
-                val targetBytes = targetSizeKbVal.toLong() * 1024L
-                var low = 5
-                var high = 95
-                var bestBytes: ByteArray? = null
-
-                for (iter in 0 until 6) {
-                    val mid = (low + high) / 2
-                    val stream = ByteArrayOutputStream()
-                    bmp.compress(compressFormat, mid, stream)
-                    val data = stream.toByteArray()
-                    bestBytes = data
-
-                    if (data.size <= targetBytes) {
-                        low = mid + 1
-                    } else {
-                        high = mid - 1
-                    }
-                    if (low > high) break
-                }
-
-                if (bestBytes != null) {
-                    FileOutputStream(outFile).use { fos ->
-                        fos.write(bestBytes)
-                    }
-                } else {
-                    FileOutputStream(outFile).use { fos ->
-                        bmp.compress(compressFormat, outputConfig.quality, fos)
-                    }
-                }
-            } else {
-                FileOutputStream(outFile).use { fos ->
-                    bmp.compress(compressFormat, outputConfig.quality, fos)
-                }
-            }
-
-            // Guarantee zero leaked EXIF headers on final artifact if EXIF stripping was requested
-            if (editState.stripExif && outFile.exists()) {
-                ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
-            }
-
-            val isSuccess = outFile.exists() && outFile.length() > 0L
-            if (isSuccess) {
-                val outSize = outFile.length()
-                val origSize = srcFile.length()
-                val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
-                CompressionResult(
-                    success = true,
-                    outputPath = outFile.absolutePath,
-                    sizeBytes = outSize,
-                    savingsPercent = savings,
-                    error = null
-                )
-            } else {
-                CompressionResult(
-                    success = false,
-                    outputPath = outFile.absolutePath,
-                    sizeBytes = 0L,
-                    error = "Failed to write encoded image file"
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Image compression exception: ${e.message}", e)
-            CompressionResult(
-                success = false,
-                outputPath = outFile.absolutePath,
-                sizeBytes = 0L,
-                error = e.message
-            )
-        }
+        val bmp = previewBitmap ?: return CompressionResult(
+            success = false,
+            outputPath = outFile.absolutePath,
+            sizeBytes = 0L,
+            error = "No valid preview bitmap to encode"
+        )
+        return ImageCompressionEngine.compress(
+            srcFile = srcFile,
+            outFile = outFile,
+            editState = editState,
+            outputConfig = outputConfig,
+            processedBitmap = bmp
+        )
     }
 
-    /**
-     * Backward-compatible overload accepting single ImageEditState.
-     */
     fun process(
         srcFile: File,
         outFile: File,

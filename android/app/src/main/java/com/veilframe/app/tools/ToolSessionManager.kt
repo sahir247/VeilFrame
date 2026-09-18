@@ -67,6 +67,14 @@ class ToolSessionManager(
         get() = toolStates.getOrPut(currentToolMode) { ToolSessionState() }
 
     fun init() {
+        binding.chipGroupPrimaryOptions.setOnCheckedStateChangeListener { _, _ ->
+            currentState.primaryOptionIndex = getSelectedOptionIndex()
+            updatePrivacySummaryUI()
+        }
+        binding.chipGroupFormat.setOnCheckedStateChangeListener { _, _ ->
+            currentState.formatOptionIndex = getSelectedFormatIndex()
+            updatePrivacySummaryUI()
+        }
         binding.switchOption1.setOnCheckedChangeListener { _, isChecked ->
             currentState.switch1Checked = isChecked
             updatePrivacySummaryUI()

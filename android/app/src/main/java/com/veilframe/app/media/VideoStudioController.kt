@@ -64,6 +64,7 @@ class VideoStudioController(
 
     private var compressionJob: Job? = null
     private var isScrubbing: Boolean = false
+    private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
 
     fun initWorkspace() {
         binding.btnVidStudioMenu.setOnClickListener { onNavigateHome() }
@@ -117,23 +118,6 @@ class VideoStudioController(
             if (isUpdatingSlidersProgrammatically || !fromUser) return@addOnChangeListener
             val seekMs = (value * 1000).toLong()
             binding.tvPlayerPosition.text = formatDuration(seekMs)
-        }
-
-        // Dual-thumb RangeSlider timeline trimmer
-        binding.rangeSliderVidTrim.addOnChangeListener { slider, _, _ ->
-            if (isUpdatingSlidersProgrammatically) return@addOnChangeListener
-            val startSec = slider.values[0]
-            val endSec = slider.values[1]
-            editState.trimStartMs = (startSec * 1000).toLong()
-            editState.trimEndMs = (endSec * 1000).toLong()
-
-            binding.tvVidTrimStartLabel.text = formatDuration(editState.trimStartMs)
-            binding.tvVidTrimEndLabel.text = formatDuration(editState.trimEndMs)
-            binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
-
-            playerController.setTrimBounds(editState.trimStartMs, editState.trimEndMs)
-            refreshStats()
-            updateEditSummary()
         }
 
         // Output Formats
@@ -304,6 +288,7 @@ class VideoStudioController(
 
         selectedUri = uri
         originalBytes = queryFileSize(uri)
+        val currentToken = loadToken.incrementAndGet()
 
         // Clear previous temporary studio cache files to prevent memory/storage leaks
         try {
@@ -362,6 +347,8 @@ class VideoStudioController(
             if (height <= 0) height = 720
 
             withContext(Dispatchers.Main) {
+                if (currentToken != loadToken.get()) return@withContext
+
                 editState.reset(duration)
                 editState.originalWidth = width
                 editState.originalHeight = height
@@ -384,11 +371,8 @@ class VideoStudioController(
                 binding.toolVidAudio.isEnabled = true
 
                 val durSec = (duration / 1000.0).toFloat().coerceAtLeast(1f)
-                updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
                 updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
 
-                binding.tvVidTrimStartLabel.text = "00:00.0"
-                binding.tvVidTrimEndLabel.text = formatDuration(duration)
                 binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(duration)}"
                 binding.tvPlayerPosition.text = "00:00.0"
                 binding.tvPlayerTotalDuration.text = formatDuration(duration)
@@ -425,25 +409,48 @@ class VideoStudioController(
     fun applyAspectRatioPreview() {
         val viewport = binding.videoPlayerViewport
         val params = viewport.layoutParams as? FrameLayout.LayoutParams ?: return
+        val container = binding.cardVidPlayerContainer
 
-        when (editState.aspect) {
-            "9:16 (Reel / Shorts / TikTok)", "9:16" -> {
-                params.width = FrameLayout.LayoutParams.WRAP_CONTENT
-                params.height = FrameLayout.LayoutParams.MATCH_PARENT
-                params.gravity = Gravity.CENTER
+        container.post {
+            val containerW = container.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+            val containerH = container.height.takeIf { it > 0 } ?: (240 * activity.resources.displayMetrics.density).toInt()
+
+            when (editState.aspect) {
+                "9:16 (Reel / Shorts / TikTok)", "9:16" -> {
+                    val h = containerH
+                    val w = (h.toFloat() * 9f / 16f).toInt().coerceAtMost(containerW)
+                    params.width = w
+                    params.height = h
+                    params.gravity = Gravity.CENTER
+                }
+                "1:1 (Square Feed)", "1:1" -> {
+                    val dim = minOf(containerW, containerH)
+                    params.width = dim
+                    params.height = dim
+                    params.gravity = Gravity.CENTER
+                }
+                "16:9 (Landscape YouTube)", "16:9" -> {
+                    val w = containerW
+                    val h = (w.toFloat() * 9f / 16f).toInt().coerceAtMost(containerH)
+                    params.width = w
+                    params.height = h
+                    params.gravity = Gravity.CENTER
+                }
+                "4:3 (Classic)", "4:3" -> {
+                    val h = containerH
+                    val w = (h.toFloat() * 4f / 3f).toInt().coerceAtMost(containerW)
+                    params.width = w
+                    params.height = h
+                    params.gravity = Gravity.CENTER
+                }
+                else -> {
+                    params.width = FrameLayout.LayoutParams.MATCH_PARENT
+                    params.height = FrameLayout.LayoutParams.MATCH_PARENT
+                    params.gravity = Gravity.CENTER
+                }
             }
-            "1:1 (Square Feed)", "1:1" -> {
-                params.width = FrameLayout.LayoutParams.MATCH_PARENT
-                params.height = FrameLayout.LayoutParams.WRAP_CONTENT
-                params.gravity = Gravity.CENTER
-            }
-            else -> {
-                params.width = FrameLayout.LayoutParams.MATCH_PARENT
-                params.height = FrameLayout.LayoutParams.MATCH_PARENT
-                params.gravity = Gravity.CENTER
-            }
+            viewport.layoutParams = params
         }
-        viewport.layoutParams = params
     }
 
     private fun toggleMute() {
@@ -573,10 +580,9 @@ class VideoStudioController(
         outputConfig.codec = "H.264"
 
         val durSec = (totalDur / 1000.0).toFloat().coerceAtLeast(1f)
-        updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
         updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
-        binding.tvVidTrimStartLabel.text = "00:00.0"
-        binding.tvVidTrimEndLabel.text = formatDuration(totalDur)
+        binding.tvPlayerPosition.text = "00:00.0"
+        binding.tvPlayerTotalDuration.text = formatDuration(totalDur)
         binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(totalDur)}"
 
         binding.sliderVidQuality.value = 28f
@@ -708,6 +714,7 @@ class VideoStudioController(
     }
 
     fun clear() {
+        loadToken.incrementAndGet()
         selectedUri = null
         originalFile = null
         originalBytes = 0L
@@ -753,7 +760,29 @@ class VideoStudioController(
         dialogBinding.tvTrimEndTime.text = formatDuration(editState.trimEndMs)
         dialogBinding.tvTrimDuration.text = formatDuration(editState.trimmedDurationMs)
 
-        dialogBinding.rangeSliderTrim.addOnChangeListener { slider, _, _ ->
+        var lastStartSec = currentStartSec
+        var lastEndSec = currentEndSec
+        var thumbJob: Job? = null
+
+        fun updateLiveThumb(timeMs: Long) {
+            thumbJob?.cancel()
+            thumbJob = scope.launch(Dispatchers.IO) {
+                val f = originalFile ?: return@launch
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(f.absolutePath)
+                    val frame = retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    retriever.release()
+                    if (frame != null && isActive) {
+                        withContext(Dispatchers.Main) {
+                            dialogBinding.imgTrimVideoThumbnail.setImageBitmap(frame)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        dialogBinding.rangeSliderTrim.addOnChangeListener { slider, _, fromUser ->
             val sSec = slider.values[0]
             val eSec = slider.values[1]
             val sMs = (sSec * 1000).toLong()
@@ -761,49 +790,61 @@ class VideoStudioController(
             dialogBinding.tvTrimStartTime.text = formatDuration(sMs)
             dialogBinding.tvTrimEndTime.text = formatDuration(eMs)
             dialogBinding.tvTrimDuration.text = formatDuration((eMs - sMs).coerceAtLeast(0))
+
+            if (fromUser) {
+                if (Math.abs(sSec - lastStartSec) > 0.05f) {
+                    lastStartSec = sSec
+                    updateLiveThumb(sMs)
+                } else if (Math.abs(eSec - lastEndSec) > 0.05f) {
+                    lastEndSec = eSec
+                    updateLiveThumb(eMs)
+                }
+            }
         }
 
         dialogBinding.chipTrimStory15.setOnClickListener {
             val e = 15f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
+            updateLiveThumb(0L)
         }
         dialogBinding.chipTrimStatus30.setOnClickListener {
             val e = 30f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
+            updateLiveThumb(0L)
         }
         dialogBinding.chipTrimMiddle.setOnClickListener {
             val midStart = durSec * 0.25f
             val midEnd = durSec * 0.75f
             dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
+            updateLiveThumb((midStart * 1000).toLong())
         }
         dialogBinding.chipTrimFull.setOnClickListener {
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
+            updateLiveThumb(0L)
         }
 
         dialogBinding.btnTrimApply.setOnClickListener {
+            thumbJob?.cancel()
             val sSec = dialogBinding.rangeSliderTrim.values[0]
             val eSec = dialogBinding.rangeSliderTrim.values[1]
             editState.trimStartMs = (sSec * 1000).toLong()
             editState.trimEndMs = (eSec * 1000).toLong()
 
-            updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, sSec, eSec)
-            binding.tvVidTrimStartLabel.text = formatDuration(editState.trimStartMs)
-            binding.tvVidTrimEndLabel.text = formatDuration(editState.trimEndMs)
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
 
             playerController.setTrimBounds(editState.trimStartMs, editState.trimEndMs)
+            playerController.seekTo(editState.trimStartMs)
             refreshStats()
             updateEditSummary()
             dialog.dismiss()
         }
 
         dialogBinding.btnTrimReset.setOnClickListener {
+            thumbJob?.cancel()
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
             editState.trimStartMs = 0L
             editState.trimEndMs = editState.durationMs
-            updateRangeSliderSafely(binding.rangeSliderVidTrim, 0f, durSec, 0f, durSec)
-            binding.tvVidTrimStartLabel.text = "00:00.0"
-            binding.tvVidTrimEndLabel.text = formatDuration(editState.durationMs)
+
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.durationMs)}"
 
             playerController.setTrimBounds(0L, editState.durationMs)
@@ -962,6 +1003,12 @@ class VideoStudioController(
                 "WEBM" -> binding.chipVidWebm.isChecked = true
                 "GIF" -> binding.chipVidGif.isChecked = true
                 else -> binding.chipVidMp4.isChecked = true
+            }
+
+            if (outputConfig.codec.contains("265", ignoreCase = true)) {
+                binding.chipVidCodecH265.isChecked = true
+            } else {
+                binding.chipVidCodecH264.isChecked = true
             }
 
             if (outputConfig.codec.equals("Copy", ignoreCase = true) && editState.hasVideoTransforms()) {
