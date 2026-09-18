@@ -430,7 +430,7 @@ object VideoProcessor {
                     onStatistics?.invoke(encMs)
                 }
             )
-            activeSessionId = asyncSession.sessionId
+            activeSessionId = asyncSession?.sessionId ?: -1L
             onSessionId?.invoke(activeSessionId)
             latch.await()
 
@@ -450,7 +450,7 @@ object VideoProcessor {
                     error = null
                 )
             } else {
-                val logs = session.allLogsAsString ?: "Execution failed"
+                val logs = session?.allLogsAsString ?: "Execution failed"
                 Log.e(TAG, "FFmpegKit execution failed (code $returnCode): $logs")
                 CompressionResult(
                     success = false,

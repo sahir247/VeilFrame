@@ -1063,9 +1063,9 @@ class ImageStudioController(
             }
         }
 
-        dialogBinding.chipGroupPosition.setOnCheckedStateChangeListener { _, checkedIds ->
+        dialogBinding.chipGroupWatermarkPosition.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupPosition.findViewById<Chip>(checkedIds[0])
+                val chip = dialogBinding.chipGroupWatermarkPosition.findViewById<Chip>(checkedIds[0])
                 draftPosition = when (chip?.id) {
                     R.id.chipPosTopLeft -> "top-left"
                     R.id.chipPosTopRight -> "top-right"
