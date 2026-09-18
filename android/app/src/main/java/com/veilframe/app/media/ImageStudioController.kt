@@ -13,7 +13,6 @@ import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.chaquo.python.Python
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
@@ -42,7 +41,6 @@ class ImageStudioController(
     private val binding: LayoutImageStudioBinding,
     private val safManager: SafDestinationManager,
     private val scope: CoroutineScope,
-    private val getPython: () -> Python?,
     private val onPickImageRequest: () -> Unit,
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
@@ -623,8 +621,7 @@ class ImageStudioController(
                     outFile = outFile,
                     editState = editState,
                     outputConfig = outputConfig,
-                    previewBitmap = fullResBmp,
-                    py = getPython()
+                    previewBitmap = fullResBmp
                 )
 
                 // Copy to SAF Destination Folder if chosen

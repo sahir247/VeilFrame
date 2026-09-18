@@ -6,7 +6,19 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
+  release:
+    types: [ published, created ]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish assets to GitHub Releases'
+        required: false
+        default: true
+        type: boolean
+      release_tag:
+        description: 'Release Tag (leave blank to auto-detect tag or pyproject.toml version, e.g. v2.2.5)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -696,6 +708,7 @@ jobs:
         !failure() &&
         !cancelled() &&
         (
+          github.event_name == 'release' ||
           github.event_name == 'workflow_dispatch' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
           startsWith(github.ref, 'refs/tags/v')
@@ -748,22 +761,39 @@ jobs:
           path: final_release/*
 
       - name: Publish GitHub Release Assets
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: >
+          github.event_name == 'release' ||
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_release == 'true'))
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
+          # Determine target release tag
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [ "${{ github.event_name }}" = "release" ] && [ -n "${{ github.event.release.tag_name }}" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "2.2.5")"
+          fi
 
-          echo "==> Publishing release: ${TAG}"
+          echo "==> Publishing release for tag: ${TAG}"
 
-          # The release should already exist for a release/tag build.
+          # Ensure notes file exists
+          if [ ! -f RELEASE_NOTES.md ]; then
+            echo "Release notes for VeilFrame ${TAG}" > RELEASE_NOTES.md
+          fi
+
+          # Create release if it doesn't already exist
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release does not exist. Creating it..."
+            echo "Release $TAG does not exist. Creating it..."
             gh release create "$TAG" \
-              --title "$TAG" \
+              --title "VeilFrame $TAG" \
               --notes-file RELEASE_NOTES.md
           fi
 

@@ -12,7 +12,6 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.chaquo.python.Python
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -45,7 +44,6 @@ class VideoStudioController(
     val playerController: VideoPlayerController,
     private val safManager: SafDestinationManager,
     private val scope: CoroutineScope,
-    private val getPython: () -> Python?,
     private val onPickVideoRequest: () -> Unit,
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
@@ -643,7 +641,6 @@ class VideoStudioController(
                     outFile = outFile,
                     editState = editState,
                     outputConfig = outputConfig,
-                    py = getPython(),
                     onStatistics = { encMs ->
                         val encSec = encMs / 1000.0
                         val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)

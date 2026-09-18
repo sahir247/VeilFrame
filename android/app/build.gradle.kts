@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python")
 }
 
 android {
@@ -94,25 +93,6 @@ android {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-
-        pip {
-            install("numpy>=1.24.0")
-            install("pillow>=10.0.0")
-            install("cryptography>=41.0.0")
-            install("pyyaml>=6.0.1")
-            install("pathspec>=0.11.0")
-        }
-    }
-
-    sourceSets {
-        getByName("main") {
-            srcDir("src/main/python")
-        }
-    }
-}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
@@ -124,19 +104,17 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
     // Full Mobile FFmpegKit with all audio/video codecs
-    implementation("com.arthenica:ffmpeg-kit-full:6.0-2")
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
     implementation("com.arthenica:smart-exception-java:0.2.1")
+
+    // AndroidX ExifInterface for native lossless and pixel-level EXIF privacy scrubbing
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // AndroidX Media3 ExoPlayer for modern video studio playback and timeline seeking
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-}
-
-configurations.all {
-    resolutionStrategy.eachDependency {
-        if ((requested.group == "com.arthenica" || requested.group == "com.arthenica.ffmpegkit") && requested.name.startsWith("ffmpeg-kit")) {
-            useTarget("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
-            because("com.arthenica artifacts were sunset on Maven Central and migrated to dev.ffmpegkit-maintained")
-        }
-    }
 }

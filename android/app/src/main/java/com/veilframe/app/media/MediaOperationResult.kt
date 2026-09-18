@@ -1,8 +1,7 @@
 package com.veilframe.app.media
 
 /**
- * Standardized result contract across the Chaquopy and native boundary.
- * Never converts arbitrary Python dicts directly to Boolean.
+ * Standardized result contract for media operations.
  */
 data class CompressionResult(
     val success: Boolean,

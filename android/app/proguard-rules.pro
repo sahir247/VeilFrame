@@ -1,8 +1,5 @@
 # Proguard rules for VeilFrame Android Release build
 
-# Chaquopy Python Runtime
--keep class com.chaquo.python.** { *; }
--dontwarn com.chaquo.python.**
 
 # App classes and Media Backend
 -keep class com.veilframe.app.** { *; }

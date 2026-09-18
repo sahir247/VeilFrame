@@ -40,8 +40,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+import com.veilframe.app.tools.AiBundleEngine
+import com.veilframe.app.tools.FolderScannerEngine
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -161,7 +161,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivityMainBinding
-    private var py: Python? = null
 
     private var currentScreen: ScreenState = ScreenState.HOME
     private var currentToolMode: ToolMode = ToolMode.AI_BUNDLE
@@ -715,7 +714,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        initPython()
+        initNativeEngine()
         setupListeners()
         showHomeScreen()
 
@@ -758,17 +757,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initPython() {
-        try {
-            if (!Python.isStarted()) {
-                Python.start(AndroidPlatform(this))
-            }
-            py = Python.getInstance()
-            logToConsole("[SYS] Initialized VeilFrame 2.2.5 Core Runtime (Python 3.11.16)")
-            logToConsole("[SYS] Local forensics & AI context engine ready.")
-        } catch (e: Exception) {
-            logToConsole("[WARN] Python runtime initialization notice: ${e.message}")
-        }
+    private fun initNativeEngine() {
+        logToConsole("[SYS] Initialized VeilFrame 2.2.5 Native Core Runtime")
+        logToConsole("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
     }
 
     private fun setupListeners() {
@@ -1534,67 +1525,56 @@ class MainActivity : AppCompatActivity() {
             1 -> 64_000
             2 -> 128_000
             3 -> 200_000
-            else -> 0
+            else -> 64_000
         }
 
         val formatIndex = getSelectedFormatIndex()
         val formatKey = when (formatIndex) {
-            0 -> "aibundle"
+            0 -> "md"
             1 -> "md"
             else -> "json"
         }
 
         withContext(Dispatchers.Main) {
-            updateJobState(JobState.PREPARING, "Extracting source files...")
-            logToConsole("[AI] Staging target files for packaging: ${state.selectedPathDisplay}...")
-        }
-
-        val workingDir = File(cacheDir, "ai_bundle_workspace")
-        val copiedCount = materializeTargetIntoDir(uri, state.isFolderSelected, workingDir) { msg ->
-            binding.tvStatusText.text = msg
-        }
-
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PROCESSING, "Tokenizing and applying security filters...")
-            logToConsole("[AI] Packaging $copiedCount source files into $formatKey format (Budget: ${if (tokenBudget == 0) "Unlimited" else "$tokenBudget tokens"})...")
+            updateJobState(JobState.PROCESSING, "Packaging AI context bundle...")
+            logToConsole("[AI] Packaging context directly from target: ${state.selectedPathDisplay} (Budget: ${if (tokenBudget == 0) "Unlimited" else "$tokenBudget tokens"})...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(cacheDir, "AIBundle_$timeStamp.$formatKey")
 
-        var totalTokens = 0
-        var includedFiles = copiedCount
+        val bundleConfig = AiBundleEngine.BundleConfig(
+            tokenBudget = tokenBudget,
+            outputFormat = formatKey,
+            maskSecrets = binding.switchOption1.isChecked,
+            excludeTests = binding.switchOption2.isChecked,
+            compressManifests = binding.switchOption3.isChecked
+        )
 
-        if (py != null) {
-            try {
-                val builderModule = py?.getModule("veilframe.folder.ai_bundle")
-                val builderClass = builderModule?.get("AIBundleBuilder")
-                val configModule = py?.getModule("veilframe.folder.config")
-                val configClass = configModule?.get("FolderConfig")
-                val config = configClass?.call(*emptyArray())
-
-                config?.put("token_budget", tokenBudget)
-                config?.put("output_format", formatKey)
-                config?.put("mask_secrets", binding.switchOption1.isChecked)
-                config?.put("exclude_tests", binding.switchOption2.isChecked)
-                config?.put("compress_manifests", binding.switchOption3.isChecked)
-
-                val builder = builderClass?.call(config)
-                val result = builder?.callAttr("build_bundle", workingDir.absolutePath, outputFile.absolutePath)
-                totalTokens = result?.get("total_tokens")?.toInt() ?: (copiedCount * 250)
-                includedFiles = result?.get("included_files")?.toInt() ?: copiedCount
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    logToConsole("[WARN] Python AI bundle engine notice: ${e.message}")
-                }
+        val bundleResult = withContext(Dispatchers.IO) {
+            if (state.isFolderSelected) {
+                AiBundleEngine.buildBundleFromSaf(
+                    context = this@MainActivity,
+                    treeUri = uri,
+                    outputFile = outputFile,
+                    config = bundleConfig,
+                    onProgress = { currentFile, included ->
+                        runOnUiThread {
+                            binding.tvStatusText.text = "Bundled $included files ($currentFile)..."
+                        }
+                    }
+                )
+            } else {
+                val name = getDisplayName(uri)
+                val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                outputFile.writeText("# Context: $name\n\n```\n$content\n```", Charsets.UTF_8)
+                AiBundleEngine.BundleResult(
+                    totalFiles = 1,
+                    includedFiles = 1,
+                    totalTokens = content.length / 4,
+                    outputPath = outputFile.absolutePath
+                )
             }
-        }
-
-        if (!outputFile.exists() || outputFile.length() == 0L) {
-            outputFile.writeText(
-                "# VeilFrame AI Bundle\n\nGenerated: $timeStamp\nFiles: $copiedCount\nBudget: $tokenBudget\n\n---\nProject Context packaged locally.",
-                Charsets.UTF_8
-            )
         }
 
         state.lastGeneratedFile = outputFile
@@ -1610,10 +1590,10 @@ class MainActivity : AppCompatActivity() {
             // Show Step 4: Result Summary Card
             binding.cardResultSummary.visibility = View.VISIBLE
             binding.tvResultTitle.text = outputFile.name
-            binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $includedFiles files included"
+            binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles} files included"
 
             logToConsole("[OK] Package generated: ${outputFile.name} (${formatBytes(outputFile.length())})")
-            logToConsole("[AI] Tokens: $totalTokens | Included files: $includedFiles | Format: $formatKey")
+            logToConsole("[AI] Tokens: ~${bundleResult.totalTokens} | Included files: ${bundleResult.includedFiles} | Format: $formatKey")
             logToConsole("[EXPORT] Output ready for saving or sharing.")
             binding.btnExecute.isEnabled = true
             binding.btnExportResult.isEnabled = true
@@ -2011,7 +1991,7 @@ class MainActivity : AppCompatActivity() {
             2 -> "md"
             3 -> "csv"
             4 -> "txt"
-            else -> "zip"
+            else -> "html"
         }
 
         val profileIndex = getSelectedOptionIndex()
@@ -2026,78 +2006,57 @@ class MainActivity : AppCompatActivity() {
         val detectSecrets = binding.switchOption3.isChecked
 
         withContext(Dispatchers.Main) {
-            updateJobState(JobState.SCANNING, "Traversing target directory...")
-            logToConsole("[SCAN] Scanning target: ${state.selectedPathDisplay} (Mode: $profileName)...")
-        }
-
-        val workingDir = File(cacheDir, "scan_workspace")
-        val copiedCount = materializeTargetIntoDir(uri, state.isFolderSelected, workingDir) { msg ->
-            binding.tvStatusText.text = msg
-        }
-
-        withContext(Dispatchers.Main) {
-            updateJobState(JobState.PROCESSING, "Auditing $copiedCount files and building $formatExt report...")
-            logToConsole("[AUDIT] Analyzed $copiedCount files in workspace. Hashes: $computeHashes | Secrets: $detectSecrets")
+            updateJobState(JobState.SCANNING, "Auditing directory stream...")
+            logToConsole("[SCAN] Scanning target directly: ${state.selectedPathDisplay} (Mode: $profileName)...")
         }
 
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(cacheDir, "Scan_Report_$timeStamp.$formatExt")
 
-        var isSuccess = false
-        var scanSummary = "$copiedCount files analyzed."
+        val scanConfig = FolderScannerEngine.ScanConfig(
+            recursive = recursive,
+            calculateHashes = computeHashes,
+            detectSecrets = detectSecrets
+        )
 
-        if (py != null) {
-            try {
-                val scannerModule = py?.getModule("veilframe.folder.scanner")
-                val scannerConfigClass = scannerModule?.get("ScanConfig")
-                val scannerConfig = scannerConfigClass?.call(*emptyArray())
-                scannerConfig?.put("recursive", recursive)
-                scannerConfig?.put("calculate_hashes", computeHashes)
-                scannerConfig?.put("detect_secrets", detectSecrets)
-
-                val scannerClass = scannerModule?.get("FolderScanner")
-                val scanner = scannerClass?.call(scannerConfig)
-                val scanResult = scanner?.callAttr("scan", workingDir.absolutePath)
-
-                // Inject user display path into scanResult for truthful target reporting
-                scanResult?.put("root_path", state.selectedPathDisplay)
-
-                val count = scanResult?.get("total_files")?.toString() ?: copiedCount.toString()
-                scanSummary = "$count files analyzed in target."
-
-                val exporterModule = py?.getModule("veilframe.folder.exporter")
-                val exporterClass = exporterModule?.get("FolderExporter")
-                val exporter = exporterClass?.call(scanResult, state.selectedPathDisplay)
-                exporter?.callAttr("export", outputFile.absolutePath, formatExt)
-
-                isSuccess = outputFile.exists() && outputFile.length() > 0
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    logToConsole("[WARN] Python exporter notice: ${e.message}, using native fallback.")
-                }
+        val scanResult = withContext(Dispatchers.IO) {
+            if (state.isFolderSelected) {
+                val res = FolderScannerEngine.scanSafTree(
+                    context = this@MainActivity,
+                    treeUri = uri,
+                    config = scanConfig,
+                    onProgress = { currentFile, count ->
+                        runOnUiThread {
+                            binding.tvStatusText.text = "Scanned $count files ($currentFile)..."
+                        }
+                    }
+                )
+                FolderScannerEngine.exportReport(res, outputFile, formatExt)
+                res
+            } else {
+                val name = getDisplayName(uri)
+                val size = contentResolver.openFileDescriptor(uri, "r")?.statSize ?: 0L
+                val record = FolderScannerEngine.ScannedFileRecord(
+                    relativePath = name,
+                    name = name,
+                    sizeBytes = size,
+                    sha256 = null,
+                    detectedSecrets = emptyList()
+                )
+                val res = FolderScannerEngine.ScanResult(
+                    rootDisplayName = name,
+                    timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
+                    totalFiles = 1,
+                    totalBytes = size,
+                    totalSecretsFound = 0,
+                    files = listOf(record)
+                )
+                FolderScannerEngine.exportReport(res, outputFile, formatExt)
+                res
             }
         }
 
-        if (!isSuccess) {
-            outputFile.writeText(
-                """
-                <!DOCTYPE html>
-                <html>
-                <head><title>VeilFrame Folder Audit Report</title><style>body{background:#101012;color:#E4E4E7;font-family:sans-serif;padding:20px;}</style></head>
-                <body>
-                <h1>VeilFrame Folder Audit Report</h1>
-                <p>Target: ${state.selectedPathDisplay}</p>
-                <p>Files Analyzed: $copiedCount</p>
-                <p>Date: $timeStamp</p>
-                <p>Status: Cleaned and Audited</p>
-                </body>
-                </html>
-                """.trimIndent(),
-                Charsets.UTF_8
-            )
-            isSuccess = true
-        }
-
+        val scanSummary = "${scanResult.totalFiles} files analyzed."
         state.lastGeneratedFile = outputFile
         state.progressPercent = 100
         state.progressDetailsText = "100% complete"
@@ -2114,6 +2073,9 @@ class MainActivity : AppCompatActivity() {
             binding.tvResultDetails.text = "${formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $scanSummary"
 
             logToConsole("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
+            if (scanResult.totalSecretsFound > 0) {
+                logToConsole("[WARN] ⚠ Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
+            }
             logToConsole("[EXPORT] Output ready for saving or sharing.")
             updatePrimaryActionDock(state)
             binding.btnExportResult.isEnabled = true
@@ -2264,7 +2226,12 @@ class MainActivity : AppCompatActivity() {
             }
             val match = installedCerts.intersect(archiveCerts)
             if (match.isEmpty()) {
-                return "Publisher certificate mismatch! The update was not signed by the authentic VeilFrame release key."
+                val isDebugBuild = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                if (isDebugBuild) {
+                    logToConsole("[SEC] Debug build: Installed debug cert ($installedCerts) differs from release cert ($archiveCerts). Allowing OS installer to mediate.")
+                } else {
+                    return "Publisher certificate mismatch! The update was not signed by the authentic VeilFrame release key."
+                }
             }
         }
 
@@ -2616,24 +2583,33 @@ class MainActivity : AppCompatActivity() {
 
         val safeApkName = sanitizeApkFilename(apkName)
         val targetApkFile = File(cacheDir, safeApkName)
-        val stagingFile = File(cacheDir, "update_staging_${System.currentTimeMillis()}.tmp")
+        val stagingFile = File(cacheDir, "update_staging_${System.currentTimeMillis()}.apk")
 
-        val dialogView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_2, null)
-        val text1 = dialogView.findViewById<TextView>(android.R.id.text1)
-        val text2 = dialogView.findViewById<TextView>(android.R.id.text2)
-        text1.text = "Downloading update: $safeApkName"
-        text2.text = "Connecting securely to GitHub Releases..."
+        val titleView = TextView(this).apply {
+            text = "Downloading update: $safeApkName"
+            textSize = 14f
+            setTextColor(getColor(R.color.vf_text_primary))
+            setPadding(0, 0, 0, 20)
+        }
 
         val progressIndicator = LinearProgressIndicator(this).apply {
             isIndeterminate = (totalBytesExpected <= 0L)
             max = 100
         }
 
+        val statusView = TextView(this).apply {
+            text = "Connecting securely to GitHub Releases..."
+            textSize = 13f
+            setTextColor(getColor(R.color.vf_text_secondary))
+            setPadding(0, 20, 0, 0)
+        }
+
         val container = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 24)
+            setPadding(64, 32, 64, 24)
+            addView(titleView)
             addView(progressIndicator)
-            addView(text2)
+            addView(statusView)
         }
 
         var isCancelled = false
@@ -2718,13 +2694,13 @@ class MainActivity : AppCompatActivity() {
                                     if (!isFinishing && !isDestroyed) {
                                         progressIndicator.isIndeterminate = false
                                         progressIndicator.progress = percent
-                                        text2.text = "${formatBytes(downloaded)} / ${formatBytes(totalLength)} ($percent%)"
+                                        statusView.text = "${formatBytes(downloaded)} / ${formatBytes(totalLength)} ($percent%)"
                                     }
                                 }
                             } else {
                                 withContext(Dispatchers.Main) {
                                     if (!isFinishing && !isDestroyed) {
-                                        text2.text = "${formatBytes(downloaded)} downloaded..."
+                                        statusView.text = "${formatBytes(downloaded)} downloaded..."
                                     }
                                 }
                             }
@@ -2853,7 +2829,7 @@ class MainActivity : AppCompatActivity() {
 
             val apkUri = FileProvider.getUriForFile(
                 this,
-                "${applicationContext.packageName}.provider",
+                "${packageName}.provider",
                 apkFile
             )
 
@@ -2863,10 +2839,14 @@ class MainActivity : AppCompatActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            val resolveInfoList = packageManager.queryIntentActivities(installIntent, 0)
-            for (resolveInfo in resolveInfoList) {
-                val pkg = resolveInfo.activityInfo.packageName
-                grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try {
+                val resolveInfoList = packageManager.queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                for (resolveInfo in resolveInfoList) {
+                    val pkg = resolveInfo.activityInfo.packageName
+                    grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } catch (e: Exception) {
+                logToConsole("[WARN] Intent activity query notice: ${e.message}")
             }
 
             binding.tvUpdateStatus.text = "Installing update... (Tap to retry if interrupted)"
@@ -2904,7 +2884,7 @@ class MainActivity : AppCompatActivity() {
                 • Multi-Format Export: HTML, JSON, Markdown, CSV, and media
                 • In-App Updates: Monotonic versionCode & SHA-256 verification
                 
-                Engine Runtime: Python 3.11 + FFmpegKit Full
+                Engine Runtime: Native Kotlin + Media3 + FFmpegKit Full
                 Open Source (Apache 2.0 / MIT)
                 """.trimIndent()
             )
@@ -2975,7 +2955,6 @@ class MainActivity : AppCompatActivity() {
             binding = binding.layoutImageStudio,
             safManager = safDestinationManager,
             scope = lifecycleScope,
-            getPython = { py },
             onPickImageRequest = { imgStudioPickerLauncher.launch("image/*") },
             onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
@@ -2994,7 +2973,6 @@ class MainActivity : AppCompatActivity() {
             playerController = videoPlayerController,
             safManager = safDestinationManager,
             scope = lifecycleScope,
-            getPython = { py },
             onPickVideoRequest = { vidStudioPickerLauncher.launch("video/*") },
             onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->

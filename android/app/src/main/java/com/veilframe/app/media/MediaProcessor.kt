@@ -6,8 +6,7 @@ import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.arthenica.ffmpegkit.Statistics
-import com.chaquo.python.PyObject
-import com.chaquo.python.Python
+import com.veilframe.app.privacy.ImageMetadataSanitizer
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -17,6 +16,7 @@ private fun quoteForShell(value: String): String = value
 
 /**
  * Central MediaProcessor coordinating ImageProcessor and VideoProcessor.
+ * Fully native Kotlin engine powered by FFmpegKit and AndroidX ExifInterface.
  */
 object MediaProcessor {
 
@@ -24,50 +24,6 @@ object MediaProcessor {
 
     val video = VideoProcessor
     val image = ImageProcessor
-
-    /**
-     * Safely extract Python result dictionary using explicit key lookups.
-     * Prevents TypeError: Cannot convert dict object to boolean.
-     */
-    fun extractPyResult(resultPy: PyObject?, fallbackOutFile: File): CompressionResult {
-        if (resultPy == null) {
-            return CompressionResult(
-                success = false,
-                outputPath = fallbackOutFile.absolutePath,
-                sizeBytes = 0L,
-                error = "Python returned null object"
-            )
-        }
-
-        return try {
-            val success = resultPy.callAttr("get", "success")?.toBoolean() == true
-            val outPath = resultPy.callAttr("get", "output_path")?.toString() ?: fallbackOutFile.absolutePath
-            val sizeBytes = resultPy.callAttr("get", "size_bytes")?.toLong()
-                ?: if (fallbackOutFile.exists()) fallbackOutFile.length() else 0L
-            val savings = resultPy.callAttr("get", "savings_percent")?.toDouble()
-                ?: resultPy.callAttr("get", "savings_pct")?.toDouble()
-                ?: 0.0
-            val duration = resultPy.callAttr("get", "duration")?.toDouble() ?: 0.0
-            val error = resultPy.callAttr("get", "error")?.toString()
-
-            CompressionResult(
-                success = success,
-                outputPath = outPath,
-                sizeBytes = sizeBytes,
-                savingsPercent = savings,
-                duration = duration,
-                error = error
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse Python result dict: ${e.message}", e)
-            CompressionResult(
-                success = false,
-                outputPath = fallbackOutFile.absolutePath,
-                sizeBytes = 0L,
-                error = "Boundary parse error: ${e.message}"
-            )
-        }
-    }
 }
 
 /**
@@ -110,7 +66,6 @@ object VideoProcessor {
         outFile: File,
         editState: VideoEditState,
         outputConfig: VideoOutputConfig,
-        py: Python? = null,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
         onSessionId: ((Long) -> Unit)? = null
     ): CompressionResult {
@@ -191,8 +146,7 @@ object VideoProcessor {
     fun process(
         srcFile: File,
         outFile: File,
-        state: VideoEditState,
-        py: Python?
+        state: VideoEditState
     ): CompressionResult {
         val outputConfig = VideoOutputConfig(
             format = "MP4",
@@ -201,7 +155,7 @@ object VideoProcessor {
             targetPreset = "Auto (Balanced CRF 28)",
             outputFileName = outFile.name
         )
-        return process(srcFile, outFile, state, outputConfig, py)
+        return process(srcFile, outFile, state, outputConfig)
     }
 
     private fun executeNativeFFmpeg(
@@ -484,96 +438,30 @@ object ImageProcessor {
         outFile: File,
         editState: ImageEditState,
         outputConfig: ImageOutputConfig,
-        previewBitmap: Bitmap?,
-        py: Python?
+        previewBitmap: Bitmap?
     ): CompressionResult {
-        val formatStr = outputConfig.format.lowercase(Locale.US)
-        val scaleVal = if (editState.resizeScale != 100) editState.resizeScale / 100.0 else 1.0
         val targetSizeKbVal = if (outputConfig.compressionMode == "target_size") outputConfig.targetSizeKb else null
 
         // 0. Built-in Lossless Metadata Stripping
         // If the user enabled EXIF scrubbing and no other geometric/filter edits are applied:
         if (editState.stripExif && !editState.hasEdits() && outputConfig.quality >= 95 && outputConfig.compressionMode != "target_size") {
-            if (py != null) {
-                try {
-                    val cleanerModule = py.getModule("veilframe.image.cleaner")
-                    val cleanerClass = cleanerModule.get("ImageCleaner")
-                    val cleaner = cleanerClass?.call()
-                    val cleaned = cleaner?.callAttr("clean_image", srcFile.absolutePath, outFile.absolutePath)?.toBoolean() ?: false
-                    if (cleaned && outFile.exists() && outFile.length() > 0L) {
-                        val outSize = outFile.length()
-                        val inSize = srcFile.length()
-                        val savings = if (inSize > 0) ((inSize - outSize).toDouble() / inSize.toDouble() * 100.0) else 0.0
-                        return CompressionResult(
-                            success = true,
-                            outputPath = outFile.absolutePath,
-                            sizeBytes = outSize,
-                            savingsPercent = savings,
-                            duration = 0.0,
-                            error = null
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Lossless ImageCleaner failed: ${e.message}. Falling back to compressor pipeline.")
-                }
-            }
-        }
-
-        // 1. Try Python compressor module if available with aligned parameter signature:
-        // def compress_image(input_path, output_path, quality=85, format=None, width=None, height=None,
-        //                    strip_exif=True, filter_name="default", rotate_deg=0.0, crop_box=None,
-        //                    scale=1.0, keep_aspect=True, goal="percentage", target_size_kb=None,
-        //                    flip_h=False, flip_v=False, text_watermark=None, bg_color=None)
-        if (py != null) {
-            try {
-                val compressorModule = py.getModule("veilframe.core.media_compressor")
-                val targetW = if (editState.resizeWidth > 0) editState.resizeWidth else null
-                val targetH = if (editState.resizeHeight > 0) editState.resizeHeight else null
-
-                val bmpW = previewBitmap?.width ?: 0
-                val bmpH = previewBitmap?.height ?: 0
-                val cropBox = if (editState.isCropped() && bmpW > 0 && bmpH > 0) {
-                    val l = (editState.cropLeft * bmpW).toInt().coerceAtLeast(0)
-                    val t = (editState.cropTop * bmpH).toInt().coerceAtLeast(0)
-                    val r = (editState.cropRight * bmpW).toInt().coerceAtMost(bmpW)
-                    val b = (editState.cropBottom * bmpH).toInt().coerceAtMost(bmpH)
-                    arrayOf(l, t, r, b)
-                } else null
-
-                val filterName = if (editState.filter != "Default" && editState.filter != "None") editState.filter.lowercase(Locale.US) else "default"
-                val bgColor = if (editState.bgType != "Transparent") editState.bgType.lowercase(Locale.US) else null
-
-                val resultPy = compressorModule.callAttr(
-                    "compress_image",
-                    srcFile.absolutePath,
-                    outFile.absolutePath,
-                    outputConfig.quality,
-                    formatStr,
-                    targetW,
-                    targetH,
-                    editState.stripExif,
-                    filterName,
-                    editState.rotationAngle.toDouble(),
-                    cropBox,
-                    scaleVal,
-                    editState.keepAspect,
-                    outputConfig.compressionMode,
-                    targetSizeKbVal,
-                    editState.flipH,
-                    editState.flipV,
-                    null,
-                    bgColor
+            val stripped = ImageMetadataSanitizer.stripExifLossless(srcFile, outFile)
+            if (stripped && outFile.exists() && outFile.length() > 0L) {
+                val outSize = outFile.length()
+                val inSize = srcFile.length()
+                val savings = if (inSize > 0) ((inSize - outSize).toDouble() / inSize.toDouble() * 100.0) else 0.0
+                return CompressionResult(
+                    success = true,
+                    outputPath = outFile.absolutePath,
+                    sizeBytes = outSize,
+                    savingsPercent = savings,
+                    duration = 0.0,
+                    error = null
                 )
-                val parsed = MediaProcessor.extractPyResult(resultPy, outFile)
-                if (parsed.success && outFile.exists() && outFile.length() > 0L) {
-                    return parsed
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Python image compression threw exception: ${e.message}. Using native Bitmap encoder.")
             }
         }
 
-        // 2. In-memory Native Bitmap encoding fallback with Target Size solver
+        // 1. Direct Native Android Bitmap encoding with iterative Target Size quality solver
         return try {
             val bmp = previewBitmap ?: return CompressionResult(
                 success = false,
@@ -582,7 +470,7 @@ object ImageProcessor {
                 error = "No valid preview bitmap to encode"
             )
 
-            val compressFormat = when (outputConfig.format.uppercase()) {
+            val compressFormat = when (outputConfig.format.uppercase(Locale.US)) {
                 "PNG" -> Bitmap.CompressFormat.PNG
                 "WEBP" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
                 else -> Bitmap.CompressFormat.JPEG
@@ -592,7 +480,6 @@ object ImageProcessor {
                 val targetBytes = targetSizeKbVal.toLong() * 1024L
                 var low = 5
                 var high = 95
-                var bestQuality = 85
                 var bestBytes: ByteArray? = null
 
                 for (iter in 0 until 6) {
@@ -601,7 +488,6 @@ object ImageProcessor {
                     bmp.compress(compressFormat, mid, stream)
                     val data = stream.toByteArray()
                     bestBytes = data
-                    bestQuality = mid
 
                     if (data.size <= targetBytes) {
                         low = mid + 1
@@ -624,6 +510,11 @@ object ImageProcessor {
                 FileOutputStream(outFile).use { fos ->
                     bmp.compress(compressFormat, outputConfig.quality, fos)
                 }
+            }
+
+            // Guarantee zero leaked EXIF headers on final artifact if EXIF stripping was requested
+            if (editState.stripExif && outFile.exists()) {
+                ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
             }
 
             val isSuccess = outFile.exists() && outFile.length() > 0L
@@ -664,14 +555,13 @@ object ImageProcessor {
         srcFile: File,
         outFile: File,
         state: ImageEditState,
-        previewBitmap: Bitmap?,
-        py: Python?
+        previewBitmap: Bitmap?
     ): CompressionResult {
         val outputConfig = ImageOutputConfig(
             format = "JPG",
             quality = 85,
             outputFileName = outFile.name
         )
-        return process(srcFile, outFile, state, outputConfig, previewBitmap, py)
+        return process(srcFile, outFile, state, outputConfig, previewBitmap)
     }
 }

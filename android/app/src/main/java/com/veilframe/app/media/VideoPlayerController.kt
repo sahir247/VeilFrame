@@ -1,39 +1,42 @@
 package com.veilframe.app.media
 
 import android.content.Context
-import android.graphics.SurfaceTexture
-import android.media.MediaPlayer
-import android.media.PlaybackParams
 import android.net.Uri
-import android.os.Build
 import android.util.Log
-import android.view.Surface
 import android.view.TextureView
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
- * Dedicated video player controller managing MediaPlayer directly on a TextureView.
- * Provides precise playback speed control, trim-boundary enforcement, continuous scrubber
- * synchronization, seeking, and mute state without VideoView limitations.
+ * Modernized video player controller powered by AndroidX Media3 (ExoPlayer).
+ * Replaces legacy android.media.MediaPlayer, providing frame-accurate seeking,
+ * hardware-accelerated playback on TextureView, seamless speed manipulation,
+ * and robust timeline scrub synchronization for the Mobile Video Studio.
  */
+@OptIn(UnstableApi::class)
 class VideoPlayerController(
     private val context: Context,
     private val textureView: TextureView,
     private val scope: CoroutineScope
-) : TextureView.SurfaceTextureListener {
+) {
 
     companion object {
         private const val TAG = "VeilFrame.VideoPlayer"
     }
 
-    private var mediaPlayer: MediaPlayer? = null
-    private var surface: Surface? = null
+    private var exoPlayer: ExoPlayer? = null
     private var tickerJob: Job? = null
 
     var isPlaying: Boolean = false
@@ -65,102 +68,88 @@ class VideoPlayerController(
     var onPlaybackStateChange: ((isPlaying: Boolean) -> Unit)? = null
     var onErrorListener: ((what: Int, extra: Int) -> Unit)? = null
 
-    private var pendingUri: Uri? = null
+    private fun getOrCreatePlayer(): ExoPlayer {
+        exoPlayer?.let { return it }
 
-    init {
-        textureView.surfaceTextureListener = this
-        if (textureView.isAvailable) {
-            val st = textureView.surfaceTexture
-            if (st != null) {
-                surface = Surface(st)
-            }
+        val player = ExoPlayer.Builder(context).build().apply {
+            setVideoTextureView(textureView)
+            repeatMode = Player.REPEAT_MODE_OFF
+
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_READY -> {
+                            val dur = duration.coerceAtLeast(0L)
+                            this@VideoPlayerController.durationMs = dur
+                            if (this@VideoPlayerController.trimEndMs <= 0L || this@VideoPlayerController.trimEndMs > dur) {
+                                this@VideoPlayerController.trimEndMs = dur
+                            }
+                            applySpeed(currentSpeed)
+                            applyMute(isMuted)
+
+                            this@VideoPlayerController.onPreparedListener?.invoke(
+                                this@VideoPlayerController.durationMs,
+                                this@VideoPlayerController.videoWidth,
+                                this@VideoPlayerController.videoHeight
+                            )
+                        }
+                        Player.STATE_ENDED -> {
+                            pause()
+                            seekTo(trimStartMs)
+                        }
+                        else -> {}
+                    }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    this@VideoPlayerController.isPlaying = playing
+                    onPlaybackStateChange?.invoke(playing)
+                    if (playing) {
+                        startTicker()
+                    } else {
+                        stopTicker()
+                    }
+                }
+
+                override fun onVideoSizeChanged(videoSize: VideoSize) {
+                    if (videoSize.width > 0 && videoSize.height > 0) {
+                        this@VideoPlayerController.videoWidth = videoSize.width
+                        this@VideoPlayerController.videoHeight = videoSize.height
+                    }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    Log.e(TAG, "ExoPlayer playback error: ${error.errorCodeName} (${error.errorCode})", error)
+                    onErrorListener?.invoke(error.errorCode, 0)
+                }
+            })
         }
+        exoPlayer = player
+        return player
     }
-
-    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-        surface?.release()
-        surface = Surface(surfaceTexture)
-        mediaPlayer?.setSurface(surface)
-        pendingUri?.let { uri ->
-            pendingUri = null
-            setDataSource(uri)
-        }
-    }
-
-    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-
-    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-        mediaPlayer?.setSurface(null)
-        surface?.release()
-        surface = null
-        return true
-    }
-
-    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
 
     fun setDataSource(uri: Uri) {
-        if (surface == null) {
-            pendingUri = uri
-            return
-        }
-
         pause()
-        releasePlayer()
+        val player = getOrCreatePlayer()
 
         try {
-            mediaPlayer = MediaPlayer().apply {
-                setSurface(this@VideoPlayerController.surface)
-                setDataSource(context, uri)
-
-                setOnPreparedListener { mp ->
-                    this@VideoPlayerController.durationMs = mp.duration.toLong()
-                    this@VideoPlayerController.videoWidth = mp.videoWidth
-                    this@VideoPlayerController.videoHeight = mp.videoHeight
-
-                    if (this@VideoPlayerController.trimEndMs <= 0L || this@VideoPlayerController.trimEndMs > this@VideoPlayerController.durationMs) {
-                        this@VideoPlayerController.trimEndMs = this@VideoPlayerController.durationMs
-                    }
-
-                    this@VideoPlayerController.applySpeed(this@VideoPlayerController.currentSpeed)
-                    this@VideoPlayerController.applyMute(this@VideoPlayerController.isMuted)
-
-                    this@VideoPlayerController.onPreparedListener?.invoke(
-                        this@VideoPlayerController.durationMs,
-                        this@VideoPlayerController.videoWidth,
-                        this@VideoPlayerController.videoHeight
-                    )
-                }
-
-                setOnCompletionListener {
-                    this@VideoPlayerController.pause()
-                    seekTo(this@VideoPlayerController.trimStartMs.toInt())
-                }
-
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                    this@VideoPlayerController.onErrorListener?.invoke(what, extra)
-                    true
-                }
-
-                prepareAsync()
-            }
+            val mediaItem = MediaItem.fromUri(uri)
+            player.setMediaItem(mediaItem)
+            player.prepare()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed setting data source: ${e.message}", e)
+            Log.e(TAG, "Failed setting media item: ${e.message}", e)
             onErrorListener?.invoke(0, 0)
         }
     }
 
     fun play() {
-        val player = mediaPlayer ?: return
+        val player = exoPlayer ?: return
         try {
-            val currentPos = player.currentPosition.toLong()
+            val currentPos = player.currentPosition
             if (currentPos < trimStartMs || currentPos >= trimEndMs) {
-                player.seekTo(trimStartMs.toInt())
+                player.seekTo(trimStartMs)
             }
-            player.start()
-            isPlaying = true
-            onPlaybackStateChange?.invoke(true)
-            startTicker()
+            player.play()
         } catch (e: Exception) {
             Log.w(TAG, "Error starting playback: ${e.message}")
         }
@@ -169,9 +158,7 @@ class VideoPlayerController(
     fun pause() {
         stopTicker()
         try {
-            if (mediaPlayer?.isPlaying == true) {
-                mediaPlayer?.pause()
-            }
+            exoPlayer?.pause()
         } catch (_: Exception) {}
         isPlaying = false
         onPlaybackStateChange?.invoke(false)
@@ -188,13 +175,9 @@ class VideoPlayerController(
     }
 
     fun seekTo(positionMs: Long) {
-        val target = positionMs.coerceIn(0L, durationMs)
+        val target = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L))
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                mediaPlayer?.seekTo(target, MediaPlayer.SEEK_CLOSEST)
-            } else {
-                mediaPlayer?.seekTo(target.toInt())
-            }
+            exoPlayer?.seekTo(target)
             onProgressUpdate?.invoke(target)
         } catch (e: Exception) {
             Log.w(TAG, "Seek failed: ${e.message}")
@@ -202,18 +185,13 @@ class VideoPlayerController(
     }
 
     fun setSpeed(speed: Float) {
-        currentSpeed = speed
-        applySpeed(speed)
+        currentSpeed = speed.coerceIn(0.25f, 4.0f)
+        applySpeed(currentSpeed)
     }
 
     private fun applySpeed(speed: Float) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val player = mediaPlayer ?: return
-                val params = player.playbackParams ?: PlaybackParams()
-                params.speed = speed
-                player.playbackParams = params
-            }
+            exoPlayer?.playbackParameters = PlaybackParameters(speed)
         } catch (e: Exception) {
             Log.w(TAG, "Failed applying playback speed: ${e.message}")
         }
@@ -225,9 +203,8 @@ class VideoPlayerController(
     }
 
     private fun applyMute(mute: Boolean) {
-        val vol = if (mute) 0f else 1f
         try {
-            mediaPlayer?.setVolume(vol, vol)
+            exoPlayer?.volume = if (mute) 0f else 1f
         } catch (_: Exception) {}
     }
 
@@ -243,7 +220,7 @@ class VideoPlayerController(
 
     val currentPosition: Long
         get() = try {
-            mediaPlayer?.currentPosition?.toLong() ?: 0L
+            exoPlayer?.currentPosition ?: 0L
         } catch (_: Exception) {
             0L
         }
@@ -271,17 +248,15 @@ class VideoPlayerController(
 
     private fun releasePlayer() {
         try {
-            mediaPlayer?.stop()
-            mediaPlayer?.reset()
-            mediaPlayer?.release()
+            exoPlayer?.stop()
+            exoPlayer?.clearMediaItems()
+            exoPlayer?.release()
         } catch (_: Exception) {}
-        mediaPlayer = null
+        exoPlayer = null
     }
 
     fun release() {
         stopTicker()
         releasePlayer()
-        surface?.release()
-        surface = null
     }
 }
