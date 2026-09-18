@@ -205,7 +205,8 @@ data class VideoEditState(
     var flipH: Boolean = false,
     var flipV: Boolean = false,
     var rotationAngle: Int = 0, // 0, 90, 180, 270
-    var fps: Int? = null
+    var fps: Int? = null,
+    var colorProfile: String = "Original"
 ) {
     fun hasEdits(): Boolean {
         return (trimStartMs > 0L) ||
@@ -213,6 +214,7 @@ data class VideoEditState(
                 (scalePreset != "Original (No scaling)" && scalePreset != "Original") ||
                 (speed != 1.0f) ||
                 (aspect != "Original") ||
+                (colorProfile != "Original" && colorProfile != "None") ||
                 (audioMode != AudioMode.KEEP) ||
                 (audioVolume != 1.0f) ||
                 (audioChannels != "keep") ||
@@ -226,6 +228,7 @@ data class VideoEditState(
         return (scalePreset != "Original (No scaling)" && scalePreset != "Original") ||
                 (aspect != "Original") ||
                 (speed != 1.0f) ||
+                (colorProfile != "Original" && colorProfile != "None") ||
                 flipH ||
                 flipV ||
                 (rotationAngle != 0) ||
@@ -248,6 +251,7 @@ data class VideoEditState(
         scalePreset = "Original (No scaling)"
         aspect = "Original"
         speed = 1.0f
+        colorProfile = "Original"
         audioMode = AudioMode.KEEP
         audioVolume = 1.0f
         audioChannels = "keep"

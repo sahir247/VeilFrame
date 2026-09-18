@@ -103,8 +103,8 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
-    // Full Mobile FFmpegKit with all audio/video codecs
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
+    // Full Mobile FFmpegKit GPL with all audio/video encoders (including libx264 and libx265)
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
     // AndroidX ExifInterface for native lossless and pixel-level EXIF privacy scrubbing

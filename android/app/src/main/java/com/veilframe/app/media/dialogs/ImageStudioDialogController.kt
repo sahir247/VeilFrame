@@ -419,19 +419,72 @@ class ImageStudioDialogController(
             else -> dialogBinding.chipPosBottomRight.isChecked = true
         }
 
+        fun updateSwatch(colorStr: String) {
+            try {
+                val c = when (colorStr.trim().lowercase()) {
+                    "white" -> android.graphics.Color.WHITE
+                    "black" -> android.graphics.Color.BLACK
+                    "red" -> android.graphics.Color.parseColor("#EF4444")
+                    "yellow" -> android.graphics.Color.parseColor("#EAB308")
+                    "blue" -> android.graphics.Color.parseColor("#3B82F6")
+                    "green" -> android.graphics.Color.parseColor("#10B981")
+                    "cyan" -> android.graphics.Color.parseColor("#06B6D4")
+                    "magenta" -> android.graphics.Color.parseColor("#D946EF")
+                    "orange" -> android.graphics.Color.parseColor("#F97316")
+                    "gold" -> android.graphics.Color.parseColor("#F59E0B")
+                    "emerald" -> android.graphics.Color.parseColor("#059669")
+                    "teal" -> android.graphics.Color.parseColor("#14B8A6")
+                    "violet" -> android.graphics.Color.parseColor("#8B5CF6")
+                    "pink" -> android.graphics.Color.parseColor("#EC4899")
+                    "coral" -> android.graphics.Color.parseColor("#F43F5E")
+                    "slate" -> android.graphics.Color.parseColor("#64748B")
+                    else -> {
+                        val hex = if (colorStr.startsWith("#")) colorStr else "#$colorStr"
+                        android.graphics.Color.parseColor(hex)
+                    }
+                }
+                dialogBinding.viewWatermarkColorSwatch.setBackgroundColor(c)
+            } catch (_: Exception) {
+                dialogBinding.viewWatermarkColorSwatch.setBackgroundColor(android.graphics.Color.WHITE)
+            }
+        }
+
         when (draftColor.uppercase()) {
             "BLACK", "#000000" -> dialogBinding.chipWmColorBlack.isChecked = true
             "RED", "#EF4444" -> dialogBinding.chipWmColorRed.isChecked = true
             "YELLOW", "#EAB308" -> dialogBinding.chipWmColorYellow.isChecked = true
             "BLUE", "#3B82F6" -> dialogBinding.chipWmColorBlue.isChecked = true
             "GREEN", "#10B981" -> dialogBinding.chipWmColorGreen.isChecked = true
-            else -> dialogBinding.chipWmColorWhite.isChecked = true
+            "CYAN", "#06B6D4" -> dialogBinding.chipWmColorCyan.isChecked = true
+            "MAGENTA", "#D946EF" -> dialogBinding.chipWmColorMagenta.isChecked = true
+            "ORANGE", "#F97316" -> dialogBinding.chipWmColorOrange.isChecked = true
+            "GOLD", "#F59E0B" -> dialogBinding.chipWmColorGold.isChecked = true
+            "EMERALD", "#059669" -> dialogBinding.chipWmColorEmerald.isChecked = true
+            "TEAL", "#14B8A6" -> dialogBinding.chipWmColorTeal.isChecked = true
+            "VIOLET", "#8B5CF6" -> dialogBinding.chipWmColorViolet.isChecked = true
+            "PINK", "#EC4899" -> dialogBinding.chipWmColorPink.isChecked = true
+            "CORAL", "#F43F5E" -> dialogBinding.chipWmColorCoral.isChecked = true
+            "SLATE", "#64748B" -> dialogBinding.chipWmColorSlate.isChecked = true
+            "WHITE", "#FFFFFF" -> dialogBinding.chipWmColorWhite.isChecked = true
+            else -> {
+                dialogBinding.chipGroupWatermarkColor.clearCheck()
+                dialogBinding.etWatermarkHex.setText(draftColor)
+            }
         }
+        updateSwatch(draftColor)
 
         when (draftFont.lowercase()) {
-            "bold" -> dialogBinding.chipFontBold.isChecked = true
+            "bold", "heavy" -> dialogBinding.chipFontBold.isChecked = true
+            "light" -> dialogBinding.chipFontLight.isChecked = true
+            "condensed" -> dialogBinding.chipFontCondensed.isChecked = true
             "serif" -> dialogBinding.chipFontSerif.isChecked = true
+            "serif bold" -> dialogBinding.chipFontSerifBold.isChecked = true
+            "serif italic" -> dialogBinding.chipFontSerifItalic.isChecked = true
             "monospace", "mono" -> dialogBinding.chipFontMono.isChecked = true
+            "mono bold", "monospace bold" -> dialogBinding.chipFontMonoBold.isChecked = true
+            "cursive", "script" -> dialogBinding.chipFontCursive.isChecked = true
+            "casual" -> dialogBinding.chipFontCasual.isChecked = true
+            "black", "heavy black" -> dialogBinding.chipFontBlack.isChecked = true
             else -> dialogBinding.chipFontSans.isChecked = true
         }
 
@@ -451,8 +504,16 @@ class ImageStudioDialogController(
                 val chip = dialogBinding.chipGroupWatermarkFont.findViewById<Chip>(checkedIds[0])
                 draftFont = when (chip?.id) {
                     R.id.chipFontBold -> "Bold"
+                    R.id.chipFontLight -> "Light"
+                    R.id.chipFontCondensed -> "Condensed"
                     R.id.chipFontSerif -> "Serif"
+                    R.id.chipFontSerifBold -> "Serif Bold"
+                    R.id.chipFontSerifItalic -> "Serif Italic"
                     R.id.chipFontMono -> "Monospace"
+                    R.id.chipFontMonoBold -> "Mono Bold"
+                    R.id.chipFontCursive -> "Cursive"
+                    R.id.chipFontCasual -> "Casual"
+                    R.id.chipFontBlack -> "Heavy Black"
                     else -> "Sans-Serif"
                 }
                 updateWatermarkPreview()
@@ -506,11 +567,40 @@ class ImageStudioDialogController(
                     R.id.chipWmColorYellow -> "#EAB308"
                     R.id.chipWmColorBlue -> "#3B82F6"
                     R.id.chipWmColorGreen -> "#10B981"
+                    R.id.chipWmColorCyan -> "#06B6D4"
+                    R.id.chipWmColorMagenta -> "#D946EF"
+                    R.id.chipWmColorOrange -> "#F97316"
+                    R.id.chipWmColorGold -> "#F59E0B"
+                    R.id.chipWmColorEmerald -> "#059669"
+                    R.id.chipWmColorTeal -> "#14B8A6"
+                    R.id.chipWmColorViolet -> "#8B5CF6"
+                    R.id.chipWmColorPink -> "#EC4899"
+                    R.id.chipWmColorCoral -> "#F43F5E"
+                    R.id.chipWmColorSlate -> "#64748B"
                     else -> "#FFFFFF"
                 }
+                updateSwatch(draftColor)
                 updateWatermarkPreview()
             }
         }
+
+        dialogBinding.etWatermarkHex.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val hex = s?.toString()?.trim() ?: ""
+                if (hex.isNotEmpty() && (hex.length == 7 || hex.length == 9 || (hex.length == 6 && !hex.startsWith("#")))) {
+                    val fullHex = if (hex.startsWith("#")) hex else "#$hex"
+                    try {
+                        android.graphics.Color.parseColor(fullHex)
+                        draftColor = fullHex
+                        dialogBinding.chipGroupWatermarkColor.clearCheck()
+                        updateSwatch(fullHex)
+                        updateWatermarkPreview()
+                    } catch (_: Exception) {}
+                }
+            }
+        })
 
         dialogBinding.chipGroupWatermarkPosition.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {

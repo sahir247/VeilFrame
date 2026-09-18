@@ -868,7 +868,7 @@
                         android:id="@+id/tvWhatsNewContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Target File Size Solver: Iterative quality optimizer for exact KB/MB limits\n• Text Watermark Studio: Custom overlays with color, size &amp; 9-point anchoring\n• Canvas Transform Tools: Horizontal &amp; vertical flips and alpha background fills\n• Multi-Container Video Engine: MP4, MOV, MKV, WebM, AVI &amp; animated GIF\n• Multi-Codec &amp; Audio Studio: H.264/H.265/VP9/AV1, volume scaling &amp; channel remixing"
+                        android:text="• Target File Size Solver: Iterative quality optimizer for exact KB/MB limits\n• Text Watermark Studio: Custom overlays with color, size &amp; 9-point anchoring\n• Canvas Transform Tools: Horizontal &amp; vertical flips and alpha background fills\n• Multi-Container Video Engine: MP4, MOV, MKV, WebM, AVI &amp; animated GIF\n• Multi-Codec &amp; Audio Studio: H.264/H.265/VP9/Stream-Copy, volume scaling &amp; channel remixing\n• Video Colour Profiles: 15 cinematic grades with real-time preview"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:lineSpacingExtra="5dp" />

@@ -335,6 +335,20 @@
                     android:text="Bold" />
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontLight"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Light" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontCondensed"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Condensed" />
+
+                <com.google.android.material.chip.Chip
                     android:id="@+id/chipFontSerif"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
@@ -342,11 +356,53 @@
                     android:text="Serif" />
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontSerifBold"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Serif Bold" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontSerifItalic"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Serif Italic" />
+
+                <com.google.android.material.chip.Chip
                     android:id="@+id/chipFontMono"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Monospace" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontMonoBold"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Mono Bold" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontCursive"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cursive" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontCasual"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Casual" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFontBlack"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Heavy Black" />
             </com.google.android.material.chip.ChipGroup>
 
             <!-- Color Selection -->
@@ -365,6 +421,7 @@
                 android:id="@+id/chipGroupWatermarkColor"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
@@ -409,7 +466,122 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Green" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorCyan"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cyan" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorMagenta"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Magenta" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorOrange"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Orange" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorGold"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Gold" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorEmerald"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Emerald" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorTeal"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Teal" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorViolet"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Violet" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorPink"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pink" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorCoral"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Coral" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipWmColorSlate"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Slate" />
             </com.google.android.material.chip.ChipGroup>
+
+            <!-- Custom Hex Color Input -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilWatermarkHex"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Custom Hex Color (e.g. #FF5722)"
+                    app:boxStrokeColor="@color/vf_primary"
+                    app:hintTextColor="@color/vf_primary">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etWatermarkHex"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textCapCharacters|textNoSuggestions"
+                        android:maxLength="9"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="13sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="12dp"
+                    app:cardCornerRadius="19dp"
+                    app:strokeColor="@color/vf_surface_stroke"
+                    app:strokeWidth="1dp"
+                    app:cardElevation="0dp">
+
+                    <View
+                        android:id="@+id/viewWatermarkColorSwatch"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="#FFFFFF" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

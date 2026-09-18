@@ -19,11 +19,12 @@ import com.google.android.material.slider.Slider
 import com.veilframe.app.R
 import com.veilframe.app.databinding.DialogVideoAspectBinding
 import com.veilframe.app.databinding.DialogVideoAudioBinding
-import com.veilframe.app.databinding.DialogVideoPresetBinding
+import com.veilframe.app.databinding.DialogVideoColorBinding
 import com.veilframe.app.databinding.DialogVideoScaleBinding
 import com.veilframe.app.databinding.DialogVideoSpeedBinding
 import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutVideoStudioBinding
+import com.veilframe.app.media.preview.VideoColorFilterHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -168,10 +169,70 @@ class VideoStudioController(
             }
         }
 
+        // Shifted Target Size Presets in Output Section
+        binding.chipGroupVidTargetPreset.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = binding.chipGroupVidTargetPreset.findViewById<Chip>(checkedIds[0])
+                when (chip?.id) {
+                    R.id.chipVidPresetWhatsapp -> {
+                        outputConfig.targetPreset = "WhatsApp (16 MB)"
+                        outputConfig.targetMb = 16f
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                    R.id.chipVidPresetDiscord -> {
+                        outputConfig.targetPreset = "Discord (25 MB)"
+                        outputConfig.targetMb = 25f
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                    R.id.chipVidPresetNitro -> {
+                        outputConfig.targetPreset = "Discord Nitro (50 MB)"
+                        outputConfig.targetMb = 50f
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                    R.id.chipVidPresetEmail -> {
+                        outputConfig.targetPreset = "Email Attachment (8 MB)"
+                        outputConfig.targetMb = 8f
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                    R.id.chipVidPresetWeb -> {
+                        outputConfig.targetPreset = "Web Stream (10 MB)"
+                        outputConfig.targetMb = 10f
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                    R.id.chipVidPresetCustom -> {
+                        outputConfig.targetPreset = "Custom"
+                        binding.tilVidCustomTargetMb.visibility = View.VISIBLE
+                        val customMb = binding.etVidCustomTargetMb.text?.toString()?.toFloatOrNull()
+                        outputConfig.targetMb = customMb
+                    }
+                    else -> {
+                        outputConfig.targetPreset = "Auto (Balanced CRF 28)"
+                        outputConfig.targetMb = null
+                        binding.tilVidCustomTargetMb.visibility = View.GONE
+                    }
+                }
+                refreshStats()
+            }
+        }
+
+        binding.etVidCustomTargetMb.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                outputConfig.targetMb = s?.toString()?.toFloatOrNull()
+                refreshStats()
+            }
+        })
+
         binding.chipGroupVidCodec.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = binding.chipGroupVidCodec.findViewById<Chip>(checkedIds[0])
-                outputConfig.codec = if (chip?.text?.toString()?.contains("265") == true) "H.265" else "H.264"
+                outputConfig.codec = when (chip?.id) {
+                    R.id.chipVidCodecH265 -> "H.265"
+                    R.id.chipVidCodecVp9 -> "VP9"
+                    R.id.chipVidCodecCopy -> "Stream Copy"
+                    else -> "H.264"
+                }
                 refreshStats()
             }
         }
@@ -214,7 +275,7 @@ class VideoStudioController(
         // Tool buttons
         binding.toolVidTrim.setOnClickListener { showTrimDialog() }
         binding.toolVidScale.setOnClickListener { showScaleDialog() }
-        binding.toolVidPreset.setOnClickListener { showPresetDialog() }
+        binding.toolVidColor.setOnClickListener { showColorDialog() }
         binding.toolVidSpeed.setOnClickListener { showSpeedDialog() }
         binding.toolVidAspect.setOnClickListener { showAspectDialog() }
         binding.toolVidAudio.setOnClickListener { showAudioDialog() }
@@ -407,7 +468,7 @@ class VideoStudioController(
                 binding.btnVidClearAll.isEnabled = true
                 binding.toolVidTrim.isEnabled = true
                 binding.toolVidScale.isEnabled = true
-                binding.toolVidPreset.isEnabled = true
+                binding.toolVidColor.isEnabled = true
                 binding.toolVidSpeed.isEnabled = true
                 binding.toolVidAspect.isEnabled = true
                 binding.toolVidAudio.isEnabled = true
@@ -463,6 +524,7 @@ class VideoStudioController(
         playerController.setDataSource(Uri.fromFile(item.file))
 
         applyAspectRatioPreview()
+        applyColorProfile(editState.colorProfile)
         updateNavigationUi()
         refreshStats()
         updateEditSummary()
@@ -697,6 +759,13 @@ class VideoStudioController(
                 binding.tvVidSummarySpeed.visibility = View.GONE
             }
 
+            if (editState.colorProfile != "Original" && editState.colorProfile.isNotEmpty()) {
+                binding.tvVidSummaryColor.visibility = View.VISIBLE
+                binding.tvVidSummaryColor.text = "✓ Colour: ${editState.colorProfile}"
+            } else {
+                binding.tvVidSummaryColor.visibility = View.GONE
+            }
+
             if (outputConfig.outputMode == VideoOutputMode.GIF) {
                 binding.tvVidSummaryAudio.visibility = View.VISIBLE
                 binding.tvVidSummaryAudio.text = "✓ Mode: GIF Animation (Audio removed)"
@@ -726,6 +795,8 @@ class VideoStudioController(
 
         binding.sliderVidQuality.value = 28f
         binding.tvVidQualityValue.text = "CRF 28"
+        binding.chipVidPresetAuto.isChecked = true
+        binding.tilVidCustomTargetMb.visibility = View.GONE
         binding.chipVidResOriginal.isChecked = true
         binding.chipVidAudioKeep.isChecked = true
         binding.chipVidMp4.isChecked = true
@@ -736,6 +807,7 @@ class VideoStudioController(
         playerController.setMute(false)
         playerController.setTrimBounds(0L, totalDur)
 
+        applyColorProfile("Original")
         updateUiForOutputMode()
         updateOutputFilenameExtension()
         applyAspectRatioPreview()
@@ -908,10 +980,11 @@ class VideoStudioController(
 
         binding.toolVidTrim.isEnabled = false
         binding.toolVidScale.isEnabled = false
-        binding.toolVidPreset.isEnabled = false
+        binding.toolVidColor.isEnabled = false
         binding.toolVidSpeed.isEnabled = false
         binding.toolVidAspect.isEnabled = false
         binding.toolVidAudio.isEnabled = false
+        applyColorProfile("Original")
 
         binding.tvVidBeforeStats.text = "0 B • 0s • Original"
         binding.tvVidAfterStats.text = "~0 B (MP4)"
@@ -1132,140 +1205,93 @@ class VideoStudioController(
         dialog.show()
     }
 
-    private fun showPresetDialog() {
-        val dialogBinding = DialogVideoPresetBinding.inflate(activity.layoutInflater)
+    private fun applyColorProfile(profileId: String) {
+        VideoColorFilterHelper.applyColorProfileToView(binding.videoTextureView, profileId)
+        VideoColorFilterHelper.applyColorProfileToImageView(binding.imgVidPreview, profileId)
+    }
+
+    private fun showColorDialog() {
+        val dialogBinding = DialogVideoColorBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        var draftCrf = outputConfig.crf
-        var draftTargetPreset = outputConfig.targetPreset
-        var draftFormat = outputConfig.format
-        var draftMode = outputConfig.outputMode
-        var draftCodec = outputConfig.codec
+        var draftProfile = editState.colorProfile
 
-        dialogBinding.sliderCrf.value = draftCrf.toFloat()
-        dialogBinding.tvCrfValue.text = draftCrf.toString()
-
-        when (draftTargetPreset) {
-            "WhatsApp (16 MB)" -> dialogBinding.chipPresetWhatsapp.isChecked = true
-            "Discord (25 MB)" -> dialogBinding.chipPresetDiscord.isChecked = true
-            "Discord Nitro (50 MB)" -> dialogBinding.chipPresetNitro.isChecked = true
-            "Email Attachment (8 MB)" -> dialogBinding.chipPresetEmail.isChecked = true
-            "Web Stream (10 MB)" -> dialogBinding.chipPresetWeb.isChecked = true
-            else -> dialogBinding.chipPresetAuto.isChecked = true
+        currentItem?.thumbnailBitmap?.let { bmp ->
+            dialogBinding.imgColorPreview.setImageBitmap(bmp)
         }
 
-        dialogBinding.chipGroupTargetSize.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupTargetSize.findViewById<Chip>(checkedIds[0])
-                draftTargetPreset = chip?.text?.toString() ?: "Auto (Balanced CRF 28)"
+        fun updateDialogPreview(profileId: String) {
+            val prof = VideoColorFilterHelper.PROFILES.find { it.id.equals(profileId, ignoreCase = true) }
+                ?: VideoColorFilterHelper.PROFILES.first()
+            dialogBinding.tvColorBadge.text = prof.name
+            dialogBinding.tvColorDescription.text = prof.description
+            VideoColorFilterHelper.applyColorProfileToImageView(dialogBinding.imgColorPreview, profileId)
+            applyColorProfile(profileId)
+        }
+
+        val allChips = listOf(
+            dialogBinding.chipColorOriginal to "Original",
+            dialogBinding.chipColorVivid to "Vivid",
+            dialogBinding.chipColorHdr to "HDR Punch",
+            dialogBinding.chipColorSunset to "Sunset Glow",
+            dialogBinding.chipColorForest to "Forest Green",
+            dialogBinding.chipColorTealOrange to "Teal & Orange",
+            dialogBinding.chipColorCinematicWarm to "Cinematic Warm",
+            dialogBinding.chipColorCoolBlue to "Cool Blue",
+            dialogBinding.chipColorBleachBypass to "Bleach Bypass",
+            dialogBinding.chipColorMoodyFilm to "Moody Film",
+            dialogBinding.chipColorRetro90s to "Retro 90s",
+            dialogBinding.chipColorSepia to "Sepia",
+            dialogBinding.chipColorCyberpunk to "Cyberpunk",
+            dialogBinding.chipColorBwClassic to "B&W Classic",
+            dialogBinding.chipColorBwDramatic to "B&W Dramatic"
+        )
+
+        fun selectChipForProfile(profileId: String) {
+            for ((chip, id) in allChips) {
+                chip.isChecked = id.equals(profileId, ignoreCase = true)
             }
         }
 
-        // Codec selection
-        when {
-            draftCodec.contains("265", ignoreCase = true) || draftCodec.contains("hevc", ignoreCase = true) -> dialogBinding.chipCodecH265.isChecked = true
-            draftCodec.contains("vp9", ignoreCase = true) -> dialogBinding.chipCodecVp9.isChecked = true
-            draftCodec.contains("av1", ignoreCase = true) -> dialogBinding.chipCodecAv1.isChecked = true
-            draftCodec.contains("copy", ignoreCase = true) -> dialogBinding.chipCodecCopy.isChecked = true
-            else -> dialogBinding.chipCodecH264.isChecked = true
-        }
+        selectChipForProfile(draftProfile)
+        updateDialogPreview(draftProfile)
 
-        dialogBinding.chipGroupVideoCodecDialog.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoCodecDialog.findViewById<Chip>(checkedIds[0])
-                draftCodec = when (chip?.id) {
-                    dialogBinding.chipCodecH265.id -> "H.265"
-                    dialogBinding.chipCodecVp9.id -> "VP9"
-                    dialogBinding.chipCodecAv1.id -> "AV1"
-                    dialogBinding.chipCodecCopy.id -> "Copy"
-                    else -> "H.264"
-                }
+        for ((chip, id) in allChips) {
+            chip.setOnClickListener {
+                draftProfile = id
+                selectChipForProfile(draftProfile)
+                updateDialogPreview(draftProfile)
             }
         }
 
-        // Container format selection
-        val isCurrentGif = draftFormat.equals("GIF", ignoreCase = true)
-        dialogBinding.chipGroupVideoCodecDialog.visibility = if (isCurrentGif) View.GONE else View.VISIBLE
-
-        when (draftFormat.uppercase()) {
-            "MOV" -> dialogBinding.chipContainerMov.isChecked = true
-            "MKV" -> dialogBinding.chipContainerMkv.isChecked = true
-            "WEBM" -> dialogBinding.chipContainerWebm.isChecked = true
-            "AVI" -> dialogBinding.chipContainerAvi.isChecked = true
-            "GIF" -> dialogBinding.chipContainerGif.isChecked = true
-            else -> dialogBinding.chipContainerMp4.isChecked = true
+        dialogBinding.btnColorReset.setOnClickListener {
+            draftProfile = "Original"
+            selectChipForProfile(draftProfile)
+            updateDialogPreview(draftProfile)
         }
 
-        dialogBinding.chipGroupVideoContainerDialog.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isNotEmpty()) {
-                val chip = dialogBinding.chipGroupVideoContainerDialog.findViewById<Chip>(checkedIds[0])
-                val text = chip?.text?.toString() ?: "MP4"
-                if (text.equals("GIF", ignoreCase = true)) {
-                    draftFormat = "GIF"
-                    draftMode = VideoOutputMode.GIF
-                    dialogBinding.chipGroupVideoCodecDialog.visibility = View.GONE
-                } else {
-                    draftMode = VideoOutputMode.VIDEO
-                    draftFormat = text
-                    dialogBinding.chipGroupVideoCodecDialog.visibility = View.VISIBLE
-                }
-            }
+        dialogBinding.btnColorCancel.setOnClickListener {
+            applyColorProfile(editState.colorProfile)
+            dialog.dismiss()
         }
 
-        dialogBinding.sliderCrf.addOnChangeListener { _, value, _ ->
-            draftCrf = value.toInt()
-            dialogBinding.tvCrfValue.text = draftCrf.toString()
+        dialogBinding.btnColorClose.setOnClickListener {
+            applyColorProfile(editState.colorProfile)
+            dialog.dismiss()
         }
 
-        dialogBinding.btnVideoPresetApply.setOnClickListener {
-            outputConfig.crf = draftCrf
-            outputConfig.targetPreset = draftTargetPreset
-            outputConfig.format = draftFormat
-            outputConfig.outputMode = draftMode
-            outputConfig.codec = draftCodec
+        dialog.setOnCancelListener {
+            applyColorProfile(editState.colorProfile)
+        }
 
-            binding.sliderVidQuality.value = outputConfig.crf.toFloat()
-            binding.tvVidQualityValue.text = "CRF ${outputConfig.crf}"
-
-            when (outputConfig.format.uppercase()) {
-                "MKV" -> binding.chipVidMkv.isChecked = true
-                "WEBM" -> binding.chipVidWebm.isChecked = true
-                "GIF" -> binding.chipVidGif.isChecked = true
-                else -> binding.chipVidMp4.isChecked = true
-            }
-
-            if (outputConfig.codec.contains("265", ignoreCase = true)) {
-                binding.chipVidCodecH265.isChecked = true
-            } else {
-                binding.chipVidCodecH264.isChecked = true
-            }
-
-            if (outputConfig.codec.equals("Copy", ignoreCase = true) && editState.hasVideoTransforms()) {
-                Toast.makeText(activity, "Notice: Stream copy is incompatible with active transforms; H.264 will be used.", Toast.LENGTH_LONG).show()
-            }
-
-            updateUiForOutputMode()
-            updateOutputFilenameExtension()
+        dialogBinding.btnColorApply.setOnClickListener {
+            editState.colorProfile = draftProfile
+            applyColorProfile(editState.colorProfile)
             refreshStats()
             updateEditSummary()
             dialog.dismiss()
         }
 
-        dialogBinding.btnVideoPresetReset.setOnClickListener {
-            draftTargetPreset = "Auto (Balanced CRF 28)"
-            draftCrf = 28
-            draftFormat = "MP4"
-            draftMode = VideoOutputMode.VIDEO
-            draftCodec = "H.264"
-            dialogBinding.chipPresetAuto.isChecked = true
-            dialogBinding.chipCodecH264.isChecked = true
-            dialogBinding.chipContainerMp4.isChecked = true
-            dialogBinding.sliderCrf.value = 28f
-            dialogBinding.tvCrfValue.text = "28"
-        }
-
-        dialogBinding.btnVideoPresetCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoPresetClose.setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
 

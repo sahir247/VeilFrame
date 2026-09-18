@@ -100,7 +100,6 @@ object VideoProcessor {
         val codecParam = when {
             outputConfig.codec.contains("265", ignoreCase = true) || outputConfig.codec.contains("hevc", ignoreCase = true) -> "libx265"
             outputConfig.codec.contains("vp9", ignoreCase = true) -> "libvpx-vp9"
-            outputConfig.codec.contains("av1", ignoreCase = true) -> "libsvtav1"
             outputConfig.codec.contains("copy", ignoreCase = true) -> "copy"
             else -> "libx264"
         }
@@ -118,6 +117,7 @@ object VideoProcessor {
             resolutionStr = resolutionStr,
             aspectStr = aspectStr,
             speed = editState.speed,
+            colorProfile = editState.colorProfile,
             audioAction = audioActionStr,
             audioVolume = editState.audioVolume,
             audioChannels = editState.audioChannels,
@@ -161,6 +161,7 @@ object VideoProcessor {
         resolutionStr: String?,
         aspectStr: String?,
         speed: Float,
+        colorProfile: String = "Original",
         audioAction: String,
         audioVolume: Float,
         audioChannels: String,
@@ -235,6 +236,11 @@ object VideoProcessor {
             if (speed != 1.0f && speed > 0.1f) {
                 val ptsMultiplier = 1.0 / speed
                 vfFilters.add(String.format(Locale.US, "setpts=%.4f*PTS", ptsMultiplier))
+            }
+
+            val colorFilter = com.veilframe.app.media.preview.VideoColorFilterHelper.getFFmpegFilter(colorProfile)
+            if (!colorFilter.isNullOrEmpty()) {
+                vfFilters.add(colorFilter)
             }
 
             // Audio configuration & filters

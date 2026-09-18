@@ -17,23 +17,24 @@
         android:background="@color/vf_surface_variant">
 
         <TextView
+            android:id="@+id/tvColorDialogTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Target Size &amp; Compression"
+            android:text="Video Colour Profile &amp; Grading"
             android:textColor="@color/vf_text_primary"
             android:textSize="15sp"
             android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-            android:id="@+id/btnVideoPresetClose"
+            android:id="@+id/btnColorClose"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:contentDescription="Close Target Size Dialog"
+            android:contentDescription="Close Colour Dialog"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
     </LinearLayout>
@@ -43,7 +44,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:maxHeight="440dp"
+        android:maxHeight="460dp"
         android:fillViewport="true">
 
         <LinearLayout
@@ -52,230 +53,228 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <!-- Live Preview Poster Frame -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:background="@color/vf_bg_dark"
+                android:layout_marginBottom="12dp">
+
+                <ImageView
+                    android:id="@+id/imgColorPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="Colour Profile Live Frame Preview" />
+
+                <!-- Active Profile Label Badge -->
+                <TextView
+                    android:id="@+id/tvColorBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_pill_accent"
+                    android:backgroundTint="#CC000000"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:text="Original"
+                    android:textColor="@color/vf_primary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
+
             <TextView
+                android:id="@+id/tvColorDescription"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="Automatically calculates exact 2-pass bitrate to fit messaging platform limits."
+                android:text="Select a color profile for live playback and export."
                 android:textColor="@color/vf_text_secondary"
                 android:textSize="12sp" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="PLATFORM SIZE LIMITS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
-
-            <!-- Platform presets -->
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupTargetSize"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:singleSelection="true">
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetAuto"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Auto (Balanced CRF 28)"
-                    android:checked="true" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetWhatsapp"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="WhatsApp (16 MB)" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetDiscord"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Discord (25 MB)" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetNitro"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Discord Nitro (50 MB)" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetEmail"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Email Attachment (8 MB)" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipPresetWeb"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Web Stream (10 MB)" />
-            </com.google.android.material.chip.ChipGroup>
-
-            <!-- Video Codecs -->
+            <!-- Profile Category: Natural & Vibrant -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
-                android:text="VIDEO CODEC"
+                android:text="NATURAL &amp; VIBRANT"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
             <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupVideoCodecDialog"
+                android:id="@+id/chipGroupColorNatural"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="14dp"
+                android:layout_marginBottom="12dp"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipCodecH264"
+                    android:id="@+id/chipColorOriginal"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="H.264 (Universal)"
+                    android:text="Original"
                     android:checked="true" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipCodecH265"
+                    android:id="@+id/chipColorVivid"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="H.265 / HEVC" />
+                    android:text="Vivid" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipCodecVp9"
+                    android:id="@+id/chipColorHdr"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="VP9" />
+                    android:text="HDR Punch" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipCodecCopy"
+                    android:id="@+id/chipColorSunset"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Copy Stream" />
+                    android:text="Sunset Glow" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorForest"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Forest Green" />
             </com.google.android.material.chip.ChipGroup>
 
-            <!-- Container Format -->
+            <!-- Profile Category: Cinematic -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
-                android:text="OUTPUT CONTAINER"
+                android:text="CINEMATIC GRADES"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
             <com.google.android.material.chip.ChipGroup
-                android:id="@+id/chipGroupVideoContainerDialog"
+                android:id="@+id/chipGroupColorCinematic"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="12dp"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerMp4"
+                    android:id="@+id/chipColorTealOrange"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="MP4"
-                    android:checked="true" />
+                    android:text="Teal &amp; Orange" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerMov"
+                    android:id="@+id/chipColorCinematicWarm"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="MOV" />
+                    android:text="Cinematic Warm" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerMkv"
+                    android:id="@+id/chipColorCoolBlue"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="MKV" />
+                    android:text="Cool Blue" />
 
                 <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerWebm"
+                    android:id="@+id/chipColorBleachBypass"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="WebM" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerAvi"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="AVI" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipContainerGif"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="GIF" />
+                    android:text="Bleach Bypass" />
             </com.google.android.material.chip.ChipGroup>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="4dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Constant Rate Factor (CRF):"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvCrfValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="28"
-                    android:textColor="@color/vf_primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <com.google.android.material.slider.Slider
-                android:id="@+id/sliderCrf"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:valueFrom="18"
-                android:valueTo="38"
-                android:value="28"
-                android:stepSize="1"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
-
+            <!-- Profile Category: Vintage & Stylized -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Lower CRF = Higher Quality / Larger File. Higher CRF = High Compression."
+                android:layout_marginBottom="6dp"
+                android:text="VINTAGE &amp; STYLIZED"
                 android:textColor="@color/vf_text_muted"
-                android:textSize="10sp" />
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupColorVintage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorMoodyFilm"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Moody Film" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorRetro90s"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Retro 90s" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorSepia"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sepia" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorCyberpunk"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cyberpunk" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Profile Category: Monochrome -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="MONOCHROME &amp; B&amp;W"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupColorMonochrome"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorBwClassic"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="B&amp;W Classic" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipColorBwDramatic"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="B&amp;W Dramatic" />
+            </com.google.android.material.chip.ChipGroup>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -288,42 +287,8 @@
         android:background="@color/vf_surface_variant">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnVideoPresetReset"
+            android:id="@+id/btnColorReset"
             style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:minWidth="0dp"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:maxLines="1"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Reset"
-            android:textColor="@color/vf_text_secondary" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnVideoPresetCancel"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
-            android:minWidth="0dp"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:layout_marginEnd="8dp"
-            android:maxLines="1"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:text="Cancel"
-            android:textColor="@color/vf_text_secondary" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnVideoPresetApply"
-            style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -332,8 +297,41 @@
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
+            android:text="Original"
+            android:textColor="@color/vf_text_secondary" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnColorCancel"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="8dp"
+            android:minWidth="0dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:text="Cancel"
+            android:textColor="@color/vf_text_secondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnColorApply"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:minWidth="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:ellipsize="end"
             android:text="Apply"
-            android:textColor="@color/vf_on_primary"
             app:backgroundTint="@color/vf_primary" />
     </LinearLayout>
 </LinearLayout>

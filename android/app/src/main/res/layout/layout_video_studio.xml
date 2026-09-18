@@ -637,7 +637,7 @@
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/toolVidPreset"
+                        android:id="@+id/toolVidColor"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
@@ -649,7 +649,7 @@
                         android:insetLeft="0dp"
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
-                        android:text="Target"
+                        android:text="Colour"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
                         android:maxLines="1"
@@ -658,7 +658,7 @@
                         android:enabled="false"
                         app:backgroundTint="@color/vf_surface_variant"
                         app:cornerRadius="8dp"
-                        app:icon="@drawable/ic_compress"
+                        app:icon="@drawable/ic_color_filter"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
                 </LinearLayout>
@@ -939,15 +939,25 @@
                         android:id="@+id/tvVidSummaryAudio"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
                         android:text="✓ Audio      Preserved"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvVidSummaryColor"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="✓ Colour     Original"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- ============================================================= -->
-        <!-- 4. OUTPUT CARD (Format, Codec, Quality, Resolution, Audio, Dest, Filename) -->
+        <!-- 4. OUTPUT CARD (Target Size, Format, Codec, Quality, Res, Audio, Dest) -->
         <!-- ============================================================= -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardVidOutput"
@@ -974,6 +984,100 @@
                     android:textStyle="bold"
                     android:letterSpacing="0.04"
                     android:layout_marginBottom="12dp" />
+
+                <!-- Target Size & Platform Presets -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="TARGET SIZE &amp; LIMITS"
+                    android:textColor="@color/vf_text_muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:layout_marginBottom="6dp" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:layout_marginBottom="8dp">
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupVidTargetPreset"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetAuto"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Auto (CRF)"
+                            android:checked="true" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetWhatsapp"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="WhatsApp (16 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetDiscord"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Discord (25 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetNitro"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Discord Nitro (50 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetEmail"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Email (8 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetWeb"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Web (10 MB)" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipVidPresetCustom"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Custom MB" />
+                    </com.google.android.material.chip.ChipGroup>
+                </HorizontalScrollView>
+
+                <!-- Custom MB Input Field -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilVidCustomTargetMb"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone"
+                    android:hint="Target Size (MB)">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etVidCustomTargetMb"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="13sp" />
+                </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Container Format -->
                 <TextView
@@ -1055,6 +1159,20 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="H.265" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidCodecVp9"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="VP9" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidCodecCopy"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Stream Copy" />
                 </com.google.android.material.chip.ChipGroup>
 
                 <!-- Quality / Compression Slider -->

@@ -81,17 +81,29 @@ object WatermarkEngine {
     }
 
     private fun parseColor(colorStr: String): Int {
+        val clean = colorStr.trim().lowercase()
         return try {
-            when (colorStr.lowercase()) {
+            when (clean) {
                 "white" -> Color.WHITE
                 "black" -> Color.BLACK
-                "red" -> Color.RED
-                "yellow" -> Color.YELLOW
-                "blue" -> Color.BLUE
-                "green" -> Color.GREEN
-                "cyan" -> Color.CYAN
-                "magenta" -> Color.MAGENTA
-                else -> Color.parseColor(colorStr)
+                "red" -> Color.parseColor("#EF4444")
+                "yellow" -> Color.parseColor("#EAB308")
+                "blue" -> Color.parseColor("#3B82F6")
+                "green" -> Color.parseColor("#10B981")
+                "cyan" -> Color.parseColor("#06B6D4")
+                "magenta" -> Color.parseColor("#D946EF")
+                "orange" -> Color.parseColor("#F97316")
+                "gold" -> Color.parseColor("#F59E0B")
+                "emerald" -> Color.parseColor("#059669")
+                "teal" -> Color.parseColor("#14B8A6")
+                "violet" -> Color.parseColor("#8B5CF6")
+                "pink" -> Color.parseColor("#EC4899")
+                "coral" -> Color.parseColor("#F43F5E")
+                "slate" -> Color.parseColor("#64748B")
+                else -> {
+                    val hex = if (colorStr.startsWith("#")) colorStr else "#$colorStr"
+                    Color.parseColor(hex)
+                }
             }
         } catch (_: Exception) {
             Color.WHITE
@@ -99,10 +111,21 @@ object WatermarkEngine {
     }
 
     private fun resolveTypeface(fontName: String): Typeface {
-        return when (fontName.lowercase()) {
-            "monospace", "mono" -> Typeface.MONOSPACE
-            "serif" -> Typeface.SERIF
+        val clean = fontName.trim().lowercase()
+        return when (clean) {
             "bold", "heavy" -> Typeface.DEFAULT_BOLD
+            "light" -> Typeface.create("sans-serif-light", Typeface.NORMAL)
+            "thin" -> Typeface.create("sans-serif-thin", Typeface.NORMAL)
+            "condensed" -> Typeface.create("sans-serif-condensed", Typeface.NORMAL)
+            "condensed bold" -> Typeface.create("sans-serif-condensed", Typeface.BOLD)
+            "serif" -> Typeface.SERIF
+            "serif bold" -> Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            "serif italic" -> Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+            "monospace", "mono" -> Typeface.MONOSPACE
+            "mono bold", "monospace bold" -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            "cursive", "script" -> Typeface.create("cursive", Typeface.NORMAL)
+            "casual" -> Typeface.create("casual", Typeface.NORMAL)
+            "black", "heavy black" -> Typeface.create("sans-serif-black", Typeface.NORMAL)
             else -> Typeface.SANS_SERIF
         }
     }
