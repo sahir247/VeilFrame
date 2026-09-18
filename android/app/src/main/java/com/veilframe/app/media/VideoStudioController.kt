@@ -947,6 +947,8 @@ class VideoStudioController(
         dialogBinding.tvTrimEndTime.text = formatDuration(editState.trimEndMs)
         dialogBinding.tvTrimDuration.text = formatDuration(editState.trimmedDurationMs)
 
+        dialogBinding.tvTrimPlayheadPosition.text = formatDuration(editState.trimStartMs)
+
         var lastStartSec = currentStartSec
         var lastEndSec = currentEndSec
 
@@ -978,10 +980,12 @@ class VideoStudioController(
                     lastStartSec = sSec
                     trimPlayer.pause()
                     trimPlayer.seekTo(sMs)
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(sMs)
                 } else if (Math.abs(eSec - lastEndSec) > 0.02f) {
                     lastEndSec = eSec
                     trimPlayer.pause()
                     trimPlayer.seekTo(eMs)
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(eMs)
                 }
             }
         }
@@ -1010,7 +1014,7 @@ class VideoStudioController(
                     if (curPos >= eMs) {
                         trimPlayer.seekTo(sMs)
                     }
-                    dialogBinding.tvTrimDuration.text = formatDuration(curPos)
+                    dialogBinding.tvTrimPlayheadPosition.text = formatDuration(curPos)
                 }
                 kotlinx.coroutines.delay(100L)
             }
@@ -1020,21 +1024,26 @@ class VideoStudioController(
             val e = 15f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
             trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
         }
         dialogBinding.chipTrimStatus30.setOnClickListener {
             val e = 30f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
             trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
         }
         dialogBinding.chipTrimMiddle.setOnClickListener {
             val midStart = durSec * 0.25f
             val midEnd = durSec * 0.75f
             dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
-            trimPlayer.seekTo((midStart * 1000).toLong())
+            val seekMs = (midStart * 1000).toLong()
+            trimPlayer.seekTo(seekMs)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(seekMs)
         }
         dialogBinding.chipTrimFull.setOnClickListener {
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
             trimPlayer.seekTo(0L)
+            dialogBinding.tvTrimPlayheadPosition.text = formatDuration(0L)
         }
 
         dialogBinding.btnTrimApply.setOnClickListener {

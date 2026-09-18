@@ -58,23 +58,64 @@ object ImagePreviewEngine {
     }
 
     fun decodeFullResolution(file: File): Bitmap? {
-        return try {
-            val opts = BitmapFactory.Options().apply {
-                inPreferredConfig = Bitmap.Config.ARGB_8888
+        val dims = probeDimensions(file)
+        val origW = dims?.width ?: 0
+        val origH = dims?.height ?: 0
+
+        // Calculate available heap headroom to pre-calculate a safe inSampleSize
+        val runtime = Runtime.getRuntime()
+        val maxMemory = runtime.maxMemory()
+        val usedMemory = runtime.totalMemory() - runtime.freeMemory()
+        val availableHeadroom = (maxMemory - usedMemory).coerceAtLeast(0L)
+
+        // Reserve budget: do not allow a single bitmap to exceed 60% of available headroom or 45% of total heap
+        val safeBudgetBytes = minOf(
+            (maxMemory * 0.45).toLong(),
+            (availableHeadroom * 0.60).toLong()
+        ).coerceAtLeast(16L * 1024 * 1024)
+
+        var initialSample = 1
+        if (origW > 0 && origH > 0) {
+            // Find power of 2 sample size that fits within safe budget
+            while (initialSample <= 16) {
+                val estW = origW / initialSample
+                val estH = origH / initialSample
+                val estBytes = estW.toLong() * estH.toLong() * 4L
+                if (estBytes <= safeBudgetBytes) {
+                    break
+                }
+                initialSample *= 2
             }
-            BitmapFactory.decodeFile(file.absolutePath, opts)
-        } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "OOM decoding full-resolution bitmap; falling back to downsampled", e)
-            // Fallback: 2x sample if device is memory constrained
-            val fallbackOpts = BitmapFactory.Options().apply {
-                inSampleSize = 2
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            BitmapFactory.decodeFile(file.absolutePath, fallbackOpts)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error decoding bitmap: ${e.message}", e)
-            null
         }
+
+        // Progressive decode with retry fallback loop on OOM up to inSampleSize = 16
+        var currentSample = initialSample.coerceAtLeast(1)
+        while (currentSample <= 16) {
+            try {
+                val opts = BitmapFactory.Options().apply {
+                    inSampleSize = currentSample
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                if (bmp != null) {
+                    if (currentSample > 1) {
+                        Log.w(
+                            TAG,
+                            "Decoded export bitmap with inSampleSize=$currentSample (${bmp.width}x${bmp.height}) to protect memory budget."
+                        )
+                    }
+                    return bmp
+                }
+            } catch (oom: OutOfMemoryError) {
+                Log.w(TAG, "OutOfMemoryError decoding at inSampleSize=$currentSample; triggering GC and retrying with downsampling", oom)
+                System.gc()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error decoding bitmap at inSampleSize=$currentSample: ${e.message}", e)
+                break
+            }
+            currentSample *= 2
+        }
+        return null
     }
 
     fun renderPreview(

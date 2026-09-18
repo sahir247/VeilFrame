@@ -107,6 +107,24 @@
                     app:backgroundTint="@color/vf_primary"
                     android:alpha="0.85"
                     android:contentDescription="Play or Pause Trim Preview" />
+
+                <!-- Live Playhead Badge -->
+                <TextView
+                    android:id="@+id/tvTrimPlayheadPosition"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_pill_accent"
+                    android:backgroundTint="#99000000"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:text="00:00.0"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace" />
             </FrameLayout>
 
             <!-- Timestamps Display (Start - Duration - End) -->
