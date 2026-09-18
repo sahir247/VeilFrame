@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.arthenica.ffmpegkit.Statistics
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import java.io.ByteArrayOutputStream
@@ -12,8 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
-private fun quoteForShell(value: String): String =
-    "\"${value.replace("\"", "\\\"")}\""
+private fun quoteForShell(value: String): String = value
 
 /**
  * Central MediaProcessor coordinating ImageProcessor and VideoProcessor.
@@ -110,7 +110,9 @@ object VideoProcessor {
         outFile: File,
         editState: VideoEditState,
         outputConfig: VideoOutputConfig,
-        py: Python? = null
+        py: Python? = null,
+        onStatistics: ((encodedMs: Long) -> Unit)? = null,
+        onSessionId: ((Long) -> Unit)? = null
     ): CompressionResult {
         val trimStartSec = editState.trimStartSeconds
         val trimDurationSec = editState.trimmedDurationSeconds
@@ -176,9 +178,12 @@ object VideoProcessor {
             rotate = editState.rotationAngle,
             fps = editState.fps,
             targetSizeMb = targetSizeMb,
-            isGifMode = isGifMode
+            isGifMode = isGifMode,
+            onStatistics = onStatistics,
+            onSessionId = onSessionId
         )
     }
+
 
     /**
      * Backward-compatible overload accepting single VideoEditState.
@@ -218,9 +223,14 @@ object VideoProcessor {
         rotate: Int,
         fps: Int?,
         targetSizeMb: Double?,
-        isGifMode: Boolean = false
+        isGifMode: Boolean = false,
+        onStatistics: ((encodedMs: Long) -> Unit)? = null,
+        onSessionId: ((Long) -> Unit)? = null
     ): CompressionResult {
         return try {
+            // Delete any stale output from a previous failed encode
+            if (outFile.exists()) outFile.delete()
+
             val cmd = mutableListOf<String>()
             cmd.add("-y")
 
@@ -317,7 +327,7 @@ object VideoProcessor {
 
                 if (afFilters.isNotEmpty() && resolvedACodec != "copy") {
                     cmd.add("-af")
-                    cmd.add("\"${afFilters.joinToString(",")}\"")
+                    cmd.add(afFilters.joinToString(","))
                 }
 
                 cmd.add("-c:a")
@@ -340,7 +350,7 @@ object VideoProcessor {
                 val baseChain = baseVf.joinToString(",")
                 val gifVf = "$baseChain,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
                 cmd.add("-vf")
-                cmd.add("\"$gifVf\"")
+                cmd.add(gifVf)
                 cmd.add("-c:v")
                 cmd.add("gif")
                 cmd.add("-loop")
@@ -358,7 +368,7 @@ object VideoProcessor {
 
                 if (vfFilters.isNotEmpty()) {
                     cmd.add("-vf")
-                    cmd.add("\"${vfFilters.joinToString(",")}\"")
+                    cmd.add(vfFilters.joinToString(","))
                 }
 
                 if (fps != null && fps > 0) {
@@ -401,8 +411,31 @@ object VideoProcessor {
             val fullCmdString = cmd.joinToString(" ")
             Log.d(TAG, "Executing native FFmpegKit: $fullCmdString")
 
-            val session = FFmpegKit.execute(fullCmdString)
-            val returnCode = session.returnCode
+            // Use synchronous blocking execute so the calling coroutine (Dispatchers.IO)
+            // naturally suspends. The session ID is surfaced immediately for cancellation.
+            var activeSessionId = -1L
+            val resultHolder = arrayOfNulls<com.arthenica.ffmpegkit.FFmpegSession>(1)
+
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val asyncSession = FFmpegKit.executeAsync(
+                fullCmdString,
+                { session ->
+                    resultHolder[0] = session
+                    latch.countDown()
+                },
+                null, // log callback – not needed; full logs available on session
+                { stats: Statistics ->
+                    // Report encoded milliseconds to UI for progress display
+                    val encMs = stats.time.toLong().coerceAtLeast(0L)
+                    onStatistics?.invoke(encMs)
+                }
+            )
+            activeSessionId = asyncSession.sessionId
+            onSessionId?.invoke(activeSessionId)
+            latch.await()
+
+            val session = resultHolder[0]
+            val returnCode = session?.returnCode
 
             if (ReturnCode.isSuccess(returnCode) && outFile.exists() && outFile.length() > 0L) {
                 val outSize = outFile.length()
@@ -494,14 +527,16 @@ object ImageProcessor {
         if (py != null) {
             try {
                 val compressorModule = py.getModule("veilframe.core.media_compressor")
-                val targetW = if (editState.targetWidth > 0 && editState.targetWidth != editState.originalWidth) editState.targetWidth else null
-                val targetH = if (editState.targetHeight > 0 && editState.targetHeight != editState.originalHeight) editState.targetHeight else null
+                val targetW = if (editState.resizeWidth > 0) editState.resizeWidth else null
+                val targetH = if (editState.resizeHeight > 0) editState.resizeHeight else null
 
-                val cropBox = if (editState.isCropped() && editState.originalWidth > 0 && editState.originalHeight > 0) {
-                    val l = (editState.cropLeft * editState.originalWidth).toInt().coerceAtLeast(0)
-                    val t = (editState.cropTop * editState.originalHeight).toInt().coerceAtLeast(0)
-                    val r = (editState.cropRight * editState.originalWidth).toInt().coerceAtMost(editState.originalWidth)
-                    val b = (editState.cropBottom * editState.originalHeight).toInt().coerceAtMost(editState.originalHeight)
+                val bmpW = previewBitmap?.width ?: 0
+                val bmpH = previewBitmap?.height ?: 0
+                val cropBox = if (editState.isCropped() && bmpW > 0 && bmpH > 0) {
+                    val l = (editState.cropLeft * bmpW).toInt().coerceAtLeast(0)
+                    val t = (editState.cropTop * bmpH).toInt().coerceAtLeast(0)
+                    val r = (editState.cropRight * bmpW).toInt().coerceAtMost(bmpW)
+                    val b = (editState.cropBottom * bmpH).toInt().coerceAtMost(bmpH)
                     arrayOf(l, t, r, b)
                 } else null
 
@@ -521,7 +556,7 @@ object ImageProcessor {
                     editState.rotationAngle.toDouble(),
                     cropBox,
                     scaleVal,
-                    editState.keepAspectRatio,
+                    editState.keepAspect,
                     outputConfig.compressionMode,
                     targetSizeKbVal,
                     editState.flipH,

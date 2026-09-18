@@ -6,12 +6,14 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.chaquo.python.Python
+import com.arthenica.ffmpegkit.FFmpegKit
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
@@ -59,8 +61,8 @@ class VideoStudioController(
         private set
     var originalBytes: Long = 0L
         private set
-    var lastResultFile: File? = null
-        private set
+    private var lastResultFile: File? = null
+    private var activeFFmpegSessionId: Long = -1L
 
     private var compressionJob: Job? = null
     private var isScrubbing: Boolean = false
@@ -603,6 +605,11 @@ class VideoStudioController(
 
         if (compressionJob?.isActive == true) {
             compressionJob?.cancel()
+            // Also cancel the running FFmpeg session to immediately free resources
+            if (activeFFmpegSessionId >= 0L) {
+                FFmpegKit.cancel(activeFFmpegSessionId)
+                activeFFmpegSessionId = -1L
+            }
             binding.layoutVidProgress.visibility = View.GONE
             binding.btnVidExecute.text = "Compress"
             Toast.makeText(activity, "Compression cancelled", Toast.LENGTH_SHORT).show()
@@ -630,12 +637,22 @@ class VideoStudioController(
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
+                val totalDurSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(1.0)
                 val result = MediaProcessor.video.process(
                     srcFile = srcFile,
                     outFile = outFile,
                     editState = editState,
                     outputConfig = outputConfig,
-                    py = getPython()
+                    py = getPython(),
+                    onStatistics = { encMs ->
+                        val encSec = encMs / 1000.0
+                        val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)
+                        scope.launch(Dispatchers.Main) {
+                            binding.tvVidProgressStatus.text =
+                                "Encoding… ${String.format(Locale.US, "%.1f", encSec)}s / ${String.format(Locale.US, "%.1f", totalDurSec)}s ($pct%)"
+                        }
+                    },
+                    onSessionId = { id -> activeFFmpegSessionId = id }
                 )
 
                 // Copy to SAF Destination Folder if chosen
