@@ -268,10 +268,13 @@ jobs:
           & "artifacts/VeilFrame-windows-x86_64.exe" presets
 
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: VeilFrame-windows-x86_64
           path: artifacts/VeilFrame-windows-x86_64.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   # ------------------------------------------------------------------ #
   # 3b. Build Standalone Linux Package (.deb & .tar.gz x86_64)         #
@@ -381,10 +384,13 @@ jobs:
           /tmp/test_linux_tar/VeilFrame doctor --json
 
       - name: Upload Linux Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: VeilFrame-linux-x86_64
           path: artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   # ------------------------------------------------------------------ #
   # 3c. Build Standalone macOS Package (.dmg & .tar.gz ARM64)          #
@@ -523,11 +529,23 @@ jobs:
           sleep 2
 
 
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload macOS tarball
+        uses: actions/upload-artifact@v4.6.2
         with:
-          name: VeilFrame-macos-arm64
-          path: artifacts/*
+          name: VeilFrame-macos-arm64-tar
+          path: artifacts/VeilFrame-macos-arm64.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: VeilFrame-macos-arm64-dmg
+          path: artifacts/VeilFrame-macos-arm64.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   # ------------------------------------------------------------------ #
   # 3d. Build Universal Python Packages (Wheel & Sdist)                #
@@ -556,10 +574,13 @@ jobs:
         run: python -m build
 
       - name: Upload Python Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: VeilFrame-python-dist
           path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   # ------------------------------------------------------------------ #
   # 3e. Build Android Release APK (ARM64)                              #
@@ -678,10 +699,13 @@ jobs:
           ls -lh android_artifacts/
 
       - name: Upload Android Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: VeilFrame-android-packages
           path: android_artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   # ------------------------------------------------------------------ #
   # 4. Release Aggregator: Checksums & GitHub Release Publishing       #
@@ -742,10 +766,13 @@ jobs:
           ls -la
 
       - name: Upload Aggregate Workflow Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: VeilFrame-all-release-assets
           path: final_release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
       - name: Publish GitHub Release Assets
         if: >
