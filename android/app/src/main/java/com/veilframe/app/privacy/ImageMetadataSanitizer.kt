@@ -27,13 +27,13 @@ object ImageMetadataSanitizer {
      * Exhaustive list of EXIF metadata tags to scrub, derived from the Kompact
      * reference architecture for complete privacy protection.
      */
+    @Suppress("DEPRECATION")
     val ALL_EXIF_TAGS = arrayOf(
         ExifInterface.TAG_APERTURE_VALUE,
         ExifInterface.TAG_ARTIST,
         ExifInterface.TAG_BITS_PER_SAMPLE,
         ExifInterface.TAG_BODY_SERIAL_NUMBER,
         ExifInterface.TAG_BRIGHTNESS_VALUE,
-        ExifInterface.TAG_CAMARA_OWNER_NAME,
         ExifInterface.TAG_CAMERA_OWNER_NAME,
         ExifInterface.TAG_CFA_PATTERN,
         ExifInterface.TAG_COLOR_SPACE,
