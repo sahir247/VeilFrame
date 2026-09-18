@@ -64,7 +64,7 @@
                         android:id="@+id/tvImgStudioTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="VeilFrame"
+                        android:text="Image Studio"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="17sp"
                         android:textStyle="bold"
@@ -220,6 +220,72 @@
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
                     </LinearLayout>
+
+                    <!-- Multi-Image Navigation Controls (Active when multiple items added) -->
+                    <LinearLayout
+                        android:id="@+id/layoutImgNavRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp"
+                        android:background="@color/vf_surface_variant"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:visibility="gone">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnImgPrev"
+                            style="@style/Widget.Material3.Button.IconButton"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:contentDescription="Previous Image"
+                            app:icon="@drawable/ic_arrow_back"
+                            app:iconSize="18dp"
+                            app:iconTint="@color/vf_primary"
+                            android:enabled="false" />
+
+                        <TextView
+                            android:id="@+id/tvImgPagination"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:text="1 / 1"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnImgNext"
+                            style="@style/Widget.Material3.Button.IconButton"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:contentDescription="Next Image"
+                            app:icon="@drawable/ic_arrow_forward"
+                            app:iconSize="18dp"
+                            app:iconTint="@color/vf_primary"
+                            android:enabled="false" />
+                    </LinearLayout>
+
+                    <!-- Horizontal Multi-Image Strip -->
+                    <HorizontalScrollView
+                        android:id="@+id/scrollImgThumbnails"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:scrollbars="none"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:id="@+id/layoutImgThumbStrip"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical" />
+                    </HorizontalScrollView>
 
                     <!-- File Item Card -->
                     <com.google.android.material.card.MaterialCardView

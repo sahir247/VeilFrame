@@ -6,11 +6,12 @@
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "Target File Size Quality Solver: Iterative binary-search quality solver strictly hitting desired KB ceilings for image outputs",
-    "Watermark & Text Overlay: Full customizable text watermarks with position anchoring, size scaling, and color presets",
-    "Canvas Orientation & Alpha Fill: Horizontal/Vertical flip transforms and solid background composites for alpha channels",
-    "Expanded Video Containers & Codecs: Full support for MP4, MOV, MKV, WebM, AVI, and GIF across H.264, H.265, VP9, and AV1",
-    "Audio Stream Remixing & Volume: 0-200% volume scaling, mono/stereo downmixing, and multi-codec support (AAC, MP3, Opus, FLAC)",
-    "Desktop Studio Modernization: Drag-and-drop ingestion cards, comparative inspection badges, and instant file reveal actions"
+    "Deferred Zero-Allocation Ingestion: Probes geometry with inJustDecodeBounds, deferring full-res decoding strictly to export time",
+    "Strict Target Size Ceiling: Enforces non-negotiable target size limits with clear diagnostics when unachievable",
+    "Interactive Media3 Timeline Trimmer: Live scrub seeking and interval playback loop with ExoPlayer",
+    "Multi-Selection & Batch Studios: Horizontal thumbnail strip navigation, Add More appending, and shared compression settings",
+    "10s Back Navigation Idle Purge: Automatically clears inactive tool memory when idle on Home",
+    "In-App Repair Utility: Re-downloads and verifies authentic release packages from GitHub to heal corrupted state",
+    "Home Dashboard UX: Reorganized into 3 distinct functional groups with tightened spacing"
   ]
 }

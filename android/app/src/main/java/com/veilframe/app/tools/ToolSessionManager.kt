@@ -501,6 +501,10 @@ class ToolSessionManager(
         }
     }
 
+    fun clearCurrentTool() {
+        clearSelectedTarget(logMessage = false)
+    }
+
     fun updateTargetCardUI(state: ToolSessionState) {
         if (state.selectedUri != null) {
             binding.layoutTargetEmpty.visibility = View.GONE

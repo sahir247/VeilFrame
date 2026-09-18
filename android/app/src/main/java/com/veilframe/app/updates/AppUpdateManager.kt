@@ -188,10 +188,15 @@ class AppUpdateManager(
         return null
     }
 
-    fun checkForUpdates(isUserInitiated: Boolean) {
+    fun repairApp() {
+        checkForUpdates(isUserInitiated = true, isRepairMode = true)
+    }
+
+    fun checkForUpdates(isUserInitiated: Boolean, isRepairMode: Boolean = false) {
         if (isCheckingUpdates) {
             if (isUserInitiated) {
-                Toast.makeText(activity, "Update check already in progress...", Toast.LENGTH_SHORT).show()
+                val action = if (isRepairMode) "Repair check" else "Update check"
+                Toast.makeText(activity, "$action already in progress...", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -346,6 +351,7 @@ class AppUpdateManager(
 
                 // 4. Bounds checking
                 val isUpdateAvailable = remoteVersionCode > installedVersionCode
+                val canProceedWithInstall = (isUpdateAvailable || isRepairMode) && apkDownloadUrl.isNotEmpty()
 
                 if (isUpdateAvailable && (remoteVersionCode > installedVersionCode + 100000 || remoteVersionCode <= 0)) {
                     onLog("[SEC] Update rejected: Malformed remote versionCode ($remoteVersionCode)")
@@ -381,20 +387,20 @@ class AppUpdateManager(
                     if (activity.isFinishing || activity.isDestroyed) return@withContext
                     binding.progressUpdateCheck.visibility = View.GONE
 
-                    if (isUpdateAvailable && apkDownloadUrl.isNotEmpty()) {
+                    if (canProceedWithInstall) {
                         if (!isAllowedUpdateUrl(apkDownloadUrl)) {
-                            binding.tvUpdateStatus.text = "Update blocked: Untrusted download origin"
+                            binding.tvUpdateStatus.text = if (isRepairMode) "Repair blocked: Untrusted origin" else "Update blocked: Untrusted origin"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
-                            showSecurityAlertDialog("Update Blocked: The APK download URL points to an unverified origin:\n$apkDownloadUrl")
+                            showSecurityAlertDialog("Operation Blocked: The APK download URL points to an unverified origin:\n$apkDownloadUrl")
                             return@withContext
                         }
 
                         if (apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-                            binding.tvUpdateStatus.text = "Update Available: v$remoteVersionName (Integrity Hash Missing)"
+                            binding.tvUpdateStatus.text = if (isRepairMode) "Repair: Missing Hash" else "Update: Missing Hash"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
                             if (isUserInitiated) {
                                 showSecurityAlertDialog(
-                                    "Update Blocked: Missing Cryptographic Digest\n\n" +
+                                    "Operation Blocked: Missing Cryptographic Digest\n\n" +
                                     "VeilFrame v$remoteVersionName is available, but the release publisher has not attached a valid 64-character SHA-256 checksum.\n\n" +
                                     "VeilFrame strictly refuses to download packages without cryptographic hash verification."
                                 )
@@ -403,7 +409,8 @@ class AppUpdateManager(
                         }
 
                         val targetName = if (manifestApkName.isNotEmpty()) sanitizeApkFilename(manifestApkName) else "VeilFrame-v$remoteVersionName.apk"
-                        binding.tvUpdateStatus.text = "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
+                        val statusLabel = if (isRepairMode) "Repair Package Ready: v$remoteVersionName" else "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
+                        binding.tvUpdateStatus.text = statusLabel
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
                         showUpdateAvailableDialog(
                             versionName = remoteVersionName,
@@ -412,8 +419,11 @@ class AppUpdateManager(
                             downloadUrl = apkDownloadUrl,
                             apkFileName = targetName,
                             sizeBytes = assetSizeBytes,
-                            expectedSha256 = apkExpectedSha256
+                            expectedSha256 = apkExpectedSha256,
+                            isRepairMode = isRepairMode
                         )
+                    } else if (isRepairMode) {
+                        Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
                         val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
                         binding.tvUpdateStatus.text = "Installed: v$currentVersionName • You're up to date ✓"
@@ -427,8 +437,9 @@ class AppUpdateManager(
                 withContext(Dispatchers.Main) {
                     if (!activity.isFinishing && !activity.isDestroyed) {
                         binding.progressUpdateCheck.visibility = View.GONE
+                        val action = if (isRepairMode) "Repair check" else "Update check"
                         if (isUserInitiated) {
-                            Toast.makeText(activity, "Update check failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
                             val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.5" } catch (_: Exception) { "2.2.5" }
                             binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
@@ -449,31 +460,44 @@ class AppUpdateManager(
         downloadUrl: String,
         apkFileName: String,
         sizeBytes: Long,
-        expectedSha256: String
+        expectedSha256: String,
+        isRepairMode: Boolean = false
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
         val sizeFormatted = if (sizeBytes > 0) " (${safStorageManager.formatBytes(sizeBytes)})" else ""
 
+        val dialogTitle = if (isRepairMode) "Repair VeilFrame Installation" else "Update Available"
+        val headerText = if (isRepairMode) {
+            "Re-download and reinstall official VeilFrame release package (v$versionName) directly from GitHub to repair any corrupted binaries, models, or local files.$sizeFormatted\n\n"
+        } else {
+            "Version: $versionName (Build $versionCode)$sizeFormatted\n\n"
+        }
+
         val message = StringBuilder().apply {
-            append("Version: $versionName (Build $versionCode)$sizeFormatted\n\n")
-            append("What's new:\n")
-            append(if (changelog.length > 350) changelog.take(350) + "..." else changelog)
-            append("\n\nSecurity & Cryptographic Verification:\n")
+            append(headerText)
+            if (!isRepairMode && changelog.isNotEmpty()) {
+                append("What's new:\n")
+                append(if (changelog.length > 350) changelog.take(350) + "..." else changelog)
+                append("\n\n")
+            }
+            append("Security & Cryptographic Verification:\n")
             append("✓ Origin: Pinned HTTPS GitHub Releases\n")
             append("✓ Package Identity: ${activity.packageName}\n")
             append("✓ Mandatory SHA-256: ${expectedSha256.take(16)}...${expectedSha256.takeLast(8)}\n")
             append("✓ Authenticity: Publisher signing certificate pinning")
         }.toString()
 
+        val positiveText = if (isRepairMode) "Download & Reinstall" else "Download & Install"
+
         activeUpdateDialog?.dismiss()
         activeUpdateDialog = MaterialAlertDialogBuilder(activity)
-            .setTitle("Update Available")
+            .setTitle(dialogTitle)
             .setMessage(message)
-            .setPositiveButton("Download & Install") { _, _ ->
+            .setPositiveButton(positiveText) { _, _ ->
                 downloadAndInstallUpdateWithProgress(downloadUrl, apkFileName, sizeBytes, expectedSha256)
             }
-            .setNegativeButton("Later", null)
+            .setNegativeButton("Cancel", null)
             .show()
     }
 

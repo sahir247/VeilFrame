@@ -33,7 +33,7 @@ class ImageStudioDialogController(
     private val scope: CoroutineScope,
     private val editState: ImageEditState,
     private val getPreviewSourceBitmap: () -> Bitmap?,
-    private val getOriginalBitmap: () -> Bitmap?,
+    private val getOriginalDimensions: () -> Pair<Int, Int>,
     private val renderLivePreview: (ImageEditState) -> Bitmap?,
     private val onEditsChanged: () -> Unit
 ) {
@@ -43,7 +43,7 @@ class ImageStudioDialogController(
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
         val draftState = editState.deepCopy()
-        val baseBmp = getPreviewSourceBitmap() ?: getOriginalBitmap()
+        val baseBmp = getPreviewSourceBitmap()
         dialogBinding.imgCropPreview.setImageBitmap(baseBmp)
 
         if (baseBmp != null) {
@@ -113,8 +113,9 @@ class ImageStudioDialogController(
         val dialogBinding = DialogResizeBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
-        val origW = getOriginalBitmap()?.width ?: 1920
-        val origH = getOriginalBitmap()?.height ?: 1080
+        val dims = getOriginalDimensions()
+        val origW = dims.first.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.width ?: 1920)
+        val origH = dims.second.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.height ?: 1080)
         val origAspect = origW.toDouble() / origH.toDouble()
 
         var draftScale = editState.resizeScale

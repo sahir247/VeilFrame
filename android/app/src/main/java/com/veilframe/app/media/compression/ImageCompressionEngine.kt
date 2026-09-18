@@ -11,6 +11,7 @@ import com.veilframe.app.privacy.ImageMetadataSanitizer
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 
 /**
  * Dedicated compression engine for Image Studio.
@@ -101,9 +102,19 @@ object ImageCompressionEngine {
                         fos.write(bestBytesUnderTarget)
                     }
                 } else {
-                    FileOutputStream(outFile).use { fos ->
-                        workingBmp.compress(compressFormat, 15, fos)
+                    val stream = ByteArrayOutputStream()
+                    workingBmp.compress(compressFormat, 15, stream)
+                    val minBytes = stream.size().toLong()
+                    if (workingBmp != processedBitmap) {
+                        try { workingBmp.recycle() } catch (_: Exception) {}
                     }
+                    val formattedMin = if (minBytes < 1024) "$minBytes B" else if (minBytes < 1024 * 1024) "${minBytes / 1024} KB" else String.format(Locale.US, "%.1f MB", minBytes / (1024.0 * 1024.0))
+                    return CompressionResult(
+                        success = false,
+                        outputPath = outFile.absolutePath,
+                        sizeBytes = minBytes,
+                        error = "Target size ${targetSizeKb} KB could not be achieved (smallest possible was $formattedMin). Try selecting a larger target size or resizing image dimensions."
+                    )
                 }
             } else {
                 FileOutputStream(outFile).use { fos ->
@@ -122,7 +133,8 @@ object ImageCompressionEngine {
                 ImageMetadataWriter.applyMetadata(outFile, editState)
             }
 
-            val isSuccess = outFile.exists() && outFile.length() > 0L
+            val targetBytesLimit = if (isTargetSizeMode) targetSizeKb.toLong() * 1024L else Long.MAX_VALUE
+            val isSuccess = outFile.exists() && outFile.length() > 0L && outFile.length() <= targetBytesLimit
             if (isSuccess) {
                 val outSize = outFile.length()
                 val origSize = srcFile.length()
@@ -135,11 +147,18 @@ object ImageCompressionEngine {
                     error = null
                 )
             } else {
+                val outSize = if (outFile.exists()) outFile.length() else 0L
+                try { outFile.delete() } catch (_: Exception) {}
+                val errMsg = if (isTargetSizeMode && outSize > targetBytesLimit) {
+                    "Target ceiling exceeded: output was ${outSize / 1024} KB (requested target: ${targetSizeKb} KB)"
+                } else {
+                    "Failed to write encoded image file"
+                }
                 CompressionResult(
                     success = false,
                     outputPath = outFile.absolutePath,
                     sizeBytes = 0L,
-                    error = "Failed to write encoded image file"
+                    error = errMsg
                 )
             }
         } catch (e: Exception) {

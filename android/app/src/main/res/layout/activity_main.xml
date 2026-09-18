@@ -236,85 +236,23 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tools Section Header -->
+            <!-- Section 1: Metadata & Privacy -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="WHAT DO YOU WANT TO DO?"
+                android:layout_marginBottom="10dp"
+                android:text="METADATA &amp; PRIVACY"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
-            <!-- Tool 1: AI Bundle -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolAi"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_tab_bundle"
-                        android:contentDescription="AI Bundle Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="AI BUNDLE"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Package source code into token-budgeted LLM analysis bundles."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open AI Bundle"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Tool 2: Video Cleaner -->
+            <!-- Tool 1: Video Cleaner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolVideo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
+                android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -371,12 +309,12 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 3: Image Cleaner -->
+            <!-- Tool 2: Image Cleaner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolImage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
+                android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -433,12 +371,23 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 4: Folder Scanner -->
+            <!-- Section 2: Folder Operation & AI Work -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="FOLDER OPERATION &amp; AI WORK"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <!-- Tool 3: Folder Scanner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolFolder"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
+                android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -495,12 +444,85 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Tool 4: AI Bundle -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolAi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="12dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tab_bundle"
+                        android:contentDescription="AI Bundle Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AI BUNDLE"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Package source code into token-budgeted LLM analysis bundles."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open AI Bundle"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Section 3: Media Editing & Compression -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="MEDIA EDITING &amp; COMPRESSION"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
             <!-- Tool 5: Image Studio & Compressor -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolImageStudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
+                android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -562,7 +584,7 @@
                 android:id="@+id/cardToolVideoStudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="24dp"
+                android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -766,22 +788,41 @@
                                 android:textSize="11sp" />
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-                            android:id="@+id/btnCheckUpdates"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                        <LinearLayout
                             android:layout_width="wrap_content"
-                            android:layout_height="38dp"
-                            android:text="Check Updates"
-                            android:textColor="@color/vf_primary"
-                            android:textSize="11sp"
-                            app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="8dp"
-                            app:icon="@drawable/ic_system_update"
-                            app:iconSize="14dp"
-                            app:iconTint="@color/vf_primary" />
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnRepairApp"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:text="Repair"
+                                android:textColor="@color/vf_accent_amber"
+                                android:textSize="11sp"
+                                app:strokeColor="@color/vf_accent_amber"
+                                app:cornerRadius="8dp"
+                                app:icon="@drawable/ic_reset"
+                                app:iconSize="13dp"
+                                app:iconTint="@color/vf_accent_amber" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnCheckUpdates"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:text="Check Updates"
+                                android:textColor="@color/vf_primary"
+                                android:textSize="11sp"
+                                app:backgroundTint="@color/vf_surface_variant"
+                                app:cornerRadius="8dp"
+                                app:icon="@drawable/ic_system_update"
+                                app:iconSize="14dp"
+                                app:iconTint="@color/vf_primary" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator

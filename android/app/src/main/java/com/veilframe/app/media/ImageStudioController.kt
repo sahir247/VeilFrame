@@ -19,6 +19,7 @@ import com.veilframe.app.media.transform.ImageTransformEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -34,12 +35,23 @@ import java.util.concurrent.atomic.AtomicLong
  * - ImageCompressionEngine (iterative binary search target size & export)
  * - ImageStudioDialogController (isolated dialog state management)
  */
+data class StudioImageItem(
+    val uri: Uri,
+    val file: File,
+    val displayName: String,
+    val originalBytes: Long,
+    val origWidth: Int,
+    val origHeight: Int,
+    var previewBitmap: Bitmap? = null
+)
+
 class ImageStudioController(
     private val activity: AppCompatActivity,
     private val binding: LayoutImageStudioBinding,
     private val safManager: SafDestinationManager,
     private val scope: CoroutineScope,
     private val onPickImageRequest: () -> Unit,
+    private val onAddMoreImageRequest: () -> Unit = onPickImageRequest,
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
     private val onShareFileRequest: (File, String) -> Unit,
@@ -49,15 +61,15 @@ class ImageStudioController(
     val editState = ImageEditState()
     val outputConfig = ImageOutputConfig()
 
-    var selectedUri: Uri? = null
+    val selectedMediaList = mutableListOf<StudioImageItem>()
+    var currentMediaIndex: Int = 0
         private set
-    var originalFile: File? = null
-        private set
-    var originalBytes: Long = 0L
-        private set
+    val currentItem: StudioImageItem? get() = selectedMediaList.getOrNull(currentMediaIndex)
 
-    // Immutable original bitmap source — probed or loaded safely
-    private var originalBitmap: Bitmap? = null
+    val selectedUri: Uri? get() = currentItem?.uri
+    val originalFile: File? get() = currentItem?.file
+    val originalBytes: Long get() = currentItem?.originalBytes ?: 0L
+
     // Fast downscaled copy (max 1280px) for smooth 60fps live preview & modal interactions
     private var previewSourceBitmap: Bitmap? = null
     var lastResultFile: File? = null
@@ -73,7 +85,12 @@ class ImageStudioController(
         scope = scope,
         editState = editState,
         getPreviewSourceBitmap = { previewSourceBitmap },
-        getOriginalBitmap = { originalBitmap },
+        getOriginalDimensions = {
+            Pair(
+                currentItem?.origWidth ?: previewSourceBitmap?.width ?: 1920,
+                currentItem?.origHeight ?: previewSourceBitmap?.height ?: 1080
+            )
+        },
         renderLivePreview = { draftState -> renderLivePreview(draftState, useFullRes = false) },
         onEditsChanged = { refreshPreview() }
     )
@@ -81,9 +98,20 @@ class ImageStudioController(
     fun initWorkspace() {
         binding.btnImgStudioMenu.setOnClickListener { onNavigateHome() }
         binding.btnSelectImage.setOnClickListener { onPickImageRequest() }
-        binding.btnImgAddMore.setOnClickListener { onPickImageRequest() }
+        binding.btnImgAddMore.setOnClickListener { onAddMoreImageRequest() }
         binding.btnImgClearAll.setOnClickListener { clear() }
-        binding.btnImgRemoveFile.setOnClickListener { clear() }
+        binding.btnImgRemoveFile.setOnClickListener { removeCurrentItem() }
+
+        binding.btnImgPrev.setOnClickListener {
+            if (currentMediaIndex > 0) {
+                selectMediaIndex(currentMediaIndex - 1)
+            }
+        }
+        binding.btnImgNext.setOnClickListener {
+            if (currentMediaIndex < selectedMediaList.size - 1) {
+                selectMediaIndex(currentMediaIndex + 1)
+            }
+        }
 
         // SAF destination selection
         binding.tvImgDestinationPath.text = safManager.imageDestinationName
@@ -209,50 +237,81 @@ class ImageStudioController(
     }
 
     fun handleImageSelected(uri: Uri) {
+        handleImagesSelected(listOf(uri))
+    }
+
+    fun handleImagesSelected(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        clear()
+        loadImages(uris, isAppend = false)
+    }
+
+    fun handleImagesAdded(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        loadImages(uris, isAppend = true)
+    }
+
+    private fun loadImages(uris: List<Uri>, isAppend: Boolean) {
         val currentToken = loadToken.incrementAndGet()
-        selectedUri = uri
-        originalBytes = queryFileSize(uri)
-        val displayName = getDisplayName(uri)
+        binding.layoutImgProgress.visibility = View.VISIBLE
+        binding.tvImgProgressStatus.text = "Loading ${uris.size} image(s)..."
 
         scope.launch(Dispatchers.IO) {
-            val cacheFile = File(activity.cacheDir, "studio_input_$displayName")
-            copyUriToFile(uri, cacheFile)
-            originalFile = cacheFile
+            val newItems = mutableListOf<StudioImageItem>()
+            for (uri in uris) {
+                try {
+                    val size = queryFileSize(uri)
+                    val displayName = getDisplayName(uri)
+                    val cacheFile = File(activity.cacheDir, "studio_input_${System.currentTimeMillis()}_$displayName")
+                    copyUriToFile(uri, cacheFile)
 
-            // Memory-safe loading via ImagePreviewEngine
-            val previewBmp = ImagePreviewEngine.decodePreviewBitmap(cacheFile, maxDim = 1280)
-            val fullBmp = ImagePreviewEngine.decodeFullResolution(cacheFile)
+                    // 1. Probe full dimensions with inJustDecodeBounds (zero pixel allocation)
+                    val dims = ImagePreviewEngine.probeDimensions(cacheFile)
+                    val w = dims?.width ?: 1920
+                    val h = dims?.height ?: 1080
+
+                    // 2. Decode 1280px preview bitmap (memory-safe preview)
+                    // Note: Full resolution is DEFERRED and ONLY loaded when exporting!
+                    val previewBmp = ImagePreviewEngine.decodePreviewBitmap(cacheFile, maxDim = 1280)
+
+                    if (previewBmp != null) {
+                        newItems.add(
+                            StudioImageItem(
+                                uri = uri,
+                                file = cacheFile,
+                                displayName = displayName,
+                                originalBytes = size,
+                                origWidth = w.takeIf { it > 0 } ?: previewBmp.width,
+                                origHeight = h.takeIf { it > 0 } ?: previewBmp.height,
+                                previewBitmap = previewBmp
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e("VeilFrame.ImageStudio", "Failed loading image: ${e.message}", e)
+                }
+            }
 
             withContext(Dispatchers.Main) {
+                binding.layoutImgProgress.visibility = View.GONE
                 if (currentToken != loadToken.get()) {
-                    // Stale selection; user selected another image or cleared
-                    previewBmp?.recycle()
-                    fullBmp?.recycle()
+                    newItems.forEach { it.previewBitmap?.recycle() }
                     return@withContext
                 }
 
-                originalBitmap = fullBmp
-                previewSourceBitmap = previewBmp ?: fullBmp
-
-                if (previewSourceBitmap == null) {
-                    Toast.makeText(activity, "Failed to load image preview", Toast.LENGTH_SHORT).show()
+                if (newItems.isEmpty()) {
+                    if (!isAppend && selectedMediaList.isEmpty()) {
+                        Toast.makeText(activity, "Failed to load image preview(s)", Toast.LENGTH_SHORT).show()
+                    }
                     return@withContext
                 }
 
-                val origW = fullBmp?.width ?: previewSourceBitmap!!.width
-                val origH = fullBmp?.height ?: previewSourceBitmap!!.height
+                val previousSize = selectedMediaList.size
+                selectedMediaList.addAll(newItems)
 
                 binding.layoutImgEmptyState.visibility = View.GONE
                 binding.layoutImgSelectedState.visibility = View.VISIBLE
-                binding.tvImgSelectedCount.text = "1 image selected"
-                binding.tvImgFileName.text = displayName
-                binding.tvImgFileSize.text = "${formatBytes(originalBytes)} • ${origW}x${origH}"
-                binding.imgFileThumb.setImageBitmap(previewSourceBitmap)
-                binding.imgBeforePreview.setImageBitmap(previewSourceBitmap)
-                binding.tvImgBeforeSize.text = "${formatBytes(originalBytes)} ($origW × $origH px)"
                 binding.btnImgClearAll.isEnabled = true
-
-                // Enable all tools
                 binding.toolCrop.isEnabled = true
                 binding.toolResize.isEnabled = true
                 binding.toolRotate.isEnabled = true
@@ -260,17 +319,94 @@ class ImageStudioController(
                 binding.toolExif.isEnabled = true
                 binding.toolText.isEnabled = true
 
-                val baseName = displayName.substringBeforeLast('.')
-                binding.etImgOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase(Locale.US)}")
-
-                // Reset edits and refresh
-                editState.reset()
-                binding.tvImgActualStats.visibility = View.GONE
-                binding.layoutImgResultActions.visibility = View.GONE
-
-                refreshPreview()
+                if (!isAppend || previousSize == 0) {
+                    selectMediaIndex(0)
+                } else {
+                    selectMediaIndex(previousSize)
+                }
                 binding.btnImgExecute.text = "Compress"
             }
+        }
+    }
+
+    fun selectMediaIndex(index: Int) {
+        if (index !in selectedMediaList.indices) return
+        currentMediaIndex = index
+        val item = selectedMediaList[index]
+        previewSourceBitmap = item.previewBitmap
+
+        binding.tvImgFileName.text = item.displayName
+        binding.tvImgFileSize.text = "${formatBytes(item.originalBytes)} • ${item.origWidth}x${item.origHeight}"
+        binding.imgFileThumb.setImageBitmap(item.previewBitmap)
+        binding.imgBeforePreview.setImageBitmap(item.previewBitmap)
+        binding.tvImgBeforeSize.text = "${formatBytes(item.originalBytes)} (${item.origWidth} × ${item.origHeight} px)"
+
+        val baseName = item.displayName.substringBeforeLast('.')
+        binding.etImgOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase(Locale.US)}")
+
+        updateNavigationUi()
+        refreshPreview()
+    }
+
+    private fun updateNavigationUi() {
+        val total = selectedMediaList.size
+        if (total > 1) {
+            binding.layoutImgNavRow.visibility = View.VISIBLE
+            binding.scrollImgThumbnails.visibility = View.VISIBLE
+            binding.tvImgPagination.text = "${currentMediaIndex + 1} / $total"
+            binding.btnImgPrev.isEnabled = currentMediaIndex > 0
+            binding.btnImgNext.isEnabled = currentMediaIndex < total - 1
+            binding.tvImgSelectedCount.text = "$total images selected"
+            renderThumbnailStrip()
+        } else {
+            binding.layoutImgNavRow.visibility = View.GONE
+            binding.scrollImgThumbnails.visibility = View.GONE
+            if (total == 1) {
+                binding.tvImgSelectedCount.text = "1 image selected"
+            }
+        }
+    }
+
+    private fun renderThumbnailStrip() {
+        val strip = binding.layoutImgThumbStrip
+        strip.removeAllViews()
+        val density = activity.resources.displayMetrics.density
+        val sizePx = (48 * density).toInt()
+        val marginPx = (4 * density).toInt()
+
+        for ((idx, item) in selectedMediaList.withIndex()) {
+            val card = com.google.android.material.card.MaterialCardView(activity).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(sizePx, sizePx).apply {
+                    setMargins(marginPx, marginPx, marginPx, marginPx)
+                }
+                radius = 6 * density
+                strokeWidth = if (idx == currentMediaIndex) (2 * density).toInt() else 0
+                strokeColor = activity.getColor(R.color.vf_primary)
+                cardElevation = if (idx == currentMediaIndex) 4 * density else 0f
+            }
+            val iv = android.widget.ImageView(activity).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                setImageBitmap(item.previewBitmap)
+            }
+            card.addView(iv)
+            card.setOnClickListener { selectMediaIndex(idx) }
+            strip.addView(card)
+        }
+    }
+
+    fun removeCurrentItem() {
+        if (selectedMediaList.isEmpty()) return
+        val item = selectedMediaList.removeAt(currentMediaIndex)
+        item.previewBitmap?.recycle()
+        if (selectedMediaList.isEmpty()) {
+            clear()
+        } else {
+            currentMediaIndex = currentMediaIndex.coerceAtMost(selectedMediaList.size - 1)
+            selectMediaIndex(currentMediaIndex)
         }
     }
 
@@ -278,16 +414,17 @@ class ImageStudioController(
      * Renders live preview using ImageTransformEngine.
      */
     fun renderLivePreview(state: ImageEditState = editState, useFullRes: Boolean = false): Bitmap? {
-        val src = (if (useFullRes) (originalBitmap ?: previewSourceBitmap) else (previewSourceBitmap ?: originalBitmap)) ?: return null
-        val fullW = originalBitmap?.width ?: src.width
-        val fullH = originalBitmap?.height ?: src.height
+        val item = currentItem ?: return null
+        val src = previewSourceBitmap ?: return null
+        val fullW = item.origWidth
+        val fullH = item.origHeight
 
         return ImageTransformEngine.transform(
             src = src,
             state = state,
             origFullW = fullW,
             origFullH = fullH,
-            useFullRes = useFullRes
+            useFullRes = false
         )
     }
 
@@ -295,8 +432,9 @@ class ImageStudioController(
         val previewBmp = renderLivePreview(editState) ?: return
         binding.imgAfterPreview.setImageBitmap(previewBmp)
 
-        val origFullW = originalBitmap?.width ?: previewBmp.width
-        val origFullH = originalBitmap?.height ?: previewBmp.height
+        val item = currentItem
+        val origFullW = item?.origWidth ?: previewBmp.width
+        val origFullH = item?.origHeight ?: previewBmp.height
 
         val targetW = when {
             editState.resizeWidth > 0 -> editState.resizeWidth
@@ -451,71 +589,114 @@ class ImageStudioController(
     }
 
     private fun executeCompression() {
-        val srcFile = originalFile ?: return
+        val itemsToProcess = selectedMediaList.toList()
+        if (itemsToProcess.isEmpty()) return
+
         val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
         val ext = outputConfig.format.lowercase(Locale.US)
         val rawName = binding.etImgOutputFilename.text.toString().trim()
         val safeBase = File(rawName).name.substringBeforeLast('.').ifBlank { "compressed_image" }
-        val outFilename = "$safeBase.$ext"
-        val outFile = File(outDir, outFilename)
 
         binding.layoutImgProgress.visibility = View.VISIBLE
         binding.btnImgExecute.text = "Cancel"
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
-                // High-fidelity full-resolution render for final output
-                val fullResBmp = renderLivePreview(editState, useFullRes = true)
-                if (fullResBmp == null) {
-                    withContext(Dispatchers.Main) {
-                        binding.layoutImgProgress.visibility = View.GONE
-                        binding.btnImgExecute.text = "Compress"
-                        Toast.makeText(activity, "Failed to render processed image", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                val result = ImageCompressionEngine.compress(
-                    srcFile = srcFile,
-                    outFile = outFile,
-                    editState = editState,
-                    outputConfig = outputConfig,
-                    processedBitmap = fullResBmp
-                )
-
-                // Copy to SAF Destination Folder if chosen
+                var successCount = 0
+                val total = itemsToProcess.size
+                var lastSavedFile: File? = null
+                var totalOriginalBytes = 0L
+                var totalCompressedBytes = 0L
                 val destUri = safManager.imageDestinationUri
-                var copiedToDest = false
-                if (result.success && destUri != null && outFile.exists()) {
-                    val mime = when (outputConfig.format.uppercase(Locale.US)) {
-                        "PNG" -> "image/png"
-                        "WEBP" -> "image/webp"
-                        else -> "image/jpeg"
+
+                for ((idx, item) in itemsToProcess.withIndex()) {
+                    if (!isActive) break
+
+                    withContext(Dispatchers.Main) {
+                        binding.tvImgProgressStatus.text = "Processing ${idx + 1} of $total: ${item.displayName}"
                     }
-                    val copyUri = safManager.copyFileToDocumentTree(outFile, destUri, mime)
-                    copiedToDest = (copyUri != null)
+
+                    val outFilename = if (total == 1) "$safeBase.$ext" else "${safeBase}_${idx + 1}.$ext"
+                    val outFile = File(outDir, outFilename)
+
+                    var fullResBmp: Bitmap? = null
+                    var transformedBmp: Bitmap? = null
+                    try {
+                        // DEFERRED FULL RESOLUTION DECODE: ONLY WHEN EXPORTING!
+                        fullResBmp = ImagePreviewEngine.decodeFullResolution(item.file)
+                        if (fullResBmp == null) {
+                            fullResBmp = ImagePreviewEngine.decodePreviewBitmap(item.file, maxDim = 2560)
+                        }
+                        if (fullResBmp == null) {
+                            Log.e("VeilFrame.ImageStudio", "Could not decode full-res for ${item.displayName}")
+                            continue
+                        }
+
+                        // Apply non-destructive transforms to full-res bitmap
+                        transformedBmp = ImageTransformEngine.transform(
+                            src = fullResBmp,
+                            state = editState,
+                            origFullW = item.origWidth,
+                            origFullH = item.origHeight,
+                            useFullRes = true
+                        )
+
+                        val result = ImageCompressionEngine.compress(
+                            srcFile = item.file,
+                            outFile = outFile,
+                            editState = editState,
+                            outputConfig = outputConfig,
+                            processedBitmap = transformedBmp ?: fullResBmp
+                        )
+
+                        if (result.success && outFile.exists()) {
+                            successCount++
+                            lastSavedFile = outFile
+                            totalOriginalBytes += item.originalBytes
+                            totalCompressedBytes += outFile.length()
+
+                            if (destUri != null) {
+                                val mime = when (outputConfig.format.uppercase(Locale.US)) {
+                                    "PNG" -> "image/png"
+                                    "WEBP" -> "image/webp"
+                                    else -> "image/jpeg"
+                                }
+                                safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(activity, "Failed for ${item.displayName}: ${result.error}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } finally {
+                        transformedBmp?.recycle()
+                        fullResBmp?.recycle()
+                    }
                 }
 
                 withContext(Dispatchers.Main) {
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress again"
-                    if (result.success && outFile.exists()) {
-                        lastResultFile = outFile
-                        val finalBmp = BitmapFactory.decodeFile(outFile.absolutePath) ?: fullResBmp
-                        binding.imgAfterPreview.setImageBitmap(finalBmp)
-                        binding.tvImgAfterSize.text = "${formatBytes(outFile.length())} (${outputConfig.format})"
-                        val ratio = if (originalBytes > 0) {
-                            (100.0 - (outFile.length().toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
+
+                    if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists()) {
+                        lastResultFile = lastSavedFile
+                        val finalBmp = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
+                        if (finalBmp != null) {
+                            binding.imgAfterPreview.setImageBitmap(finalBmp)
+                        }
+                        binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${outputConfig.format})"
+                        val ratio = if (totalOriginalBytes > 0) {
+                            (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
-                        binding.tvImgComparisonRatio.text = "Saved: ${formatBytes(originalBytes)} → ${formatBytes(outFile.length())} (-$ratio%)"
+                        binding.tvImgComparisonRatio.text = "Saved: ${formatBytes(totalOriginalBytes)} → ${formatBytes(totalCompressedBytes)} (-$ratio%)"
                         binding.tvImgActualStats.visibility = View.VISIBLE
-                        binding.tvImgActualStats.text = "Compression finished • Saved $ratio%"
+                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Saved $ratio%"
                         binding.layoutImgResultActions.visibility = View.VISIBLE
 
-                        val destMsg = if (copiedToDest) "\nSaved to destination folder: ${safManager.imageDestinationName}" else ""
-                        Toast.makeText(activity, "Image compressed successfully! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
+                        val destMsg = if (safManager.imageDestinationUri != null) "\nSaved to: ${safManager.imageDestinationName}" else ""
+                        Toast.makeText(activity, "Successfully compressed $successCount image(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(activity, "Image compression failed: ${result.error}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(activity, "Compression failed to produce valid outputs", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
@@ -531,13 +712,16 @@ class ImageStudioController(
 
     fun clear() {
         loadToken.incrementAndGet()
-        selectedUri = null
-        originalFile = null
-        originalBytes = 0L
-        originalBitmap = null
+        selectedMediaList.forEach { it.previewBitmap?.recycle() }
+        selectedMediaList.clear()
+        currentMediaIndex = 0
         previewSourceBitmap = null
         lastResultFile = null
         compressionJob?.cancel()
+
+        binding.layoutImgNavRow.visibility = View.GONE
+        binding.scrollImgThumbnails.visibility = View.GONE
+        binding.layoutImgThumbStrip.removeAllViews()
 
         binding.layoutImgEmptyState.visibility = View.VISIBLE
         binding.layoutImgSelectedState.visibility = View.GONE

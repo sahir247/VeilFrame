@@ -292,12 +292,19 @@ object VideoProcessor {
                 }
             }
 
+            val isWebm = outFile.name.endsWith(".webm", ignoreCase = true)
+            val isMp4 = outFile.name.endsWith(".mp4", ignoreCase = true) || outFile.name.endsWith(".mov", ignoreCase = true)
+
             // Video codec, GIF Animation mode, & CRF / Target Bitrate
             if (isGifMode) {
                 val gifFps = if (fps != null && fps > 0) fps else 15
                 val baseVf = listOf("fps=$gifFps") + vfFilters.filterNot { it.startsWith("setpts") }
                 val baseChain = baseVf.joinToString(",")
-                val gifVf = "$baseChain,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+                val gifVf = if (baseChain.isNotEmpty()) {
+                    "$baseChain,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+                } else {
+                    "split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3"
+                }
                 cmd.add("-vf")
                 cmd.add(gifVf)
                 cmd.add("-c:v")
@@ -308,11 +315,16 @@ object VideoProcessor {
                 // Enforce copy codec incompatibility rule:
                 // Stream copy cannot coexist with spatial or temporal video filter graphs
                 val hasVideoTransforms = vfFilters.isNotEmpty() || (fps != null && fps > 0)
-                val resolvedCodec = if (codec.contains("copy", ignoreCase = true) && hasVideoTransforms) {
-                    Log.w(TAG, "Stream copy ('copy') is incompatible with video filtering; auto-promoting to libx264 re-encode.")
-                    "libx264"
-                } else {
-                    codec
+                val resolvedCodec = when {
+                    isWebm -> "libvpx-vp9"
+                    codec.contains("copy", ignoreCase = true) && hasVideoTransforms -> {
+                        Log.w(TAG, "Stream copy ('copy') is incompatible with video filtering; auto-promoting to libx264 re-encode.")
+                        "libx264"
+                    }
+                    codec.contains("copy", ignoreCase = true) -> "copy"
+                    codec.contains("265", ignoreCase = true) || codec.contains("hevc", ignoreCase = true) -> "libx265"
+                    codec.contains("vp9", ignoreCase = true) -> "libvpx-vp9"
+                    else -> "libx264" // Normalized encoder for H.264 / default
                 }
 
                 if (vfFilters.isNotEmpty()) {
@@ -329,6 +341,7 @@ object VideoProcessor {
                 cmd.add(resolvedCodec)
 
                 if (resolvedCodec != "copy") {
+                    val isVp9 = resolvedCodec == "libvpx-vp9"
                     if (targetSizeMb != null && targetSizeMb > 0 && trimDurationSec > 0.2) {
                         // Total target budget in bits
                         val totalTargetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0
@@ -347,15 +360,35 @@ object VideoProcessor {
 
                         cmd.add("-b:v")
                         cmd.add("${targetBitrateKbps}k")
-                        cmd.add("-maxrate")
-                        cmd.add("${(targetBitrateKbps * 1.35).toInt()}k")
-                        cmd.add("-bufsize")
-                        cmd.add("${targetBitrateKbps * 2}k")
+                        if (isVp9) {
+                            cmd.add("-deadline")
+                            cmd.add("realtime")
+                            cmd.add("-cpu-used")
+                            cmd.add("4")
+                            cmd.add("-row-mt")
+                            cmd.add("1")
+                        } else {
+                            cmd.add("-maxrate")
+                            cmd.add("${(targetBitrateKbps * 1.35).toInt()}k")
+                            cmd.add("-bufsize")
+                            cmd.add("${targetBitrateKbps * 2}k")
+                        }
                     } else {
                         cmd.add("-crf")
                         cmd.add(crf.toString())
-                        cmd.add("-preset")
-                        cmd.add("ultrafast")
+                        if (isVp9) {
+                            cmd.add("-b:v")
+                            cmd.add("0")
+                            cmd.add("-deadline")
+                            cmd.add("realtime")
+                            cmd.add("-cpu-used")
+                            cmd.add("4")
+                            cmd.add("-row-mt")
+                            cmd.add("1")
+                        } else {
+                            cmd.add("-preset")
+                            cmd.add("ultrafast")
+                        }
                     }
                 }
             }
@@ -422,7 +455,7 @@ object VideoProcessor {
                 val tailLogs = allLogs.lines().takeLast(15).joinToString("\n")
 
                 val diagnostic = StringBuilder()
-                    .append("Video compression failed: FFmpeg execution failed (code $returnCode)\n")
+                    .append("FFmpeg execution failed (code $returnCode)\n")
                     .append("Details: Codec=$codec, Container=${outFile.extension.uppercase(Locale.US)}, Duration=${String.format(Locale.US, "%.2f", trimDurationSec)}s")
                 if (targetSizeMb != null) {
                     diagnostic.append(", Target=${String.format(Locale.US, "%.1f", targetSizeMb)}MB")

@@ -34,6 +34,8 @@ import com.veilframe.app.tools.ToolMode
 import com.veilframe.app.tools.ToolSessionManager
 import com.veilframe.app.updates.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -63,6 +65,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoStudioController: VideoStudioController
     private var pendingExportFile: File? = null
     private var isConsoleExpanded: Boolean = false
+    private var backClearTimerJob: Job? = null
 
     // Multi-format export launcher (Storage Access Framework)
     private val exportDocumentLauncher = registerForActivityResult(
@@ -120,18 +123,34 @@ class MainActivity : AppCompatActivity() {
 
     // Studio SAF Pickers
     private val imgStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            imageStudioController.handleImageSelected(uri)
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            imageStudioController.handleImagesSelected(uris)
+        }
+    }
+
+    private val imgStudioAddMoreLauncher = registerForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            imageStudioController.handleImagesAdded(uris)
         }
     }
 
     private val vidStudioPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            videoStudioController.handleVideoSelected(uri)
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            videoStudioController.handleVideosSelected(uris)
+        }
+    }
+
+    private val vidStudioAddMoreLauncher = registerForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            videoStudioController.handleVideosAdded(uris)
         }
     }
 
@@ -302,7 +321,7 @@ class MainActivity : AppCompatActivity() {
             binding = binding,
             onSaveActiveToolState = { toolSessionManager.saveCurrentToolState() },
             onPauseVideoPlayback = { pauseVideoPlayback() },
-            onHomeScreenEntered = {}
+            onHomeScreenEntered = { scheduleBackClearWork() }
         )
         navigationController.init()
 
@@ -350,6 +369,7 @@ class MainActivity : AppCompatActivity() {
             safManager = safDestinationManager,
             scope = lifecycleScope,
             onPickImageRequest = { imgStudioPickerLauncher.launch("image/*") },
+            onAddMoreImageRequest = { imgStudioAddMoreLauncher.launch("image/*") },
             onPickFolderRequest = { imgFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
                 pendingExportFile = file
@@ -369,6 +389,7 @@ class MainActivity : AppCompatActivity() {
             safManager = safDestinationManager,
             scope = lifecycleScope,
             onPickVideoRequest = { vidStudioPickerLauncher.launch("video/*") },
+            onAddMoreVideoRequest = { vidStudioAddMoreLauncher.launch("video/*") },
             onPickFolderRequest = { vidFolderPickerLauncher.launch(null) },
             onExportFileRequest = { file ->
                 pendingExportFile = file
@@ -416,9 +437,12 @@ class MainActivity : AppCompatActivity() {
             openVideoStudio()
         }
 
-        // In-App Updates Button
+        // In-App Updates & Repair Button
         binding.btnCheckUpdates.setOnClickListener {
             appUpdateManager.checkForUpdates(isUserInitiated = true)
+        }
+        binding.btnRepairApp.setOnClickListener {
+            appUpdateManager.repairApp()
         }
 
         // External Links
@@ -465,6 +489,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openTool(toolMode: ToolMode) {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -476,6 +502,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openImageStudio() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -486,6 +514,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openVideoStudio() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
         pauseVideoPlayback()
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
@@ -493,6 +523,23 @@ class MainActivity : AppCompatActivity() {
         toolSessionManager.currentToolMode = ToolMode.VIDEO_COMPRESSOR
         navigationController.showVideoStudioScreen()
         consoleLogController.log("[UI] Opened Video Studio workspace.")
+    }
+
+    private fun scheduleBackClearWork() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = lifecycleScope.launch {
+            delay(10_000L) // 10 seconds idle on Home clears inactive tool work
+            if (navigationController.currentScreen == ScreenState.HOME) {
+                toolSessionManager.clearCurrentTool()
+                if (::imageStudioController.isInitialized) {
+                    imageStudioController.clear()
+                }
+                if (::videoStudioController.isInitialized) {
+                    videoStudioController.clear()
+                }
+                consoleLogController.log("[SESSION] Inactive tool work cleared after 10s on Home.")
+            }
+        }
     }
 
     private fun openFilePickerForCurrentTool() {

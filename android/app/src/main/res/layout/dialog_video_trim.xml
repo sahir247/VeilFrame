@@ -61,29 +61,52 @@
                 android:textColor="@color/vf_text_secondary"
                 android:textSize="12sp" />
 
-            <!-- Video Thumbnail / Waveform Container -->
+            <!-- Interactive Media3 Live Video Preview & Player -->
             <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="160dp"
+                android:layout_height="180dp"
                 android:background="@color/vf_bg_dark"
                 android:layout_marginBottom="16dp">
 
+                <androidx.media3.ui.PlayerView
+                    android:id="@+id/trimPlayerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    app:use_controller="false"
+                    app:surface_type="texture_view"
+                    app:resize_mode="fit" />
+
                 <ImageView
-                    android:id="@+id/imgTrimVideoThumbnail"
+                    android:id="@+id/imgTrimFallback"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:scaleType="fitCenter"
+                    android:visibility="gone"
                     android:contentDescription="Video Frame Thumbnail" />
 
-                <!-- Play Overlay Icon -->
-                <ImageView
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                <ProgressBar
+                    android:id="@+id/trimBufferingBar"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_action_play"
-                    android:alpha="0.75"
-                    app:tint="@color/vf_primary"
-                    android:contentDescription="Play preview" />
+                    android:indeterminate="true"
+                    android:indeterminateTint="@color/vf_primary"
+                    android:visibility="gone" />
+
+                <!-- Interactive Play / Pause Overlay Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnTrimPlayPause"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:layout_gravity="center"
+                    app:icon="@drawable/ic_action_play"
+                    app:iconSize="28dp"
+                    app:iconTint="@color/vf_on_primary"
+                    app:backgroundTint="@color/vf_primary"
+                    android:alpha="0.85"
+                    android:contentDescription="Play or Pause Trim Preview" />
             </FrameLayout>
 
             <!-- Timestamps Display (Start - Duration - End) -->

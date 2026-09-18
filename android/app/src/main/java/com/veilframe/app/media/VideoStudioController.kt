@@ -38,6 +38,17 @@ import java.util.Locale
  * Controller managing the Mobile Video Studio workspace.
  * Coordinates between UI controls, edit models, and the dedicated VideoPlayerController.
  */
+data class StudioVideoItem(
+    val uri: Uri,
+    val file: File,
+    val displayName: String,
+    val originalBytes: Long,
+    val durationMs: Long,
+    val width: Int,
+    val height: Int,
+    var thumbnailBitmap: Bitmap? = null
+)
+
 class VideoStudioController(
     private val activity: AppCompatActivity,
     private val binding: LayoutVideoStudioBinding,
@@ -45,6 +56,7 @@ class VideoStudioController(
     private val safManager: SafDestinationManager,
     private val scope: CoroutineScope,
     private val onPickVideoRequest: () -> Unit,
+    private val onAddMoreVideoRequest: () -> Unit = onPickVideoRequest,
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
     private val onShareFileRequest: (File, String) -> Unit,
@@ -53,12 +65,14 @@ class VideoStudioController(
     val editState = VideoEditState()
     val outputConfig = VideoOutputConfig()
 
-    var selectedUri: Uri? = null
+    val selectedMediaList = mutableListOf<StudioVideoItem>()
+    var currentMediaIndex: Int = 0
         private set
-    var originalFile: File? = null
-        private set
-    var originalBytes: Long = 0L
-        private set
+    val currentItem: StudioVideoItem? get() = selectedMediaList.getOrNull(currentMediaIndex)
+
+    val selectedUri: Uri? get() = currentItem?.uri
+    val originalFile: File? get() = currentItem?.file
+    val originalBytes: Long get() = currentItem?.originalBytes ?: 0L
     private var lastResultFile: File? = null
     private var activeFFmpegSessionId: Long = -1L
 
@@ -69,8 +83,20 @@ class VideoStudioController(
     fun initWorkspace() {
         binding.btnVidStudioMenu.setOnClickListener { onNavigateHome() }
         binding.btnSelectVideo.setOnClickListener { onPickVideoRequest() }
+        binding.btnVidAddMore.setOnClickListener { onAddMoreVideoRequest() }
         binding.btnVidClearAll.setOnClickListener { clear() }
-        binding.btnVidRemoveFile.setOnClickListener { clear() }
+        binding.btnVidRemoveFile.setOnClickListener { removeCurrentItem() }
+
+        binding.btnVidPrev.setOnClickListener {
+            if (currentMediaIndex > 0) {
+                selectMediaIndex(currentMediaIndex - 1)
+            }
+        }
+        binding.btnVidNext.setOnClickListener {
+            if (currentMediaIndex < selectedMediaList.size - 1) {
+                selectMediaIndex(currentMediaIndex + 1)
+            }
+        }
 
         // SAF destination folder selection
         binding.tvVidDestinationPath.text = safManager.videoDestinationName
@@ -270,99 +296,115 @@ class VideoStudioController(
     }
 
     fun handleVideoSelected(uri: Uri) {
-        val mimeType = activity.contentResolver.getType(uri) ?: ""
-        val displayName = getDisplayName(uri)
-        val ext = displayName.substringAfterLast('.', "").lowercase(Locale.US)
+        handleVideosSelected(listOf(uri))
+    }
 
-        val supportedExts = setOf("mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "flv", "ts", "wmv")
-        val isVideoMime = mimeType.startsWith("video/") || mimeType.contains("matroska") || mimeType == "application/octet-stream"
+    fun handleVideosSelected(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        clear()
+        loadVideos(uris, isAppend = false)
+    }
 
-        if (!supportedExts.contains(ext) && !isVideoMime && mimeType.isNotEmpty()) {
-            MaterialAlertDialogBuilder(activity)
-                .setTitle("Unsupported video format")
-                .setMessage("Please select a supported video file (MP4, MOV, WEBM, MKV, AVI, etc.).")
-                .setPositiveButton("OK", null)
-                .show()
-            return
-        }
+    fun handleVideosAdded(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        loadVideos(uris, isAppend = true)
+    }
 
-        selectedUri = uri
-        originalBytes = queryFileSize(uri)
+    private fun loadVideos(uris: List<Uri>, isAppend: Boolean) {
         val currentToken = loadToken.incrementAndGet()
-
-        // Clear previous temporary studio cache files to prevent memory/storage leaks
-        try {
-            activity.cacheDir.listFiles()?.filter { it.name.startsWith("studio_input_") }?.forEach { it.delete() }
-        } catch (_: Exception) {}
+        binding.playerBufferingBar.visibility = View.VISIBLE
 
         scope.launch(Dispatchers.IO) {
-            val cacheFile = File(activity.cacheDir, "studio_input_$displayName")
-            try {
-                copyUriToFile(uri, cacheFile)
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    MaterialAlertDialogBuilder(activity)
-                        .setTitle("Unable to access this video")
-                        .setMessage("Please grant file access and try again.\n${e.message}")
-                        .setPositiveButton("OK", null)
-                        .show()
+            val newItems = mutableListOf<StudioVideoItem>()
+            for (uri in uris) {
+                val mimeType = activity.contentResolver.getType(uri) ?: ""
+                val displayName = getDisplayName(uri)
+                val ext = displayName.substringAfterLast('.', "").lowercase(Locale.US)
+                val supportedExts = setOf("mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "flv", "ts", "wmv")
+                val isVideoMime = mimeType.startsWith("video/") || mimeType.contains("matroska") || mimeType == "application/octet-stream"
+
+                if (!supportedExts.contains(ext) && !isVideoMime && mimeType.isNotEmpty()) {
+                    continue
                 }
-                return@launch
-            }
-            originalFile = cacheFile
 
-            var duration = 0L
-            var width = 0
-            var height = 0
-            var thumbFrame: Bitmap? = null
-
-            try {
-                val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(cacheFile.absolutePath)
-                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                if (durStr != null) duration = durStr.toLong()
-                val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                if (wStr != null) width = wStr.toInt()
-                val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                if (hStr != null) height = hStr.toInt()
-                thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                retriever.release()
-            } catch (e: Exception) {
-                Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
-            }
-
-            if (duration <= 0L && thumbFrame == null) {
-                withContext(Dispatchers.Main) {
-                    MaterialAlertDialogBuilder(activity)
-                        .setTitle("Unable to read this video")
-                        .setMessage("The file may be corrupted or unsupported.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                val size = queryFileSize(uri)
+                val cacheFile = File(activity.cacheDir, "studio_vid_${System.currentTimeMillis()}_$displayName")
+                try {
+                    copyUriToFile(uri, cacheFile)
+                } catch (e: Exception) {
+                    Log.w("VeilFrame.VideoStudio", "Failed copying video: ${e.message}")
+                    continue
                 }
-                return@launch
-            }
 
-            if (duration <= 0L) duration = 1000L
-            if (width <= 0) width = 1280
-            if (height <= 0) height = 720
+                var duration = 0L
+                var width = 0
+                var height = 0
+                var thumbFrame: Bitmap? = null
+
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(cacheFile.absolutePath)
+                    val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    if (durStr != null) duration = durStr.toLong()
+                    val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                    if (wStr != null) width = wStr.toInt()
+                    val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                    if (hStr != null) height = hStr.toInt()
+                    val rotStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                    val rot = rotStr?.toIntOrNull() ?: 0
+                    if (rot == 90 || rot == 270) {
+                        val tmp = width
+                        width = height
+                        height = tmp
+                    }
+                    thumbFrame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    retriever.release()
+                } catch (e: Exception) {
+                    Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
+                }
+
+                if (duration <= 0L) duration = 1000L
+                if (width <= 0) width = 1280
+                if (height <= 0) height = 720
+
+                newItems.add(
+                    StudioVideoItem(
+                        uri = uri,
+                        file = cacheFile,
+                        displayName = displayName,
+                        originalBytes = size,
+                        durationMs = duration,
+                        width = width,
+                        height = height,
+                        thumbnailBitmap = thumbFrame
+                    )
+                )
+            }
 
             withContext(Dispatchers.Main) {
-                if (currentToken != loadToken.get()) return@withContext
+                binding.playerBufferingBar.visibility = View.GONE
+                if (currentToken != loadToken.get()) {
+                    newItems.forEach { it.thumbnailBitmap?.recycle() }
+                    return@withContext
+                }
 
-                editState.reset(duration)
-                editState.originalWidth = width
-                editState.originalHeight = height
+                if (newItems.isEmpty()) {
+                    if (!isAppend && selectedMediaList.isEmpty()) {
+                        MaterialAlertDialogBuilder(activity)
+                            .setTitle("Unable to read selected video(s)")
+                            .setMessage("Please ensure the selected files are valid videos.")
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+                    return@withContext
+                }
+
+                val previousSize = selectedMediaList.size
+                selectedMediaList.addAll(newItems)
 
                 binding.layoutVidEmptyState.visibility = View.GONE
                 binding.layoutVidSelectedState.visibility = View.VISIBLE
-                binding.tvVidSelectedCount.text = "1 video selected"
-                binding.tvVidFileName.text = displayName
-                binding.tvVidFileDetails.text = "${formatBytes(originalBytes)} • ${formatDuration(duration)} • ${width}x${height}"
-                binding.imgVidThumb.setImageBitmap(thumbFrame)
-                binding.imgVidPreview.setImageBitmap(thumbFrame)
                 binding.btnVidClearAll.isEnabled = true
-
-                // Enable tools
                 binding.toolVidTrim.isEnabled = true
                 binding.toolVidScale.isEnabled = true
                 binding.toolVidPreset.isEnabled = true
@@ -370,39 +412,121 @@ class VideoStudioController(
                 binding.toolVidAspect.isEnabled = true
                 binding.toolVidAudio.isEnabled = true
 
-                val durSec = (duration / 1000.0).toFloat().coerceAtLeast(1f)
-                updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
-
-                binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(duration)}"
-                binding.tvPlayerPosition.text = "00:00.0"
-                binding.tvPlayerTotalDuration.text = formatDuration(duration)
-                binding.tvPlayerSpeedBadge.text = "${editState.speed}×"
-
-                binding.tvVidBeforeStats.text = "${formatBytes(originalBytes)} • ${formatDuration(duration)} • ${width}x${height}"
-
-                val baseName = displayName.substringBeforeLast('.')
-                binding.etVidOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase(Locale.US)}")
-
-                binding.tvVidActualStats.visibility = View.GONE
-                binding.layoutVidResultActions.visibility = View.GONE
-
-                // Set data source on dedicated VideoPlayerController using seekable local cache file
-                binding.playerBufferingBar.visibility = View.VISIBLE
-                playerController.onPreparedListener = { durMs, w, h ->
-                    binding.playerBufferingBar.visibility = View.GONE
-                    binding.imgVidPreview.visibility = View.GONE
+                if (!isAppend || previousSize == 0) {
+                    selectMediaIndex(0)
+                } else {
+                    selectMediaIndex(previousSize)
                 }
-                playerController.onErrorListener = { what, extra ->
-                    binding.playerBufferingBar.visibility = View.GONE
-                    Log.w("VeilFrame.VideoStudio", "MediaPlayer warning/error: what=$what extra=$extra")
-                }
-                playerController.setDataSource(Uri.fromFile(cacheFile))
-
-                applyAspectRatioPreview()
-                refreshStats()
-                updateEditSummary()
                 binding.btnVidExecute.text = "Compress"
             }
+        }
+    }
+
+    fun selectMediaIndex(index: Int) {
+        if (index !in selectedMediaList.indices) return
+        currentMediaIndex = index
+        val item = selectedMediaList[index]
+
+        editState.reset(item.durationMs)
+        editState.originalWidth = item.width
+        editState.originalHeight = item.height
+
+        val durSec = (item.durationMs / 1000.0).toFloat().coerceAtLeast(1f)
+        updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
+
+        binding.tvVidFileName.text = item.displayName
+        binding.tvVidFileDetails.text = "${formatBytes(item.originalBytes)} • ${formatDuration(item.durationMs)} • ${item.width}x${item.height}"
+        binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(item.durationMs)}"
+        binding.tvPlayerPosition.text = "00:00.0"
+        binding.tvPlayerTotalDuration.text = formatDuration(item.durationMs)
+        binding.tvPlayerSpeedBadge.text = "${editState.speed}×"
+        binding.tvVidBeforeStats.text = "${formatBytes(item.originalBytes)} • ${formatDuration(item.durationMs)} • ${item.width}x${item.height}"
+
+        val baseName = item.displayName.substringBeforeLast('.')
+        binding.etVidOutputFilename.setText("compressed_${baseName}.${outputConfig.format.lowercase(Locale.US)}")
+
+        if (item.thumbnailBitmap != null) {
+            binding.imgVidThumb.setImageBitmap(item.thumbnailBitmap)
+            binding.imgVidPreview.setImageBitmap(item.thumbnailBitmap)
+            binding.imgVidPreview.visibility = View.VISIBLE
+        }
+
+        binding.playerBufferingBar.visibility = View.VISIBLE
+        playerController.onPreparedListener = { _, _, _ ->
+            binding.playerBufferingBar.visibility = View.GONE
+            binding.imgVidPreview.visibility = View.GONE
+        }
+        playerController.onErrorListener = { what, extra ->
+            binding.playerBufferingBar.visibility = View.GONE
+            Log.w("VeilFrame.VideoStudio", "MediaPlayer error: what=$what extra=$extra")
+        }
+        playerController.setDataSource(Uri.fromFile(item.file))
+
+        applyAspectRatioPreview()
+        updateNavigationUi()
+        refreshStats()
+        updateEditSummary()
+    }
+
+    private fun updateNavigationUi() {
+        val total = selectedMediaList.size
+        if (total > 1) {
+            binding.layoutVidNavRow.visibility = View.VISIBLE
+            binding.scrollVidThumbnails.visibility = View.VISIBLE
+            binding.tvVidPagination.text = "${currentMediaIndex + 1} / $total"
+            binding.btnVidPrev.isEnabled = currentMediaIndex > 0
+            binding.btnVidNext.isEnabled = currentMediaIndex < total - 1
+            binding.tvVidSelectedCount.text = "$total videos selected"
+            renderThumbnailStrip()
+        } else {
+            binding.layoutVidNavRow.visibility = View.GONE
+            binding.scrollVidThumbnails.visibility = View.GONE
+            if (total == 1) {
+                binding.tvVidSelectedCount.text = "1 video selected"
+            }
+        }
+    }
+
+    private fun renderThumbnailStrip() {
+        val strip = binding.layoutVidThumbStrip
+        strip.removeAllViews()
+        val density = activity.resources.displayMetrics.density
+        val sizePx = (48 * density).toInt()
+        val marginPx = (4 * density).toInt()
+
+        for ((idx, item) in selectedMediaList.withIndex()) {
+            val card = com.google.android.material.card.MaterialCardView(activity).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(sizePx, sizePx).apply {
+                    setMargins(marginPx, marginPx, marginPx, marginPx)
+                }
+                radius = 6 * density
+                strokeWidth = if (idx == currentMediaIndex) (2 * density).toInt() else 0
+                strokeColor = activity.getColor(R.color.vf_primary)
+                cardElevation = if (idx == currentMediaIndex) 4 * density else 0f
+            }
+            val iv = android.widget.ImageView(activity).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                setImageBitmap(item.thumbnailBitmap)
+            }
+            card.addView(iv)
+            card.setOnClickListener { selectMediaIndex(idx) }
+            strip.addView(card)
+        }
+    }
+
+    fun removeCurrentItem() {
+        if (selectedMediaList.isEmpty()) return
+        val item = selectedMediaList.removeAt(currentMediaIndex)
+        item.thumbnailBitmap?.recycle()
+        if (selectedMediaList.isEmpty()) {
+            clear()
+        } else {
+            currentMediaIndex = currentMediaIndex.coerceAtMost(selectedMediaList.size - 1)
+            selectMediaIndex(currentMediaIndex)
         }
     }
 
@@ -444,8 +568,23 @@ class VideoStudioController(
                     params.gravity = Gravity.CENTER
                 }
                 else -> {
-                    params.width = FrameLayout.LayoutParams.MATCH_PARENT
-                    params.height = FrameLayout.LayoutParams.MATCH_PARENT
+                    // "Original" aspect ratio: maintain natural video proportions without altering or stretching
+                    val vidW = editState.originalWidth.takeIf { it > 0 } ?: currentItem?.width ?: 0
+                    val vidH = editState.originalHeight.takeIf { it > 0 } ?: currentItem?.height ?: 0
+                    if (vidW > 0 && vidH > 0) {
+                        val videoAspect = vidW.toFloat() / vidH.toFloat()
+                        val containerAspect = containerW.toFloat() / containerH.toFloat()
+                        if (videoAspect > containerAspect) {
+                            params.width = containerW
+                            params.height = (containerW / videoAspect).toInt().coerceAtMost(containerH)
+                        } else {
+                            params.height = containerH
+                            params.width = (containerH * videoAspect).toInt().coerceAtMost(containerW)
+                        }
+                    } else {
+                        params.width = FrameLayout.LayoutParams.MATCH_PARENT
+                        params.height = FrameLayout.LayoutParams.MATCH_PARENT
+                    }
                     params.gravity = Gravity.CENTER
                 }
             }
@@ -637,13 +776,13 @@ class VideoStudioController(
     }
 
     private fun executeCompression() {
-        val srcFile = originalFile ?: return
+        val itemsToProcess = selectedMediaList.toList()
+        if (itemsToProcess.isEmpty()) return
+
         val outDir = File(activity.cacheDir, "studio_output").apply { mkdirs() }
         val ext = if (outputConfig.outputMode == VideoOutputMode.GIF) "gif" else outputConfig.format.lowercase(Locale.US)
         val rawName = binding.etVidOutputFilename.text.toString().trim()
         val base = rawName.substringBeforeLast('.', rawName).ifBlank { "compressed_video" }
-        val outFilename = "$base.$ext"
-        val outFile = File(outDir, outFilename)
 
         if (outputConfig.codec.equals("copy", ignoreCase = true) && editState.hasVideoTransforms()) {
             Toast.makeText(activity, "Notice: Active transforms require re-encoding. Stream copy promoted to H.264.", Toast.LENGTH_SHORT).show()
@@ -654,53 +793,83 @@ class VideoStudioController(
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
-                val totalDurSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(1.0)
-                val result = MediaProcessor.video.process(
-                    srcFile = srcFile,
-                    outFile = outFile,
-                    editState = editState,
-                    outputConfig = outputConfig,
-                    onStatistics = { encMs ->
-                        val encSec = encMs / 1000.0
-                        val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)
-                        scope.launch(Dispatchers.Main) {
-                            binding.tvVidProgressStatus.text =
-                                "Encoding… ${String.format(Locale.US, "%.1f", encSec)}s / ${String.format(Locale.US, "%.1f", totalDurSec)}s ($pct%)"
-                        }
-                    },
-                    onSessionId = { id -> activeFFmpegSessionId = id }
-                )
-
-                // Copy to SAF Destination Folder if chosen
+                var successCount = 0
+                val total = itemsToProcess.size
+                var lastSavedFile: File? = null
+                var totalOriginalBytes = 0L
+                var totalCompressedBytes = 0L
                 val destUri = safManager.videoDestinationUri
-                if (result.success && destUri != null && outFile.exists()) {
-                    val mime = when (outputConfig.format.uppercase()) {
-                        "MKV" -> "video/x-matroska"
-                        "WEBM" -> "video/webm"
-                        "MOV" -> "video/quicktime"
-                        "AVI" -> "video/x-msvideo"
-                        "GIF" -> "image/gif"
-                        else -> "video/mp4"
+
+                for ((idx, item) in itemsToProcess.withIndex()) {
+                    if (!isActive) break
+
+                    val totalDurSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(1.0)
+                    val outFilename = if (total == 1) "$base.$ext" else "${base}_${idx + 1}.$ext"
+                    val outFile = File(outDir, outFilename)
+
+                    withContext(Dispatchers.Main) {
+                        binding.tvVidProgressStatus.text = "Encoding [${idx + 1}/$total]: ${item.displayName}…"
                     }
-                    safManager.copyFileToDocumentTree(outFile, destUri, mime)
+
+                    val result = MediaProcessor.video.process(
+                        srcFile = item.file,
+                        outFile = outFile,
+                        editState = editState,
+                        outputConfig = outputConfig,
+                        onStatistics = { encMs ->
+                            val encSec = encMs / 1000.0
+                            val pct = ((encSec / totalDurSec) * 100.0).toInt().coerceIn(0, 99)
+                            scope.launch(Dispatchers.Main) {
+                                binding.tvVidProgressStatus.text =
+                                    "[${idx + 1}/$total] ${item.displayName} • ${String.format(Locale.US, "%.1f", encSec)}s / ${String.format(Locale.US, "%.1f", totalDurSec)}s ($pct%)"
+                            }
+                        },
+                        onSessionId = { id -> activeFFmpegSessionId = id }
+                    )
+
+                    if (result.success && outFile.exists() && outFile.length() > 0L) {
+                        successCount++
+                        lastSavedFile = outFile
+                        totalOriginalBytes += item.originalBytes
+                        totalCompressedBytes += outFile.length()
+
+                        if (destUri != null) {
+                            val mime = when (outputConfig.format.uppercase()) {
+                                "MKV" -> "video/x-matroska"
+                                "WEBM" -> "video/webm"
+                                "MOV" -> "video/quicktime"
+                                "AVI" -> "video/x-msvideo"
+                                "GIF" -> "image/gif"
+                                else -> "video/mp4"
+                            }
+                            safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(activity, "Failed for ${item.displayName}: ${result.error ?: "Encoding error"}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
 
                 withContext(Dispatchers.Main) {
                     binding.layoutVidProgress.visibility = View.GONE
                     binding.btnVidExecute.text = "Compress again"
-                    if (result.success && outFile.exists() && outFile.length() > 0L) {
-                        lastResultFile = outFile
+
+                    if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists() && lastSavedFile.length() > 0L) {
+                        lastResultFile = lastSavedFile
                         val durTrimmed = editState.trimmedDurationMs
-                        binding.tvVidAfterStats.text = "${formatBytes(outFile.length())} • ${formatDuration(durTrimmed)} • ${outputConfig.format}"
-                        val ratio = if (originalBytes > 0) {
-                            (100.0 - (outFile.length().toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
+                        binding.tvVidAfterStats.text = "${formatBytes(lastSavedFile.length())} • ${formatDuration(durTrimmed)} • ${outputConfig.format}"
+                        val ratio = if (totalOriginalBytes > 0) {
+                            (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
                         binding.tvVidActualStats.visibility = View.VISIBLE
-                        binding.tvVidActualStats.text = "Actual Output: ${formatBytes(outFile.length())} • ${formatDuration(durTrimmed)} (Saved: $ratio%)"
+                        binding.tvVidActualStats.text = "Processed $successCount of $total videos • Saved $ratio%"
                         binding.layoutVidResultActions.visibility = View.VISIBLE
-                        Toast.makeText(activity, "Video compressed successfully!", Toast.LENGTH_SHORT).show()
+
+                        val destMsg = if (safManager.videoDestinationUri != null) "\nSaved to: ${safManager.videoDestinationName}" else ""
+                        Toast.makeText(activity, "Successfully compressed $successCount video(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(activity, "Video compression failed: ${result.error ?: "Encoder error"}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(activity, "Video compression failed to produce output", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
@@ -715,13 +884,22 @@ class VideoStudioController(
 
     fun clear() {
         loadToken.incrementAndGet()
-        selectedUri = null
-        originalFile = null
-        originalBytes = 0L
+        selectedMediaList.forEach { it.thumbnailBitmap?.recycle() }
+        selectedMediaList.clear()
+        currentMediaIndex = 0
         lastResultFile = null
         compressionJob?.cancel()
+        compressionJob = null
+        if (activeFFmpegSessionId >= 0L) {
+            FFmpegKit.cancel(activeFFmpegSessionId)
+            activeFFmpegSessionId = -1L
+        }
 
         playerController.pause()
+        binding.layoutVidNavRow.visibility = View.GONE
+        binding.scrollVidThumbnails.visibility = View.GONE
+        binding.layoutVidThumbStrip.removeAllViews()
+
         binding.imgVidThumb.setImageDrawable(null)
         binding.imgVidPreview.setImageDrawable(null)
         binding.layoutVidEmptyState.visibility = View.VISIBLE
@@ -749,7 +927,16 @@ class VideoStudioController(
     private fun showTrimDialog() {
         val dialogBinding = DialogVideoTrimBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
-        dialogBinding.imgTrimVideoThumbnail.setImageDrawable(binding.imgVidPreview.drawable)
+
+        val trimPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(activity).build()
+        dialogBinding.trimPlayerView.player = trimPlayer
+
+        val f = originalFile
+        if (f != null && f.exists()) {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(f))
+            trimPlayer.setMediaItem(mediaItem)
+            trimPlayer.prepare()
+        }
 
         val durSec = (editState.durationMs / 1000.0).toFloat().coerceAtLeast(1f)
         val currentStartSec = (editState.trimStartMs / 1000.0).toFloat().coerceIn(0f, durSec)
@@ -762,26 +949,21 @@ class VideoStudioController(
 
         var lastStartSec = currentStartSec
         var lastEndSec = currentEndSec
-        var thumbJob: Job? = null
 
-        fun updateLiveThumb(timeMs: Long) {
-            thumbJob?.cancel()
-            thumbJob = scope.launch(Dispatchers.IO) {
-                val f = originalFile ?: return@launch
-                try {
-                    val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(f.absolutePath)
-                    val frame = retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    retriever.release()
-                    if (frame != null && isActive) {
-                        withContext(Dispatchers.Main) {
-                            dialogBinding.imgTrimVideoThumbnail.setImageBitmap(frame)
-                        }
-                    }
-                } catch (_: Exception) {}
+        trimPlayer.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                dialogBinding.btnTrimPlayPause.setIconResource(
+                    if (isPlaying) R.drawable.ic_action_pause else R.drawable.ic_action_play
+                )
             }
-        }
 
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                dialogBinding.trimBufferingBar.visibility =
+                    if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+            }
+        })
+
+        // Live scrub seeking to the exact frame
         dialogBinding.rangeSliderTrim.addOnChangeListener { slider, _, fromUser ->
             val sSec = slider.values[0]
             val eSec = slider.values[1]
@@ -792,39 +974,70 @@ class VideoStudioController(
             dialogBinding.tvTrimDuration.text = formatDuration((eMs - sMs).coerceAtLeast(0))
 
             if (fromUser) {
-                if (Math.abs(sSec - lastStartSec) > 0.05f) {
+                if (Math.abs(sSec - lastStartSec) > 0.02f) {
                     lastStartSec = sSec
-                    updateLiveThumb(sMs)
-                } else if (Math.abs(eSec - lastEndSec) > 0.05f) {
+                    trimPlayer.pause()
+                    trimPlayer.seekTo(sMs)
+                } else if (Math.abs(eSec - lastEndSec) > 0.02f) {
                     lastEndSec = eSec
-                    updateLiveThumb(eMs)
+                    trimPlayer.pause()
+                    trimPlayer.seekTo(eMs)
                 }
+            }
+        }
+
+        // Play / Pause toggle with interval looping
+        dialogBinding.btnTrimPlayPause.setOnClickListener {
+            if (trimPlayer.isPlaying) {
+                trimPlayer.pause()
+            } else {
+                val curPos = trimPlayer.currentPosition
+                val sMs = (dialogBinding.rangeSliderTrim.values[0] * 1000).toLong()
+                val eMs = (dialogBinding.rangeSliderTrim.values[1] * 1000).toLong()
+                if (curPos < sMs || curPos >= eMs) {
+                    trimPlayer.seekTo(sMs)
+                }
+                trimPlayer.play()
+            }
+        }
+
+        val tickerJob = scope.launch(Dispatchers.Main) {
+            while (isActive) {
+                if (trimPlayer.isPlaying) {
+                    val curPos = trimPlayer.currentPosition
+                    val sMs = (dialogBinding.rangeSliderTrim.values[0] * 1000).toLong()
+                    val eMs = (dialogBinding.rangeSliderTrim.values[1] * 1000).toLong()
+                    if (curPos >= eMs) {
+                        trimPlayer.seekTo(sMs)
+                    }
+                    dialogBinding.tvTrimDuration.text = formatDuration(curPos)
+                }
+                kotlinx.coroutines.delay(100L)
             }
         }
 
         dialogBinding.chipTrimStory15.setOnClickListener {
             val e = 15f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
-            updateLiveThumb(0L)
+            trimPlayer.seekTo(0L)
         }
         dialogBinding.chipTrimStatus30.setOnClickListener {
             val e = 30f.coerceAtMost(durSec)
             dialogBinding.rangeSliderTrim.values = listOf(0f, e)
-            updateLiveThumb(0L)
+            trimPlayer.seekTo(0L)
         }
         dialogBinding.chipTrimMiddle.setOnClickListener {
             val midStart = durSec * 0.25f
             val midEnd = durSec * 0.75f
             dialogBinding.rangeSliderTrim.values = listOf(midStart, midEnd)
-            updateLiveThumb((midStart * 1000).toLong())
+            trimPlayer.seekTo((midStart * 1000).toLong())
         }
         dialogBinding.chipTrimFull.setOnClickListener {
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
-            updateLiveThumb(0L)
+            trimPlayer.seekTo(0L)
         }
 
         dialogBinding.btnTrimApply.setOnClickListener {
-            thumbJob?.cancel()
             val sSec = dialogBinding.rangeSliderTrim.values[0]
             val eSec = dialogBinding.rangeSliderTrim.values[1]
             editState.trimStartMs = (sSec * 1000).toLong()
@@ -840,7 +1053,6 @@ class VideoStudioController(
         }
 
         dialogBinding.btnTrimReset.setOnClickListener {
-            thumbJob?.cancel()
             dialogBinding.rangeSliderTrim.values = listOf(0f, durSec)
             editState.trimStartMs = 0L
             editState.trimEndMs = editState.durationMs
@@ -855,6 +1067,14 @@ class VideoStudioController(
 
         dialogBinding.btnTrimCancel.setOnClickListener { dialog.dismiss() }
         dialogBinding.btnTrimClose.setOnClickListener { dialog.dismiss() }
+
+        dialog.setOnDismissListener {
+            tickerJob.cancel()
+            trimPlayer.stop()
+            trimPlayer.release()
+            dialogBinding.trimPlayerView.player = null
+        }
+
         dialog.show()
     }
 
