@@ -777,13 +777,13 @@ jobs:
             echo "Release notes for VeilFrame ${TAG}" > RELEASE_NOTES.md
           fi
 
-          # Create release if it doesn't already exist
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG does not exist. Creating it..."
-            gh release create "$TAG" \
-              --title "VeilFrame $TAG" \
-              --notes-file RELEASE_NOTES.md
-          fi
+          # Ensure release exists
+          gh release create "$TAG" \
+            --title "VeilFrame $TAG" \
+            --notes-file RELEASE_NOTES.md || true
+          gh release edit "$TAG" \
+            --title "VeilFrame $TAG" \
+            --notes-file RELEASE_NOTES.md || true
 
           echo "==> Uploading release assets..."
 
