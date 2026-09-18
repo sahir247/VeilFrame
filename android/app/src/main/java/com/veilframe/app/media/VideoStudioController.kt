@@ -114,14 +114,14 @@ class VideoStudioController(
             }
         })
         binding.playerScrubber.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                val seekMs = (value * 1000).toLong()
-                binding.tvPlayerPosition.text = formatDuration(seekMs)
-            }
+            if (isUpdatingSlidersProgrammatically || !fromUser) return@addOnChangeListener
+            val seekMs = (value * 1000).toLong()
+            binding.tvPlayerPosition.text = formatDuration(seekMs)
         }
 
         // Dual-thumb RangeSlider timeline trimmer
         binding.rangeSliderVidTrim.addOnChangeListener { slider, _, _ ->
+            if (isUpdatingSlidersProgrammatically) return@addOnChangeListener
             val startSec = slider.values[0]
             val endSec = slider.values[1]
             editState.trimStartMs = (startSec * 1000).toLong()
@@ -231,6 +231,8 @@ class VideoStudioController(
         binding.tvVidDestinationPath.text = name
     }
 
+    private var isUpdatingSlidersProgrammatically: Boolean = false
+
     private fun updateRangeSliderSafely(
         slider: com.google.android.material.slider.RangeSlider,
         from: Float,
@@ -243,14 +245,19 @@ class VideoStudioController(
         val safeStart = start.coerceIn(safeFrom, safeTo)
         val safeEnd = end.coerceIn(safeStart, safeTo)
 
+        isUpdatingSlidersProgrammatically = true
         try {
-            val curMin = slider.valueFrom
-            slider.values = listOf(curMin, curMin)
-        } catch (_: Exception) {}
-
-        slider.valueFrom = safeFrom
-        slider.valueTo = safeTo
-        slider.values = listOf(safeStart, safeEnd)
+            slider.stepSize = 0f
+            slider.valueFrom = minOf(slider.valueFrom, safeFrom)
+            slider.valueTo = maxOf(slider.valueTo, safeTo)
+            slider.values = listOf(safeStart, safeEnd)
+            slider.valueFrom = safeFrom
+            slider.valueTo = safeTo
+        } catch (e: Exception) {
+            Log.w("VeilFrame.VideoStudio", "Error updating RangeSlider: ${e.message}")
+        } finally {
+            isUpdatingSlidersProgrammatically = false
+        }
     }
 
     private fun updateSliderSafely(
@@ -263,13 +270,19 @@ class VideoStudioController(
         val safeTo = if (to <= safeFrom) safeFrom + 1f else to
         val safeVal = value.coerceIn(safeFrom, safeTo)
 
+        isUpdatingSlidersProgrammatically = true
         try {
-            slider.value = slider.valueFrom
-        } catch (_: Exception) {}
-
-        slider.valueFrom = safeFrom
-        slider.valueTo = safeTo
-        slider.value = safeVal
+            slider.stepSize = 0f
+            slider.valueFrom = minOf(slider.valueFrom, safeFrom)
+            slider.valueTo = maxOf(slider.valueTo, safeTo)
+            slider.value = safeVal
+            slider.valueFrom = safeFrom
+            slider.valueTo = safeTo
+        } catch (e: Exception) {
+            Log.w("VeilFrame.VideoStudio", "Error updating Slider: ${e.message}")
+        } finally {
+            isUpdatingSlidersProgrammatically = false
+        }
     }
 
     fun handleVideoSelected(uri: Uri) {

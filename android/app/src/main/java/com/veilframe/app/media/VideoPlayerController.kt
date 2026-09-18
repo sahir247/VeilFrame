@@ -72,7 +72,11 @@ class VideoPlayerController(
         exoPlayer?.let { return it }
 
         val player = ExoPlayer.Builder(context).build().apply {
-            setVideoTextureView(textureView)
+            try {
+                setVideoTextureView(textureView)
+            } catch (e: Exception) {
+                Log.w(TAG, "TextureView attachment notice: ${e.message}")
+            }
             repeatMode = Player.REPEAT_MODE_OFF
 
             addListener(object : Player.Listener {
@@ -130,9 +134,8 @@ class VideoPlayerController(
 
     fun setDataSource(uri: Uri) {
         pause()
-        val player = getOrCreatePlayer()
-
         try {
+            val player = getOrCreatePlayer()
             val mediaItem = MediaItem.fromUri(uri)
             player.setMediaItem(mediaItem)
             player.prepare()

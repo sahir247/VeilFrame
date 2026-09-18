@@ -38,6 +38,23 @@ for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS=-Dfile.encoding=UTF-8 "-Xmx64m" "-Xms64m"
 
+@rem Prefer compatible Android Studio / OpenJDK 17-21 if current JAVA_HOME is Java 25+ (unsupported by Gradle/Kotlin)
+if exist "C:\Program Files\Android\openjdk\jdk-21.0.8\bin\java.exe" (
+    if not defined JAVA_HOME (
+        set "JAVA_HOME=C:\Program Files\Android\openjdk\jdk-21.0.8"
+    ) else (
+        echo %JAVA_HOME% | findstr /i "jdk-25 25." >nul 2>&1
+        if %ERRORLEVEL% equ 0 set "JAVA_HOME=C:\Program Files\Android\openjdk\jdk-21.0.8"
+    )
+) else if exist "C:\Program Files\Android\Android Studio\jbr\bin\java.exe" (
+    if not defined JAVA_HOME (
+        set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
+    ) else (
+        echo %JAVA_HOME% | findstr /i "jdk-25 25." >nul 2>&1
+        if %ERRORLEVEL% equ 0 set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
+    )
+)
+
 @rem Find java.exe
 if defined JAVA_HOME goto findJavaFromJavaHome
 

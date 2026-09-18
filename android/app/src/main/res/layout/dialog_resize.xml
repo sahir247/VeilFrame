@@ -66,6 +66,23 @@
                     android:layout_height="match_parent"
                     android:scaleType="fitCenter"
                     android:contentDescription="Resize Preview" />
+
+                <!-- Live Resolution and Scale Badge -->
+                <TextView
+                    android:id="@+id/tvResizeLiveBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_pill_accent"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp"
+                    android:text="1920 × 1080 px (100%)"
+                    android:textColor="@color/vf_accent_green"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
             </FrameLayout>
 
             <LinearLayout
@@ -102,7 +119,7 @@
                 android:valueFrom="10"
                 android:valueTo="200"
                 android:value="100"
-                android:stepSize="5"
+                android:stepSize="1"
                 app:thumbColor="@color/vf_primary"
                 app:trackColorActive="@color/vf_primary"
                 app:trackColorInactive="@color/vf_surface_variant" />

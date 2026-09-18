@@ -10,6 +10,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -300,25 +301,27 @@ class ImageStudioController(
         val targetHeight: Int
         if (state.resizeWidth > 0 && state.resizeHeight > 0) {
             if (useFullRes) {
-                targetWidth = state.resizeWidth
-                targetHeight = state.resizeHeight
+                targetWidth = state.resizeWidth.coerceIn(16, 16384)
+                targetHeight = state.resizeHeight.coerceIn(16, 16384)
             } else {
-                val ratioW = result.width.toFloat() / origFullW.toFloat()
-                val ratioH = result.height.toFloat() / origFullH.toFloat()
-                targetWidth = (state.resizeWidth * ratioW).toInt().coerceAtLeast(1)
-                targetHeight = (state.resizeHeight * ratioH).toInt().coerceAtLeast(1)
+                val ratioW = result.width.toFloat() / origFullW.toFloat().coerceAtLeast(1f)
+                val ratioH = result.height.toFloat() / origFullH.toFloat().coerceAtLeast(1f)
+                targetWidth = (state.resizeWidth * ratioW).toInt().coerceIn(16, 16384)
+                targetHeight = (state.resizeHeight * ratioH).toInt().coerceIn(16, 16384)
             }
         } else if (state.resizeScale != 100) {
-            targetWidth = ((result.width * state.resizeScale) / 100).coerceAtLeast(1)
-            targetHeight = ((result.height * state.resizeScale) / 100).coerceAtLeast(1)
+            targetWidth = ((result.width * state.resizeScale) / 100).coerceIn(16, 16384)
+            targetHeight = ((result.height * state.resizeScale) / 100).coerceIn(16, 16384)
         } else {
-            targetWidth = result.width
-            targetHeight = result.height
+            targetWidth = result.width.coerceAtLeast(16)
+            targetHeight = result.height.coerceAtLeast(16)
         }
         if (targetWidth != result.width || targetHeight != result.height) {
             try {
                 result = Bitmap.createScaledBitmap(result, targetWidth, targetHeight, true)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("VeilFrame.ImageStudio", "createScaledBitmap error: ${e.message}")
+            }
         }
 
         // 4. Background Fill (for alpha transparency)
@@ -786,6 +789,7 @@ class ImageStudioController(
         var draftH = if (editState.resizeHeight > 0) editState.resizeHeight else origH
         var draftKeepAspect = editState.keepAspect
         var isUpdatingText = false
+        var debounceJob: Job? = null
 
         fun updateResizePreview() {
             val previewDraft = editState.deepCopy().apply {
@@ -795,6 +799,56 @@ class ImageStudioController(
                 keepAspect = draftKeepAspect
             }
             dialogBinding.imgResizePreview.setImageBitmap(renderLivePreview(previewDraft))
+            dialogBinding.tvResizeLiveBadge.text = "${draftW} × ${draftH} px (${draftScale}%)"
+            val scaleFactor = (draftScale.toFloat() / 100f).coerceIn(0.15f, 1.0f)
+            dialogBinding.imgResizePreview.scaleX = scaleFactor
+            dialogBinding.imgResizePreview.scaleY = scaleFactor
+        }
+
+        fun applyWidthUpdate() {
+            if (isUpdatingText) return
+            val text = dialogBinding.etResizeWidth.text?.toString()?.trim() ?: ""
+            val newW = text.toIntOrNull()
+            if (newW != null && newW >= 16) {
+                isUpdatingText = true
+                draftW = newW.coerceIn(16, 16384)
+                if (draftKeepAspect) {
+                    draftH = Math.round(draftW / origAspect).toInt().coerceIn(16, 16384)
+                    dialogBinding.etResizeHeight.setText(draftH.toString())
+                }
+                val scale = Math.round((draftW.toDouble() / origW.toDouble()) * 100).toInt().coerceIn(10, 200)
+                draftScale = scale
+                dialogBinding.sliderResizeScale.value = scale.toFloat().coerceIn(
+                    dialogBinding.sliderResizeScale.valueFrom,
+                    dialogBinding.sliderResizeScale.valueTo
+                )
+                dialogBinding.tvResizeScaleLabel.text = "$scale%"
+                updateResizePreview()
+                isUpdatingText = false
+            }
+        }
+
+        fun applyHeightUpdate() {
+            if (isUpdatingText) return
+            val text = dialogBinding.etResizeHeight.text?.toString()?.trim() ?: ""
+            val newH = text.toIntOrNull()
+            if (newH != null && newH >= 16) {
+                isUpdatingText = true
+                draftH = newH.coerceIn(16, 16384)
+                if (draftKeepAspect) {
+                    draftW = Math.round(draftH * origAspect).toInt().coerceIn(16, 16384)
+                    dialogBinding.etResizeWidth.setText(draftW.toString())
+                }
+                val scale = Math.round((draftH.toDouble() / origH.toDouble()) * 100).toInt().coerceIn(10, 200)
+                draftScale = scale
+                dialogBinding.sliderResizeScale.value = scale.toFloat().coerceIn(
+                    dialogBinding.sliderResizeScale.valueFrom,
+                    dialogBinding.sliderResizeScale.valueTo
+                )
+                dialogBinding.tvResizeScaleLabel.text = "$scale%"
+                updateResizePreview()
+                isUpdatingText = false
+            }
         }
 
         dialogBinding.sliderResizeScale.value = draftScale.toFloat().coerceIn(10f, 200f)
@@ -808,26 +862,16 @@ class ImageStudioController(
             draftKeepAspect = isChecked
         }
 
-        // Two-way aspect ratio calculation: width updates height, height updates width
+        // Lazy two-way dimension typing: wait for typing pause or focus change before calculating companion
         dialogBinding.etResizeWidth.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
                 if (isUpdatingText) return
-                val newW = s?.toString()?.toIntOrNull()
-                if (newW != null && newW > 0) {
-                    isUpdatingText = true
-                    draftW = newW
-                    if (draftKeepAspect) {
-                        draftH = Math.round(newW / origAspect).toInt().coerceAtLeast(1)
-                        dialogBinding.etResizeHeight.setText(draftH.toString())
-                    }
-                    val scale = Math.round((draftW.toDouble() / origW.toDouble()) * 100).toInt().coerceIn(10, 200)
-                    draftScale = scale
-                    dialogBinding.sliderResizeScale.value = scale.toFloat()
-                    dialogBinding.tvResizeScaleLabel.text = "$scale%"
-                    updateResizePreview()
-                    isUpdatingText = false
+                debounceJob?.cancel()
+                debounceJob = scope.launch(Dispatchers.Main) {
+                    kotlinx.coroutines.delay(400)
+                    applyWidthUpdate()
                 }
             }
         })
@@ -837,31 +881,54 @@ class ImageStudioController(
             override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
                 if (isUpdatingText) return
-                val newH = s?.toString()?.toIntOrNull()
-                if (newH != null && newH > 0) {
-                    isUpdatingText = true
-                    draftH = newH
-                    if (draftKeepAspect) {
-                        draftW = Math.round(newH * origAspect).toInt().coerceAtLeast(1)
-                        dialogBinding.etResizeWidth.setText(draftW.toString())
-                    }
-                    val scale = Math.round((draftH.toDouble() / origH.toDouble()) * 100).toInt().coerceIn(10, 200)
-                    draftScale = scale
-                    dialogBinding.sliderResizeScale.value = scale.toFloat()
-                    dialogBinding.tvResizeScaleLabel.text = "$scale%"
-                    updateResizePreview()
-                    isUpdatingText = false
+                debounceJob?.cancel()
+                debounceJob = scope.launch(Dispatchers.Main) {
+                    kotlinx.coroutines.delay(400)
+                    applyHeightUpdate()
                 }
             }
         })
 
+        dialogBinding.etResizeWidth.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                debounceJob?.cancel()
+                applyWidthUpdate()
+            }
+        }
+
+        dialogBinding.etResizeHeight.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                debounceJob?.cancel()
+                applyHeightUpdate()
+            }
+        }
+
+        dialogBinding.etResizeWidth.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE ||
+                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT) {
+                debounceJob?.cancel()
+                applyWidthUpdate()
+                false
+            } else false
+        }
+
+        dialogBinding.etResizeHeight.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE ||
+                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT) {
+                debounceJob?.cancel()
+                applyHeightUpdate()
+                false
+            } else false
+        }
+
         dialogBinding.sliderResizeScale.addOnChangeListener { _, value, fromUser ->
             if (!fromUser || isUpdatingText) return@addOnChangeListener
+            debounceJob?.cancel()
             isUpdatingText = true
-            draftScale = value.toInt()
+            draftScale = value.toInt().coerceIn(10, 200)
             dialogBinding.tvResizeScaleLabel.text = "$draftScale%"
-            draftW = ((origW * draftScale) / 100).coerceAtLeast(1)
-            draftH = ((origH * draftScale) / 100).coerceAtLeast(1)
+            draftW = ((origW * draftScale) / 100).coerceIn(16, 16384)
+            draftH = ((origH * draftScale) / 100).coerceIn(16, 16384)
             dialogBinding.etResizeWidth.setText(draftW.toString())
             dialogBinding.etResizeHeight.setText(draftH.toString())
             updateResizePreview()
@@ -869,6 +936,7 @@ class ImageStudioController(
         }
 
         dialogBinding.btnResizeApply.setOnClickListener {
+            debounceJob?.cancel()
             editState.resizeScale = draftScale
             editState.resizeWidth = draftW
             editState.resizeHeight = draftH
@@ -877,6 +945,7 @@ class ImageStudioController(
             dialog.dismiss()
         }
         dialogBinding.btnResizeReset.setOnClickListener {
+            debounceJob?.cancel()
             isUpdatingText = true
             draftScale = 100
             draftW = origW
@@ -890,8 +959,17 @@ class ImageStudioController(
             updateResizePreview()
             isUpdatingText = false
         }
-        dialogBinding.btnResizeCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnResizeClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnResizeCancel.setOnClickListener {
+            debounceJob?.cancel()
+            dialog.dismiss()
+        }
+        dialogBinding.btnResizeClose.setOnClickListener {
+            debounceJob?.cancel()
+            dialog.dismiss()
+        }
+        dialog.setOnDismissListener {
+            debounceJob?.cancel()
+        }
         dialog.show()
     }
 

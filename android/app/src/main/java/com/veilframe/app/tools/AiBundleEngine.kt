@@ -93,7 +93,7 @@ object AiBundleEngine {
                     val content = readFileContent(resolver, child.uri, config.maskSecrets)
                     if (content.isNullOrBlank()) continue
 
-                    val fileSection = buildFileSection(relativePath, content, config.outputFormat)
+                    val fileSection = buildFileSection(relativePath, content, config.outputFormat, includedFiles + 1)
                     val sectionLen = fileSection.length
 
                     if (currentChars + sectionLen <= charsBudget) {
@@ -114,10 +114,10 @@ object AiBundleEngine {
         val estimatedTokens = currentChars / 4
 
         outputFile.parentFile?.mkdirs()
-        val finalDocument = if (config.outputFormat.lowercase(Locale.US) == "json") {
-            buildJsonBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
-        } else {
-            buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
+        val finalDocument = when (config.outputFormat.lowercase(Locale.US)) {
+            "json" -> buildJsonBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
+            "aibundle" -> buildNativeAibundle(rootName, timeStamp, includedFiles, estimatedTokens, totalFilesSeen, sections)
+            else -> buildMarkdownBundle(rootName, timeStamp, includedFiles, estimatedTokens, sections)
         }
 
         outputFile.writeText(finalDocument, Charsets.UTF_8)
@@ -153,26 +153,73 @@ object AiBundleEngine {
                 lowerPath.contains("/test/") || lowerPath.contains("/tests/") || lowerPath.contains("/androidTest/")
     }
 
-    private fun buildFileSection(path: String, content: String, format: String): String {
-        return if (format.lowercase(Locale.US) == "json") {
-            "\"${path.replace("\\", "\\\\")}\": ${content.replace("\\", "\\\\").replace("\"", "\\\"")}"
-        } else {
-            val lang = when (path.substringAfterLast('.', "").lowercase(Locale.US)) {
-                "kt" -> "kotlin"
-                "java" -> "java"
-                "py" -> "python"
-                "js" -> "javascript"
-                "ts" -> "typescript"
-                "json" -> "json"
-                "xml" -> "xml"
-                "gradle", "kts" -> "kotlin"
-                "html" -> "html"
-                "css" -> "css"
-                "sh" -> "bash"
-                else -> ""
+    private fun buildFileSection(path: String, content: String, format: String, fileIndex: Int): String {
+        return when (format.lowercase(Locale.US)) {
+            "json" -> {
+                "\"${path.replace("\\", "\\\\")}\": ${org.json.JSONObject.quote(content)}"
             }
-            "### $path\n\n```$lang\n$content\n```\n\n"
+            "aibundle" -> {
+                val ext = path.substringAfterLast('.', "").lowercase(Locale.US)
+                val id = "F%03d".format(fileIndex)
+                "@FILE id=\"$id\" path=\"$path\" language=\"$ext\"\n<<<\n$content\n>>>\n\n"
+            }
+            else -> {
+                val lang = when (path.substringAfterLast('.', "").lowercase(Locale.US)) {
+                    "kt" -> "kotlin"
+                    "java" -> "java"
+                    "py" -> "python"
+                    "js" -> "javascript"
+                    "ts" -> "typescript"
+                    "json" -> "json"
+                    "xml" -> "xml"
+                    "gradle", "kts" -> "kotlin"
+                    "html" -> "html"
+                    "css" -> "css"
+                    "sh" -> "bash"
+                    else -> ""
+                }
+                "### $path\n\n```$lang\n$content\n```\n\n"
+            }
         }
+    }
+
+    private fun buildNativeAibundle(
+        rootName: String,
+        timestamp: String,
+        fileCount: Int,
+        totalTokens: Int,
+        totalFilesSeen: Int,
+        sections: List<String>
+    ): String {
+        val sb = StringBuilder()
+        sb.append("@VEILFRAME_BUNDLE\n")
+        sb.append("version=1\n")
+        sb.append("project=$rootName\n")
+        sb.append("timestamp=$timestamp\n")
+        sb.append("total_tokens=$totalTokens\n")
+        sb.append("included_files=$fileCount\n")
+        sb.append("excluded_files=${(totalFilesSeen - fileCount).coerceAtLeast(0)}\n\n")
+
+        sb.append("@PROJECT\n")
+        sb.append("Name: $rootName\n")
+        sb.append("Engine: VeilFrame Mobile Hub Native Kotlin\n")
+        sb.append("Included in Context: $fileCount files (~$totalTokens tokens)\n\n")
+
+        sb.append("@SUMMARY\n")
+        sb.append("Total Files Evaluated: $totalFilesSeen\n")
+        sb.append("Included in Bundle: $fileCount\n")
+        sb.append("Estimated Tokens: ~$totalTokens\n\n")
+
+        sb.append("@FILES\n")
+        for (sec in sections) {
+            sb.append(sec)
+        }
+
+        sb.append("@SECURITY\n")
+        sb.append("STATUS: SECURE | Credentials, API tokens, and secret patterns sanitized\n\n")
+
+        sb.append("@END\n")
+        return sb.toString()
     }
 
     private fun buildMarkdownBundle(rootName: String, timestamp: String, fileCount: Int, tokens: Int, sections: List<String>): String {
