@@ -737,33 +737,53 @@ jobs:
           path: downloaded_artifacts
 
       - name: Assemble Release Assets & Compute SHA-256 Checksums
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
           mkdir -p final_release
-          
-          # Find and copy all distribution files (.exe, .deb, .dmg, .tar.gz, .whl, .apk, .aab) into final_release
-          find downloaded_artifacts -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.whl" -o -name "*.apk" -o -name "*.aab" \) -exec cp {} final_release/ \;
-          
-          # Inject authentic computed SHA-256 into update.json and bundle into release assets
-          if [ -f "final_release/VeilFrame-android-arm64.apk" ]; then
+
+          find downloaded_artifacts -type f \
+            \( -name "*.exe" \
+            -o -name "*.deb" \
+            -o -name "*.dmg" \
+            -o -name "*.tar.gz" \
+            -o -name "*.whl" \
+            -o -name "*.apk" \
+            -o -name "*.aab" \) \
+            -exec cp {} final_release/ \;
+
+          shopt -s nullglob
+          assets=(final_release/*)
+
+          if ((${#assets[@]} == 0)); then
+            echo "::error::No build artifacts were copied into final_release"
+            find downloaded_artifacts -maxdepth 3 -type f -print
+            exit 1
+          fi
+
+          if [ -f final_release/VeilFrame-android-arm64.apk ]; then
             APK_SHA256=$(sha256sum final_release/VeilFrame-android-arm64.apk | awk '{print $1}')
-            echo "Calculated VeilFrame-android-arm64.apk SHA-256: $APK_SHA256"
-            python3 -c "import json, sys; d = json.load(open('android/update.json')); d['sha256'] = sys.argv[1]; json.dump(d, open('final_release/update.json', 'w'), indent=2)" "$APK_SHA256"
-            echo "Generated final_release/update.json with verified APK SHA-256:"
-            cat final_release/update.json
+            python3 -c \
+              "import json,sys
+               p='android/update.json'
+               d=json.load(open(p))
+               d['sha256']=sys.argv[1]
+               json.dump(d,open('final_release/update.json','w'),indent=2)" \
+              "$APK_SHA256"
           else
-            echo "Notice: VeilFrame-android-arm64.apk not present in downloaded artifacts, copying template update.json"
             cp android/update.json final_release/update.json
           fi
-          
-          cd final_release
-          rm -f SHA256SUMS.txt
-          for f in *; do
-            if [ -f "$f" ] && [ "$f" != "SHA256SUMS.txt" ]; then
-              sha256sum "$f"
-            fi
-          done > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-          ls -la
+
+          (
+            cd final_release
+            rm -f SHA256SUMS.txt
+            for file in *; do
+              [ -f "$file" ] && sha256sum "$file"
+            done
+          ) > final_release/SHA256SUMS.txt
+
+          ls -lah final_release
 
       - name: Upload Aggregate Workflow Artifact
         uses: actions/upload-artifact@v4.6.2
@@ -779,52 +799,59 @@ jobs:
           github.event_name == 'release' ||
           startsWith(github.ref, 'refs/tags/v') ||
           (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-          (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_release == 'true'))
+          (github.event_name == 'workflow_dispatch' &&
+           (inputs.publish_release == true || inputs.publish_release == 'true'))
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
 
-          # Determine target release tag
           if [ -n "${{ inputs.release_tag }}" ]; then
             TAG="${{ inputs.release_tag }}"
-          elif [ "${{ github.event_name }}" = "release" ] && [ -n "${{ github.event.release.tag_name }}" ]; then
+          elif [ "${{ github.event_name }}" = "release" ] &&
+               [ -n "${{ github.event.release.tag_name }}" ]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "2.2.5")"
+            TAG="v$(python3 -c \
+              "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
           fi
 
-          echo "==> Publishing release for tag: ${TAG}"
+          echo "Publishing release: ${TAG}"
+
+          mapfile -t assets < <(
+            find final_release -maxdepth 1 -type f -print
+          )
+
+          if ((${#assets[@]} == 0)); then
+            echo "::error::No release assets were generated in final_release"
+            find final_release -maxdepth 2 -print || true
+            exit 1
+          fi
 
           # Ensure notes file exists
           if [ ! -f RELEASE_NOTES.md ]; then
             echo "Release notes for VeilFrame ${TAG}" > RELEASE_NOTES.md
           fi
 
-          # Ensure release exists
-          gh release create "$TAG" \
-            --title "VeilFrame $TAG" \
-            --notes-file RELEASE_NOTES.md || true
-          gh release edit "$TAG" \
-            --title "VeilFrame $TAG" \
-            --notes-file RELEASE_NOTES.md || true
-
-          echo "==> Uploading release assets..."
-
-          shopt -s nullglob
-          assets=(final_release/*)
-
-          if ((${#assets[@]} == 0)); then
-            echo "ERROR: No release assets found."
-            exit 1
+          # Create the release only when it does not already exist.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Using existing release ${TAG}"
+          else
+            gh release create "$TAG" \
+              --title "VeilFrame ${TAG}" \
+              --notes-file RELEASE_NOTES.md
           fi
 
-          # Upload all assets in one gh invocation.
+          # Refresh the release metadata without hiding errors.
+          gh release edit "$TAG" \
+            --title "VeilFrame ${TAG}" \
+            --notes-file RELEASE_NOTES.md
+
           gh release upload "$TAG" \
             --clobber \
             "${assets[@]}"
 
-          echo "==> Release ${TAG} published successfully."
+          echo "Release ${TAG} published successfully."
