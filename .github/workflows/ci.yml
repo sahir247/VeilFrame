@@ -275,6 +275,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   # ------------------------------------------------------------------ #
   # 3b. Build Standalone Linux Package (.deb & .tar.gz x86_64)         #
@@ -391,6 +392,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   # ------------------------------------------------------------------ #
   # 3c. Build Standalone macOS Package (.dmg & .tar.gz ARM64)          #
@@ -528,6 +530,14 @@ jobs:
           sync
           sleep 2
 
+      - name: Verify GitHub Actions connectivity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          nslookup github.com || true
+          nslookup actions.githubusercontent.com || true
+          curl --fail --silent --show-error --location \
+            https://api.github.com/zen || true
 
       - name: Upload macOS tarball
         uses: actions/upload-artifact@v4.6.2
@@ -537,6 +547,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4.6.2
@@ -546,6 +557,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   # ------------------------------------------------------------------ #
   # 3d. Build Universal Python Packages (Wheel & Sdist)                #
@@ -581,6 +593,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   # ------------------------------------------------------------------ #
   # 3e. Build Android Release APK (ARM64)                              #
@@ -706,6 +719,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
   # ------------------------------------------------------------------ #
   # 4. Release Aggregator: Checksums & GitHub Release Publishing       #
@@ -802,6 +816,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+          overwrite: true
 
       - name: Publish GitHub Release Assets
         if: >
