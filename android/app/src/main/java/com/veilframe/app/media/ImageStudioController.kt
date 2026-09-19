@@ -55,7 +55,8 @@ class ImageStudioController(
     private val onPickFolderRequest: () -> Unit,
     private val onExportFileRequest: (File) -> Unit,
     private val onShareFileRequest: (File, String) -> Unit,
-    private val onNavigateHome: () -> Unit
+    private val onNavigateHome: () -> Unit,
+    private val onOpenModelManager: () -> Unit = {}
 ) {
     // Authoritative state
     val editState = ImageEditState()
@@ -97,6 +98,7 @@ class ImageStudioController(
 
     fun initWorkspace() {
         binding.btnImgStudioMenu.setOnClickListener { onNavigateHome() }
+        binding.btnImgStudioFavorite.setOnClickListener { onOpenModelManager() }
         binding.btnSelectImage.setOnClickListener { onPickImageRequest() }
         binding.btnImgAddMore.setOnClickListener { onAddMoreImageRequest() }
         binding.btnImgClearAll.setOnClickListener { clear() }
@@ -437,6 +439,9 @@ class ImageStudioController(
     fun refreshPreview() {
         val previewBmp = renderLivePreview(editState) ?: return
         binding.imgAfterPreview.setImageBitmap(previewBmp)
+        val visualScale = (editState.resizeScale.toFloat() / 100f).coerceIn(0.2f, 2.5f)
+        binding.imgAfterPreview.scaleX = visualScale
+        binding.imgAfterPreview.scaleY = visualScale
 
         val item = currentItem
         val origFullW = item?.origWidth ?: previewBmp.width
@@ -563,6 +568,8 @@ class ImageStudioController(
         binding.tvImgQualityValue.text = "85%"
         binding.chipImgJpg.isChecked = true
         outputConfig.format = "JPG"
+        binding.imgAfterPreview.scaleX = 1f
+        binding.imgAfterPreview.scaleY = 1f
 
         refreshPreview()
         Toast.makeText(activity, "Image edits reset to original", Toast.LENGTH_SHORT).show()

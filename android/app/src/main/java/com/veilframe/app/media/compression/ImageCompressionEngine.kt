@@ -169,7 +169,7 @@ object ImageCompressionEngine {
     }
 
     /**
-     * Computes empirical size estimate for display in UI.
+     * Computes empirical, high-precision size estimate for display in UI.
      */
     fun estimateOutputBytes(
         originalBytes: Long,
@@ -181,34 +181,65 @@ object ImageCompressionEngine {
     ): Long {
         if (outputConfig.compressionMode == "target_size") {
             val targetKb = outputConfig.targetSizeKb ?: 250
-            return (targetKb * 1024L).coerceAtMost(originalBytes.coerceAtLeast(1024L))
+            return (targetKb * 1024L).coerceAtLeast(1024L)
         }
 
         val targetFormat = ImageFormatEncoder.Format.fromString(outputConfig.format)
-        val dimRatio = (targetWidth.toDouble() * targetHeight.toDouble()) /
-                (origWidth.toDouble() * origHeight.toDouble()).coerceAtLeast(1.0)
+        val targetPixels = (targetWidth.toLong() * targetHeight.toLong()).coerceAtLeast(1L)
+        val origPixels = (origWidth.toLong() * origHeight.toLong()).coerceAtLeast(1L)
+        val dimRatio = targetPixels.toDouble() / origPixels.toDouble()
+        val quality = outputConfig.quality.coerceIn(5, 100)
 
         return when (targetFormat) {
             ImageFormatEncoder.Format.BMP -> {
-                // Exact uncompressed BMP size: 54 bytes + 3 * w * h
-                ((targetWidth * 3L + 3) and 3.inv().toLong()) * targetHeight + 54L
+                // Exact standard 24-bit uncompressed Windows DIB bitmap:
+                // Row size is padded to 4-byte boundary: (width * 3 + 3) & ~3
+                val rowBytes = ((targetWidth * 3L + 3) and 3.inv().toLong())
+                rowBytes * targetHeight + 54L
+            }
+            ImageFormatEncoder.Format.JPEG -> {
+                val qFactor = if (quality >= 85) {
+                    1.0 + (quality - 85) * 0.035
+                } else {
+                    Math.pow(quality / 85.0, 1.35)
+                }
+                if (originalBytes > 0) {
+                    (originalBytes * dimRatio * qFactor).toLong().coerceIn(1024L, (targetPixels * 1.5).toLong())
+                } else {
+                    (targetPixels * 0.22 * qFactor).toLong().coerceAtLeast(1024L)
+                }
+            }
+            ImageFormatEncoder.Format.WEBP -> {
+                val qFactor = if (quality >= 85) {
+                    1.0 + (quality - 85) * 0.03
+                } else {
+                    Math.pow(quality / 85.0, 1.3)
+                }
+                val base = if (originalBytes > 0) (originalBytes * dimRatio * 0.72) else (targetPixels * 0.16)
+                (base * qFactor).toLong().coerceAtLeast(1024L)
             }
             ImageFormatEncoder.Format.PNG -> {
-                (originalBytes * dimRatio * 1.1).toLong().coerceAtLeast(1024L)
-            }
-            ImageFormatEncoder.Format.TIFF -> {
-                (originalBytes * dimRatio * 1.5).toLong().coerceAtLeast(1024L)
-            }
-            ImageFormatEncoder.Format.GIF -> {
-                (originalBytes * dimRatio * 0.8).toLong().coerceAtLeast(1024L)
+                // Deflate lossless compression for photographic content averages ~1.4 bytes/pixel
+                if (originalBytes > 0) {
+                    val candidate = (originalBytes * dimRatio * 2.2).toLong()
+                    minOf(candidate, (targetPixels * 1.4).toLong()).coerceAtLeast(1024L)
+                } else {
+                    (targetPixels * 1.4).toLong().coerceAtLeast(1024L)
+                }
             }
             ImageFormatEncoder.Format.HEIF, ImageFormatEncoder.Format.HEIC, ImageFormatEncoder.Format.AVIF -> {
-                val qRatio = Math.pow(outputConfig.quality.toDouble() / 100.0, 1.4)
-                (originalBytes.toDouble() * dimRatio * qRatio * 0.45).toLong().coerceAtLeast(1024L)
+                // Advanced intra-coding achieves ~45-55% smaller size than JPEG
+                val qFactor = Math.pow(quality / 85.0, 1.4)
+                val base = if (originalBytes > 0) (originalBytes * dimRatio * 0.50) else (targetPixels * 0.12)
+                (base * qFactor).toLong().coerceAtLeast(1024L)
             }
-            ImageFormatEncoder.Format.JPEG, ImageFormatEncoder.Format.WEBP -> {
-                val qRatio = Math.pow(outputConfig.quality.toDouble() / 100.0, 1.3)
-                (originalBytes.toDouble() * dimRatio * qRatio * 0.7).toLong().coerceIn(1024L, (originalBytes * 1.5).toLong())
+            ImageFormatEncoder.Format.TIFF -> {
+                // Uncompressed or LZW TIFF
+                (targetPixels * 2.0).toLong().coerceAtLeast(1024L)
+            }
+            ImageFormatEncoder.Format.GIF -> {
+                // 8-bit palette indexed GIF
+                (targetPixels * 0.65).toLong().coerceAtLeast(1024L)
             }
         }
     }

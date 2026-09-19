@@ -87,7 +87,8 @@ object VideoProcessor {
             "9:16 (Reel / Shorts / TikTok)", "9:16" -> "9:16"
             "1:1 (Square Feed)", "1:1" -> "1:1"
             "16:9 (Landscape YouTube)", "16:9" -> "16:9"
-            "4:3 (Classic)", "4:3" -> "4:3"
+            "4:3 (Classic)", "4:3 (Standard)", "4:3" -> "4:3"
+            "3:4 (Portrait)", "3:4" -> "3:4"
             else -> null
         }
         val audioActionStr = when (editState.audioMode) {
@@ -124,9 +125,11 @@ object VideoProcessor {
             audioCodec = outputConfig.audioCodec,
             codec = codecParam,
             crf = outputConfig.crf,
+            compressionPreset = outputConfig.compressionPreset,
             flipH = editState.flipH,
             flipV = editState.flipV,
             rotate = editState.rotationAngle,
+            customCropPercent = editState.customCropPercent,
             fps = editState.fps,
             targetSizeMb = targetSizeMb,
             isGifMode = isGifMode,
@@ -168,9 +171,11 @@ object VideoProcessor {
         audioCodec: String,
         codec: String,
         crf: Int,
+        compressionPreset: String = "slow",
         flipH: Boolean,
         flipV: Boolean,
         rotate: Int,
+        customCropPercent: Int = 0,
         fps: Int?,
         targetSizeMb: Double?,
         isGifMode: Boolean = false,
@@ -212,7 +217,13 @@ object VideoProcessor {
                     "1:1" -> vfFilters.add("crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2")
                     "16:9" -> vfFilters.add("crop=trunc(min(iw\\,ih*16/9)/2)*2:trunc(min(ih\\,iw*9/16)/2)*2")
                     "4:3" -> vfFilters.add("crop=trunc(min(iw\\,ih*4/3)/2)*2:trunc(min(ih\\,iw*3/4)/2)*2")
+                    "3:4" -> vfFilters.add("crop=trunc(min(iw\\,ih*3/4)/2)*2:trunc(min(ih\\,iw*4/3)/2)*2")
                 }
+            }
+
+            if (customCropPercent > 0) {
+                val factor = (1.0 - (customCropPercent / 100.0).coerceIn(0.0, 0.8))
+                vfFilters.add(String.format(Locale.US, "crop=trunc(iw*%.3f/2)*2:trunc(ih*%.3f/2)*2", factor, factor))
             }
 
             if (flipH) vfFilters.add("hflip")
@@ -348,6 +359,8 @@ object VideoProcessor {
 
                 if (resolvedCodec != "copy") {
                     val isVp9 = resolvedCodec == "libvpx-vp9"
+                    val speedPresetNormalized = compressionPreset.lowercase(Locale.US)
+
                     if (targetSizeMb != null && targetSizeMb > 0 && trimDurationSec > 0.2) {
                         // Total target budget in bits
                         val totalTargetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0
@@ -367,13 +380,36 @@ object VideoProcessor {
                         cmd.add("-b:v")
                         cmd.add("${targetBitrateKbps}k")
                         if (isVp9) {
-                            cmd.add("-deadline")
-                            cmd.add("realtime")
-                            cmd.add("-cpu-used")
-                            cmd.add("4")
+                            when (speedPresetNormalized) {
+                                "slow" -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("good")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("1")
+                                }
+                                "fast" -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("realtime")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("4")
+                                }
+                                else -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("good")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("3")
+                                }
+                            }
                             cmd.add("-row-mt")
                             cmd.add("1")
                         } else {
+                            cmd.add("-preset")
+                            val presetArg = when (speedPresetNormalized) {
+                                "slow" -> "slow"
+                                "fast" -> "fast"
+                                else -> "medium"
+                            }
+                            cmd.add(presetArg)
                             cmd.add("-maxrate")
                             cmd.add("${(targetBitrateKbps * 1.35).toInt()}k")
                             cmd.add("-bufsize")
@@ -385,15 +421,36 @@ object VideoProcessor {
                         if (isVp9) {
                             cmd.add("-b:v")
                             cmd.add("0")
-                            cmd.add("-deadline")
-                            cmd.add("realtime")
-                            cmd.add("-cpu-used")
-                            cmd.add("4")
+                            when (speedPresetNormalized) {
+                                "slow" -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("good")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("1")
+                                }
+                                "fast" -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("realtime")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("4")
+                                }
+                                else -> {
+                                    cmd.add("-deadline")
+                                    cmd.add("good")
+                                    cmd.add("-cpu-used")
+                                    cmd.add("3")
+                                }
+                            }
                             cmd.add("-row-mt")
                             cmd.add("1")
                         } else {
                             cmd.add("-preset")
-                            cmd.add("ultrafast")
+                            val presetArg = when (speedPresetNormalized) {
+                                "slow" -> "slow"
+                                "fast" -> "fast"
+                                else -> "medium"
+                            }
+                            cmd.add(presetArg)
                         }
                     }
                 }

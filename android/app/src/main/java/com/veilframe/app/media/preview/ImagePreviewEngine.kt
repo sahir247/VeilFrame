@@ -62,26 +62,15 @@ object ImagePreviewEngine {
         val origW = dims?.width ?: 0
         val origH = dims?.height ?: 0
 
-        // Calculate available heap headroom to pre-calculate a safe inSampleSize
-        val runtime = Runtime.getRuntime()
-        val maxMemory = runtime.maxMemory()
-        val usedMemory = runtime.totalMemory() - runtime.freeMemory()
-        val availableHeadroom = (maxMemory - usedMemory).coerceAtLeast(0L)
-
-        // Reserve budget: do not allow a single bitmap to exceed 60% of available headroom or 45% of total heap
-        val safeBudgetBytes = minOf(
-            (maxMemory * 0.45).toLong(),
-            (availableHeadroom * 0.60).toLong()
-        ).coerceAtLeast(16L * 1024 * 1024)
-
+        // Only downsample upfront if the raw uncompressed bitmap exceeds 70% of maximum heap
         var initialSample = 1
+        val maxBudgetBytes = (Runtime.getRuntime().maxMemory() * 0.70).toLong().coerceAtLeast(64L * 1024 * 1024)
         if (origW > 0 && origH > 0) {
-            // Find power of 2 sample size that fits within safe budget
             while (initialSample <= 16) {
                 val estW = origW / initialSample
                 val estH = origH / initialSample
                 val estBytes = estW.toLong() * estH.toLong() * 4L
-                if (estBytes <= safeBudgetBytes) {
+                if (estBytes <= maxBudgetBytes) {
                     break
                 }
                 initialSample *= 2

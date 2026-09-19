@@ -1,17 +1,16 @@
 {
-  "versionCode": 225,
-  "versionName": "2.2.5",
-  "tag": "v2.2.5",
+  "versionCode": 226,
+  "versionName": "2.2.6",
+  "tag": "v2.2.6",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "Deferred Zero-Allocation Ingestion: Probes geometry with inJustDecodeBounds, deferring full-res decoding strictly to export time",
-    "Strict Target Size Ceiling: Enforces non-negotiable target size limits with clear diagnostics when unachievable",
-    "Interactive Media3 Timeline Trimmer: Live scrub seeking and interval playback loop with ExoPlayer",
-    "Multi-Selection & Batch Studios: Horizontal thumbnail strip navigation, Add More appending, and shared compression settings",
-    "10s Back Navigation Idle Purge: Automatically clears inactive tool memory when idle on Home",
-    "In-App Repair Utility: Re-downloads and verifies authentic release packages from GitHub to heal corrupted state",
-    "Home Dashboard UX: Reorganized into 3 distinct functional groups with tightened spacing"
+    "AI Image Upscaler: Dedicated on-device super-resolution tool with Point 7 models (Real-ESRGAN General 2×/4×, Anime 4×, and native Lanczos/Bicubic/Nearest)",
+    "Accurate File Size Estimations: Exact 24-bit padded rowBytes for BMP and precision empirical formulas across all image and video studio formats",
+    "Video Studio & Compressor Overhaul: Compression speed presets (Slow, Medium, Fast), video rotation (90°/180°/270°), flip (H/V), 4:3 and 3:4 aspects, and custom margin crop slider",
+    "Trim-bounded Playback: Live media player playback, seeking, and scrubber looping strictly clamped to selected trim interval",
+    "Scale > 100% Live Preview: Real-time visual scaling reflection and memory-safe full-resolution export for enlarged image studio scaling",
+    "On-Demand Model Manager: In-app model repository with background download, SHA-256 integrity verification, and zero initial APK bloat"
   ]
 }

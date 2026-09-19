@@ -1,7 +1,7 @@
 """
 VeilFrame — Privacy-focused media sanitization with independent visual-fidelity verification and cryptographically signed audit manifests.
 """
-__version__ = "2.2.5"
+__version__ = "2.2.6"
 __all__ = ["__version__", "main"]
 
 

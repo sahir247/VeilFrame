@@ -111,8 +111,9 @@ object ImageTransformEngine {
         if (targetWidth != result.width || targetHeight != result.height) {
             try {
                 result = Bitmap.createScaledBitmap(result, targetWidth, targetHeight, true)
-            } catch (e: Exception) {
-                Log.w(TAG, "createScaledBitmap error: ${e.message}")
+            } catch (t: Throwable) {
+                Log.w(TAG, "createScaledBitmap error: ${t.message}", t)
+                System.gc()
             }
         }
 

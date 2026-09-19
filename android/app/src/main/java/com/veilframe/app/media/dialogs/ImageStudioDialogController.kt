@@ -114,8 +114,14 @@ class ImageStudioDialogController(
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
         val dims = getOriginalDimensions()
-        val origW = dims.first.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.width ?: 1920)
-        val origH = dims.second.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.height ?: 1080)
+        val fullW = dims.first.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.width ?: 1920)
+        val fullH = dims.second.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.height ?: 1080)
+        val origW = if (editState.isCropped()) {
+            ((editState.cropRight - editState.cropLeft) * fullW).toInt().coerceAtLeast(16)
+        } else fullW
+        val origH = if (editState.isCropped()) {
+            ((editState.cropBottom - editState.cropTop) * fullH).toInt().coerceAtLeast(16)
+        } else fullH
         val origAspect = origW.toDouble() / origH.toDouble()
 
         var draftScale = editState.resizeScale

@@ -205,6 +205,7 @@ data class VideoEditState(
     var flipH: Boolean = false,
     var flipV: Boolean = false,
     var rotationAngle: Int = 0, // 0, 90, 180, 270
+    var customCropPercent: Int = 0,
     var fps: Int? = null,
     var colorProfile: String = "Original"
 ) {
@@ -221,6 +222,7 @@ data class VideoEditState(
                 flipH ||
                 flipV ||
                 (rotationAngle != 0) ||
+                (customCropPercent > 0) ||
                 (fps != null)
     }
 
@@ -232,6 +234,7 @@ data class VideoEditState(
                 flipH ||
                 flipV ||
                 (rotationAngle != 0) ||
+                (customCropPercent > 0) ||
                 (fps != null && fps!! > 0)
     }
 
@@ -258,6 +261,7 @@ data class VideoEditState(
         flipH = false
         flipV = false
         rotationAngle = 0
+        customCropPercent = 0
         fps = null
     }
 }
@@ -271,6 +275,7 @@ data class VideoOutputConfig(
     var crf: Int = 28,
     var targetPreset: String = "Auto (Balanced CRF 28)",
     var targetMb: Float? = null,
+    var compressionPreset: String = "slow", // "slow" (Max Quality, Smaller Size), "medium" (Balanced), "fast" (Quick Export)
     var audioCodec: String = "aac",
     var audioBitrateKbps: Int? = null,
     var outputMode: VideoOutputMode = VideoOutputMode.VIDEO,

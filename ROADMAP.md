@@ -10,7 +10,23 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.5 CURRENT (Production Release)
+### v2.2.6 CURRENT (Production Release)
+- **AI Image Upscaler Subsystem (7th Independent Tool)**:
+  - On-Device Neural Super-Resolution: Runs isolated ONNX Runtime models with zero cloud uploads or telemetry.
+  - Point 7 Model Architecture: Real-ESRGAN General 2× (33.8 MB), Real-ESRGAN General 4× (33.8 MB), Real-ESRGAN Anime 4× (9.1 MB), plus native mathematical sinc Lanczos (3-lobe), Bicubic spline, and Nearest neighbor filters.
+  - Tiled Super-Resolution Processing: Subdivides images into memory-safe tiles with 32px overlap and cubic Hermite feathering to prevent seam artifacts and out-of-memory crashes on mobile GPUs/CPUs.
+  - Dynamic Model Download Manager: In-app model management with resumable streaming, automatic HTTP redirect resolution, SHA-256 integrity verification, and zero initial APK bloat.
+- **Accurate File Size Estimation Overhaul**:
+  - BMP Exact Row Padding: Computes precise 24-bit aligned scanline widths (`((24 * w + 31) / 32) * 4`), resolving severe size over-estimation bugs.
+  - Format-Specific Empirical Solvers: Calibrated entropy estimation across JPEG, WebP, PNG, TIFF, GIF, HEIF/AVIF, and video bitrates (CRF, codecs, speed presets, and audio channels).
+- **Video Studio & Compressor Overhaul**:
+  - Compression Speed Presets: Added Slow (Maximum Quality, Smallest Size), Medium (Balanced), and Fast (Rapid Processing) options replacing hardcoded ultrafast settings.
+  - Video Rotation & Canvas Flip: 90° CW, 180°, 270° CW rotation, horizontal/vertical flipping, 4:3 and 3:4 aspect ratios, and custom margin crop slider (0–40%).
+  - Trim-Bounded Playback Clamping: Player seek, scrub, and playback loop are strictly clamped within selected trim range.
+- **Image Studio Scale > 100% Live Preview**:
+  - Live preview immediately reflects zoom/scale slider values exceeding 100% on the main workspace and applies safe full-resolution export with GC fallback.
+
+### v2.2.5 (Previous Release)
 - **Target File Size Quality Solver**: Automated iterative binary search optimizer (5–95% quality range, $\le 7$ iterations) for target file size budgets (KB/MB) without quality degradation guesswork.
 - **Mobile & Desktop Image Studio Enhancements**:
   - Text Watermark & Overlay Studio: Custom overlay text, presets, 9-point spatial anchoring, font size slider, color palette selection, and drop-shadow contrast protection.

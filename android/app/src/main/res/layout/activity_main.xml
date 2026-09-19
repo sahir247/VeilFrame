@@ -679,7 +679,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="VIDEO STUDIO &amp; TRIMMER"
+                            android:text="VIDEO STUDIO &amp; COMPRESSOR"
                             android:textColor="@color/vf_text_primary"
                             android:textSize="14sp"
                             android:textStyle="bold"
@@ -689,7 +689,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Visual timeline trimmer (anywhere in video), resolution scaling, speed, and size constraints."
+                            android:text="Visual video compressor, trimming, rotation, resolution scaling, speed, and size constraints."
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -699,6 +699,68 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Video Studio"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 7: AI Image Upscaler -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolImageUpscaler"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="12dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_resize"
+                        android:contentDescription="AI Image Upscaler Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IMAGE UPSCALER (AI)"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="AI super-resolution (Real-ESRGAN &amp; Lanczos) with tiled inference and 100% offline privacy."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Image Upscaler"
                         app:tint="@color/vf_secondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1909,6 +1971,13 @@
     <include
         android:id="@+id/layoutMarkdownViewer"
         layout="@layout/layout_markdown_viewer" />
+
+    <!-- ================================================================= -->
+    <!-- 7. IMAGE UPSCALER WORKSPACE (AI Super-Resolution & Tiled Inference) -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutImageUpscaler"
+        layout="@layout/layout_image_upscaler" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->

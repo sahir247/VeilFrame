@@ -149,7 +149,7 @@ class VideoPlayerController(
         val player = exoPlayer ?: return
         try {
             val currentPos = player.currentPosition
-            if (currentPos < trimStartMs || currentPos >= trimEndMs) {
+            if (currentPos < trimStartMs || (trimEndMs > trimStartMs && currentPos >= trimEndMs)) {
                 player.seekTo(trimStartMs)
             }
             player.play()
@@ -178,7 +178,9 @@ class VideoPlayerController(
     }
 
     fun seekTo(positionMs: Long) {
-        val target = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L))
+        val minPos = trimStartMs
+        val maxPos = if (trimEndMs > trimStartMs) trimEndMs else durationMs.coerceAtLeast(0L)
+        val target = positionMs.coerceIn(minPos, maxPos)
         try {
             exoPlayer?.seekTo(target)
             onProgressUpdate?.invoke(target)
@@ -216,7 +218,7 @@ class VideoPlayerController(
         trimEndMs = if (endMs > 0L) endMs else durationMs
 
         val curPos = currentPosition
-        if (curPos < trimStartMs || curPos > trimEndMs) {
+        if (curPos < trimStartMs || (trimEndMs > trimStartMs && curPos >= trimEndMs)) {
             seekTo(trimStartMs)
         }
     }
@@ -233,12 +235,13 @@ class VideoPlayerController(
         tickerJob = scope.launch(Dispatchers.Main) {
             while (isActive && isPlaying) {
                 val pos = currentPosition
-                if (pos >= trimEndMs && trimEndMs > trimStartMs) {
-                    pause()
+                if (trimEndMs > trimStartMs && pos >= trimEndMs) {
                     seekTo(trimStartMs)
-                    break
+                } else if (pos < trimStartMs) {
+                    seekTo(trimStartMs)
+                } else {
+                    onProgressUpdate?.invoke(pos)
                 }
-                onProgressUpdate?.invoke(pos)
                 delay(50)
             }
         }

@@ -78,6 +78,7 @@ class ToolExecutionController(
                 ToolMode.FOLDER_SCANNER -> runFolderScan(uri)
                 ToolMode.IMAGE_COMPRESSOR -> getImageStudioController()?.execute()
                 ToolMode.VIDEO_COMPRESSOR -> getVideoStudioController()?.execute()
+                ToolMode.IMAGE_UPSCALER -> { /* Handled within ImageUpscalerController */ }
             }
             sessionManager.updatePrimaryActionDock(sessionManager.currentState)
         }

@@ -1,0 +1,568 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/scrollImageUpscaler"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/vf_bg_dark"
+    android:clipToPadding="false"
+    android:paddingBottom="32dp"
+    app:layout_behavior="@string/appbar_scrolling_view_behavior"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- ============================================================= -->
+        <!-- 1. APP BAR                                                    -->
+        <!-- ============================================================= -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/vf_surface"
+            app:cardCornerRadius="12dp"
+            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUpscalerBack"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:contentDescription="Navigate Back"
+                    app:icon="@drawable/ic_arrow_back"
+                    app:iconTint="@color/vf_primary" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Image Upscaler"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="17sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.04" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AI Super-Resolution &amp; Tiled Inference"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUpscalerModelManager"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:contentDescription="Model Manager"
+                    app:icon="@drawable/ic_system_update"
+                    app:iconTint="@color/vf_primary" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ============================================================= -->
+        <!-- 2. EMPTY STATE / SELECT IMAGE CARD                            -->
+        <!-- ============================================================= -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardUpscalerSelectImage"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/vf_surface"
+            app:cardCornerRadius="16dp"
+            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <ImageView
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_resize"
+                    app:tint="@color/vf_primary"
+                    android:layout_marginBottom="12dp"
+                    android:contentDescription="Select Image Icon" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Select an Image to Upscale"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Supports JPEG, PNG, WebP, BMP, and TIFF"
+                    android:textColor="@color/vf_text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="16dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUpscalerPickImage"
+                    style="@style/Widget.Material3.Button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:text="Choose Image"
+                    android:textColor="@color/vf_on_primary"
+                    app:backgroundTint="@color/vf_primary"
+                    app:icon="@drawable/ic_add"
+                    app:iconTint="@color/vf_on_primary" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ============================================================= -->
+        <!-- 3. WORKSPACE CONTAINER (Visible when image selected)          -->
+        <!-- ============================================================= -->
+        <LinearLayout
+            android:id="@+id/layoutUpscalerWorkspace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- Interactive Preview Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="240dp"
+                        android:background="@color/vf_bg_dark">
+
+                        <ImageView
+                            android:id="@+id/imgUpscalerPreview"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitCenter"
+                            android:contentDescription="Upscaler Live Preview" />
+
+                        <TextView
+                            android:id="@+id/tvUpscalerBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="top|start"
+                            android:layout_margin="8dp"
+                            android:background="@color/vf_surface_variant"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="ORIGINAL"
+                            android:textColor="@color/vf_accent_blue"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+
+                    <!-- Source specs & change image -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="8dp">
+
+                        <TextView
+                            android:id="@+id/tvUpscalerSourceInfo"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="photo.jpg • 1920×1080 • 2.4 MB"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnUpscalerChangeImage"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Change"
+                            android:textSize="12sp"
+                            android:textColor="@color/vf_primary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Preset Selection -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PRESET"
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="6dp" />
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:layout_marginBottom="8dp">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupUpscalerPresets"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetPhoto"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Photo"
+                                android:checked="true" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetPhotoQuality"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Photo (HQ)" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetAnime"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Anime" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetIllustration"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Illustration" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetFast"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Fast" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetStandard"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Standard (Lanczos)" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipPresetCustom"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Custom" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <TextView
+                        android:id="@+id/tvUpscalerPresetDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Balanced natural photographic upscaling preserving real textures."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Resolved Model Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="6dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="AI MODEL"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnUpscalerChangeModel"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:text="Change Model"
+                            android:textSize="11sp"
+                            android:textColor="@color/vf_primary" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvUpscalerModelName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Real-ESRGAN General 2×"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="4dp" />
+
+                    <TextView
+                        android:id="@+id/tvUpscalerModelStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="✓ Installed"
+                        android:textColor="@color/vf_accent_green"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Scaling Factor Chips -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SCALE FACTOR"
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="8dp" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupUpscalerScale"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipScale2x"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="2× Scale"
+                            android:checked="true" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipScale4x"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="4× Scale" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipScale8x"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="8× (Two-Pass)" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <TextView
+                        android:id="@+id/tvUpscalerTargetDimensions"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Output: 3840 × 2160 (~8.3 MP)"
+                        android:textColor="@color/vf_accent_blue"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Progress Overlay (visible during download or inference) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/layoutUpscalerProgress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface_variant"
+                app:cardCornerRadius="16dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:id="@+id/tvUpscalerProgressStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Processing tiles..."
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp" />
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progressUpscaler"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:indeterminate="true"
+                        app:indicatorColor="@color/vf_primary"
+                        app:trackColor="@color/vf_surface"
+                        android:layout_marginBottom="10dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUpscalerCancel"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_gravity="end"
+                        android:text="Cancel"
+                        android:textColor="@color/vf_accent_red"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Result Actions (visible after upscaling complete) -->
+            <LinearLayout
+                android:id="@+id/layoutUpscalerResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUpscalerSave"
+                    style="@style/Widget.Material3.Button"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="Save"
+                    android:textColor="@color/vf_on_primary"
+                    app:backgroundTint="@color/vf_primary"
+                    app:icon="@drawable/ic_action_save"
+                    app:iconTint="@color/vf_on_primary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnUpscalerShare"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="Share"
+                    android:textColor="@color/vf_text_primary"
+                    app:icon="@drawable/ic_action_share"
+                    app:iconTint="@color/vf_text_primary" />
+            </LinearLayout>
+
+            <!-- Main Execute Action Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnUpscalerExecute"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="UPSCALE"
+                android:textColor="@color/vf_on_primary"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.04"
+                app:backgroundTint="@color/vf_primary"
+                app:icon="@drawable/ic_resize"
+                app:iconTint="@color/vf_on_primary"
+                android:layout_marginBottom="8dp" />
+
+            <!-- Offline Privacy Guarantee -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="🔒 Processing 100% offline. Models run entirely on this device."
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

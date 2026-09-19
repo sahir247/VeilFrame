@@ -74,7 +74,7 @@
                         android:id="@+id/tvVidStudioSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Visual Trimmer &amp; Video Compression"
+                        android:text="Visual Video Studio &amp; Compressor"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp" />
                 </LinearLayout>
@@ -388,7 +388,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Video Timeline &amp; Trimmer"
+                        android:text="Live preview"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="14sp"
                         android:textStyle="bold"
@@ -1173,6 +1173,47 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Stream Copy" />
+                </com.google.android.material.chip.ChipGroup>
+
+                <!-- Compression Speed / Efficiency (Slow Compress vs Fast Compress) -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="COMPRESSION SPEED &amp; EFFICIENCY"
+                    android:textColor="@color/vf_text_muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupVidSpeedPreset"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidSpeedSlow"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Slow (Max Quality, Smaller Size)"
+                        android:checked="true" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidSpeedMedium"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Medium (Balanced)" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidSpeedFast"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Fast (Quick Export)" />
                 </com.google.android.material.chip.ChipGroup>
 
                 <!-- Quality / Compression Slider -->

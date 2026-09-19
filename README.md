@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.5-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.6-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -82,7 +82,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Direct download and tap-to-install on device |
-| **Python (Any OS)** | `veilframe-2.2.5-py3-none-any.whl` | Universal | `pip install veilframe-2.2.5-py3-none-any.whl` |
+| **Python (Any OS)** | `veilframe-2.2.6-py3-none-any.whl` | Universal | `pip install veilframe-2.2.6-py3-none-any.whl` |
 
 ```powershell
 # Windows Checksum Verification:
@@ -507,14 +507,16 @@ veilframe gui
 The desktop application features 5 dedicated operational modes:
 - **Video Sanitizer:** Multi-pass elementary stream extraction, Bayer CFA PRNU perturbation, 2D DCT median shift, and audio ENF notch filtration with live preview.
 - **Image Privacy Compiler:** Multi-layer container scrubbing, linear sRGB normalization, isolated ConstantFill semantic redaction, and 7-probe adversarial red-team verification.
-- **Media Compressor (New in v2.2.5):** Interactive image and video editing studio supporting iterative target size quality solver (KB/MB), text watermark overlays, canvas flip/background fill, multi-container video export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec support (H.264, H.265, VP9, AV1), audio volume scaling & channel remixing, visual timeline trimming, and EXIF control.
+- **Media Compressor (Expanded in v2.2.6):** Interactive image and video editing studio supporting iterative target size quality solver (KB/MB), empirical multi-format file size estimation, compression speed presets (Slow, Medium, Fast), video rotation & custom margin cropping, trim-bounded live playback, text watermark overlays, canvas flip/background fill, multi-container video export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec support (H.264, H.265, VP9, AV1), audio volume scaling & channel remixing, and EXIF control.
 - **Folder Analyzer:** High-performance directory tree scanning, SQLite indexing, and 3-stage duplicate file detection with interactive HTML export.
 - **AI Project Lister:** Token-bounded `.aibundle` v1 compiler and security audit analyzer for feeding full project context into LLMs.
 
 #### Android Native Mobile Application (`com.veilframe.app`)
-VeilFrame provides a complete on-device Android application (API 26+ / Android 8.0 through Android 15, Target SDK 35):
+VeilFrame provides a complete on-device Android application (API 26+ / Android 8.0 through Android 15, Target SDK 35) offering 7 dedicated workflows:
+- **AI Image Upscaler (New in v2.2.6):** 100% offline, on-device neural super-resolution powered by ONNX Runtime and Point 7 models (Real-ESRGAN General 2×/4×, Real-ESRGAN Anime 4×, and native mathematical Lanczos 3-lobe, Bicubic, and Nearest Neighbor). Features memory-safe tiled inference with 32px overlap and cubic Hermite seam blending, plus an on-demand model download manager with SHA-256 verification and zero initial APK bloat.
+- **Video Studio & Compressor:** Visual compressor and editor with speed presets (Slow for max compression, Medium, Fast), 90°/180°/270° video rotation, canvas flip, 4:3 and 3:4 aspect framing, custom margin crop slider (0–40%), and trim-bounded player seeking and looping.
+- **Image Studio & Compressor:** Deep image compression and transformation with accurate BMP DWORD padding and empirical format size estimations, scale > 100% live preview reflection, text watermarks, alpha background fills, color filters, and EXIF editing.
 - **Pure APK Signature Scheme V2/V3:** Release APKs strictly enforce V2/V3 block signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification issues.
-- **Mobile Image Studio:** Responsive studio featuring target file size solver (KB/MB), text watermark overlays with color and 9-point anchoring, horizontal/vertical flipping, alpha background fill compositing, live comparative before/after rendering, continuous quality slider (1%–100%), aspect cropping, custom resizing, rotation, and EXIF control.
 - **Cryptographic In-App Updates:** Automatic updates powered by `android/update.json` and release assets, monotonic integer `versionCode` bounds checks, HTTPS pinned origin enforcement (GitHub + AWS S3 CDN), atomic staging `.tmp` downloads, storage preflight checks, zero-bypass mandatory SHA-256 validation, and publisher signing certificate verification against the running app before triggering installation.
 - **Offline Markdown Viewer & Live Editor:** Full-featured GitHub Flavored Markdown reader and editor with Write/Preview mode switching, offline non-blocking Mermaid diagrams, KaTeX math typesetting, syntax-highlighted code blocks with 1-tap copy, table of contents navigation, in-page search, dirty-state back navigation protection, in-place Save & SAF Save As, and New Markdown Maker (from scratch).
 - **Status Bar & Notch Handling:** Edge-to-edge window inset handling ensuring zero clipping under camera cutouts and system bars.

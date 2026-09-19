@@ -95,6 +95,144 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="16:9 (Landscape YouTube)" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAspect43"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="4:3 (Standard)" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAspect34"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3:4 (Portrait)" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAspectCustom"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Custom Crop" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <!-- Custom Crop Controls (visible when Custom Crop selected) -->
+            <LinearLayout
+                android:id="@+id/layoutVideoCustomCrop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/vf_surface_variant"
+                android:padding="12dp"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Custom Crop Margin (%)"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/tvCustomCropValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Crop: 10% each side"
+                    android:textColor="@color/vf_accent_blue"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/sliderCustomCrop"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0"
+                    android:valueTo="40"
+                    android:stepSize="1"
+                    android:value="10" />
+            </LinearLayout>
+
+            <!-- Video Rotation & Flip Section -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Rotation &amp; Orientation"
+                android:textColor="@color/vf_text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="Rotate video or mirror horizontally/vertically without quality loss."
+                android:textColor="@color/vf_text_secondary"
+                android:textSize="11sp" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupVideoRotation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipRotate0"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0° (Normal)"
+                    android:checked="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipRotate90"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="90° CW" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipRotate180"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="180°" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipRotate270"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="270° CW" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupVideoFlip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFlipH"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Flip Horizontal"
+                    android:checkable="true" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFlipV"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Flip Vertical"
+                    android:checkable="true" />
             </com.google.android.material.chip.ChipGroup>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

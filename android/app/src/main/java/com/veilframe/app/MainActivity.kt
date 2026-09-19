@@ -28,6 +28,7 @@ import com.veilframe.app.media.VideoPlayerController
 import com.veilframe.app.media.VideoStudioController
 import com.veilframe.app.navigation.MainNavigationController
 import com.veilframe.app.navigation.ScreenState
+import com.veilframe.app.upscale.ui.ImageUpscalerController
 import com.veilframe.app.storage.CreateDocumentWithMime
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.tools.JobState
@@ -65,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoPlayerController: VideoPlayerController
     private lateinit var imageStudioController: ImageStudioController
     private lateinit var videoStudioController: VideoStudioController
+    private lateinit var imageUpscalerController: ImageUpscalerController
     private lateinit var markdownViewerController: MarkdownViewerController
     private var pendingExportFile: File? = null
     private var isConsoleExpanded: Boolean = false
@@ -215,6 +217,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val imgUpscalerPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            imageUpscalerController.handleImageSelected(uri)
+        }
+    }
+
     // Dedicated Tools SAF and Photo Picker Activity Result Launchers
     private val visualMediaPickerLauncher = registerForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -279,7 +289,7 @@ class MainActivity : AppCompatActivity() {
         initStudioWorkspaces()
         setupListeners()
 
-        consoleLogController.log("[SYS] Initialized VeilFrame 2.2.5 Native Core Runtime")
+        consoleLogController.log("[SYS] Initialized VeilFrame 2.2.6 Native Core Runtime")
         consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
 
         navigationController.showHomeScreen()
@@ -357,6 +367,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (::videoPlayerController.isInitialized) {
             videoPlayerController.release()
+        }
+        if (::imageUpscalerController.isInitialized) {
+            imageUpscalerController.release()
         }
         if (::markdownViewerController.isInitialized) {
             markdownViewerController.clear()
@@ -469,7 +482,8 @@ class MainActivity : AppCompatActivity() {
             onShareFileRequest = { file, mime ->
                 shareStudioFile(file, mime)
             },
-            onNavigateHome = { navigationController.showHomeScreen() }
+            onNavigateHome = { navigationController.showHomeScreen() },
+            onOpenModelManager = { imageUpscalerController.showModelManagerDialog() }
         )
 
         videoStudioController = VideoStudioController(
@@ -492,8 +506,17 @@ class MainActivity : AppCompatActivity() {
             onNavigateHome = { navigationController.showHomeScreen() }
         )
 
+        imageUpscalerController = ImageUpscalerController(
+            activity = this,
+            binding = binding,
+            onBackRequested = { navigationController.showHomeScreen() },
+            onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
+            onLog = { msg -> consoleLogController.log(msg) }
+        )
+
         imageStudioController.initWorkspace()
         videoStudioController.initWorkspace()
+        imageUpscalerController.init()
     }
 
     private fun setupListeners() {
@@ -525,6 +548,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.cardToolVideoStudio.setOnClickListener {
             openVideoStudio()
+        }
+
+        binding.cardToolImageUpscaler.setOnClickListener {
+            openImageUpscaler()
         }
 
         // In-App Updates & Repair Button
@@ -636,6 +663,18 @@ class MainActivity : AppCompatActivity() {
         toolSessionManager.currentToolMode = ToolMode.VIDEO_COMPRESSOR
         navigationController.showVideoStudioScreen()
         consoleLogController.log("[UI] Opened Video Studio workspace.")
+    }
+
+    fun openImageUpscaler() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        toolSessionManager.currentToolMode = ToolMode.IMAGE_UPSCALER
+        navigationController.showImageUpscalerScreen()
+        consoleLogController.log("[UI] Opened Image Upscaler workspace.")
     }
 
     fun openMarkdownViewer(uri: Uri, title: String? = null) {
@@ -838,7 +877,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.2.5
+                VeilFrame v2.2.6
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution

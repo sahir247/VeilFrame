@@ -8,5 +8,6 @@ enum class ScreenState {
     TOOL,
     IMAGE_STUDIO,
     VIDEO_STUDIO,
-    MARKDOWN_VIEWER
+    MARKDOWN_VIEWER,
+    IMAGE_UPSCALER
 }

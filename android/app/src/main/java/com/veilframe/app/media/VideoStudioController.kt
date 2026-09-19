@@ -244,6 +244,19 @@ class VideoStudioController(
             refreshStats()
         }
 
+        // Compression speed preset chips (Slow, Medium, Fast)
+        binding.chipGroupVidSpeedPreset.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = binding.chipGroupVidSpeedPreset.findViewById<Chip>(checkedIds[0])
+                outputConfig.compressionPreset = when (chip?.id) {
+                    R.id.chipVidSpeedFast -> "fast"
+                    R.id.chipVidSpeedMedium -> "medium"
+                    else -> "slow"
+                }
+                refreshStats()
+            }
+        }
+
         // In-place resolution chips
         binding.chipGroupVidResolution.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
@@ -622,11 +635,38 @@ class VideoStudioController(
                     params.height = h
                     params.gravity = Gravity.CENTER
                 }
-                "4:3 (Classic)", "4:3" -> {
+                "4:3 (Classic)", "4:3 (Standard)", "4:3" -> {
                     val h = containerH
                     val w = (h.toFloat() * 4f / 3f).toInt().coerceAtMost(containerW)
                     params.width = w
                     params.height = h
+                    params.gravity = Gravity.CENTER
+                }
+                "3:4 (Portrait)", "3:4" -> {
+                    val h = containerH
+                    val w = (h.toFloat() * 3f / 4f).toInt().coerceAtMost(containerW)
+                    params.width = w
+                    params.height = h
+                    params.gravity = Gravity.CENTER
+                }
+                "Custom Crop" -> {
+                    val factor = 1.0f - (editState.customCropPercent / 100f).coerceIn(0f, 0.8f)
+                    val vidW = editState.originalWidth.takeIf { it > 0 } ?: currentItem?.width ?: 0
+                    val vidH = editState.originalHeight.takeIf { it > 0 } ?: currentItem?.height ?: 0
+                    if (vidW > 0 && vidH > 0) {
+                        val videoAspect = vidW.toFloat() / vidH.toFloat()
+                        val containerAspect = containerW.toFloat() / containerH.toFloat()
+                        val (baseW, baseH) = if (videoAspect > containerAspect) {
+                            containerW to ((containerW / videoAspect).toInt().coerceAtMost(containerH))
+                        } else {
+                            ((containerH * videoAspect).toInt().coerceAtMost(containerW)) to containerH
+                        }
+                        params.width = (baseW * factor).toInt().coerceAtLeast(100)
+                        params.height = (baseH * factor).toInt().coerceAtLeast(100)
+                    } else {
+                        params.width = (containerW * factor).toInt().coerceAtLeast(100)
+                        params.height = (containerH * factor).toInt().coerceAtLeast(100)
+                    }
                     params.gravity = Gravity.CENTER
                 }
                 else -> {
@@ -651,6 +691,11 @@ class VideoStudioController(
                 }
             }
             viewport.layoutParams = params
+
+            // Live preview rotation and mirror orientation
+            binding.videoTextureView.rotation = editState.rotationAngle.toFloat()
+            binding.videoTextureView.scaleX = if (editState.flipH) -1f else 1f
+            binding.videoTextureView.scaleY = if (editState.flipV) -1f else 1f
         }
     }
 
@@ -702,17 +747,68 @@ class VideoStudioController(
             "Discord (25 MB)" -> (24.0 * 1024 * 1024).toLong()
             "Email Attachment (8 MB)" -> (7.8 * 1024 * 1024).toLong()
             else -> {
-                val baseKbps = when (editState.scalePreset) {
-                    "1080p (Full HD)" -> 3500
-                    "720p (HD)" -> 1800
-                    "480p (SD Compact)" -> 900
-                    "360p (Ultra Small)" -> 500
-                    else -> 2500
+                if (outputConfig.outputMode == VideoOutputMode.GIF) {
+                    val gifFps = (editState.fps ?: 15).coerceIn(5, 30)
+                    val (w, h) = when (editState.scalePreset) {
+                        "1080p (Full HD)" -> 1920 to 1080
+                        "720p (HD)" -> 1280 to 720
+                        "480p (SD Compact)" -> 854 to 480
+                        "360p (Ultra Small)" -> 640 to 360
+                        else -> {
+                            val ow = editState.originalWidth.takeIf { it > 0 } ?: 640
+                            val oh = editState.originalHeight.takeIf { it > 0 } ?: 360
+                            ow to oh
+                        }
+                    }
+                    val frameCount = (durationSec * gifFps).toLong().coerceAtLeast(1)
+                    val bytesPerFrame = (w * h * 0.15).toLong().coerceAtLeast(1024)
+                    frameCount * bytesPerFrame
+                } else if (outputConfig.codec == "Stream Copy" && !editState.hasVideoTransforms()) {
+                    val origDur = currentItem?.durationMs ?: 0L
+                    if (origDur > 0 && originalBytes > 0) {
+                        ((originalBytes.toDouble() * (editState.trimmedDurationMs.toDouble() / origDur.toDouble()))).toLong()
+                    } else originalBytes
+                } else {
+                    val baseKbps = when (editState.scalePreset) {
+                        "1080p (Full HD)" -> 3800
+                        "720p (HD)" -> 2000
+                        "480p (SD Compact)" -> 1000
+                        "360p (Ultra Small)" -> 550
+                        else -> {
+                            val ow = editState.originalWidth.takeIf { it > 0 } ?: 1280
+                            val oh = editState.originalHeight.takeIf { it > 0 } ?: 720
+                            val pixels = ow * oh
+                            when {
+                                pixels >= 1920 * 1080 -> 3800
+                                pixels >= 1280 * 720 -> 2000
+                                pixels >= 854 * 480 -> 1000
+                                else -> 600
+                            }
+                        }
+                    }
+                    val crfFactor = Math.pow(0.89, (outputConfig.crf - 23).toDouble())
+                    val codecFactor = when (outputConfig.codec) {
+                        "H.265" -> 0.58
+                        "VP9" -> 0.68
+                        else -> 1.0
+                    }
+                    val speedPresetFactor = when (outputConfig.compressionPreset) {
+                        "slow" -> 0.82
+                        "medium" -> 1.0
+                        "fast" -> 1.25
+                        else -> 0.82
+                    }
+                    val videoKbps = (baseKbps * crfFactor * codecFactor * speedPresetFactor).coerceIn(120.0, 15000.0)
+                    val audioKbps = when (editState.audioMode) {
+                        AudioMode.MUTE -> 0
+                        AudioMode.VOICE_64K -> 64
+                        AudioMode.HIGH_FIDELITY_256K -> 256
+                        else -> 128
+                    }
+                    val totalKbps = videoKbps + audioKbps
+                    val totalBytes = ((totalKbps * 1000 / 8) * durationSec).toLong()
+                    totalBytes
                 }
-                val crfFactor = Math.pow(0.92, (outputConfig.crf - 23).toDouble())
-                val estKbps = (baseKbps * crfFactor).toLong().coerceIn(200, 8000)
-                val totalBytes = ((estKbps * 1000 / 8) * durationSec).toLong()
-                if (originalBytes > 0) totalBytes.coerceAtMost(originalBytes) else totalBytes
             }
         }
 
@@ -747,12 +843,20 @@ class VideoStudioController(
 
             if (editState.aspect != "Original") {
                 binding.tvVidSummaryAspect.visibility = View.VISIBLE
-                binding.tvVidSummaryAspect.text = "✓ Aspect: ${editState.aspect}"
+                val cropInfo = if (editState.aspect == "Custom Crop") " (${editState.customCropPercent}%)" else ""
+                binding.tvVidSummaryAspect.text = "✓ Aspect: ${editState.aspect}$cropInfo"
             } else {
                 binding.tvVidSummaryAspect.visibility = View.GONE
             }
 
-            if (editState.speed != 1.0f) {
+            if (editState.rotationAngle != 0 || editState.flipH || editState.flipV) {
+                val rotParts = mutableListOf<String>()
+                if (editState.rotationAngle != 0) rotParts.add("${editState.rotationAngle}°")
+                if (editState.flipH) rotParts.add("Flip H")
+                if (editState.flipV) rotParts.add("Flip V")
+                binding.tvVidSummarySpeed.visibility = View.VISIBLE
+                binding.tvVidSummarySpeed.text = "✓ Orientation: ${rotParts.joinToString(", ")}"
+            } else if (editState.speed != 1.0f) {
                 binding.tvVidSummarySpeed.visibility = View.VISIBLE
                 binding.tvVidSummarySpeed.text = "✓ Speed: ${editState.speed}×"
             } else {
@@ -786,6 +890,7 @@ class VideoStudioController(
         outputConfig.format = "MP4"
         outputConfig.outputMode = VideoOutputMode.VIDEO
         outputConfig.codec = "H.264"
+        outputConfig.compressionPreset = "slow"
 
         val durSec = (totalDur / 1000.0).toFloat().coerceAtLeast(1f)
         updateSliderSafely(binding.playerScrubber, 0f, durSec, 0f)
@@ -801,6 +906,7 @@ class VideoStudioController(
         binding.chipVidAudioKeep.isChecked = true
         binding.chipVidMp4.isChecked = true
         binding.chipVidCodecH264.isChecked = true
+        binding.chipVidSpeedSlow.isChecked = true
         binding.tvPlayerSpeedBadge.text = "1.0×"
 
         playerController.setSpeed(1.0f)
@@ -1126,6 +1232,14 @@ class VideoStudioController(
             editState.trimEndMs = (eSec * 1000).toLong()
 
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
+            binding.tvPlayerTotalDuration.text = formatDuration(editState.trimEndMs)
+
+            updateSliderSafely(
+                binding.playerScrubber,
+                sSec,
+                eSec.coerceAtLeast(sSec + 0.1f),
+                sSec
+            )
 
             playerController.setTrimBounds(editState.trimStartMs, editState.trimEndMs)
             playerController.seekTo(editState.trimStartMs)
@@ -1140,8 +1254,17 @@ class VideoStudioController(
             editState.trimEndMs = editState.durationMs
 
             binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.durationMs)}"
+            binding.tvPlayerTotalDuration.text = formatDuration(editState.durationMs)
+
+            updateSliderSafely(
+                binding.playerScrubber,
+                0f,
+                durSec.coerceAtLeast(0.1f),
+                0f
+            )
 
             playerController.setTrimBounds(0L, editState.durationMs)
+            playerController.seekTo(0L)
             refreshStats()
             updateEditSummary()
             dialog.dismiss()
@@ -1348,23 +1471,71 @@ class VideoStudioController(
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
 
         var draftAspect = editState.aspect
+        var draftCustomCrop = editState.customCropPercent
+        var draftRotation = editState.rotationAngle
+        var draftFlipH = editState.flipH
+        var draftFlipV = editState.flipV
 
         when (draftAspect) {
             "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
             "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
             "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
+            "4:3 (Standard)", "4:3 (Classic)", "4:3" -> dialogBinding.chipAspect43.isChecked = true
+            "3:4 (Portrait)", "3:4" -> dialogBinding.chipAspect34.isChecked = true
+            "Custom Crop" -> {
+                dialogBinding.chipAspectCustom.isChecked = true
+                dialogBinding.layoutVideoCustomCrop.visibility = View.VISIBLE
+            }
             else -> dialogBinding.chipAspectOrig.isChecked = true
+        }
+
+        dialogBinding.sliderCustomCrop.value = draftCustomCrop.toFloat().coerceIn(0f, 40f)
+        dialogBinding.tvCustomCropValue.text = "Crop: ${draftCustomCrop}% each side"
+        dialogBinding.sliderCustomCrop.addOnChangeListener { _, value, _ ->
+            draftCustomCrop = value.toInt()
+            dialogBinding.tvCustomCropValue.text = "Crop: ${draftCustomCrop}% each side"
         }
 
         dialogBinding.chipGroupVideoAspect.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = dialogBinding.chipGroupVideoAspect.findViewById<Chip>(checkedIds[0])
                 draftAspect = chip?.text?.toString() ?: "Original"
+                dialogBinding.layoutVideoCustomCrop.visibility =
+                    if (chip?.id == R.id.chipAspectCustom) View.VISIBLE else View.GONE
             }
         }
 
+        when (draftRotation) {
+            90 -> dialogBinding.chipRotate90.isChecked = true
+            180 -> dialogBinding.chipRotate180.isChecked = true
+            270 -> dialogBinding.chipRotate270.isChecked = true
+            else -> dialogBinding.chipRotate0.isChecked = true
+        }
+
+        dialogBinding.chipGroupVideoRotation.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = dialogBinding.chipGroupVideoRotation.findViewById<Chip>(checkedIds[0])
+                draftRotation = when (chip?.id) {
+                    R.id.chipRotate90 -> 90
+                    R.id.chipRotate180 -> 180
+                    R.id.chipRotate270 -> 270
+                    else -> 0
+                }
+            }
+        }
+
+        dialogBinding.chipFlipH.isChecked = draftFlipH
+        dialogBinding.chipFlipV.isChecked = draftFlipV
+
+        dialogBinding.chipFlipH.setOnCheckedChangeListener { _, isChecked -> draftFlipH = isChecked }
+        dialogBinding.chipFlipV.setOnCheckedChangeListener { _, isChecked -> draftFlipV = isChecked }
+
         dialogBinding.btnVideoAspectApply.setOnClickListener {
             editState.aspect = draftAspect
+            editState.customCropPercent = if (draftAspect == "Custom Crop") draftCustomCrop else 0
+            editState.rotationAngle = draftRotation
+            editState.flipH = draftFlipH
+            editState.flipV = draftFlipV
             applyAspectRatioPreview()
             refreshStats()
             updateEditSummary()
@@ -1373,7 +1544,16 @@ class VideoStudioController(
 
         dialogBinding.btnVideoAspectReset.setOnClickListener {
             draftAspect = "Original"
+            draftCustomCrop = 0
+            draftRotation = 0
+            draftFlipH = false
+            draftFlipV = false
             dialogBinding.chipAspectOrig.isChecked = true
+            dialogBinding.layoutVideoCustomCrop.visibility = View.GONE
+            dialogBinding.sliderCustomCrop.value = 0f
+            dialogBinding.chipRotate0.isChecked = true
+            dialogBinding.chipFlipH.isChecked = false
+            dialogBinding.chipFlipV.isChecked = false
         }
 
         dialogBinding.btnVideoAspectCancel.setOnClickListener { dialog.dismiss() }

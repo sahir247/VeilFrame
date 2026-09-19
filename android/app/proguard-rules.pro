@@ -28,4 +28,8 @@
 -keepattributes *Annotation*
 -keepattributes Signature
 
+# ONNX Runtime JNI
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
 

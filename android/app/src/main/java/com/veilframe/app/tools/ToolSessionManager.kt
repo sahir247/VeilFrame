@@ -58,6 +58,10 @@ class ToolSessionManager(
         ToolMode.VIDEO_COMPRESSOR to ToolSessionState(
             primaryOptionIndex = 0,
             formatOptionIndex = 0
+        ),
+        ToolMode.IMAGE_UPSCALER to ToolSessionState(
+            primaryOptionIndex = 0,
+            formatOptionIndex = 0
         )
     )
 
@@ -172,6 +176,7 @@ class ToolSessionManager(
         ToolMode.FOLDER_SCANNER -> "FOLDER SCANNER"
         ToolMode.IMAGE_COMPRESSOR -> "IMAGE STUDIO"
         ToolMode.VIDEO_COMPRESSOR -> "VIDEO STUDIO"
+        ToolMode.IMAGE_UPSCALER -> "IMAGE UPSCALER"
     }
 
     fun getToolExecuteText(mode: ToolMode): String = when (mode) {
@@ -181,6 +186,7 @@ class ToolSessionManager(
         ToolMode.FOLDER_SCANNER -> "START FORENSIC AUDIT"
         ToolMode.IMAGE_COMPRESSOR -> "COMPRESS IMAGE"
         ToolMode.VIDEO_COMPRESSOR -> "COMPRESS VIDEO"
+        ToolMode.IMAGE_UPSCALER -> "UPSCALE IMAGE"
     }
 
     fun configureToolUI(mode: ToolMode) {
@@ -318,7 +324,8 @@ class ToolSessionManager(
                 )
             }
             ToolMode.IMAGE_COMPRESSOR,
-            ToolMode.VIDEO_COMPRESSOR -> {
+            ToolMode.VIDEO_COMPRESSOR,
+            ToolMode.IMAGE_UPSCALER -> {
                 // Media Studio workspaces use dedicated layouts
             }
         }
@@ -597,7 +604,8 @@ class ToolSessionManager(
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ SHA-256 cryptographic hashing active" else "○ SHA-256 calculation skipped (low CPU/battery)"
             }
             ToolMode.IMAGE_COMPRESSOR,
-            ToolMode.VIDEO_COMPRESSOR -> {
+            ToolMode.VIDEO_COMPRESSOR,
+            ToolMode.IMAGE_UPSCALER -> {
                 binding.tvPrivacyProfileBadge.text = "MEDIA STUDIO"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)

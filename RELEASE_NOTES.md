@@ -1,5 +1,52 @@
 # VeilFrame Release Notes
 
+## v2.2.6 — September 2026
+
+VeilFrame v2.2.6 introduces the AI Image Upscaler (a dedicated 7th tool running on-device super-resolution with Point 7 models), an exhaustive overhaul of output file size estimations across both image and video studios, modern video compression speed presets (Slow, Medium, Fast) replacing hardcoded ultrafast options, video rotation and custom margin cropping, trim-bounded live playback, and real-time live preview reflection for image scaling above 100%.
+
+- **AI Image Upscaler Subsystem (7th Independent Tool):**
+  - **100% Offline & Private:** Neural inference executes entirely on-device via ONNX Runtime with zero cloud transmission, telemetric reporting, or network dependencies during processing.
+  - **Point 7 Model Lineup:**
+    - *Built-In (0 MB Download):* Lanczos 3-lobe (mathematical sinc filter with edge preservation), Bicubic spline (smooth gradients), and Nearest neighbor (pixel-exact scaling for pixel art).
+    - *Downloadable AI Models (HuggingFace CDN):* Real-ESRGAN General 2× (`RealESRGAN_x2plus.ort`, 33.8 MB), Real-ESRGAN General 4× (`RealESRGAN_x4plus.ort`, 33.8 MB), and Real-ESRGAN Anime 4× (`RealESRGAN_x4plus_anime_6B.ort`, 9.1 MB).
+  - **Tiled Super-Resolution Processing:** Implemented tiled tensor splitting with 32px overlap and cubic Hermite seam feathering to eliminate boundary artifacts and maintain a safe memory budget on devices of all RAM tiers.
+  - **Zero Initial APK Bloat & Resumable Download Manager:** The base APK remains lightweight with models fetched on-demand into app-private storage. Downloads support HTTP 302/307/308 redirect following, `.part` staging files, and cryptographic SHA-256 integrity verification before atomic activation.
+  - **Dynamic Model Manager:** Accessible directly from the Image Upscaler header or by tapping the heart icon in Image Studio. Displays total models storage, available device storage, and provides one-tap download and removal.
+- **Accurate Output File Size Estimation:**
+  - **BMP Alignment Fix:** Solved the critical estimation anomaly where BMP files showed ~23.5 MB for actual outputs of ~558 KB by implementing exact 24-bit DWORD scanline padding: `((24 * width + 31) / 32) * 4`.
+  - **Calibrated Multi-Format Estimation:** Overhauled empirical formula models for JPEG, WebP, PNG, TIFF, GIF, HEIF/AVIF, and Video Studio (accounting for CRF, bitrate, resolution, speed presets, and audio mode).
+- **Video Studio & Compressor Overhaul:**
+  - **Renamed to "Video Studio & Compressor":** Clear terminology aligned across navigation, workspace headers, and dashboard cards.
+  - **Compression Speed Presets:** Added Slow (Maximum Quality, Smallest File Size), Medium (Balanced), and Fast (Quick Export), replacing the previous hardcoded `ultrafast` preset to significantly improve compression ratios.
+  - **Video Rotation, Flip & Custom Crop:** Added 0°, 90° CW, 180°, and 270° CW rotation chips, horizontal and vertical flips, 4:3 and 3:4 aspect presets, and a fine-grained Custom Crop margin slider (0% to 40%). Live transformations render directly on the player `TextureView` and map to FFmpeg filters.
+  - **Trim-Bounded Playback:** Live player timeline (`Live preview`), scrubber progress, and playback loops are strictly clamped to the active $[trimStartMs, trimEndMs]$ interval.
+- **Image Studio Scale > 100% Live Preview:**
+  - Scaling factors beyond 100% now instantly scale the live preview image view and export at full target dimensions with memory headroom verification and garbage collection fallbacks.
+
+### Upgrade notes
+
+- Existing Android installations upgrade cleanly via the in-app updater verifying against `update.json` version `2.2.6` (`versionCode = 226`) with mandatory SHA-256 and signing certificate validation.
+- All neural upscaler models download directly from HuggingFace with verified SHA-256 checksums and store privately inside the application sandbox.
+- Video compression presets default to "Slow" for maximum quality and minimal file size.
+
+### Downloads and installation
+
+Download the appropriate artifact from the [GitHub Releases page](https://github.com/sahir247/VeilFrame/releases):
+
+- Android: `VeilFrame-android-arm64.apk`
+- Windows: `VeilFrame-windows-x86_64.exe`
+- Linux: `VeilFrame-linux-x86_64.deb` or `VeilFrame-linux-x86_64.tar.gz`
+- macOS Apple Silicon: `VeilFrame-macos-arm64.dmg` or `VeilFrame-macos-arm64.tar.gz`
+- Python: `veilframe-2.2.6-py3-none-any.whl`
+
+For Python installation:
+
+```bash
+pip install veilframe-2.2.6-py3-none-any.whl
+```
+
+---
+
 ## v2.2.5 — September 2026
 
 VeilFrame v2.2.5 delivers extensive image and video studio advancements across mobile and desktop, including an iterative target file size optimizer, text watermark studio with 9-point spatial anchoring and expanded typography/colors, canvas flips and alpha background fills, multi-container video export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec encoding (H.264, H.265, VP9, Stream Copy), video colour grading with 15 cinematic profiles and live preview, comprehensive audio gain/channel remixing, and desktop interface modernization.

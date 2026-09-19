@@ -65,6 +65,7 @@ class MainNavigationController(
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
 
         onHomeScreenEntered()
     }
@@ -85,6 +86,7 @@ class MainNavigationController(
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
     }
 
     fun showImageStudioScreen() {
@@ -103,6 +105,7 @@ class MainNavigationController(
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
     }
 
     fun showVideoStudioScreen() {
@@ -121,6 +124,7 @@ class MainNavigationController(
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
     }
 
     fun showMarkdownViewerScreen() {
@@ -141,5 +145,25 @@ class MainNavigationController(
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.VISIBLE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
+    }
+
+    fun showImageUpscalerScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        previousScreen = currentScreen
+        currentScreen = ScreenState.IMAGE_UPSCALER
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.scrollHome.visibility = View.GONE
+        binding.scrollTool.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
+        binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+        binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.VISIBLE
     }
 }

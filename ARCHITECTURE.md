@@ -573,6 +573,35 @@ The media compression subsystem (`veilframe.core.media_compressor`) exposes high
 
 ---
 
+## AI Image Upscaler Subsystem (v2.2.6 Architecture)
+
+VeilFrame v2.2.6 introduces the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`), operating under 100% offline local privacy guarantees:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    AI IMAGE UPSCALER SUBSYSTEM (ONNX)                      │
+├──────────────────────────────────────┬─────────────────────────────────────┤
+│        POINT 7 MODEL REGISTRY        │        TILED INFERENCE PIPELINE     │
+│                                      │                                     │
+│ • Real-ESRGAN General 2× (33.8 MB)   │ • Dynamic Memory Planner (Heap/RAM) │
+│   Residual-in-Residual Dense Blocks  │ • Safe Tile Slicing (512–1024px)    │
+│ • Real-ESRGAN General 4× (33.8 MB)   │ • 32px Tile Overlap Padding         │
+│   Maximum photographic detail        │ • Cubic Hermite Seam Feathering     │
+│ • Real-ESRGAN Anime 4× (9.1 MB)      │ • [1, 3, H, W] RGB Normalization    │
+│   Crisp edges & vibrant illustration │ • Native Alpha Channel Scaling      │
+│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Two-Pass 8× Super-Resolution      │
+│ • Bicubic Spline (Built-in)          │ • Background Model Download Manager │
+│ • Nearest Neighbor (Built-in)        │   (Redirects, .part, SHA-256 Check) │
+└──────────────────────────────────────┴─────────────────────────────────────┘
+```
+
+1. **Point 7 Model Lineup:** Strictly isolates neural super-resolution to three high-performance ONNX models (Real-ESRGAN General 2×/4× and Anime 4×) plus three native mathematical interpolation algorithms (Lanczos-3, Bicubic, Nearest).
+2. **Zero-Bloat On-Demand Caching:** Models are not bundled inside the base APK (~79 MB). Instead, models stream on-demand from HuggingFace directly into `context.filesDir/models/upscaler/[id]/model.ort`, verifying against strict SHA-256 checksums before atomic activation.
+3. **Tiled Memory Allocation & Hermite Feathering:** Large images are partitioned into overlapping tiles ($512\times512$ to $1024\times1024$) with 32px overlap borders. To eliminate visible tile seams, boundary pixels are merged using smooth cubic Hermite polynomial blending ($S(t) = 3t^2 - 2t^3$).
+4. **100% Offline Privacy Guarantee:** Inference executes exclusively on local device NPU/GPU/CPU cores using the native ONNX Runtime C++ engine (`onnxruntime-android:1.20.0`). Zero image bytes or metadata ever leave the user's device.
+
+---
+
 ## Decoupled Research Attribution Benchmark Layer
 
 The research attribution benchmark suite (`research/attribution_benchmarks/`) provides an empirical evaluation framework:
