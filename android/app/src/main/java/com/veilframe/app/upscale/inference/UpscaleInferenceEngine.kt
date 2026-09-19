@@ -38,7 +38,8 @@ class UpscaleInferenceEngine(
         val srcH = source.height
 
         // Check memory safety plan
-        val plan = UpscaleMemoryPlanner.plan(srcW, srcH, targetScale)
+        val isAiModel = (model.type == ModelType.AI_ONNX)
+        val plan = UpscaleMemoryPlanner.plan(srcW, srcH, targetScale, isAiModel = isAiModel)
         if (!plan.isSafe) {
             val err = plan.warningMessage ?: "Image resolution exceeds device memory budget."
             return@withContext Result.failure(IllegalArgumentException(err))

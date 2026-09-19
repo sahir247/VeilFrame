@@ -15,7 +15,7 @@ object UpscaleMemoryPlanner {
         val warningMessage: String? = null
     )
 
-    fun plan(sourceWidth: Int, sourceHeight: Int, scale: Int): MemoryPlan {
+    fun plan(sourceWidth: Int, sourceHeight: Int, scale: Int, isAiModel: Boolean = false): MemoryPlan {
         val srcPixels = sourceWidth.toLong() * sourceHeight.toLong()
         val outPixels = srcPixels * scale.toLong() * scale.toLong()
 
@@ -39,16 +39,25 @@ object UpscaleMemoryPlanner {
         val freeMemory = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
         val freeMb = freeMemory / (1024 * 1024)
 
-        // Select tile size based on available heap
-        val tileSize = when {
-            freeMb >= 384 -> 1024
-            freeMb >= 192 -> 768
-            else -> 512
+        // Select tile size based on model type and available heap.
+        // Neural models (Real-ESRGAN RRDBNet) require small tiles (256-384) to avoid multi-gigabyte
+        // native activations, CPU starvation, and device freezing.
+        val (tileSize, overlap) = if (isAiModel) {
+            when {
+                freeMb >= 512 -> 384 to 24
+                else -> 256 to 16
+            }
+        } else {
+            when {
+                freeMb >= 384 -> 1024 to 32
+                freeMb >= 192 -> 768 to 32
+                else -> 512 to 32
+            }
         }
 
         return MemoryPlan(
             tileSize = tileSize,
-            overlap = 32,
+            overlap = overlap,
             isSafe = true
         )
     }

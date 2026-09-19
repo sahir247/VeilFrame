@@ -175,32 +175,38 @@ class VideoStudioController(
                 val chip = binding.chipGroupVidTargetPreset.findViewById<Chip>(checkedIds[0])
                 when (chip?.id) {
                     R.id.chipVidPresetWhatsapp -> {
-                        outputConfig.targetPreset = "WhatsApp (16 MB)"
+                        outputConfig.targetPreset = "WhatsApp Status"
                         outputConfig.targetMb = 16f
+                        binding.layoutWhatsappStatusResolution.visibility = View.VISIBLE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
                     R.id.chipVidPresetDiscord -> {
                         outputConfig.targetPreset = "Discord (25 MB)"
                         outputConfig.targetMb = 25f
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
                     R.id.chipVidPresetNitro -> {
                         outputConfig.targetPreset = "Discord Nitro (50 MB)"
                         outputConfig.targetMb = 50f
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
                     R.id.chipVidPresetEmail -> {
                         outputConfig.targetPreset = "Email Attachment (8 MB)"
                         outputConfig.targetMb = 8f
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
                     R.id.chipVidPresetWeb -> {
                         outputConfig.targetPreset = "Web Stream (10 MB)"
                         outputConfig.targetMb = 10f
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
                     R.id.chipVidPresetCustom -> {
                         outputConfig.targetPreset = "Custom"
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.VISIBLE
                         val customMb = binding.etVidCustomTargetMb.text?.toString()?.toFloatOrNull()
                         outputConfig.targetMb = customMb
@@ -208,8 +214,20 @@ class VideoStudioController(
                     else -> {
                         outputConfig.targetPreset = "Auto (Balanced CRF 28)"
                         outputConfig.targetMb = null
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                     }
+                }
+                refreshStats()
+            }
+        }
+
+        binding.chipGroupWhatsappStatusResolution.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val resChip = binding.chipGroupWhatsappStatusResolution.findViewById<Chip>(checkedIds[0])
+                outputConfig.whatsappStatusResolution = when (resChip?.id) {
+                    R.id.chipStatusResFhd -> com.veilframe.app.media.whatsapp.WhatsappStatusResolution.FHD_1080P
+                    else -> com.veilframe.app.media.whatsapp.WhatsappStatusResolution.HD_720P
                 }
                 refreshStats()
             }
@@ -743,7 +761,12 @@ class VideoStudioController(
         val durationSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(0.1)
 
         val estBytes = when (outputConfig.targetPreset) {
-            "WhatsApp (16 MB)" -> (15.5 * 1024 * 1024).toLong()
+            "WhatsApp Status", "WhatsApp (16 MB)" -> {
+                val baseKbps = outputConfig.whatsappStatusResolution.baseMaxRateKbps
+                val bufSize = com.veilframe.app.media.whatsapp.WhatsappStatusRateControl.calculateBufSize(baseKbps, durationSec)
+                val totalKbps = (baseKbps * 0.85).toInt() + 128
+                ((totalKbps * 1024L / 8L) * durationSec).toLong()
+            }
             "Discord (25 MB)" -> (24.0 * 1024 * 1024).toLong()
             "Email Attachment (8 MB)" -> (7.8 * 1024 * 1024).toLong()
             else -> {

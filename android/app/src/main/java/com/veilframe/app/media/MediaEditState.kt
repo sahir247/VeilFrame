@@ -279,5 +279,6 @@ data class VideoOutputConfig(
     var audioCodec: String = "aac",
     var audioBitrateKbps: Int? = null,
     var outputMode: VideoOutputMode = VideoOutputMode.VIDEO,
-    var outputFileName: String = ""
+    var outputFileName: String = "",
+    var whatsappStatusResolution: com.veilframe.app.media.whatsapp.WhatsappStatusResolution = com.veilframe.app.media.whatsapp.WhatsappStatusResolution.HD_720P
 )

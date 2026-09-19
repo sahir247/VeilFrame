@@ -109,6 +109,29 @@ object VideoProcessor {
                 outputConfig.format.equals("gif", ignoreCase = true) ||
                 outFile.name.endsWith(".gif", ignoreCase = true)
 
+        val isMuted = isGifMode || audioActionStr == "mute" || outputConfig.audioCodec.equals("mute", ignoreCase = true)
+
+        // Route WhatsApp Status destination directly to dedicated WhatsappStatusMediaPipeline
+        if (outputConfig.targetPreset.contains("WhatsApp", ignoreCase = true) ||
+            outputConfig.targetPreset.contains("Status", ignoreCase = true)) {
+            val statusResolution = outputConfig.whatsappStatusResolution
+            return com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
+                srcFile = srcFile,
+                outFile = outFile,
+                resolution = statusResolution,
+                trimStartSec = trimStartSec,
+                trimDurationSec = trimDurationSec,
+                flipH = editState.flipH,
+                flipV = editState.flipV,
+                rotate = editState.rotationAngle,
+                speed = editState.speed,
+                colorProfile = editState.colorProfile,
+                isMuted = isMuted,
+                onStatistics = onStatistics,
+                onSessionId = onSessionId
+            )
+        }
+
         // Authoritative Android FFmpegKit direct argument-array execution layer
         return executeNativeFFmpeg(
             srcFile = srcFile,

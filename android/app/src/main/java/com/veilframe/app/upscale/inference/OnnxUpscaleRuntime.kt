@@ -32,6 +32,20 @@ class OnnxUpscaleRuntime(
 
     companion object {
         private const val TAG = "VeilFrame.OnnxRuntime"
+
+        fun isQualcommPlatform(): Boolean {
+            return try {
+                val hw = android.os.Build.HARDWARE?.lowercase(java.util.Locale.US) ?: ""
+                val board = android.os.Build.BOARD?.lowercase(java.util.Locale.US) ?: ""
+                val soc = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    android.os.Build.SOC_MANUFACTURER?.lowercase(java.util.Locale.US) ?: ""
+                } else ""
+                hw.contains("qcom") || hw.contains("snapdragon") ||
+                        soc.contains("qualcomm") || board.contains("qcom")
+            } catch (_: Throwable) {
+                false
+            }
+        }
     }
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
@@ -53,12 +67,60 @@ class OnnxUpscaleRuntime(
     val expectedHeight: Long
     val expectedWidth: Long
 
+    val executionProvider: String
+    private var optionsHolder: OrtSession.SessionOptions? = null
+
     init {
         val sessionOptions = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(1, 4))
+            setIntraOpNumThreads(2)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
         }
-        session = env.createSession(modelFile.absolutePath, sessionOptions)
+        optionsHolder = sessionOptions
+
+        var ep = "CPU"
+        val isQualcomm = isQualcommPlatform()
+
+        if (isQualcomm) {
+            try {
+                // Try Qualcomm AI Engine Direct (QNN) HTP (Hexagon Tensor Processor)
+                sessionOptions.addQnn(mapOf("backend_path" to "libQnnHtp.so"))
+                ep = "QNN (Qualcomm HTP)"
+                Log.i(TAG, "Hardware Acceleration: Enabled Qualcomm AI Engine Direct (QNN HTP).")
+            } catch (eQnn: Throwable) {
+                Log.w(TAG, "Qualcomm QNN HTP provider unavailable: ${eQnn.message}; falling back to NNAPI.")
+                try {
+                    sessionOptions.addNnapi()
+                    ep = "NNAPI (Qualcomm Accelerator)"
+                    Log.i(TAG, "Hardware Acceleration: Enabled Android NNAPI.")
+                } catch (eNnapi: Throwable) {
+                    Log.w(TAG, "NNAPI provider unavailable: ${eNnapi.message}; using optimized CPU fallback.")
+                    ep = "CPU"
+                }
+            }
+        } else {
+            try {
+                sessionOptions.addNnapi()
+                ep = "NNAPI (Unified Accelerator)"
+                Log.i(TAG, "Hardware Acceleration: Enabled Android NNAPI.")
+            } catch (eNnapi: Throwable) {
+                Log.w(TAG, "NNAPI provider unavailable: ${eNnapi.message}; using optimized CPU fallback.")
+                ep = "CPU"
+            }
+        }
+
+        session = try {
+            env.createSession(modelFile.absolutePath, sessionOptions)
+        } catch (eInit: Throwable) {
+            Log.w(TAG, "Failed to create session with $ep: ${eInit.message}; falling back to standard CPU session.")
+            val cpuOptions = OrtSession.SessionOptions().apply {
+                setIntraOpNumThreads(2)
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+            }
+            optionsHolder = cpuOptions
+            ep = "CPU (Fallback)"
+            env.createSession(modelFile.absolutePath, cpuOptions)
+        }
+        executionProvider = ep
 
         // 1. Inspect ONNX Runtime model metadata immediately after session creation
         val inputEntry = session.inputInfo.entries.firstOrNull()
@@ -372,6 +434,9 @@ class OnnxUpscaleRuntime(
     override fun close() {
         try {
             session.close()
+        } catch (_: Exception) {}
+        try {
+            optionsHolder?.close()
         } catch (_: Exception) {}
         try {
             env.close()

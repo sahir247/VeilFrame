@@ -89,6 +89,26 @@ def build_atempo_chain(speed: float) -> str:
     return ",".join(f"atempo={f:.3f}".rstrip("0").rstrip(".") for f in tempo_factors)
 
 
+def calculate_whatsapp_status_bufsize(base_kbps: int, duration_sec: float) -> int:
+    """
+    Calculates duration-dependent bufsize for WhatsApp Status rate control.
+    Exact bucket comparisons:
+    <6.0s -> base / 2
+    6.0s to <11.0s -> floor(base / 1.5)
+    11.0s to <16.0s -> base
+    >=16.0s -> floor(base * 1.5)
+    """
+    safe_dur = max(0.0, float(duration_sec))
+    if safe_dur < 6.0:
+        return base_kbps // 2
+    elif safe_dur < 11.0:
+        return int(base_kbps / 1.5)
+    elif safe_dur < 16.0:
+        return base_kbps
+    else:
+        return int(base_kbps * 1.5)
+
+
 def _apply_text_watermark(
     img: Image.Image,
     watermark_config: Dict[str, Any],
@@ -575,7 +595,20 @@ def compress_video(
         elif rotate in (270,):
             vf_filters.append("transpose=2")
 
-        if resolution:
+        is_whatsapp_status = bool(
+            kwargs.get("whatsapp_status")
+            or kwargs.get("preset") in ("whatsapp_status", "WhatsApp Status")
+            or kwargs.get("target_preset") in ("whatsapp_status", "WhatsApp Status")
+        )
+
+        if is_whatsapp_status:
+            status_res = str(kwargs.get("whatsapp_status_resolution", resolution or "hd")).lower()
+            is_fhd = "fhd" in status_res or "1080" in status_res
+            target_w, target_h = (1080, 1920) if is_fhd else (720, 1280)
+            base_maxrate = 3800 if is_fhd else 1900
+            bufsize = calculate_whatsapp_status_bufsize(base_maxrate, effective_dur)
+            vf_filters.append(f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},format=yuv420p")
+        elif resolution:
             res_clean = resolution.lower()
             if "1080p" in res_clean:
                 vf_filters.append("scale=-2:1080")
@@ -646,7 +679,9 @@ def compress_video(
             cmd.extend(["-c:v", resolved_codec])
 
             if resolved_codec != "copy":
-                if target_size_mb is not None and target_size_mb > 0 and effective_dur > 0.2:
+                if is_whatsapp_status:
+                    cmd.extend(["-crf", "23", "-maxrate", f"{base_maxrate}k", "-bufsize", f"{bufsize}k", "-r", "29.97"])
+                elif target_size_mb is not None and target_size_mb > 0 and effective_dur > 0.2:
                     target_bits = target_size_mb * 8 * 1024 * 1024 * 0.95
                     audio_bits = 0 if strip_audio else 128 * 1024 * effective_dur
                     video_bits = max(50 * 1024 * effective_dur, target_bits - audio_bits)
@@ -681,8 +716,11 @@ def compress_video(
 
             cmd.extend(["-c:a", resolved_a_codec])
             if resolved_a_codec not in ("copy", "flac"):
-                a_bitrate = audio_bitrate or ("64k" if audio_action == "aac_64k" else ("256k" if audio_action == "aac_256k" else "128k"))
-                cmd.extend(["-b:a", a_bitrate])
+                if is_whatsapp_status:
+                    cmd.extend(["-ar", "44100", "-b:a", "128k"])
+                else:
+                    a_bitrate = audio_bitrate or ("64k" if audio_action == "aac_64k" else ("256k" if audio_action == "aac_256k" else "128k"))
+                    cmd.extend(["-b:a", a_bitrate])
 
         # 6. Metadata Privacy Scrubbing
         if strip_metadata:

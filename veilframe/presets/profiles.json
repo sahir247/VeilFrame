@@ -191,6 +191,31 @@
       "psnr_worst_min_db": 25.0
     }
   },
+  "WhatsApp Status": {
+    "description": "WhatsApp Status 9:16 preconditioning pipeline with verified rate control (HD 720p 1900k / FHD 1080p 3800k maxrate, duration-dependent bufsize, 29.97 fps, yuv420p, 44.1 kHz 128 kbps audio).",
+    "crop": { "enabled": true, "mode": "status_canvas", "aspect": "9:16" },
+    "resize": { "enabled": true, "mode": "manual", "width": 720, "height": 1280, "maintain_aspect": false },
+    "fps": { "enabled": true, "mode": "manual", "fps": 29.97 },
+    "trim": { "enabled": false, "mode": "manual", "start": 0.0 },
+    "noise": { "enabled": false, "mode": "manual", "strength": 0 },
+    "color": { "enabled": false, "mode": "manual" },
+    "audio_privacy": { "enabled": true, "mode": "auto", "enf_notch": false, "micro_pitch": false },
+    "quantization": { "forced_gop": true, "normalize_timestamps": true, "epoch_zero": true, "bitexact": true },
+    "codec": { "mode": "manual", "codec": "h264" },
+    "quality": { "mode": "whatsapp_status", "crf": 23, "resolution": "hd", "base_maxrate_kbps": 1900 },
+    "privacy": {
+      "remove_metadata": true,
+      "remove_comments": true,
+      "remove_chapters": true,
+      "remove_attachments": true,
+      "scrub_after_encoding": true,
+      "verify_output": true
+    },
+    "quality_gate": {
+      "enabled": false,
+      "enforce_strict": false
+    }
+  },
   "WhatsApp (16 MB Target)": {
     "description": "Optimizes video bitrate, audio stream, and resolution downscaling to guarantee compressed output fits within WhatsApp's 16 MB limit.",
     "crop": { "enabled": false, "mode": "manual", "left": 0, "right": 0, "top": 0, "bottom": 0 },

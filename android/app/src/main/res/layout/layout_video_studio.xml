@@ -1021,7 +1021,7 @@
                             style="@style/Widget.Material3.Chip.Filter"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="WhatsApp (16 MB)" />
+                            android:text="WhatsApp Status" />
 
                         <com.google.android.material.chip.Chip
                             android:id="@+id/chipVidPresetDiscord"
@@ -1059,6 +1059,48 @@
                             android:text="Custom MB" />
                     </com.google.android.material.chip.ChipGroup>
                 </HorizontalScrollView>
+
+                <!-- WhatsApp Status Resolution Selector (HD 720p vs FHD 1080p) -->
+                <LinearLayout
+                    android:id="@+id/layoutWhatsappStatusResolution"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="STATUS RESOLUTION"
+                        android:textColor="@color/vf_text_muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:layout_marginBottom="4dp" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupWhatsappStatusResolution"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:singleSelection="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipStatusResHd"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="HD 720p (1900k)"
+                            android:checked="true" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipStatusResFhd"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FHD 1080p (3800k)" />
+                    </com.google.android.material.chip.ChipGroup>
+                </LinearLayout>
 
                 <!-- Custom MB Input Field -->
                 <com.google.android.material.textfield.TextInputLayout
