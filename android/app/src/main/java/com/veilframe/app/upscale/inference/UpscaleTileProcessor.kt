@@ -2,18 +2,17 @@ package com.veilframe.app.upscale.inference
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
- * Tiled inference processor with overlap and smooth-step seam blending.
- * Directly implements ImageToolbox's TileGrid overlap and cubic Hermite feathering math.
+ * High-performance tiled inference processor with boundary tile handling,
+ * spatial overlap, and cubic Hermite (smooth-step) seam blending.
  */
 class UpscaleTileProcessor(
-    private val tileSize: Int = 512,
-    private val overlap: Int = 32
+    val tileSize: Int = 512,
+    val overlap: Int = 32
 ) {
 
     data class TileArea(
@@ -38,9 +37,11 @@ class UpscaleTileProcessor(
             while (x < imageWidth) {
                 val tileW = minOf(tileSize, imageWidth - x)
                 tiles.add(TileArea(col, row, x, y, tileW, tileH))
+                if (x + tileW >= imageWidth) break
                 x += step
                 col++
             }
+            if (y + tileH >= imageHeight) break
             y += step
             row++
         }
@@ -50,16 +51,16 @@ class UpscaleTileProcessor(
     suspend fun processTiles(
         source: Bitmap,
         scale: Int,
-        onTileInfer: suspend (tile: Bitmap) -> Bitmap,
+        onTileInfer: suspend (tile: Bitmap, row: Int, col: Int) -> Bitmap,
         onProgress: (current: Int, total: Int) -> Unit
     ): Bitmap = withContext(Dispatchers.Default) {
         val srcW = source.width
         val srcH = source.height
 
-        // If source fits in a single tile without splitting
+        // If source fits entirely in a single tile without splitting
         if (srcW <= tileSize && srcH <= tileSize) {
             onProgress(0, 1)
-            val result = onTileInfer(source)
+            val result = onTileInfer(source, 0, 0)
             onProgress(1, 1)
             return@withContext result
         }
@@ -75,15 +76,15 @@ class UpscaleTileProcessor(
             ensureActive()
             onProgress(index, totalTiles)
 
-            // Extract tile
+            // Extract tile from source image
             val srcTile = Bitmap.createBitmap(source, tile.x, tile.y, tile.width, tile.height)
             val processedTile = try {
-                onTileInfer(srcTile)
+                onTileInfer(srcTile, tile.row, tile.col)
             } finally {
                 if (srcTile != source) srcTile.recycle()
             }
 
-            // Draw & blend tile into output
+            // Blend tile into aggregated output canvas
             blendTileIntoOutput(
                 output = outputBitmap,
                 tileBitmap = processedTile,
@@ -98,7 +99,7 @@ class UpscaleTileProcessor(
         outputBitmap
     }
 
-    private fun blendTileIntoOutput(
+    internal fun blendTileIntoOutput(
         output: Bitmap,
         tileBitmap: Bitmap,
         tile: TileArea,
@@ -111,7 +112,7 @@ class UpscaleTileProcessor(
         val shouldBlendLeft = tile.col > 0
         val shouldBlendTop = tile.row > 0
 
-        // Corner or non-overlapping first tile
+        // Non-overlapping first tile or top-left corner
         if (!shouldBlendLeft && !shouldBlendTop) {
             val canvas = Canvas(output)
             canvas.drawBitmap(tileBitmap, targetX.toFloat(), targetY.toFloat(), null)
@@ -162,10 +163,21 @@ class UpscaleTileProcessor(
 
     private fun mixColor(from: Int, to: Int, amount: Float): Int {
         val inv = 1f - amount
-        val a = (Color.alpha(from) * inv + Color.alpha(to) * amount).toInt().coerceIn(0, 255)
-        val r = (Color.red(from) * inv + Color.red(to) * amount).toInt().coerceIn(0, 255)
-        val g = (Color.green(from) * inv + Color.green(to) * amount).toInt().coerceIn(0, 255)
-        val b = (Color.blue(from) * inv + Color.blue(to) * amount).toInt().coerceIn(0, 255)
-        return Color.argb(a, r, g, b)
+        val fromA = (from ushr 24) and 0xff
+        val fromR = (from ushr 16) and 0xff
+        val fromG = (from ushr 8) and 0xff
+        val fromB = from and 0xff
+
+        val toA = (to ushr 24) and 0xff
+        val toR = (to ushr 16) and 0xff
+        val toG = (to ushr 8) and 0xff
+        val toB = to and 0xff
+
+        val a = (fromA * inv + toA * amount).toInt().coerceIn(0, 255)
+        val r = (fromR * inv + toR * amount).toInt().coerceIn(0, 255)
+        val g = (fromG * inv + toG * amount).toInt().coerceIn(0, 255)
+        val b = (fromB * inv + toB * amount).toInt().coerceIn(0, 255)
+
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 }

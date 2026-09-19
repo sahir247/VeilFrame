@@ -63,7 +63,7 @@ object UpscaleModelRegistry {
     val REAL_ESRGAN_GENERAL_4X = UpscaleModel(
         id = "realesrgan-general-4x",
         name = "Real-ESRGAN General 4×",
-        description = "Maximum photographic clarity and realistic texture restoration with deep residual in residual dense blocks.",
+        description = "Reliable general-purpose photo restoration with deep residual in residual dense blocks.",
         type = ModelType.AI_ONNX,
         nativeScale = 4,
         sizeBytes = 35_437_480L,

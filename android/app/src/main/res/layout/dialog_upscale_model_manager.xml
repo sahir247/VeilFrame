@@ -230,7 +230,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="33.8 MB • Maximum Photographic Clarity"
+                                android:text="33.8 MB • Reliable Photo Restoration"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>

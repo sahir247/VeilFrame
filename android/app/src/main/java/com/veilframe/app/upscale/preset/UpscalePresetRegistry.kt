@@ -16,7 +16,7 @@ object UpscalePresetRegistry {
     val PHOTO_QUALITY = UpscalePreset(
         id = "photo_quality",
         name = "Photo (High Quality)",
-        description = "Maximum photographic clarity and realistic texture restoration.",
+        description = "Reliable general-purpose photo restoration with neural detail synthesis.",
         recommendedModelId = "realesrgan-general-4x",
         defaultScale = 4
     )

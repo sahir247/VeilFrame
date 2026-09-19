@@ -75,8 +75,13 @@ class UpscaleInferenceEngine(
 
                     try {
                         ensureActive()
+                        val effectiveTileSize = if (!runtime.isDynamicSpatial && runtime.expectedWidth > 0L) {
+                            minOf(plan.tileSize, runtime.expectedWidth.toInt())
+                        } else {
+                            plan.tileSize
+                        }
                         val tileProcessor = UpscaleTileProcessor(
-                            tileSize = plan.tileSize,
+                            tileSize = effectiveTileSize,
                             overlap = plan.overlap
                         )
 
@@ -84,8 +89,8 @@ class UpscaleInferenceEngine(
                         val aiResult = tileProcessor.processTiles(
                             source = source,
                             scale = model.nativeScale,
-                            onTileInfer = { tile ->
-                                runtime.runTile(tile)
+                            onTileInfer = { tile, row, col ->
+                                runtime.runTile(tile, row, col)
                             },
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0

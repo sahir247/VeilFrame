@@ -1,25 +1,33 @@
 package com.veilframe.app.upscale.inference
 
+import ai.onnxruntime.NodeInfo
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.FloatBuffer
+import java.nio.ShortBuffer
 
 /**
- * Isolated ONNX Runtime wrapper for Real-ESRGAN super-resolution models.
- * Implements NCHW float [0, 1] input normalization and [0, 255] output denormalization,
- * conforming to ImageToolbox's AiProcessor tensor contract.
+ * Production-grade ONNX Runtime wrapper for Real-ESRGAN and modern super-resolution models.
+ * Features:
+ * - Comprehensive metadata inspection and logging immediately upon session creation
+ * - Support for both dynamic spatial dimensions and fixed spatial dimensions with boundary tile padding & unpadding
+ * - Support for both FLOAT32 and FLOAT16 tensors (via bit-exact IEEE-754 binary16 conversion)
+ * - Safe output structure validation and dynamic dimension derivation directly from the output tensor
+ * - High-clarity error formatting on ORT exceptions indicating model name, expected shape, supplied shape, and tile coordinates
  */
 class OnnxUpscaleRuntime(
-    private val modelFile: File,
-    private val scale: Int
+    val modelFile: File,
+    val scale: Int
 ) : AutoCloseable {
 
     companion object {
@@ -29,7 +37,21 @@ class OnnxUpscaleRuntime(
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val session: OrtSession
 
-    private val inputName: String
+    val inputName: String
+    val inputType: OnnxJavaType
+    val inputShape: LongArray
+    val inputRank: Int
+
+    val outputName: String
+    val outputType: OnnxJavaType
+    val outputShape: LongArray
+    val outputRank: Int
+
+    val isDynamicSpatial: Boolean
+    val expectedBatch: Long
+    val expectedChannels: Long
+    val expectedHeight: Long
+    val expectedWidth: Long
 
     init {
         val sessionOptions = OrtSession.SessionOptions().apply {
@@ -37,94 +59,309 @@ class OnnxUpscaleRuntime(
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
         }
         session = env.createSession(modelFile.absolutePath, sessionOptions)
-        inputName = session.inputNames.iterator().next()
-        Log.i(TAG, "Initialized ONNX session for ${modelFile.name}, inputName: $inputName, scale: $scale")
-    }
 
-    suspend fun runTile(tileBitmap: Bitmap): Bitmap = withContext(Dispatchers.Default) {
-        ensureActive()
-        val width = tileBitmap.width
-        val height = tileBitmap.height
-        val pixelCount = width * height
+        // 1. Inspect ONNX Runtime model metadata immediately after session creation
+        val inputEntry = session.inputInfo.entries.firstOrNull()
+            ?: throw IllegalStateException("ONNX model ${modelFile.name} has no input tensors.")
+        inputName = inputEntry.key
+        val inputNodeInfo: NodeInfo = inputEntry.value
+        val inputTensorInfo = (inputNodeInfo.info as? TensorInfo)
+            ?: throw IllegalStateException("ONNX input ${inputName} is not a TensorInfo.")
 
-        val srcPixels = IntArray(pixelCount)
-        tileBitmap.getPixels(srcPixels, 0, width, 0, 0, width, height)
+        inputType = inputTensorInfo.type
+        inputShape = inputTensorInfo.shape
+        inputRank = inputShape.size
 
-        val hasAlpha = tileBitmap.hasAlpha()
-        val alphaChannel = if (hasAlpha) FloatArray(pixelCount) else null
+        val outputEntry = session.outputInfo.entries.firstOrNull()
+            ?: throw IllegalStateException("ONNX model ${modelFile.name} has no output tensors.")
+        outputName = outputEntry.key
+        val outputNodeInfo: NodeInfo = outputEntry.value
+        val outputTensorInfo = (outputNodeInfo.info as? TensorInfo)
+            ?: throw IllegalStateException("ONNX output ${outputName} is not a TensorInfo.")
 
-        // NCHW format: 3 channels (R, G, B) normalized to [0.0f, 1.0f]
-        val inputFloats = FloatArray(3 * pixelCount)
-        val planeG = pixelCount
-        val planeB = 2 * pixelCount
+        outputType = outputTensorInfo.type
+        outputShape = outputTensorInfo.shape
+        outputRank = outputShape.size
 
-        for (i in 0 until pixelCount) {
-            val pixel = srcPixels[i]
-            if (hasAlpha) {
-                alphaChannel!![i] = Color.alpha(pixel) / 255.0f
-            }
-            inputFloats[i] = Color.red(pixel) / 255.0f
-            inputFloats[planeG + i] = Color.green(pixel) / 255.0f
-            inputFloats[planeB + i] = Color.blue(pixel) / 255.0f
+        if (inputRank >= 4) {
+            expectedBatch = inputShape[0]
+            expectedChannels = inputShape[1]
+            expectedHeight = inputShape[2]
+            expectedWidth = inputShape[3]
+            isDynamicSpatial = (expectedHeight <= 0L || expectedWidth <= 0L)
+        } else {
+            expectedBatch = 1L
+            expectedChannels = 3L
+            expectedHeight = -1L
+            expectedWidth = -1L
+            isDynamicSpatial = true
         }
 
-        val shape = longArrayOf(1, 3, height.toLong(), width.toLong())
-        val floatBuffer = FloatBuffer.wrap(inputFloats)
-        val inputTensor = OnnxTensor.createTensor(env, floatBuffer, shape)
+        // Detailed logging of metadata as required by Specification Item 1
+        try {
+            Log.i(TAG, "==========================================================")
+            Log.i(TAG, "ONNX Model Metadata Inspection: ${modelFile.name}")
+            Log.i(TAG, "  Model Filename:    ${modelFile.name} (${modelFile.length()} bytes)")
+            Log.i(TAG, "  Input Name:        $inputName")
+            Log.i(TAG, "  Input Type:        $inputType")
+            Log.i(TAG, "  Input Rank:        $inputRank")
+            Log.i(TAG, "  Input Dimensions:  ${inputShape.contentToString()}")
+            Log.i(TAG, "  Output Name:       $outputName")
+            Log.i(TAG, "  Output Type:       $outputType")
+            Log.i(TAG, "  Output Rank:       $outputRank")
+            Log.i(TAG, "  Output Dimensions: ${outputShape.contentToString()}")
+            Log.i(TAG, "  Spatial Dimension: ${if (isDynamicSpatial) "Dynamic H/W" else "Fixed [H=$expectedHeight, W=$expectedWidth]"}")
+            Log.i(TAG, "==========================================================")
+        } catch (_: Throwable) {
+            // Log fallback for non-Android environments (pure JUnit)
+            println("ONNX Model: ${modelFile.name}, Input: $inputName $inputType ${inputShape.contentToString()}, Output: $outputName $outputType ${outputShape.contentToString()}, Dynamic: $isDynamicSpatial")
+        }
+    }
+
+    /**
+     * Executes inference for a single image tile.
+     * Supports both dynamic models and fixed spatial models with automatic boundary padding and cropping.
+     * Supports both FLOAT32 and FLOAT16 models.
+     *
+     * @param tileBitmap The input tile bitmap (e.g. 512x512 or boundary tile 312x400)
+     * @param row The row coordinate in the tile grid for error reporting
+     * @param col The col coordinate in the tile grid for error reporting
+     */
+    suspend fun runTile(tileBitmap: Bitmap, row: Int = 0, col: Int = 0): Bitmap = withContext(Dispatchers.Default) {
+        ensureActive()
+        val actualW = tileBitmap.width
+        val actualH = tileBitmap.height
+
+        if (actualW <= 0 || actualH <= 0) {
+            throw IllegalArgumentException("Invalid tile dimensions: ${actualW}x${actualH}")
+        }
+
+        // Determine input dimensions and whether boundary padding is required
+        val targetInW: Int
+        val targetInH: Int
+        val needsPadding: Boolean
+
+        if (!isDynamicSpatial && expectedWidth > 0L && expectedHeight > 0L) {
+            targetInW = expectedWidth.toInt()
+            targetInH = expectedHeight.toInt()
+
+            if (actualW > targetInW || actualH > targetInH) {
+                val errorMsg = """
+                    Model:
+                    ${modelFile.name}
+
+                    Input expected:
+                    [1,3,$targetInH,$targetInW]
+
+                    Input supplied:
+                    [1,3,$actualH,$actualW]
+
+                    Tile:
+                    row=$row col=$col
+
+                    The supplied tile dimensions exceed the fixed model spatial shape.
+                """.trimIndent()
+                throw IllegalArgumentException(errorMsg)
+            }
+            needsPadding = (actualW != targetInW || actualH != targetInH)
+        } else {
+            // Dynamic spatial dimensions
+            targetInW = actualW
+            targetInH = actualH
+            needsPadding = false
+        }
+
+        val targetPixelCount = targetInW * targetInH
+        val srcPixels = IntArray(actualW * actualH)
+        tileBitmap.getPixels(srcPixels, 0, actualW, 0, 0, actualW, actualH)
+
+        val hasAlpha = tileBitmap.hasAlpha()
+        val alphaChannel = if (hasAlpha) FloatArray(actualW * actualH) else null
+
+        // Populate NCHW float planes [0.0f, 1.0f]
+        val planeR = FloatArray(targetPixelCount)
+        val planeG = FloatArray(targetPixelCount)
+        val planeB = FloatArray(targetPixelCount)
+
+        var srcIdx = 0
+        for (y in 0 until actualH) {
+            for (x in 0 until actualW) {
+                val pixel = srcPixels[srcIdx]
+                if (hasAlpha) {
+                    val a = (pixel ushr 24) and 0xff
+                    alphaChannel!![srcIdx] = a / 255.0f
+                }
+                srcIdx++
+            }
+        }
+
+        // Fill target grid with edge pixel replication (border clamping) for padding
+        for (y in 0 until targetInH) {
+            val clampY = if (y < actualH) y else actualH - 1
+            for (x in 0 until targetInW) {
+                val clampX = if (x < actualW) x else actualW - 1
+                val pixel = srcPixels[clampY * actualW + clampX]
+                val idx = y * targetInW + x
+
+                val r = (pixel ushr 16) and 0xff
+                val g = (pixel ushr 8) and 0xff
+                val b = pixel and 0xff
+
+                planeR[idx] = r / 255.0f
+                planeG[idx] = g / 255.0f
+                planeB[idx] = b / 255.0f
+            }
+        }
+
+        val tensorShape = longArrayOf(1L, 3L, targetInH.toLong(), targetInW.toLong())
+
+        // 6. Validate tensor type: FLOAT / FLOAT16 / etc.
+        val inputTensor: OnnxTensor = when (inputType) {
+            OnnxJavaType.FLOAT16 -> {
+                val shortBuffer = ShortBuffer.allocate(3 * targetPixelCount)
+                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeR[i]))
+                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeG[i]))
+                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeB[i]))
+                shortBuffer.rewind()
+                OnnxTensor.createTensor(env, shortBuffer, tensorShape, OnnxJavaType.FLOAT16)
+            }
+            OnnxJavaType.FLOAT -> {
+                val flatFloats = FloatArray(3 * targetPixelCount)
+                System.arraycopy(planeR, 0, flatFloats, 0, targetPixelCount)
+                System.arraycopy(planeG, 0, flatFloats, targetPixelCount, targetPixelCount)
+                System.arraycopy(planeB, 0, flatFloats, 2 * targetPixelCount, targetPixelCount)
+                val floatBuffer = FloatBuffer.wrap(flatFloats)
+                OnnxTensor.createTensor(env, floatBuffer, tensorShape)
+            }
+            else -> {
+                throw UnsupportedOperationException("Unsupported ONNX input tensor type: $inputType")
+            }
+        }
 
         try {
             ensureActive()
-            session.run(mapOf(inputName to inputTensor)).use { result ->
-                val outputValue = result[0].value
-                val outWidth = width * scale
-                val outHeight = height * scale
-                val outPixelCount = outWidth * outHeight
 
-                val outputFloats = when (outputValue) {
-                    is Array<*> -> {
-                        // Tensor shape [1, 3, outH, outW]
-                        @Suppress("UNCHECKED_CAST")
-                        val batch = outputValue[0] as Array<Array<FloatArray>>
-                        val flat = FloatArray(3 * outPixelCount)
-                        val outPlaneG = outPixelCount
-                        val outPlaneB = 2 * outPixelCount
-                        var idx = 0
-                        for (y in 0 until outHeight) {
-                            for (x in 0 until outWidth) {
-                                flat[idx] = batch[0][y][x]
-                                flat[outPlaneG + idx] = batch[1][y][x]
-                                flat[outPlaneB + idx] = batch[2][y][x]
-                                idx++
-                            }
-                        }
-                        flat
+            val result = try {
+                session.run(mapOf(inputName to inputTensor))
+            } catch (e: OrtException) {
+                // 8. Improve the ORT error message with exact context
+                val expectedStr = if (isDynamicSpatial) "[1,3,H,W] (Dynamic)" else "[1,3,$targetInH,$targetInW]"
+                val suppliedStr = "[1,3,$actualH,$actualW]"
+                val customErrorMsg = """
+                    Model:
+                    ${modelFile.name}
+
+                    Input expected:
+                    $expectedStr
+
+                    Input supplied:
+                    $suppliedStr
+
+                    Tile:
+                    row=$row col=$col
+
+                    Inference execution failed: ${e.message}
+                    The tile was incompatible with the model shape or internal layer dimensions.
+                """.trimIndent()
+                throw IllegalStateException(customErrorMsg, e)
+            }
+
+            result.use { res ->
+                // 7. Validate output structure before casting
+                if (res.size() == 0) {
+                    throw IllegalStateException("ONNX model ${modelFile.name} returned empty inference results.")
+                }
+
+                val outValue = res.get(0)
+                val outTensor = (outValue as? OnnxTensor)
+                    ?: throw IllegalStateException("Expected OnnxTensor in result[0], but got: ${outValue?.javaClass?.name}")
+
+                val outTensorInfo = (outTensor.info as? TensorInfo)
+                    ?: throw IllegalStateException("Output tensor info is not TensorInfo: ${outTensor.info?.javaClass?.name}")
+
+                val actualOutShape = outTensorInfo.shape
+                if (actualOutShape.size < 4) {
+                    throw IllegalStateException("Expected 4D NCHW output shape, got: ${actualOutShape.contentToString()}")
+                }
+
+                // 5. Derive output dimensions from the actual output tensor
+                val outTensorH = actualOutShape[2].toInt()
+                val outTensorW = actualOutShape[3].toInt()
+                val outPixelCount = outTensorW * outTensorH
+
+                val actualScaleX = outTensorW / targetInW
+                val actualScaleY = outTensorH / targetInH
+
+                // Read output tensor values according to output tensor type
+                val outR = FloatArray(outPixelCount)
+                val outG = FloatArray(outPixelCount)
+                val outB = FloatArray(outPixelCount)
+
+                when (outTensorInfo.type) {
+                    OnnxJavaType.FLOAT16 -> {
+                        val shortBuf = outTensor.shortBuffer
+                        shortBuf.rewind()
+                        for (i in 0 until outPixelCount) outR[i] = Float16Utils.halfToFloat(shortBuf.get())
+                        for (i in 0 until outPixelCount) outG[i] = Float16Utils.halfToFloat(shortBuf.get())
+                        for (i in 0 until outPixelCount) outB[i] = Float16Utils.halfToFloat(shortBuf.get())
                     }
-                    else -> throw IllegalStateException("Unexpected ONNX output structure: ${outputValue?.javaClass}")
+                    OnnxJavaType.FLOAT -> {
+                        val floatBuf = outTensor.floatBuffer
+                        floatBuf.rewind()
+                        floatBuf.get(outR)
+                        floatBuf.get(outG)
+                        floatBuf.get(outB)
+                    }
+                    else -> {
+                        // Multi-dimensional array fallback
+                        val rawValue = outTensor.value
+                        when (rawValue) {
+                            is Array<*> -> {
+                                @Suppress("UNCHECKED_CAST")
+                                val batch = rawValue[0] as Array<Array<FloatArray>>
+                                var idx = 0
+                                for (y in 0 until outTensorH) {
+                                    for (x in 0 until outTensorW) {
+                                        outR[idx] = batch[0][y][x]
+                                        outG[idx] = batch[1][y][x]
+                                        outB[idx] = batch[2][y][x]
+                                        idx++
+                                    }
+                                }
+                            }
+                            else -> throw IllegalStateException("Unsupported output tensor type / structure: ${outTensorInfo.type}")
+                        }
+                    }
                 }
 
-                val dstPixels = IntArray(outPixelCount)
-                val outPlaneG = outPixelCount
-                val outPlaneB = 2 * outPixelCount
+                // Crop output dimensions to original unpadded tile size
+                val finalTileW = if (needsPadding) actualW * actualScaleX else outTensorW
+                val finalTileH = if (needsPadding) actualH * actualScaleY else outTensorH
+                val finalPixelCount = finalTileW * finalTileH
+                val dstPixels = IntArray(finalPixelCount)
 
-                for (idx in 0 until outPixelCount) {
-                    val outY = idx / outWidth
-                    val outX = idx % outWidth
+                var dstIdx = 0
+                for (y in 0 until finalTileH) {
+                    val outYIdx = y * outTensorW
+                    for (x in 0 until finalTileW) {
+                        val tensorIdx = outYIdx + x
 
-                    val alphaVal = if (alphaChannel != null) {
-                        val srcY = (outY / scale).coerceIn(0, height - 1)
-                        val srcX = (outX / scale).coerceIn(0, width - 1)
-                        (alphaChannel[srcY * width + srcX] * 255.0f).toInt().coerceIn(0, 255)
-                    } else 255
+                        val alphaVal = if (alphaChannel != null) {
+                            val srcY = (y / actualScaleY).coerceIn(0, actualH - 1)
+                            val srcX = (x / actualScaleX).coerceIn(0, actualW - 1)
+                            (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
+                        } else 255
 
-                    val r = (outputFloats[idx] * 255.0f).toInt().coerceIn(0, 255)
-                    val g = (outputFloats[outPlaneG + idx] * 255.0f).toInt().coerceIn(0, 255)
-                    val b = (outputFloats[outPlaneB + idx] * 255.0f).toInt().coerceIn(0, 255)
+                        val r = (outR[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+                        val g = (outG[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+                        val b = (outB[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
 
-                    dstPixels[idx] = Color.argb(alphaVal, r, g, b)
+                        dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
+                    }
                 }
 
-                val outBitmap = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
-                outBitmap.setPixels(dstPixels, 0, outWidth, 0, 0, outWidth, outHeight)
+                val outBitmap = Bitmap.createBitmap(finalTileW, finalTileH, Bitmap.Config.ARGB_8888)
+                outBitmap.setPixels(dstPixels, 0, finalTileW, 0, 0, finalTileW, finalTileH)
                 outBitmap
             }
         } finally {
