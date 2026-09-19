@@ -71,7 +71,7 @@ class UpscaleInferenceEngine(
                         )
                     }
 
-                    listener?.onStatus("Loading ${model.name} neural weights...")
+                    listener?.onStatus("Loading ${model.name} weights...")
                     val runtime = OnnxUpscaleRuntime(modelFile, model.nativeScale)
 
                     try {
@@ -86,32 +86,37 @@ class UpscaleInferenceEngine(
                             overlap = plan.overlap
                         )
 
-                        listener?.onStatus("Processing tiles with ${model.name}...")
+                        val extraScale = if (targetScale > model.nativeScale) targetScale / model.nativeScale else 1
+                        listener?.onStatus("Ready: ${model.name} via ${runtime.executionProvider} (tile: ${effectiveTileSize}px, scale: ${targetScale}×)")
+
+                        var lastTileMs = 0L
                         val aiResult = tileProcessor.processTiles(
                             source = source,
-                            scale = model.nativeScale,
+                            scale = targetScale,
                             onTileInfer = { tile, row, col ->
-                                runtime.runTile(tile, row, col)
+                                val t0 = System.currentTimeMillis()
+                                val baseTile = runtime.runTile(tile, row, col)
+                                val finalTile = if (extraScale > 1) {
+                                    val refinedW = baseTile.width * extraScale
+                                    val refinedH = baseTile.height * extraScale
+                                    val refined = AlgorithmicUpscaler.scaleLanczos3(baseTile, refinedW, refinedH)
+                                    baseTile.recycle()
+                                    refined
+                                } else {
+                                    baseTile
+                                }
+                                lastTileMs = System.currentTimeMillis() - t0
+                                finalTile
                             },
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0
                                 listener?.onProgress(current, total, pct)
-                                listener?.onStatus("Processing tile $current / $total...")
+                                val timeInfo = if (lastTileMs > 0) " (${lastTileMs}ms)" else ""
+                                listener?.onStatus("Processing tile $current / $total$timeInfo • ${runtime.executionProvider}")
                             }
                         )
 
-                        // If user requested a higher scale than native model (e.g. 8x with a 4x model)
-                        if (targetScale > model.nativeScale) {
-                            val extraScale = targetScale / model.nativeScale
-                            listener?.onStatus("Applying secondary refinement (${extraScale}× Lanczos)...")
-                            val extraW = aiResult.width * extraScale
-                            val extraH = aiResult.height * extraScale
-                            val refined = AlgorithmicUpscaler.scaleLanczos3(aiResult, extraW, extraH)
-                            aiResult.recycle()
-                            refined
-                        } else {
-                            aiResult
-                        }
+                        aiResult
                     } finally {
                         runtime.close()
                     }

@@ -178,6 +178,54 @@ class UpscaleTileProcessorDimensionsTest {
         assertEquals(3996, heightLarge * 4)
     }
 
+    @Test
+    fun testTileCoreExtraction_ExactPartition_NoGapsAndNoOverlap() {
+        val width = 600
+        val height = 800
+        val processor = UpscaleTileProcessor(tileSize = 256, overlap = 24)
+        val tiles = processor.calculateTiles(width, height)
+
+        // Track how many tile cores cover each pixel in the 600x800 image
+        val coverageGrid = Array(height) { IntArray(width) }
+
+        for (tile in tiles) {
+            val coreStartX = tile.x + tile.coreX
+            val coreStartY = tile.y + tile.coreY
+            val coreEndX = coreStartX + tile.coreWidth
+            val coreEndY = coreStartY + tile.coreHeight
+
+            for (y in coreStartY until coreEndY) {
+                for (x in coreStartX until coreEndX) {
+                    coverageGrid[y][x]++
+                }
+            }
+        }
+
+        // Verify that every single pixel is covered by EXACTLY ONE tile core
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                assertEquals("Pixel ($x, $y) must be covered by exactly 1 core", 1, coverageGrid[y][x])
+            }
+        }
+    }
+
+    @Test
+    fun testUpscaleMemoryPlanner_StandardTileSizesAndSafeBudget() {
+        // AI model should choose 256 or 384, never 768 or 1024
+        val planSmall = com.veilframe.app.upscale.inference.UpscaleMemoryPlanner.plan(512, 512, 4, isAiModel = true)
+        assertTrue("AI tile size must be <= 384", planSmall.tileSize <= 384)
+        assertTrue("Plan should be safe for 512x512 at 4x", planSmall.isSafe)
+        assertTrue("Working set must be calculated", planSmall.estimatedWorkingSetBytes > 0L)
+
+        // Huge resolution (e.g. 10000x10000 = 100 MP) must be rejected
+        val planHuge = com.veilframe.app.upscale.inference.UpscaleMemoryPlanner.plan(10000, 10000, 4, isAiModel = true)
+        org.junit.Assert.assertFalse("100 MP source must be flagged as unsafe", planHuge.isSafe)
+
+        // 4000x3000 at 4x = 16000x12000 = 192 MP must be rejected because it exceeds 36 MP mobile ceiling
+        val planExceed = com.veilframe.app.upscale.inference.UpscaleMemoryPlanner.plan(4000, 3000, 4, isAiModel = true)
+        org.junit.Assert.assertFalse("192 MP output must be flagged as unsafe", planExceed.isSafe)
+    }
+
     private fun verifyCompleteCoverage(tiles: List<UpscaleTileProcessor.TileArea>, imageW: Int, imageH: Int) {
         // Ensure every corner and coordinate in [0..imageW) x [0..imageH) is covered by at least one tile
         val checkPoints = listOf(

@@ -59,47 +59,48 @@ object AlgorithmicUpscaler {
         val srcH = source.height
         val a = 3 // 3 lobes
 
-        fun sinc(x: Double): Double {
-            if (abs(x) < 1e-6) return 1.0
-            val piX = PI * x
+        fun sinc(x: Float): Float {
+            if (abs(x) < 1e-6f) return 1.0f
+            val piX = (PI.toFloat() * x)
             return sin(piX) / piX
         }
 
-        fun lanczosKernel(x: Double): Double {
+        fun lanczosKernel(x: Float): Float {
             val absX = abs(x)
-            if (absX >= a) return 0.0
+            if (absX >= a) return 0.0f
             return sinc(absX) * sinc(absX / a)
         }
 
         val srcPixels = IntArray(srcW * srcH)
         source.getPixels(srcPixels, 0, srcW, 0, 0, srcW, srcH)
 
-        // Pass 1: Horizontal resampling to intermediate buffer
-        val interPixels = Array(targetWidth * srcH) { DoubleArray(4) }
-        val xRatio = srcW.toDouble() / targetWidth.toDouble()
+        // Pass 1: Horizontal resampling to intermediate primitive buffer.
+        // Memory-efficient contiguous primitive array (zero per-pixel object allocations).
+        val interPixels = FloatArray(targetWidth * srcH * 4)
+        val xRatio = srcW.toFloat() / targetWidth.toFloat()
 
         for (y in 0 until srcH) {
             val srcRowOffset = y * srcW
             val dstRowOffset = y * targetWidth
             for (x in 0 until targetWidth) {
-                val center = (x + 0.5) * xRatio - 0.5
+                val center = (x + 0.5f) * xRatio - 0.5f
                 val minX = (center - a).toInt().coerceAtLeast(0)
                 val maxX = (center + a).toInt().coerceAtMost(srcW - 1)
 
-                var sumWeight = 0.0
-                var r = 0.0
-                var g = 0.0
-                var b = 0.0
-                var alpha = 0.0
+                var sumWeight = 0.0f
+                var r = 0.0f
+                var g = 0.0f
+                var b = 0.0f
+                var alpha = 0.0f
 
                 for (sx in minX..maxX) {
-                    val w = lanczosKernel(center - sx)
-                    if (w != 0.0) {
+                    val w = lanczosKernel(center - sx.toFloat())
+                    if (w != 0.0f) {
                         val c = srcPixels[srcRowOffset + sx]
-                        val pxA = Color.alpha(c).toDouble()
-                        val pxR = Color.red(c).toDouble()
-                        val pxG = Color.green(c).toDouble()
-                        val pxB = Color.blue(c).toDouble()
+                        val pxA = ((c ushr 24) and 0xff).toFloat()
+                        val pxR = ((c ushr 16) and 0xff).toFloat()
+                        val pxG = ((c ushr 8) and 0xff).toFloat()
+                        val pxB = (c and 0xff).toFloat()
 
                         alpha += pxA * w
                         r += pxR * w
@@ -109,39 +110,40 @@ object AlgorithmicUpscaler {
                     }
                 }
 
-                if (sumWeight > 0.0) {
-                    interPixels[dstRowOffset + x][0] = (alpha / sumWeight).coerceIn(0.0, 255.0)
-                    interPixels[dstRowOffset + x][1] = (r / sumWeight).coerceIn(0.0, 255.0)
-                    interPixels[dstRowOffset + x][2] = (g / sumWeight).coerceIn(0.0, 255.0)
-                    interPixels[dstRowOffset + x][3] = (b / sumWeight).coerceIn(0.0, 255.0)
+                val outBase = (dstRowOffset + x) * 4
+                if (sumWeight > 0.0f) {
+                    interPixels[outBase] = (alpha / sumWeight).coerceIn(0.0f, 255.0f)
+                    interPixels[outBase + 1] = (r / sumWeight).coerceIn(0.0f, 255.0f)
+                    interPixels[outBase + 2] = (g / sumWeight).coerceIn(0.0f, 255.0f)
+                    interPixels[outBase + 3] = (b / sumWeight).coerceIn(0.0f, 255.0f)
                 }
             }
         }
 
         // Pass 2: Vertical resampling to destination pixels
         val dstPixels = IntArray(targetWidth * targetHeight)
-        val yRatio = srcH.toDouble() / targetHeight.toDouble()
+        val yRatio = srcH.toFloat() / targetHeight.toFloat()
 
         for (x in 0 until targetWidth) {
             for (y in 0 until targetHeight) {
-                val center = (y + 0.5) * yRatio - 0.5
+                val center = (y + 0.5f) * yRatio - 0.5f
                 val minY = (center - a).toInt().coerceAtLeast(0)
                 val maxY = (center + a).toInt().coerceAtMost(srcH - 1)
 
-                var sumWeight = 0.0
-                var r = 0.0
-                var g = 0.0
-                var b = 0.0
-                var alpha = 0.0
+                var sumWeight = 0.0f
+                var r = 0.0f
+                var g = 0.0f
+                var b = 0.0f
+                var alpha = 0.0f
 
                 for (sy in minY..maxY) {
-                    val w = lanczosKernel(center - sy)
-                    if (w != 0.0) {
-                        val srcIdx = sy * targetWidth + x
-                        val pxA = interPixels[srcIdx][0]
-                        val pxR = interPixels[srcIdx][1]
-                        val pxG = interPixels[srcIdx][2]
-                        val pxB = interPixels[srcIdx][3]
+                    val w = lanczosKernel(center - sy.toFloat())
+                    if (w != 0.0f) {
+                        val srcIdx = (sy * targetWidth + x) * 4
+                        val pxA = interPixels[srcIdx]
+                        val pxR = interPixels[srcIdx + 1]
+                        val pxG = interPixels[srcIdx + 2]
+                        val pxB = interPixels[srcIdx + 3]
 
                         alpha += pxA * w
                         r += pxR * w
@@ -151,12 +153,12 @@ object AlgorithmicUpscaler {
                     }
                 }
 
-                if (sumWeight > 0.0) {
+                if (sumWeight > 0.0f) {
                     val finalA = (alpha / sumWeight).toInt().coerceIn(0, 255)
                     val finalR = (r / sumWeight).toInt().coerceIn(0, 255)
                     val finalG = (g / sumWeight).toInt().coerceIn(0, 255)
                     val finalB = (b / sumWeight).toInt().coerceIn(0, 255)
-                    dstPixels[y * targetWidth + x] = Color.argb(finalA, finalR, finalG, finalB)
+                    dstPixels[y * targetWidth + x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
                 }
             }
         }

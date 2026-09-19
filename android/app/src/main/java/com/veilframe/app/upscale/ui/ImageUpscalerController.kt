@@ -405,14 +405,13 @@ class ImageUpscalerController(
                         scope.launch(Dispatchers.Main) {
                             upscalerBinding.progressUpscaler.isIndeterminate = false
                             upscalerBinding.progressUpscaler.progress = percent
-                            upscalerBinding.tvUpscalerProgressStatus.text =
-                                "Processing tile $currentTile of $totalTiles ($percent%)"
                         }
                     }
 
                     override fun onStatus(message: String) {
                         scope.launch(Dispatchers.Main) {
                             upscalerBinding.tvUpscalerProgressStatus.text = message
+                            onLog("[UPSCALER] $message")
                         }
                     }
                 }

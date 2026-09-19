@@ -71,13 +71,16 @@ class OnnxUpscaleRuntime(
     private var optionsHolder: OrtSession.SessionOptions? = null
 
     init {
+        val availableCores = Runtime.getRuntime().availableProcessors()
+        val intraOpThreads = if (availableCores <= 2) 1 else 2
+
         val sessionOptions = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(2)
+            setIntraOpNumThreads(intraOpThreads)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
         }
         optionsHolder = sessionOptions
 
-        var ep = "CPU"
+        var ep = "CPU ($intraOpThreads threads)"
         val isQualcomm = isQualcommPlatform()
 
         if (isQualcomm) {
@@ -94,7 +97,7 @@ class OnnxUpscaleRuntime(
                     Log.i(TAG, "Hardware Acceleration: Enabled Android NNAPI.")
                 } catch (eNnapi: Throwable) {
                     Log.w(TAG, "NNAPI provider unavailable: ${eNnapi.message}; using optimized CPU fallback.")
-                    ep = "CPU"
+                    ep = "CPU ($intraOpThreads threads)"
                 }
             }
         } else {
@@ -104,7 +107,7 @@ class OnnxUpscaleRuntime(
                 Log.i(TAG, "Hardware Acceleration: Enabled Android NNAPI.")
             } catch (eNnapi: Throwable) {
                 Log.w(TAG, "NNAPI provider unavailable: ${eNnapi.message}; using optimized CPU fallback.")
-                ep = "CPU"
+                ep = "CPU ($intraOpThreads threads)"
             }
         }
 
@@ -113,11 +116,11 @@ class OnnxUpscaleRuntime(
         } catch (eInit: Throwable) {
             Log.w(TAG, "Failed to create session with $ep: ${eInit.message}; falling back to standard CPU session.")
             val cpuOptions = OrtSession.SessionOptions().apply {
-                setIntraOpNumThreads(2)
+                setIntraOpNumThreads(intraOpThreads)
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
             }
             optionsHolder = cpuOptions
-            ep = "CPU (Fallback)"
+            ep = "CPU (Fallback $intraOpThreads threads)"
             env.createSession(modelFile.absolutePath, cpuOptions)
         }
         executionProvider = ep
@@ -241,57 +244,53 @@ class OnnxUpscaleRuntime(
         val alphaChannel = if (hasAlpha) FloatArray(actualW * actualH) else null
 
         // Populate NCHW float planes [0.0f, 1.0f]
-        val planeR = FloatArray(targetPixelCount)
-        val planeG = FloatArray(targetPixelCount)
-        val planeB = FloatArray(targetPixelCount)
-
-        var srcIdx = 0
-        for (y in 0 until actualH) {
-            for (x in 0 until actualW) {
-                val pixel = srcPixels[srcIdx]
-                if (hasAlpha) {
-                    val a = (pixel ushr 24) and 0xff
-                    alphaChannel!![srcIdx] = a / 255.0f
-                }
-                srcIdx++
-            }
-        }
-
-        // Fill target grid with edge pixel replication (border clamping) for padding
-        for (y in 0 until targetInH) {
-            val clampY = if (y < actualH) y else actualH - 1
-            for (x in 0 until targetInW) {
-                val clampX = if (x < actualW) x else actualW - 1
-                val pixel = srcPixels[clampY * actualW + clampX]
-                val idx = y * targetInW + x
-
-                val r = (pixel ushr 16) and 0xff
-                val g = (pixel ushr 8) and 0xff
-                val b = pixel and 0xff
-
-                planeR[idx] = r / 255.0f
-                planeG[idx] = g / 255.0f
-                planeB[idx] = b / 255.0f
-            }
-        }
-
+        // Populate single direct buffer without intermediate plane arrays or duplicates
         val tensorShape = longArrayOf(1L, 3L, targetInH.toLong(), targetInW.toLong())
+        val gOffset = targetPixelCount
+        val bOffset = 2 * targetPixelCount
 
-        // 6. Validate tensor type: FLOAT / FLOAT16 / etc.
         val inputTensor: OnnxTensor = when (inputType) {
             OnnxJavaType.FLOAT16 -> {
                 val shortBuffer = ShortBuffer.allocate(3 * targetPixelCount)
-                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeR[i]))
-                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeG[i]))
-                for (i in 0 until targetPixelCount) shortBuffer.put(Float16Utils.floatToHalf(planeB[i]))
+                for (y in 0 until targetInH) {
+                    val clampY = if (y < actualH) y else actualH - 1
+                    val srcRowOffset = clampY * actualW
+                    val dstIdx = y * targetInW
+                    for (x in 0 until targetInW) {
+                        val clampX = if (x < actualW) x else actualW - 1
+                        val pixel = srcPixels[srcRowOffset + clampX]
+                        val r = ((pixel ushr 16) and 0xff) / 255.0f
+                        val g = ((pixel ushr 8) and 0xff) / 255.0f
+                        val b = (pixel and 0xff) / 255.0f
+                        val idx = dstIdx + x
+
+                        shortBuffer.put(idx, Float16Utils.floatToHalf(r))
+                        shortBuffer.put(gOffset + idx, Float16Utils.floatToHalf(g))
+                        shortBuffer.put(bOffset + idx, Float16Utils.floatToHalf(b))
+                    }
+                }
                 shortBuffer.rewind()
                 OnnxTensor.createTensor(env, shortBuffer, tensorShape, OnnxJavaType.FLOAT16)
             }
             OnnxJavaType.FLOAT -> {
                 val flatFloats = FloatArray(3 * targetPixelCount)
-                System.arraycopy(planeR, 0, flatFloats, 0, targetPixelCount)
-                System.arraycopy(planeG, 0, flatFloats, targetPixelCount, targetPixelCount)
-                System.arraycopy(planeB, 0, flatFloats, 2 * targetPixelCount, targetPixelCount)
+                for (y in 0 until targetInH) {
+                    val clampY = if (y < actualH) y else actualH - 1
+                    val srcRowOffset = clampY * actualW
+                    val dstIdx = y * targetInW
+                    for (x in 0 until targetInW) {
+                        val clampX = if (x < actualW) x else actualW - 1
+                        val pixel = srcPixels[srcRowOffset + clampX]
+                        val r = (pixel ushr 16) and 0xff
+                        val g = (pixel ushr 8) and 0xff
+                        val b = pixel and 0xff
+                        val idx = dstIdx + x
+
+                        flatFloats[idx] = r / 255.0f
+                        flatFloats[gOffset + idx] = g / 255.0f
+                        flatFloats[bOffset + idx] = b / 255.0f
+                    }
+                }
                 val floatBuffer = FloatBuffer.wrap(flatFloats)
                 OnnxTensor.createTensor(env, floatBuffer, tensorShape)
             }
@@ -354,25 +353,63 @@ class OnnxUpscaleRuntime(
                 val actualScaleX = outTensorW / targetInW
                 val actualScaleY = outTensorH / targetInH
 
-                // Read output tensor values according to output tensor type
-                val outR = FloatArray(outPixelCount)
-                val outG = FloatArray(outPixelCount)
-                val outB = FloatArray(outPixelCount)
+                // Crop output dimensions to original unpadded tile size
+                val finalTileW = if (needsPadding) actualW * actualScaleX else outTensorW
+                val finalTileH = if (needsPadding) actualH * actualScaleY else outTensorH
+                val finalPixelCount = finalTileW * finalTileH
+                val dstPixels = IntArray(finalPixelCount)
+
+                val gBase = outPixelCount
+                val bBase = 2 * outPixelCount
 
                 when (outTensorInfo.type) {
                     OnnxJavaType.FLOAT16 -> {
                         val shortBuf = outTensor.shortBuffer
                         shortBuf.rewind()
-                        for (i in 0 until outPixelCount) outR[i] = Float16Utils.halfToFloat(shortBuf.get())
-                        for (i in 0 until outPixelCount) outG[i] = Float16Utils.halfToFloat(shortBuf.get())
-                        for (i in 0 until outPixelCount) outB[i] = Float16Utils.halfToFloat(shortBuf.get())
+                        var dstIdx = 0
+                        for (y in 0 until finalTileH) {
+                            val outYIdx = y * outTensorW
+                            for (x in 0 until finalTileW) {
+                                val tensorIdx = outYIdx + x
+                                val alphaVal = if (alphaChannel != null) {
+                                    val srcY = (y / actualScaleY).coerceIn(0, actualH - 1)
+                                    val srcX = (x / actualScaleX).coerceIn(0, actualW - 1)
+                                    (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
+                                } else 255
+
+                                val r = (Float16Utils.halfToFloat(shortBuf.get(tensorIdx)) * 255.0f).toInt().coerceIn(0, 255)
+                                val g = (Float16Utils.halfToFloat(shortBuf.get(gBase + tensorIdx)) * 255.0f).toInt().coerceIn(0, 255)
+                                val b = (Float16Utils.halfToFloat(shortBuf.get(bBase + tensorIdx)) * 255.0f).toInt().coerceIn(0, 255)
+
+                                dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
+                            }
+                        }
                     }
                     OnnxJavaType.FLOAT -> {
                         val floatBuf = outTensor.floatBuffer
                         floatBuf.rewind()
-                        floatBuf.get(outR)
-                        floatBuf.get(outG)
-                        floatBuf.get(outB)
+                        // Copy single contiguous buffer for direct indexed access (avoids 3 separate FloatArrays)
+                        val allFloats = FloatArray(3 * outPixelCount)
+                        floatBuf.get(allFloats)
+
+                        var dstIdx = 0
+                        for (y in 0 until finalTileH) {
+                            val outYIdx = y * outTensorW
+                            for (x in 0 until finalTileW) {
+                                val tensorIdx = outYIdx + x
+                                val alphaVal = if (alphaChannel != null) {
+                                    val srcY = (y / actualScaleY).coerceIn(0, actualH - 1)
+                                    val srcX = (x / actualScaleX).coerceIn(0, actualW - 1)
+                                    (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
+                                } else 255
+
+                                val r = (allFloats[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+                                val g = (allFloats[gBase + tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+                                val b = (allFloats[bBase + tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+
+                                dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
+                            }
+                        }
                     }
                     else -> {
                         // Multi-dimensional array fallback
@@ -381,44 +418,25 @@ class OnnxUpscaleRuntime(
                             is Array<*> -> {
                                 @Suppress("UNCHECKED_CAST")
                                 val batch = rawValue[0] as Array<Array<FloatArray>>
-                                var idx = 0
-                                for (y in 0 until outTensorH) {
-                                    for (x in 0 until outTensorW) {
-                                        outR[idx] = batch[0][y][x]
-                                        outG[idx] = batch[1][y][x]
-                                        outB[idx] = batch[2][y][x]
-                                        idx++
+                                var dstIdx = 0
+                                for (y in 0 until finalTileH) {
+                                    for (x in 0 until finalTileW) {
+                                        val alphaVal = if (alphaChannel != null) {
+                                            val srcY = (y / actualScaleY).coerceIn(0, actualH - 1)
+                                            val srcX = (x / actualScaleX).coerceIn(0, actualW - 1)
+                                            (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
+                                        } else 255
+
+                                        val r = (batch[0][y][x] * 255.0f).toInt().coerceIn(0, 255)
+                                        val g = (batch[1][y][x] * 255.0f).toInt().coerceIn(0, 255)
+                                        val b = (batch[2][y][x] * 255.0f).toInt().coerceIn(0, 255)
+
+                                        dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                                     }
                                 }
                             }
                             else -> throw IllegalStateException("Unsupported output tensor type / structure: ${outTensorInfo.type}")
                         }
-                    }
-                }
-
-                // Crop output dimensions to original unpadded tile size
-                val finalTileW = if (needsPadding) actualW * actualScaleX else outTensorW
-                val finalTileH = if (needsPadding) actualH * actualScaleY else outTensorH
-                val finalPixelCount = finalTileW * finalTileH
-                val dstPixels = IntArray(finalPixelCount)
-
-                var dstIdx = 0
-                for (y in 0 until finalTileH) {
-                    val outYIdx = y * outTensorW
-                    for (x in 0 until finalTileW) {
-                        val tensorIdx = outYIdx + x
-
-                        val alphaVal = if (alphaChannel != null) {
-                            val srcY = (y / actualScaleY).coerceIn(0, actualH - 1)
-                            val srcX = (x / actualScaleX).coerceIn(0, actualW - 1)
-                            (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
-                        } else 255
-
-                        val r = (outR[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
-                        val g = (outG[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
-                        val b = (outB[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
-
-                        dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                     }
                 }
 

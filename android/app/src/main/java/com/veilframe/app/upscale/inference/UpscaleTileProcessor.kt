@@ -2,17 +2,22 @@ package com.veilframe.app.upscale.inference
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Rect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
  * High-performance tiled inference processor with boundary tile handling,
- * spatial overlap, and cubic Hermite (smooth-step) seam blending.
+ * spatial overlap, and zero-allocation core-region extraction.
+ *
+ * Rather than blending overlapping tiles in Kotlin CPU loops, each tile is extracted
+ * with overlap margin to prevent neural boundary distortion, and only the pristine
+ * central "core" is blitted into the output canvas via native Skia drawBitmap.
  */
 class UpscaleTileProcessor(
-    val tileSize: Int = 512,
-    val overlap: Int = 32
+    val tileSize: Int = 384,
+    val overlap: Int = 24
 ) {
 
     data class TileArea(
@@ -21,22 +26,55 @@ class UpscaleTileProcessor(
         val x: Int,
         val y: Int,
         val width: Int,
-        val height: Int
+        val height: Int,
+        val coreX: Int,
+        val coreY: Int,
+        val coreWidth: Int,
+        val coreHeight: Int
     )
 
     fun calculateTiles(imageWidth: Int, imageHeight: Int): List<TileArea> {
         val tiles = mutableListOf<TileArea>()
+        val halfOverlap = overlap / 2
         val step = (tileSize - overlap).coerceAtLeast(1)
 
         var row = 0
         var y = 0
         while (y < imageHeight) {
             val tileH = minOf(tileSize, imageHeight - y)
+            val isFirstRow = (row == 0)
+            val isLastRow = (y + tileH >= imageHeight)
+
+            val coreLocalY = if (isFirstRow) 0 else halfOverlap
+            val coreBottom = if (isLastRow) tileH else (tileH - halfOverlap)
+            val coreH = (coreBottom - coreLocalY).coerceAtLeast(0)
+
             var col = 0
             var x = 0
             while (x < imageWidth) {
                 val tileW = minOf(tileSize, imageWidth - x)
-                tiles.add(TileArea(col, row, x, y, tileW, tileH))
+                val isFirstCol = (col == 0)
+                val isLastCol = (x + tileW >= imageWidth)
+
+                val coreLocalX = if (isFirstCol) 0 else halfOverlap
+                val coreRight = if (isLastCol) tileW else (tileW - halfOverlap)
+                val coreW = (coreRight - coreLocalX).coerceAtLeast(0)
+
+                tiles.add(
+                    TileArea(
+                        col = col,
+                        row = row,
+                        x = x,
+                        y = y,
+                        width = tileW,
+                        height = tileH,
+                        coreX = coreLocalX,
+                        coreY = coreLocalY,
+                        coreWidth = coreW,
+                        coreHeight = coreH
+                    )
+                )
+
                 if (x + tileW >= imageWidth) break
                 x += step
                 col++
@@ -71,6 +109,9 @@ class UpscaleTileProcessor(
         val outW = srcW * scale
         val outH = srcH * scale
         val outputBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(outputBitmap)
+        val srcRect = Rect()
+        val dstRect = Rect()
 
         for ((index, tile) in tileAreas.withIndex()) {
             ensureActive()
@@ -84,100 +125,26 @@ class UpscaleTileProcessor(
                 if (srcTile != source) srcTile.recycle()
             }
 
-            // Blend tile into aggregated output canvas
-            blendTileIntoOutput(
-                output = outputBitmap,
-                tileBitmap = processedTile,
-                tile = tile,
-                overlap = overlap,
-                scale = scale
-            )
+            // Copy valid core directly into aggregated output canvas via native drawBitmap
+            val actualScaleX = processedTile.width / tile.width
+            val actualScaleY = processedTile.height / tile.height
+
+            val srcCoreX = tile.coreX * actualScaleX
+            val srcCoreY = tile.coreY * actualScaleY
+            val srcCoreW = tile.coreWidth * actualScaleX
+            val srcCoreH = tile.coreHeight * actualScaleY
+
+            val dstX = (tile.x + tile.coreX) * actualScaleX
+            val dstY = (tile.y + tile.coreY) * actualScaleY
+
+            srcRect.set(srcCoreX, srcCoreY, srcCoreX + srcCoreW, srcCoreY + srcCoreH)
+            dstRect.set(dstX, dstY, dstX + srcCoreW, dstY + srcCoreH)
+
+            canvas.drawBitmap(processedTile, srcRect, dstRect, null)
             processedTile.recycle()
             onProgress(index + 1, totalTiles)
         }
 
         outputBitmap
-    }
-
-    internal fun blendTileIntoOutput(
-        output: Bitmap,
-        tileBitmap: Bitmap,
-        tile: TileArea,
-        overlap: Int,
-        scale: Int
-    ) {
-        val targetX = tile.x * scale
-        val targetY = tile.y * scale
-        val blendWidth = overlap * scale
-        val shouldBlendLeft = tile.col > 0
-        val shouldBlendTop = tile.row > 0
-
-        // Non-overlapping first tile or top-left corner
-        if (!shouldBlendLeft && !shouldBlendTop) {
-            val canvas = Canvas(output)
-            canvas.drawBitmap(tileBitmap, targetX.toFloat(), targetY.toFloat(), null)
-            return
-        }
-
-        val w = tileBitmap.width
-        val h = tileBitmap.height
-        val existing = IntArray(w * h)
-        val incoming = IntArray(w * h)
-
-        try {
-            output.getPixels(existing, 0, w, targetX, targetY, w, h)
-        } catch (_: Throwable) {
-            val canvas = Canvas(output)
-            canvas.drawBitmap(tileBitmap, targetX.toFloat(), targetY.toFloat(), null)
-            return
-        }
-
-        tileBitmap.getPixels(incoming, 0, w, 0, 0, w, h)
-
-        for (localY in 0 until h) {
-            for (localX in 0 until w) {
-                val mixLeft = shouldBlendLeft && localX < blendWidth
-                val mixTop = shouldBlendTop && localY < blendWidth
-                if (!mixLeft && !mixTop) continue
-
-                // Smooth-step cubic Hermite curve: t * t * (3 - 2t)
-                val blendLeft = if (mixLeft) {
-                    val t = (localX.toFloat() / blendWidth.toFloat()).coerceIn(0f, 1f)
-                    t * t * (3f - 2f * t)
-                } else 1f
-
-                val blendTop = if (mixTop) {
-                    val t = (localY.toFloat() / blendWidth.toFloat()).coerceIn(0f, 1f)
-                    t * t * (3f - 2f * t)
-                } else 1f
-
-                val blend = minOf(blendLeft, blendTop)
-                val idx = localY * w + localX
-
-                incoming[idx] = mixColor(existing[idx], incoming[idx], blend)
-            }
-        }
-
-        output.setPixels(incoming, 0, w, targetX, targetY, w, h)
-    }
-
-    private fun mixColor(from: Int, to: Int, amount: Float): Int {
-        val inv = 1f - amount
-        val fromA = (from ushr 24) and 0xff
-        val fromR = (from ushr 16) and 0xff
-        val fromG = (from ushr 8) and 0xff
-        val fromB = from and 0xff
-
-        val toA = (to ushr 24) and 0xff
-        val toR = (to ushr 16) and 0xff
-        val toG = (to ushr 8) and 0xff
-        val toB = to and 0xff
-
-        val a = (fromA * inv + toA * amount).toInt().coerceIn(0, 255)
-        val r = (fromR * inv + toR * amount).toInt().coerceIn(0, 255)
-        val g = (fromG * inv + toG * amount).toInt().coerceIn(0, 255)
-        val b = (fromB * inv + toB * amount).toInt().coerceIn(0, 255)
-
-        return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 }
