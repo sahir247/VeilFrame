@@ -93,6 +93,8 @@ object WhatsappStatusCommandBuilder {
         } else {
             args.add("-map")
             args.add("0:a?")
+            args.add("-c:a")
+            args.add("aac")
             args.add("-ar")
             args.add(WhatsappStatusConstants.AUDIO_SAMPLE_RATE.toString())
             args.add("-b:a")
@@ -113,6 +115,14 @@ object WhatsappStatusCommandBuilder {
 
         args.add("-r")
         args.add(String.format(Locale.US, "%.2f", WhatsappStatusConstants.FPS))
+
+        // Explicit BT.709 color metadata tags for WhatsApp player consistency
+        args.add("-color_primaries")
+        args.add("bt709")
+        args.add("-color_trc")
+        args.add("bt709")
+        args.add("-colorspace")
+        args.add("bt709")
 
         // Privacy metadata scrubbing
         args.add("-map_metadata")
@@ -168,6 +178,14 @@ object WhatsappStatusCommandBuilder {
 
         args.add("-r")
         args.add(String.format(Locale.US, "%.2f", WhatsappStatusConstants.FPS))
+
+        // Explicit BT.709 color metadata tags
+        args.add("-color_primaries")
+        args.add("bt709")
+        args.add("-color_trc")
+        args.add("bt709")
+        args.add("-colorspace")
+        args.add("bt709")
 
         args.add("-map_metadata")
         args.add("-1")

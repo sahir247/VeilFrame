@@ -111,9 +111,11 @@ object VideoProcessor {
 
         val isMuted = isGifMode || audioActionStr == "mute" || outputConfig.audioCodec.equals("mute", ignoreCase = true)
 
-        // Route WhatsApp Status destination directly to dedicated WhatsappStatusMediaPipeline
-        if (outputConfig.targetPreset.contains("WhatsApp", ignoreCase = true) ||
-            outputConfig.targetPreset.contains("Status", ignoreCase = true)) {
+        // Route WhatsApp Status destination directly to dedicated WhatsappStatusMediaPipeline.
+        // Distinct from generic "WhatsApp (16 MB)" chat attachment preset.
+        val isStatusPreset = outputConfig.targetPreset.equals("WhatsApp Status", ignoreCase = true) ||
+                (outputConfig.targetPreset.contains("Status", ignoreCase = true) && !outputConfig.targetPreset.contains("16", ignoreCase = true))
+        if (isStatusPreset) {
             val statusResolution = outputConfig.whatsappStatusResolution
             return com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
                 srcFile = srcFile,

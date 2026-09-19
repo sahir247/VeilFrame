@@ -680,7 +680,15 @@ def compress_video(
 
             if resolved_codec != "copy":
                 if is_whatsapp_status:
-                    cmd.extend(["-crf", "23", "-maxrate", f"{base_maxrate}k", "-bufsize", f"{bufsize}k", "-r", "29.97"])
+                    cmd.extend([
+                        "-crf", "23",
+                        "-maxrate", f"{base_maxrate}k",
+                        "-bufsize", f"{bufsize}k",
+                        "-r", "29.97",
+                        "-color_primaries", "bt709",
+                        "-color_trc", "bt709",
+                        "-colorspace", "bt709"
+                    ])
                 elif target_size_mb is not None and target_size_mb > 0 and effective_dur > 0.2:
                     target_bits = target_size_mb * 8 * 1024 * 1024 * 0.95
                     audio_bits = 0 if strip_audio else 128 * 1024 * effective_dur
@@ -695,7 +703,9 @@ def compress_video(
             cmd.append("-an")
         else:
             resolved_a_codec = "aac"
-            if "mp3" in audio_codec.lower():
+            if is_whatsapp_status:
+                resolved_a_codec = "aac"
+            elif "mp3" in audio_codec.lower():
                 resolved_a_codec = "libmp3lame"
             elif "opus" in audio_codec.lower():
                 resolved_a_codec = "libopus"
