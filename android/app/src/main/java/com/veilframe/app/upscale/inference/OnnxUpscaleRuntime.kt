@@ -388,9 +388,6 @@ class OnnxUpscaleRuntime(
                     OnnxJavaType.FLOAT -> {
                         val floatBuf = outTensor.floatBuffer
                         floatBuf.rewind()
-                        // Copy single contiguous buffer for direct indexed access (avoids 3 separate FloatArrays)
-                        val allFloats = FloatArray(3 * outPixelCount)
-                        floatBuf.get(allFloats)
 
                         var dstIdx = 0
                         for (y in 0 until finalTileH) {
@@ -403,9 +400,9 @@ class OnnxUpscaleRuntime(
                                     (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
                                 } else 255
 
-                                val r = (allFloats[tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
-                                val g = (allFloats[gBase + tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
-                                val b = (allFloats[bBase + tensorIdx] * 255.0f).toInt().coerceIn(0, 255)
+                                val r = (floatBuf.get(tensorIdx) * 255.0f).toInt().coerceIn(0, 255)
+                                val g = (floatBuf.get(gBase + tensorIdx) * 255.0f).toInt().coerceIn(0, 255)
+                                val b = (floatBuf.get(bBase + tensorIdx) * 255.0f).toInt().coerceIn(0, 255)
 
                                 dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                             }

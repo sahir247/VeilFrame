@@ -1,0 +1,71 @@
+package com.veilframe.app.upscale
+
+import com.veilframe.app.upscale.model.ModelCapability
+import com.veilframe.app.upscale.model.ModelGenre
+import com.veilframe.app.upscale.model.ModelTier
+import com.veilframe.app.upscale.model.UpscaleModelRegistry
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class UpscaleModelRegistryTest {
+
+    @Test
+    fun testRealEsrganGeneral4xScaleDecoupling() {
+        val model = UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X
+        // Native model scale is 4
+        assertEquals(4, model.nativeScale)
+        // Supported output scales allow 4x and 8x (4x AI + 2x Lanczos refinement)
+        assertTrue("Must support 4x", model.supportedOutputScales.contains(4))
+        assertTrue("Must support 8x via hybrid refinement", model.supportedOutputScales.contains(8))
+        assertEquals("Reliable general-purpose photo restoration with deep residual in residual dense blocks.", model.description)
+        assertEquals(ModelGenre.GENERAL_PHOTO, model.genre)
+        assertEquals(ModelCapability.SUPER_RESOLUTION, model.capability)
+        assertEquals(ModelTier.TIER_A_NATIVE, model.tier)
+    }
+
+    @Test
+    fun testCodeFormerSpecializedFaceRestoration() {
+        val model = UpscaleModelRegistry.CODEFORMER
+        assertEquals(1, model.nativeScale)
+        assertEquals(ModelCapability.FACE_RESTORATION, model.capability)
+        assertEquals(ModelGenre.PORTRAIT_FACE, model.genre)
+        assertEquals(ModelTier.TIER_A_NATIVE, model.tier)
+        assertFalse("CodeFormer operates on whole face crops, not general tiles", model.tileCompatible)
+        assertTrue(model.description.contains("Specialized portrait face restoration pipeline"))
+    }
+
+    @Test
+    fun testExpandedTierAModelsExist() {
+        val plksr = UpscaleModelRegistry.REAL_PLKSR_4X
+        assertEquals(4, plksr.nativeScale)
+        assertTrue(plksr.supportedOutputScales.contains(8))
+        assertEquals(ModelTier.TIER_A_NATIVE, plksr.tier)
+
+        val swinir = UpscaleModelRegistry.SWINIR_REALSR_4X
+        assertEquals(4, swinir.nativeScale)
+        assertTrue(swinir.supportedOutputScales.contains(8))
+        assertEquals(ModelTier.TIER_A_NATIVE, swinir.tier)
+
+        val cugan = UpscaleModelRegistry.REAL_CUGAN_4X
+        assertEquals(4, cugan.nativeScale)
+        assertTrue(cugan.supportedOutputScales.contains(8))
+        assertEquals(ModelTier.TIER_A_NATIVE, cugan.tier)
+
+        val span = UpscaleModelRegistry.SPAN_4X
+        assertEquals(4, span.nativeScale)
+        assertTrue(span.supportedOutputScales.contains(8))
+        assertEquals(ModelTier.TIER_A_NATIVE, span.tier)
+    }
+
+    @Test
+    fun testAlgorithmicModelsAreBuiltIn() {
+        listOf(UpscaleModelRegistry.LANCZOS, UpscaleModelRegistry.BICUBIC, UpscaleModelRegistry.NEAREST).forEach { model ->
+            assertTrue(model.isBuiltIn)
+            assertEquals(0L, model.sizeBytes)
+            assertEquals(ModelGenre.ALGORITHMIC_FAST, model.genre)
+            assertTrue(model.supportedOutputScales.containsAll(listOf(2, 4, 8)))
+        }
+    }
+}

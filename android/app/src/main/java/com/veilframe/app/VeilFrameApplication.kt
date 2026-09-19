@@ -9,5 +9,6 @@ import android.app.Application
 class VeilFrameApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.veilframe.app.settings.ThemeSettingsManager.init(this)
     }
 }

@@ -45,15 +45,11 @@ android {
                 storePassword = storePass
                 keyAlias = keyAl
                 keyPassword = keyPass
-            } else if (isCi) {
-                error("Release keystore is missing in CI environment! Production release build requires valid keystore credentials.")
             } else {
-                // Fallback for local dev builds without signing credentials
-                val debugConfig = getByName("debug")
-                storeFile = debugConfig.storeFile
-                storePassword = debugConfig.storePassword
-                keyAlias = debugConfig.keyAlias
-                keyPassword = debugConfig.keyPassword
+                val hasReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+                if (hasReleaseTask || isCi) {
+                    throw GradleException("Release keystore credentials missing! Release builds cannot be signed with debug keys. Provide KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD.")
+                }
             }
 
             // V1 is intentionally disabled.
@@ -125,6 +121,7 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     testImplementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

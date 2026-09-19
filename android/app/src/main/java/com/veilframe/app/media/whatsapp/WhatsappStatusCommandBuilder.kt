@@ -116,13 +116,15 @@ object WhatsappStatusCommandBuilder {
         args.add("-r")
         args.add(String.format(Locale.US, "%.2f", WhatsappStatusConstants.FPS))
 
-        // Explicit BT.709 color metadata tags for WhatsApp player consistency
+        // Explicit BT.709 color metadata tags and yuv420p for WhatsApp player consistency
         args.add("-color_primaries")
         args.add("bt709")
         args.add("-color_trc")
         args.add("bt709")
         args.add("-colorspace")
         args.add("bt709")
+        args.add("-pix_fmt")
+        args.add(WhatsappStatusConstants.PIXEL_FORMAT)
 
         // Privacy metadata scrubbing
         args.add("-map_metadata")

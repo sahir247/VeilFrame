@@ -27,9 +27,19 @@ object ModelDownloadVerifier {
         return sb.toString()
     }
 
+    private val SHA256_REGEX = Regex("^[A-Fa-f0-9]{64}$")
+
     fun verify(file: File, expectedSha256: String): Boolean {
-        if (expectedSha256.isEmpty()) return true
+        val expected = expectedSha256.trim()
+        if (!SHA256_REGEX.matches(expected)) return false
+        if (!file.isFile || file.length() == 0L) return false
+
         val actual = calculateSha256(file)
-        return actual.equals(expectedSha256, ignoreCase = true)
+        if (actual.isEmpty()) return false
+
+        return MessageDigest.isEqual(
+            actual.lowercase(java.util.Locale.ROOT).toByteArray(Charsets.UTF_8),
+            expected.lowercase(java.util.Locale.ROOT).toByteArray(Charsets.UTF_8)
+        )
     }
 }

@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/vf_surface"
+    android:orientation="vertical">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp"
+        android:background="@color/vf_surface_variant">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="10dp"
+            android:src="@drawable/ic_settings"
+            app:tint="@color/vf_accent_green" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Appearance &amp; Theming"
+            android:textColor="@color/vf_text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnThemeSettingsClose"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:contentDescription="Close"
+            app:icon="@drawable/ic_close"
+            app:iconTint="@color/vf_text_secondary" />
+    </LinearLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="520dp"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Section 1: Base Theme Mode -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="THEME MODE"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.1"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/rgThemeMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp">
+
+                <RadioButton
+                    android:id="@+id/rbThemeSystem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="6dp"
+                    android:text="Follow System\nMatches device day / night setting"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbThemeLight"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="6dp"
+                    android:text="Light\nCrisp daylight palette"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbThemeDark"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="6dp"
+                    android:text="Dark\nSubtle deep charcoal contrast"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbThemeAmoled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="6dp"
+                    android:text="AMOLED True Black\nPure #000000 background for battery savings"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+            </RadioGroup>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/vf_surface_stroke"
+                android:layout_marginVertical="12dp" />
+
+            <!-- Section 2: Material You Dynamic Colors -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Material You Dynamic Color"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Derive accent colors from system wallpaper (Android 12+). Takes precedence over custom palettes."
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switchDynamicColor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/vf_surface_stroke"
+                android:layout_marginVertical="12dp" />
+
+            <!-- Section 3: Custom Accent Palettes -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ACCENT PALETTE (WHEN DYNAMIC COLOR IS OFF)"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.1"
+                android:textStyle="bold" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupAccentPalette"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaletteMonochrome"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Monochrome" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaletteForestSage"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Forest Sage" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaletteDeepOcean"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Deep Ocean" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaletteWarmAmber"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Warm Amber" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaletteCyberViolet"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cyber Violet" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/vf_surface_stroke"
+                android:layout_marginVertical="12dp" />
+
+            <!-- Section 4: Typography -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TYPOGRAPHY STYLE"
+                android:textColor="@color/vf_accent_green"
+                android:textSize="11sp"
+                android:letterSpacing="0.1"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/rgTypography"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp">
+
+                <RadioButton
+                    android:id="@+id/rbTypoSans"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="Modern Sans-Serif (Default)"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbTypoMonospace"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="Terminal Monospace"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbTypoSerif"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="Editorial Serif"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+            </RadioGroup>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Footer -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@color/vf_surface_variant">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnApplyTheme"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Done"
+            app:cornerRadius="8dp" />
+    </LinearLayout>
+</LinearLayout>

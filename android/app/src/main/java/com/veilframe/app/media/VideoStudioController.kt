@@ -179,30 +179,35 @@ class VideoStudioController(
                         outputConfig.targetMb = 16f
                         binding.layoutWhatsappStatusResolution.visibility = View.VISIBLE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(true)
                     }
                     R.id.chipVidPresetDiscord -> {
                         outputConfig.targetPreset = "Discord (25 MB)"
                         outputConfig.targetMb = 25f
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                     R.id.chipVidPresetNitro -> {
                         outputConfig.targetPreset = "Discord Nitro (50 MB)"
                         outputConfig.targetMb = 50f
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                     R.id.chipVidPresetEmail -> {
                         outputConfig.targetPreset = "Email Attachment (8 MB)"
                         outputConfig.targetMb = 8f
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                     R.id.chipVidPresetWeb -> {
                         outputConfig.targetPreset = "Web Stream (10 MB)"
                         outputConfig.targetMb = 10f
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                     R.id.chipVidPresetCustom -> {
                         outputConfig.targetPreset = "Custom"
@@ -210,12 +215,14 @@ class VideoStudioController(
                         binding.tilVidCustomTargetMb.visibility = View.VISIBLE
                         val customMb = binding.etVidCustomTargetMb.text?.toString()?.toFloatOrNull()
                         outputConfig.targetMb = customMb
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                     else -> {
                         outputConfig.targetPreset = "Auto (Balanced CRF 28)"
                         outputConfig.targetMb = null
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
                     }
                 }
                 refreshStats()
@@ -730,6 +737,53 @@ class VideoStudioController(
         refreshStats()
         updateEditSummary()
         Toast.makeText(activity, if (newMuted) "Player muted" else "Player unmuted", Toast.LENGTH_SHORT).show()
+    }
+
+    fun setEncodingControlsLockedForWhatsapp(locked: Boolean) {
+        val alpha = if (locked) 0.4f else 1.0f
+        val isInteractive = !locked
+
+        // 1. Container format chips
+        binding.chipGroupVidFormat.isEnabled = isInteractive
+        for (i in 0 until binding.chipGroupVidFormat.childCount) {
+            binding.chipGroupVidFormat.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidFormat.alpha = alpha
+
+        // 2. Encoder codec chips
+        binding.chipGroupVidCodec.isEnabled = isInteractive
+        for (i in 0 until binding.chipGroupVidCodec.childCount) {
+            binding.chipGroupVidCodec.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidCodec.alpha = alpha
+
+        // 3. Encoder speed preset chips (Slow / Medium / Fast compression efficiency)
+        binding.chipGroupVidSpeedPreset.isEnabled = isInteractive
+        for (i in 0 until binding.chipGroupVidSpeedPreset.childCount) {
+            binding.chipGroupVidSpeedPreset.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidSpeedPreset.alpha = alpha
+
+        // 4. Quality slider & label
+        binding.sliderVidQuality.isEnabled = isInteractive
+        binding.sliderVidQuality.alpha = alpha
+        binding.tvVidQualityValue.alpha = alpha
+
+        // 5. Output resolution chips (WhatsApp Status uses dedicated Status Resolution selector)
+        binding.chipGroupVidResolution.isEnabled = isInteractive
+        for (i in 0 until binding.chipGroupVidResolution.childCount) {
+            binding.chipGroupVidResolution.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidResolution.alpha = alpha
+
+        // 6. Audio output remove chip
+        binding.chipGroupVidAudio.isEnabled = isInteractive
+        for (i in 0 until binding.chipGroupVidAudio.childCount) {
+            binding.chipGroupVidAudio.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidAudio.alpha = alpha
+
+        // Note: Media transformations (Trim, Playback Speed toolVidSpeed, Aspect, Color) remain interactive (Option B)
     }
 
     fun updateUiForOutputMode() {

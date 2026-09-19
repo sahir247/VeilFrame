@@ -3,6 +3,7 @@ package com.veilframe.app.upscale.inference
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import com.veilframe.app.upscale.model.ModelCapability
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRepository
@@ -21,6 +22,42 @@ class UpscaleInferenceEngine(
 
     companion object {
         private const val TAG = "VeilFrame.UpscaleEngine"
+
+        /**
+         * Capability-aware execution validator.
+         * Validates scale compatibility, minimum input dimensions, and model-specific capability
+         * constraints (e.g. rejecting arbitrary tiled super-resolution on CodeFormer and face restoration models).
+         */
+        fun validateExecutionPlan(
+            srcW: Int,
+            srcH: Int,
+            model: UpscaleModel,
+            targetScale: Int
+        ) {
+            // 1. Validate scale compatibility
+            require(targetScale in model.supportedOutputScales) {
+                "Output scale ${targetScale}× is not supported by ${model.name}. Supported output scales: ${model.supportedOutputScales.joinToString(", ")}×"
+            }
+
+            // 2. Validate input dimensions against model minimum
+            require(srcW >= model.minInputDimension && srcH >= model.minInputDimension) {
+                "Input image dimensions (${srcW}×${srcH}) do not meet the minimum required dimensions (${model.minInputDimension}×${model.minInputDimension}px) for ${model.name}."
+            }
+
+            // 3. Capability-aware execution path validation
+            if (model.capability == ModelCapability.FACE_RESTORATION) {
+                // Face restoration models (CodeFormer) require aligned portrait face crops and do not support arbitrary tiled super-resolution
+                if (!model.tileCompatible) {
+                    require(srcW == model.minInputDimension && srcH == model.minInputDimension) {
+                        "Model ${model.name} is a specialized face restoration model (${model.capability}) requiring aligned ${model.minInputDimension}×${model.minInputDimension} face crops. Arbitrary tiled super-resolution is rejected before inference."
+                    }
+                }
+            } else if (!model.tileCompatible) {
+                require(srcW == model.minInputDimension && srcH == model.minInputDimension) {
+                    "Model ${model.name} does not support spatial tiling and requires exact dimensions of ${model.minInputDimension}×${model.minInputDimension}."
+                }
+            }
+        }
     }
 
     interface InferenceProgressListener {
@@ -36,6 +73,9 @@ class UpscaleInferenceEngine(
     ): Result<Bitmap> = withContext(Dispatchers.Default) {
         val srcW = source.width
         val srcH = source.height
+
+        // Validate execution plan: scales, dimensions, and capability constraints
+        validateExecutionPlan(srcW, srcH, model, targetScale)
 
         // Check memory safety plan
         val isAiModel = (model.type == ModelType.AI_ONNX)
@@ -87,7 +127,12 @@ class UpscaleInferenceEngine(
                         )
 
                         val extraScale = if (targetScale > model.nativeScale) targetScale / model.nativeScale else 1
-                        listener?.onStatus("Ready: ${model.name} via ${runtime.executionProvider} (tile: ${effectiveTileSize}px, scale: ${targetScale}×)")
+                        val scaleDesc = if (extraScale > 1) {
+                            "${model.nativeScale}× AI + ${extraScale}× Lanczos refinement"
+                        } else {
+                            "${targetScale}× AI"
+                        }
+                        listener?.onStatus("Ready: ${model.name} ($scaleDesc via ${runtime.executionProvider}, tile: ${effectiveTileSize}px)")
 
                         var lastTileMs = 0L
                         val aiResult = tileProcessor.processTiles(

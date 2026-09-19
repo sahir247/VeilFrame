@@ -78,9 +78,6 @@
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                     android:id="@+id/btnToggleTheme"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="38dp"
@@ -88,6 +85,17 @@
                     android:layout_marginStart="6dp"
                     android:contentDescription="Toggle Light/Dark Theme"
                     app:icon="@drawable/ic_theme_toggle"
+                    app:iconSize="18dp"
+                    app:iconTint="@color/vf_primary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSettings"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="Appearance and Customization Settings"
+                    app:icon="@drawable/ic_settings"
                     app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>
@@ -165,9 +173,6 @@
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                     android:id="@+id/btnToolToggleTheme"
                     style="@style/Widget.Material3.Button.IconButton"
                     android:layout_width="38dp"
@@ -175,6 +180,17 @@
                     android:layout_marginStart="4dp"
                     android:contentDescription="Toggle Light/Dark Theme"
                     app:icon="@drawable/ic_theme_toggle"
+                    app:iconSize="18dp"
+                    app:iconTint="@color/vf_primary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToolSettings"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="Appearance and Customization Settings"
+                    app:icon="@drawable/ic_settings"
                     app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>

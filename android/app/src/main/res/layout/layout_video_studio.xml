@@ -1100,6 +1100,44 @@
                             android:layout_height="wrap_content"
                             android:text="FHD 1080p (3800k)" />
                     </com.google.android.material.chip.ChipGroup>
+
+                    <!-- WhatsApp Status Controlled Pipeline Notice -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardWhatsappStatusNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        app:cardBackgroundColor="@color/vf_status_info_bg"
+                        app:cardCornerRadius="8dp"
+                        app:strokeColor="@color/vf_status_info"
+                        app:strokeWidth="1dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:padding="10dp">
+
+                            <ImageView
+                                android:layout_width="18dp"
+                                android:layout_height="18dp"
+                                android:src="@drawable/ic_info_outline"
+                                app:tint="@color/vf_status_info"
+                                android:contentDescription="Info" />
+
+                            <TextView
+                                android:id="@+id/tvWhatsappStatusNotice"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:text="WhatsApp Status encoding parameters are managed automatically; media transformations (trim, speed, crop) remain user-controlled."
+                                android:textColor="@color/vf_status_info"
+                                android:textSize="11sp"
+                                android:lineSpacingExtra="2dp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
                 <!-- Custom MB Input Field -->

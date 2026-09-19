@@ -253,15 +253,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
-        val isDarkMode = prefs.getBoolean("dark_theme", true)
-        AppCompatDelegate.setDefaultNightMode(
-            if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        )
-
+        com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
 
         // Restore cached changelog if available
         val cachedTag = prefs.getString("cached_changelog_tag", null)
@@ -520,9 +516,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        // Theme toggle actions
+        // Theme & Appearance actions
         binding.btnToggleTheme.setOnClickListener { toggleTheme() }
         binding.btnToolToggleTheme.setOnClickListener { toggleTheme() }
+        binding.btnSettings.setOnClickListener { showThemeSettingsDialog() }
+        binding.btnToolSettings.setOnClickListener { showThemeSettingsDialog() }
 
         // Home Dashboard Tool Cards - DISTINCT CLEANER WORKFLOWS
         binding.cardToolAi.setOnClickListener {
@@ -849,18 +847,102 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleTheme() {
-        val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
-        val currentNightMode = AppCompatDelegate.getDefaultNightMode()
-        val isDark = if (currentNightMode == AppCompatDelegate.MODE_NIGHT_UNSPECIFIED) {
-            (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        } else {
-            currentNightMode == AppCompatDelegate.MODE_NIGHT_YES
+        val current = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
+        val next = when (current) {
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> {
+                val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                if (isDark) com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT else com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
+            }
+            else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
         }
-        val newDark = !isDark
-        prefs.edit().putBoolean("dark_theme", newDark).apply()
-        AppCompatDelegate.setDefaultNightMode(
-            if (newDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        )
+        com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next)
+    }
+
+    private fun showThemeSettingsDialog() {
+        if (isFinishing || isDestroyed) return
+        val dialogView = layoutInflater.inflate(R.layout.dialog_theme_settings, null)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setView(dialogView)
+            .create()
+
+        val rgThemeMode = dialogView.findViewById<android.widget.RadioGroup>(R.id.rgThemeMode)
+        val rbThemeSystem = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeSystem)
+        val rbThemeLight = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeLight)
+        val rbThemeDark = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeDark)
+        val rbThemeAmoled = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeAmoled)
+
+        when (com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)) {
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> rbThemeSystem.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> rbThemeLight.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> rbThemeDark.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> rbThemeAmoled.isChecked = true
+        }
+
+        rgThemeMode.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.rbThemeLight -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
+                R.id.rbThemeDark -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
+                R.id.rbThemeAmoled -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED
+                else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
+            }
+            com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode)
+        }
+
+        val switchDynamic = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchDynamicColor)
+        val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        switchDynamic.isEnabled = isDynamicSupported
+        switchDynamic.isChecked = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this) && isDynamicSupported
+        switchDynamic.setOnCheckedChangeListener { _, isChecked ->
+            com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
+        }
+
+        val chipGroupPalette = dialogView.findViewById<com.google.android.material.chip.ChipGroup>(R.id.chipGroupAccentPalette)
+        val currentPalette = com.veilframe.app.settings.ThemeSettingsManager.getAccentPalette(this)
+        when (currentPalette) {
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteMonochrome)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.SAGE -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteForestSage)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.OCEAN -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteDeepOcean)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.AMBER -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteWarmAmber)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteCyberViolet)?.isChecked = true
+        }
+
+        chipGroupPalette.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val palette = when (checkedIds[0]) {
+                    R.id.chipPaletteMonochrome -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
+                    R.id.chipPaletteForestSage -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.SAGE
+                    R.id.chipPaletteDeepOcean -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.OCEAN
+                    R.id.chipPaletteWarmAmber -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.AMBER
+                    R.id.chipPaletteCyberViolet -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET
+                    else -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
+                }
+                com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
+            }
+        }
+
+        val rgTypo = dialogView.findViewById<android.widget.RadioGroup>(R.id.rgTypography)
+        when (com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)) {
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoSans)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoMonospace)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoSerif)?.isChecked = true
+        }
+
+        rgTypo.setOnCheckedChangeListener { _, checkedId ->
+            val typo = when (checkedId) {
+                R.id.rbTypoMonospace -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE
+                R.id.rbTypoSerif -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF
+                else -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT
+            }
+            com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
+        }
+
+        dialogView.findViewById<View>(R.id.btnThemeSettingsClose)?.setOnClickListener { dialog.dismiss() }
+        dialogView.findViewById<View>(R.id.btnApplyTheme)?.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
     }
 
     private fun openWebUrl(url: String) {

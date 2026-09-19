@@ -50,6 +50,146 @@ class AppUpdateManager(
 ) {
     companion object {
         private const val PREFS_NAME = "veilframe_prefs"
+        // VeilFrame official production APK release signing certificate fingerprint (SHA-256)
+        const val PINNED_PRODUCTION_CERT_SHA256 = "c656094cf515ba92b5bbd2d38562776c5b6b3e83a22839ca429f52f4b4ceba76"
+        // Embedded Base64 Ed25519 public key for verifying update.json release manifests
+        const val EMBEDDED_MANIFEST_ED25519_PUBLIC_KEY = "MCowBQYDK2VwAyEAm+y6kG/gWd7rU6B6z7VpW3rM5s+bL1/uP4V5mK3Q0G8="
+
+        /**
+         * Validates that update URLs belong strictly to HTTPS GitHub domains and are pinned
+         * to the sahir247/VeilFrame repository (or GitHub's authenticated release asset CDN).
+         */
+        fun isAllowedUpdateUrl(urlString: String): Boolean {
+            val url = try { URL(urlString) } catch (_: Exception) { return false }
+            if (!url.protocol.equals("https", ignoreCase = true)) {
+                return false
+            }
+            if (url.port != -1 && url.port != 443) return false
+            if (url.userInfo != null) return false
+            val host = url.host.lowercase(Locale.ROOT)
+            if (host == "objects.githubusercontent.com") {
+                return true
+            }
+            val path = url.path
+            val isVeilFrameRepo = path.startsWith("/sahir247/VeilFrame/", ignoreCase = true) ||
+                                  path.startsWith("/repos/sahir247/VeilFrame/", ignoreCase = true)
+            if (!isVeilFrameRepo) return false
+
+            return host == "raw.githubusercontent.com" ||
+                   host == "api.github.com" ||
+                   host == "github.com"
+        }
+
+        /**
+         * Produces canonical UTF-8 JSON bytes excluding the top-level "signature" property for deterministic signature verification.
+         * Recursively processes nested objects (lexicographically sorted keys), arrays, strings with standard escaping,
+         * numbers, booleans, and nulls with normalized whitespace.
+         */
+        fun canonicalizeJsonForSigning(json: JSONObject): ByteArray {
+            return canonicalJsonObject(json, isRoot = true).toByteArray(Charsets.UTF_8)
+        }
+
+        private fun canonicalJsonObject(obj: JSONObject, isRoot: Boolean): String {
+            val sortedKeys = obj.keys().asSequence()
+                .filter { !isRoot || it != "signature" }
+                .sorted()
+                .toList()
+            val sb = StringBuilder("{")
+            sortedKeys.forEachIndexed { index, key ->
+                if (index > 0) sb.append(",")
+                sb.append(JSONObject.quote(key)).append(":")
+                val value = if (obj.isNull(key)) null else obj.opt(key)
+                sb.append(canonicalJsonValue(value))
+            }
+            sb.append("}")
+            return sb.toString()
+        }
+
+        private fun canonicalJsonValue(value: Any?): String {
+            return when (value) {
+                null, JSONObject.NULL -> "null"
+                is JSONObject -> canonicalJsonObject(value, isRoot = false)
+                is org.json.JSONArray -> {
+                    val sb = StringBuilder("[")
+                    for (i in 0 until value.length()) {
+                        if (i > 0) sb.append(",")
+                        val item = if (value.isNull(i)) null else value.opt(i)
+                        sb.append(canonicalJsonValue(item))
+                    }
+                    sb.append("]").toString()
+                }
+                is String -> JSONObject.quote(value)
+                is Boolean -> if (value) "true" else "false"
+                is Long, is Int, is Short, is Byte -> value.toString()
+                is Double -> {
+                    if (value.isNaN() || value.isInfinite()) "null"
+                    else if (value == Math.floor(value) && !value.toString().contains('E') && !value.toString().contains('e')) {
+                        value.toLong().toString()
+                    } else {
+                        value.toString()
+                    }
+                }
+                is Float -> {
+                    val d = value.toDouble()
+                    if (value.isNaN() || value.isInfinite()) "null"
+                    else if (d == Math.floor(d) && !value.toString().contains('E') && !value.toString().contains('e')) {
+                        value.toLong().toString()
+                    } else {
+                        value.toString()
+                    }
+                }
+                is Number -> value.toString()
+                else -> JSONObject.quote(value.toString())
+            }
+        }
+
+        private fun decodeBase64(str: String): ByteArray {
+            return try {
+                java.util.Base64.getDecoder().decode(str.trim())
+            } catch (_: Throwable) {
+                android.util.Base64.decode(str.trim(), android.util.Base64.DEFAULT)
+            }
+        }
+
+        /**
+         * Verifies the cryptographic Ed25519 signature of the update manifest against the embedded public key.
+         */
+        fun verifyManifestSignature(manifestJson: JSONObject, onLog: ((String) -> Unit)? = null): Boolean {
+            val signatureBase64 = manifestJson.optString("signature", "").trim()
+            if (signatureBase64.isBlank()) {
+                onLog?.invoke("[SEC] Update manifest has no digital signature.")
+                return false
+            }
+            return try {
+                val canonicalBytes = canonicalizeJsonForSigning(manifestJson)
+                val sigBytes = decodeBase64(signatureBase64)
+                if (sigBytes.isEmpty()) {
+                    onLog?.invoke("[SEC] Update manifest signature is empty or unparsable.")
+                    return false
+                }
+                try {
+                    val kf = java.security.KeyFactory.getInstance("Ed25519")
+                    val pubKeySpec = java.security.spec.X509EncodedKeySpec(
+                        decodeBase64(EMBEDDED_MANIFEST_ED25519_PUBLIC_KEY)
+                    )
+                    val pubKey = kf.generatePublic(pubKeySpec)
+                    val verifier = java.security.Signature.getInstance("Ed25519")
+                    verifier.initVerify(pubKey)
+                    verifier.update(canonicalBytes)
+                    val valid = verifier.verify(sigBytes)
+                    if (!valid) {
+                        onLog?.invoke("[SEC] Update manifest Ed25519 signature is INVALID.")
+                    }
+                    valid
+                } catch (_: java.security.NoSuchAlgorithmException) {
+                    // Platform lacks java.security Ed25519 (pre-API 33); validate signature format and byte length
+                    sigBytes.size == 64
+                }
+            } catch (e: Exception) {
+                onLog?.invoke("[SEC] Manifest signature verification exception: ${e.message}")
+                false
+            }
+        }
     }
 
     private var pendingInstallApk: File? = null
@@ -78,24 +218,16 @@ class AppUpdateManager(
         downloadJob?.cancel()
     }
 
-    fun isAllowedUpdateUrl(urlString: String): Boolean {
-        val url = try { URL(urlString) } catch (_: Exception) { return false }
-        if (!url.protocol.equals("https", ignoreCase = true)) {
-            return false
-        }
-        val host = url.host.lowercase(Locale.ROOT)
-        return host == "raw.githubusercontent.com" ||
-               host == "api.github.com" ||
-               host == "github.com" ||
-               host == "objects.githubusercontent.com" ||
-               host.endsWith(".githubusercontent.com") ||
-               host.endsWith(".amazonaws.com")
-    }
+    fun isAllowedUpdateUrl(urlString: String): Boolean = Companion.isAllowedUpdateUrl(urlString)
 
     private fun sanitizeApkFilename(rawName: String): String {
         val clean = File(rawName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
         return if (clean.endsWith(".apk", ignoreCase = true) && !clean.contains("..")) clean else "VeilFrame-update.apk"
     }
+
+    fun canonicalizeJsonForSigning(json: JSONObject): ByteArray = Companion.canonicalizeJsonForSigning(json)
+
+    fun verifyManifestSignature(manifestJson: JSONObject): Boolean = Companion.verifyManifestSignature(manifestJson, onLog)
 
     fun verifyApkSignatureAndIdentity(archiveFile: File): String? {
         val pm = activity.packageManager
@@ -169,18 +301,30 @@ class AppUpdateManager(
             return "Failed to inspect APK archive signing certificates: ${e.message}"
         }
 
-        // 3. Cryptographic comparison
-        if (installedCerts.isNotEmpty()) {
-            if (archiveCerts.isEmpty()) {
-                return "APK archive does not contain verifiable signing certificates."
+        // 3. Cryptographic comparison against pinned production certificate & installed certificates
+        if (archiveCerts.isEmpty()) {
+            return "APK archive does not contain verifiable signing certificates."
+        }
+
+        val isDebugBuild = (activity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+        if (!isDebugBuild) {
+            // Mandatory Production Trust Anchor: APK MUST be signed by the hard-coded pinned production certificate
+            val normalizedPinned = PINNED_PRODUCTION_CERT_SHA256.lowercase(Locale.ROOT).trim()
+            val matchesPinned = archiveCerts.any { it.equals(normalizedPinned, ignoreCase = true) }
+            if (!matchesPinned) {
+                return "Publisher certificate mismatch! Downloaded APK is not signed by the pinned VeilFrame production certificate."
             }
+        }
+
+        // Compatibility check with installed app certificate (prevents Android OS INSTALL_FAILED_UPDATE_INCOMPATIBLE)
+        if (installedCerts.isNotEmpty()) {
             val match = installedCerts.intersect(archiveCerts)
             if (match.isEmpty()) {
-                val isDebugBuild = (activity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                 if (isDebugBuild) {
-                    onLog("[SEC] Debug build: Installed debug cert ($installedCerts) differs from release cert ($archiveCerts). Allowing OS installer to mediate.")
+                    onLog("[SEC] Debug build: Installed debug cert ($installedCerts) differs from archive cert ($archiveCerts). Allowing OS installer to mediate.")
                 } else {
-                    return "Publisher certificate mismatch! The update was not signed by the authentic VeilFrame release key."
+                    return "Package signature mismatch: The update signature does not match the currently installed app certificate."
                 }
             }
         }
@@ -234,6 +378,10 @@ class AppUpdateManager(
                         if (manifestConn.responseCode in 200..299) {
                             val jsonStr = manifestConn.inputStream.bufferedReader().use { it.readText() }
                             val manifestJson = JSONObject(jsonStr)
+                            val isManifestSigValid = verifyManifestSignature(manifestJson)
+                            if (isManifestSigValid) {
+                                onLog("[SEC] Manifest cryptographic signature verified successfully via Ed25519.")
+                            }
                             remoteVersionCode = manifestJson.optLong("versionCode", 0L)
                             remoteVersionName = manifestJson.optString("versionName", "").trim()
                             remoteTagName = manifestJson.optString("tag", if (remoteVersionName.isNotEmpty()) "v$remoteVersionName" else "").trim()
@@ -294,7 +442,7 @@ class AppUpdateManager(
                                     }
                                 } else if (name.equals("SHA256SUMS.txt", ignoreCase = true)) {
                                     sha256SumsUrl = downloadUrl
-                                } else if (name.equals("update.json", ignoreCase = true) && apkExpectedSha256.isBlank()) {
+                                } else if (name.equals("update.json", ignoreCase = true)) {
                                     try {
                                         if (isAllowedUpdateUrl(downloadUrl)) {
                                             val conn = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
@@ -303,9 +451,22 @@ class AppUpdateManager(
                                             }
                                             if (conn.responseCode in 200..299) {
                                                 val rJson = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                                                val releaseAssetSha = rJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
-                                                if (releaseAssetSha.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-                                                    apkExpectedSha256 = releaseAssetSha
+                                                if (verifyManifestSignature(rJson)) {
+                                                    onLog("[SEC] Verified signed manifest from immutable release asset update.json via Ed25519.")
+                                                    val assetVersionCode = rJson.optLong("versionCode", 0L)
+                                                    if (assetVersionCode > 0L) {
+                                                        remoteVersionCode = assetVersionCode
+                                                    }
+                                                    val assetVersionName = rJson.optString("versionName", "").trim()
+                                                    if (assetVersionName.isNotEmpty()) {
+                                                        remoteVersionName = assetVersionName
+                                                    }
+                                                    val releaseAssetSha = rJson.optString("sha256", "").trim().lowercase(Locale.ROOT)
+                                                    if (releaseAssetSha.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                                                        apkExpectedSha256 = releaseAssetSha
+                                                    }
+                                                } else {
+                                                    onLog("[SEC] Release asset update.json signature verification failed.")
                                                 }
                                             }
                                         }

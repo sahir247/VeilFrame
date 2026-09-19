@@ -134,6 +134,64 @@ object VideoProcessor {
             )
         }
 
+        if (targetSizeMb != null && targetSizeMb > 0) {
+            val targetBytes = (targetSizeMb * 1024.0 * 1024.0).toLong()
+            var attempt = 0
+            var reduction = 1.0
+            var lastResult: CompressionResult? = null
+            while (attempt < 3) {
+                val res = executeNativeFFmpeg(
+                    srcFile = srcFile,
+                    outFile = outFile,
+                    trimStartSec = trimStartSec,
+                    trimDurationSec = trimDurationSec,
+                    resolutionStr = resolutionStr,
+                    aspectStr = aspectStr,
+                    speed = editState.speed,
+                    colorProfile = editState.colorProfile,
+                    audioAction = audioActionStr,
+                    audioVolume = editState.audioVolume,
+                    audioChannels = editState.audioChannels,
+                    audioCodec = outputConfig.audioCodec,
+                    codec = codecParam,
+                    crf = outputConfig.crf,
+                    compressionPreset = outputConfig.compressionPreset,
+                    flipH = editState.flipH,
+                    flipV = editState.flipV,
+                    rotate = editState.rotationAngle,
+                    customCropPercent = editState.customCropPercent,
+                    fps = editState.fps,
+                    targetSizeMb = targetSizeMb,
+                    isGifMode = isGifMode,
+                    bitrateReductionFactor = reduction,
+                    onStatistics = onStatistics,
+                    onSessionId = onSessionId
+                )
+                lastResult = res
+                if (!res.success) {
+                    return res
+                }
+                if (res.sizeBytes <= targetBytes) {
+                    return res
+                }
+                // Overshot target ceiling: reduce bitrate by 15% and retry (max 2 retries)
+                attempt++
+                reduction *= 0.85
+                Log.w(TAG, "Output size ${formatBytes(res.sizeBytes)} exceeded target ceiling ${formatBytes(targetBytes)}. Retry attempt $attempt/2 with 15% bitrate reduction (factor $reduction)...")
+            }
+            val finalSize = lastResult?.sizeBytes ?: outFile.length()
+            val errMsg = "SIZE_LIMIT_UNACHIEVABLE: Encoded output ($finalSize bytes) exceeds target ceiling ($targetBytes bytes) after 2 retries."
+            Log.e(TAG, errMsg)
+            return CompressionResult(
+                success = false,
+                outputPath = outFile.absolutePath,
+                sizeBytes = finalSize,
+                savingsPercent = lastResult?.savingsPercent ?: 0.0,
+                duration = trimDurationSec,
+                error = errMsg
+            )
+        }
+
         // Authoritative Android FFmpegKit direct argument-array execution layer
         return executeNativeFFmpeg(
             srcFile = srcFile,
@@ -158,6 +216,7 @@ object VideoProcessor {
             fps = editState.fps,
             targetSizeMb = targetSizeMb,
             isGifMode = isGifMode,
+            bitrateReductionFactor = 1.0,
             onStatistics = onStatistics,
             onSessionId = onSessionId
         )
@@ -204,6 +263,7 @@ object VideoProcessor {
         fps: Int?,
         targetSizeMb: Double?,
         isGifMode: Boolean = false,
+        bitrateReductionFactor: Double = 1.0,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
         onSessionId: ((Long) -> Unit)? = null
     ): CompressionResult {
@@ -389,8 +449,8 @@ object VideoProcessor {
                     if (targetSizeMb != null && targetSizeMb > 0 && trimDurationSec > 0.2) {
                         // Total target budget in bits
                         val totalTargetBits = targetSizeMb * 8.0 * 1024.0 * 1024.0
-                        // Reserve 6% for container/mux overhead
-                        val containerReserveBits = totalTargetBits * 0.06
+                        // Reserve 8% for container/mux overhead
+                        val containerReserveBits = totalTargetBits * 0.08
                         val audioBitrate = if (isMuted) 0.0 else when (audioAction) {
                             "aac_64k" -> 64.0
                             "aac_256k" -> 256.0
@@ -400,7 +460,8 @@ object VideoProcessor {
                         val availableVideoBits = totalTargetBits - containerReserveBits - audioReserveBits
 
                         // Minimum viable video bitrate is 120 kbps to avoid severe encoder crash or black frames
-                        val targetBitrateKbps = ((availableVideoBits / (trimDurationSec * 1024.0)).toInt()).coerceAtLeast(120)
+                        val baseBitrate = (availableVideoBits / (trimDurationSec * 1024.0)) * bitrateReductionFactor
+                        val targetBitrateKbps = (baseBitrate.toInt()).coerceAtLeast(120)
 
                         cmd.add("-b:v")
                         cmd.add("${targetBitrateKbps}k")
@@ -490,7 +551,12 @@ object VideoProcessor {
             cmd.add(outFile.absolutePath)
 
             val cmdArray = cmd.toTypedArray()
-            Log.d(TAG, "Executing native FFmpegKit with ${cmdArray.size} arguments: ${cmdArray.joinToString(" ")}")
+            val sanitizedCmd = cmdArray.map { arg ->
+                if (arg == srcFile.absolutePath) "[INPUT_PATH]"
+                else if (arg == outFile.absolutePath) "[OUTPUT_PATH]"
+                else arg
+            }.joinToString(" ")
+            Log.d(TAG, "Executing native FFmpegKit with ${cmdArray.size} arguments: $sanitizedCmd")
 
             var activeSessionId = -1L
             val resultHolder = arrayOfNulls<com.arthenica.ffmpegkit.FFmpegSession>(1)
@@ -522,12 +588,21 @@ object VideoProcessor {
                 val savings = if (origSize > 0) ((origSize - outSize).toDouble() / origSize.toDouble() * 100.0) else 0.0
 
                 // Inspect actual output size against requested target
-                val warning: String? = if (targetSizeMb != null && targetSizeMb > 0) {
+                if (targetSizeMb != null && targetSizeMb > 0) {
                     val targetBytes = (targetSizeMb * 1024.0 * 1024.0).toLong()
-                    if (outSize > targetBytes * 1.05) {
-                        "Target ceiling not strictly achieved: Output is ${formatBytes(outSize)}, requested was <= ${formatBytes(targetBytes)}"
-                    } else null
-                } else null
+                    if (outSize > targetBytes) {
+                        val errMsg = "Target ceiling not achieved: Output is ${formatBytes(outSize)}, requested limit was ${formatBytes(targetBytes)} (SIZE_LIMIT_UNACHIEVABLE)"
+                        Log.e(TAG, errMsg)
+                        return CompressionResult(
+                            success = false,
+                            outputPath = outFile.absolutePath,
+                            sizeBytes = outSize,
+                            savingsPercent = savings,
+                            duration = trimDurationSec,
+                            error = errMsg
+                        )
+                    }
+                }
 
                 CompressionResult(
                     success = true,
@@ -535,7 +610,7 @@ object VideoProcessor {
                     sizeBytes = outSize,
                     savingsPercent = savings,
                     duration = trimDurationSec,
-                    error = warning
+                    error = null
                 )
             } else {
                 val allLogs = session?.allLogsAsString ?: "No session logs available"
