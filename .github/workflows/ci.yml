@@ -845,6 +845,13 @@ jobs:
 
           echo "Publishing release: ${TAG}"
 
+          # Format release name as v.<version> (e.g. v.2.2.6)
+          VERSION="${TAG#v}"
+          VERSION="${VERSION#.}"
+          RELEASE_TITLE="v.${VERSION}"
+
+          echo "Release Title: ${RELEASE_TITLE}"
+
           mapfile -t assets < <(
             find final_release -maxdepth 1 -type f -print
           )
@@ -857,7 +864,7 @@ jobs:
 
           # Ensure notes file exists
           if [ ! -f RELEASE_NOTES.md ]; then
-            echo "Release notes for VeilFrame ${TAG}" > RELEASE_NOTES.md
+            echo "Release notes for ${RELEASE_TITLE}" > RELEASE_NOTES.md
           fi
 
           # Create the release only when it does not already exist.
@@ -865,13 +872,13 @@ jobs:
             echo "Using existing release ${TAG}"
           else
             gh release create "$TAG" \
-              --title "VeilFrame ${TAG}" \
+              --title "$RELEASE_TITLE" \
               --notes-file RELEASE_NOTES.md
           fi
 
           # Refresh the release metadata without hiding errors.
           gh release edit "$TAG" \
-            --title "VeilFrame ${TAG}" \
+            --title "$RELEASE_TITLE" \
             --notes-file RELEASE_NOTES.md
 
           gh release upload "$TAG" \
