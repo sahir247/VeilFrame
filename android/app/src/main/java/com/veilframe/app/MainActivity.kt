@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -77,6 +78,38 @@ class MainActivity : AppCompatActivity() {
             safStorageManager.persistReadPermission(uri)
             openMarkdownViewer(uri)
         }
+    }
+
+    private var pendingMarkdownSaveContent: String? = null
+
+    // Markdown Save As export launcher (Storage Access Framework)
+    private val markdownSaveAsLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown")
+    ) { destUri ->
+        val content = pendingMarkdownSaveContent
+        if (destUri != null && content != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val success = try {
+                    contentResolver.openOutputStream(destUri, "wt")?.use { out ->
+                        out.write(content.toByteArray(Charsets.UTF_8))
+                        out.flush()
+                    }
+                    true
+                } catch (e: Exception) {
+                    Log.e("VeilFrame", "Save As write failed: ${e.message}", e)
+                    false
+                }
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        val name = DocumentFile.fromSingleUri(this@MainActivity, destUri)?.name ?: "Document.md"
+                        markdownViewerController.onDocumentSavedAs(destUri, name)
+                    } else {
+                        Toast.makeText(this@MainActivity, "Save As write failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        pendingMarkdownSaveContent = null
     }
 
     // Multi-format export launcher (Storage Access Framework)
@@ -351,7 +384,14 @@ class MainActivity : AppCompatActivity() {
             binding = binding,
             onSaveActiveToolState = { toolSessionManager.saveCurrentToolState() },
             onPauseVideoPlayback = { pauseVideoPlayback() },
-            onHomeScreenEntered = { scheduleBackClearWork() }
+            onHomeScreenEntered = { scheduleBackClearWork() },
+            onMarkdownBackPressed = {
+                if (::markdownViewerController.isInitialized) {
+                    markdownViewerController.handleBackPressed()
+                } else {
+                    false
+                }
+            }
         )
         navigationController.init()
 
@@ -396,6 +436,10 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenMarkdownFileRequest = {
                 markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+            },
+            onSaveAsMarkdownRequest = { suggestedName, content ->
+                pendingMarkdownSaveContent = content
+                markdownSaveAsLauncher.launch(suggestedName)
             }
         )
         markdownViewerController.init()
@@ -512,9 +556,21 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        // Markdown Viewer Dashboard Card
+        // Markdown Viewer Dashboard Card (Open Existing or Create New from Zero)
         binding.cardToolMarkdownViewer.setOnClickListener {
-            markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+            val options = arrayOf<CharSequence>("Open Markdown File...", "Create New Markdown (From Zero)")
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Markdown Viewer & Editor")
+                .setItems(options) { _, which ->
+                    if (which == 0) {
+                        markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+                    } else {
+                        navigationController.showMarkdownViewerScreen()
+                        markdownViewerController.createNewDocument()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         // Result Card Direct Actions

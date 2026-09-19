@@ -241,6 +241,30 @@ body.width-full #viewer-container {
   cursor: pointer;
 }
 
+.mermaid-diagram-box.mermaid-pending {
+  padding: 24px;
+  color: var(--vf-fg-muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mermaid-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--vf-fg-muted);
+  border-top-color: var(--vf-accent);
+  border-radius: 50%;
+  animation: vf-spin 0.8s linear infinite;
+}
+
+@keyframes vf-spin {
+  to { transform: rotate(360deg); }
+}
+
 .mermaid-error {
   padding: 12px;
   background-color: rgba(218, 54, 51, 0.1);
@@ -251,10 +275,29 @@ body.width-full #viewer-container {
   font-size: 12px;
 }
 
-.mermaid-error pre {
-  background-color: transparent;
-  color: inherit;
+.mermaid-error-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.mermaid-source-details {
   margin-top: 6px;
+}
+
+.mermaid-source-details summary {
+  cursor: pointer;
+  color: var(--vf-fg-muted);
+  font-size: 11px;
+}
+
+.mermaid-source-details pre {
+  background-color: var(--vf-code-bg);
+  color: var(--vf-fg);
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow-x: auto;
+  font-size: 11px;
 }
 
 /* KaTeX Math */

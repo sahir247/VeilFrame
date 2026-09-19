@@ -14,7 +14,8 @@ class MainNavigationController(
     private val binding: ActivityMainBinding,
     private val onSaveActiveToolState: () -> Unit,
     private val onPauseVideoPlayback: () -> Unit,
-    private val onHomeScreenEntered: () -> Unit
+    private val onHomeScreenEntered: () -> Unit,
+    private val onMarkdownBackPressed: () -> Boolean = { false }
 ) {
     var currentScreen: ScreenState = ScreenState.HOME
         private set
@@ -25,6 +26,9 @@ class MainNavigationController(
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
+                    if (onMarkdownBackPressed()) {
+                        return
+                    }
                     if (previousScreen == ScreenState.TOOL) {
                         showToolScreen()
                     } else {

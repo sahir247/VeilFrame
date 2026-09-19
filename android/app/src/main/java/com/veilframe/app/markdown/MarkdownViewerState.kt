@@ -13,6 +13,17 @@ enum class MarkdownTheme(val jsValue: String) {
     LIGHT("light")
 }
 
+enum class ViewerLifecycleState {
+    IDLE,
+    LOADING_VIEWER,
+    VIEWER_READY,
+    RENDERING,
+    MERMAID_LOADING,
+    MERMAID_RENDERING,
+    RENDERED,
+    ERROR
+}
+
 data class TocItem(
     val id: String,
     val title: String,
@@ -20,6 +31,7 @@ data class TocItem(
 )
 
 data class MarkdownViewerState(
+    var lifecycleState: ViewerLifecycleState = ViewerLifecycleState.IDLE,
     var documentUri: Uri? = null,
     var documentFile: File? = null,
     var documentTitle: String = "Document.md",
@@ -32,5 +44,7 @@ data class MarkdownViewerState(
     var isSearchActive: Boolean = false,
     var searchQuery: String = "",
     var currentMatchIndex: Int = 0,
-    var totalMatches: Int = 0
+    var totalMatches: Int = 0,
+    var isEditMode: Boolean = false,
+    var isModified: Boolean = false
 )

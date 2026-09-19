@@ -1,8 +1,8 @@
 package com.veilframe.app.markdown
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -16,8 +16,12 @@ import androidx.webkit.WebViewAssetLoader
 class MarkdownWebViewClient(
     private val context: Context,
     private val resourceResolver: MarkdownResourceResolver,
-    private val onPageReady: () -> Unit
+    private val onPageFinishedDiagnostic: (String) -> Unit = {}
 ) : WebViewClient() {
+
+    companion object {
+        private const val TAG = "VeilFrame.MdClient"
+    }
 
     private val assetLoader: WebViewAssetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -76,6 +80,7 @@ class MarkdownWebViewClient(
 
     override fun onPageFinished(view: WebView, url: String) {
         super.onPageFinished(view, url)
-        onPageReady()
+        Log.d(TAG, "[MARKDOWN] WebView onPageFinished: $url")
+        onPageFinishedDiagnostic(url)
     }
 }

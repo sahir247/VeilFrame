@@ -5,20 +5,8 @@
   let searchMatches = [];
   let currentSearchIndex = -1;
   let isDarkMode = true;
-
-  // Initialize Mermaid with safe defaults
-  if (typeof mermaid !== 'undefined') {
-    try {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        securityLevel: 'loose',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      });
-    } catch (e) {
-      console.warn('Mermaid init error:', e);
-    }
-  }
+  let isMermaidLoading = false;
+  let isMermaidLoaded = false;
 
   // Reading progress tracker
   window.addEventListener('scroll', function() {
@@ -36,187 +24,251 @@
 
   window.VeilFrameMarkdown = {
     render: function(markdownText, baseUri) {
-      currentToc = [];
-      searchMatches = [];
-      currentSearchIndex = -1;
-
-      const bodyEl = document.getElementById('markdown-body');
-      const frontMatterEl = document.getElementById('front-matter-card');
-      const emptyEl = document.getElementById('empty-state');
-
-      if (!markdownText || !markdownText.trim()) {
-        bodyEl.innerHTML = '';
-        frontMatterEl.style.display = 'none';
-        emptyEl.style.display = 'block';
-        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onTableOfContents === 'function') {
-          window.VeilFrameBridge.onTableOfContents('[]');
+      try {
+        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onStageChanged === 'function') {
+          window.VeilFrameBridge.onStageChanged('RENDERING');
         }
-        return;
-      }
-      emptyEl.style.display = 'none';
 
-      // 1. Parse YAML Front Matter
-      let content = markdownText;
-      const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-      if (frontMatterMatch) {
-        content = content.substring(frontMatterMatch[0].length);
-        const yamlStr = frontMatterMatch[1];
-        renderFrontMatter(yamlStr, frontMatterEl);
-      } else {
-        frontMatterEl.style.display = 'none';
-      }
+        currentToc = [];
+        searchMatches = [];
+        currentSearchIndex = -1;
 
-      // 2. Protect LaTeX Math from Marked parser
-      const mathPlaceholders = [];
-      // Display math: $$ ... $$ or \[ ... \]
-      content = content.replace(/\$\$([\s\S]*?)\$\$/g, function(match, math) {
-        const id = '%%%KATEX_DISPLAY_' + mathPlaceholders.length + '%%%';
-        mathPlaceholders.push({ id: id, math: math.trim(), display: true });
-        return id;
-      });
-      content = content.replace(/\\\[([\s\S]*?)\\\]/g, function(match, math) {
-        const id = '%%%KATEX_DISPLAY_' + mathPlaceholders.length + '%%%';
-        mathPlaceholders.push({ id: id, math: math.trim(), display: true });
-        return id;
-      });
-      // Inline math: $ ... $ or \( ... \) (avoid matching currency like $10)
-      content = content.replace(/(^|[^\$])\$([^\$\n]+?)\$(?!\$)/g, function(match, prefix, math) {
-        const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
-        mathPlaceholders.push({ id: id, math: math.trim(), display: false });
-        return prefix + id;
-      });
-      content = content.replace(/\\\(([\s\S]*?)\\\)/g, function(match, math) {
-        const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
-        mathPlaceholders.push({ id: id, math: math.trim(), display: false });
-        return id;
-      });
+        const bodyEl = document.getElementById('markdown-body');
+        const frontMatterEl = document.getElementById('front-matter-card');
+        const emptyEl = document.getElementById('empty-state');
 
-      // 3. Configure Marked.js
-      const renderer = new marked.Renderer();
+        if (!markdownText || !markdownText.trim()) {
+          bodyEl.innerHTML = '';
+          frontMatterEl.style.display = 'none';
+          emptyEl.style.display = 'block';
+          if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onTableOfContents === 'function') {
+            window.VeilFrameBridge.onTableOfContents('[]');
+          }
+          if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
+            window.VeilFrameBridge.onRenderFinished();
+          }
+          return;
+        }
+        emptyEl.style.display = 'none';
 
-      // Custom Code & Mermaid Renderer
-      renderer.code = function(code, lang) {
-        const safeLang = (lang || '').trim().toLowerCase();
-        if (safeLang === 'mermaid') {
-          const encoded = encodeURIComponent(code);
-          return '<div class="mermaid-container">' +
-                   '<div class="mermaid" data-source="' + encoded + '">' + escapeHtml(code) + '</div>' +
-                   '<div class="mermaid-actions">' +
-                     '<button class="mermaid-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encoded.replace(/'/g, "\\'") + '\'), this)">Copy Diagram</button>' +
+        // 1. Parse YAML Front Matter
+        let content = markdownText;
+        const frontMatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+        if (frontMatterMatch) {
+          content = content.substring(frontMatterMatch[0].length);
+          const yamlStr = frontMatterMatch[1];
+          renderFrontMatter(yamlStr, frontMatterEl);
+        } else {
+          frontMatterEl.style.display = 'none';
+        }
+
+        // 2. Protect LaTeX Math from Marked parser
+        const mathPlaceholders = [];
+        // Display math: $$ ... $$ or \[ ... \]
+        content = content.replace(/\$\$([\s\S]*?)\$\$/g, function(match, math) {
+          const id = '%%%KATEX_DISPLAY_' + mathPlaceholders.length + '%%%';
+          mathPlaceholders.push({ id: id, math: math.trim(), display: true });
+          return id;
+        });
+        content = content.replace(/\\\[([\s\S]*?)\\\]/g, function(match, math) {
+          const id = '%%%KATEX_DISPLAY_' + mathPlaceholders.length + '%%%';
+          mathPlaceholders.push({ id: id, math: math.trim(), display: true });
+          return id;
+        });
+        // Inline math: $ ... $ or \( ... \) (avoid matching currency like $10)
+        content = content.replace(/(^|[^\$])\$([^\$\n]+?)\$(?!\$)/g, function(match, prefix, math) {
+          const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
+          mathPlaceholders.push({ id: id, math: math.trim(), display: false });
+          return prefix + id;
+        });
+        content = content.replace(/\\\(([\s\S]*?)\\\)/g, function(match, math) {
+          const id = '%%%KATEX_INLINE_' + mathPlaceholders.length + '%%%';
+          mathPlaceholders.push({ id: id, math: math.trim(), display: false });
+          return id;
+        });
+
+        // 3. Configure Marked.js 15 token-based Renderer
+        const renderer = new marked.Renderer();
+
+        // Custom Code & Mermaid Renderer (Marked 15 token API)
+        renderer.code = function(token, legacyLang) {
+          let code, lang;
+          if (typeof token === 'object' && token !== null) {
+            code = token.text || '';
+            lang = token.lang || '';
+          } else {
+            code = token || '';
+            lang = legacyLang || '';
+          }
+
+          const safeLang = (lang || '').trim().toLowerCase();
+          if (safeLang === 'mermaid') {
+            const encoded = encodeURIComponent(code);
+            return '<div class="mermaid-container">' +
+                     '<div class="mermaid" data-source="' + encoded + '">' +
+                       '<div class="mermaid-diagram-box mermaid-pending">' +
+                         '<span class="mermaid-spinner"></span> Rendering diagram...' +
+                       '</div>' +
+                     '</div>' +
+                     '<div class="mermaid-actions">' +
+                       '<button class="mermaid-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encoded.replace(/'/g, "\\'") + '\'), this)">Copy Diagram</button>' +
+                     '</div>' +
+                   '</div>';
+          }
+
+          let highlighted = '';
+          let displayLang = safeLang || 'text';
+          if (typeof hljs !== 'undefined' && safeLang && hljs.getLanguage(safeLang)) {
+            try {
+              highlighted = hljs.highlight(code, { language: safeLang, ignoreIllegals: true }).value;
+            } catch (e) {
+              highlighted = escapeHtml(code);
+            }
+          } else if (typeof hljs !== 'undefined' && !safeLang) {
+            try {
+              const autoRes = hljs.highlightAuto(code);
+              highlighted = autoRes.value;
+              displayLang = autoRes.language || 'text';
+            } catch (e) {
+              highlighted = escapeHtml(code);
+            }
+          } else {
+            highlighted = escapeHtml(code);
+          }
+
+          const encodedCode = encodeURIComponent(code);
+          return '<div class="code-block-wrapper">' +
+                   '<div class="code-block-header">' +
+                     '<span>' + escapeHtml(displayLang.toUpperCase()) + '</span>' +
+                     '<button class="code-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encodedCode.replace(/'/g, "\\'") + '\'), this)">Copy</button>' +
                    '</div>' +
+                   '<pre><code class="hljs ' + (safeLang ? 'language-' + safeLang : '') + '">' + highlighted + '</code></pre>' +
                  '</div>';
+        };
+
+        // Custom Table Renderer (wraps in responsive scroll container)
+        renderer.table = function(token) {
+          let tableHtml = '';
+          if (typeof token === 'object' && token !== null) {
+            tableHtml = marked.Renderer.prototype.table.call(this, token);
+          } else {
+            const header = token || '';
+            const body = arguments[1] || '';
+            tableHtml = '<table><thead>' + header + '</thead><tbody>' + body + '</tbody></table>';
+          }
+          return '<div class="table-wrapper">' + tableHtml + '</div>';
+        };
+
+        // Custom Heading Renderer (Marked 15 token API + stable slug + TOC)
+        renderer.heading = function(token, legacyLevel) {
+          let text, level, htmlContent;
+          if (typeof token === 'object' && token !== null) {
+            text = token.text || '';
+            level = token.depth || 1;
+            htmlContent = this.parser ? this.parser.parseInline(token.tokens) : (token.text || '');
+          } else {
+            text = token || '';
+            level = legacyLevel || 1;
+            htmlContent = text;
+          }
+          const cleanText = text.replace(/<[^>]*>/g, '').trim();
+          const slug = 'heading-' + currentToc.length + '-' + cleanText.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '');
+          if (level >= 1 && level <= 4) {
+            currentToc.push({ id: slug, title: cleanText, level: level });
+          }
+          return '<h' + level + ' id="' + slug + '">' + htmlContent + '</h' + level + '>\n';
+        };
+
+        // Custom Image Renderer (Marked 15 token API + relative asset resolution)
+        renderer.image = function(token, legacyTitle, legacyText) {
+          let href, title, text;
+          if (typeof token === 'object' && token !== null) {
+            href = token.href || '';
+            title = token.title || '';
+            text = token.text || '';
+          } else {
+            href = token || '';
+            title = legacyTitle || '';
+            text = legacyText || '';
+          }
+          let resolvedHref = href;
+          if (href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('data:')) {
+            if (baseUri) {
+              resolvedHref = '/__vf_resource__?path=' + encodeURIComponent(href) + '&base=' + encodeURIComponent(baseUri);
+            }
+          }
+          const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+          return '<img src="' + resolvedHref + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy" style="max-width: 100%; height: auto; border-radius: 6px;">';
+        };
+
+        // Custom Link Renderer (Marked 15 token API + security sandbox)
+        renderer.link = function(token, legacyTitle, legacyText) {
+          let href, title, content;
+          if (typeof token === 'object' && token !== null) {
+            href = token.href || '';
+            title = token.title || '';
+            content = this.parser ? this.parser.parseInline(token.tokens) : (token.text || '');
+          } else {
+            href = token || '';
+            title = legacyTitle || '';
+            content = legacyText || '';
+          }
+          const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
+          return '<a href="' + href + '"' + titleAttr + ' target="_blank" rel="noopener noreferrer">' + content + '</a>';
+        };
+
+        // 4. Parse Markdown into HTML
+        let html = marked.parse(content, {
+          renderer: renderer,
+          gfm: true,
+          breaks: true,
+          pedantic: false
+        });
+
+        // 5. Restore Math with KaTeX
+        for (let i = 0; i < mathPlaceholders.length; i++) {
+          const item = mathPlaceholders[i];
+          let renderedMath = '';
+          if (typeof katex !== 'undefined') {
+            try {
+              renderedMath = katex.renderToString(item.math, {
+                displayMode: item.display,
+                throwOnError: false
+              });
+            } catch (e) {
+              renderedMath = '<span class="katex-error">' + escapeHtml(item.math) + '</span>';
+            }
+          } else {
+            renderedMath = escapeHtml(item.math);
+          }
+          html = html.split(item.id).join(renderedMath);
         }
 
-        let highlighted = '';
-        let displayLang = safeLang || 'text';
-        if (typeof hljs !== 'undefined' && safeLang && hljs.getLanguage(safeLang)) {
-          try {
-            highlighted = hljs.highlight(code, { language: safeLang, ignoreIllegals: true }).value;
-          } catch (e) {
-            highlighted = escapeHtml(code);
-          }
-        } else if (typeof hljs !== 'undefined' && !safeLang) {
-          try {
-            const autoRes = hljs.highlightAuto(code);
-            highlighted = autoRes.value;
-            displayLang = autoRes.language || 'text';
-          } catch (e) {
-            highlighted = escapeHtml(code);
-          }
+        bodyEl.innerHTML = html;
+
+        // 6. Notify TOC to Kotlin immediately
+        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onTableOfContents === 'function') {
+          window.VeilFrameBridge.onTableOfContents(JSON.stringify(currentToc));
+        }
+
+        // 7. Check for Mermaid Diagrams
+        const hasMermaid = document.querySelectorAll('.mermaid').length > 0;
+        if (hasMermaid) {
+          renderMermaidDiagrams();
         } else {
-          highlighted = escapeHtml(code);
+          // No Mermaid: document is fully rendered immediately
+          requestAnimationFrame(function() {
+            if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
+              window.VeilFrameBridge.onRenderFinished();
+            }
+          });
         }
 
-        const encodedCode = encodeURIComponent(code);
-        return '<div class="code-block-wrapper">' +
-                 '<div class="code-block-header">' +
-                   '<span>' + escapeHtml(displayLang.toUpperCase()) + '</span>' +
-                   '<button class="code-copy-btn" onclick="window.VeilFrameMarkdown.copyCode(decodeURIComponent(\'' + encodedCode.replace(/'/g, "\\'") + '\'), this)">Copy</button>' +
-                 '</div>' +
-                 '<pre><code class="hljs ' + (safeLang ? 'language-' + safeLang : '') + '">' + highlighted + '</code></pre>' +
-               '</div>';
-      };
-
-      // Custom Table Renderer (wraps in responsive scroll container)
-      renderer.table = function(header, body) {
-        return '<div class="table-wrapper">' +
-                 '<table>' +
-                   '<thead>' + header + '</thead>' +
-                   '<tbody>' + body + '</tbody>' +
-                 '</table>' +
-               '</div>';
-      };
-
-      // Custom Heading Renderer (stable IDs + TOC generation)
-      renderer.heading = function(text, level) {
-        const cleanText = text.replace(/<[^>]*>/g, '').trim();
-        const slug = 'heading-' + currentToc.length + '-' + cleanText.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '');
-        if (level >= 1 && level <= 4) {
-          currentToc.push({ id: slug, title: cleanText, level: level });
+      } catch (renderErr) {
+        console.error('[MARKDOWN] Render error:', renderErr);
+        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderError === 'function') {
+          window.VeilFrameBridge.onRenderError('RENDERING', renderErr.message || String(renderErr));
         }
-        return '<h' + level + ' id="' + slug + '">' + text + '</h' + level + '>';
-      };
-
-      // Custom Image Renderer (resolves relative image paths)
-      renderer.image = function(href, title, text) {
-        let resolvedHref = href;
-        if (href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('data:')) {
-          if (baseUri) {
-            resolvedHref = '/__vf_resource__?path=' + encodeURIComponent(href) + '&base=' + encodeURIComponent(baseUri);
-          }
-        }
-        const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-        return '<img src="' + resolvedHref + '" alt="' + escapeHtml(text || '') + '"' + titleAttr + ' loading="lazy" style="max-width: 100%; height: auto; border-radius: 6px;">';
-      };
-
-      // Custom Link Renderer (security - opens in external browser)
-      renderer.link = function(href, title, text) {
-        const titleAttr = title ? ' title="' + escapeHtml(title) + '"' : '';
-        return '<a href="' + href + '"' + titleAttr + ' target="_blank" rel="noopener noreferrer">' + text + '</a>';
-      };
-
-      // 4. Parse Markdown into HTML
-      let html = marked.parse(content, {
-        renderer: renderer,
-        gfm: true,
-        breaks: true,
-        pedantic: false
-      });
-
-      // 5. Restore Math with KaTeX
-      for (let i = 0; i < mathPlaceholders.length; i++) {
-        const item = mathPlaceholders[i];
-        let renderedMath = '';
-        if (typeof katex !== 'undefined') {
-          try {
-            renderedMath = katex.renderToString(item.math, {
-              displayMode: item.display,
-              throwOnError: false
-            });
-          } catch (e) {
-            renderedMath = '<span class="katex-error">' + escapeHtml(item.math) + '</span>';
-          }
-        } else {
-          renderedMath = escapeHtml(item.math);
-        }
-        html = html.split(item.id).join(renderedMath);
-      }
-
-      bodyEl.innerHTML = html;
-
-      // 6. Render Mermaid Diagrams
-      renderMermaidDiagrams();
-
-      // 7. Notify TOC to Kotlin
-      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onTableOfContents === 'function') {
-        window.VeilFrameBridge.onTableOfContents(JSON.stringify(currentToc));
-      }
-
-      // 8. Notify Render Finished
-      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
-        setTimeout(function() {
-          window.VeilFrameBridge.onRenderFinished();
-        }, 80);
       }
     },
 
@@ -230,12 +282,13 @@
         hljsTheme.href = isDarkMode ? 'lib/highlightjs/github-dark.min.css' : 'lib/highlightjs/github.min.css';
       }
 
-      if (typeof mermaid !== 'undefined') {
+      if (typeof mermaid !== 'undefined' && isMermaidLoaded) {
         try {
           mermaid.initialize({
             startOnLoad: false,
             theme: isDarkMode ? 'dark' : 'default',
-            securityLevel: 'loose'
+            securityLevel: 'strict',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
           });
           renderMermaidDiagrams();
         } catch (e) {}
@@ -279,6 +332,18 @@
       } else {
         fallbackCopy(text, btnElement);
       }
+    },
+
+    getDiagnostics: function() {
+      return JSON.stringify({
+        ready: !!window.VeilFrameMarkdownReady,
+        marked: typeof marked !== 'undefined',
+        highlight: typeof hljs !== 'undefined',
+        katex: typeof katex !== 'undefined',
+        mermaid: typeof mermaid !== 'undefined',
+        mermaidLoaded: !!isMermaidLoaded,
+        mermaidLoading: !!isMermaidLoading
+      });
     },
 
     // Search / Find in page
@@ -341,21 +406,105 @@
     }
   };
 
-  function renderMermaidDiagrams() {
-    if (typeof mermaid === 'undefined') return;
-    const containers = document.querySelectorAll('.mermaid');
-    containers.forEach(function(el, idx) {
-      const source = el.getAttribute('data-source') ? decodeURIComponent(el.getAttribute('data-source')) : el.textContent;
-      const uniqueId = 'mermaid-svg-' + idx + '-' + Date.now();
+  // Asynchronous non-blocking Mermaid loader
+  function loadMermaidAsync(callback) {
+    if (typeof mermaid !== 'undefined' && isMermaidLoaded) {
+      callback(null);
+      return;
+    }
+    if (isMermaidLoading) {
+      const checkInterval = setInterval(function() {
+        if (isMermaidLoaded) {
+          clearInterval(checkInterval);
+          callback(null);
+        }
+      }, 50);
+      return;
+    }
+    isMermaidLoading = true;
+    if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onStageChanged === 'function') {
+      window.VeilFrameBridge.onStageChanged('MERMAID_LOADING');
+    }
+
+    const script = document.createElement('script');
+    script.src = 'lib/mermaid/mermaid.min.js';
+    script.onload = function() {
+      isMermaidLoaded = true;
+      isMermaidLoading = false;
       try {
-        mermaid.render(uniqueId, source).then(function(res) {
-          el.innerHTML = '<div class="mermaid-diagram-box">' + res.svg + '</div>';
-        }).catch(function(err) {
-          el.innerHTML = '<div class="mermaid-error"><span>⚠️ Mermaid rendering error</span><pre>' + escapeHtml(source) + '</pre></div>';
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: isDarkMode ? 'dark' : 'default',
+          securityLevel: 'strict',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
         });
       } catch (e) {
-        el.innerHTML = '<div class="mermaid-error"><span>⚠️ Mermaid rendering failed</span><pre>' + escapeHtml(source) + '</pre></div>';
+        console.warn('[MARKDOWN] Mermaid init error:', e);
       }
+      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onStageChanged === 'function') {
+        window.VeilFrameBridge.onStageChanged('MERMAID_RENDERING');
+      }
+      callback(null);
+    };
+    script.onerror = function(err) {
+      isMermaidLoading = false;
+      console.error('[MARKDOWN] Failed to load local mermaid asset:', err);
+      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderError === 'function') {
+        window.VeilFrameBridge.onRenderError('MERMAID_LOADING', 'Failed to load local mermaid asset');
+      }
+      callback(new Error('Failed to load local mermaid asset'));
+    };
+    document.head.appendChild(script);
+  }
+
+  function renderMermaidDiagrams() {
+    const containers = document.querySelectorAll('.mermaid');
+    if (containers.length === 0) {
+      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
+        window.VeilFrameBridge.onRenderFinished();
+      }
+      return;
+    }
+
+    loadMermaidAsync(function(err) {
+      if (err) {
+        containers.forEach(function(el) {
+          const source = el.getAttribute('data-source') ? decodeURIComponent(el.getAttribute('data-source')) : el.textContent;
+          el.innerHTML = '<div class="mermaid-error">' +
+                           '<div class="mermaid-error-title">⚠️ Mermaid library could not be loaded offline</div>' +
+                           '<details class="mermaid-source-details"><summary>Show source</summary><pre>' + escapeHtml(source) + '</pre></details>' +
+                         '</div>';
+        });
+        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
+          window.VeilFrameBridge.onRenderFinished();
+        }
+        return;
+      }
+
+      if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onStageChanged === 'function') {
+        window.VeilFrameBridge.onStageChanged('MERMAID_RENDERING');
+      }
+
+      const promises = [];
+      containers.forEach(function(el, idx) {
+        const source = el.getAttribute('data-source') ? decodeURIComponent(el.getAttribute('data-source')) : el.textContent;
+        const uniqueId = 'mermaid-svg-' + idx + '-' + Date.now();
+        const p = mermaid.render(uniqueId, source).then(function(res) {
+          el.innerHTML = '<div class="mermaid-diagram-box">' + res.svg + '</div>';
+        }).catch(function(err) {
+          el.innerHTML = '<div class="mermaid-error">' +
+                           '<div class="mermaid-error-title">⚠️ Mermaid rendering error</div>' +
+                           '<details class="mermaid-source-details"><summary>Show source</summary><pre>' + escapeHtml(source) + '</pre></details>' +
+                         '</div>';
+        });
+        promises.push(p);
+      });
+
+      Promise.allSettled(promises).then(function() {
+        if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onRenderFinished === 'function') {
+          window.VeilFrameBridge.onRenderFinished();
+        }
+      });
     });
   }
 
@@ -457,6 +606,12 @@
               .replace(/>/g, '&gt;')
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#039;');
+  }
+
+  // Signal renderer readiness immediately
+  window.VeilFrameMarkdownReady = true;
+  if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onViewerReady === 'function') {
+    window.VeilFrameBridge.onViewerReady();
   }
 
 })();

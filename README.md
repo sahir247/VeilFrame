@@ -81,7 +81,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **Linux (Portable)** | `VeilFrame-linux-x86_64.tar.gz` | x86_64 | Extract `tar -xzf VeilFrame-linux-x86_64.tar.gz` and run `./VeilFrame` |
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
-| **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Sideload onto device via `adb install VeilFrame-android-arm64.apk` or direct install |
+| **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Direct download and tap-to-install on device |
 | **Python (Any OS)** | `veilframe-2.2.5-py3-none-any.whl` | Universal | `pip install veilframe-2.2.5-py3-none-any.whl` |
 
 ```powershell
@@ -516,10 +516,11 @@ VeilFrame provides a complete on-device Android application (API 26+ / Android 8
 - **Pure APK Signature Scheme V2/V3:** Release APKs strictly enforce V2/V3 block signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification issues.
 - **Mobile Image Studio:** Responsive studio featuring target file size solver (KB/MB), text watermark overlays with color and 9-point anchoring, horizontal/vertical flipping, alpha background fill compositing, live comparative before/after rendering, continuous quality slider (1%–100%), aspect cropping, custom resizing, rotation, and EXIF control.
 - **Cryptographic In-App Updates:** Automatic updates powered by `android/update.json` and release assets, monotonic integer `versionCode` bounds checks, HTTPS pinned origin enforcement (GitHub + AWS S3 CDN), atomic staging `.tmp` downloads, storage preflight checks, zero-bypass mandatory SHA-256 validation, and publisher signing certificate verification against the running app before triggering installation.
+- **Offline Markdown Viewer & Live Editor:** Full-featured GitHub Flavored Markdown reader and editor with Write/Preview mode switching, offline non-blocking Mermaid diagrams, KaTeX math typesetting, syntax-highlighted code blocks with 1-tap copy, table of contents navigation, in-page search, dirty-state back navigation protection, in-place Save & SAF Save As, and New Markdown Maker (from scratch).
 - **Status Bar & Notch Handling:** Edge-to-edge window inset handling ensuring zero clipping under camera cutouts and system bars.
 
 ```bash
-# Build standalone Android ARM64 APK (for testing, sideloading, or GitHub Releases)
+# Build standalone Android ARM64 APK (for direct device install or GitHub Releases)
 ./build.sh android-apk
 
 # Build universal Android App Bundle (AAB for Google Play Console distribution)

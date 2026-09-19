@@ -550,13 +550,13 @@
                             android:textStyle="bold"
                             android:letterSpacing="0.04" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Read GFM docs with offline Mermaid, KaTeX, TOC, code copy, and search."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="3dp"
+                                android:text="Read &amp; edit GFM docs with live preview, offline Mermaid, KaTeX, TOC, code copy, and New MD Maker."
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp" />
                     </LinearLayout>
 
                     <ImageView

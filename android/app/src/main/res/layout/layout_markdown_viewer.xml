@@ -77,6 +77,92 @@
             app:iconSize="20dp" />
     </LinearLayout>
 
+    <!-- Sub-Toolbar: Mode Switcher (GitHub-style Write / Preview) & Actions -->
+    <LinearLayout
+        android:id="@+id/layoutMarkdownSubToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/vf_surface_variant"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <!-- Mode Toggle Segment: Preview vs Write -->
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/toggleMarkdownMode"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMarkdownTabPreview"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="Preview"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="@color/vf_text_primary"
+                app:icon="@drawable/ic_visibility"
+                app:iconSize="14dp"
+                app:iconTint="@color/vf_text_primary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMarkdownTabWrite"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="Write"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="@color/vf_text_primary"
+                app:icon="@drawable/ic_edit"
+                app:iconSize="14dp"
+                app:iconTint="@color/vf_text_primary" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Save (In-place Overwrite) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMarkdownSave"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="Save"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            app:icon="@drawable/ic_action_save"
+            app:iconSize="14dp"
+            android:visibility="gone" />
+
+        <!-- Save As (Export New Document) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMarkdownSaveAs"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="4dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="Save As"
+            android:textSize="11sp"
+            android:textColor="@color/vf_text_secondary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
     <!-- Collapsible In-Page Search Bar -->
     <LinearLayout
         android:id="@+id/layoutMarkdownSearch"
@@ -153,12 +239,111 @@
         app:indicatorColor="@color/vf_accent_green"
         app:trackColor="@color/vf_surface_variant" />
 
-    <!-- Offline Markdown WebView Surface -->
-    <WebView
-        android:id="@+id/wvMarkdown"
+    <!-- Content Frame: WebView vs Live Editor vs Error State -->
+    <FrameLayout
+        android:id="@+id/layoutMarkdownContentContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@color/vf_bg_dark" />
+        android:layout_weight="1">
+
+        <!-- 1. Offline Markdown WebView Surface -->
+        <WebView
+            android:id="@+id/wvMarkdown"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/vf_bg_dark" />
+
+        <!-- 2. Live Markdown Editor ("Write" Mode) -->
+        <ScrollView
+            android:id="@+id/layoutMarkdownEditor"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:background="@color/vf_bg_dark"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/etMarkdownSource"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="top|start"
+                android:padding="16dp"
+                android:background="@null"
+                android:fontFamily="monospace"
+                android:hint="Type or paste Markdown here..."
+                android:textColor="@color/vf_text_primary"
+                android:textColorHint="@color/vf_text_muted"
+                android:textSize="14sp"
+                android:lineSpacingMultiplier="1.2"
+                android:inputType="textMultiLine|textNoSuggestions"
+                android:scrollbars="vertical" />
+        </ScrollView>
+
+        <!-- 3. Renderer Error State View -->
+        <LinearLayout
+            android:id="@+id/layoutMarkdownError"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="24dp"
+            android:background="@color/vf_bg_dark"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_close"
+                app:tint="@color/vf_accent_red"
+                android:contentDescription="Error" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Unable to render Markdown"
+                android:textColor="@color/vf_text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvMarkdownErrorDetails"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="The document engine encountered an unexpected rendering error."
+                android:textColor="@color/vf_text_secondary"
+                android:textSize="13sp"
+                android:gravity="center" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="20dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMarkdownRetry"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Retry"
+                    app:icon="@drawable/ic_reset"
+                    app:iconSize="16dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMarkdownSwitchToEditor"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="Open in Editor"
+                    app:icon="@drawable/ic_edit"
+                    app:iconSize="16dp" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </FrameLayout>
 
 </LinearLayout>

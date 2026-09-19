@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -28,23 +30,32 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * Controller managing the offline Markdown viewer screen:
- * - WebView lifecycle and secure local rendering pipeline
- * - Dynamic theme, font size, and reader width updates
- * - Table of Contents navigation
- * - In-page search with real-time match cycling
- * - Scroll position persistence and restoration
+ * Controller managing the offline Markdown viewer & GitHub-style live editor:
+ * - State machine: IDLE -> LOADING_VIEWER -> VIEWER_READY -> RENDERING -> (MERMAID_LOADING -> MERMAID_RENDERING) -> RENDERED
+ * - Only RENDERED hides the loading indicator
+ * - Watchdog distinguishes viewer initialization vs rendering vs mermaid timeouts
+ * - Non-blocking asynchronous Mermaid rendering
+ * - Token-based Marked.js 15 API compatibility
+ * - Live Markdown Editor with Write / Preview mode switching (renders on tab switch, not keystroke)
+ * - In-place overwrite (Save) and SAF export (Save As)
+ * - Dirty-state guard on back navigation (Save / Discard / Cancel)
+ * - "New MD Maker" to create Markdown documents from scratch
  */
 class MarkdownViewerController(
     private val activity: AppCompatActivity,
     private val binding: LayoutMarkdownViewerBinding,
     private val onNavigateBack: () -> Unit,
-    private val onOpenMarkdownFileRequest: () -> Unit = {}
+    private val onOpenMarkdownFileRequest: () -> Unit = {},
+    private val onSaveAsMarkdownRequest: (suggestedName: String, content: String) -> Unit = { _, _ -> }
 ) : MarkdownRenderer {
 
     companion object {
         private const val TAG = "VeilFrame.MdController"
         private const val VIEWER_URL = "https://appassets.androidplatform.net/assets/markdown/viewer.html"
+        private const val WATCHDOG_CHECK_INTERVAL_MS = 1000L
+        private const val MAX_INIT_TIMEOUT_MS = 5000L
+        private const val MAX_RENDER_TIMEOUT_MS = 8000L
+        private const val MAX_MERMAID_TIMEOUT_MS = 12000L
     }
 
     private val state = MarkdownViewerState()
@@ -52,33 +63,73 @@ class MarkdownViewerController(
     private var isPageLoaded = false
     private var pendingRenderTask: (() -> Unit)? = null
     private val scrollPositions = mutableMapOf<String, Int>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var watchdogStartTime: Long = 0L
+    private var watchdogRunnable: Runnable? = null
 
     fun init() {
+        state.lifecycleState = ViewerLifecycleState.LOADING_VIEWER
         setupWebView()
         setupToolbar()
+        setupModeSwitcher()
+        setupEditor()
         setupSearch()
+        setupErrorView()
     }
 
     @SuppressLint("JavascriptInterface")
     private fun setupWebView() {
+        Log.d(TAG, "[MARKDOWN] Viewer initializing")
         MarkdownSecurityPolicy.configureWebSettings(binding.wvMarkdown.settings)
 
         binding.wvMarkdown.webViewClient = MarkdownWebViewClient(
             context = activity,
             resourceResolver = resourceResolver,
-            onPageReady = {
-                isPageLoaded = true
-                binding.progressMarkdownLoading.visibility = View.GONE
-                // Sync initial theme
-                setTheme(state.theme)
-                setTextScale(state.textScale)
-                setReadingWidth(state.readingWidth)
-                pendingRenderTask?.invoke()
-                pendingRenderTask = null
+            onPageFinishedDiagnostic = { url ->
+                Log.d(TAG, "[MARKDOWN] onPageFinished diagnostic callback: $url")
             }
         )
 
         binding.wvMarkdown.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun onViewerReady() {
+                activity.runOnUiThread {
+                    Log.d(TAG, "[MARKDOWN] Viewer ready (JS onViewerReady signal)")
+                    isPageLoaded = true
+                    state.lifecycleState = ViewerLifecycleState.VIEWER_READY
+                    binding.layoutMarkdownError.visibility = View.GONE
+
+                    // Sync initial styling properties to CSS variables without reloading
+                    setTheme(state.theme)
+                    setTextScale(state.textScale)
+                    setReadingWidth(state.readingWidth)
+
+                    // Execute any pending render task. NOTE: Loading indicator remains visible until RENDERED!
+                    pendingRenderTask?.invoke()
+                    pendingRenderTask = null
+                }
+            }
+
+            @JavascriptInterface
+            fun onStageChanged(stage: String) {
+                activity.runOnUiThread {
+                    when (stage) {
+                        "RENDERING" -> {
+                            Log.d(TAG, "[MARKDOWN] Render started")
+                            state.lifecycleState = ViewerLifecycleState.RENDERING
+                        }
+                        "MERMAID_LOADING" -> {
+                            Log.d(TAG, "[MARKDOWN] Mermaid loading")
+                            state.lifecycleState = ViewerLifecycleState.MERMAID_LOADING
+                        }
+                        "MERMAID_RENDERING" -> {
+                            Log.d(TAG, "[MARKDOWN] Mermaid rendering")
+                            state.lifecycleState = ViewerLifecycleState.MERMAID_RENDERING
+                        }
+                    }
+                }
+            }
+
             @JavascriptInterface
             fun onTableOfContents(json: String) {
                 activity.runOnUiThread {
@@ -89,13 +140,32 @@ class MarkdownViewerController(
             @JavascriptInterface
             fun onRenderFinished() {
                 activity.runOnUiThread {
+                    Log.d(TAG, "[MARKDOWN] Render finished")
+                    stopWatchdog()
+                    state.lifecycleState = ViewerLifecycleState.RENDERED
+
+                    // ONLY RENDERED hides the progress indicator
                     binding.progressMarkdownLoading.visibility = View.GONE
-                    // Restore saved scroll position if any
+                    binding.layoutMarkdownError.visibility = View.GONE
+
+                    // Staged restore of saved scroll position if any
                     val key = getDocumentKey()
                     val savedY = scrollPositions[key] ?: state.scrollPosition
                     if (savedY > 0) {
                         setScrollPosition(savedY)
                     }
+                }
+            }
+
+            @JavascriptInterface
+            fun onRenderError(stage: String, error: String) {
+                activity.runOnUiThread {
+                    Log.e(TAG, "[MARKDOWN] Render error in $stage: $error")
+                    stopWatchdog()
+                    state.lifecycleState = ViewerLifecycleState.ERROR
+                    binding.progressMarkdownLoading.visibility = View.GONE
+                    binding.layoutMarkdownError.visibility = View.VISIBLE
+                    binding.tvMarkdownErrorDetails.text = "[$stage] $error"
                 }
             }
 
@@ -124,11 +194,12 @@ class MarkdownViewerController(
 
         binding.progressMarkdownLoading.visibility = View.VISIBLE
         binding.wvMarkdown.loadUrl(VIEWER_URL)
+        startWatchdog()
     }
 
     private fun setupToolbar() {
         binding.btnMarkdownBack.setOnClickListener {
-            onNavigateBack()
+            handleBackAction()
         }
 
         binding.btnMarkdownToc.setOnClickListener {
@@ -141,6 +212,55 @@ class MarkdownViewerController(
 
         binding.btnMarkdownMenu.setOnClickListener { view ->
             showOverflowMenu(view)
+        }
+
+        binding.btnMarkdownSave.setOnClickListener {
+            saveCurrentDocument()
+        }
+
+        binding.btnMarkdownSaveAs.setOnClickListener {
+            saveAsDocument()
+        }
+    }
+
+    private fun setupModeSwitcher() {
+        binding.toggleMarkdownMode.check(R.id.btnMarkdownTabPreview)
+        binding.toggleMarkdownMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                when (checkedId) {
+                    R.id.btnMarkdownTabPreview -> {
+                        switchToPreviewMode()
+                    }
+                    R.id.btnMarkdownTabWrite -> {
+                        switchToWriteMode()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupEditor() {
+        binding.etMarkdownSource.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (state.isEditMode) {
+                    state.isModified = true
+                    binding.btnMarkdownSave.visibility = View.VISIBLE
+                    binding.btnMarkdownSaveAs.visibility = View.VISIBLE
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+    }
+
+    private fun setupErrorView() {
+        binding.btnMarkdownRetry.setOnClickListener {
+            reload()
+        }
+
+        binding.btnMarkdownSwitchToEditor.setOnClickListener {
+            switchToWriteMode()
+            binding.toggleMarkdownMode.check(R.id.btnMarkdownTabWrite)
         }
     }
 
@@ -177,6 +297,159 @@ class MarkdownViewerController(
         }
     }
 
+    fun switchToPreviewMode() {
+        if (state.isEditMode) {
+            val edited = binding.etMarkdownSource.text.toString()
+            state.rawMarkdown = edited
+            loadMarkdown(edited, state.documentUri, getDocumentKey())
+        }
+        state.isEditMode = false
+        binding.wvMarkdown.visibility = View.VISIBLE
+        binding.layoutMarkdownEditor.visibility = View.GONE
+        binding.layoutMarkdownError.visibility = View.GONE
+
+        if (state.isModified) {
+            binding.btnMarkdownSave.visibility = View.VISIBLE
+            binding.btnMarkdownSaveAs.visibility = View.VISIBLE
+        } else {
+            binding.btnMarkdownSave.visibility = View.GONE
+            binding.btnMarkdownSaveAs.visibility = View.GONE
+        }
+    }
+
+    fun switchToWriteMode() {
+        state.isEditMode = true
+        binding.wvMarkdown.visibility = View.GONE
+        binding.layoutMarkdownEditor.visibility = View.VISIBLE
+        binding.layoutMarkdownError.visibility = View.GONE
+
+        binding.etMarkdownSource.setText(state.rawMarkdown)
+        binding.etMarkdownSource.setSelection(binding.etMarkdownSource.text.length)
+
+        binding.btnMarkdownSave.visibility = View.VISIBLE
+        binding.btnMarkdownSaveAs.visibility = View.VISIBLE
+    }
+
+    fun createNewDocument() {
+        state.documentUri = null
+        state.documentFile = null
+        state.documentTitle = "Untitled.md"
+        state.rawMarkdown = "# New Document\n\nWrite your Markdown content here...\n"
+        state.isModified = true
+
+        binding.tvMarkdownTitle.text = state.documentTitle
+        binding.toggleMarkdownMode.check(R.id.btnMarkdownTabWrite)
+        switchToWriteMode()
+        Toast.makeText(activity, "New Markdown document created", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveCurrentDocument() {
+        val content = if (state.isEditMode) {
+            val edited = binding.etMarkdownSource.text.toString()
+            state.rawMarkdown = edited
+            edited
+        } else {
+            state.rawMarkdown
+        }
+
+        // 1. Direct local file save
+        val localFile = state.documentFile
+        if (localFile != null && localFile.canWrite()) {
+            try {
+                localFile.writeText(content, Charsets.UTF_8)
+                state.isModified = false
+                binding.btnMarkdownSave.visibility = View.GONE
+                Toast.makeText(activity, "Saved ${localFile.name}", Toast.LENGTH_SHORT).show()
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed writing to local file: ${e.message}", e)
+            }
+        }
+
+        // 2. SAF Content URI in-place overwrite
+        val uri = state.documentUri
+        if (uri != null && uri.scheme == "content") {
+            try {
+                activity.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
+                state.isModified = false
+                binding.btnMarkdownSave.visibility = View.GONE
+                Toast.makeText(activity, "Saved document", Toast.LENGTH_SHORT).show()
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "In-place URI write not permitted or failed: ${e.message}")
+            }
+        }
+
+        // 3. Fallback to Save As
+        Toast.makeText(activity, "Please select destination to save file", Toast.LENGTH_SHORT).show()
+        saveAsDocument()
+    }
+
+    fun saveAsDocument() {
+        val content = if (state.isEditMode) {
+            val edited = binding.etMarkdownSource.text.toString()
+            state.rawMarkdown = edited
+            edited
+        } else {
+            state.rawMarkdown
+        }
+        val suggestedName = if (state.documentTitle.endsWith(".md", ignoreCase = true) ||
+            state.documentTitle.endsWith(".markdown", ignoreCase = true)) {
+            state.documentTitle
+        } else {
+            "${state.documentTitle}.md"
+        }
+        onSaveAsMarkdownRequest(suggestedName, content)
+    }
+
+    fun onDocumentSavedAs(newUri: Uri, newName: String) {
+        state.documentUri = newUri
+        state.documentFile = null
+        state.documentTitle = newName
+        state.isModified = false
+        binding.tvMarkdownTitle.text = newName
+        binding.btnMarkdownSave.visibility = View.GONE
+        Toast.makeText(activity, "Saved as $newName", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Handles back press with dirty-state guard. Returns true if consumed (e.g. showing unsaved dialog).
+     */
+    fun handleBackPressed(): Boolean {
+        if (state.isSearchActive) {
+            toggleSearch(false)
+            return true
+        }
+
+        if (state.isModified) {
+            AlertDialog.Builder(activity)
+                .setTitle("Unsaved changes")
+                .setMessage("You have unsaved changes in '${state.documentTitle}'. Do you want to save before leaving?")
+                .setPositiveButton("Save") { _, _ ->
+                    saveCurrentDocument()
+                    onNavigateBack()
+                }
+                .setNegativeButton("Discard") { _, _ ->
+                    state.isModified = false
+                    onNavigateBack()
+                }
+                .setNeutralButton("Cancel", null)
+                .show()
+            return true
+        }
+
+        return false
+    }
+
+    private fun handleBackAction() {
+        if (!handleBackPressed()) {
+            onNavigateBack()
+        }
+    }
+
     fun loadMarkdown(uri: Uri, title: String? = null) {
         openDocument(uri, title)
     }
@@ -190,13 +463,16 @@ class MarkdownViewerController(
     }
 
     fun openDocument(uri: Uri, title: String? = null) {
+        val resolvedTitle = title ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Document.md"
+        Log.d(TAG, "[MARKDOWN] Document loaded: $resolvedTitle")
         state.documentUri = uri
         state.documentFile = null
-        val resolvedTitle = title ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Document.md"
         state.documentTitle = resolvedTitle
+        state.isModified = false
         binding.tvMarkdownTitle.text = resolvedTitle
 
         binding.progressMarkdownLoading.visibility = View.VISIBLE
+        binding.layoutMarkdownError.visibility = View.GONE
 
         activity.lifecycleScope.launch(Dispatchers.IO) {
             val content = try {
@@ -209,37 +485,55 @@ class MarkdownViewerController(
             }
 
             withContext(Dispatchers.Main) {
+                state.rawMarkdown = content
+                binding.etMarkdownSource.setText(content)
+                binding.toggleMarkdownMode.check(R.id.btnMarkdownTabPreview)
+                switchToPreviewMode()
                 loadMarkdown(content, uri, uri.toString())
             }
         }
     }
 
     fun openDocument(file: File) {
+        Log.d(TAG, "[MARKDOWN] Document loaded: ${file.name}")
         state.documentFile = file
         state.documentUri = Uri.fromFile(file)
         state.documentTitle = file.name
+        state.isModified = false
         binding.tvMarkdownTitle.text = file.name
 
         binding.progressMarkdownLoading.visibility = View.VISIBLE
+        binding.layoutMarkdownError.visibility = View.GONE
 
         activity.lifecycleScope.launch(Dispatchers.IO) {
             val content = try {
                 file.readText(Charsets.UTF_8)
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to read document from File: ${e.message}", e)
                 "# Error Opening Document\n\nCould not read `${file.name}`: ${e.message}"
             }
 
             withContext(Dispatchers.Main) {
+                state.rawMarkdown = content
+                binding.etMarkdownSource.setText(content)
+                binding.toggleMarkdownMode.check(R.id.btnMarkdownTabPreview)
+                switchToPreviewMode()
                 loadMarkdown(content, Uri.fromFile(file), file.absolutePath)
             }
         }
     }
 
     fun openMarkdownContent(content: String, title: String, baseUri: Uri? = null) {
+        Log.d(TAG, "[MARKDOWN] Document loaded: $title")
         state.documentFile = null
         state.documentUri = baseUri
         state.documentTitle = title
+        state.rawMarkdown = content
+        state.isModified = false
         binding.tvMarkdownTitle.text = title
+        binding.etMarkdownSource.setText(content)
+        binding.toggleMarkdownMode.check(R.id.btnMarkdownTabPreview)
+        switchToPreviewMode()
         loadMarkdown(content, baseUri, title)
     }
 
@@ -249,7 +543,12 @@ class MarkdownViewerController(
         val safeBaseUri = baseUri?.toString() ?: ""
 
         val execute = {
+            state.lifecycleState = ViewerLifecycleState.RENDERING
+            Log.d(TAG, "[MARKDOWN] Render started")
             binding.progressMarkdownLoading.visibility = View.VISIBLE
+            binding.layoutMarkdownError.visibility = View.GONE
+            startWatchdog()
+
             val escapedContent = escapeJsString(sanitized)
             val escapedBase = escapeJsString(safeBaseUri)
             val js = "window.VeilFrameMarkdown.render('$escapedContent', '$escapedBase');"
@@ -263,67 +562,123 @@ class MarkdownViewerController(
         }
     }
 
+    /**
+     * Watchdog timer distinguishing stage-specific timeouts:
+     * - LOADING_VIEWER: viewer initialization timeout
+     * - RENDERING: Markdown rendering timeout
+     * - MERMAID_LOADING / MERMAID_RENDERING: Mermaid rendering timeout
+     */
+    private fun startWatchdog() {
+        stopWatchdog()
+        watchdogStartTime = System.currentTimeMillis()
+        watchdogRunnable = object : Runnable {
+            override fun run() {
+                val elapsed = System.currentTimeMillis() - watchdogStartTime
+                val currentState = state.lifecycleState
+
+                val timedOut = when (currentState) {
+                    ViewerLifecycleState.LOADING_VIEWER -> elapsed > MAX_INIT_TIMEOUT_MS
+                    ViewerLifecycleState.RENDERING -> elapsed > MAX_RENDER_TIMEOUT_MS
+                    ViewerLifecycleState.MERMAID_LOADING, ViewerLifecycleState.MERMAID_RENDERING -> elapsed > MAX_MERMAID_TIMEOUT_MS
+                    else -> false
+                }
+
+                if (timedOut && currentState != ViewerLifecycleState.RENDERED && currentState != ViewerLifecycleState.ERROR) {
+                    val stageName = when (currentState) {
+                        ViewerLifecycleState.LOADING_VIEWER -> "Viewer Initialization"
+                        ViewerLifecycleState.RENDERING -> "Markdown Rendering"
+                        ViewerLifecycleState.MERMAID_LOADING -> "Mermaid Loading"
+                        ViewerLifecycleState.MERMAID_RENDERING -> "Mermaid Rendering"
+                        else -> "Processing"
+                    }
+                    Log.w(TAG, "[MARKDOWN] Watchdog timeout in stage $stageName after ${elapsed}ms")
+
+                    binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.getDiagnostics() : '{}'") { diag ->
+                        Log.w(TAG, "[MARKDOWN] JS diagnostics on timeout: $diag")
+                        state.lifecycleState = ViewerLifecycleState.ERROR
+                        binding.progressMarkdownLoading.visibility = View.GONE
+                        binding.layoutMarkdownError.visibility = View.VISIBLE
+                        binding.tvMarkdownErrorDetails.text = "$stageName took longer than expected. Diagnostics: $diag"
+                    }
+                    return
+                }
+
+                if (currentState != ViewerLifecycleState.RENDERED && currentState != ViewerLifecycleState.ERROR) {
+                    mainHandler.postDelayed(this, WATCHDOG_CHECK_INTERVAL_MS)
+                }
+            }
+        }
+        mainHandler.postDelayed(watchdogRunnable!!, WATCHDOG_CHECK_INTERVAL_MS)
+    }
+
+    private fun stopWatchdog() {
+        watchdogRunnable?.let { mainHandler.removeCallbacks(it) }
+        watchdogRunnable = null
+    }
+
     override fun reload() {
         loadMarkdown(state.rawMarkdown, state.documentUri, getDocumentKey())
     }
 
     override fun clear() {
+        stopWatchdog()
+        state.lifecycleState = ViewerLifecycleState.IDLE
         state.rawMarkdown = ""
         state.tableOfContents = emptyList()
-        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown.render('', '');", null)
+        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.render('', '') : null;", null)
     }
 
     override fun setTheme(theme: MarkdownTheme) {
         state.theme = theme
-        val js = "window.VeilFrameMarkdown.setTheme('${theme.jsValue}');"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.setTheme('${theme.jsValue}') : null;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
     override fun setTextScale(scale: Float) {
         state.textScale = scale.coerceIn(0.75f, 2.0f)
-        val js = "window.VeilFrameMarkdown.setTextScale(${state.textScale});"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.setTextScale(${state.textScale}) : null;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
     override fun setReadingWidth(width: ReadingWidth) {
         state.readingWidth = width
-        val js = "window.VeilFrameMarkdown.setReadingWidth('${width.jsValue}');"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.setReadingWidth('${width.jsValue}') : null;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
     override fun scrollToHeading(id: String) {
         val safeId = escapeJsString(id)
-        val js = "window.VeilFrameMarkdown.scrollToHeading('$safeId');"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.scrollToHeading('$safeId') : null;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
     override fun find(query: String) {
         val escaped = escapeJsString(query)
-        val js = "window.VeilFrameMarkdown.find('$escaped');"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.find('$escaped') : 0;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
     override fun findNext() {
-        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown.findNext();", null)
+        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.findNext() : null;", null)
     }
 
     override fun findPrevious() {
-        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown.findPrevious();", null)
+        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.findPrevious() : null;", null)
     }
 
     override fun clearFind() {
-        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown.clearFind();", null)
+        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.clearFind() : null;", null)
     }
 
     override fun getScrollPosition(callback: (Int) -> Unit) {
-        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown.getScrollY();") { res ->
+        binding.wvMarkdown.evaluateJavascript("window.VeilFrameMarkdown ? window.VeilFrameMarkdown.getScrollY() : 0;") { res ->
             val pos = res?.toIntOrNull() ?: 0
             callback(pos)
         }
     }
 
     override fun setScrollPosition(position: Int) {
-        val js = "window.VeilFrameMarkdown.setScrollY($position);"
+        val js = "window.VeilFrameMarkdown ? window.VeilFrameMarkdown.setScrollY($position) : null;"
         binding.wvMarkdown.evaluateJavascript(js, null)
     }
 
@@ -367,9 +722,12 @@ class MarkdownViewerController(
 
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(activity, anchor)
+        popup.menu.add(0, 20, 0, "New Markdown Document")
         popup.menu.add(0, 10, 0, "Contents (TOC)")
         popup.menu.add(0, 11, 0, "Find in Document")
         popup.menu.add(0, 12, 0, "Open File...")
+        popup.menu.add(0, 21, 0, "Save Document")
+        popup.menu.add(0, 22, 0, "Save As...")
         popup.menu.add(0, 1, 0, if (state.readingWidth == ReadingWidth.COMFORTABLE) "Width: Full" else "Width: Comfortable")
         popup.menu.add(0, 2, 0, "Font Size...")
         popup.menu.add(0, 3, 0, if (state.theme == MarkdownTheme.DARK) "Theme: Light" else "Theme: Dark")
@@ -380,6 +738,10 @@ class MarkdownViewerController(
 
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                20 -> {
+                    createNewDocument()
+                    true
+                }
                 10 -> {
                     showTableOfContentsDialog()
                     true
@@ -390,6 +752,14 @@ class MarkdownViewerController(
                 }
                 12 -> {
                     onOpenMarkdownFileRequest()
+                    true
+                }
+                21 -> {
+                    saveCurrentDocument()
+                    true
+                }
+                22 -> {
+                    saveAsDocument()
                     true
                 }
                 1 -> {
@@ -467,18 +837,19 @@ class MarkdownViewerController(
     }
 
     private fun copyRawMarkdown() {
+        val content = if (state.isEditMode) binding.etMarkdownSource.text.toString() else state.rawMarkdown
         val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Markdown Document", state.rawMarkdown)
+        val clip = ClipData.newPlainText("Markdown Document", content)
         clipboard.setPrimaryClip(clip)
         Toast.makeText(activity, "Markdown copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
     private fun shareDocument() {
         try {
+            val content = if (state.isEditMode) binding.etMarkdownSource.text.toString() else state.rawMarkdown
             val file = state.documentFile ?: run {
-                // Stage temporary file for sharing
                 val tempFile = File(activity.cacheDir, state.documentTitle)
-                tempFile.writeText(state.rawMarkdown, Charsets.UTF_8)
+                tempFile.writeText(content, Charsets.UTF_8)
                 tempFile
             }
             val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", file)

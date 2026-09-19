@@ -53,11 +53,9 @@ Download the appropriate artifact from the [GitHub Releases page](https://github
 - macOS Apple Silicon: `VeilFrame-macos-arm64.dmg` or `VeilFrame-macos-arm64.tar.gz`
 - Python: `veilframe-2.2.5-py3-none-any.whl`
 
-For Android sideloading:
+### Android installation
 
-```bash
-adb install -r VeilFrame-android-arm64.apk
-```
+Download `VeilFrame-android-arm64.apk` directly on your Android device and tap to install. If prompted, allow "Install unknown apps" for your browser or file manager.
 
 For Python installation:
 

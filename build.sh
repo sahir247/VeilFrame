@@ -33,7 +33,7 @@ show_help() {
     echo "  test         Run GUI & CLI test suite"
     echo "  package      Create installer packages (.dmg for macOS, .deb & .tar.gz for Linux)"
     echo "  android      Build all Android release packages (.apk & .aab)"
-    echo "  android-apk  Build Android standalone APK (arm64) for testing and sideloading"
+    echo "  android-apk  Build Android standalone APK (arm64) for testing and direct installation"
     echo "  android-aab  Build Android App Bundle (.aab) for Google Play distribution"
     echo "  all          Run clean, build, test, and package (default)"
     echo ""
