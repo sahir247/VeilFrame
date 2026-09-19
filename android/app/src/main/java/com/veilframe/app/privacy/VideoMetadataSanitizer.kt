@@ -20,6 +20,9 @@ object VideoMetadataSanitizer {
         scrubAudio: Boolean = true
     ): Boolean {
         return try {
+            val isWebm = outputPath.endsWith(".webm", ignoreCase = true)
+            val isInputWebm = inputPath.endsWith(".webm", ignoreCase = true)
+
             val cmd = mutableListOf<String>()
             cmd.add("-y")
             cmd.add("-i")
@@ -32,44 +35,81 @@ object VideoMetadataSanitizer {
             if (scrubAudio) {
                 cmd.add("-an")
             } else {
-                cmd.add("-c:a")
-                cmd.add("copy")
+                if (isWebm) {
+                    cmd.add("-c:a")
+                    cmd.add("libopus")
+                } else {
+                    cmd.add("-c:a")
+                    cmd.add("copy")
+                }
             }
+
+            val vCodec = if (isWebm) "libvpx-vp9" else "libx264"
 
             when (noiseLevel.lowercase()) {
                 "high", "stealth", "aggressive" -> {
                     cmd.add("-vf")
                     cmd.add("noise=alls=8:allf=t+u")
                     cmd.add("-c:v")
-                    cmd.add("libx264")
-                    cmd.add("-preset")
-                    cmd.add("veryfast")
-                    cmd.add("-crf")
-                    cmd.add("23")
+                    cmd.add(vCodec)
+                    if (isWebm) {
+                        cmd.add("-b:v")
+                        cmd.add("0")
+                        cmd.add("-crf")
+                        cmd.add("32")
+                    } else {
+                        cmd.add("-preset")
+                        cmd.add("veryfast")
+                        cmd.add("-crf")
+                        cmd.add("23")
+                    }
                 }
                 "medium" -> {
                     cmd.add("-vf")
                     cmd.add("noise=alls=4:allf=t")
                     cmd.add("-c:v")
-                    cmd.add("libx264")
-                    cmd.add("-preset")
-                    cmd.add("veryfast")
-                    cmd.add("-crf")
-                    cmd.add("22")
+                    cmd.add(vCodec)
+                    if (isWebm) {
+                        cmd.add("-b:v")
+                        cmd.add("0")
+                        cmd.add("-crf")
+                        cmd.add("30")
+                    } else {
+                        cmd.add("-preset")
+                        cmd.add("veryfast")
+                        cmd.add("-crf")
+                        cmd.add("22")
+                    }
                 }
                 "low" -> {
                     cmd.add("-vf")
                     cmd.add("noise=alls=2:allf=t")
                     cmd.add("-c:v")
-                    cmd.add("libx264")
-                    cmd.add("-preset")
-                    cmd.add("veryfast")
-                    cmd.add("-crf")
-                    cmd.add("20")
+                    cmd.add(vCodec)
+                    if (isWebm) {
+                        cmd.add("-b:v")
+                        cmd.add("0")
+                        cmd.add("-crf")
+                        cmd.add("28")
+                    } else {
+                        cmd.add("-preset")
+                        cmd.add("veryfast")
+                        cmd.add("-crf")
+                        cmd.add("20")
+                    }
                 }
                 else -> {
-                    cmd.add("-c:v")
-                    cmd.add("copy")
+                    if (isWebm && !isInputWebm) {
+                        cmd.add("-c:v")
+                        cmd.add("libvpx-vp9")
+                        cmd.add("-b:v")
+                        cmd.add("0")
+                        cmd.add("-crf")
+                        cmd.add("30")
+                    } else {
+                        cmd.add("-c:v")
+                        cmd.add("copy")
+                    }
                 }
             }
 
@@ -86,8 +126,15 @@ object VideoMetadataSanitizer {
                 Log.i(TAG, "Video cleaned successfully with FFmpegKit: $outputPath")
                 true
             } else {
-                Log.w(TAG, "Transcode pass exited with code $returnCode. Retrying fast remux pass...")
-                val fallbackSession = FFmpegKit.execute("-y -i \"$inputPath\" -map_metadata -1 -map_chapters -1 -c copy \"$outputPath\"")
+                Log.w(TAG, "Transcode pass exited with code $returnCode. Retrying fallback pass...")
+                val fallbackCmd = if (isWebm) {
+                    val aFlag = if (scrubAudio) "-an" else "-c:a libopus"
+                    "-y -i \"$inputPath\" -map_metadata -1 -map_chapters -1 -c:v libvpx-vp9 -b:v 0 -crf 32 $aFlag \"$outputPath\""
+                } else {
+                    val aFlag = if (scrubAudio) "-an" else "-c:a copy"
+                    "-y -i \"$inputPath\" -map_metadata -1 -map_chapters -1 -c:v copy $aFlag \"$outputPath\""
+                }
+                val fallbackSession = FFmpegKit.execute(fallbackCmd)
                 ReturnCode.isSuccess(fallbackSession.returnCode)
             }
         } catch (e: Exception) {

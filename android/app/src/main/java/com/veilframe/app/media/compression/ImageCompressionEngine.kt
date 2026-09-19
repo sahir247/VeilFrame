@@ -1,22 +1,19 @@
 package com.veilframe.app.media.compression
 
 import android.graphics.Bitmap
-import android.os.Build
 import android.util.Log
 import com.veilframe.app.media.CompressionResult
 import com.veilframe.app.media.ImageEditState
 import com.veilframe.app.media.ImageOutputConfig
 import com.veilframe.app.media.metadata.ImageMetadataWriter
 import com.veilframe.app.privacy.ImageMetadataSanitizer
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
 
 /**
  * Dedicated compression engine for Image Studio.
  * Handles:
- * - Quality-based compression (JPEG, PNG, WEBP)
+ * - Multi-format encoding (JPEG, PNG, WEBP, BMP, TIFF, GIF, HEIF, HEIC, AVIF)
  * - Iterative binary-search target-size solver (retains best under target + dimension fallback)
  * - Post-encode size verification
  * - Metadata dispatch (Sanitizer for strip, Writer for custom EXIF)
@@ -36,45 +33,41 @@ object ImageCompressionEngine {
             outFile.parentFile?.mkdirs()
             if (outFile.exists()) outFile.delete()
 
-            val compressFormat = when (outputConfig.format.uppercase()) {
-                "PNG" -> Bitmap.CompressFormat.PNG
-                "WEBP" -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
-                else -> Bitmap.CompressFormat.JPEG
-            }
-
+            val targetFormat = ImageFormatEncoder.Format.fromString(outputConfig.format)
             val targetSizeKb = outputConfig.targetSizeKb ?: 250
-            val isTargetSizeMode = outputConfig.compressionMode == "target_size" &&
-                    compressFormat != Bitmap.CompressFormat.PNG &&
-                    targetSizeKb > 0
+            val isTargetSizeMode = outputConfig.compressionMode == "target_size" && targetSizeKb > 0
+            val targetBytes = targetSizeKb.toLong() * 1024L
 
             var workingBmp = processedBitmap
+            val tempProbeFile = File(outFile.parentFile, "probe_${System.currentTimeMillis()}.${targetFormat.extension}")
 
             if (isTargetSizeMode) {
-                val targetBytes = targetSizeKb.toLong() * 1024L
-                var bestBytesUnderTarget: ByteArray? = null
-                var low = 5
-                var high = 95
+                var bestFileUnderTarget = false
+                var optimalQuality = outputConfig.quality
 
-                // Binary search for optimal quality level
-                for (iter in 0 until 8) {
-                    val mid = (low + high) / 2
-                    val stream = ByteArrayOutputStream()
-                    workingBmp.compress(compressFormat, mid, stream)
-                    val data = stream.toByteArray()
-
-                    if (data.size <= targetBytes) {
-                        bestBytesUnderTarget = data
-                        low = mid + 1 // try higher quality
-                    } else {
-                        high = mid - 1 // reduce quality
+                if (targetFormat.supportsQuality) {
+                    var low = 5
+                    var high = 95
+                    for (iter in 0 until 8) {
+                        val mid = (low + high) / 2
+                        tempProbeFile.delete()
+                        val ok = ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, mid)
+                        if (ok && tempProbeFile.exists() && tempProbeFile.length() <= targetBytes) {
+                            tempProbeFile.copyTo(outFile, overwrite = true)
+                            bestFileUnderTarget = true
+                            optimalQuality = mid
+                            low = mid + 1 // try higher quality
+                        } else {
+                            high = mid - 1 // reduce quality
+                        }
+                        if (low > high) break
                     }
-                    if (low > high) break
                 }
 
-                // If even minimum quality exceeds target bytes, downscale dimensions
-                if (bestBytesUnderTarget == null || bestBytesUnderTarget.size > targetBytes) {
+                // If quality iteration was not enough or format is lossless, downscale dimensions
+                if (!bestFileUnderTarget || (outFile.exists() && outFile.length() > targetBytes) || !outFile.exists()) {
                     var scale = 0.85f
-                    for (downscaleAttempt in 0 until 5) {
+                    for (downscaleAttempt in 0 until 6) {
                         val newW = (workingBmp.width * scale).toInt().coerceAtLeast(32)
                         val newH = (workingBmp.height * scale).toInt().coerceAtLeast(32)
                         val downscaled = try {
@@ -85,11 +78,12 @@ object ImageCompressionEngine {
                             if (workingBmp != processedBitmap) workingBmp.recycle()
                             workingBmp = downscaled
 
-                            val stream = ByteArrayOutputStream()
-                            workingBmp.compress(compressFormat, 25, stream)
-                            val data = stream.toByteArray()
-                            if (data.size <= targetBytes) {
-                                bestBytesUnderTarget = data
+                            tempProbeFile.delete()
+                            val probeQ = if (targetFormat.supportsQuality) 30 else 100
+                            val ok = ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, probeQ)
+                            if (ok && tempProbeFile.exists() && tempProbeFile.length() <= targetBytes) {
+                                tempProbeFile.copyTo(outFile, overwrite = true)
+                                bestFileUnderTarget = true
                                 break
                             }
                         }
@@ -97,14 +91,14 @@ object ImageCompressionEngine {
                     }
                 }
 
-                if (bestBytesUnderTarget != null) {
-                    FileOutputStream(outFile).use { fos ->
-                        fos.write(bestBytesUnderTarget)
-                    }
-                } else {
-                    val stream = ByteArrayOutputStream()
-                    workingBmp.compress(compressFormat, 15, stream)
-                    val minBytes = stream.size().toLong()
+                tempProbeFile.delete()
+
+                if (!bestFileUnderTarget || !outFile.exists() || outFile.length() > targetBytes) {
+                    // Try one final minimum encode to report actual smallest achievable size
+                    tempProbeFile.delete()
+                    ImageFormatEncoder.encodeImage(workingBmp, tempProbeFile, targetFormat, 15)
+                    val minBytes = if (tempProbeFile.exists()) tempProbeFile.length() else workingBmp.byteCount.toLong()
+                    tempProbeFile.delete()
                     if (workingBmp != processedBitmap) {
                         try { workingBmp.recycle() } catch (_: Exception) {}
                     }
@@ -113,13 +107,12 @@ object ImageCompressionEngine {
                         success = false,
                         outputPath = outFile.absolutePath,
                         sizeBytes = minBytes,
-                        error = "Target size ${targetSizeKb} KB could not be achieved (smallest possible was $formattedMin). Try selecting a larger target size or resizing image dimensions."
+                        error = "Target size ${targetSizeKb} KB could not be achieved (smallest possible for ${targetFormat.displayName} was $formattedMin). Try selecting a larger target size or resizing image dimensions."
                     )
                 }
             } else {
-                FileOutputStream(outFile).use { fos ->
-                    workingBmp.compress(compressFormat, outputConfig.quality, fos)
-                }
+                // Quality mode: direct encode
+                ImageFormatEncoder.encodeImage(workingBmp, outFile, targetFormat, outputConfig.quality)
             }
 
             if (workingBmp != processedBitmap) {
@@ -129,7 +122,7 @@ object ImageCompressionEngine {
             // Metadata handling
             if (editState.stripExif && outFile.exists()) {
                 ImageMetadataSanitizer.stripExifLossless(outFile, outFile)
-            } else if (!editState.stripExif && outFile.exists() && compressFormat == Bitmap.CompressFormat.JPEG) {
+            } else if (!editState.stripExif && outFile.exists() && targetFormat == ImageFormatEncoder.Format.JPEG) {
                 ImageMetadataWriter.applyMetadata(outFile, editState)
             }
 
@@ -158,15 +151,18 @@ object ImageCompressionEngine {
                     success = false,
                     outputPath = outFile.absolutePath,
                     sizeBytes = 0L,
+                    savingsPercent = 0.0,
                     error = errMsg
                 )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Image compression failed: ${e.message}", e)
+            try { outFile.delete() } catch (_: Exception) {}
             CompressionResult(
                 success = false,
                 outputPath = outFile.absolutePath,
                 sizeBytes = 0L,
+                savingsPercent = 0.0,
                 error = e.message ?: "Unknown compression error"
             )
         }
@@ -188,17 +184,32 @@ object ImageCompressionEngine {
             return (targetKb * 1024L).coerceAtMost(originalBytes.coerceAtLeast(1024L))
         }
 
-        if (outputConfig.format.equals("PNG", ignoreCase = true)) {
-            val scaleFactor = (targetWidth.toDouble() * targetHeight.toDouble()) /
-                    (origWidth.toDouble() * origHeight.toDouble()).coerceAtLeast(1.0)
-            return (originalBytes * scaleFactor).toLong().coerceAtLeast(1024L)
-        }
-
-        // Empirical model for JPEG/WEBP
+        val targetFormat = ImageFormatEncoder.Format.fromString(outputConfig.format)
         val dimRatio = (targetWidth.toDouble() * targetHeight.toDouble()) /
                 (origWidth.toDouble() * origHeight.toDouble()).coerceAtLeast(1.0)
-        val qRatio = Math.pow(outputConfig.quality.toDouble() / 100.0, 1.3)
-        val est = (originalBytes.toDouble() * dimRatio * qRatio * 0.7).toLong()
-        return est.coerceIn(1024L, (originalBytes * 1.5).toLong())
+
+        return when (targetFormat) {
+            ImageFormatEncoder.Format.BMP -> {
+                // Exact uncompressed BMP size: 54 bytes + 3 * w * h
+                ((targetWidth * 3L + 3) and 3.inv().toLong()) * targetHeight + 54L
+            }
+            ImageFormatEncoder.Format.PNG -> {
+                (originalBytes * dimRatio * 1.1).toLong().coerceAtLeast(1024L)
+            }
+            ImageFormatEncoder.Format.TIFF -> {
+                (originalBytes * dimRatio * 1.5).toLong().coerceAtLeast(1024L)
+            }
+            ImageFormatEncoder.Format.GIF -> {
+                (originalBytes * dimRatio * 0.8).toLong().coerceAtLeast(1024L)
+            }
+            ImageFormatEncoder.Format.HEIF, ImageFormatEncoder.Format.HEIC, ImageFormatEncoder.Format.AVIF -> {
+                val qRatio = Math.pow(outputConfig.quality.toDouble() / 100.0, 1.4)
+                (originalBytes.toDouble() * dimRatio * qRatio * 0.45).toLong().coerceAtLeast(1024L)
+            }
+            ImageFormatEncoder.Format.JPEG, ImageFormatEncoder.Format.WEBP -> {
+                val qRatio = Math.pow(outputConfig.quality.toDouble() / 100.0, 1.3)
+                (originalBytes.toDouble() * dimRatio * qRatio * 0.7).toLong().coerceIn(1024L, (originalBytes * 1.5).toLong())
+            }
+        }
     }
 }

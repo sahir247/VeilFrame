@@ -240,22 +240,36 @@ class SafStorageManager(private val context: Context) {
 
     fun getMimeTypeForFile(file: File): String = getExportMimeType(file)
 
-    fun getExportMimeType(file: File): String {
-        return when (file.extension.lowercase(Locale.US)) {
-            "aibundle" -> "application/octet-stream"
-            "md", "txt" -> "text/plain"
-            "json" -> "application/json"
-            "html", "htm" -> "text/html"
-            "csv" -> "text/csv"
-            "zip" -> "application/zip"
-            "mp4" -> "video/mp4"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "webp" -> "image/webp"
-            "gif" -> "image/gif"
-            else -> "application/octet-stream"
+    fun getExportMimeType(file: File): String = Companion.getExportMimeType(file)
+
+    companion object {
+        fun getExportMimeType(file: File): String {
+            return when (file.extension.lowercase(Locale.US)) {
+                "aibundle" -> "application/octet-stream"
+                "md", "markdown", "mdown", "mkdn" -> "text/markdown"
+                "txt" -> "text/plain"
+                "json" -> "application/json"
+                "html", "htm" -> "text/html"
+                "csv" -> "text/csv"
+                "zip" -> "application/zip"
+                "mp4" -> "video/mp4"
+                "mkv" -> "video/x-matroska"
+                "webm" -> "video/webm"
+                "mov" -> "video/quicktime"
+                "avi" -> "video/x-msvideo"
+                "3gp" -> "video/3gpp"
+                "flv" -> "video/x-flv"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                "bmp" -> "image/bmp"
+                "tiff", "tif" -> "image/tiff"
+                "heic" -> "image/heic"
+                "heif" -> "image/heif"
+                "avif" -> "image/avif"
+                else -> "application/octet-stream"
+            }
         }
     }
 }

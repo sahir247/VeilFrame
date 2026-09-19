@@ -506,6 +506,68 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Tool: Markdown Viewer -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolMarkdownViewer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="12dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_text"
+                        android:contentDescription="Markdown Viewer"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="MARKDOWN VIEWER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Read GFM docs with offline Mermaid, KaTeX, TOC, code copy, and search."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Markdown Viewer"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Section 3: Media Editing & Compression -->
             <TextView
                 android:layout_width="wrap_content"
@@ -758,71 +820,71 @@
                     android:orientation="vertical"
                     android:padding="16dp">
 
+                    <!-- Full-width Header: Title & Installed Version -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="VeilFrame Mobile"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:singleLine="true"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:id="@+id/tvUpdateStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Installed: v2.2.5 • Local Engine"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <!-- Separate Balanced Horizontal Action Row Below -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
 
-                        <LinearLayout
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRepairApp"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                            android:layout_height="38dp"
                             android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_marginEnd="6dp"
+                            android:text="Repair"
+                            android:textColor="@color/vf_accent_amber"
+                            android:textSize="11sp"
+                            app:strokeColor="@color/vf_accent_amber"
+                            app:cornerRadius="8dp"
+                            app:icon="@drawable/ic_reset"
+                            app:iconSize="13dp"
+                            app:iconTint="@color/vf_accent_amber" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="VeilFrame Mobile"
-                                android:textColor="@color/vf_text_primary"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:id="@+id/tvUpdateStatus"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:text="Installed: v2.2.5 • Local Engine"
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnRepairApp"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:text="Repair"
-                                android:textColor="@color/vf_accent_amber"
-                                android:textSize="11sp"
-                                app:strokeColor="@color/vf_accent_amber"
-                                app:cornerRadius="8dp"
-                                app:icon="@drawable/ic_reset"
-                                app:iconSize="13dp"
-                                app:iconTint="@color/vf_accent_amber" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btnCheckUpdates"
-                                style="@style/Widget.Material3.Button.TonalButton"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:text="Check Updates"
-                                android:textColor="@color/vf_primary"
-                                android:textSize="11sp"
-                                app:backgroundTint="@color/vf_surface_variant"
-                                app:cornerRadius="8dp"
-                                app:icon="@drawable/ic_system_update"
-                                app:iconSize="14dp"
-                                app:iconTint="@color/vf_primary" />
-                        </LinearLayout>
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCheckUpdates"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:text="Check Updates"
+                            android:textColor="@color/vf_primary"
+                            android:textSize="11sp"
+                            app:backgroundTint="@color/vf_surface_variant"
+                            app:cornerRadius="8dp"
+                            app:icon="@drawable/ic_system_update"
+                            app:iconSize="14dp"
+                            app:iconTint="@color/vf_primary" />
                     </LinearLayout>
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -1565,18 +1627,22 @@
                         app:indicatorColor="@color/vf_accent_green"
                         app:trackColor="@color/vf_surface_variant" />
 
-                    <!-- Status & Metrics Row -->
+                    <!-- Status & Metrics Row (Fixed/stable container so live path updates never jitter layout) -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:minHeight="42dp"
+                        android:gravity="center_vertical"
                         android:orientation="horizontal"
-                        android:layout_marginTop="8dp">
+                        android:layout_marginTop="10dp">
 
                         <TextView
                             android:id="@+id/tvStatusText"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:maxLines="2"
+                            android:ellipsize="middle"
                             android:text="Ready for execution."
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
@@ -1585,6 +1651,7 @@
                             android:id="@+id/tvProgressDetails"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
                             android:text=""
                             android:textColor="@color/vf_accent_green"
                             android:textSize="11sp"
@@ -1592,16 +1659,13 @@
                             android:textStyle="bold" />
                     </LinearLayout>
 
-                    <!-- Collapsible Accordion Header for Technical Logs -->
+                    <!-- Collapsible Accordion Header for Technical Logs (Extended gap between monitor and console) -->
                     <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                         android:id="@+id/btnToggleConsole"
                         style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="match_parent"
-                        android:layout_height="36dp"
-                        android:layout_marginTop="10dp"
+                        android:layout_height="38dp"
+                        android:layout_marginTop="18dp"
                         android:text="View Technical Logs"
                         android:textColor="@color/vf_secondary"
                         android:textSize="11sp"
@@ -1756,10 +1820,26 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:layout_marginBottom="12dp"
+                        android:layout_marginBottom="8dp"
                         android:text="Output ready in local cache"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnResultPreview"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginBottom="8dp"
+                        android:text="Preview Markdown"
+                        android:textColor="@color/vf_primary"
+                        android:textSize="12sp"
+                        android:visibility="gone"
+                        app:backgroundTint="@color/vf_surface_variant"
+                        app:cornerRadius="8dp"
+                        app:icon="@drawable/ic_visibility"
+                        app:iconTint="@color/vf_primary"
+                        app:iconSize="16dp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -1822,6 +1902,13 @@
     <include
         android:id="@+id/layoutVideoStudio"
         layout="@layout/layout_video_studio" />
+
+    <!-- ================================================================= -->
+    <!-- 6. MARKDOWN VIEWER WORKSPACE                                      -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutMarkdownViewer"
+        layout="@layout/layout_markdown_viewer" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->

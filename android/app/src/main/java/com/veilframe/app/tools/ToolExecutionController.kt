@@ -65,6 +65,7 @@ class ToolExecutionController(
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false
         binding.cardResultSummary.visibility = View.GONE
+        binding.btnResultPreview.visibility = View.GONE
         binding.progressIndicator.visibility = View.VISIBLE
         binding.progressIndicator.isIndeterminate = true
         binding.tvProgressDetails.text = ""
@@ -155,6 +156,8 @@ class ToolExecutionController(
             binding.cardResultSummary.visibility = View.VISIBLE
             binding.tvResultTitle.text = outputFile.name
             binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • ${bundleResult.includedFiles} files included"
+            val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
+            binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
 
             onLog("[OK] Package generated: ${outputFile.name} (${safStorageManager.formatBytes(outputFile.length())})")
             onLog("[AI] Tokens: ~${bundleResult.totalTokens} | Included files: ${bundleResult.includedFiles} | Format: $formatKey")
@@ -377,7 +380,7 @@ class ToolExecutionController(
             val outputBatchDir = File(activity.cacheDir, "batch_img_sanitized_$timeStamp").apply { mkdirs() }
             val copiedCount = safStorageManager.materializeTargetIntoDir(uri, true, stagingDir)
 
-            val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic")
+            val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "gif")
             val candidateFiles = stagingDir.walkTopDown().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in imageExtensions }.toList()
 
             if (candidateFiles.isEmpty()) {
@@ -385,7 +388,7 @@ class ToolExecutionController(
                 outputBatchDir.deleteRecursively()
                 withContext(Dispatchers.Main) {
                     sessionManager.updateJobState(JobState.FAILED, "No supported image files found in folder.")
-                    onLog("[WARN] No image files (.jpg, .png, .webp, etc.) found in selected folder ($copiedCount files inspected).")
+                    onLog("[WARN] No image files (.jpg, .png, .webp, .bmp, .heic, etc.) found in selected folder ($copiedCount files inspected).")
                     sessionManager.updatePrimaryActionDock(state)
                 }
                 return
@@ -402,6 +405,10 @@ class ToolExecutionController(
                     1 -> "jpg"
                     2 -> "png"
                     3 -> "webp"
+                    4 -> "bmp"
+                    5 -> "tiff"
+                    6 -> "gif"
+                    7 -> "heif"
                     else -> inputFile.extension.lowercase(Locale.ROOT).ifEmpty { "jpg" }
                 }
                 val outputFile = File(outputBatchDir, "${inputFile.nameWithoutExtension}_cleaned.$targetExt")
@@ -482,6 +489,10 @@ class ToolExecutionController(
                 1 -> "jpg"
                 2 -> "png"
                 3 -> "webp"
+                4 -> "bmp"
+                5 -> "tiff"
+                6 -> "gif"
+                7 -> "heif"
                 else -> sourceExt.ifEmpty { "jpg" }
             }
 
@@ -634,6 +645,8 @@ class ToolExecutionController(
             binding.cardResultSummary.visibility = View.VISIBLE
             binding.tvResultTitle.text = outputFile.name
             binding.tvResultDetails.text = "${safStorageManager.formatBytes(outputFile.length())} • ${outputFile.extension.uppercase()} • $scanSummary"
+            val isMd = outputFile.extension.equals("md", ignoreCase = true) || outputFile.extension.equals("markdown", ignoreCase = true)
+            binding.btnResultPreview.visibility = if (isMd) View.VISIBLE else View.GONE
 
             onLog("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
             if (scanResult.totalSecretsFound > 0) {

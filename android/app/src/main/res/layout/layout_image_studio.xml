@@ -879,6 +879,48 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="WebP" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgHeif"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="HEIF" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgHeic"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="HEIC" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgAvif"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AVIF" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgBmp"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BMP" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgTiff"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TIFF" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipImgGif"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="GIF" />
                 </com.google.android.material.chip.ChipGroup>
 
                 <!-- Compression Goal Selection -->

@@ -1,0 +1,290 @@
+:root {
+  --vf-body-size: 16px;
+  --vf-code-size: 14px;
+  --vf-heading-scale: 1.0;
+}
+
+/* Base resets & theme tokens */
+body.theme-dark {
+  --vf-bg: #0d1117;
+  --vf-fg: #e6edf3;
+  --vf-fg-muted: #8b949e;
+  --vf-border: #30363d;
+  --vf-card-bg: #161b22;
+  --vf-code-bg: #161b22;
+  --vf-link: #58a6ff;
+  --vf-accent: #2ea043;
+  --vf-pre-bg: #161b22;
+  color-scheme: dark;
+}
+
+body.theme-light {
+  --vf-bg: #ffffff;
+  --vf-fg: #1f2328;
+  --vf-fg-muted: #656d76;
+  --vf-border: #d0d7de;
+  --vf-card-bg: #f6f8fa;
+  --vf-code-bg: #f6f8fa;
+  --vf-link: #0969da;
+  --vf-accent: #1a7f37;
+  --vf-pre-bg: #f6f8fa;
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--vf-bg);
+  color: var(--vf-fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  font-size: var(--vf-body-size);
+  line-height: 1.6;
+  word-wrap: break-word;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Thin Reading Progress Indicator */
+#reading-progress-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 9999;
+  background-color: transparent;
+}
+
+#reading-progress-bar {
+  height: 100%;
+  width: 0%;
+  background-color: var(--vf-accent);
+  transition: width 0.08s ease-out;
+}
+
+/* Layout Containers */
+#viewer-container {
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+body.width-comfortable #viewer-container {
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+body.width-full #viewer-container {
+  max-width: 100%;
+  margin: 0;
+}
+
+/* Typography scaling */
+.markdown-body {
+  font-size: var(--vf-body-size) !important;
+  color: var(--vf-fg) !important;
+  background-color: transparent !important;
+}
+
+.markdown-body h1 { font-size: calc(2.0em * var(--vf-heading-scale)) !important; }
+.markdown-body h2 { font-size: calc(1.5em * var(--vf-heading-scale)) !important; }
+.markdown-body h3 { font-size: calc(1.25em * var(--vf-heading-scale)) !important; }
+.markdown-body h4 { font-size: calc(1.0em * var(--vf-heading-scale)) !important; }
+
+.markdown-body a {
+  color: var(--vf-link) !important;
+  text-decoration: none;
+}
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+/* Front Matter Card */
+.front-matter-card {
+  background-color: var(--vf-card-bg);
+  border: 1px solid var(--vf-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 24px;
+  font-size: calc(var(--vf-body-size) * 0.9);
+}
+
+.front-matter-title {
+  font-size: calc(var(--vf-body-size) * 1.15);
+  font-weight: bold;
+  color: var(--vf-fg);
+  margin-bottom: 8px;
+}
+
+.front-matter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 16px;
+}
+
+.front-matter-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.front-matter-key {
+  font-size: 11px;
+  color: var(--vf-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.front-matter-val {
+  color: var(--vf-fg);
+  word-break: break-all;
+}
+
+/* Code Block Containers */
+.code-block-wrapper {
+  margin: 16px 0;
+  border-radius: 8px;
+  border: 1px solid var(--vf-border);
+  background-color: var(--vf-pre-bg);
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background-color: rgba(127, 127, 127, 0.08);
+  border-bottom: 1px solid var(--vf-border);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  color: var(--vf-fg-muted);
+  user-select: none;
+}
+
+.code-copy-btn {
+  background: transparent;
+  border: 1px solid var(--vf-border);
+  border-radius: 4px;
+  color: var(--vf-fg-muted);
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.code-copy-btn:hover {
+  color: var(--vf-fg);
+  border-color: var(--vf-fg-muted);
+}
+
+.code-copy-btn.copied {
+  color: #2ea043;
+  border-color: #2ea043;
+}
+
+.code-block-wrapper pre {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  background-color: transparent !important;
+  font-size: var(--vf-code-size) !important;
+  overflow-x: auto;
+}
+
+/* Horizontal Table Scrolling */
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 16px 0;
+  border-radius: 6px;
+  border: 1px solid var(--vf-border);
+}
+
+.table-wrapper table {
+  margin: 0 !important;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Mermaid Diagrams */
+.mermaid-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  text-align: center;
+  margin: 20px 0;
+  background-color: var(--vf-card-bg);
+  border: 1px solid var(--vf-border);
+  border-radius: 8px;
+  padding: 16px;
+  position: relative;
+}
+
+.mermaid-diagram-box {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.mermaid-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.mermaid-copy-btn {
+  background: transparent;
+  border: 1px solid var(--vf-border);
+  border-radius: 4px;
+  color: var(--vf-fg-muted);
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mermaid-error {
+  padding: 12px;
+  background-color: rgba(218, 54, 51, 0.1);
+  border: 1px solid #da3633;
+  border-radius: 6px;
+  color: #f85149;
+  text-align: left;
+  font-size: 12px;
+}
+
+.mermaid-error pre {
+  background-color: transparent;
+  color: inherit;
+  margin-top: 6px;
+}
+
+/* KaTeX Math */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 0;
+}
+
+/* Find in Page Highlighter */
+mark.vf-search-highlight {
+  background-color: rgba(245, 158, 11, 0.4);
+  color: inherit;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+mark.vf-search-highlight.active {
+  background-color: #f59e0b;
+  color: #000000;
+  font-weight: bold;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--vf-fg-muted);
+}
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}

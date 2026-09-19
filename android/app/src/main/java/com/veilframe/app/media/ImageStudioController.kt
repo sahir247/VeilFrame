@@ -121,13 +121,19 @@ class ImageStudioController(
         binding.btnImgResetAllEdits.setOnClickListener { resetEdits() }
         binding.btnImgResetPreview.setOnClickListener { resetEdits() }
 
-        // In-place Format chips (JPG, PNG, WebP)
+        // In-place Format chips (JPG, PNG, WebP, HEIF, HEIC, AVIF, BMP, TIFF, GIF)
         binding.chipGroupImgFormat.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val chip = binding.chipGroupImgFormat.findViewById<Chip>(checkedIds[0])
                 outputConfig.format = when (chip?.id) {
                     R.id.chipImgPng -> "PNG"
                     R.id.chipImgWebp -> "WEBP"
+                    R.id.chipImgHeif -> "HEIF"
+                    R.id.chipImgHeic -> "HEIC"
+                    R.id.chipImgAvif -> "AVIF"
+                    R.id.chipImgBmp -> "BMP"
+                    R.id.chipImgTiff -> "TIFF"
+                    R.id.chipImgGif -> "GIF"
                     else -> "JPG"
                 }
                 refreshPreview()
@@ -659,6 +665,12 @@ class ImageStudioController(
                                 val mime = when (outputConfig.format.uppercase(Locale.US)) {
                                     "PNG" -> "image/png"
                                     "WEBP" -> "image/webp"
+                                    "BMP" -> "image/bmp"
+                                    "TIFF" -> "image/tiff"
+                                    "GIF" -> "image/gif"
+                                    "HEIF" -> "image/heif"
+                                    "HEIC" -> "image/heic"
+                                    "AVIF" -> "image/avif"
                                     else -> "image/jpeg"
                                 }
                                 safManager.copyFileToDocumentTree(outFile, destUri, mime)

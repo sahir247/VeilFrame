@@ -15,8 +15,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
+!android/app/src/main/assets/markdown/lib/**
 parts/
 sdist/
 var/
@@ -110,6 +111,9 @@ resource_videos
 .gradle/
 **/android/.gradle/
 **/android/**/build/
+**/.kotlin/
+**/jdk-*/
+android/jdk*/
 *.apk
 *.aab
 *.aar

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>VeilFrame Markdown Viewer</title>
+  <link rel="stylesheet" href="lib/github-markdown/github-markdown.css">
+  <link rel="stylesheet" href="lib/highlightjs/github-dark.min.css" id="hljs-theme">
+  <link rel="stylesheet" href="lib/katex/katex.min.css">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body class="theme-dark width-comfortable">
+  <!-- Reading Progress Bar -->
+  <div id="reading-progress-container">
+    <div id="reading-progress-bar"></div>
+  </div>
+
+  <main id="viewer-container">
+    <!-- Front Matter Card -->
+    <div id="front-matter-card" class="front-matter-card" style="display: none;"></div>
+
+    <!-- Rendered Markdown Article -->
+    <article id="markdown-body" class="markdown-body"></article>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="empty-state" style="display: none;">
+      <div class="empty-icon">📄</div>
+      <h3>No document loaded</h3>
+      <p>Select a Markdown document to begin reading.</p>
+    </div>
+  </main>
+
+  <!-- Bundled Offline Vendor Libraries -->
+  <script src="lib/marked/marked.min.js"></script>
+  <script src="lib/highlightjs/highlight.min.js"></script>
+  <script src="lib/katex/katex.min.js"></script>
+  <script src="lib/mermaid/mermaid.min.js"></script>
+  <!-- VeilFrame Markdown Viewer Engine -->
+  <script src="viewer.js"></script>
+</body>
+</html>

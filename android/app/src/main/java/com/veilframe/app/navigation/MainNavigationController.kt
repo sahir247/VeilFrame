@@ -18,11 +18,19 @@ class MainNavigationController(
 ) {
     var currentScreen: ScreenState = ScreenState.HOME
         private set
+    var previousScreen: ScreenState = ScreenState.HOME
+        private set
 
     fun init() {
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (currentScreen != ScreenState.HOME) {
+                if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
+                    if (previousScreen == ScreenState.TOOL) {
+                        showToolScreen()
+                    } else {
+                        showHomeScreen()
+                    }
+                } else if (currentScreen != ScreenState.HOME) {
                     showHomeScreen()
                 } else {
                     isEnabled = false
@@ -42,6 +50,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
+        previousScreen = currentScreen
         currentScreen = ScreenState.HOME
 
         binding.toolbarHome.visibility = View.VISIBLE
@@ -51,6 +60,7 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
 
         onHomeScreenEntered()
     }
@@ -60,6 +70,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
+        previousScreen = currentScreen
         currentScreen = ScreenState.TOOL
 
         binding.toolbarHome.visibility = View.GONE
@@ -69,6 +80,7 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.VISIBLE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
     }
 
     fun showImageStudioScreen() {
@@ -76,6 +88,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
+        previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_STUDIO
 
         binding.toolbarHome.visibility = View.GONE
@@ -85,6 +98,7 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
     }
 
     fun showVideoStudioScreen() {
@@ -92,6 +106,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
+        previousScreen = currentScreen
         currentScreen = ScreenState.VIDEO_STUDIO
 
         binding.toolbarHome.visibility = View.GONE
@@ -101,5 +116,26 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
+    }
+
+    fun showMarkdownViewerScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        if (currentScreen != ScreenState.MARKDOWN_VIEWER) {
+            previousScreen = currentScreen
+        }
+        currentScreen = ScreenState.MARKDOWN_VIEWER
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.scrollHome.visibility = View.GONE
+        binding.scrollTool.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
+        binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
+        binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.VISIBLE
     }
 }

@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.logging.ConsoleLogController
+import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.media.ImageStudioController
 import com.veilframe.app.media.SafDestinationManager
 import com.veilframe.app.media.VideoPlayerController
@@ -63,9 +64,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoPlayerController: VideoPlayerController
     private lateinit var imageStudioController: ImageStudioController
     private lateinit var videoStudioController: VideoStudioController
+    private lateinit var markdownViewerController: MarkdownViewerController
     private var pendingExportFile: File? = null
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
+
+    // Markdown file picker launcher
+    private val markdownPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            openMarkdownViewer(uri)
+        }
+    }
 
     // Multi-format export launcher (Storage Access Framework)
     private val exportDocumentLauncher = registerForActivityResult(
@@ -255,23 +267,38 @@ class MainActivity : AppCompatActivity() {
         if (intent == null) return
         val action = intent.action
         val type = intent.type ?: ""
-        if (action == Intent.ACTION_SEND) {
-            val uri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val uri: Uri? = if (action == Intent.ACTION_SEND) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(Intent.EXTRA_STREAM)
             } ?: intent.data
+        } else if (action == Intent.ACTION_VIEW) {
+            intent.data
+        } else {
+            null
+        }
 
-            if (uri != null) {
-                safStorageManager.persistReadPermission(uri)
-                if (type.startsWith("video/")) {
-                    openVideoStudio()
-                    videoStudioController.handleVideoSelected(uri)
-                } else if (type.startsWith("image/")) {
-                    openImageStudio()
-                    imageStudioController.handleImageSelected(uri)
-                }
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            val displayName = DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: ""
+            val nameLower = displayName.lowercase(Locale.ROOT)
+            val isMarkdown = nameLower.endsWith(".md") ||
+                    nameLower.endsWith(".markdown") ||
+                    nameLower.endsWith(".mdown") ||
+                    nameLower.endsWith(".mkdn") ||
+                    type == "text/markdown" ||
+                    (type == "text/plain" && (nameLower.endsWith(".md") || nameLower.endsWith(".markdown")))
+
+            if (isMarkdown) {
+                openMarkdownViewer(uri, displayName)
+            } else if (type.startsWith("video/") || nameLower.endsWith(".mp4") || nameLower.endsWith(".webm") || nameLower.endsWith(".mkv") || nameLower.endsWith(".mov") || nameLower.endsWith(".avi")) {
+                openVideoStudio()
+                videoStudioController.handleVideoSelected(uri)
+            } else if (type.startsWith("image/") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".png") || nameLower.endsWith(".webp") || nameLower.endsWith(".heic") || nameLower.endsWith(".heif") || nameLower.endsWith(".avif") || nameLower.endsWith(".bmp") || nameLower.endsWith(".tiff") || nameLower.endsWith(".tif") || nameLower.endsWith(".gif")) {
+                openImageStudio()
+                imageStudioController.handleImageSelected(uri)
             }
         }
     }
@@ -297,6 +324,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (::videoPlayerController.isInitialized) {
             videoPlayerController.release()
+        }
+        if (::markdownViewerController.isInitialized) {
+            markdownViewerController.clear()
         }
     }
 
@@ -353,6 +383,22 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onLog = { msg -> consoleLogController.log(msg) }
         )
+
+        markdownViewerController = MarkdownViewerController(
+            activity = this,
+            binding = binding.layoutMarkdownViewer,
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOL) {
+                    navigationController.showToolScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            },
+            onOpenMarkdownFileRequest = {
+                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+            }
+        )
+        markdownViewerController.init()
     }
 
     private fun initStudioWorkspaces() {
@@ -466,9 +512,20 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        // Markdown Viewer Dashboard Card
+        binding.cardToolMarkdownViewer.setOnClickListener {
+            markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+        }
+
         // Result Card Direct Actions
         binding.btnResultSave.setOnClickListener { launchExportCurrentArtifact() }
         binding.btnResultShare.setOnClickListener { toolExecutionController.shareLastResult() }
+        binding.btnResultPreview.setOnClickListener {
+            val file = toolSessionManager.currentState.lastGeneratedFile
+            if (file != null && file.exists()) {
+                openMarkdownViewer(file)
+            }
+        }
 
         // Primary Execution Action
         binding.btnExecute.setOnClickListener { toolExecutionController.executeSelectedMode() }
@@ -523,6 +580,30 @@ class MainActivity : AppCompatActivity() {
         toolSessionManager.currentToolMode = ToolMode.VIDEO_COMPRESSOR
         navigationController.showVideoStudioScreen()
         consoleLogController.log("[UI] Opened Video Studio workspace.")
+    }
+
+    fun openMarkdownViewer(uri: Uri, title: String? = null) {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showMarkdownViewerScreen()
+        markdownViewerController.loadMarkdown(uri, title)
+        consoleLogController.log("[MARKDOWN] Opened viewer: ${title ?: uri.lastPathSegment}")
+    }
+
+    fun openMarkdownViewer(file: File, title: String? = null) {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showMarkdownViewerScreen()
+        markdownViewerController.loadMarkdown(file, title)
+        consoleLogController.log("[MARKDOWN] Opened viewer: ${file.name}")
     }
 
     private fun scheduleBackClearWork() {

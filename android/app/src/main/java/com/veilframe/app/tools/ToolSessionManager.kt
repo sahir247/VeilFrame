@@ -148,8 +148,11 @@ class ToolSessionManager(
             binding.tvResultDetails.text = "${safStorageManager.formatBytes(file.length())} • ${file.extension.uppercase()} • Output ready in local cache"
             binding.btnExportResult.isEnabled = true
             binding.btnShareResult.isEnabled = true
+            val isMarkdown = file.extension.equals("md", ignoreCase = true) || file.extension.equals("markdown", ignoreCase = true)
+            binding.btnResultPreview.visibility = if (isMarkdown) View.VISIBLE else View.GONE
         } else {
             binding.cardResultSummary.visibility = View.GONE
+            binding.btnResultPreview.visibility = View.GONE
             binding.btnExportResult.isEnabled = false
             binding.btnShareResult.isEnabled = false
         }
@@ -253,7 +256,7 @@ class ToolSessionManager(
                     primaryDefaultIndex = 0,
                     formatLabel = "Image Format",
                     formatDesc = "Output image encoding and color profile",
-                    formatChips = listOf("Original / Auto", "JPEG (.jpg)", "PNG (.png)", "WebP (.webp)"),
+                    formatChips = listOf("Original / Auto", "JPEG (.jpg)", "PNG (.png)", "WebP (.webp)", "BMP (.bmp)", "TIFF (.tiff)", "GIF (.gif)", "HEIF (.heif)"),
                     formatDefaultIndex = 0,
                     switch1Title = "Strip EXIF, GPS & Camera Maker Notes",
                     switch1Desc = "Eliminates location, aperture, camera serials, and dates",

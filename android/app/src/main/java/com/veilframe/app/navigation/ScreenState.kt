@@ -7,5 +7,6 @@ enum class ScreenState {
     HOME,
     TOOL,
     IMAGE_STUDIO,
-    VIDEO_STUDIO
+    VIDEO_STUDIO,
+    MARKDOWN_VIEWER
 }
