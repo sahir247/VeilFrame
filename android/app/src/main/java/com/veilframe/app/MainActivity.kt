@@ -287,7 +287,7 @@ class MainActivity : AppCompatActivity() {
         initStudioWorkspaces()
         setupListeners()
 
-        consoleLogController.log("[SYS] Initialized VeilFrame 2.2.6 Native Core Runtime")
+        consoleLogController.log("[SYS] Initialized VeilFrame 2.2.7 Native Core Runtime")
         consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
 
         navigationController.showHomeScreen()
@@ -1016,7 +1016,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.2.6
+                VeilFrame v2.2.7
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution

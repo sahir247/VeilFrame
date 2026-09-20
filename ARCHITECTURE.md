@@ -573,9 +573,9 @@ The media compression subsystem (`veilframe.core.media_compressor`) exposes high
 
 ---
 
-## AI Image Upscaler Subsystem (v2.2.6 Architecture)
+## AI Image Upscaler Subsystem (v2.2.7 Architecture)
 
-VeilFrame v2.2.6 introduces the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`), operating under 100% offline local privacy guarantees:
+VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`), operating under 100% offline local privacy guarantees:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
