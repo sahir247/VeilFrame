@@ -25,7 +25,6 @@ class DeviceCapabilityProfileTest {
             lowRamDevice = false,
             supportsNnapi = true,
             supportsNnapiFp16 = true,
-            supportsQnnBuild = false,
             supportsXnnpack = false,
             thermalStatus = 0
         )
@@ -34,16 +33,15 @@ class DeviceCapabilityProfileTest {
         assertEquals(8, profile.cpuCores)
         assertTrue(profile.supportsNnapi)
         assertTrue(profile.supportsNnapiFp16)
-        assertFalse(profile.supportsQnnBuild)
         assertFalse(profile.lowRamDevice)
         assertTrue(profile.javaHeapBudget > 0L)
         assertTrue(profile.nativeProcessBudget > 0L)
     }
 
     @Test
-    fun testQnnCapabilityFlagTruthfulReporting() {
-        // Standard ORT builds do not bundle QNN native libraries
-        val standardOrtProfile = DeviceCapabilityProfile(
+    fun testNnapiCapabilityReporting() {
+        // Standard ORT device profile with NNAPI supported
+        val nnapiProfile = DeviceCapabilityProfile(
             manufacturer = "Samsung",
             model = "Galaxy S24",
             cpuCores = 8,
@@ -54,15 +52,12 @@ class DeviceCapabilityProfileTest {
             lowRamDevice = false,
             supportsNnapi = true,
             supportsNnapiFp16 = true,
-            supportsQnnBuild = false,
             supportsXnnpack = false,
             thermalStatus = 0
         )
-        assertFalse("Standard ORT build must not report QNN as supported", standardOrtProfile.supportsQnnBuild)
-
-        // Custom QNN-enabled build
-        val customQnnProfile = standardOrtProfile.copy(supportsQnnBuild = true)
-        assertTrue("Custom QNN build correctly reports QNN support", customQnnProfile.supportsQnnBuild)
+        assertTrue("NNAPI must be reported as supported", nnapiProfile.supportsNnapi)
+        assertTrue("NNAPI FP16 must be reported on Android 10+ (API 34)", nnapiProfile.supportsNnapiFp16)
+        assertEquals(8, nnapiProfile.cpuCores)
     }
 
     @Test
@@ -78,7 +73,6 @@ class DeviceCapabilityProfileTest {
             lowRamDevice = true,
             supportsNnapi = true,
             supportsNnapiFp16 = false,
-            supportsQnnBuild = false,
             supportsXnnpack = false,
             thermalStatus = 0
         )

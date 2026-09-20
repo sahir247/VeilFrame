@@ -16,9 +16,6 @@ data class PerformanceProfileKey(
     val modelId: String,
     val modelHash: String = "",
     val modelScale: Int,
-    val qnnDeviceId: String? = null,
-    val qnnHardwareType: String? = null,
-    val qnnDriverVersion: String? = null,
     val benchmarkVersion: Int = CURRENT_BENCHMARK_VERSION
 ) {
     companion object {
@@ -28,13 +25,10 @@ data class PerformanceProfileKey(
             device: DeviceCapabilityProfile,
             modelId: String,
             modelScale: Int,
-            ortVersion: String = "1.20.0",
+            ortVersion: String = "1.27.0",
             providerBuildId: String = "standard",
             providerConfigurationId: String = "default",
-            modelHash: String = "",
-            qnnDeviceId: String? = null,
-            qnnHardwareType: String? = null,
-            qnnDriverVersion: String? = null
+            modelHash: String = ""
         ): PerformanceProfileKey {
             val primaryAbi = device.supportedAbis.firstOrNull() ?: "arm64-v8a"
             return PerformanceProfileKey(
@@ -47,9 +41,6 @@ data class PerformanceProfileKey(
                 modelId = modelId,
                 modelHash = modelHash,
                 modelScale = modelScale,
-                qnnDeviceId = qnnDeviceId,
-                qnnHardwareType = qnnHardwareType,
-                qnnDriverVersion = qnnDriverVersion,
                 benchmarkVersion = CURRENT_BENCHMARK_VERSION
             )
         }
@@ -57,12 +48,7 @@ data class PerformanceProfileKey(
 
     fun toKeyString(): String {
         val hashPart = if (modelHash.isNotEmpty()) "_h${modelHash.take(8)}" else ""
-        val qnnPart = buildString {
-            if (!qnnDeviceId.isNullOrEmpty()) append("_qdev${qnnDeviceId}")
-            if (!qnnHardwareType.isNullOrEmpty()) append("_qhw${qnnHardwareType}")
-            if (!qnnDriverVersion.isNullOrEmpty()) append("_qdrv${qnnDriverVersion}")
-        }
-        return "${deviceModel.replace(' ', '_')}_api${androidApi}_${abi}_ort${ortVersion}_pb${providerBuildId}_pc${providerConfigurationId}${qnnPart}_${modelId}${hashPart}_scale${modelScale}_v${benchmarkVersion}"
+        return "${deviceModel.replace(' ', '_')}_api${androidApi}_${abi}_ort${ortVersion}_pb${providerBuildId}_pc${providerConfigurationId}_${modelId}${hashPart}_scale${modelScale}_v${benchmarkVersion}"
     }
 }
 

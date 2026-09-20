@@ -22,7 +22,6 @@ data class DeviceCapabilityProfile(
     val lowRamDevice: Boolean,
     val supportsNnapi: Boolean,
     val supportsNnapiFp16: Boolean,
-    val supportsQnnBuild: Boolean,
     val isQualcommSoc: Boolean = false,
     val supportsXnnpack: Boolean,
     val thermalStatus: Int,
@@ -62,14 +61,6 @@ data class DeviceCapabilityProfile(
                     hardwareStr.startsWith("sm") ||
                     hardwareStr.startsWith("sdm")
 
-            // Check if QNN provider is already compiled or registered
-            val isQnnAvailable = try {
-                Class.forName("ai.onnxruntime.providers.QnnExecutionProvider")
-                true
-            } catch (_: Throwable) {
-                false
-            }
-
             return DeviceCapabilityProfile(
                 manufacturer = Build.MANUFACTURER ?: "Unknown",
                 model = Build.MODEL ?: "Unknown",
@@ -83,7 +74,6 @@ data class DeviceCapabilityProfile(
                 lowRamDevice = actManager?.isLowRamDevice ?: (totalMem < 3L * 1024 * 1024 * 1024),
                 supportsNnapi = api >= Build.VERSION_CODES.O_MR1,
                 supportsNnapiFp16 = api >= Build.VERSION_CODES.Q,
-                supportsQnnBuild = isQnnAvailable,
                 isQualcommSoc = isQcom,
                 supportsXnnpack = false,
                 thermalStatus = thermal

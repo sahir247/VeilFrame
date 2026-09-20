@@ -136,30 +136,87 @@ class WhatsappStatusPipelineTest {
     }
 
     @Test
+    fun testBoundedDimensionsOriginalAspect() {
+        // 16:9 Landscape
+        val hd169 = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1920, 1080, "Original")
+        assertEquals(1280 to 720, hd169)
+        val fhd169 = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1920, 1080, "Original")
+        assertEquals(1920 to 1080, fhd169)
+
+        // 9:16 Portrait
+        val hd916 = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1080, 1920, "Original")
+        assertEquals(720 to 1280, hd916)
+        val fhd916 = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1080, 1920, "Original")
+        assertEquals(1080 to 1920, fhd916)
+
+        // 1:1 Square
+        val hd11 = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1080, 1080, "Original")
+        assertEquals(720 to 720, hd11)
+        val fhd11 = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1080, 1080, "Original")
+        assertEquals(1080 to 1080, fhd11)
+
+        // 4:5 Portrait
+        val hd45 = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1080, 1350, "Original")
+        assertEquals(720 to 900, hd45)
+        val fhd45 = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1080, 1350, "Original")
+        assertEquals(1080 to 1350, fhd45)
+
+        // 4:3 Landscape
+        val hd43 = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1440, 1080, "Original")
+        assertEquals(960 to 720, hd43)
+        val fhd43 = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1440, 1080, "Original")
+        assertEquals(1440 to 1080, fhd43)
+
+        // Arbitrary resolution (1437x891): must produce even dimensions strictly within bounds
+        val hdArb = WhatsappStatusResolution.HD_720P.calculateBoundedDimensions(1437, 891, "Original")
+        assertEquals(1160 to 720, hdArb)
+        assertEquals(0, hdArb.first % 2)
+        assertEquals(0, hdArb.second % 2)
+        assertTrue(hdArb.first <= 1280 && hdArb.second <= 720)
+
+        val fhdArb = WhatsappStatusResolution.FHD_1080P.calculateBoundedDimensions(1437, 891, "Original")
+        assertEquals(1742 to 1080, fhdArb)
+        assertEquals(0, fhdArb.first % 2)
+        assertEquals(0, fhdArb.second % 2)
+        assertTrue(fhdArb.first <= 1920 && fhdArb.second <= 1080)
+    }
+
+    @Test
     fun testFilterGraphSdrAndHdr() {
-        // SDR HD
+        // SDR HD with Original aspect: preserves DAR, no crop
         val sdrHd = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
             resolution = WhatsappStatusResolution.HD_720P,
-            isHdr = false
+            isHdr = false,
+            aspect = "Original",
+            srcWidth = 1920,
+            srcHeight = 1080
         )
-        assertTrue(sdrHd.contains("scale=720:1280:force_original_aspect_ratio=increase"))
-        assertTrue(sdrHd.contains("crop=720:1280"))
+        assertTrue(sdrHd.contains("setsar=1"))
+        assertTrue(sdrHd.contains("scale=1280:720"))
+        assertFalse(sdrHd.contains("crop="))
         assertTrue(sdrHd.contains("format=yuv420p[vout]"))
         assertFalse(sdrHd.contains("zscale"))
 
-        // SDR FHD
-        val sdrFhd = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
+        // SDR FHD with explicit 9:16 aspect: crops to 9:16 then scales
+        val sdrFhd916 = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
             resolution = WhatsappStatusResolution.FHD_1080P,
-            isHdr = false
+            isHdr = false,
+            aspect = "9:16",
+            srcWidth = 1920,
+            srcHeight = 1080
         )
-        assertTrue(sdrFhd.contains("scale=1080:1920:force_original_aspect_ratio=increase"))
-        assertTrue(sdrFhd.contains("crop=1080:1920"))
-        assertTrue(sdrFhd.contains("format=yuv420p[vout]"))
+        assertTrue(sdrFhd916.contains("setsar=1"))
+        assertTrue(sdrFhd916.contains("crop="))
+        assertTrue(sdrFhd916.contains("scale=1080:1920"))
+        assertTrue(sdrFhd916.contains("format=yuv420p[vout]"))
 
         // HDR
         val hdr = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
             resolution = WhatsappStatusResolution.HD_720P,
-            isHdr = true
+            isHdr = true,
+            aspect = "Original",
+            srcWidth = 1920,
+            srcHeight = 1080
         )
         assertTrue(hdr.contains("zscale=t=linear:npl=100"))
         assertTrue(hdr.contains("format=gbrpf32le"))
@@ -167,6 +224,7 @@ class WhatsappStatusPipelineTest {
         assertTrue(hdr.contains("tonemap=tonemap=hable:desat=0"))
         assertTrue(hdr.contains("zscale=t=bt709:m=bt709:r=tv"))
         assertTrue(hdr.contains("setsar=1"))
+        assertTrue(hdr.contains("scale=1280:720"))
     }
 
     @Test

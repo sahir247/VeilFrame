@@ -66,6 +66,7 @@ class ImageStudioDialogController(
 
         when (draftState.cropAspect) {
             "1:1" -> dialogBinding.chipAspect11.isChecked = true
+            "Passport (600×600)" -> dialogBinding.chipAspectPassport.isChecked = true
             "4:3" -> dialogBinding.chipAspect43.isChecked = true
             "3:4" -> dialogBinding.chipAspect34.isChecked = true
             "16:9" -> dialogBinding.chipAspect169.isChecked = true
@@ -78,6 +79,7 @@ class ImageStudioDialogController(
                 val chip = dialogBinding.chipGroupAspectRatio.findViewById<Chip>(checkedIds[0])
                 draftState.cropAspect = when (chip?.id) {
                     R.id.chipAspect11 -> "1:1"
+                    R.id.chipAspectPassport -> "Passport (600×600)"
                     R.id.chipAspect43 -> "4:3"
                     R.id.chipAspect34 -> "3:4"
                     R.id.chipAspect169 -> "16:9"

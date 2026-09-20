@@ -49,7 +49,6 @@ class OnnxUpscaleRuntime(
             Backend.NNAPI -> InferenceAccelerationMode.NNAPI
             Backend.CPU -> InferenceAccelerationMode.CPU
             Backend.XNNPACK -> InferenceAccelerationMode.XNNPACK
-            Backend.QNN -> InferenceAccelerationMode.QNN
         },
         precision = profile.precision,
         customIntraOpThreads = profile.intraOpThreads,
@@ -429,9 +428,6 @@ class OnnxUpscaleRuntime(
     override fun close() {
         try {
             session.close()
-            if (backendInfo.backend == Backend.QNN) {
-                com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.decrementSession()
-            }
         } catch (_: Exception) {}
         try {
             optionsHolder?.close()

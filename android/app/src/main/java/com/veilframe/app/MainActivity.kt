@@ -255,8 +255,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         super.onCreate(savedInstanceState)
+        com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
@@ -269,11 +269,12 @@ class MainActivity : AppCompatActivity() {
             binding.tvWhatsNewContent.text = cachedChangelog
         }
 
-        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock
+        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
             val statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             binding.appBarLayout.setPadding(0, statusBarTop, 0, 0)
+            binding.containerSettings.setPadding(0, statusBarTop, 0, navBarBottom)
             binding.bottomActionDock.setPadding(
                 binding.bottomActionDock.paddingStart,
                 binding.bottomActionDock.paddingTop,
@@ -287,7 +288,10 @@ class MainActivity : AppCompatActivity() {
         initStudioWorkspaces()
         setupListeners()
 
-        consoleLogController.log("[SYS] Initialized VeilFrame 2.2.7 Native Core Runtime")
+        binding.tvVersionBadge.text = "v${BuildConfig.VERSION_NAME}"
+        binding.tvUpdateStatus.text = "Installed: v${BuildConfig.VERSION_NAME} • Local Engine"
+
+        consoleLogController.log("[SYS] Initialized VeilFrame ${BuildConfig.VERSION_NAME} Native Core Runtime")
         consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
 
         navigationController.showHomeScreen()
@@ -737,19 +741,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun scheduleBackClearWork() {
         backClearTimerJob?.cancel()
-        backClearTimerJob = lifecycleScope.launch {
-            delay(10_000L) // 10 seconds idle on Home clears inactive tool work
-            if (navigationController.currentScreen == ScreenState.HOME) {
-                toolSessionManager.clearCurrentTool()
-                if (::imageStudioController.isInitialized) {
-                    imageStudioController.clear()
-                }
-                if (::videoStudioController.isInitialized) {
-                    videoStudioController.clear()
-                }
-                consoleLogController.log("[SESSION] Inactive tool work cleared after 10s on Home.")
-            }
+        backClearTimerJob = null
+        // Immediately release heavy video/audio resources upon returning to Home to prevent phantom frame retention
+        if (::videoStudioController.isInitialized) {
+            videoStudioController.clear()
         }
+        if (::videoPlayerController.isInitialized) {
+            videoPlayerController.clearMedia()
+        }
+        if (::imageStudioController.isInitialized) {
+            imageStudioController.clear()
+        }
+        toolSessionManager.clearCurrentTool()
+        consoleLogController.log("[SESSION] Cleared inactive media studio resources on Home.")
     }
 
     private fun openFilePickerForCurrentTool() {
@@ -901,6 +905,13 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || isDestroyed) return
         val panelBinding = binding.layoutSettingsPanel
 
+        val rootInsets = ViewCompat.getRootWindowInsets(binding.rootCoordinator)
+        val sTop = rootInsets?.getInsets(WindowInsetsCompat.Type.statusBars())?.top ?: 0
+        val nBottom = rootInsets?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+        if (sTop > 0 || nBottom > 0) {
+            binding.containerSettings.setPadding(0, sTop, 0, nBottom)
+        }
+
         // 1. Theme mode selection
         when (com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)) {
             com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> panelBinding.rbThemeSystem.isChecked = true
@@ -917,14 +928,30 @@ class MainActivity : AppCompatActivity() {
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
             com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode)
+            com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         }
 
-        // 2. Dynamic color toggle
+        // 2. Dynamic color toggle with live palette chip disabling
+        fun updatePaletteChipsEnabled(dynamicActive: Boolean) {
+            panelBinding.chipGroupAccentPalette.isEnabled = !dynamicActive
+            panelBinding.chipPaletteMonochrome.isEnabled = !dynamicActive
+            panelBinding.chipPaletteForestSage.isEnabled = !dynamicActive
+            panelBinding.chipPaletteDeepOcean.isEnabled = !dynamicActive
+            panelBinding.chipPaletteWarmAmber.isEnabled = !dynamicActive
+            panelBinding.chipPaletteCyberViolet.isEnabled = !dynamicActive
+            panelBinding.chipGroupAccentPalette.alpha = if (dynamicActive) 0.38f else 1.0f
+            panelBinding.tvDynamicColorNotice.visibility = if (dynamicActive) View.VISIBLE else View.GONE
+        }
+
         val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val dynamicInitial = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this) && isDynamicSupported
         panelBinding.switchDynamicColor.isEnabled = isDynamicSupported
-        panelBinding.switchDynamicColor.isChecked = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this) && isDynamicSupported
+        panelBinding.switchDynamicColor.isChecked = dynamicInitial
+        updatePaletteChipsEnabled(dynamicInitial)
+
         panelBinding.switchDynamicColor.setOnCheckedChangeListener { _, isChecked ->
             com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
+            updatePaletteChipsEnabled(isChecked)
         }
 
         // 3. Custom accent palette
@@ -964,6 +991,7 @@ class MainActivity : AppCompatActivity() {
                 else -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT
             }
             com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
+            com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         }
 
         // 5. Hardware diagnostics live telemetry
@@ -972,8 +1000,8 @@ class MainActivity : AppCompatActivity() {
         val totalMb = profile.totalMemoryBytes / (1024 * 1024)
         panelBinding.tvSettingsHardwareCores.text = "CPU Cores: ${profile.cpuCores} (Active HW Threads)"
         panelBinding.tvSettingsHardwareMemory.text = "RAM Headroom: ~${availMb} MB (Total: ${totalMb} MB)"
-        panelBinding.tvSettingsHardwareNnapi.text = "NNAPI: ${if (profile.supportsNnapi) "Supported (ORT EP Active)" else "Unsupported / Fallback"}"
-        panelBinding.tvSettingsHardwareQnn.text = "QNN: ${if (profile.supportsQnnBuild) "Active (Qualcomm HTP/NPU)" else "Standard ORT (Custom Build Required)"}"
+        panelBinding.tvSettingsHardwareNnapi.text = "NNAPI: ${if (profile.supportsNnapi) "Supported (NPU/GPU Accelerator)" else "Unsupported / CPU Fallback"}"
+        panelBinding.tvSettingsHardwareAcceleration.text = "Acceleration: ${if (profile.supportsNnapiFp16) "NNAPI FP16 Relaxed + Multi-Threaded CPU" else "NNAPI Standard + CPU"}"
 
         // 6. Close and dismissal bindings
         panelBinding.btnSettingsClose.setOnClickListener { closeSettingsOverlay() }

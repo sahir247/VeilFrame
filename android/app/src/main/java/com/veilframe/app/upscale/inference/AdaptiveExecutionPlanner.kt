@@ -20,8 +20,8 @@ data class ThermalRecoveryPolicy(
  * execution profile for AI super-resolution on Android devices.
  *
  * Implements Progressive Accelerator Concurrency Without CPU-Core Capping across 4 distinct layers:
- * 1. Static Candidate Generation (ModelExecutionCapabilities / QnnModelCapability):
- *    Initial candidate generation without pre-classifying models as HTP-ineligible.
+ * 1. Static Candidate Generation (ModelExecutionCapabilities):
+ *    Initial candidate generation evaluated against device capabilities.
  * 2. Runtime Model Compatibility Determination (ORT model/device compatibility API):
  *    Evaluates device and model graph compatibility prior to expensive compilation.
  * 3. Empirical Full-Graph Verification (disable_cpu_ep_fallback = 1 probe):
@@ -104,7 +104,7 @@ class AdaptiveExecutionPlanner(
         // - benchmarkSearchLimit: maximum worker count calibration will search during this run (calibration policy ceiling).
         //   Raising it later discovers higher concurrency without code changes.
         // - providerConcurrencyConstraint: documented upper bound for the selected EP/runtime.
-        //   CPU/XNNPACK are bounded by physical core count; NNAPI and QNN document a maximum of 8 concurrent
+        //   CPU/XNNPACK are bounded by physical core count; NNAPI documents a maximum of 8 concurrent
         //   sessions; AUTO leaves no artificial ceiling beyond benchmarkSearchLimit.
         // - maxSafeWorkers (memorySafetyBound): conservative estimated safety bound derived from observed process
         //   memory during execution.
@@ -113,8 +113,7 @@ class AdaptiveExecutionPlanner(
             InferenceAccelerationMode.CPU -> deviceProfile.cpuCores
             InferenceAccelerationMode.XNNPACK -> deviceProfile.cpuCores
             InferenceAccelerationMode.NNAPI -> 8
-            InferenceAccelerationMode.QNN -> 8
-            InferenceAccelerationMode.AUTO -> 16
+            InferenceAccelerationMode.AUTO -> 8
         }
 
         val candidateWorkerUpperBound = minOf(
@@ -139,12 +138,7 @@ class AdaptiveExecutionPlanner(
         }
 
         // 3. Generate cache key with modern ORT version, specific provider configuration ID, and model hash
-        val providerConfigId = when (userMode) {
-            InferenceAccelerationMode.QNN -> {
-                if (modelCapabilities.qnnSupportedTargets.contains(QnnTarget.HTP)) "htp_burst" else "gpu"
-            }
-            else -> "default"
-        }
+        val providerConfigId = "default"
         val cacheKey = PerformanceProfileKey.forDeviceAndModel(
             device = deviceProfile,
             modelId = modelId,
@@ -163,7 +157,6 @@ class AdaptiveExecutionPlanner(
                 InferenceAccelerationMode.NNAPI -> cachedProfile.backend == Backend.NNAPI
                 InferenceAccelerationMode.CPU -> cachedProfile.backend == Backend.CPU
                 InferenceAccelerationMode.XNNPACK -> cachedProfile.backend == Backend.XNNPACK
-                InferenceAccelerationMode.QNN -> cachedProfile.backend == Backend.QNN
             }
             if (modeMatches && cachedProfile.workers <= maxSafeWorkers) {
                 Log.i(TAG, "Using cached execution profile: $cachedProfile (${cached.measuredMpPerSecond} MP/s, confidence=${cached.confidence})")
@@ -250,9 +243,8 @@ class AdaptiveExecutionPlanner(
         val evaluateNnapi = (userMode == InferenceAccelerationMode.AUTO || userMode == InferenceAccelerationMode.NNAPI) && deviceProfile.supportsNnapi
         val evaluateCpu = (userMode == InferenceAccelerationMode.AUTO || userMode == InferenceAccelerationMode.CPU)
         val evaluateXnnpack = (userMode == InferenceAccelerationMode.XNNPACK) && deviceProfile.supportsXnnpack
-        val evaluateQnn = (userMode == InferenceAccelerationMode.QNN) && deviceProfile.supportsQnnBuild
 
-        // NNAPI candidates
+        // Optimized NNAPI candidates: evaluate both FP16 Relaxed and Default precision with progressive concurrency
         if (evaluateNnapi) {
             val precisions = mutableListOf(InferencePrecisionMode.DEFAULT)
             if (deviceProfile.supportsNnapiFp16 && modelCapabilities.supportsFp16) {
@@ -260,6 +252,7 @@ class AdaptiveExecutionPlanner(
             }
 
             for (prec in precisions) {
+                // Baseline single-worker accelerator
                 candidates.add(
                     ExecutionProfile(
                         backend = Backend.NNAPI,
@@ -273,12 +266,28 @@ class AdaptiveExecutionPlanner(
                     )
                 )
 
+                // Multi-worker accelerator concurrency for modern heterogeneous SoCs
                 if (deviceProfile.cpuCores >= 4 && maxSafeWorkers >= 2) {
                     candidates.add(
                         ExecutionProfile(
                             backend = Backend.NNAPI,
                             precision = prec,
                             workers = 2,
+                            intraOpThreads = null,
+                            interOpThreads = null,
+                            tileSize = tileSize,
+                            overlap = overlap,
+                            sessionStrategy = SessionStrategy.SHARED_SESSION
+                        )
+                    )
+                }
+
+                if (deviceProfile.cpuCores >= 8 && maxSafeWorkers >= 3) {
+                    candidates.add(
+                        ExecutionProfile(
+                            backend = Backend.NNAPI,
+                            precision = prec,
+                            workers = 3,
                             intraOpThreads = null,
                             interOpThreads = null,
                             tileSize = tileSize,
@@ -329,84 +338,6 @@ class AdaptiveExecutionPlanner(
                         )
                     )
                 }
-            }
-        }
-
-        // QNN candidates (Qualcomm Snapdragon downloadable Plugin EP or custom build)
-        // Gated by hardware eligibility AND model compatibility (HTP & GPU are both candidates by default)
-        if (evaluateQnn && modelCapabilities.qnnCompatible) {
-            val supportedTargets = modelCapabilities.qnnCandidateTargets.ifEmpty { modelCapabilities.qnnSupportedTargets }
-
-            // 1. QNN HTP (Hexagon Tensor Processor / NPU) - burst and balanced performance modes
-            if (supportedTargets.contains(QnnTarget.HTP)) {
-                candidates.add(
-                    ExecutionProfile(
-                        backend = Backend.QNN,
-                        precision = InferencePrecisionMode.FP16_RELAXED,
-                        workers = 1,
-                        intraOpThreads = null,
-                        interOpThreads = null,
-                        tileSize = tileSize,
-                        overlap = overlap,
-                        providerConfiguration = mapOf(
-                            "backend_path" to "libQnnHtp.so",
-                            "qnn.perf_mode" to "burst",
-                            "htp_performance_mode" to "burst"
-                        )
-                    )
-                )
-                candidates.add(
-                    ExecutionProfile(
-                        backend = Backend.QNN,
-                        precision = InferencePrecisionMode.FP16_RELAXED,
-                        workers = 1,
-                        intraOpThreads = null,
-                        interOpThreads = null,
-                        tileSize = tileSize,
-                        overlap = overlap,
-                        providerConfiguration = mapOf(
-                            "backend_path" to "libQnnHtp.so",
-                            "qnn.perf_mode" to "balanced",
-                            "htp_performance_mode" to "balanced"
-                        )
-                    )
-                )
-                if (maxSafeWorkers >= 2) {
-                    candidates.add(
-                        ExecutionProfile(
-                            backend = Backend.QNN,
-                            precision = InferencePrecisionMode.FP16_RELAXED,
-                            workers = 2,
-                            intraOpThreads = null,
-                            interOpThreads = null,
-                            tileSize = tileSize,
-                            overlap = overlap,
-                            providerConfiguration = mapOf(
-                                "backend_path" to "libQnnHtp.so",
-                                "qnn.perf_mode" to "burst",
-                                "htp_performance_mode" to "burst"
-                            )
-                        )
-                    )
-                }
-            }
-
-            // 2. QNN GPU (Qualcomm Adreno GPU) - native FP32/FP16 execution
-            if (supportedTargets.contains(QnnTarget.GPU)) {
-                candidates.add(
-                    ExecutionProfile(
-                        backend = Backend.QNN,
-                        precision = InferencePrecisionMode.FP16_RELAXED,
-                        workers = 1,
-                        intraOpThreads = null,
-                        interOpThreads = null,
-                        tileSize = tileSize,
-                        overlap = overlap,
-                        providerConfiguration = mapOf(
-                            "backend_path" to "libQnnGpu.so"
-                        )
-                    )
-                )
             }
         }
 

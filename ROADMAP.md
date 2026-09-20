@@ -11,51 +11,42 @@
 ## Release Milestones & Architecture Status
 
 ### v2.2.7 CURRENT (Production Release)
-- **Adaptive AI Inference Architecture**:
-  - Benchmark-driven execution planning across NNAPI, CPU/XNNPACK, and Qualcomm QNN.
-  - Progressive worker expansion without artificial CPU-core caps on accelerators.
-  - Pure unpenalized throughput measurement with scaling efficiency tracking.
-  - Adaptive thermal ladder (8 -> 6 -> 4 -> 3 -> 2 -> 1) with hysteresis cooldown.
-- **Independent Memory Domains**:
-  - Decoupled Java and native memory budgets with zero-worker edge-case rejection.
-  - Emergency output pixel ceiling (default 100 MP) for pathological input protection.
-- **Standalone Qualcomm QNN Plugin EP Pack**:
-  - Modular downloadable acceleration pack using official standalone Plugin EP APIs.
-  - Target-specific execution for QNN HTP (FP16 math and QDQ quantized models) and QNN GPU (FP32/FP16).
-  - Diagnostic full-coverage probe (session.disable_cpu_ep_fallback = 1) testing complete graph execution.
-- **Material 3 Expressive Design System**:
-  - Fluid spring physics on all modal dialogs, sheets, and transitions.
-  - Zero-emoji compliance with Material Symbols and accessible vector drawables.
+- **WhatsApp Status Bounded Resolution Architecture**:
+  - Decoupled resolution scaling from forced 9:16 aspect ratio: HD (1280×720) and FHD (1920×1080) bounded limits.
+  - Deterministic DAR preservation for Original aspect mode across all standard ratios without cropping or distortion.
+  - On-demand aspect cropping for explicit target ratios and strict even integer dimensions invariant `(dimension / 2) * 2`.
+- **Video Studio Constraints & State Invariants**:
+  - Honest estimation: eliminated phantom calculations when empty, displaying "No video selected" and "Select a video to calculate".
+  - Rigid mutual exclusivity: WhatsApp Status enforces MP4 + H.264 locking; GIF reverts to Auto (CRF) and disables/mutes audio.
+  - Empty state tool gray-out: edit tools and audio chip group disabled with `alpha = 0.38f`.
+- **Floating Action Dock State Machine**:
+  - 4-stage reactive controller (`EMPTY` $\to$ `READY` $\to$ `PROCESSING` $\to$ `COMPLETED`).
+  - Saved state indicator with 2.5s auto-revert timer and `onEditApplied()` state reset.
+- **Image Studio Passport (600×600) Preset**:
+  - Dedicated 1:1 aspect constraint and exact 600×600 px document export sizing for official compliance.
+- **AMOLED Dark Theming & UI Modernization**:
+  - Strict "AMOLED Dark" styling, Dynamic Color awareness notice, post-inflation theme application.
+  - 24dp card corner radii and categorical reorganization (`MEDIA STUDIOS`, `PRIVACY CLEANERS`, `FORENSICS & AI`).
+- **2025–2026 AI Super-Resolution Catalog**:
+  - Expanded lineup: SAT-light 2×/4×, SAFMNv3 2×/4×, Real-SAFMN++ 4×, ESPAN 4×, PFT-light 4×, DRCT 4×, PlainUSR 4×.
+  - Real-ESRGAN General 4× re-labeled to "Legacy Standard", with reference-only models filtered from device pickers.
+- **Adaptive AI Inference Architecture (Zero QNN)**:
+  - Benchmark-driven execution planning across NNAPI and CPU/XNNPACK backends.
+  - Progressive worker concurrency and adaptive thermal step-downs.
+  - Decoupled Java heap and native memory budgets with zero-worker edge-case rejection.
+  - Complete elimination of Qualcomm QNN SDK code, headers, and dependencies.
 
 ### v2.2.6 (Previous Release)
-- **AI Image Upscaler Subsystem (7th Independent Tool)**:
-  - On-Device Neural Super-Resolution: Runs isolated ONNX Runtime models with zero cloud uploads or telemetry.
-  - Point 7 Model Architecture: Real-ESRGAN General 2× (33.8 MB), Real-ESRGAN General 4× (33.8 MB), Real-ESRGAN Anime 4× (9.1 MB), plus native mathematical sinc Lanczos (3-lobe), Bicubic spline, and Nearest neighbor filters.
-  - Tiled Super-Resolution Processing: Subdivides images into memory-safe tiles with 32px overlap and cubic Hermite feathering to prevent seam artifacts and out-of-memory crashes on mobile GPUs/CPUs.
-  - Dynamic Model Download Manager: In-app model management with resumable streaming, automatic HTTP redirect resolution, SHA-256 integrity verification, and zero initial APK bloat.
-- **Accurate File Size Estimation Overhaul**:
-  - BMP Exact Row Padding: Computes precise 24-bit aligned scanline widths (`((24 * w + 31) / 32) * 4`), resolving severe size over-estimation bugs.
-  - Format-Specific Empirical Solvers: Calibrated entropy estimation across JPEG, WebP, PNG, TIFF, GIF, HEIF/AVIF, and video bitrates (CRF, codecs, speed presets, and audio channels).
-- **Video Studio & Compressor Overhaul**:
-  - Compression Speed Presets: Added Slow (Maximum Quality, Smallest Size), Medium (Balanced), and Fast (Rapid Processing) options replacing hardcoded ultrafast settings.
-  - Video Rotation & Canvas Flip: 90° CW, 180°, 270° CW rotation, horizontal/vertical flipping, 4:3 and 3:4 aspect ratios, and custom margin crop slider (0–40%).
-  - Trim-Bounded Playback Clamping: Player seek, scrub, and playback loop are strictly clamped within selected trim range.
-- **Image Studio Scale > 100% Live Preview**:
-  - Live preview immediately reflects zoom/scale slider values exceeding 100% on the main workspace and applies safe full-resolution export with GC fallback.
+- **AI Image Upscaler Subsystem**: 7th tool running on-device super-resolution with Point 7 models (Real-ESRGAN 2×/4×, Anime 4×, Lanczos, Bicubic, Nearest) and tiled Hermite feathering.
+- **Accurate File Size Estimation**: Exact 24-bit DWORD scanline padding (`((24 * w + 31) / 32) * 4`), resolving BMP size over-estimation bugs, and calibrated multi-format models.
+- **Video Studio & Compressor**: Added Slow, Medium, and Fast compression presets, video rotation, canvas flip, 4:3/3:4 aspect, and custom margin crop slider (0–40%).
+- **Image Studio Scale > 100%**: Main workspace live preview zoom with full-resolution export memory safeguards.
 
 ### v2.2.5 (Previous Release)
-- **Target File Size Quality Solver**: Automated iterative binary search optimizer (5–95% quality range, $\le 7$ iterations) for target file size budgets (KB/MB) without quality degradation guesswork.
-- **Mobile & Desktop Image Studio Enhancements**:
-  - Text Watermark & Overlay Studio: Custom overlay text, presets, 9-point spatial anchoring, font size slider, color palette selection, and drop-shadow contrast protection.
-  - Canvas Orientation & Alpha Fill: Lossless horizontal & vertical flipping, and alpha background replacement for transparent images (White, Black, Transparent).
-  - High-Fidelity Comparative Inspection: Real-time side-by-side before/after comparison with live file size badges and percentage savings calculations.
-- **Expanded Video Engine & Formats**:
-  - Multi-Container Output Support: Export to MP4, MOV, MKV, WebM, AVI, and animated GIF.
-  - Multi-Codec Video Encoding: Support for H.264 (`libx264`), H.265 (`libx265`), VP9 (`libvpx-vp9`), and AV1 (`libsvtav1`).
-  - Audio Studio Processing: Audio volume gain scaling (0%–200%), channel remixing (Keep, Stereo, Mono), and codec encoding (AAC, MP3, Opus, FLAC, Mute).
-  - Video Spatial & Temporal Transforms: Horizontal & vertical flip filters, 90°/180°/270° rotation, customizable framerates (15, 24, 30, 60 fps), and playback speed multiplier chaining (0.25x–4.0x).
-- **Desktop GUI Modernization**: Modernized dark-mode cards (`#0f172a`), drag-and-drop file ingestion drop-zone, and comparative inspection cards with one-click folder reveal and system media player launching.
-- **Android UI Hardening**: Strict single-line button constraints across all layouts, eliminating label clipping or wrapping across diverse device screen densities.
+- **Native GPL FFmpegKit**: Upgraded Android video engine to native GPL `FFmpegKit 8.1.7` bundling `libx264` and `libx265`, dropping Python/Chaquopy from Android.
+- **Video Studio Colour Grading**: 15 cinematic profiles with 60fps hardware-accelerated live preview rendering.
+- **Target File Size Quality Solver**: Automated iterative binary search optimizer under non-negotiable size ceilings.
+- **Studio Modernization**: Reorganized output settings card, text watermark studio (12 fonts, 16 colors, 9-point anchoring), multi-container export (MP4, MOV, MKV, WebM, AVI, GIF), multi-codec suite, and audio channel remixing.
 
 ### v2.2.4 (Previous Release)
 - **APK Signature Scheme V2/V3**: Exclusively uses V2/V3 block-level signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification failures.

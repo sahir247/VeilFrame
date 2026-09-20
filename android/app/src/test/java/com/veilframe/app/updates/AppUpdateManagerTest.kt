@@ -101,8 +101,9 @@ class AppUpdateManagerTest {
         assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://raw.githubusercontent.com/sahir247/VeilFrame/main/android/update.json"))
         assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://raw.githubusercontent.com/sahir247/VeilFrame/v2.2.6/android/update.json"))
         assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://api.github.com/repos/sahir247/VeilFrame/releases/latest"))
-        assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://github.com/sahir247/VeilFrame/releases/download/v2.2.6/VeilFrame-v2.2.6.apk"))
         assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/123456?token=xyz"))
+        assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://release-assets.githubusercontent.com/123456/VeilFrame-v2.2.7.apk?token=xyz"))
+        assertTrue(AppUpdateManager.isAllowedUpdateUrl("https://github-releases.githubusercontent.com/123456/VeilFrame-v2.2.7.apk"))
 
         // Blocked: Third-party or attacker GitHub repositories
         assertFalse("Block attacker raw GitHub", AppUpdateManager.isAllowedUpdateUrl("https://raw.githubusercontent.com/attacker/malicious/main/update.json"))

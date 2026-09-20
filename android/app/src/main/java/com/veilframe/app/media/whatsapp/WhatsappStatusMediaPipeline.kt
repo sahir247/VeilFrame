@@ -30,6 +30,7 @@ object WhatsappStatusMediaPipeline {
         srcFile: File,
         outFile: File,
         resolution: WhatsappStatusResolution = WhatsappStatusResolution.HD_720P,
+        aspect: String = "Original",
         trimStartSec: Double = 0.0,
         trimDurationSec: Double = 0.0,
         flipH: Boolean = false,
@@ -66,6 +67,9 @@ object WhatsappStatusMediaPipeline {
             val effectiveHdr = analysis.isHdr
             val filterGraph = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
                 resolution = resolution,
+                srcWidth = analysis.width,
+                srcHeight = analysis.height,
+                aspect = aspect,
                 isHdr = effectiveHdr,
                 flipH = flipH,
                 flipV = flipV,

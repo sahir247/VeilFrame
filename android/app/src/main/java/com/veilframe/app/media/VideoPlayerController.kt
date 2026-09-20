@@ -135,6 +135,10 @@ class VideoPlayerController(
     fun setDataSource(uri: Uri) {
         pause()
         try {
+            try {
+                textureView.visibility = android.view.View.VISIBLE
+                textureView.alpha = 1f
+            } catch (_: Exception) {}
             val player = getOrCreatePlayer()
             val mediaItem = MediaItem.fromUri(uri)
             player.setMediaItem(mediaItem)
@@ -143,6 +147,24 @@ class VideoPlayerController(
             Log.e(TAG, "Failed setting media item: ${e.message}", e)
             onErrorListener?.invoke(0, 0)
         }
+    }
+
+    /**
+     * Fully releases player and detaches/clears TextureView surface to eliminate phantom frame persistence.
+     */
+    fun clearMedia() {
+        pause()
+        stopTicker()
+        releasePlayer()
+        durationMs = 0L
+        videoWidth = 0
+        videoHeight = 0
+        trimStartMs = 0L
+        trimEndMs = 0L
+        try {
+            textureView.visibility = android.view.View.GONE
+            textureView.alpha = 0f
+        } catch (_: Exception) {}
     }
 
     fun play() {

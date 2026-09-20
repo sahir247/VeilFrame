@@ -52,7 +52,6 @@ object OnnxSessionFactory {
             Backend.NNAPI -> InferenceAccelerationMode.NNAPI
             Backend.CPU -> InferenceAccelerationMode.CPU
             Backend.XNNPACK -> InferenceAccelerationMode.XNNPACK
-            Backend.QNN -> InferenceAccelerationMode.QNN
         }
         return createSession(
             env = env,
@@ -84,66 +83,6 @@ object OnnxSessionFactory {
             return createCpuSession(env, modelFile, intraOpThreads, interOpThreads, mode)
         }
 
-        // Check if QNN build is requested
-        if (mode == InferenceAccelerationMode.QNN) {
-            try {
-                val qnnOptions = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(intraOpThreads)
-                    setInterOpNumThreads(interOpThreads)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
-                    if (providerConfiguration.containsKey("session.disable_cpu_ep_fallback")) {
-                        val fallbackVal = providerConfiguration["session.disable_cpu_ep_fallback"] ?: "1"
-                        try {
-                            addConfigEntry("session.disable_cpu_ep_fallback", fallbackVal)
-                            Log.i(TAG, "Configured session.disable_cpu_ep_fallback = $fallbackVal for QNN probe")
-                        } catch (eConfig: Throwable) {
-                            Log.w(TAG, "Failed to set addConfigEntry: ${eConfig.message}")
-                        }
-                    }
-
-                    // Explicitly bind the discovered OrtEpDevice instance (never inferred solely from strings)
-                    try {
-                        val isGpuTarget = providerConfiguration["backend_path"]?.contains("Gpu", ignoreCase = true) == true ||
-                                providerConfiguration["backend_type"]?.equals("GPU", ignoreCase = true) == true
-                        val target = if (isGpuTarget) com.veilframe.app.upscale.inference.QnnTarget.GPU else com.veilframe.app.upscale.inference.QnnTarget.HTP
-                        val matchingDevice = com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.selectDevice(target)
-                            ?: com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.getDiscoveredDevices().firstOrNull()
-
-                        if (matchingDevice != null) {
-                            com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.bindSessionDevice(
-                                options = this,
-                                device = matchingDevice,
-                                providerOptions = providerConfiguration
-                            )
-                        }
-                    } catch (eDev: Throwable) {
-                        Log.w(TAG, "Device binding hook error: ${eDev.message}")
-                    }
-                }
-                // Create session with Qualcomm QNN EP and record active lease session
-                val session = env.createSession(modelFile.absolutePath, qnnOptions)
-                com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.incrementSession()
-                Log.i(TAG, "Created session with Qualcomm QNN EP (active QNN sessions: ${com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.currentSessionCount})")
-                return SessionResult(
-                    session = session,
-                    options = qnnOptions,
-                    backendInfo = InferenceBackendInfo(
-                        backend = Backend.QNN,
-                        accelerationMode = mode,
-                        configuredExecutionProvider = "QNNExecutionProvider",
-                        cpuFallbackEnabled = providerConfiguration["session.disable_cpu_ep_fallback"] != "1",
-                        observedFallback = null,
-                        fp16Enabled = precision == InferencePrecisionMode.FP16_RELAXED,
-                        intraOpThreads = intraOpThreads,
-                        interOpThreads = interOpThreads,
-                        providerConfiguration = if (providerConfiguration.isNotEmpty()) providerConfiguration else mapOf("backend_type" to "HTP")
-                    )
-                )
-            } catch (t: Throwable) {
-                Log.w(TAG, "QNN EP requested but unavailable in this build (${t.message}); falling back to NNAPI/CPU")
-            }
-        }
-
         // Check if NNAPI can be attempted (Android 8.1+ / API 27+)
         val canAttemptNnapi = try {
             Build.VERSION.SDK_INT >= 27
@@ -152,11 +91,14 @@ object OnnxSessionFactory {
             false
         }
 
-        if (canAttemptNnapi) {
+        if (canAttemptNnapi && (mode == InferenceAccelerationMode.AUTO || mode == InferenceAccelerationMode.NNAPI)) {
             val nnapiOptions = OrtSession.SessionOptions().apply {
                 setIntraOpNumThreads(intraOpThreads)
                 setInterOpNumThreads(interOpThreads)
-                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+                // Use ALL_OPT for maximum operator fusion, constant folding, and dead code elimination
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+                setMemoryPatternOptimization(true)
             }
 
             var nnapiRegistered = false
@@ -164,26 +106,32 @@ object OnnxSessionFactory {
                 if (Build.VERSION.SDK_INT >= 29) {
                     try {
                         val flagsClass = Class.forName("ai.onnxruntime.providers.NNAPIFlags")
-                        val cpuDisabled = java.lang.Enum.valueOf(flagsClass.asSubclass(Enum::class.java), "CPU_DISABLED")
                         val flagSet = java.util.HashSet<Any>()
-                        flagSet.add(cpuDisabled)
+                        // Note: We deliberately do NOT set CPU_DISABLED so that operators unsupported
+                        // by vendor NNAPI drivers seamlessly fall back to CPU, keeping hardware acceleration
+                        // active for all supported layers without session failure.
                         if (precision == InferencePrecisionMode.FP16_RELAXED) {
                             val fp16 = java.lang.Enum.valueOf(flagsClass.asSubclass(Enum::class.java), "USE_FP16")
                             flagSet.add(fp16)
                         }
+                        try {
+                            val nchw = java.lang.Enum.valueOf(flagsClass.asSubclass(Enum::class.java), "USE_NCHW")
+                            flagSet.add(nchw)
+                        } catch (_: Throwable) {}
+
                         val addNnapiMethod = nnapiOptions.javaClass.methods.firstOrNull {
                             it.name == "addNnapi" && it.parameterTypes.size == 1 && java.util.Set::class.java.isAssignableFrom(it.parameterTypes[0])
                         }
-                        if (addNnapiMethod != null) {
+                        if (addNnapiMethod != null && flagSet.isNotEmpty()) {
                             addNnapiMethod.invoke(nnapiOptions, flagSet)
                             nnapiRegistered = true
-                            Log.i(TAG, "Registered NNAPI with CPU_DISABLED (API ${Build.VERSION.SDK_INT})")
+                            Log.i(TAG, "Registered NNAPI with flags: $flagSet (API ${Build.VERSION.SDK_INT})")
                         } else {
                             nnapiOptions.addNnapi()
                             nnapiRegistered = true
                         }
                     } catch (eFlag: Throwable) {
-                        Log.w(TAG, "NNAPIFlags unavailable ($eFlag); using standard addNnapi()")
+                        Log.w(TAG, "NNAPIFlags reflection notice ($eFlag); using standard addNnapi()")
                         nnapiOptions.addNnapi()
                         nnapiRegistered = true
                     }
@@ -199,8 +147,8 @@ object OnnxSessionFactory {
                 try {
                     val session = env.createSession(modelFile.absolutePath, nnapiOptions)
                     val isFp16 = (precision == InferencePrecisionMode.FP16_RELAXED)
-                    val desc = if (isFp16) "NNAPI (FP16 Relaxed, ORT CPU Fallback)" else "NNAPI (ORT CPU Fallback)"
-                    Log.i(TAG, "Created session with $desc")
+                    val desc = if (isFp16) "NNAPI (FP16 Relaxed, Adaptive Operator Fallback)" else "NNAPI (Adaptive Operator Fallback)"
+                    Log.i(TAG, "Created optimized hardware session with $desc")
                     return SessionResult(
                         session = session,
                         options = nnapiOptions,
@@ -216,7 +164,7 @@ object OnnxSessionFactory {
                         )
                     )
                 } catch (eInit: Throwable) {
-                    Log.w(TAG, "NNAPI session initialization failed: ${eInit.message}; falling back to optimized CPU session")
+                    Log.w(TAG, "NNAPI session initialization failed (${eInit.message}); falling back to optimized CPU session")
                     try {
                         nnapiOptions.close()
                     } catch (_: Throwable) {}

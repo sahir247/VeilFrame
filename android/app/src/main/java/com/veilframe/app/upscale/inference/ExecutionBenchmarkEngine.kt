@@ -319,7 +319,6 @@ class ExecutionBenchmarkEngine(
                         Backend.NNAPI -> if (profile.workers > 1) 45L else 50L
                         Backend.CPU -> (120L / profile.workers).coerceAtLeast(30L)
                         Backend.XNNPACK -> 40L
-                        Backend.QNN -> 25L
                     }
                     SystemClock.sleep(simMs)
                     return TileBenchmarkOutput(

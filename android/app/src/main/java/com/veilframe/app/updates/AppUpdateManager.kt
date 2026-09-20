@@ -67,7 +67,11 @@ class AppUpdateManager(
             if (url.port != -1 && url.port != 443) return false
             if (url.userInfo != null) return false
             val host = url.host.lowercase(Locale.ROOT)
-            if (host == "objects.githubusercontent.com") {
+            // Allow GitHub release asset CDN domains
+            if (host == "objects.githubusercontent.com" ||
+                host == "release-assets.githubusercontent.com" ||
+                host == "github-releases.githubusercontent.com" ||
+                (host.endsWith(".githubusercontent.com") && host != "raw.githubusercontent.com" && host != "gist.githubusercontent.com")) {
                 return true
             }
             val path = url.path

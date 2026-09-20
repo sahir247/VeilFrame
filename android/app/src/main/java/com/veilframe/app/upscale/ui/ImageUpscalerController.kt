@@ -129,9 +129,13 @@ class ImageUpscalerController(
             showModelSelectorDialog(upscalerBinding.btnUpscalerChangeModel)
         }
 
-        // Execution button (morphs to required dialog if needed)
+        // Execution button (morphs to required dialog if needed, or handles select / cancel)
         upscalerBinding.btnUpscalerExecute.setOnClickListener {
-            startUpscalingFlow(upscalerBinding.btnUpscalerExecute)
+            when {
+                sourceBitmap == null -> onPickImageRequested()
+                inferenceJob?.isActive == true || downloadJob?.isActive == true -> cancelActiveOperations()
+                else -> startUpscalingFlow(upscalerBinding.btnUpscalerExecute)
+            }
         }
 
         // Cancel button
@@ -198,6 +202,7 @@ class ImageUpscalerController(
 
                     updateTargetDimensions()
                     updateModelDisplay()
+                    updateUIState()
                     onLog("[UPSCALER] Loaded source image ${bitmap.width}×${bitmap.height}")
                 }
             } catch (e: Exception) {
@@ -356,16 +361,52 @@ class ImageUpscalerController(
 
     private fun updateUIState() {
         val hasImage = (sourceBitmap != null)
-        if (!hasImage) {
-            upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
-            upscalerBinding.layoutUpscalerWorkspace.visibility = View.GONE
-            upscalerBinding.btnUpscalerExecute.isEnabled = false
-            upscalerBinding.btnUpscalerExecute.alpha = 0.5f
-        } else {
-            upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
-            upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
-            upscalerBinding.btnUpscalerExecute.isEnabled = true
-            upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+        val isProcessing = (inferenceJob?.isActive == true || downloadJob?.isActive == true)
+        val hasResult = (resultBitmap != null)
+        val model = getResolvedModel()
+        val isInstalled = repository.isModelInstalled(model)
+
+        when {
+            isProcessing -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+                upscalerBinding.btnUpscalerExecute.text = "Cancel"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_close)
+                upscalerBinding.btnUpscalerExecute.isEnabled = true
+                upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+            }
+            !hasImage -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.GONE
+                upscalerBinding.btnUpscalerExecute.text = "Select Image"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_file_pick)
+                upscalerBinding.btnUpscalerExecute.isEnabled = true
+                upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+            }
+            !isInstalled -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+                upscalerBinding.btnUpscalerExecute.text = "Download Model & Upscale"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_system_update)
+                upscalerBinding.btnUpscalerExecute.isEnabled = true
+                upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+            }
+            hasResult -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+                upscalerBinding.btnUpscalerExecute.text = "Upscale Again"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_resize)
+                upscalerBinding.btnUpscalerExecute.isEnabled = true
+                upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+            }
+            else -> {
+                upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
+                upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+                upscalerBinding.btnUpscalerExecute.text = "Upscale (${targetScale}×)"
+                upscalerBinding.btnUpscalerExecute.setIconResource(R.drawable.ic_resize)
+                upscalerBinding.btnUpscalerExecute.isEnabled = true
+                upscalerBinding.btnUpscalerExecute.alpha = 1.0f
+            }
         }
         updateTargetDimensions()
         updateModelDisplay()
@@ -466,9 +507,9 @@ class ImageUpscalerController(
     private fun executeUpscaling(src: Bitmap, model: UpscaleModel, scale: Int) {
         upscalerBinding.layoutUpscalerProgress.visibility = View.VISIBLE
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
-        upscalerBinding.btnUpscalerExecute.isEnabled = false
         upscalerBinding.progressUpscaler.isIndeterminate = true
         upscalerBinding.tvUpscalerProgressStatus.text = "Preparing ${model.name} pipeline..."
+        updateUIState()
 
         inferenceJob = scope.launch {
             onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
@@ -530,11 +571,20 @@ class ImageUpscalerController(
                         com.veilframe.app.ui.motion.ProcessingMotionController.confirmCompletion(upscalerBinding.layoutUpscalerResults)
 
                         val mp = (upscaled.width * upscaled.height) / 1_000_000.0
+                        val throughput = if (elapsedSec > 0.0) mp / elapsedSec else 0.0
+                        upscalerBinding.tvDiagThroughput.text = String.format(
+                            Locale.US,
+                            "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)",
+                            throughput,
+                            elapsedSec,
+                            mp
+                        )
                         onLog(
                             String.format(
                                 Locale.US,
-                                "[UPSCALER] Upscale completed in %.1fs: %d×%d (~%.1f MP)",
+                                "[UPSCALER] Upscale completed in %.1fs (~%.1f MP/s): %d×%d (~%.1f MP)",
                                 elapsedSec,
+                                throughput,
                                 upscaled.width,
                                 upscaled.height,
                                 mp
@@ -542,7 +592,7 @@ class ImageUpscalerController(
                         )
                         Toast.makeText(
                             activity,
-                            String.format(Locale.US, "Upscaled to %d×%d in %.1fs", upscaled.width, upscaled.height, elapsedSec),
+                            String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", upscaled.width, upscaled.height, throughput, elapsedSec),
                             Toast.LENGTH_SHORT
                         ).show()
                     },
@@ -552,6 +602,7 @@ class ImageUpscalerController(
                         Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
                     }
                 )
+                updateUIState()
             }
         }
     }
@@ -562,9 +613,9 @@ class ImageUpscalerController(
         downloadJob?.cancel()
         downloadJob = null
         upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
-        upscalerBinding.btnUpscalerExecute.isEnabled = true
         onLog("[UPSCALER] Active operation cancelled by user.")
         Toast.makeText(activity, "Cancelled", Toast.LENGTH_SHORT).show()
+        updateUIState()
     }
 
     fun showModelSelectorDialog(originView: View? = null) {

@@ -92,6 +92,27 @@ class ToolSessionManager(
             currentState.switch3Checked = isChecked
             updatePrivacySummaryUI()
         }
+        binding.sliderToolIntensity.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                binding.sliderToolIntensity.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            }
+            currentState.sliderValue = value
+            if (currentToolMode == ToolMode.IMAGE_CLEANER) {
+                binding.tvToolSliderValue.text = "${value.toInt()}%"
+            } else if (currentToolMode == ToolMode.VIDEO_CLEANER) {
+                binding.tvToolSliderValue.text = "CRF ${value.toInt()}"
+            }
+        }
+
+        ExpressiveMotion.applyTouchBounce(binding.btnPickFolder)
+        ExpressiveMotion.applyTouchBounce(binding.btnPickFile)
+        ExpressiveMotion.applyTouchBounce(binding.btnChangeTarget)
+        ExpressiveMotion.applyTouchBounce(binding.btnClearTarget)
+        ExpressiveMotion.applyTouchBounce(binding.btnExecute)
+        ExpressiveMotion.applyTouchBounce(binding.btnExportResult)
+        ExpressiveMotion.applyTouchBounce(binding.btnShareResult)
+        ExpressiveMotion.applyTouchBounce(binding.btnResultSave)
+        ExpressiveMotion.applyTouchBounce(binding.btnResultShare)
     }
 
     fun saveCurrentToolState() {
@@ -101,6 +122,7 @@ class ToolSessionManager(
         state.switch1Checked = binding.switchOption1.isChecked
         state.switch2Checked = binding.switchOption2.isChecked
         state.switch3Checked = binding.switchOption3.isChecked
+        state.sliderValue = binding.sliderToolIntensity.value
         state.consoleLogs = binding.tvConsoleLog.text.toString()
 
         val prefs = activity.getSharedPreferences("veilframe_tool_prefs", Context.MODE_PRIVATE)
@@ -110,6 +132,7 @@ class ToolSessionManager(
             .putBoolean("${currentToolMode.name}_switch1", state.switch1Checked)
             .putBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
             .putBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
+            .putFloat("${currentToolMode.name}_slider", state.sliderValue)
             .apply()
     }
 
@@ -121,6 +144,7 @@ class ToolSessionManager(
             state.switch1Checked = prefs.getBoolean("${currentToolMode.name}_switch1", state.switch1Checked)
             state.switch2Checked = prefs.getBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
             state.switch3Checked = prefs.getBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
+            state.sliderValue = prefs.getFloat("${currentToolMode.name}_slider", state.sliderValue)
         }
 
         // Restore Target Card (Empty vs Mounted state)
@@ -132,6 +156,16 @@ class ToolSessionManager(
         binding.switchOption1.isChecked = state.switch1Checked
         binding.switchOption2.isChecked = state.switch2Checked
         binding.switchOption3.isChecked = state.switch3Checked
+
+        if (currentToolMode == ToolMode.IMAGE_CLEANER) {
+            val clamped = state.sliderValue.coerceIn(50f, 100f)
+            binding.sliderToolIntensity.value = clamped
+            binding.tvToolSliderValue.text = "${clamped.toInt()}%"
+        } else if (currentToolMode == ToolMode.VIDEO_CLEANER) {
+            val clamped = state.sliderValue.coerceIn(18f, 36f)
+            binding.sliderToolIntensity.value = clamped
+            binding.tvToolSliderValue.text = "CRF ${clamped.toInt()}"
+        }
 
         // Restore Privacy Summary
         updatePrivacySummaryUI()
@@ -194,6 +228,7 @@ class ToolSessionManager(
         currentToolMode = mode
         when (mode) {
             ToolMode.AI_BUNDLE -> {
+                binding.layoutToolSlider.visibility = View.GONE
                 binding.tvToolTitle.text = "AI BUNDLE"
                 binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
                 binding.btnPickFolder.text = "Project Folder"
@@ -227,6 +262,17 @@ class ToolSessionManager(
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Video"
 
+                binding.layoutToolSlider.visibility = View.VISIBLE
+                binding.tvToolSliderTitle.text = "CRF COMPRESSION FACTOR (LOWER = HIGHER QUALITY)"
+                binding.sliderToolIntensity.valueFrom = 18f
+                binding.sliderToolIntensity.valueTo = 36f
+                binding.sliderToolIntensity.stepSize = 1f
+                val clamped = currentState.sliderValue.coerceIn(18f, 36f)
+                val initialVal = if (currentState.sliderValue < 18f || currentState.sliderValue > 36f) 23f else clamped
+                currentState.sliderValue = initialVal
+                binding.sliderToolIntensity.value = initialVal
+                binding.tvToolSliderValue.text = "CRF ${initialVal.toInt()}"
+
                 configureOptions(
                     paramHeader = "VIDEO PRIVACY PARAMETERS",
                     primaryLabel = "Sensor Fingerprint Protection",
@@ -255,6 +301,17 @@ class ToolSessionManager(
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Image"
 
+                binding.layoutToolSlider.visibility = View.VISIBLE
+                binding.tvToolSliderTitle.text = "IMAGE FIDELITY & QUALITY"
+                binding.sliderToolIntensity.valueFrom = 50f
+                binding.sliderToolIntensity.valueTo = 100f
+                binding.sliderToolIntensity.stepSize = 5f
+                val clamped = currentState.sliderValue.coerceIn(50f, 100f)
+                val initialVal = if (clamped < 50f) 95f else clamped
+                currentState.sliderValue = initialVal
+                binding.sliderToolIntensity.value = initialVal
+                binding.tvToolSliderValue.text = "${initialVal.toInt()}%"
+
                 configureOptions(
                     paramHeader = "IMAGE PRIVACY PARAMETERS",
                     primaryLabel = "Privacy / Quality Fidelity",
@@ -278,6 +335,7 @@ class ToolSessionManager(
                 )
             }
             ToolMode.FOLDER_SCANNER -> {
+                binding.layoutToolSlider.visibility = View.GONE
                 binding.tvToolTitle.text = "FOLDER SCANNER"
                 binding.tvToolSubtitle.text = "Perform structural directory audits, secret scans & duplicate hunts"
                 binding.btnPickFolder.text = "Select Folder"
@@ -436,6 +494,10 @@ class ToolSessionManager(
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
                 textSize = 12f
+                shapeAppearanceModel = shapeAppearanceModel.toBuilder()
+                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .build()
+                ExpressiveMotion.applyTouchBounce(this)
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) {
                         onPrimaryChipSelected?.invoke(index)
@@ -461,6 +523,10 @@ class ToolSessionManager(
                 isCheckedIconVisible = true
                 checkedIconTint = createChipTextStateList()
                 textSize = 12f
+                shapeAppearanceModel = shapeAppearanceModel.toBuilder()
+                    .setAllCornerSizes(resources.displayMetrics.density * 18f)
+                    .build()
+                ExpressiveMotion.applyTouchBounce(this)
             }
             binding.chipGroupFormat.addView(chip)
         }

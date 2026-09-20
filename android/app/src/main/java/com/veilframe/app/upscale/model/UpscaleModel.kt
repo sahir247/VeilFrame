@@ -21,6 +21,7 @@ data class UpscaleModel(
     val genre: ModelGenre = ModelGenre.GENERAL_PHOTO,
     val capability: ModelCapability = ModelCapability.SUPER_RESOLUTION,
     val tier: ModelTier = ModelTier.TIER_A_NATIVE,
+    val deploymentStatus: DeploymentStatus = DeploymentStatus.ANDROID_NATIVE,
     val license: String = "Apache-2.0 / Open Source",
     val qualityFocus: String = "Balanced",
     // ONNX Tensor & Runtime Compatibility Metadata
@@ -49,6 +50,12 @@ enum class ModelTier {
     TIER_A_NATIVE,
     TIER_B_CONVERTED,
     TIER_C_DESKTOP
+}
+
+enum class DeploymentStatus {
+    ANDROID_NATIVE,
+    ANDROID_EXPERIMENTAL,
+    REFERENCE_ONLY
 }
 
 enum class ModelGenre {

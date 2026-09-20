@@ -15,9 +15,15 @@ object WhatsappStatusFilterGraphBuilder {
 
     /**
      * Builds the complete filter_complex string for WhatsApp Status video encoding.
+     * Preserves Display Aspect Ratio (DAR) without crop in Original mode.
+     * Applies target-aspect crop then bounded scaling in explicit aspect modes.
+     * Strictly enforces setsar=1 and even dimension rounding.
      */
     fun buildVideoFilterGraph(
         resolution: WhatsappStatusResolution,
+        srcWidth: Int = 0,
+        srcHeight: Int = 0,
+        aspect: String = "Original",
         isHdr: Boolean = false,
         flipH: Boolean = false,
         flipV: Boolean = false,
@@ -25,8 +31,9 @@ object WhatsappStatusFilterGraphBuilder {
         speed: Float = 1.0f,
         colorProfile: String = "Original"
     ): String {
-        val targetW = resolution.width
-        val targetH = resolution.height
+        val effW = if (rotate == 90 || rotate == 270) srcHeight else srcWidth
+        val effH = if (rotate == 90 || rotate == 270) srcWidth else srcHeight
+        val (targetW, targetH) = resolution.calculateBoundedDimensions(effW, effH, aspect)
 
         val filterChains = mutableListOf<String>()
         var currentInput = "0:v"
@@ -38,7 +45,7 @@ object WhatsappStatusFilterGraphBuilder {
             currentInput = "v_sdr"
         }
 
-        // 2. Spatial and geometric transformations
+        // 2. Spatial, geometric, and aspect transformations
         val transforms = mutableListOf<String>()
 
         if (flipH) transforms.add("hflip")
@@ -50,9 +57,18 @@ object WhatsappStatusFilterGraphBuilder {
             270 -> transforms.add("transpose=2")
         }
 
-        // 9:16 Status Canvas: scale to fill 9:16 canvas, then center crop
-        transforms.add("scale=$targetW:$targetH:force_original_aspect_ratio=increase")
-        transforms.add("crop=$targetW:$targetH")
+        // Normalize non-square SAR to 1:1 square pixels before scaling
+        transforms.add("setsar=1")
+
+        val isOriginalAspect = aspect.equals("Original", ignoreCase = true) || aspect.isBlank()
+        if (isOriginalAspect) {
+            // Original aspect: Proportional resize strictly fitting inside bounds without cropping or stretching
+            transforms.add("scale=$targetW:$targetH")
+        } else {
+            // Explicit aspect ratio target: crop to composition, then scale to bounded canvas
+            transforms.add("scale=$targetW:$targetH:force_original_aspect_ratio=increase")
+            transforms.add("crop=$targetW:$targetH")
+        }
 
         // Playback speed timing
         if (Math.abs(speed - 1.0f) > 0.01f && speed > 0.1f) {

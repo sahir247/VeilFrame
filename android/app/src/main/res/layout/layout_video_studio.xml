@@ -786,7 +786,7 @@
                                 android:id="@+id/tvVidBeforeStats"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0 B • 0s • Original"
+                                android:text="No video selected"
                                 android:textColor="@color/vf_text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>
@@ -818,7 +818,7 @@
                                 android:id="@+id/tvVidAfterStats"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="~0 B (MP4)"
+                                android:text="Select a video to calculate"
                                 android:textColor="@color/vf_accent_green"
                                 android:textSize="11sp"
                                 android:textStyle="bold" />

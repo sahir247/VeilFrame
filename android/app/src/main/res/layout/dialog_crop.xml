@@ -122,6 +122,13 @@
                         android:text="1:1" />
 
                     <com.google.android.material.chip.Chip
+                        android:id="@+id/chipAspectPassport"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Passport (600×600)" />
+
+                    <com.google.android.material.chip.Chip
                         android:id="@+id/chipAspect43"
                         style="@style/Widget.Material3.Chip.Filter"
                         android:layout_width="wrap_content"

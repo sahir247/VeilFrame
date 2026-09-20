@@ -90,7 +90,7 @@ object UpscaleModelRegistry {
 
     val REAL_ESRGAN_GENERAL_4X = UpscaleModel(
         id = "realesrgan-general-4x",
-        name = "Real-ESRGAN General 4×",
+        name = "Real-ESRGAN General 4× (Legacy Standard)",
         description = "Reliable general-purpose photo restoration with deep residual in residual dense blocks.",
         type = ModelType.AI_ONNX,
         nativeScale = 4,
@@ -227,6 +227,188 @@ object UpscaleModelRegistry {
         minInputDimension = 512
     )
 
+    // 2025-2026 Modern SOTA Lightweight & Mobile Models
+    val SAT_LIGHT_2X = UpscaleModel(
+        id = "sat-light-2x",
+        name = "SAT-light 2×",
+        description = "Space-Aggregation Transformer for lightweight super-resolution. Pure INT8/FP16 native execution with high edge sharpness.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 2,
+        sizeBytes = 4_850_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}SAT_light_x2.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(2, 4),
+        recommendedPresetIds = listOf("photo", "fast"),
+        isBuiltIn = false,
+        genre = ModelGenre.LIGHTWEIGHT_MOBILE,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "Lightweight Space-Aggregation"
+    )
+
+    val SAT_LIGHT_4X = UpscaleModel(
+        id = "sat-light-4x",
+        name = "SAT-light 4×",
+        description = "Space-Aggregation Transformer 4× offering high PSNR restoration at ultra-low mobile memory footprints.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 5_200_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}SAT_light_x4.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("fast_mobile", "photo_fidelity"),
+        isBuiltIn = false,
+        genre = ModelGenre.LIGHTWEIGHT_MOBILE,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "Lightweight Space-Aggregation"
+    )
+
+    val SAFMN_V3_2X = UpscaleModel(
+        id = "safmn-v3-2x",
+        name = "SAFMNv3 2×",
+        description = "Spatially-Adaptive Feature Modulation Network v3 with enhanced receptive field and minimal FLOPs.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 2,
+        sizeBytes = 2_800_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}SAFMNv3_x2.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(2, 4),
+        recommendedPresetIds = listOf("fast"),
+        isBuiltIn = false,
+        genre = ModelGenre.LIGHTWEIGHT_MOBILE,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "MIT",
+        qualityFocus = "Spatially-Adaptive Feature Modulation"
+    )
+
+    val SAFMN_V3_4X = UpscaleModel(
+        id = "safmn-v3-4x",
+        name = "SAFMNv3 4×",
+        description = "Spatially-Adaptive Feature Modulation Network v3 4× with sub-3M parameter footprint and rapid mobile inference.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 3_150_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}SAFMNv3_x4.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("fast_mobile"),
+        isBuiltIn = false,
+        genre = ModelGenre.LIGHTWEIGHT_MOBILE,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "MIT",
+        qualityFocus = "Ultra-Fast Adaptive Modulation"
+    )
+
+    val REAL_SAFMN_PLUS_4X = UpscaleModel(
+        id = "real-safmn-plus-4x",
+        name = "Real-SAFMN++ 4×",
+        description = "Compact blind super-resolution model tailored for real-world degraded mobile photos with noise reduction.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 6_400_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}RealSAFMN_plus_x4.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_quality"),
+        isBuiltIn = false,
+        genre = ModelGenre.GENERAL_PHOTO,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "MIT",
+        qualityFocus = "Blind Super-Resolution + Denoising"
+    )
+
+    val ESPAN_4X = UpscaleModel(
+        id = "espan-4x",
+        name = "ESPAN 4×",
+        description = "Efficient Pixel Attention Network designed for resource-constrained edge devices with high structural retention.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 5_800_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}ESPAN_x4.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_balanced"),
+        isBuiltIn = false,
+        genre = ModelGenre.LIGHTWEIGHT_MOBILE,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "Efficient Edge Attention"
+    )
+
+    val PFT_LIGHT_4X = UpscaleModel(
+        id = "pft-light-4x",
+        name = "PFT-light 4×",
+        description = "Progressive Frequency Transformer separating low and high frequency image components for crisp texture recovery.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 12_600_000L,
+        downloadUrl = "${HF_UPSCALE_BASE}PFT_light_x4.ort",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_fidelity"),
+        isBuiltIn = false,
+        genre = ModelGenre.PHOTO_FIDELITY,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "Progressive Frequency Decomposition"
+    )
+
+    // Tier C: High-Parameter Reference / Server-Grade Models (Not selectable for Android native execution)
+    val DRCT_4X = UpscaleModel(
+        id = "drct-4x",
+        name = "DRCT 4× (Dense Residual Channel Transformer)",
+        description = "State-of-the-art dense residual channel transformer. High-parameter architecture for workstation and server-grade benchmarks.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 86_000_000L,
+        downloadUrl = "",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = emptyList(),
+        isBuiltIn = false,
+        genre = ModelGenre.PHOTO_FIDELITY,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_C_DESKTOP,
+        deploymentStatus = DeploymentStatus.REFERENCE_ONLY,
+        license = "Apache-2.0",
+        qualityFocus = "Workstation SOTA Benchmark"
+    )
+
+    val PLAIN_USR_4X = UpscaleModel(
+        id = "plain-usr-4x",
+        name = "PlainUSR 4× (Unconstrained SR)",
+        description = "Heavyweight unconstrained super-resolution model with dense self-attention. Benchmark baseline for workstation GPUs.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 94_000_000L,
+        downloadUrl = "",
+        sha256 = "",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = emptyList(),
+        isBuiltIn = false,
+        genre = ModelGenre.PHOTO_FIDELITY,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_C_DESKTOP,
+        deploymentStatus = DeploymentStatus.REFERENCE_ONLY,
+        license = "Apache-2.0",
+        qualityFocus = "Server-Grade Unconstrained Attention"
+    )
+
     val ALL_MODELS: List<UpscaleModel> = listOf(
         LANCZOS,
         BICUBIC,
@@ -238,25 +420,33 @@ object UpscaleModelRegistry {
         SWINIR_REALSR_4X,
         REAL_PLKSR_4X,
         SPAN_4X,
+        SAT_LIGHT_2X,
+        SAT_LIGHT_4X,
+        SAFMN_V3_2X,
+        SAFMN_V3_4X,
+        REAL_SAFMN_PLUS_4X,
+        ESPAN_4X,
+        PFT_LIGHT_4X,
+        DRCT_4X,
+        PLAIN_USR_4X,
         CODEFORMER
     )
 
-    val AI_MODELS: List<UpscaleModel> = listOf(
-        REAL_ESRGAN_GENERAL_2X,
-        REAL_ESRGAN_GENERAL_4X,
-        REAL_ESRGAN_ANIME_4X,
-        REAL_CUGAN_4X,
-        SWINIR_REALSR_4X,
-        REAL_PLKSR_4X,
-        SPAN_4X,
-        CODEFORMER
-    )
+    /**
+     * Selectable models for Android on-device execution.
+     * Excludes Tier C / Reference-Only workstation models.
+     */
+    val SELECTABLE_MODELS: List<UpscaleModel> = ALL_MODELS.filter {
+        it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY && it.tier != ModelTier.TIER_C_DESKTOP
+    }
 
-    val BUILT_IN_MODELS: List<UpscaleModel> = listOf(
-        LANCZOS,
-        BICUBIC,
-        NEAREST
-    )
+    val AI_MODELS: List<UpscaleModel> = SELECTABLE_MODELS.filter { it.type == ModelType.AI_ONNX }
+
+    val BUILT_IN_MODELS: List<UpscaleModel> = ALL_MODELS.filter { it.isBuiltIn }
+
+    val REFERENCE_MODELS: List<UpscaleModel> = ALL_MODELS.filter {
+        it.deploymentStatus == DeploymentStatus.REFERENCE_ONLY || it.tier == ModelTier.TIER_C_DESKTOP
+    }
 
     fun getModelById(id: String): UpscaleModel? {
         return ALL_MODELS.find { it.id.equals(id, ignoreCase = true) }

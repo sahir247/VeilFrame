@@ -20,7 +20,6 @@ class TileSizePolicyTest {
         lowRamDevice = false,
         supportsNnapi = true,
         supportsNnapiFp16 = true,
-        supportsQnnBuild = false,
         supportsXnnpack = true,
         thermalStatus = 0
     )

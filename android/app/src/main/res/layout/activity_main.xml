@@ -72,7 +72,7 @@
                     android:paddingEnd="8dp"
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
-                    android:text="v2.2.5"
+                    android:text="v2.2.7"
                     android:textColor="@color/vf_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
@@ -252,421 +252,27 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Section 1: Metadata & Privacy -->
+            <!-- Category 1: Media Studios -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:text="METADATA &amp; PRIVACY"
+                android:text="MEDIA STUDIOS"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
-            <!-- Tool 1: Video Cleaner -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolVideo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_tab_video"
-                        android:contentDescription="Video Cleaner Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="VIDEO CLEANER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Scrub bitstream metadata and protect against sensor fingerprinting."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Video Cleaner"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Tool 2: Image Cleaner -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolImage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_tab_image"
-                        android:contentDescription="Image Cleaner Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="IMAGE CLEANER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Strip EXIF, GPS coordinates, camera maker notes, and thumbnails."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Cleaner"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Section 2: Folder Operation & AI Work -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:text="FOLDER OPERATION &amp; AI WORK"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
-
-            <!-- Tool 3: Folder Scanner -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolFolder"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_tab_folder"
-                        android:contentDescription="Folder Scanner Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="FOLDER SCANNER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Perform deep forensic directory audits, secret scans, and duplicate hunts."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Folder Scanner"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Tool 4: AI Bundle -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolAi"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_tab_bundle"
-                        android:contentDescription="AI Bundle Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="AI BUNDLE"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Package source code into token-budgeted LLM analysis bundles."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open AI Bundle"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Tool: Markdown Viewer -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolMarkdownViewer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_text"
-                        android:contentDescription="Markdown Viewer"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="MARKDOWN VIEWER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="3dp"
-                                android:text="Read &amp; edit GFM docs with live preview, offline Mermaid, KaTeX, TOC, code copy, and New MD Maker."
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Markdown Viewer"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Section 3: Media Editing & Compression -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:text="MEDIA EDITING &amp; COMPRESSION"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
-
-            <!-- Tool 5: Image Studio & Compressor -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardToolImageStudio"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_crop"
-                        android:contentDescription="Image Studio Tool"
-                        app:tint="@color/vf_primary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="8dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="IMAGE STUDIO &amp; COMPRESSOR"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:text="Crop, resize, rotate, color filter presets, EXIF editing, and deep compression."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:contentDescription="Open Image Studio"
-                        app:tint="@color/vf_secondary" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Tool 6: Video Studio & Visual Trimmer -->
+            <!-- Tool 1: Video Studio & Visual Trimmer -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolVideoStudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -719,7 +325,69 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 7: AI Image Upscaler -->
+            <!-- Tool 2: Image Studio & Compressor -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolImageStudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_crop"
+                        android:contentDescription="Image Studio Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IMAGE STUDIO &amp; COMPRESSOR"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Crop, resize, rotate, color filter presets, EXIF editing, and deep compression."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Image Studio"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 3: AI Image Upscaler -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolImageUpscaler"
                 android:layout_width="match_parent"
@@ -728,7 +396,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -777,6 +445,338 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Image Upscaler"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Category 2: Privacy Cleaners -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="PRIVACY CLEANERS"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <!-- Tool 4: Video Cleaner -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolVideo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tab_video"
+                        android:contentDescription="Video Cleaner Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="VIDEO CLEANER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Scrub bitstream metadata and protect against sensor fingerprinting."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Video Cleaner"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 5: Image Cleaner -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolImage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tab_image"
+                        android:contentDescription="Image Cleaner Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="IMAGE CLEANER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Strip EXIF, GPS coordinates, camera maker notes, and thumbnails."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Image Cleaner"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Category 3: Forensics & AI -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:text="FORENSICS &amp; AI"
+                android:textColor="@color/vf_text_muted"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <!-- Tool 6: Folder Scanner -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolFolder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tab_folder"
+                        android:contentDescription="Folder Scanner Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FOLDER SCANNER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Perform deep forensic directory audits, secret scans, and duplicate hunts."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Folder Scanner"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 7: AI Bundle -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolAi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tab_bundle"
+                        android:contentDescription="AI Bundle Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AI BUNDLE"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Package source code into token-budgeted LLM analysis bundles."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open AI Bundle"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 8: Markdown Viewer -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolMarkdownViewer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_text"
+                        android:contentDescription="Markdown Viewer"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="MARKDOWN VIEWER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="3dp"
+                                android:text="Read &amp; edit GFM docs with live preview, offline Mermaid, KaTeX, TOC, code copy, and New MD Maker."
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Markdown Viewer"
                         app:tint="@color/vf_secondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -919,7 +919,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Installed: v2.2.5 • Local Engine"
+                            android:text="Installed: v2.2.7 • Local Engine"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -993,7 +993,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.5"
+                android:text="WHAT'S NEW IN v2.2.7"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
@@ -1139,7 +1139,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -1230,7 +1230,7 @@
                                 android:singleLine="true"
                                 android:ellipsize="end"
                                 app:backgroundTint="@color/vf_surface_variant"
-                                app:cornerRadius="8dp"
+                                app:cornerRadius="21dp"
                                 app:icon="@drawable/ic_folder_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
@@ -1253,7 +1253,7 @@
                                 android:singleLine="true"
                                 android:ellipsize="end"
                                 app:backgroundTint="@color/vf_surface_variant"
-                                app:cornerRadius="8dp"
+                                app:cornerRadius="21dp"
                                 app:icon="@drawable/ic_file_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
@@ -1337,9 +1337,6 @@
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                                 android:id="@+id/btnChangeTarget"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
@@ -1351,7 +1348,10 @@
                                 android:textColor="@color/vf_primary"
                                 android:textSize="11sp"
                                 android:textStyle="bold"
-                                app:cornerRadius="8dp"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:cornerRadius="19dp"
                                 app:strokeColor="@color/vf_primary"
                                 app:strokeWidth="1dp"
                                 app:icon="@drawable/ic_folder_pick"
@@ -1359,9 +1359,6 @@
                                 app:iconTint="@color/vf_primary" />
 
                             <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
                                 android:id="@+id/btnClearTarget"
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
@@ -1373,7 +1370,10 @@
                                 android:textColor="@color/vf_accent_red"
                                 android:textSize="11sp"
                                 android:textStyle="bold"
-                                app:cornerRadius="8dp"
+                                android:maxLines="1"
+                                android:singleLine="true"
+                                android:ellipsize="end"
+                                app:cornerRadius="19dp"
                                 app:strokeColor="@color/vf_accent_red"
                                 app:strokeWidth="1dp"
                                 app:icon="@drawable/ic_action_clear"
@@ -1391,7 +1391,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -1411,6 +1411,60 @@
                         android:textSize="12sp"
                         android:textStyle="bold"
                         android:letterSpacing="0.06" />
+
+                    <!-- Expressive Tool Slider Row (Shown dynamically for Image & Video Cleaner) -->
+                    <LinearLayout
+                        android:id="@+id/layoutToolSlider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="14dp"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="4dp">
+
+                            <TextView
+                                android:id="@+id/tvToolSliderTitle"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Compression Intensity"
+                                android:textColor="@color/vf_text_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvToolSliderValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@color/vf_surface_variant"
+                                android:paddingStart="8dp"
+                                android:paddingEnd="8dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="95%"
+                                android:textColor="@color/vf_primary"
+                                android:textSize="11sp"
+                                android:fontFamily="monospace"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/sliderToolIntensity"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0"
+                            android:valueTo="100"
+                            android:value="95"
+                            app:thumbColor="@color/vf_primary"
+                            app:trackColorActive="@color/vf_primary"
+                            app:trackColorInactive="@color/vf_surface_variant" />
+                    </LinearLayout>
 
                     <!-- Primary Setting Row -->
                     <TextView
@@ -1606,7 +1660,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -1683,7 +1737,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -1733,6 +1787,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:visibility="invisible"
+                        app:trackCornerRadius="4dp"
+                        app:trackThickness="8dp"
                         app:indicatorColor="@color/vf_accent_green"
                         app:trackColor="@color/vf_surface_variant" />
 
@@ -1877,7 +1933,7 @@
                 android:layout_marginBottom="16dp"
                 android:visibility="gone"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="24dp"
                 app:strokeColor="@color/vf_accent_green"
                 app:strokeWidth="1dp">
 
@@ -1945,7 +2001,7 @@
                         android:textSize="12sp"
                         android:visibility="gone"
                         app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
+                        app:cornerRadius="20dp"
                         app:icon="@drawable/ic_visibility"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
@@ -1969,7 +2025,7 @@
                             android:textColor="@color/vf_text_primary"
                             android:textSize="11sp"
                             app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="8dp"
+                            app:cornerRadius="20dp"
                             app:icon="@drawable/ic_action_save"
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
@@ -1988,7 +2044,7 @@
                             android:textColor="@color/vf_text_primary"
                             android:textSize="11sp"
                             app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="8dp"
+                            app:cornerRadius="20dp"
                             app:icon="@drawable/ic_action_share"
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
@@ -2059,7 +2115,7 @@
             android:textStyle="bold"
             android:letterSpacing="0.06"
             app:backgroundTint="@color/vf_primary"
-            app:cornerRadius="8dp"
+            app:cornerRadius="24dp"
             app:icon="@drawable/ic_action_play"
             app:iconTint="@color/vf_on_primary"
             app:iconGravity="textStart" />
@@ -2085,7 +2141,7 @@
                 android:textSize="12sp"
                 android:enabled="false"
                 app:backgroundTint="@color/vf_surface_variant"
-                app:cornerRadius="8dp"
+                app:cornerRadius="21dp"
                 app:icon="@drawable/ic_action_save"
                 app:iconTint="@color/vf_secondary"
                 app:iconGravity="textStart" />
@@ -2105,7 +2161,7 @@
                 android:textSize="12sp"
                 android:enabled="false"
                 app:backgroundTint="@color/vf_surface_variant"
-                app:cornerRadius="8dp"
+                app:cornerRadius="21dp"
                 app:icon="@drawable/ic_action_share"
                 app:iconTint="@color/vf_secondary"
                 app:iconGravity="textStart" />

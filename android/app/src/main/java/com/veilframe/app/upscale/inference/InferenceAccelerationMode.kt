@@ -6,13 +6,11 @@ package com.veilframe.app.upscale.inference
  * - NNAPI: Android Neural Networks API accelerator
  * - CPU: Standard optimized ONNX Runtime CPU engine
  * - XNNPACK: Highly optimized mobile floating-point CPU engine
- * - QNN: Qualcomm Neural Network execution provider (requires QNN-enabled custom ORT build)
  */
 enum class Backend {
     NNAPI,
     CPU,
-    XNNPACK,
-    QNN
+    XNNPACK
 }
 
 /**
@@ -30,8 +28,7 @@ enum class InferenceAccelerationMode {
     AUTO,
     NNAPI,
     CPU,
-    XNNPACK,
-    QNN
+    XNNPACK
 }
 
 /**
@@ -73,9 +70,6 @@ data class InferenceBackendInfo(
     val displayLabel: String = when {
         backend == Backend.NNAPI && cpuFallbackEnabled -> "NNAPI • CPU fallback enabled"
         backend == Backend.NNAPI -> "NNAPI"
-        backend == Backend.QNN && providerConfiguration["backend_type"] == "HTP" -> "QNN / HTP"
-        backend == Backend.QNN && providerConfiguration["backend_type"] == "GPU" -> "QNN / GPU"
-        backend == Backend.QNN -> "QNN"
         backend == Backend.XNNPACK -> "XNNPACK"
         else -> "ORT CPU"
     }

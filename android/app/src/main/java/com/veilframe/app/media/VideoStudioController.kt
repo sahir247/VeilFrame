@@ -25,6 +25,8 @@ import com.veilframe.app.databinding.DialogVideoSpeedBinding
 import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutVideoStudioBinding
 import com.veilframe.app.media.preview.VideoColorFilterHelper
+import com.veilframe.app.ui.dock.FloatingActionState
+import com.veilframe.app.ui.dock.FloatingDockStateController
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MotionSpec
 import com.veilframe.app.ui.motion.MorphDialogController
@@ -83,6 +85,7 @@ class VideoStudioController(
     private var compressionJob: Job? = null
     private var isScrubbing: Boolean = false
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
+    private lateinit var floatingDockController: FloatingDockStateController
 
     fun initWorkspace() {
         binding.btnVidStudioMenu.setOnClickListener { onNavigateHome() }
@@ -158,6 +161,14 @@ class VideoStudioController(
                 if (text.contains("GIF", ignoreCase = true)) {
                     outputConfig.format = "GIF"
                     outputConfig.outputMode = VideoOutputMode.GIF
+                    // WhatsApp Status is strictly H.264 MP4; if previously selected, switch to Auto (CRF)
+                    if (outputConfig.targetPreset == "WhatsApp Status") {
+                        outputConfig.targetPreset = "Auto (Balanced CRF 28)"
+                        outputConfig.targetMb = null
+                        binding.chipVidPresetAuto.isChecked = true
+                        binding.layoutWhatsappStatusResolution.visibility = View.GONE
+                        setEncodingControlsLockedForWhatsapp(false)
+                    }
                 } else {
                     outputConfig.outputMode = VideoOutputMode.VIDEO
                     outputConfig.format = when (text.take(3)) {
@@ -169,6 +180,7 @@ class VideoStudioController(
                 updateUiForOutputMode()
                 updateOutputFilenameExtension()
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -180,9 +192,20 @@ class VideoStudioController(
                     R.id.chipVidPresetWhatsapp -> {
                         outputConfig.targetPreset = "WhatsApp Status"
                         outputConfig.targetMb = 16f
+                        // WhatsApp Status requires compatible MP4 container and H.264 video codec
+                        outputConfig.outputMode = VideoOutputMode.VIDEO
+                        outputConfig.format = "MP4"
+                        outputConfig.codec = "H.264"
+                        binding.chipVidMp4.isChecked = true
+                        binding.chipVidCodecH264.isChecked = true
+                        editState.scalePreset = "Original (No scaling)"
+                        binding.chipVidResOriginal.isChecked = true
+
                         binding.layoutWhatsappStatusResolution.visibility = View.VISIBLE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(true)
+                        updateUiForOutputMode()
+                        updateOutputFilenameExtension()
                     }
                     R.id.chipVidPresetDiscord -> {
                         outputConfig.targetPreset = "Discord (25 MB)"
@@ -190,6 +213,7 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                     R.id.chipVidPresetNitro -> {
                         outputConfig.targetPreset = "Discord Nitro (50 MB)"
@@ -197,6 +221,7 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                     R.id.chipVidPresetEmail -> {
                         outputConfig.targetPreset = "Email Attachment (8 MB)"
@@ -204,6 +229,7 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                     R.id.chipVidPresetWeb -> {
                         outputConfig.targetPreset = "Web Stream (10 MB)"
@@ -211,6 +237,7 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                     R.id.chipVidPresetCustom -> {
                         outputConfig.targetPreset = "Custom"
@@ -219,6 +246,7 @@ class VideoStudioController(
                         val customMb = binding.etVidCustomTargetMb.text?.toString()?.toFloatOrNull()
                         outputConfig.targetMb = customMb
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                     else -> {
                         outputConfig.targetPreset = "Auto (Balanced CRF 28)"
@@ -226,9 +254,11 @@ class VideoStudioController(
                         binding.layoutWhatsappStatusResolution.visibility = View.GONE
                         binding.tilVidCustomTargetMb.visibility = View.GONE
                         setEncodingControlsLockedForWhatsapp(false)
+                        updateUiForOutputMode()
                     }
                 }
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -240,6 +270,7 @@ class VideoStudioController(
                     else -> com.veilframe.app.media.whatsapp.WhatsappStatusResolution.HD_720P
                 }
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -249,6 +280,7 @@ class VideoStudioController(
             override fun afterTextChanged(s: android.text.Editable?) {
                 outputConfig.targetMb = s?.toString()?.toFloatOrNull()
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         })
 
@@ -262,14 +294,18 @@ class VideoStudioController(
                     else -> "H.264"
                 }
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         }
 
         // In-place CRF quality slider
-        binding.sliderVidQuality.addOnChangeListener { _, value, _ ->
-            outputConfig.crf = value.toInt()
-            binding.tvVidQualityValue.text = "CRF ${outputConfig.crf}"
-            refreshStats()
+        binding.sliderVidQuality.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                outputConfig.crf = value.toInt()
+                binding.tvVidQualityValue.text = "CRF ${outputConfig.crf}"
+                refreshStats()
+                floatingDockController.onEditApplied()
+            }
         }
 
         // Compression speed preset chips (Slow, Medium, Fast)
@@ -282,6 +318,7 @@ class VideoStudioController(
                     else -> "slow"
                 }
                 refreshStats()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -298,6 +335,7 @@ class VideoStudioController(
                 }
                 refreshStats()
                 updateEditSummary()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -310,6 +348,7 @@ class VideoStudioController(
                 binding.btnPlayerMute.setIconResource(if (editState.audioMode == AudioMode.MUTE) R.drawable.ic_audio_volume_off else R.drawable.ic_audio_volume)
                 refreshStats()
                 updateEditSummary()
+                floatingDockController.onEditApplied()
             }
         }
 
@@ -324,9 +363,30 @@ class VideoStudioController(
         // Compression execution
         binding.btnVidExecute.setOnClickListener { handleExecute() }
 
-        // Floating Action Dock wiring
-        binding.btnFloatingExecute.setOnClickListener { binding.btnVidExecute.performClick() }
-        binding.btnFloatingShare.setOnClickListener { binding.btnVidShareResult.performClick() }
+        // Floating Action Dock state controller initialization
+        floatingDockController = FloatingDockStateController(
+            dockCard = binding.cardFloatingActionDock,
+            primaryButton = binding.btnFloatingExecute,
+            secondaryButton = binding.btnFloatingShare,
+            onPrimaryClick = {
+                when (floatingDockController.currentState) {
+                    FloatingActionState.EMPTY -> onPickVideoRequest()
+                    FloatingActionState.READY -> handleExecute()
+                    FloatingActionState.COMPLETED -> {
+                        val f = lastResultFile
+                        if (f != null && f.exists()) {
+                            onExportFileRequest(f)
+                            floatingDockController.onSaved()
+                        }
+                    }
+                    FloatingActionState.PROCESSING -> { /* in progress */ }
+                }
+            },
+            onSecondaryClick = {
+                val f = lastResultFile
+                if (f != null && f.exists()) onShareFileRequest(f, "video/*")
+            }
+        )
 
         // Result save & share
         binding.btnVidSaveResult.setOnClickListener {
@@ -562,16 +622,22 @@ class VideoStudioController(
                 binding.btnVidClearAll.isEnabled = true
                 binding.toolVidTrim.isEnabled = true
                 binding.toolVidTrim.alpha = 1.0f
-                binding.toolVidScale.isEnabled = true
-                binding.toolVidScale.alpha = 1.0f
+                val isWhatsapp = outputConfig.targetPreset == "WhatsApp Status"
+                binding.toolVidScale.isEnabled = !isWhatsapp
+                binding.toolVidScale.alpha = if (isWhatsapp) 0.38f else 1.0f
                 binding.toolVidColor.isEnabled = true
                 binding.toolVidColor.alpha = 1.0f
                 binding.toolVidSpeed.isEnabled = true
                 binding.toolVidSpeed.alpha = 1.0f
                 binding.toolVidAspect.isEnabled = true
                 binding.toolVidAspect.alpha = 1.0f
-                binding.toolVidAudio.isEnabled = true
-                binding.toolVidAudio.alpha = 1.0f
+                val isGif = outputConfig.outputMode == VideoOutputMode.GIF
+                binding.toolVidAudio.isEnabled = !isGif
+                binding.toolVidAudio.alpha = if (isGif) 0.38f else 1.0f
+                binding.chipGroupVidAudio.isEnabled = !isGif
+                binding.chipGroupVidAudio.alpha = if (isGif) 0.38f else 1.0f
+                binding.chipVidAudioKeep.isEnabled = !isGif
+                binding.chipVidAudioRemove.isEnabled = !isGif
                 binding.btnVidExecute.isEnabled = true
                 binding.btnVidExecute.alpha = 1.0f
                 binding.btnFloatingExecute.isEnabled = true
@@ -806,25 +872,28 @@ class VideoStudioController(
     }
 
     fun setEncodingControlsLockedForWhatsapp(locked: Boolean) {
-        val alpha = if (locked) 0.4f else 1.0f
+        val alpha = if (locked) 0.38f else 1.0f
         val isInteractive = !locked
 
         // 1. Container format chips
-        binding.chipGroupVidFormat.isEnabled = isInteractive
+        if (locked) {
+            binding.chipVidMp4.isChecked = true
+        }
         for (i in 0 until binding.chipGroupVidFormat.childCount) {
             binding.chipGroupVidFormat.getChildAt(i).isEnabled = isInteractive
         }
         binding.chipGroupVidFormat.alpha = alpha
 
         // 2. Encoder codec chips
-        binding.chipGroupVidCodec.isEnabled = isInteractive
+        if (locked) {
+            binding.chipVidCodecH264.isChecked = true
+        }
         for (i in 0 until binding.chipGroupVidCodec.childCount) {
             binding.chipGroupVidCodec.getChildAt(i).isEnabled = isInteractive
         }
         binding.chipGroupVidCodec.alpha = alpha
 
         // 3. Encoder speed preset chips (Slow / Medium / Fast compression efficiency)
-        binding.chipGroupVidSpeedPreset.isEnabled = isInteractive
         for (i in 0 until binding.chipGroupVidSpeedPreset.childCount) {
             binding.chipGroupVidSpeedPreset.getChildAt(i).isEnabled = isInteractive
         }
@@ -836,35 +905,37 @@ class VideoStudioController(
         binding.tvVidQualityValue.alpha = alpha
 
         // 5. Output resolution chips (WhatsApp Status uses dedicated Status Resolution selector)
-        binding.chipGroupVidResolution.isEnabled = isInteractive
         for (i in 0 until binding.chipGroupVidResolution.childCount) {
             binding.chipGroupVidResolution.getChildAt(i).isEnabled = isInteractive
         }
         binding.chipGroupVidResolution.alpha = alpha
 
-        // 6. Audio output remove chip
-        binding.chipGroupVidAudio.isEnabled = isInteractive
-        for (i in 0 until binding.chipGroupVidAudio.childCount) {
-            binding.chipGroupVidAudio.getChildAt(i).isEnabled = isInteractive
-        }
-        binding.chipGroupVidAudio.alpha = alpha
-
-        // Note: Media transformations (Trim, Playback Speed toolVidSpeed, Aspect, Color) remain interactive (Option B)
+        // 6. Scale tool button
+        val hasMedia = selectedMediaList.isNotEmpty() && currentItem != null
+        binding.toolVidScale.isEnabled = isInteractive && hasMedia
+        binding.toolVidScale.alpha = if (isInteractive && hasMedia) 1.0f else 0.38f
     }
 
     fun updateUiForOutputMode() {
         val isGif = outputConfig.outputMode == VideoOutputMode.GIF
+        val hasMedia = selectedMediaList.isNotEmpty() && currentItem != null
+
         if (isGif) {
             binding.chipGroupVidCodec.visibility = View.GONE
             binding.toolVidAudio.isEnabled = false
-            binding.toolVidAudio.alpha = 0.4f
+            binding.toolVidAudio.alpha = 0.38f
             binding.chipGroupVidAudio.visibility = View.GONE
             editState.audioMode = AudioMode.MUTE
         } else {
             binding.chipGroupVidCodec.visibility = View.VISIBLE
-            binding.toolVidAudio.isEnabled = true
-            binding.toolVidAudio.alpha = 1.0f
             binding.chipGroupVidAudio.visibility = View.VISIBLE
+            binding.toolVidAudio.isEnabled = hasMedia
+            binding.toolVidAudio.alpha = if (hasMedia) 1.0f else 0.38f
+            binding.chipGroupVidAudio.isEnabled = hasMedia
+            binding.chipGroupVidAudio.alpha = if (hasMedia) 1.0f else 0.38f
+            for (i in 0 until binding.chipGroupVidAudio.childCount) {
+                binding.chipGroupVidAudio.getChildAt(i).isEnabled = hasMedia
+            }
         }
     }
 
@@ -878,90 +949,133 @@ class VideoStudioController(
     }
 
     fun refreshStats() {
+        if (selectedMediaList.isEmpty() || currentItem == null) {
+            binding.tvVidBeforeStats.text = "No video selected"
+            binding.tvVidAfterStats.text = "Select a video to calculate"
+            updateEditSummary()
+            return
+        }
+
+        val item = currentItem!!
         val durationSec = (editState.trimmedDurationSeconds / editState.speed).coerceAtLeast(0.1)
 
         val estBytes = when (outputConfig.targetPreset) {
             "WhatsApp Status", "WhatsApp (16 MB)" -> {
                 val baseKbps = outputConfig.whatsappStatusResolution.baseMaxRateKbps
-                val bufSize = com.veilframe.app.media.whatsapp.WhatsappStatusRateControl.calculateBufSize(baseKbps, durationSec)
                 val totalKbps = (baseKbps * 0.85).toInt() + 128
                 ((totalKbps * 1024L / 8L) * durationSec).toLong()
             }
-            "Discord (25 MB)" -> (24.0 * 1024 * 1024).toLong()
-            "Email Attachment (8 MB)" -> (7.8 * 1024 * 1024).toLong()
+            "Discord (25 MB)" -> {
+                val maxAllowedBytes = (24.5 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "Discord Nitro (50 MB)" -> {
+                val maxAllowedBytes = (49.0 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "Email Attachment (8 MB)" -> {
+                val maxAllowedBytes = (7.8 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
+            "Web Stream (10 MB)" -> {
+                val maxAllowedBytes = (9.8 * 1024 * 1024).toLong()
+                val normalEst = calculateEstimatedBytes(durationSec)
+                minOf(normalEst, maxAllowedBytes)
+            }
             else -> {
-                if (outputConfig.outputMode == VideoOutputMode.GIF) {
-                    val gifFps = (editState.fps ?: 15).coerceIn(5, 30)
-                    val (w, h) = when (editState.scalePreset) {
-                        "1080p (Full HD)" -> 1920 to 1080
-                        "720p (HD)" -> 1280 to 720
-                        "480p (SD Compact)" -> 854 to 480
-                        "360p (Ultra Small)" -> 640 to 360
-                        else -> {
-                            val ow = editState.originalWidth.takeIf { it > 0 } ?: 640
-                            val oh = editState.originalHeight.takeIf { it > 0 } ?: 360
-                            ow to oh
-                        }
-                    }
-                    val frameCount = (durationSec * gifFps).toLong().coerceAtLeast(1)
-                    val bytesPerFrame = (w * h * 0.15).toLong().coerceAtLeast(1024)
-                    frameCount * bytesPerFrame
-                } else if (outputConfig.codec == "Stream Copy" && !editState.hasVideoTransforms()) {
-                    val origDur = currentItem?.durationMs ?: 0L
-                    if (origDur > 0 && originalBytes > 0) {
-                        ((originalBytes.toDouble() * (editState.trimmedDurationMs.toDouble() / origDur.toDouble()))).toLong()
-                    } else originalBytes
+                if (outputConfig.targetMb != null) {
+                    val maxAllowedBytes = (outputConfig.targetMb!! * 0.95f * 1024 * 1024).toLong()
+                    val normalEst = calculateEstimatedBytes(durationSec)
+                    minOf(normalEst, maxAllowedBytes)
                 } else {
-                    val baseKbps = when (editState.scalePreset) {
-                        "1080p (Full HD)" -> 3800
-                        "720p (HD)" -> 2000
-                        "480p (SD Compact)" -> 1000
-                        "360p (Ultra Small)" -> 550
-                        else -> {
-                            val ow = editState.originalWidth.takeIf { it > 0 } ?: 1280
-                            val oh = editState.originalHeight.takeIf { it > 0 } ?: 720
-                            val pixels = ow * oh
-                            when {
-                                pixels >= 1920 * 1080 -> 3800
-                                pixels >= 1280 * 720 -> 2000
-                                pixels >= 854 * 480 -> 1000
-                                else -> 600
-                            }
-                        }
-                    }
-                    val crfFactor = Math.pow(0.89, (outputConfig.crf - 23).toDouble())
-                    val codecFactor = when (outputConfig.codec) {
-                        "H.265" -> 0.58
-                        "VP9" -> 0.68
-                        else -> 1.0
-                    }
-                    val speedPresetFactor = when (outputConfig.compressionPreset) {
-                        "slow" -> 0.82
-                        "medium" -> 1.0
-                        "fast" -> 1.25
-                        else -> 0.82
-                    }
-                    val videoKbps = (baseKbps * crfFactor * codecFactor * speedPresetFactor).coerceIn(120.0, 15000.0)
-                    val audioKbps = when (editState.audioMode) {
-                        AudioMode.MUTE -> 0
-                        AudioMode.VOICE_64K -> 64
-                        AudioMode.HIGH_FIDELITY_256K -> 256
-                        else -> 128
-                    }
-                    val totalKbps = videoKbps + audioKbps
-                    val totalBytes = ((totalKbps * 1000 / 8) * durationSec).toLong()
-                    totalBytes
+                    calculateEstimatedBytes(durationSec)
                 }
             }
         }
 
         val formatDesc = if (outputConfig.outputMode == VideoOutputMode.GIF) "GIF (Animated)" else outputConfig.format
+        binding.tvVidBeforeStats.text = "${formatBytes(item.originalBytes)} • ${formatDuration(item.durationMs)} • ${item.width}x${item.height}"
         binding.tvVidAfterStats.text = "~${formatBytes(estBytes)} • ${formatDuration(editState.trimmedDurationMs)} • $formatDesc"
         updateEditSummary()
     }
 
+    private fun calculateEstimatedBytes(durationSec: Double): Long {
+        return if (outputConfig.outputMode == VideoOutputMode.GIF) {
+            val gifFps = (editState.fps ?: 15).coerceIn(5, 30)
+            val (w, h) = when (editState.scalePreset) {
+                "1080p (Full HD)" -> 1920 to 1080
+                "720p (HD)" -> 1280 to 720
+                "480p (SD Compact)" -> 854 to 480
+                "360p (Ultra Small)" -> 640 to 360
+                else -> {
+                    val ow = editState.originalWidth.takeIf { it > 0 } ?: (currentItem?.width ?: 640)
+                    val oh = editState.originalHeight.takeIf { it > 0 } ?: (currentItem?.height ?: 360)
+                    ow to oh
+                }
+            }
+            val frameCount = (durationSec * gifFps).toLong().coerceAtLeast(1)
+            val bytesPerFrame = (w * h * 0.15).toLong().coerceAtLeast(1024)
+            frameCount * bytesPerFrame
+        } else if (outputConfig.codec == "Stream Copy" && !editState.hasVideoTransforms()) {
+            val origDur = currentItem?.durationMs ?: 0L
+            if (origDur > 0 && originalBytes > 0) {
+                ((originalBytes.toDouble() * (editState.trimmedDurationMs.toDouble() / origDur.toDouble()))).toLong()
+            } else originalBytes
+        } else {
+            val baseKbps = when (editState.scalePreset) {
+                "1080p (Full HD)" -> 3800
+                "720p (HD)" -> 2000
+                "480p (SD Compact)" -> 1000
+                "360p (Ultra Small)" -> 550
+                else -> {
+                    val ow = editState.originalWidth.takeIf { it > 0 } ?: (currentItem?.width ?: 1280)
+                    val oh = editState.originalHeight.takeIf { it > 0 } ?: (currentItem?.height ?: 720)
+                    val pixels = ow * oh
+                    when {
+                        pixels >= 1920 * 1080 -> 3800
+                        pixels >= 1280 * 720 -> 2000
+                        pixels >= 854 * 480 -> 1000
+                        else -> 600
+                    }
+                }
+            }
+            val crfFactor = Math.pow(0.89, (outputConfig.crf - 23).toDouble())
+            val codecFactor = when (outputConfig.codec) {
+                "H.265" -> 0.58
+                "VP9" -> 0.68
+                else -> 1.0
+            }
+            val speedPresetFactor = when (outputConfig.compressionPreset) {
+                "slow" -> 0.82
+                "medium" -> 1.0
+                "fast" -> 1.25
+                else -> 0.82
+            }
+            val videoKbps = (baseKbps * crfFactor * codecFactor * speedPresetFactor).coerceIn(120.0, 15000.0)
+            val audioKbps = when (editState.audioMode) {
+                AudioMode.MUTE -> 0
+                AudioMode.VOICE_64K -> 64
+                AudioMode.HIGH_FIDELITY_256K -> 256
+                else -> 128
+            }
+            val totalKbps = videoKbps + audioKbps
+            val totalBytes = ((totalKbps * 1000 / 8) * durationSec).toLong().coerceAtLeast(1024L)
+            totalBytes
+        }
+    }
+
     fun updateEditSummary() {
-        val hasEdits = editState.hasEdits() || outputConfig.outputMode == VideoOutputMode.GIF
+        if (selectedMediaList.isEmpty() || currentItem == null) {
+            binding.tvVidSummaryEmpty.visibility = View.VISIBLE
+            binding.layoutVidSummaryDetails.visibility = View.GONE
+            syncFloatingDockState()
+            return
+        }
+
+        val hasEdits = editState.hasEdits() || outputConfig.outputMode == VideoOutputMode.GIF || outputConfig.targetPreset == "WhatsApp Status"
         if (!hasEdits) {
             binding.tvVidSummaryEmpty.visibility = View.VISIBLE
             binding.layoutVidSummaryDetails.visibility = View.GONE
@@ -1091,6 +1205,7 @@ class VideoStudioController(
             binding.layoutVidProgress.visibility = View.GONE
             binding.btnVidExecute.text = "Compress"
             Toast.makeText(activity, "Compression cancelled", Toast.LENGTH_SHORT).show()
+            syncFloatingDockState()
             return
         }
 
@@ -1112,6 +1227,7 @@ class VideoStudioController(
 
         binding.layoutVidProgress.visibility = View.VISIBLE
         binding.btnVidExecute.text = "Cancel"
+        syncFloatingDockState()
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
@@ -1202,6 +1318,7 @@ class VideoStudioController(
                     binding.layoutVidProgress.visibility = View.GONE
                     binding.btnVidExecute.text = "Compress"
                     Toast.makeText(activity, "Video compression error: ${e.message}", Toast.LENGTH_LONG).show()
+                    syncFloatingDockState()
                 }
             }
         }
@@ -1220,7 +1337,20 @@ class VideoStudioController(
             activeFFmpegSessionId = -1L
         }
 
-        playerController.pause()
+        playerController.clearMedia()
+        binding.videoTextureView.visibility = View.GONE
+        binding.videoTextureView.alpha = 0f
+        binding.videoTextureView.rotation = 0f
+        binding.videoTextureView.scaleX = 1f
+        binding.videoTextureView.scaleY = 1f
+
+        // Delete temporary cached studio video files
+        try {
+            activity.cacheDir.listFiles { _, name -> name.startsWith("studio_vid_") }?.forEach {
+                it.delete()
+            }
+        } catch (_: Exception) {}
+
         binding.layoutVidNavRow.visibility = View.GONE
         binding.scrollVidThumbnails.visibility = View.GONE
         binding.layoutVidThumbStrip.removeAllViews()
@@ -1232,30 +1362,38 @@ class VideoStudioController(
         binding.btnVidClearAll.isEnabled = false
 
         binding.toolVidTrim.isEnabled = false
-        binding.toolVidTrim.alpha = 0.5f
+        binding.toolVidTrim.alpha = 0.38f
         binding.toolVidScale.isEnabled = false
-        binding.toolVidScale.alpha = 0.5f
+        binding.toolVidScale.alpha = 0.38f
         binding.toolVidColor.isEnabled = false
-        binding.toolVidColor.alpha = 0.5f
+        binding.toolVidColor.alpha = 0.38f
         binding.toolVidSpeed.isEnabled = false
-        binding.toolVidSpeed.alpha = 0.5f
+        binding.toolVidSpeed.alpha = 0.38f
         binding.toolVidAspect.isEnabled = false
-        binding.toolVidAspect.alpha = 0.5f
+        binding.toolVidAspect.alpha = 0.38f
         binding.toolVidAudio.isEnabled = false
-        binding.toolVidAudio.alpha = 0.5f
+        binding.toolVidAudio.alpha = 0.38f
+
+        // Audio chips
+        binding.chipGroupVidAudio.isEnabled = false
+        binding.chipGroupVidAudio.alpha = 0.38f
+        binding.chipVidAudioKeep.isEnabled = false
+        binding.chipVidAudioRemove.isEnabled = false
+
         applyColorProfile("Original")
 
-        binding.tvVidBeforeStats.text = "0 B • 0s • Original"
-        binding.tvVidAfterStats.text = "~0 B (MP4)"
+        binding.tvVidBeforeStats.text = "No video selected"
+        binding.tvVidAfterStats.text = "Select a video to calculate"
         binding.tvVidActualStats.visibility = View.GONE
         binding.layoutVidResultActions.visibility = View.GONE
         binding.btnVidExecute.text = "Select video"
         binding.btnVidExecute.isEnabled = false
-        binding.btnVidExecute.alpha = 0.5f
-        binding.btnFloatingExecute.isEnabled = false
-        binding.btnFloatingExecute.alpha = 0.5f
+        binding.btnVidExecute.alpha = 0.38f
+        binding.btnFloatingExecute.isEnabled = true
+        binding.btnFloatingExecute.alpha = 1.0f
 
         editState.reset()
+        applyAspectRatioPreview()
         updateEditSummary()
     }
 
@@ -1880,21 +2018,35 @@ class VideoStudioController(
      * Synchronizes the floating quick action dock with current media and execution state.
      */
     fun syncFloatingDockState() {
+        if (!::floatingDockController.isInitialized) return
         val hasMedia = (selectedMediaList.isNotEmpty() && currentItem != null)
         val isBusy = (compressionJob?.isActive == true)
         val hasResult = (lastResultFile != null && lastResultFile?.exists() == true)
 
-        if (!hasMedia || isBusy) {
-            binding.cardFloatingActionDock.visibility = View.GONE
+        if (!hasMedia) {
+            floatingDockController.transitionTo(FloatingActionState.EMPTY)
             return
         }
 
-        binding.btnFloatingExecute.text = binding.btnVidExecute.text
-        binding.btnFloatingExecute.isEnabled = binding.btnVidExecute.isEnabled
-        binding.btnFloatingShare.visibility = if (hasResult) View.VISIBLE else View.GONE
+        if (isBusy) {
+            floatingDockController.transitionTo(FloatingActionState.PROCESSING)
+            return
+        }
 
-        if (binding.cardFloatingActionDock.alpha > 0.05f) {
-            binding.cardFloatingActionDock.visibility = View.VISIBLE
+        if (hasResult) {
+            floatingDockController.transitionTo(
+                FloatingActionState.COMPLETED,
+                actionTitle = "Save Video",
+                actionIcon = R.drawable.ic_action_save,
+                secondaryTitle = "Share",
+                secondaryIcon = R.drawable.ic_action_share
+            )
+        } else {
+            floatingDockController.transitionTo(
+                FloatingActionState.READY,
+                actionTitle = "Compress Video",
+                actionIcon = R.drawable.ic_compress
+            )
         }
     }
 }

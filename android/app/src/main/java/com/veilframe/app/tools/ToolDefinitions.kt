@@ -49,5 +49,6 @@ data class ToolSessionState(
     var progressPercent: Int = 0,
     var progressDetailsText: String = "",
     var lastGeneratedFile: File? = null,
-    var consoleLogs: String = "[SYS] Ready for execution."
+    var consoleLogs: String = "[SYS] Ready for execution.",
+    var sliderValue: Float = 95f
 )

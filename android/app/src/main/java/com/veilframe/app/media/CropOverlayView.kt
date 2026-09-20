@@ -151,12 +151,12 @@ class CropOverlayView @JvmOverloads constructor(
     }
 
     fun setCropAspect(aspect: String) {
-        targetAspectRatio = when (aspect) {
-            "1:1" -> 1.0f
-            "4:3" -> 4f / 3f
-            "3:4" -> 3f / 4f
-            "16:9" -> 16f / 9f
-            "9:16" -> 9f / 16f
+        targetAspectRatio = when {
+            aspect == "1:1" || aspect.contains("Passport", ignoreCase = true) -> 1.0f
+            aspect == "4:3" -> 4f / 3f
+            aspect == "3:4" -> 3f / 4f
+            aspect == "16:9" -> 16f / 9f
+            aspect == "9:16" -> 9f / 16f
             else -> null
         }
 

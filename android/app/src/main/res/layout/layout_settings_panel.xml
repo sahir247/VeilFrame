@@ -49,7 +49,7 @@
                 android:id="@+id/tvSettingsHeaderSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Theming, AMOLED True Black &amp; Engine Diagnostics"
+                android:text="Theming, AMOLED Dark &amp; Engine Diagnostics"
                 android:textColor="@color/vf_text_secondary"
                 android:textSize="11sp"
                 android:maxLines="1"
@@ -135,7 +135,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="6dp"
-                    android:text="AMOLED True Black\nPure #000000 background for battery savings"
+                    android:text="AMOLED Dark\nPure #000000 background for battery savings"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
             </RadioGroup>
@@ -198,6 +198,16 @@
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvDynamicColorNotice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Custom accent palettes are disabled while Dynamic Color is enabled."
+                android:textColor="@color/vf_status_info"
+                android:textSize="11sp"
+                android:visibility="gone" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupAccentPalette"
@@ -354,11 +364,11 @@
                         android:fontFamily="monospace" />
 
                     <TextView
-                        android:id="@+id/tvSettingsHardwareQnn"
+                        android:id="@+id/tvSettingsHardwareAcceleration"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="QNN (Qualcomm NPU): Custom ORT build required"
+                        android:text="Acceleration: NNAPI (NPU/GPU) + Multi-Threaded CPU"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:fontFamily="monospace" />

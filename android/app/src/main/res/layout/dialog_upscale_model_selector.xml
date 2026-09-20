@@ -81,7 +81,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="8dp"
-                    android:text="Real-ESRGAN General 4× (AI • 33.8 MB)\nReliable general-purpose photo restoration"
+                    android:text="Real-ESRGAN General 4× (Legacy Standard • AI 33.8 MB)\nReliable general-purpose photo restoration"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
 

@@ -121,6 +121,7 @@ object VideoProcessor {
                 srcFile = srcFile,
                 outFile = outFile,
                 resolution = statusResolution,
+                aspect = editState.aspect,
                 trimStartSec = trimStartSec,
                 trimDurationSec = trimDurationSec,
                 flipH = editState.flipH,

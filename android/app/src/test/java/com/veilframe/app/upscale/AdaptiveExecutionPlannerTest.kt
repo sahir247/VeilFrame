@@ -32,7 +32,6 @@ class AdaptiveExecutionPlannerTest {
             lowRamDevice = false,
             supportsNnapi = true,
             supportsNnapiFp16 = true,
-            supportsQnnBuild = false,
             supportsXnnpack = false,
             thermalStatus = 0
         )
@@ -59,7 +58,7 @@ class AdaptiveExecutionPlannerTest {
         for (cand in nnapiCandidates) {
             assertNull("NNAPI candidates must have null intraOpThreads", cand.intraOpThreads)
             assertNull("NNAPI candidates must have null interOpThreads", cand.interOpThreads)
-            assertTrue("NNAPI workers should be bounded (1 or 2)", cand.workers in 1..2)
+            assertTrue("NNAPI workers should be bounded (1 to 3)", cand.workers in 1..3)
         }
 
         // 2. CPU candidates must have coupled thread/worker pairs
@@ -71,50 +70,44 @@ class AdaptiveExecutionPlannerTest {
             assertEquals(InferencePrecisionMode.DEFAULT, cand.precision)
         }
 
-        // 3. QNN must NOT be present when supportsQnnBuild is false
-        val qnnCandidates = candidates.filter { it.backend == Backend.QNN }
-        assertTrue("QNN candidates must not be generated when supportsQnnBuild is false", qnnCandidates.isEmpty())
+        // 3. NNAPI candidates must support FP16 Relaxed on supported hardware
+        val nnapiFp16Candidates = candidates.filter { it.backend == Backend.NNAPI && it.precision == InferencePrecisionMode.FP16_RELAXED }
+        assertTrue("NNAPI candidates should include FP16 Relaxed precision when supported", nnapiFp16Candidates.isNotEmpty())
     }
 
     @Test
-    fun testQnnCandidateGenerationOnSupportedBuild() {
-        val qnnDevice = DeviceCapabilityProfile(
-            manufacturer = "Qualcomm",
-            model = "Snapdragon NPU",
+    fun testNnapiCandidateGenerationWithMultiWorkerOptimization() {
+        val nnapiDevice = DeviceCapabilityProfile(
+            manufacturer = "Google",
+            model = "Pixel 8",
             cpuCores = 8,
             supportedAbis = listOf("arm64-v8a"),
             totalMemoryBytes = 12L * 1024 * 1024 * 1024,
             availableMemoryBytes = 6L * 1024 * 1024 * 1024,
             apiLevel = 34,
             lowRamDevice = false,
-            supportsNnapi = false,
-            supportsNnapiFp16 = false,
-            supportsQnnBuild = true,
+            supportsNnapi = true,
+            supportsNnapiFp16 = true,
             supportsXnnpack = false,
             thermalStatus = 0
         )
 
         val candidates = planner.generateBackendCandidates(
-            userMode = InferenceAccelerationMode.QNN,
-            deviceProfile = qnnDevice,
+            userMode = InferenceAccelerationMode.NNAPI,
+            deviceProfile = nnapiDevice,
             modelCapabilities = ModelExecutionCapabilities(
                 nativeScale = 4,
-                supportsFp16 = true,
-                qnnCompatibilityStatus = com.veilframe.app.upscale.inference.QnnCompatibilityStatus.SUPPORTED,
-                qnnSupportedTargets = setOf(com.veilframe.app.upscale.inference.QnnTarget.HTP, com.veilframe.app.upscale.inference.QnnTarget.GPU)
+                supportsFp16 = true
             ),
             tileSize = 256,
             overlap = 16,
-            maxSafeWorkers = 2
+            maxSafeWorkers = 4
         )
 
-        assertEquals(4, candidates.size)
-        assertTrue(candidates.all { it.backend == Backend.QNN })
-        assertTrue(candidates.all { it.precision == InferencePrecisionMode.FP16_RELAXED })
-        assertTrue(candidates.all { it.intraOpThreads == null })
-        assertTrue(candidates.any { it.providerConfiguration["backend_path"] == "libQnnHtp.so" && it.providerConfiguration["qnn.perf_mode"] == "burst" })
-        assertTrue(candidates.any { it.providerConfiguration["backend_path"] == "libQnnHtp.so" && it.providerConfiguration["qnn.perf_mode"] == "balanced" })
-        assertTrue(candidates.any { it.providerConfiguration["backend_path"] == "libQnnGpu.so" })
+        assertTrue("NNAPI candidates must be generated", candidates.isNotEmpty())
+        assertTrue("All candidates must use NNAPI backend", candidates.all { it.backend == Backend.NNAPI })
+        assertTrue("All NNAPI candidates must leave intraOpThreads null (managed by runtime)", candidates.all { it.intraOpThreads == null })
+        assertTrue("Candidates should evaluate both 1 and 2 concurrent workers for throughput", candidates.any { it.workers == 1 } && candidates.any { it.workers == 2 })
     }
 
     @Test
@@ -225,12 +218,9 @@ class AdaptiveExecutionPlannerTest {
     }
 
     @Test
-    fun testRealEsrganSupportsBothQnnHtpAndGpuCandidates() {
-        // Default floating-point model (e.g. RealESRGAN FP32/FP16)
+    fun testRealEsrganCapabilities() {
         val fpModelCaps = ModelExecutionCapabilities(nativeScale = 4, supportsFp16 = true)
-        assertTrue("RealESRGAN floating-point model supports QNN HTP (FP16 math)", fpModelCaps.qnnCapability.htpSupported)
-        assertTrue("RealESRGAN floating-point model supports QNN GPU directly", fpModelCaps.qnnCapability.gpuSupported)
-        assertTrue("Candidate targets include GPU", fpModelCaps.qnnSupportedTargets.contains(com.veilframe.app.upscale.inference.QnnTarget.GPU))
-        assertTrue("Candidate targets include HTP", fpModelCaps.qnnSupportedTargets.contains(com.veilframe.app.upscale.inference.QnnTarget.HTP))
+        assertEquals(4, fpModelCaps.nativeScale)
+        assertTrue("RealESRGAN floating-point model supports FP16 math", fpModelCaps.supportsFp16)
     }
 }

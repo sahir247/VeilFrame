@@ -27,7 +27,6 @@ class PerformanceProfileCacheTest {
             lowRamDevice = false,
             supportsNnapi = true,
             supportsNnapiFp16 = true,
-            supportsQnnBuild = false,
             supportsXnnpack = false,
             thermalStatus = 0
         )
@@ -106,7 +105,6 @@ class PerformanceProfileCacheTest {
             lowRamDevice = false,
             supportsNnapi = true,
             supportsNnapiFp16 = true,
-            supportsQnnBuild = true,
             supportsXnnpack = true,
             thermalStatus = 0
         )
@@ -116,19 +114,19 @@ class PerformanceProfileCacheTest {
             modelId = "realesrgan_x4plus",
             modelScale = 4,
             ortVersion = "1.27.0",
-            providerBuildId = "qnn2.6.0",
-            providerConfigurationId = "burst_htp",
+            providerBuildId = "standard",
+            providerConfigurationId = "nnapi_fp16",
             modelHash = "a1b2c3d4e5f6"
         )
 
         assertEquals("Qualcomm SM8650", key.deviceModel)
-        assertEquals("qnn2.6.0", key.providerBuildId)
-        assertEquals("burst_htp", key.providerConfigurationId)
+        assertEquals("standard", key.providerBuildId)
+        assertEquals("nnapi_fp16", key.providerConfigurationId)
         assertEquals("a1b2c3d4e5f6", key.modelHash)
 
         val keyStr = key.toKeyString()
-        assertTrue(keyStr.contains("pbqnn2.6.0"))
-        assertTrue(keyStr.contains("pcburst_htp"))
+        assertTrue(keyStr.contains("pbstandard"))
+        assertTrue(keyStr.contains("pcnnapi_fp16"))
         assertTrue(keyStr.contains("_ha1b2c3d4"))
     }
 }

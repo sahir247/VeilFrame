@@ -41,12 +41,12 @@ object ImageTransformEngine {
                 Log.w(TAG, "Crop error: ${e.message}")
             }
         } else if (state.cropAspect != "Free" && state.cropAspect != "Original") {
-            val ratio = when (state.cropAspect) {
-                "1:1" -> 1.0f
-                "4:3" -> 4f / 3f
-                "3:4" -> 3f / 4f
-                "16:9" -> 16f / 9f
-                "9:16" -> 9f / 16f
+            val ratio = when {
+                state.cropAspect == "1:1" || state.cropAspect.contains("Passport", ignoreCase = true) -> 1.0f
+                state.cropAspect == "4:3" -> 4f / 3f
+                state.cropAspect == "3:4" -> 3f / 4f
+                state.cropAspect == "16:9" -> 16f / 9f
+                state.cropAspect == "9:16" -> 9f / 16f
                 else -> null
             }
             if (ratio != null) {
@@ -91,7 +91,10 @@ object ImageTransformEngine {
         // 3. Resize
         val targetWidth: Int
         val targetHeight: Int
-        if (state.resizeWidth > 0 && state.resizeHeight > 0) {
+        if (state.cropAspect.contains("Passport", ignoreCase = true) && state.resizeWidth <= 0 && state.resizeScale == 100) {
+            targetWidth = if (useFullRes) 600 else (600f * (result.width.toFloat() / origFullW.toFloat().coerceAtLeast(1f))).toInt().coerceIn(16, 600)
+            targetHeight = targetWidth
+        } else if (state.resizeWidth > 0 && state.resizeHeight > 0) {
             if (useFullRes) {
                 targetWidth = state.resizeWidth.coerceIn(16, 16384)
                 targetHeight = state.resizeHeight.coerceIn(16, 16384)

@@ -26,6 +26,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
+import com.veilframe.app.ui.dock.FloatingActionState
+import com.veilframe.app.ui.dock.FloatingDockStateController
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MotionSpec
 
@@ -78,6 +80,7 @@ class ImageStudioController(
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
+    private lateinit var floatingDockController: FloatingDockStateController
 
     // Race-condition guard for async image loading
     private val loadToken = AtomicLong(0L)
@@ -227,9 +230,25 @@ class ImageStudioController(
         // Execute / cancel compression
         binding.btnImgExecute.setOnClickListener { handleExecute() }
 
-        // Floating Action Dock wiring
-        binding.btnFloatingExecute.setOnClickListener { binding.btnImgExecute.performClick() }
-        binding.btnFloatingShare.setOnClickListener { binding.btnImgShareResult.performClick() }
+        // Floating Action Dock state controller initialization
+        floatingDockController = FloatingDockStateController(
+            dockCard = binding.cardFloatingActionDock,
+            primaryButton = binding.btnFloatingExecute,
+            secondaryButton = binding.btnFloatingShare,
+            onPrimaryClick = {
+                when (floatingDockController.currentState) {
+                    FloatingActionState.COMPLETED -> {
+                        val f = lastResultFile
+                        if (f != null && f.exists()) onExportFileRequest(f)
+                    }
+                    else -> handleExecute()
+                }
+            },
+            onSecondaryClick = {
+                val f = lastResultFile
+                if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+            }
+        )
 
         // Result save & share
         binding.btnImgSaveResult.setOnClickListener {
@@ -659,6 +678,7 @@ class ImageStudioController(
             binding.layoutImgProgress.visibility = View.GONE
             binding.btnImgExecute.text = "Compress"
             Toast.makeText(activity, "Compression cancelled", Toast.LENGTH_SHORT).show()
+            syncFloatingDockState()
             return
         }
 
@@ -676,6 +696,7 @@ class ImageStudioController(
 
         binding.layoutImgProgress.visibility = View.VISIBLE
         binding.btnImgExecute.text = "Cancel"
+        syncFloatingDockState()
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
@@ -790,7 +811,8 @@ class ImageStudioController(
                 withContext(Dispatchers.Main) {
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress"
-                    Toast.makeText(activity, "Compression error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "Image compression error: ${e.message}", Toast.LENGTH_LONG).show()
+                    syncFloatingDockState()
                 }
             }
         }
@@ -884,21 +906,35 @@ class ImageStudioController(
      * Synchronizes the floating quick action dock with current media and execution state.
      */
     fun syncFloatingDockState() {
+        if (!::floatingDockController.isInitialized) return
         val hasMedia = (selectedMediaList.isNotEmpty() && currentItem != null)
         val isBusy = (compressionJob?.isActive == true)
         val hasResult = (lastResultFile != null && lastResultFile?.exists() == true)
 
-        if (!hasMedia || isBusy) {
-            binding.cardFloatingActionDock.visibility = View.GONE
+        if (!hasMedia) {
+            floatingDockController.transitionTo(FloatingActionState.EMPTY)
             return
         }
 
-        binding.btnFloatingExecute.text = binding.btnImgExecute.text
-        binding.btnFloatingExecute.isEnabled = binding.btnImgExecute.isEnabled
-        binding.btnFloatingShare.visibility = if (hasResult) View.VISIBLE else View.GONE
+        if (isBusy) {
+            floatingDockController.transitionTo(FloatingActionState.PROCESSING)
+            return
+        }
 
-        if (binding.cardFloatingActionDock.alpha > 0.05f) {
-            binding.cardFloatingActionDock.visibility = View.VISIBLE
+        if (hasResult) {
+            floatingDockController.transitionTo(
+                FloatingActionState.COMPLETED,
+                actionTitle = "Save Image",
+                actionIcon = R.drawable.ic_action_save,
+                secondaryTitle = "Share",
+                secondaryIcon = R.drawable.ic_action_share
+            )
+        } else {
+            floatingDockController.transitionTo(
+                FloatingActionState.READY,
+                actionTitle = "Process Image",
+                actionIcon = R.drawable.ic_compress
+            )
         }
     }
 }
