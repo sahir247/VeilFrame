@@ -936,14 +936,19 @@
                             android:id="@+id/btnRepairApp"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="0dp"
-                            android:layout_height="38dp"
+                            android:layout_height="wrap_content"
+                            android:minHeight="40dp"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
+                            android:paddingStart="4dp"
+                            android:paddingEnd="4dp"
                             android:text="Repair"
                             android:textColor="@color/vf_accent_amber"
                             android:textSize="11sp"
                             app:strokeColor="@color/vf_accent_amber"
                             app:cornerRadius="8dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
                             app:icon="@drawable/ic_reset"
                             app:iconSize="13dp"
                             app:iconTint="@color/vf_accent_amber" />
@@ -952,14 +957,19 @@
                             android:id="@+id/btnCheckUpdates"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
-                            android:layout_height="38dp"
+                            android:layout_height="wrap_content"
+                            android:minHeight="40dp"
                             android:layout_weight="1"
                             android:layout_marginStart="6dp"
+                            android:paddingStart="4dp"
+                            android:paddingEnd="4dp"
                             android:text="Check Updates"
                             android:textColor="@color/vf_primary"
                             android:textSize="11sp"
                             app:backgroundTint="@color/vf_surface_variant"
                             app:cornerRadius="8dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
                             app:icon="@drawable/ic_system_update"
                             app:iconSize="14dp"
                             app:iconTint="@color/vf_primary" />
@@ -1008,7 +1018,7 @@
                         android:id="@+id/tvWhatsNewContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Target File Size Solver: Iterative quality optimizer for exact KB/MB limits\n• Text Watermark Studio: Custom overlays with color, size &amp; 9-point anchoring\n• Canvas Transform Tools: Horizontal &amp; vertical flips and alpha background fills\n• Multi-Container Video Engine: MP4, MOV, MKV, WebM, AVI &amp; animated GIF\n• Multi-Codec &amp; Audio Studio: H.264/H.265/VP9/Stream-Copy, volume scaling &amp; channel remixing\n• Video Colour Profiles: 15 cinematic grades with real-time preview"
+                        android:text="• Adaptive AI inference engine with benchmark-driven parallelism\n• Material 3 Expressive tactile transitions and AMOLED true black"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:lineSpacingExtra="5dp" />
@@ -1139,6 +1149,27 @@
                     android:orientation="vertical"
                     android:padding="16dp">
 
+                    <!-- Unified Card Header matching Image/Video Studio -->
+                    <LinearLayout
+                        android:id="@+id/cardToolHeader"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:id="@+id/tvToolCardHeaderTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Target Selection"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+                    </LinearLayout>
+
                     <!-- State A: Empty State (Shown when no target is selected) -->
                     <LinearLayout
                         android:id="@+id/layoutTargetEmpty"
@@ -1263,7 +1294,7 @@
                                 android:paddingEnd="8dp"
                                 android:paddingTop="2dp"
                                 android:paddingBottom="2dp"
-                                android:text="READY ✓"
+                                android:text="READY"
                                 android:textColor="@color/vf_accent_green"
                                 android:textSize="10sp"
                                 android:textStyle="bold" />
@@ -2080,5 +2111,28 @@
                 app:iconGravity="textStart" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- ================================================================= -->
+    <!-- 8. SETTINGS SLIDE-OVER OVERLAY                                    -->
+    <!-- ================================================================= -->
+    <View
+        android:id="@+id/scrimSettings"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:visibility="gone"
+        android:elevation="20dp" />
+
+    <FrameLayout
+        android:id="@+id/containerSettings"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        android:elevation="21dp">
+
+        <include
+            android:id="@+id/layoutSettingsPanel"
+            layout="@layout/layout_settings_panel" />
+    </FrameLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

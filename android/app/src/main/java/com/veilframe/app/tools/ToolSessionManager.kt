@@ -540,21 +540,25 @@ class ToolSessionManager(
                 binding.btnExecute.text = "CANCEL PROCESSING"
                 binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
                 binding.btnExecute.isEnabled = true
+                binding.btnExecute.alpha = 1.0f
             }
             JobState.COMPLETE -> {
                 binding.btnExecute.text = "RUN ANOTHER TASK"
                 binding.btnExecute.setIconResource(R.drawable.ic_action_play)
                 binding.btnExecute.isEnabled = true
+                binding.btnExecute.alpha = 1.0f
             }
             else -> {
                 if (state.selectedUri == null) {
                     binding.btnExecute.text = "SELECT TARGET TO BEGIN"
                     binding.btnExecute.setIconResource(R.drawable.ic_folder_pick)
-                    binding.btnExecute.isEnabled = true
+                    binding.btnExecute.isEnabled = false
+                    binding.btnExecute.alpha = 0.5f
                 } else {
                     binding.btnExecute.text = getToolExecuteText(currentToolMode)
                     binding.btnExecute.setIconResource(R.drawable.ic_action_play)
                     binding.btnExecute.isEnabled = true
+                    binding.btnExecute.alpha = 1.0f
                 }
             }
         }
@@ -566,9 +570,9 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.text = "LLM PACKAGING"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "○ Raw credentials unmasked (masking disabled)"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Test suites, mocks & fixtures excluded from context" else "○ Full source directory included"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ Dependency manifests compressed to reduce prompt tokens" else "○ Manifest compression disabled"
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "• Raw credentials unmasked (masking disabled)"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Test suites, mocks & fixtures excluded from context" else "• Full source directory included"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Dependency manifests compressed to reduce prompt tokens" else "• Manifest compression disabled"
             }
             ToolMode.VIDEO_CLEANER -> {
                 val noiseLevel = when (getSelectedOptionIndex()) {
@@ -580,17 +584,17 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.text = "$noiseLevel DEFENSE".uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Camera EXIF, GPS coordinates & device serials purged" else "○ EXIF & GPS retained"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Audio stream stripped completely" else "✓ Audio stream preserved (metadata tags scrubbed)"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ Bitstream repacked (PRNU sensor pattern noise mitigated)" else "○ Stream remuxed without pixel alteration"
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Camera EXIF, GPS coordinates & device serials purged" else "• EXIF & GPS retained"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Audio stream stripped completely" else "• Audio stream preserved (metadata tags scrubbed)"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked (PRNU sensor pattern noise mitigated)" else "• Stream remuxed without pixel alteration"
             }
             ToolMode.IMAGE_CLEANER -> {
                 binding.tvPrivacyProfileBadge.text = "METADATA STRIP"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ EXIF, GPS location & camera maker notes scrubbed" else "○ EXIF retained"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ Embedded preview thumbnails & caches eliminated" else "○ Thumbnails preserved"
-                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "✓ ICC color profile sanitized to standard sRGB" else "○ ICC profile preserved"
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Embedded preview thumbnails & caches eliminated" else "• Thumbnails preserved"
+                binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• ICC color profile sanitized to standard sRGB" else "• ICC profile preserved"
             }
             ToolMode.FOLDER_SCANNER -> {
                 val mode = when (getSelectedOptionIndex()) {
@@ -601,8 +605,8 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.text = mode.uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "✓ Recursive directory traversal across all subprojects" else "○ Top-level directory only"
-                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "✓ SHA-256 cryptographic hashing active" else "○ SHA-256 calculation skipped (low CPU/battery)"
+                binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Recursive directory traversal across all subprojects" else "• Top-level directory only"
+                binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• SHA-256 cryptographic hashing active" else "• SHA-256 calculation skipped (low CPU/battery)"
             }
             ToolMode.IMAGE_COMPRESSOR,
             ToolMode.VIDEO_COMPRESSOR,
@@ -610,9 +614,9 @@ class ToolSessionManager(
                 binding.tvPrivacyProfileBadge.text = "MEDIA STUDIO"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
-                binding.tvPrivacyImpact1.text = "✓ Visual optimization & size reduction"
-                binding.tvPrivacyImpact2.text = "✓ Metadata scrubbing & privacy protection"
-                binding.tvPrivacyImpact3.text = "✓ Target platform profile matching"
+                binding.tvPrivacyImpact1.text = "• Visual optimization & size reduction"
+                binding.tvPrivacyImpact2.text = "• Metadata scrubbing & privacy protection"
+                binding.tvPrivacyImpact3.text = "• Target platform profile matching"
             }
         }
     }

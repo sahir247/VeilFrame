@@ -1,5 +1,25 @@
 # VeilFrame Release Notes
 
+## v2.2.7 — September 2026
+
+VeilFrame v2.2.7 delivers an adaptive hardware-aware AI inference engine, unpenalized throughput measurement, progressive worker expansion, optional standalone Qualcomm QNN Plugin EP acceleration, and a refined Material 3 Expressive motion and visual architecture.
+
+- **Adaptive AI Inference Engine:**
+  - **Hardware-Aware Planner:** Dynamically evaluates NNAPI, CPU/XNNPACK, and Qualcomm QNN backends, selecting the fastest sustainable configuration via empirical micro-benchmarks.
+  - **Progressive Worker Concurrency:** Scalable concurrency search without arbitrary CPU-core caps on accelerators: candidateWorkerUpperBound = min(memorySafeWorkers, providerSafeWorkers, eligibleTileCount, benchmarkSearchLimit).
+  - **Unpenalized Throughput:** Evaluates real measured megapixels per second with empirical scaling efficiency: scalingEfficiency(N) = throughput(N) / (N * throughput(1)).
+  - **Adaptive Thermal Ladder:** Progressive thermal step-downs (8 -> 6 -> 4 -> 3 -> 2 -> 1) with hysteresis dwell times, reserving single-worker fallback strictly for thermal emergencies.
+- **Independent Memory Safety:**
+  - **Dual-Domain Budgeting:** Decoupled Java heap and native memory budgets with explicit zero-worker edge-case rejection (max(0, floor(Budget/PerWorker))) and safe minimal footprint fallback.
+  - **Pathological Input Protection:** Configurable emergency output limit (emergencyMaxOutputPixels, default 100 MP) preventing out-of-memory driver resets.
+- **Qualcomm QNN Standalone Plugin EP:**
+  - **Modular Acceleration Pack:** Optional on-demand download utilizing official ONNX Runtime Plugin EP APIs (registerExecutionProviderLibrary, getEpDevices, unregisterExecutionProviderLibrary) on ARM64 Snapdragon devices.
+  - **Target-Specific Support:** Evaluates QNN HTP (Hexagon Tensor Processor, supporting both FP16 math and quantized QDQ variants) and QNN GPU (native FP32/FP16 execution) via full-coverage diagnostic probing (session.disable_cpu_ep_fallback = 1).
+  - **Persistent Cache & Device Fingerprinting:** Caches optimal profiles indexed by device, model, precision, and QNN device identity, with multi-factor confidence scoring (LOW, MEDIUM, HIGH).
+- **Material 3 Expressive Design System:**
+  - **Fluid Motion Physics:** Spring-driven interpolations across modal dialogs, bottom sheets, navigation transitions, and interactive controls.
+  - **Zero-Emoji Compliance:** Complete replacement of emoji glyphs with accessible vector drawables and Material Symbols across all screens, toasts, and dialogs.
+
 ## v2.2.6 — September 2026
 
 VeilFrame v2.2.6 introduces the AI Image Upscaler (a dedicated 7th tool running on-device super-resolution with Point 7 models), an exhaustive overhaul of output file size estimations across both image and video studios, modern video compression speed presets (Slow, Medium, Fast) replacing hardcoded ultrafast options, video rotation and custom margin cropping, trim-bounded live playback, and real-time live preview reflection for image scaling above 100%.

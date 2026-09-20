@@ -384,7 +384,7 @@
                         android:id="@+id/tvUpscalerModelStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="✓ Installed"
+                        android:text="• Installed"
                         android:textColor="@color/vf_accent_green"
                         android:textSize="12sp"
                         android:textStyle="bold" />
@@ -417,35 +417,42 @@
                         android:letterSpacing="0.06"
                         android:layout_marginBottom="8dp" />
 
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chipGroupUpscalerScale"
+                    <com.google.android.material.button.MaterialButtonToggleGroup
+                        android:id="@+id/toggleGroupUpscalerScale"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="8dp"
-                        app:singleSelection="true">
+                        android:layout_marginBottom="12dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipScale2x"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnScale2x"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
                             android:text="2× Scale"
+                            android:textSize="12sp"
                             android:checked="true" />
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipScale4x"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="4× Scale" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnScale4x"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:text="4× Scale"
+                            android:textSize="12sp" />
 
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipScale8x"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="8× (4× AI + 2× Lanczos)" />
-                    </com.google.android.material.chip.ChipGroup>
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnScale8x"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:text="8× Hybrid"
+                            android:textSize="12sp" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <TextView
                         android:id="@+id/tvUpscalerTargetDimensions"
@@ -539,6 +546,114 @@
                     app:iconTint="@color/vf_text_primary" />
             </LinearLayout>
 
+            <!-- Performance Diagnostics Panel (Hardware & Telemetry) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardUpscalerDiagnostics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:id="@+id/layoutDiagnosticsHeader"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="PERFORMANCE DIAGNOSTICS"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06" />
+
+                        <ImageView
+                            android:id="@+id/imgDiagnosticsChevron"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_expand_more"
+                            app:tint="@color/vf_secondary"
+                            android:contentDescription="Expand Diagnostics" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/layoutDiagnosticsContent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="10dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tvDiagHardware"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Hardware: Probing..."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:layout_marginBottom="3dp" />
+
+                        <TextView
+                            android:id="@+id/tvDiagBackend"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Active Backend: Auto"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:layout_marginBottom="3dp" />
+
+                        <TextView
+                            android:id="@+id/tvDiagExecutionProfile"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Profile: 1 worker • 384px tiles"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:layout_marginBottom="3dp" />
+
+                        <TextView
+                            android:id="@+id/tvDiagThroughput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Throughput: Measuring..."
+                            android:textColor="@color/vf_accent_blue"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="10dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRunUpscaleBenchmark"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Run Calibration Benchmark"
+                            android:textSize="11sp"
+                            android:textColor="@color/vf_primary"
+                            app:strokeColor="@color/vf_surface_stroke"
+                            app:cornerRadius="8dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Main Execute Action Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnUpscalerExecute"
@@ -560,7 +675,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:text="🔒 Processing 100% offline. Models run entirely on this device."
+                android:text="Processing 100% offline. Models run entirely on this device."
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp" />
         </LinearLayout>

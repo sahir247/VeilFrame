@@ -14,8 +14,8 @@ class AppUpdateManagerTest {
     fun testCanonicalizeJsonForSigning_RecursiveDeterministicOrdering() {
         // Document with keys in random order and nested objects in reverse order
         val json1 = JSONObject().apply {
-            put("versionName", "2.2.6")
-            put("versionCode", 226)
+            put("versionName", "2.2.7")
+            put("versionCode", 227)
             put("signature", "SIGNATURE_TO_BE_STRIPPED")
             put("apk", JSONObject().apply {
                 put("size", 12345678L)
@@ -57,8 +57,8 @@ class AppUpdateManagerTest {
                 put("sha256", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
                 put("size", 12345678L)
             })
-            put("versionCode", 226)
-            put("versionName", "2.2.6")
+            put("versionCode", 227)
+            put("versionName", "2.2.7")
             put("signature", "DIFFERENT_SIGNATURE_STILL_STRIPPED")
         }
 
@@ -77,7 +77,7 @@ class AppUpdateManagerTest {
         assertFalse("Must strip top-level signature", str1.contains("DIFFERENT_SIGNATURE_STILL_STRIPPED"))
 
         // Must preserve sorted nested structure
-        val expected = "{\"apk\":{\"sha256\":\"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\",\"size\":12345678},\"metadata\":{\"a_key\":\"first\",\"nested_array\":[{\"name\":\"beta\",\"order\":2},{\"name\":\"alpha\",\"order\":1}],\"z_key\":\"last\"},\"versionCode\":226,\"versionName\":\"2.2.6\"}"
+        val expected = "{\"apk\":{\"sha256\":\"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\",\"size\":12345678},\"metadata\":{\"a_key\":\"first\",\"nested_array\":[{\"name\":\"beta\",\"order\":2},{\"name\":\"alpha\",\"order\":1}],\"z_key\":\"last\"},\"versionCode\":227,\"versionName\":\"2.2.7\"}"
         assertEquals(expected, str1)
     }
 
@@ -87,11 +87,11 @@ class AppUpdateManagerTest {
             put("bool_val", true)
             put("null_val", JSONObject.NULL)
             put("double_val", 42.0)
-            put("unicode_val", "VeilFrame 🛡️ 视频")
+            put("unicode_val", "VeilFrame [Secure] 视频")
         }
 
         val canonicalStr = String(AppUpdateManager.canonicalizeJsonForSigning(json), Charsets.UTF_8)
-        val expected = "{\"bool_val\":true,\"double_val\":42,\"null_val\":null,\"unicode_val\":\"VeilFrame 🛡️ 视频\"}"
+        val expected = "{\"bool_val\":true,\"double_val\":42,\"null_val\":null,\"unicode_val\":\"VeilFrame [Secure] 视频\"}"
         assertEquals(expected, canonicalStr)
     }
 
@@ -118,14 +118,14 @@ class AppUpdateManagerTest {
     @Test
     fun testVerifyManifestSignature_RejectsUnsignedOrMalformed() {
         val unsignedJson = JSONObject().apply {
-            put("versionCode", 226)
-            put("versionName", "2.2.6")
+            put("versionCode", 227)
+            put("versionName", "2.2.7")
         }
         assertFalse("Unsigned manifest must fail verification", AppUpdateManager.verifyManifestSignature(unsignedJson))
 
         val malformedSigJson = JSONObject().apply {
-            put("versionCode", 226)
-            put("versionName", "2.2.6")
+            put("versionCode", 227)
+            put("versionName", "2.2.7")
             put("signature", "invalid-base64-not-ed25519")
         }
         assertFalse("Malformed signature must fail verification", AppUpdateManager.verifyManifestSignature(malformedSigJson))

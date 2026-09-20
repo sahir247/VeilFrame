@@ -10,7 +10,24 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.6 CURRENT (Production Release)
+### v2.2.7 CURRENT (Production Release)
+- **Adaptive AI Inference Architecture**:
+  - Benchmark-driven execution planning across NNAPI, CPU/XNNPACK, and Qualcomm QNN.
+  - Progressive worker expansion without artificial CPU-core caps on accelerators.
+  - Pure unpenalized throughput measurement with scaling efficiency tracking.
+  - Adaptive thermal ladder (8 -> 6 -> 4 -> 3 -> 2 -> 1) with hysteresis cooldown.
+- **Independent Memory Domains**:
+  - Decoupled Java and native memory budgets with zero-worker edge-case rejection.
+  - Emergency output pixel ceiling (default 100 MP) for pathological input protection.
+- **Standalone Qualcomm QNN Plugin EP Pack**:
+  - Modular downloadable acceleration pack using official standalone Plugin EP APIs.
+  - Target-specific execution for QNN HTP (FP16 math and QDQ quantized models) and QNN GPU (FP32/FP16).
+  - Diagnostic full-coverage probe (session.disable_cpu_ep_fallback = 1) testing complete graph execution.
+- **Material 3 Expressive Design System**:
+  - Fluid spring physics on all modal dialogs, sheets, and transitions.
+  - Zero-emoji compliance with Material Symbols and accessible vector drawables.
+
+### v2.2.6 (Previous Release)
 - **AI Image Upscaler Subsystem (7th Independent Tool)**:
   - On-Device Neural Super-Resolution: Runs isolated ONNX Runtime models with zero cloud uploads or telemetry.
   - Point 7 Model Architecture: Real-ESRGAN General 2× (33.8 MB), Real-ESRGAN General 4× (33.8 MB), Real-ESRGAN Anime 4× (9.1 MB), plus native mathematical sinc Lanczos (3-lobe), Bicubic spline, and Nearest neighbor filters.

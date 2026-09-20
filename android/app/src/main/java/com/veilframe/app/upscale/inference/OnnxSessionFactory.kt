@@ -41,19 +41,107 @@ object OnnxSessionFactory {
     }
 
     /**
+     * Creates an OrtSession honoring a full ExecutionProfile.
+     */
+    fun createSession(
+        env: OrtEnvironment,
+        modelFile: File,
+        profile: ExecutionProfile
+    ): SessionResult {
+        val mode = when (profile.backend) {
+            Backend.NNAPI -> InferenceAccelerationMode.NNAPI
+            Backend.CPU -> InferenceAccelerationMode.CPU
+            Backend.XNNPACK -> InferenceAccelerationMode.XNNPACK
+            Backend.QNN -> InferenceAccelerationMode.QNN
+        }
+        return createSession(
+            env = env,
+            modelFile = modelFile,
+            mode = mode,
+            precision = profile.precision,
+            customIntraOpThreads = profile.intraOpThreads,
+            customInterOpThreads = profile.interOpThreads,
+            providerConfiguration = profile.providerConfiguration
+        )
+    }
+
+    /**
      * Creates an OrtSession honoring the requested acceleration mode and precision profile.
      */
     fun createSession(
         env: OrtEnvironment,
         modelFile: File,
         mode: InferenceAccelerationMode = InferenceAccelerationMode.AUTO,
-        precision: InferencePrecisionMode = InferencePrecisionMode.DEFAULT
+        precision: InferencePrecisionMode = InferencePrecisionMode.DEFAULT,
+        customIntraOpThreads: Int? = null,
+        customInterOpThreads: Int? = null,
+        providerConfiguration: Map<String, String> = emptyMap()
     ): SessionResult {
-        val intraOpThreads = calculateCpuThreads()
-        val interOpThreads = 1
+        val intraOpThreads = customIntraOpThreads ?: calculateCpuThreads()
+        val interOpThreads = customInterOpThreads ?: 1
 
         if (mode == InferenceAccelerationMode.CPU) {
             return createCpuSession(env, modelFile, intraOpThreads, interOpThreads, mode)
+        }
+
+        // Check if QNN build is requested
+        if (mode == InferenceAccelerationMode.QNN) {
+            try {
+                val qnnOptions = OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(intraOpThreads)
+                    setInterOpNumThreads(interOpThreads)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+                    if (providerConfiguration.containsKey("session.disable_cpu_ep_fallback")) {
+                        val fallbackVal = providerConfiguration["session.disable_cpu_ep_fallback"] ?: "1"
+                        try {
+                            addConfigEntry("session.disable_cpu_ep_fallback", fallbackVal)
+                            Log.i(TAG, "Configured session.disable_cpu_ep_fallback = $fallbackVal for QNN probe")
+                        } catch (eConfig: Throwable) {
+                            Log.w(TAG, "Failed to set addConfigEntry: ${eConfig.message}")
+                        }
+                    }
+
+                    // Explicitly bind the discovered OrtEpDevice instance (never inferred solely from strings)
+                    try {
+                        val isGpuTarget = providerConfiguration["backend_path"]?.contains("Gpu", ignoreCase = true) == true ||
+                                providerConfiguration["backend_type"]?.equals("GPU", ignoreCase = true) == true
+                        val target = if (isGpuTarget) com.veilframe.app.upscale.inference.QnnTarget.GPU else com.veilframe.app.upscale.inference.QnnTarget.HTP
+                        val matchingDevice = com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.selectDevice(target)
+                            ?: com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.getDiscoveredDevices().firstOrNull()
+
+                        if (matchingDevice != null) {
+                            com.veilframe.app.upscale.inference.qnn.QnnAccelerationManager.bindSessionDevice(
+                                options = this,
+                                device = matchingDevice,
+                                providerOptions = providerConfiguration
+                            )
+                        }
+                    } catch (eDev: Throwable) {
+                        Log.w(TAG, "Device binding hook error: ${eDev.message}")
+                    }
+                }
+                // Create session with Qualcomm QNN EP and record active lease session
+                val session = env.createSession(modelFile.absolutePath, qnnOptions)
+                com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.incrementSession()
+                Log.i(TAG, "Created session with Qualcomm QNN EP (active QNN sessions: ${com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.currentSessionCount})")
+                return SessionResult(
+                    session = session,
+                    options = qnnOptions,
+                    backendInfo = InferenceBackendInfo(
+                        backend = Backend.QNN,
+                        accelerationMode = mode,
+                        configuredExecutionProvider = "QNNExecutionProvider",
+                        cpuFallbackEnabled = providerConfiguration["session.disable_cpu_ep_fallback"] != "1",
+                        observedFallback = null,
+                        fp16Enabled = precision == InferencePrecisionMode.FP16_RELAXED,
+                        intraOpThreads = intraOpThreads,
+                        interOpThreads = interOpThreads,
+                        providerConfiguration = if (providerConfiguration.isNotEmpty()) providerConfiguration else mapOf("backend_type" to "HTP")
+                    )
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "QNN EP requested but unavailable in this build (${t.message}); falling back to NNAPI/CPU")
+            }
         }
 
         // Check if NNAPI can be attempted (Android 8.1+ / API 27+)
@@ -119,11 +207,12 @@ object OnnxSessionFactory {
                         backendInfo = InferenceBackendInfo(
                             backend = Backend.NNAPI,
                             accelerationMode = mode,
+                            configuredExecutionProvider = "NNAPIExecutionProvider",
                             cpuFallbackEnabled = true,
+                            observedFallback = null,
                             fp16Enabled = isFp16,
                             intraOpThreads = intraOpThreads,
-                            interOpThreads = interOpThreads,
-                            providerDescription = desc
+                            interOpThreads = interOpThreads
                         )
                     )
                 } catch (eInit: Throwable) {
@@ -160,11 +249,12 @@ object OnnxSessionFactory {
             backendInfo = InferenceBackendInfo(
                 backend = Backend.CPU,
                 accelerationMode = mode,
+                configuredExecutionProvider = "CPUExecutionProvider",
                 cpuFallbackEnabled = false,
+                observedFallback = null,
                 fp16Enabled = false,
                 intraOpThreads = intraOpThreads,
-                interOpThreads = interOpThreads,
-                providerDescription = desc
+                interOpThreads = interOpThreads
             )
         )
     }

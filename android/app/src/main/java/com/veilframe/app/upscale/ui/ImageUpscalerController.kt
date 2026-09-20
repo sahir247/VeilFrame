@@ -118,8 +118,11 @@ class ImageUpscalerController(
         // Presets ChipGroup
         setupPresets()
 
-        // Scale ChipGroup
+        // Scale ToggleGroup
         setupScales()
+
+        // Performance Diagnostics Panel
+        setupDiagnostics()
 
         // Explicit Model Selector (morphs from change model button)
         upscalerBinding.btnUpscalerChangeModel.setOnClickListener {
@@ -235,9 +238,9 @@ class ImageUpscalerController(
             if (preset.defaultScale != targetScale && explicitModel == null) {
                 targetScale = preset.defaultScale
                 when (targetScale) {
-                    4 -> upscalerBinding.chipScale4x.isChecked = true
-                    8 -> upscalerBinding.chipScale8x.isChecked = true
-                    else -> upscalerBinding.chipScale2x.isChecked = true
+                    4 -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale4x)
+                    8 -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale8x)
+                    else -> upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale2x)
                 }
             }
 
@@ -248,16 +251,58 @@ class ImageUpscalerController(
     }
 
     private fun setupScales() {
-        upscalerBinding.chipGroupUpscalerScale.setOnCheckedStateChangeListener { _, checkedIds ->
-            if (checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
-            targetScale = when (checkedIds.first()) {
-                R.id.chipScale4x -> 4
-                R.id.chipScale8x -> 8
+        upscalerBinding.toggleGroupUpscalerScale.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            targetScale = when (checkedId) {
+                R.id.btnScale4x -> 4
+                R.id.btnScale8x -> 8
                 else -> 2
             }
             updateTargetDimensions()
             updateModelDisplay()
             onLog("[UPSCALER] Target scale set to ${targetScale}×")
+        }
+    }
+
+    private fun setupDiagnostics() {
+        val devProfile = com.veilframe.app.upscale.inference.DeviceCapabilityProfile.probe(activity)
+        upscalerBinding.tvDiagHardware.text = "Device: ${devProfile.manufacturer} ${devProfile.model} • ${devProfile.cpuCores} CPU cores"
+        upscalerBinding.tvDiagBackend.text = if (devProfile.supportsNnapi) "Active Backend: NNAPI (FP16 Relaxed, CPU Fallback)" else "Active Backend: Optimized CPU (${devProfile.cpuCores} threads)"
+        upscalerBinding.tvDiagExecutionProfile.text = "Planner: AdaptiveExecutionPlanner (Hardware-Aware)"
+        upscalerBinding.tvDiagThroughput.text = "Throughput: Idle"
+
+        var isExpanded = false
+        upscalerBinding.layoutDiagnosticsHeader.setOnClickListener {
+            isExpanded = !isExpanded
+            upscalerBinding.layoutDiagnosticsContent.visibility = if (isExpanded) View.VISIBLE else View.GONE
+            upscalerBinding.imgDiagnosticsChevron.animate().rotation(if (isExpanded) 180f else 0f).setDuration(160L).start()
+        }
+
+        upscalerBinding.btnRunUpscaleBenchmark.setOnClickListener {
+            upscalerBinding.btnRunUpscaleBenchmark.isEnabled = false
+            upscalerBinding.tvDiagThroughput.text = "Throughput: Calibrating (multi-tile concurrency)..."
+            scope.launch {
+                val model = getResolvedModel()
+                val modelFile = repository.getModelFile(model.id)
+                val benchmarkEngine = com.veilframe.app.upscale.inference.ExecutionBenchmarkEngine()
+                val planner = com.veilframe.app.upscale.inference.AdaptiveExecutionPlanner(benchmarkEngine)
+                val profile = withContext(Dispatchers.Default) {
+                    planner.planExecution(
+                        context = activity,
+                        modelFile = modelFile,
+                        modelId = model.id,
+                        targetScale = targetScale,
+                        sourceWidth = 1024,
+                        sourceHeight = 1024
+                    )
+                }
+                withContext(Dispatchers.Main) {
+                    upscalerBinding.btnRunUpscaleBenchmark.isEnabled = true
+                    upscalerBinding.tvDiagExecutionProfile.text = "Profile: ${profile.backend} • ${profile.workers} workers • ${profile.tileSize}px tiles"
+                    upscalerBinding.tvDiagThroughput.text = "Throughput: Calibrated optimal profile (${profile.backend}, ${profile.workers} workers)"
+                    Toast.makeText(activity, "Calibration complete: ${profile.backend}, ${profile.workers} workers", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -267,8 +312,15 @@ class ImageUpscalerController(
             val targetW = src.width * targetScale
             val targetH = src.height * targetScale
             val mp = (targetW * targetH) / 1_000_000.0
+            val model = getResolvedModel()
+            val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(targetScale, model.nativeScale)
+            val pipelineSuffix = if (model.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+                " • ${targetScale}× Output (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× Refinement)"
+            } else {
+                ""
+            }
             upscalerBinding.tvUpscalerTargetDimensions.text =
-                String.format(Locale.US, "Output: %d × %d (~%.1f MP)", targetW, targetH, mp)
+                String.format(Locale.US, "Output: %d × %d (~%.1f MP)%s", targetW, targetH, mp, pipelineSuffix)
         } else {
             upscalerBinding.tvUpscalerTargetDimensions.text = "Output: - × - (Select an image)"
         }
@@ -293,22 +345,27 @@ class ImageUpscalerController(
 
         val isInstalled = repository.isModelInstalled(model)
         if (isInstalled) {
-            upscalerBinding.tvUpscalerModelStatus.text = "✓ Installed & Ready"
+            upscalerBinding.tvUpscalerModelStatus.text = "Installed & Ready"
             upscalerBinding.tvUpscalerModelStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
         } else {
             val sizeMb = String.format(Locale.US, "%.1f MB", model.sizeBytes / (1024.0 * 1024.0))
-            upscalerBinding.tvUpscalerModelStatus.text = "⬇ Needs Download ($sizeMb)"
+            upscalerBinding.tvUpscalerModelStatus.text = "Needs Download ($sizeMb)"
             upscalerBinding.tvUpscalerModelStatus.setTextColor(activity.getColor(R.color.vf_primary))
         }
     }
 
     private fun updateUIState() {
-        if (sourceBitmap == null) {
+        val hasImage = (sourceBitmap != null)
+        if (!hasImage) {
             upscalerBinding.cardUpscalerSelectImage.visibility = View.VISIBLE
             upscalerBinding.layoutUpscalerWorkspace.visibility = View.GONE
+            upscalerBinding.btnUpscalerExecute.isEnabled = false
+            upscalerBinding.btnUpscalerExecute.alpha = 0.5f
         } else {
             upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
             upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
+            upscalerBinding.btnUpscalerExecute.isEnabled = true
+            upscalerBinding.btnUpscalerExecute.alpha = 1.0f
         }
         updateTargetDimensions()
         updateModelDisplay()
@@ -425,7 +482,11 @@ class ImageUpscalerController(
                     override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
                         scope.launch(Dispatchers.Main) {
                             upscalerBinding.progressUpscaler.isIndeterminate = false
-                            upscalerBinding.progressUpscaler.progress = percent
+                            com.veilframe.app.ui.motion.ProcessingMotionController.updateProgress(
+                                upscalerBinding.progressUpscaler,
+                                percent,
+                                true
+                            )
                         }
                     }
 
@@ -456,10 +517,17 @@ class ImageUpscalerController(
                     onSuccess = { upscaled ->
                         resultBitmap = upscaled
                         upscalerBinding.imgUpscalerPreview.setImageBitmap(upscaled)
-                        upscalerBinding.tvUpscalerBadge.text = "UPSCALED (${scale}×)"
+                        val resolvedModel = getResolvedModel()
+                        val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
+                        val badgeText = if (resolvedModel.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
+                            "${scale}× OUTPUT (${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× REFINEMENT)"
+                        } else {
+                            "UPSCALED (${scale}×)"
+                        }
+                        upscalerBinding.tvUpscalerBadge.text = badgeText
                         upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                         upscalerBinding.layoutUpscalerResults.visibility = View.VISIBLE
-                        ExpressiveMotion.playJellyBounce(upscalerBinding.btnUpscalerSave)
+                        com.veilframe.app.ui.motion.ProcessingMotionController.confirmCompletion(upscalerBinding.layoutUpscalerResults)
 
                         val mp = (upscaled.width * upscaled.height) / 1_000_000.0
                         onLog(
@@ -564,7 +632,7 @@ class ImageUpscalerController(
             // 2x Card
             val is2x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_2X)
             if (is2x) {
-                dialogBinding.tvModelStatus2x.text = "✓ Installed"
+                dialogBinding.tvModelStatus2x.text = "Installed"
                 dialogBinding.tvModelStatus2x.setTextColor(activity.getColor(R.color.vf_accent_green))
                 dialogBinding.btnDownloadModel2x.visibility = View.GONE
                 dialogBinding.btnDeleteModel2x.visibility = View.VISIBLE
@@ -578,7 +646,7 @@ class ImageUpscalerController(
             // 4x Card
             val is4x = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X)
             if (is4x) {
-                dialogBinding.tvModelStatus4x.text = "✓ Installed"
+                dialogBinding.tvModelStatus4x.text = "Installed"
                 dialogBinding.tvModelStatus4x.setTextColor(activity.getColor(R.color.vf_accent_green))
                 dialogBinding.btnDownloadModel4x.visibility = View.GONE
                 dialogBinding.btnDeleteModel4x.visibility = View.VISIBLE
@@ -592,7 +660,7 @@ class ImageUpscalerController(
             // Anime Card
             val isAnime = repository.isModelInstalled(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4X)
             if (isAnime) {
-                dialogBinding.tvModelStatusAnime.text = "✓ Installed"
+                dialogBinding.tvModelStatusAnime.text = "Installed"
                 dialogBinding.tvModelStatusAnime.setTextColor(activity.getColor(R.color.vf_accent_green))
                 dialogBinding.btnDownloadModelAnime.visibility = View.GONE
                 dialogBinding.btnDeleteModelAnime.visibility = View.VISIBLE

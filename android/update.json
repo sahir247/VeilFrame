@@ -1,16 +1,14 @@
 {
-  "versionCode": 226,
-  "versionName": "2.2.6",
-  "tag": "v2.2.6",
+  "versionCode": 227,
+  "versionName": "2.2.7",
+  "tag": "v2.2.7",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "AI Image Upscaler: Dedicated on-device super-resolution tool with Point 7 models (Real-ESRGAN General 2×/4×, Anime 4×, and native Lanczos/Bicubic/Nearest)",
-    "Accurate File Size Estimations: Exact 24-bit padded rowBytes for BMP and precision empirical formulas across all image and video studio formats",
-    "Video Studio & Compressor Overhaul: Compression speed presets (Slow, Medium, Fast), video rotation (90°/180°/270°), flip (H/V), 4:3 and 3:4 aspects, and custom margin crop slider",
-    "Trim-bounded Playback: Live media player playback, seeking, and scrubber looping strictly clamped to selected trim interval",
-    "Scale > 100% Live Preview: Real-time visual scaling reflection and memory-safe full-resolution export for enlarged image studio scaling",
-    "On-Demand Model Manager: In-app model repository with background download, SHA-256 integrity verification, and zero initial APK bloat"
+    "Adaptive Inference Architecture: Hardware-aware benchmark-driven engine with unpenalized throughput, progressive worker expansion, and adaptive thermal step-downs",
+    "Independent Memory Safety: Dual Java/native memory budgeting with strict zero-worker edge-case rejection and pathological resolution protection",
+    "Qualcomm QNN Plugin EP: Standalone downloadable acceleration pack supporting QNN HTP (FP16/QDQ) and QNN GPU (FP32/FP16) on Snapdragon devices",
+    "Material 3 Expressive UI: Fluid spring physics, predictive back transitions, dynamic contrast elevation, and zero-emoji compliance"
   ]
 }

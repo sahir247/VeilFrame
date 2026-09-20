@@ -33,8 +33,28 @@ class OnnxUpscaleRuntime(
     val modelFile: File,
     val scale: Int,
     mode: InferenceAccelerationMode = InferenceAccelerationMode.AUTO,
-    precision: InferencePrecisionMode = InferencePrecisionMode.DEFAULT
+    precision: InferencePrecisionMode = InferencePrecisionMode.DEFAULT,
+    customIntraOpThreads: Int? = null,
+    customInterOpThreads: Int? = null
 ) : AutoCloseable {
+
+    constructor(
+        modelFile: File,
+        scale: Int,
+        profile: ExecutionProfile
+    ) : this(
+        modelFile = modelFile,
+        scale = scale,
+        mode = when (profile.backend) {
+            Backend.NNAPI -> InferenceAccelerationMode.NNAPI
+            Backend.CPU -> InferenceAccelerationMode.CPU
+            Backend.XNNPACK -> InferenceAccelerationMode.XNNPACK
+            Backend.QNN -> InferenceAccelerationMode.QNN
+        },
+        precision = profile.precision,
+        customIntraOpThreads = profile.intraOpThreads,
+        customInterOpThreads = profile.interOpThreads
+    )
 
     companion object {
         private const val TAG = "VeilFrame.OnnxRuntime"
@@ -68,7 +88,9 @@ class OnnxUpscaleRuntime(
             env = env,
             modelFile = modelFile,
             mode = mode,
-            precision = precision
+            precision = precision,
+            customIntraOpThreads = customIntraOpThreads,
+            customInterOpThreads = customInterOpThreads
         )
         session = sessionResult.session
         optionsHolder = sessionResult.options
@@ -407,6 +429,9 @@ class OnnxUpscaleRuntime(
     override fun close() {
         try {
             session.close()
+            if (backendInfo.backend == Backend.QNN) {
+                com.veilframe.app.upscale.inference.qnn.QnnPluginLeaseManager.decrementSession()
+            }
         } catch (_: Exception) {}
         try {
             optionsHolder?.close()

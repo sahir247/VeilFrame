@@ -40,25 +40,22 @@ object ExpressiveMotion {
     }
 
     /**
-     * Attaches tactile spring bounce to any interactive view (buttons, tool cards, chips).
+     * Attaches tactile spring bounce to interactive views.
      *
      * Rules:
      * - Does NOT consume touch events (returns false so OnClickListener, ScrollView, and
      *   RecyclerView handle gestures normally).
-     * - On ACTION_DOWN: scales to 0.94 over 75ms + fires a single haptic feedback tap.
+     * - On ACTION_DOWN: scales to 0.96 over 75ms (NO haptic feedback on touch down to prevent
+     *   accidental vibration during scrolling).
      * - On ACTION_UP: springs back via overshoot to 1.0 over 180ms.
-     * - On ACTION_CANCEL or drag beyond touch bounds: returns directly to 1.0f without jelly.
+     * - On ACTION_CANCEL or drag beyond touch bounds: returns directly to 1.0f.
      */
-    fun applyTouchBounce(
-        view: View,
-        hapticFeedback: Int = HapticFeedbackConstants.KEYBOARD_TAP
-    ) {
+    fun applyTouchBounce(view: View) {
         view.setOnTouchListener { v, event ->
             if (!v.isEnabled) return@setOnTouchListener false
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.performHapticFeedback(hapticFeedback)
                     v.animate()
                         .scaleX(MotionSpec.PRESS_SCALE)
                         .scaleY(MotionSpec.PRESS_SCALE)
@@ -83,7 +80,6 @@ object ExpressiveMotion {
                         .start()
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    // If finger slides outside the view bounds during touch, abort press state
                     val x = event.x
                     val y = event.y
                     if (x < 0f || x > v.width || y < 0f || y > v.height) {
@@ -96,8 +92,71 @@ object ExpressiveMotion {
                     }
                 }
             }
-            false // Critical: never consume the event
+            false
         }
+    }
+
+    /**
+     * Attaches pure spring motion to tool cards.
+     * Guaranteed zero vibration during touches or scrolling, with subtle spring response.
+     */
+    fun applyCardSpringMotion(view: View) {
+        view.setOnTouchListener { v, event ->
+            if (!v.isEnabled) return@setOnTouchListener false
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate()
+                        .scaleX(0.98f)
+                        .scaleY(0.98f)
+                        .setDuration(80L)
+                        .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+                        .start()
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(180L)
+                        .setInterpolator(MotionSpec.OVERSHOOT_FAST)
+                        .start()
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(100L)
+                        .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+                        .start()
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val x = event.x
+                    val y = event.y
+                    if (x < 0f || x > v.width || y < 0f || y > v.height) {
+                        v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(100L)
+                            .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+                            .start()
+                    }
+                }
+            }
+            false
+        }
+    }
+
+    /**
+     * Tactile confirmation feedback reserved strictly for explicit button click confirmation,
+     * toggle detents, and completion events.
+     */
+    fun performConfirmationHaptic(
+        view: View,
+        feedbackConstant: Int = HapticFeedbackConstants.KEYBOARD_TAP
+    ) {
+        try {
+            view.performHapticFeedback(feedbackConstant)
+        } catch (_: Throwable) {}
     }
 
     /**

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.6-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.7-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>
@@ -82,7 +82,7 @@ Download pre-compiled native binaries, installers, mobile packages, and `SHA256S
 | **macOS (Installer)** | `VeilFrame-macos-arm64.dmg` | Apple Silicon (ARM64) | Open DMG and drag **VeilFrame.app** to `/Applications` |
 | **macOS (Portable)** | `VeilFrame-macos-arm64.tar.gz` | Apple Silicon (ARM64) | Extract `tar -xzf VeilFrame-macos-arm64.tar.gz` and open `VeilFrame.app` |
 | **Android (APK)** | `VeilFrame-android-arm64.apk` | ARM64 (API 26+) | Direct download and tap-to-install on device |
-| **Python (Any OS)** | `veilframe-2.2.6-py3-none-any.whl` | Universal | `pip install veilframe-2.2.6-py3-none-any.whl` |
+| **Python (Any OS)** | `veilframe-2.2.7-py3-none-any.whl` | Universal | `pip install veilframe-2.2.7-py3-none-any.whl` |
 
 ```powershell
 # Windows Checksum Verification:
@@ -513,7 +513,13 @@ The desktop application features 5 dedicated operational modes:
 
 #### Android Native Mobile Application (`com.veilframe.app`)
 VeilFrame provides a complete on-device Android application (API 26+ / Android 8.0 through Android 15, Target SDK 35) offering 7 dedicated workflows:
-- **AI Image Upscaler (New in v2.2.6):** 100% offline, on-device neural super-resolution powered by ONNX Runtime and Point 7 models (Real-ESRGAN General 2×/4×, Real-ESRGAN Anime 4×, and native mathematical Lanczos 3-lobe, Bicubic, and Nearest Neighbor). Features memory-safe tiled inference with 32px overlap and cubic Hermite seam blending, plus an on-demand model download manager with SHA-256 verification and zero initial APK bloat.
+- **AI Image Upscaler (Adaptive Engine in v2.2.7):** 100% offline, on-device neural super-resolution powered by ONNX Runtime and Point 7 models (Real-ESRGAN General 2×/4×, Real-ESRGAN Anime 4×, and native mathematical Lanczos 3-lobe, Bicubic, and Nearest Neighbor).
+  - *Hardware-Aware Adaptive Execution Planner:* Empirically micro-benchmarks candidate execution providers (NNAPI, CPU/XNNPACK, and Qualcomm QNN) to discover the fastest sustainable profile under current thermal, memory, and model constraints.
+  - *Progressive Worker Expansion:* Dynamically scales worker concurrency without artificial CPU-core caps on hardware accelerators: `candidateWorkerUpperBound = min(memorySafeWorkers, providerSafeWorkers, eligibleTileCount, benchmarkSearchLimit)`.
+  - *Unpenalized Throughput Measurement:* Employs real measured megapixels per second with empirical scaling efficiency: `scalingEfficiency(N) = throughput(N) / (N * throughput(1))`.
+  - *Dual-Domain Memory Safety:* Decoupled Java heap and native memory budgeting with explicit zero-worker edge-case rejection and emergency output pixel protection (100 MP default).
+  - *Standalone Qualcomm QNN Plugin EP Acceleration:* Optional downloadable acceleration pack on ARM64 Snapdragon devices using official ONNX Runtime Plugin EP APIs (`registerExecutionProviderLibrary()`, `getEpDevices()`), evaluating both QNN HTP (supporting FP16 math and quantized QDQ variants) and QNN GPU (FP32/FP16).
+  - *Material 3 Expressive UI:* Physics-based spring animations, predictive back transitions, dynamic contrast elevation, and strict zero-emoji compliance.
 - **Video Studio & Compressor:** Visual compressor and editor with speed presets (Slow for max compression, Medium, Fast), 90°/180°/270° video rotation, canvas flip, 4:3 and 3:4 aspect framing, custom margin crop slider (0–40%), and trim-bounded player seeking and looping.
 - **Image Studio & Compressor:** Deep image compression and transformation with accurate BMP DWORD padding and empirical format size estimations, scale > 100% live preview reflection, text watermarks, alpha background fills, color filters, and EXIF editing.
 - **Pure APK Signature Scheme V2/V3:** Release APKs strictly enforce V2/V3 block signing, disabling legacy V1 JAR signatures and preventing `META-INF/MANIFEST.MF` verification issues.

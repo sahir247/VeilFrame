@@ -114,57 +114,69 @@ class UpscaleInferenceEngine(
                         )
                     }
 
+                    listener?.onStatus("Planning adaptive execution profile...")
+                    listener?.onStage("Planning execution", 0, 1)
+
+                    val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
+                    val planner = AdaptiveExecutionPlanner()
+                    val modelCaps = ModelExecutionCapabilities(
+                        nativeScale = model.nativeScale,
+                        supportedOutputScales = model.supportedOutputScales,
+                        minSpatialSize = model.minInputDimension,
+                        tileCompatible = model.tileCompatible
+                    )
+
+                    val executionProfile = planner.planExecution(
+                        context = context,
+                        modelFile = modelFile,
+                        modelId = model.id,
+                        targetScale = targetScale,
+                        sourceWidth = srcW,
+                        sourceHeight = srcH,
+                        modelCapabilities = modelCaps
+                    )
+
                     listener?.onStatus("Loading ${model.name} weights...")
                     listener?.onStage("Initializing neural runtime", 0, 1)
-                    val runtime = OnnxUpscaleRuntime(modelFile, model.nativeScale)
+                    val runtime = OnnxUpscaleRuntime(modelFile, model.nativeScale, executionProfile)
 
                     try {
                         ensureActive()
                         val effectiveTileSize = if (!runtime.isDynamicSpatial && runtime.expectedWidth > 0L) {
-                            minOf(plan.tileSize, runtime.expectedWidth.toInt())
+                            minOf(executionProfile.tileSize, runtime.expectedWidth.toInt())
                         } else {
-                            plan.tileSize
+                            executionProfile.tileSize
                         }
                         val tileProcessor = UpscaleTileProcessor(
                             tileSize = effectiveTileSize,
-                            overlap = plan.overlap
+                            overlap = executionProfile.overlap
                         )
 
-                        val extraScale = if (targetScale > model.nativeScale) targetScale / model.nativeScale else 1
-                        val scaleDesc = if (extraScale > 1) {
-                            "${model.nativeScale}× AI + ${extraScale}× Lanczos refinement"
+                        val scaleDesc = if (scalePlan.requiresRefinement) {
+                            "${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× Lanczos refinement"
                         } else {
                             "${targetScale}× AI"
                         }
-                        listener?.onStatus("Ready: ${model.name} ($scaleDesc via ${runtime.executionProvider}, tile: ${effectiveTileSize}px)")
+                        listener?.onStatus("Ready: ${model.name} ($scaleDesc via ${runtime.executionProvider}, ${executionProfile.workers} workers, tile: ${effectiveTileSize}px)")
 
-                        // Calculate total tiles and resolve bounded parallel worker count
-                        val tileCount = tileProcessor.calculateTiles(srcW, srcH).size.coerceAtLeast(1)
-                        val estimatedPerWorkerBytes = (effectiveTileSize.toLong() * effectiveTileSize.toLong() * 4L * 6L) // input + output + buffers
-                        val workers = WorkerPolicy.resolve(
-                            backend = runtime.backendInfo.backend,
-                            memoryBudgetBytes = plan.estimatedWorkingSetBytes,
-                            perWorkerBytes = estimatedPerWorkerBytes,
-                            tileCount = tileCount
-                        )
+                        val totalDurationMs = java.util.concurrent.atomic.AtomicLong(0L)
 
-                        var lastTileMs = 0L
                         val aiResult = tileProcessor.processTiles(
                             source = source,
                             scale = targetScale,
-                            workers = workers,
+                            workers = executionProfile.workers,
                             onTileInfer = { tile, row, col, index, total ->
                                 val t0 = System.currentTimeMillis()
                                 listener?.onStage("Neural inference", index + 1, total)
-                                listener?.onStatus("Tile ${index + 1} of $total: Running neural inference via ${runtime.executionProvider}...")
+                                listener?.onStatus("Tile ${index + 1} of $total: Running inference via ${runtime.executionProvider}...")
 
                                 val baseProcessed = runtime.runTile(tile, row, col)
 
-                                val finalProcessed = if (extraScale > 1) {
+                                val finalProcessed = if (scalePlan.requiresRefinement) {
                                     listener?.onStage("Lanczos refinement", index + 1, total)
                                     val baseBmp = baseProcessed.bitmap
-                                    val refinedW = baseBmp.width * extraScale
-                                    val refinedH = baseBmp.height * extraScale
+                                    val refinedW = baseBmp.width * scalePlan.refinementScale
+                                    val refinedH = baseBmp.height * scalePlan.refinementScale
                                     val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
                                     baseBmp.recycle()
                                     ProcessedTile(refinedBmp, targetScale)
@@ -172,15 +184,30 @@ class UpscaleInferenceEngine(
                                     baseProcessed
                                 }
 
-                                lastTileMs = System.currentTimeMillis() - t0
+                                val elapsedMs = System.currentTimeMillis() - t0
+                                totalDurationMs.addAndGet(elapsedMs)
                                 listener?.onStage("Composing", index + 1, total)
                                 finalProcessed
                             },
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0
                                 listener?.onProgress(current, total, pct)
-                                val timeInfo = if (lastTileMs > 0) " (${lastTileMs}ms)" else ""
-                                listener?.onStatus("Processed tile $current of $total$timeInfo • ${runtime.executionProvider}")
+
+                                val done = current.coerceAtLeast(1)
+                                val avgMs = totalDurationMs.get() / done
+                                val remainingTiles = (total - current).coerceAtLeast(0)
+                                val etaSeconds = if (executionProfile.workers > 1) {
+                                    ((remainingTiles * avgMs) / (1000L * executionProfile.workers)).coerceAtLeast(0L)
+                                } else {
+                                    ((remainingTiles * avgMs) / 1000L).coerceAtLeast(0L)
+                                }
+
+                                val etaStr = if (current > 0 && remainingTiles > 0) {
+                                    val sec = String.format(java.util.Locale.US, "%02ds", etaSeconds)
+                                    " • ~$sec left"
+                                } else ""
+
+                                listener?.onStatus("Tile $current of $total • ${runtime.executionProvider}$etaStr")
                             }
                         )
 

@@ -49,6 +49,8 @@ class MorphDialogController {
 
         // Transparent window background so only the styled Material dialog card translates/scales
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialogView.setBackgroundResource(com.veilframe.app.R.drawable.bg_popup_dialog)
+        dialogView.clipToOutline = true
 
         // Reduced motion check
         if (ExpressiveMotion.isReducedMotion(context)) {
@@ -191,18 +193,25 @@ class MorphDialogController {
             .translationX(targetTransX)
             .translationY(targetTransY)
             .setDuration(MotionSpec.NORMAL)
-            .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+            .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     try {
                         dialog.dismiss()
                     } catch (_: Throwable) {}
                     state = DialogMotionState.DISMISSED
+                    ExpressiveMotion.performConfirmationHaptic(originView)
 
-                    // State-confirmation jelly settling bounce on the originating control
-                    ExpressiveMotion.playJellyBounce(originView) {
-                        onDismissComplete?.invoke()
-                    }
+                    // Gentle spring settle on originating control without jarring multi-stage wobble
+                    originView.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(160L)
+                        .setInterpolator(MotionSpec.EMPHASIZED_DECELERATE)
+                        .withEndAction {
+                            onDismissComplete?.invoke()
+                        }
+                        .start()
                 }
             })
             .start()

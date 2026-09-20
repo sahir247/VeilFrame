@@ -385,6 +385,7 @@ class VideoStudioController(
                 progress = progress
             )
         }
+        clear()
     }
 
     fun onDestinationFolderSelected(uri: Uri) {
@@ -560,11 +561,21 @@ class VideoStudioController(
                 binding.layoutVidSelectedState.visibility = View.VISIBLE
                 binding.btnVidClearAll.isEnabled = true
                 binding.toolVidTrim.isEnabled = true
+                binding.toolVidTrim.alpha = 1.0f
                 binding.toolVidScale.isEnabled = true
+                binding.toolVidScale.alpha = 1.0f
                 binding.toolVidColor.isEnabled = true
+                binding.toolVidColor.alpha = 1.0f
                 binding.toolVidSpeed.isEnabled = true
+                binding.toolVidSpeed.alpha = 1.0f
                 binding.toolVidAspect.isEnabled = true
+                binding.toolVidAspect.alpha = 1.0f
                 binding.toolVidAudio.isEnabled = true
+                binding.toolVidAudio.alpha = 1.0f
+                binding.btnVidExecute.isEnabled = true
+                binding.btnVidExecute.alpha = 1.0f
+                binding.btnFloatingExecute.isEnabled = true
+                binding.btnFloatingExecute.alpha = 1.0f
 
                 if (!isAppend || previousSize == 0) {
                     selectMediaIndex(0)
@@ -961,14 +972,14 @@ class VideoStudioController(
             val hasTrim = editState.trimStartMs > 0L || (editState.durationMs > 0L && editState.trimEndMs < editState.durationMs)
             if (hasTrim) {
                 binding.tvVidSummaryTrim.visibility = View.VISIBLE
-                binding.tvVidSummaryTrim.text = "✓ Trim: ${formatDuration(editState.trimStartMs)} → ${formatDuration(editState.trimEndMs)} (${formatDuration(editState.trimmedDurationMs)})"
+                binding.tvVidSummaryTrim.text = "• Trim: ${formatDuration(editState.trimStartMs)} → ${formatDuration(editState.trimEndMs)} (${formatDuration(editState.trimmedDurationMs)})"
             } else {
                 binding.tvVidSummaryTrim.visibility = View.GONE
             }
 
             if (editState.scalePreset != "Original (No scaling)" && editState.scalePreset != "Original") {
                 binding.tvVidSummaryScale.visibility = View.VISIBLE
-                binding.tvVidSummaryScale.text = "✓ Resolution: ${editState.scalePreset}"
+                binding.tvVidSummaryScale.text = "• Resolution: ${editState.scalePreset}"
             } else {
                 binding.tvVidSummaryScale.visibility = View.GONE
             }
@@ -976,7 +987,7 @@ class VideoStudioController(
             if (editState.aspect != "Original") {
                 binding.tvVidSummaryAspect.visibility = View.VISIBLE
                 val cropInfo = if (editState.aspect == "Custom Crop") " (${editState.customCropPercent}%)" else ""
-                binding.tvVidSummaryAspect.text = "✓ Aspect: ${editState.aspect}$cropInfo"
+                binding.tvVidSummaryAspect.text = "• Aspect: ${editState.aspect}$cropInfo"
             } else {
                 binding.tvVidSummaryAspect.visibility = View.GONE
             }
@@ -987,27 +998,27 @@ class VideoStudioController(
                 if (editState.flipH) rotParts.add("Flip H")
                 if (editState.flipV) rotParts.add("Flip V")
                 binding.tvVidSummarySpeed.visibility = View.VISIBLE
-                binding.tvVidSummarySpeed.text = "✓ Orientation: ${rotParts.joinToString(", ")}"
+                binding.tvVidSummarySpeed.text = "• Orientation: ${rotParts.joinToString(", ")}"
             } else if (editState.speed != 1.0f) {
                 binding.tvVidSummarySpeed.visibility = View.VISIBLE
-                binding.tvVidSummarySpeed.text = "✓ Speed: ${editState.speed}×"
+                binding.tvVidSummarySpeed.text = "• Speed: ${editState.speed}×"
             } else {
                 binding.tvVidSummarySpeed.visibility = View.GONE
             }
 
             if (editState.colorProfile != "Original" && editState.colorProfile.isNotEmpty()) {
                 binding.tvVidSummaryColor.visibility = View.VISIBLE
-                binding.tvVidSummaryColor.text = "✓ Colour: ${editState.colorProfile}"
+                binding.tvVidSummaryColor.text = "• Colour: ${editState.colorProfile}"
             } else {
                 binding.tvVidSummaryColor.visibility = View.GONE
             }
 
             if (outputConfig.outputMode == VideoOutputMode.GIF) {
                 binding.tvVidSummaryAudio.visibility = View.VISIBLE
-                binding.tvVidSummaryAudio.text = "✓ Mode: GIF Animation (Audio removed)"
+                binding.tvVidSummaryAudio.text = "• Mode: GIF Animation (Audio removed)"
             } else if (editState.audioMode != AudioMode.KEEP) {
                 binding.tvVidSummaryAudio.visibility = View.VISIBLE
-                binding.tvVidSummaryAudio.text = "✓ Audio: ${editState.audioMode}"
+                binding.tvVidSummaryAudio.text = "• Audio: ${editState.audioMode}"
             } else {
                 binding.tvVidSummaryAudio.visibility = View.GONE
             }
@@ -1221,11 +1232,17 @@ class VideoStudioController(
         binding.btnVidClearAll.isEnabled = false
 
         binding.toolVidTrim.isEnabled = false
+        binding.toolVidTrim.alpha = 0.5f
         binding.toolVidScale.isEnabled = false
+        binding.toolVidScale.alpha = 0.5f
         binding.toolVidColor.isEnabled = false
+        binding.toolVidColor.alpha = 0.5f
         binding.toolVidSpeed.isEnabled = false
+        binding.toolVidSpeed.alpha = 0.5f
         binding.toolVidAspect.isEnabled = false
+        binding.toolVidAspect.alpha = 0.5f
         binding.toolVidAudio.isEnabled = false
+        binding.toolVidAudio.alpha = 0.5f
         applyColorProfile("Original")
 
         binding.tvVidBeforeStats.text = "0 B • 0s • Original"
@@ -1233,6 +1250,10 @@ class VideoStudioController(
         binding.tvVidActualStats.visibility = View.GONE
         binding.layoutVidResultActions.visibility = View.GONE
         binding.btnVidExecute.text = "Select video"
+        binding.btnVidExecute.isEnabled = false
+        binding.btnVidExecute.alpha = 0.5f
+        binding.btnFloatingExecute.isEnabled = false
+        binding.btnFloatingExecute.alpha = 0.5f
 
         editState.reset()
         updateEditSummary()

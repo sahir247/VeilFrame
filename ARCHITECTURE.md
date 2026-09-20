@@ -578,27 +578,102 @@ The media compression subsystem (`veilframe.core.media_compressor`) exposes high
 VeilFrame v2.2.6 introduces the on-device AI Image Upscaler (`com.veilframe.app.upscale.*`), operating under 100% offline local privacy guarantees:
 
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                    AI IMAGE UPSCALER SUBSYSTEM (ONNX)                      │
-├──────────────────────────────────────┬─────────────────────────────────────┤
-│        POINT 7 MODEL REGISTRY        │        TILED INFERENCE PIPELINE     │
-│                                      │                                     │
-│ • Real-ESRGAN General 2× (33.8 MB)   │ • Dynamic Memory Planner (Heap/RAM) │
-│   Residual-in-Residual Dense Blocks  │ • Safe Tile Slicing (512–1024px)    │
-│ • Real-ESRGAN General 4× (33.8 MB)   │ • 32px Tile Overlap Padding         │
-│   Maximum photographic detail        │ • Cubic Hermite Seam Feathering     │
-│ • Real-ESRGAN Anime 4× (9.1 MB)      │ • [1, 3, H, W] RGB Normalization    │
-│   Crisp edges & vibrant illustration │ • Native Alpha Channel Scaling      │
-│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Two-Pass 8× Super-Resolution      │
-│ • Bicubic Spline (Built-in)          │ • Background Model Download Manager │
-│ • Nearest Neighbor (Built-in)        │   (Redirects, .part, SHA-256 Check) │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                   AI IMAGE UPSCALER & ADAPTIVE INFERENCE SUBSYSTEM (v2.2.7)                      │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│        POINT 7 MODEL REGISTRY        │        ADAPTIVE EXECUTION & BENCHMARKING ENGINE           │
+│                                      │                                                           │
+│ • Real-ESRGAN General 2× (33.8 MB)   │ • Hardware-Aware Discovery (NNAPI, CPU/XNNPACK, QNN)      │
+│   Residual-in-Residual Dense Blocks  │ • Decoupled Dual-Domain Memory Budgeting (Java + Native)  │
+│ • Real-ESRGAN General 4× (33.8 MB)   │ • Progressive Worker Concurrency Search (Uncapped)       │
+│   Maximum photographic detail        │ • Pure Unpenalized Throughput & Scaling Efficiency        │
+│ • Real-ESRGAN Anime 4× (9.1 MB)      │ • Adaptive Thermal Ladder (8 -> 6 -> 4 -> 3 -> 2 -> 1)    │
+│   Crisp edges & vibrant illustration │ • Standalone Qualcomm QNN Plugin EP (HTP + GPU)           │
+│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Full-Coverage Diagnostic Probe (disable_cpu_ep_fallback)│
+│ • Bicubic Spline (Built-in)          │ • Persistent Profile Cache with Multi-Factor Confidence   │
+│ • Nearest Neighbor (Built-in)        │ • Material 3 Expressive Motion System (Spring Physics)    │
+└──────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
-1. **Point 7 Model Lineup:** Strictly isolates neural super-resolution to three high-performance ONNX models (Real-ESRGAN General 2×/4× and Anime 4×) plus three native mathematical interpolation algorithms (Lanczos-3, Bicubic, Nearest).
-2. **Zero-Bloat On-Demand Caching:** Models are not bundled inside the base APK (~79 MB). Instead, models stream on-demand from HuggingFace directly into `context.filesDir/models/upscaler/[id]/model.ort`, verifying against strict SHA-256 checksums before atomic activation.
-3. **Tiled Memory Allocation & Hermite Feathering:** Large images are partitioned into overlapping tiles ($512\times512$ to $1024\times1024$) with 32px overlap borders. To eliminate visible tile seams, boundary pixels are merged using smooth cubic Hermite polynomial blending ($S(t) = 3t^2 - 2t^3$).
-4. **100% Offline Privacy Guarantee:** Inference executes exclusively on local device NPU/GPU/CPU cores using the native ONNX Runtime C++ engine (`onnxruntime-android:1.20.0`). Zero image bytes or metadata ever leave the user's device.
+### 1. Hardware-Aware Adaptive Execution Flow
+
+```text
+                                MODEL
+                                  │
+                                  ▼
+                      ModelExecutionCapabilities
+                    (QnnModelCapability: HTP vs GPU)
+                                  │
+                                  ▼
+                                DEVICE
+                                  │
+                                  ▼
+                        DeviceCapabilityProfile
+                                  │
+                                  ▼
+                  Runtime / Backend Capability Discovery
+                                  │
+          ┌───────────────────────┼────────────────────────┐
+          ▼                       ▼                        ▼
+        NNAPI               CPU / XNNPACK             QNN Plugin*
+          │                       │                        │
+          └───────────────────────┼────────────────────────┘
+                                  ▼
+                       Legal Candidate Profiles
+                                  ▼
+                        Memory / Model Filter
+                 (Safe Rejection if maxSafeWorkers=0)
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+            Single-Tile Probe           Multi-Tile Probe
+            backend / precision         workers 1 → 2 → 3 → ... → N
+            (3 samples, median MP/s)    (median MP/s, scaling efficiency)
+                    │                           │
+                    └─────────────┬─────────────┘
+                                  ▼
+                      AdaptiveExecutionPlanner
+                                  │
+                                  ▼
+                          ExecutionProfile
+                                  │
+                                  ▼
+                        Bounded Tile Executor
+                                  │
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼             ▼
+                Telemetry      Thermal       Progress
+            (Approx Peak PSS) (Progressive Step)
+                    │             │             │
+                    └─────────────┼─────────────┘
+                                  ▼
+                         Runtime Adaptation
+                     (Next-Lower Sustainable)
+                                  │
+                                  ▼
+                         Cached Best Profile
+                    (Exact Config ID + Confidence)
+```
+
+### 2. Standalone Qualcomm QNN Plugin EP Architecture
+- **Decoupled Packaging:** Targets the official Qualcomm standalone Plugin EP artifact (`libonnxruntime_providers_qnn.so`) rather than requiring custom monolithic ORT builds.
+- **Backend Separation:** Supports both QNN HTP (Hexagon Tensor Processor, running FP16 math on supported SoCs or quantized QDQ graphs) and QNN GPU (native FP32/FP16 models).
+- **Public Java Plugin APIs:** Directly registers native libraries using `env.registerExecutionProviderLibrary()`, enumerates targets via `env.getEpDevices()`, and binds selected `OrtEpDevice` instances to `SessionOptions`.
+- **Diagnostic Full-Coverage Probe:** Sets `session.disable_cpu_ep_fallback = 1` during calibration compilation. Full coverage PASS yields optimal acceleration; FAIL triggers evaluation of fallback routes.
+
+### 3. Progressive Worker Concurrency & Memory Safety
+- **No Artificial Ceilings:** Concurrency is bounded strictly by genuine hardware and safety boundaries:
+  $$\text{candidateWorkerUpperBound} = \min(\text{memorySafeWorkers}, \text{providerSafeWorkers}, \text{eligibleTileCount}, \text{benchmarkSearchLimit})$$
+  CPU cores only influence intra-op thread allocation on CPU/XNNPACK, never capping accelerator concurrency.
+- **Decoupled Memory Domains:** Evaluates Java heap headroom and native system budgets independently:
+  $$\text{JavaSafeWorkers} = \max\left(0, \left\lfloor \frac{\text{JavaBudget}}{\text{JavaPerWorker}} \right\rfloor\right),\quad \text{NativeSafeWorkers} = \max\left(0, \left\lfloor \frac{\text{NativeBudget}}{\text{NativePerWorker}} \right\rfloor\right)$$
+  When $\text{memorySafeWorkers} == 0$, execution is safely rejected or routed to minimal footprint fallback rather than risking out-of-memory crashes.
+- **Unpenalized Throughput:** Evaluates real measured megapixels per second without artificial contention penalty multipliers, tracking:
+  $$\text{scalingEfficiency}(N) = \frac{\text{throughput}(N)}{N \times \text{throughput}(1)}$$
+
+### 4. Material 3 Expressive UI & Zero-Emoji Compliance
+- **Physics-Based Spring Transitions:** Damped spring interpolations across dialogs, modal sheets, and tool transitions.
+- **Strict Zero-Emoji Compliance:** Universal replacement of emoji characters with accessible vector drawables and Material Symbols across all UI surfaces and strings.
 
 ---
 

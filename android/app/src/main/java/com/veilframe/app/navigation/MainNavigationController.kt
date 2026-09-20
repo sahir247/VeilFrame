@@ -25,6 +25,13 @@ class MainNavigationController(
     fun init() {
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (binding.containerSettings.visibility == View.VISIBLE) {
+                    com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
+                        binding.containerSettings,
+                        binding.scrimSettings
+                    )
+                    return
+                }
                 if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
                     if (onMarkdownBackPressed()) {
                         return

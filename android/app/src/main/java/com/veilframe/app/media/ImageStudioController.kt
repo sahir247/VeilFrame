@@ -286,6 +286,7 @@ class ImageStudioController(
                 progress = progress
             )
         }
+        clear()
     }
 
     fun onDestinationFolderSelected(uri: Uri) {
@@ -373,11 +374,21 @@ class ImageStudioController(
                 binding.layoutImgSelectedState.visibility = View.VISIBLE
                 binding.btnImgClearAll.isEnabled = true
                 binding.toolCrop.isEnabled = true
+                binding.toolCrop.alpha = 1.0f
                 binding.toolResize.isEnabled = true
+                binding.toolResize.alpha = 1.0f
                 binding.toolRotate.isEnabled = true
+                binding.toolRotate.alpha = 1.0f
                 binding.toolColorFilter.isEnabled = true
+                binding.toolColorFilter.alpha = 1.0f
                 binding.toolExif.isEnabled = true
+                binding.toolExif.alpha = 1.0f
                 binding.toolText.isEnabled = true
+                binding.toolText.alpha = 1.0f
+                binding.btnImgExecute.isEnabled = true
+                binding.btnImgExecute.alpha = 1.0f
+                binding.btnFloatingExecute.isEnabled = true
+                binding.btnFloatingExecute.alpha = 1.0f
 
                 if (!isAppend || previousSize == 0) {
                     selectMediaIndex(0)
@@ -580,15 +591,15 @@ class ImageStudioController(
             if (editState.watermarkText.isNotEmpty()) {
                 binding.tvImgSummaryCrop.visibility = View.VISIBLE
                 val curCrop = if (editState.isCropped()) "Crop ${editState.cropAspect} • " else ""
-                binding.tvImgSummaryCrop.text = "✓ ${curCrop}Watermark: \"${editState.watermarkText}\""
+                binding.tvImgSummaryCrop.text = "• ${curCrop}Watermark: \"${editState.watermarkText}\""
             }
 
             if (editState.resizeScale != 100 || editState.resizeWidth > 0) {
                 binding.tvImgSummaryResize.visibility = View.VISIBLE
                 binding.tvImgSummaryResize.text = if (editState.resizeWidth > 0) {
-                    "✓ Resize: ${editState.resizeWidth}×${editState.resizeHeight} px"
+                    "• Resize: ${editState.resizeWidth}×${editState.resizeHeight} px"
                 } else {
-                    "✓ Resize: ${editState.resizeScale}%"
+                    "• Resize: ${editState.resizeScale}%"
                 }
             } else {
                 binding.tvImgSummaryResize.visibility = View.GONE
@@ -596,7 +607,7 @@ class ImageStudioController(
 
             if (editState.filter != "Default" && editState.filter != "None") {
                 binding.tvImgSummaryFilter.visibility = View.VISIBLE
-                binding.tvImgSummaryFilter.text = "✓ Filter: ${editState.filter}"
+                binding.tvImgSummaryFilter.text = "• Filter: ${editState.filter}"
             } else {
                 binding.tvImgSummaryFilter.visibility = View.GONE
             }
@@ -606,7 +617,7 @@ class ImageStudioController(
                     editState.exifDateTime.isNotEmpty() || editState.exifGps.isNotEmpty()
             if (hasExifEdits) {
                 binding.tvImgSummaryExif.visibility = View.VISIBLE
-                binding.tvImgSummaryExif.text = if (editState.stripExif) "✓ EXIF: Privacy Scrubbed (Clean)" else "✓ EXIF: Custom Metadata"
+                binding.tvImgSummaryExif.text = if (editState.stripExif) "• EXIF: Privacy Scrubbed (Clean)" else "• EXIF: Custom Metadata"
             } else {
                 binding.tvImgSummaryExif.visibility = View.GONE
             }
@@ -802,11 +813,17 @@ class ImageStudioController(
         binding.layoutImgSelectedState.visibility = View.GONE
         binding.btnImgClearAll.isEnabled = false
         binding.toolCrop.isEnabled = false
+        binding.toolCrop.alpha = 0.5f
         binding.toolResize.isEnabled = false
+        binding.toolResize.alpha = 0.5f
         binding.toolRotate.isEnabled = false
+        binding.toolRotate.alpha = 0.5f
         binding.toolColorFilter.isEnabled = false
+        binding.toolColorFilter.alpha = 0.5f
         binding.toolExif.isEnabled = false
+        binding.toolExif.alpha = 0.5f
         binding.toolText.isEnabled = false
+        binding.toolText.alpha = 0.5f
 
         binding.imgFileThumb.setImageDrawable(null)
         binding.imgBeforePreview.setImageDrawable(null)
@@ -816,6 +833,10 @@ class ImageStudioController(
         binding.tvImgActualStats.visibility = View.GONE
         binding.layoutImgResultActions.visibility = View.GONE
         binding.btnImgExecute.text = "Select image"
+        binding.btnImgExecute.isEnabled = false
+        binding.btnImgExecute.alpha = 0.5f
+        binding.btnFloatingExecute.isEnabled = false
+        binding.btnFloatingExecute.alpha = 0.5f
         editState.reset()
         updateEditSummary()
     }

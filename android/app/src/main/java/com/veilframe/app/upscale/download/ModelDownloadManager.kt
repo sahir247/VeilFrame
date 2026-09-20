@@ -26,20 +26,21 @@ class ModelDownloadManager(
         private const val CONNECT_TIMEOUT_MS = 15000
         private const val READ_TIMEOUT_MS = 30000
 
-        private val ALLOWED_HOSTS = setOf(
-            "huggingface.co",
-            "cdn-lfs.huggingface.co",
-            "github.com",
-            "objects.githubusercontent.com"
-        )
+        private fun isAllowedHost(host: String): Boolean {
+            val h = host.lowercase(java.util.Locale.ROOT)
+            if (h == "huggingface.co" || h.endsWith(".huggingface.co")) return true
+            if (h == "hf.co" || h.endsWith(".hf.co")) return true
+            if (h == "github.com" || h.endsWith(".github.com")) return true
+            if (h == "objects.githubusercontent.com" || h.endsWith(".githubusercontent.com")) return true
+            return false
+        }
 
         fun isAllowedModelUrl(urlString: String): Boolean {
             val url = try { URL(urlString) } catch (_: Exception) { return false }
             if (!url.protocol.equals("https", ignoreCase = true)) return false
             if (url.port != -1 && url.port != 443) return false
             if (url.userInfo != null) return false
-            val host = url.host.lowercase(java.util.Locale.ROOT)
-            return host in ALLOWED_HOSTS
+            return isAllowedHost(url.host)
         }
     }
 

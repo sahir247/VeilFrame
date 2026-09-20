@@ -24,5 +24,34 @@
         <item name="android:statusBarColor">@color/vf_bg_dark</item>
         <item name="android:navigationBarColor">@color/vf_bg_dark</item>
         <item name="android:windowLightStatusBar">false</item>
+
+        <!-- Material 3 Expressive Dialog & Components Styling -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.VeilFrame.MaterialAlertDialog</item>
+    </style>
+
+    <!-- Material 3 Expressive Dialog Overlay (28dp extra large shape, surface container) -->
+    <style name="ThemeOverlay.VeilFrame.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Dialog</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.VeilFrame.Dialog</item>
+        <item name="colorSurface">@color/vf_surface</item>
+        <item name="colorOnSurface">@color/vf_text_primary</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.VeilFrame.Button.Pill</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.VeilFrame.Button.Text</item>
+    </style>
+
+    <style name="ShapeAppearance.VeilFrame.Dialog" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
+        <item name="cornerSize">28dp</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Button.Pill" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Pill</item>
+    </style>
+
+    <style name="Widget.VeilFrame.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Pill</item>
+    </style>
+
+    <style name="ShapeAppearance.VeilFrame.Pill" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">50%</item>
     </style>
 </resources>

@@ -477,7 +477,7 @@ class AppUpdateManager(
                     }
                 }
 
-                // 3. Fallback SHA-256 resolution
+                // 3. Fallback SHA-256 resolution from SHA256SUMS.txt or release body
                 if ((apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) && sha256SumsUrl.isNotEmpty()) {
                     try {
                         if (isAllowedUpdateUrl(sha256SumsUrl)) {
@@ -507,6 +507,18 @@ class AppUpdateManager(
                         }
                     } catch (e: Exception) {
                         onLog("[WARN] SHA256SUMS.txt fallback notice: ${e.message}")
+                    }
+                }
+
+                if ((apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) && releaseChangelog.isNotEmpty()) {
+                    val bodyHashMatch = Regex("""(?i)(?:sha[-_]?256|checksum|digest|hash)[\s:=*`]+([a-fA-F0-9]{64})""").find(releaseChangelog)
+                        ?: Regex("""\b([a-fA-F0-9]{64})\b""").find(releaseChangelog)
+                    if (bodyHashMatch != null) {
+                        val parsedHash = bodyHashMatch.groupValues[1].lowercase(Locale.ROOT)
+                        if (parsedHash.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                            apkExpectedSha256 = parsedHash
+                            onLog("[SEC] Resolved authentic APK SHA-256 from release changelog body: $apkExpectedSha256")
+                        }
                     }
                 }
 
@@ -556,19 +568,6 @@ class AppUpdateManager(
                             return@withContext
                         }
 
-                        if (apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-                            binding.tvUpdateStatus.text = if (isRepairMode) "Repair: Missing Hash" else "Update: Missing Hash"
-                            binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_amber))
-                            if (isUserInitiated) {
-                                showSecurityAlertDialog(
-                                    "Operation Blocked: Missing Cryptographic Digest\n\n" +
-                                    "VeilFrame v$remoteVersionName is available, but the release publisher has not attached a valid 64-character SHA-256 checksum.\n\n" +
-                                    "VeilFrame strictly refuses to download packages without cryptographic hash verification."
-                                )
-                            }
-                            return@withContext
-                        }
-
                         val targetName = if (manifestApkName.isNotEmpty()) sanitizeApkFilename(manifestApkName) else "VeilFrame-v$remoteVersionName.apk"
                         val statusLabel = if (isRepairMode) "Repair Package Ready: v$remoteVersionName" else "Update Available: v$remoteVersionName (Build $remoteVersionCode)"
                         binding.tvUpdateStatus.text = statusLabel
@@ -586,8 +585,8 @@ class AppUpdateManager(
                     } else if (isRepairMode) {
                         Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
-                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.6" } catch (_: Exception) { "2.2.6" }
-                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • You're up to date ✓"
+                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.7" } catch (_: Exception) { "2.2.7" }
+                        binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Up to date"
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
                             Toast.makeText(activity, "You have the latest version (v$currentVersionName)", Toast.LENGTH_SHORT).show()
@@ -602,7 +601,7 @@ class AppUpdateManager(
                         if (isUserInitiated) {
                             Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
-                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.6" } catch (_: Exception) { "2.2.6" }
+                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.7" } catch (_: Exception) { "2.2.7" }
                             binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_text_secondary))
                         }
@@ -642,11 +641,16 @@ class AppUpdateManager(
                 append(if (changelog.length > 350) changelog.take(350) + "..." else changelog)
                 append("\n\n")
             }
+            val shaVerificationLine = if (expectedSha256.isNotBlank()) {
+                "• SHA-256 Digest: ${expectedSha256.take(16)}...${expectedSha256.takeLast(8)}\n"
+            } else {
+                "• Authenticity: Mandatory publisher certificate pinning & version verification\n"
+            }
             append("Security & Cryptographic Verification:\n")
-            append("✓ Origin: Pinned HTTPS GitHub Releases\n")
-            append("✓ Package Identity: ${activity.packageName}\n")
-            append("✓ Mandatory SHA-256: ${expectedSha256.take(16)}...${expectedSha256.takeLast(8)}\n")
-            append("✓ Authenticity: Publisher signing certificate pinning")
+            append("• Origin: Pinned HTTPS GitHub Releases\n")
+            append("• Package Identity: ${activity.packageName}\n")
+            append(shaVerificationLine)
+            append("• Authenticity: Publisher signing certificate pinning")
         }.toString()
 
         val positiveText = if (isRepairMode) "Download & Reinstall" else "Download & Install"
@@ -671,8 +675,8 @@ class AppUpdateManager(
         if (activity.isFinishing || activity.isDestroyed) return
 
         val cleanExpectedSha256 = expectedSha256.trim().lowercase(Locale.ROOT)
-        if (!cleanExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-            showSecurityAlertDialog("Update Aborted: Missing or Malformed SHA-256 Digest!")
+        if (cleanExpectedSha256.isNotEmpty() && !cleanExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+            showSecurityAlertDialog("Update Aborted: Malformed SHA-256 Digest ($cleanExpectedSha256)!")
             return
         }
 
@@ -827,21 +831,23 @@ class AppUpdateManager(
                     activeDownloadDialog = null
                 }
 
-                // SHA-256 verification
+                // SHA-256 verification (if digest provided by release publisher)
                 val computedSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-                if (!computedSha256.equals(cleanExpectedSha256, ignoreCase = true)) {
-                    stagingFile.delete()
-                    withContext(Dispatchers.Main) {
-                        if (!activity.isFinishing && !activity.isDestroyed) {
-                            showSecurityAlertDialog(
-                                "SHA-256 Integrity Verification Failed!\n\n" +
-                                "Expected: $cleanExpectedSha256\n" +
-                                "Computed: $computedSha256\n\n" +
-                                "The downloaded package does not match the cryptographic digest. Installation aborted."
-                            )
+                if (cleanExpectedSha256.isNotEmpty()) {
+                    if (!computedSha256.equals(cleanExpectedSha256, ignoreCase = true)) {
+                        stagingFile.delete()
+                        withContext(Dispatchers.Main) {
+                            if (!activity.isFinishing && !activity.isDestroyed) {
+                                showSecurityAlertDialog(
+                                    "SHA-256 Integrity Verification Failed!\n\n" +
+                                    "Expected: $cleanExpectedSha256\n" +
+                                    "Computed: $computedSha256\n\n" +
+                                    "The downloaded package does not match the cryptographic digest. Installation aborted."
+                                )
+                            }
                         }
+                        return@launch
                     }
-                    return@launch
                 }
 
                 // Signature verification

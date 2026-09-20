@@ -521,8 +521,8 @@ class MainActivity : AppCompatActivity() {
         // Theme & Appearance actions
         binding.btnToggleTheme.setOnClickListener { toggleTheme() }
         binding.btnToolToggleTheme.setOnClickListener { toggleTheme() }
-        binding.btnSettings.setOnClickListener { showThemeSettingsDialog(binding.btnSettings) }
-        binding.btnToolSettings.setOnClickListener { showThemeSettingsDialog(binding.btnToolSettings) }
+        binding.btnSettings.setOnClickListener { openSettingsOverlay() }
+        binding.btnToolSettings.setOnClickListener { openSettingsOverlay() }
 
         // Material 3 Expressive Motion: tactile touch bounce on all primary interactive views
         val interactiveBounceViews = listOf(
@@ -897,27 +897,19 @@ class MainActivity : AppCompatActivity() {
         com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next)
     }
 
-    private fun showThemeSettingsDialog(originView: View? = null) {
+    private fun openSettingsOverlay() {
         if (isFinishing || isDestroyed) return
-        val dialogView = layoutInflater.inflate(R.layout.dialog_theme_settings, null)
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setView(dialogView)
-            .create()
+        val panelBinding = binding.layoutSettingsPanel
 
-        val rgThemeMode = dialogView.findViewById<android.widget.RadioGroup>(R.id.rgThemeMode)
-        val rbThemeSystem = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeSystem)
-        val rbThemeLight = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeLight)
-        val rbThemeDark = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeDark)
-        val rbThemeAmoled = dialogView.findViewById<android.widget.RadioButton>(R.id.rbThemeAmoled)
-
+        // 1. Theme mode selection
         when (com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)) {
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> rbThemeSystem.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> rbThemeLight.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> rbThemeDark.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> rbThemeAmoled.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> panelBinding.rbThemeSystem.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> panelBinding.rbThemeLight.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> panelBinding.rbThemeDark.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> panelBinding.rbThemeAmoled.isChecked = true
         }
 
-        rgThemeMode.setOnCheckedChangeListener { _, checkedId ->
+        panelBinding.rgThemeMode.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
                 R.id.rbThemeLight -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
                 R.id.rbThemeDark -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
@@ -927,25 +919,24 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode)
         }
 
-        val switchDynamic = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchDynamicColor)
+        // 2. Dynamic color toggle
         val isDynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        switchDynamic.isEnabled = isDynamicSupported
-        switchDynamic.isChecked = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this) && isDynamicSupported
-        switchDynamic.setOnCheckedChangeListener { _, isChecked ->
+        panelBinding.switchDynamicColor.isEnabled = isDynamicSupported
+        panelBinding.switchDynamicColor.isChecked = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this) && isDynamicSupported
+        panelBinding.switchDynamicColor.setOnCheckedChangeListener { _, isChecked ->
             com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
         }
 
-        val chipGroupPalette = dialogView.findViewById<com.google.android.material.chip.ChipGroup>(R.id.chipGroupAccentPalette)
-        val currentPalette = com.veilframe.app.settings.ThemeSettingsManager.getAccentPalette(this)
-        when (currentPalette) {
-            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteMonochrome)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.SAGE -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteForestSage)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.OCEAN -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteDeepOcean)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.AMBER -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteWarmAmber)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET -> dialogView.findViewById<com.google.android.material.chip.Chip>(R.id.chipPaletteCyberViolet)?.isChecked = true
+        // 3. Custom accent palette
+        when (com.veilframe.app.settings.ThemeSettingsManager.getAccentPalette(this)) {
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME -> panelBinding.chipPaletteMonochrome.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.SAGE -> panelBinding.chipPaletteForestSage.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.OCEAN -> panelBinding.chipPaletteDeepOcean.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.AMBER -> panelBinding.chipPaletteWarmAmber.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET -> panelBinding.chipPaletteCyberViolet.isChecked = true
         }
 
-        chipGroupPalette.setOnCheckedStateChangeListener { _, checkedIds ->
+        panelBinding.chipGroupAccentPalette.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
                 val palette = when (checkedIds[0]) {
                     R.id.chipPaletteMonochrome -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
@@ -959,14 +950,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val rgTypo = dialogView.findViewById<android.widget.RadioGroup>(R.id.rgTypography)
+        // 4. Typography style
         when (com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)) {
-            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoSans)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoMonospace)?.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF -> dialogView.findViewById<android.widget.RadioButton>(R.id.rbTypoSerif)?.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT -> panelBinding.rbTypoSans.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE -> panelBinding.rbTypoMonospace.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF -> panelBinding.rbTypoSerif.isChecked = true
         }
 
-        rgTypo.setOnCheckedChangeListener { _, checkedId ->
+        panelBinding.rgTypography.setOnCheckedChangeListener { _, checkedId ->
             val typo = when (checkedId) {
                 R.id.rbTypoMonospace -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE
                 R.id.rbTypoSerif -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF
@@ -975,14 +966,40 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
         }
 
-        dialogView.findViewById<View>(R.id.btnThemeSettingsClose)?.setOnClickListener {
-            MorphDialogController.dismissWithMorph(dialog, dialogView, originView)
-        }
-        dialogView.findViewById<View>(R.id.btnApplyTheme)?.setOnClickListener {
-            MorphDialogController.dismissWithMorph(dialog, dialogView, originView)
+        // 5. Hardware diagnostics live telemetry
+        val profile = com.veilframe.app.upscale.inference.DeviceCapabilityProfile.probe(this)
+        val availMb = profile.availableMemoryBytes / (1024 * 1024)
+        val totalMb = profile.totalMemoryBytes / (1024 * 1024)
+        panelBinding.tvSettingsHardwareCores.text = "CPU Cores: ${profile.cpuCores} (Active HW Threads)"
+        panelBinding.tvSettingsHardwareMemory.text = "RAM Headroom: ~${availMb} MB (Total: ${totalMb} MB)"
+        panelBinding.tvSettingsHardwareNnapi.text = "NNAPI: ${if (profile.supportsNnapi) "Supported (ORT EP Active)" else "Unsupported / Fallback"}"
+        panelBinding.tvSettingsHardwareQnn.text = "QNN: ${if (profile.supportsQnnBuild) "Active (Qualcomm HTP/NPU)" else "Standard ORT (Custom Build Required)"}"
+
+        // 6. Close and dismissal bindings
+        panelBinding.btnSettingsClose.setOnClickListener { closeSettingsOverlay() }
+        panelBinding.btnSettingsDone.setOnClickListener { closeSettingsOverlay() }
+        binding.scrimSettings.setOnClickListener { closeSettingsOverlay() }
+
+        // 7. Left-to-right swipe-to-dismiss gesture
+        com.veilframe.app.ui.motion.NavigationMotionController.attachSwipeToDismiss(
+            settingsContainer = binding.containerSettings,
+            scrimView = binding.scrimSettings
+        ) {
+            closeSettingsOverlay()
         }
 
-        MorphDialogController.showWithMorph(dialog, dialogView, originView)
+        // 8. Open slide-over animation with M3 Expressive physics
+        com.veilframe.app.ui.motion.NavigationMotionController.openSettings(
+            settingsContainer = binding.containerSettings,
+            scrimView = binding.scrimSettings
+        )
+    }
+
+    private fun closeSettingsOverlay() {
+        com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
+            settingsContainer = binding.containerSettings,
+            scrimView = binding.scrimSettings
+        )
     }
 
     private fun openWebUrl(url: String) {
