@@ -7,6 +7,8 @@ import android.text.TextWatcher
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.view.View
+import com.veilframe.app.ui.motion.MorphDialogController
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
@@ -38,9 +40,10 @@ class ImageStudioDialogController(
     private val onEditsChanged: () -> Unit
 ) {
 
-    fun showCropDialog() {
+    fun showCropDialog(originView: View? = null) {
         val dialogBinding = DialogCropBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         val draftState = editState.deepCopy()
         val baseBmp = getPreviewSourceBitmap()
@@ -86,14 +89,15 @@ class ImageStudioDialogController(
         }
 
         dialogBinding.btnCropApply.setOnClickListener {
-            val normRect = dialogBinding.cropOverlayView.getCropNormalized()
-            editState.cropLeft = normRect.left
-            editState.cropTop = normRect.top
-            editState.cropRight = normRect.right
-            editState.cropBottom = normRect.bottom
-            editState.cropAspect = draftState.cropAspect
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                val normRect = dialogBinding.cropOverlayView.getCropNormalized()
+                editState.cropLeft = normRect.left
+                editState.cropTop = normRect.top
+                editState.cropRight = normRect.right
+                editState.cropBottom = normRect.bottom
+                editState.cropAspect = draftState.cropAspect
+                onEditsChanged()
+            })
         }
         dialogBinding.btnCropReset.setOnClickListener {
             draftState.cropLeft = 0f
@@ -104,14 +108,19 @@ class ImageStudioDialogController(
             dialogBinding.cropOverlayView.setCropAspect("Free")
             dialogBinding.chipAspectFree.isChecked = true
         }
-        dialogBinding.btnCropCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnCropClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnCropCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnCropClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    fun showResizeDialog() {
+    fun showResizeDialog(originView: View? = null) {
         val dialogBinding = DialogResizeBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         val dims = getOriginalDimensions()
         val fullW = dims.first.takeIf { it > 0 } ?: (getPreviewSourceBitmap()?.width ?: 1920)
@@ -274,12 +283,13 @@ class ImageStudioDialogController(
 
         dialogBinding.btnResizeApply.setOnClickListener {
             debounceJob?.cancel()
-            editState.resizeScale = draftScale
-            editState.resizeWidth = draftW
-            editState.resizeHeight = draftH
-            editState.keepAspect = draftKeepAspect
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.resizeScale = draftScale
+                editState.resizeWidth = draftW
+                editState.resizeHeight = draftH
+                editState.keepAspect = draftKeepAspect
+                onEditsChanged()
+            })
         }
         dialogBinding.btnResizeReset.setOnClickListener {
             debounceJob?.cancel()
@@ -298,21 +308,22 @@ class ImageStudioDialogController(
         }
         dialogBinding.btnResizeCancel.setOnClickListener {
             debounceJob?.cancel()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
         dialogBinding.btnResizeClose.setOnClickListener {
             debounceJob?.cancel()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
         dialog.setOnDismissListener {
             debounceJob?.cancel()
         }
-        dialog.show()
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    fun showRotateDialog() {
+    fun showRotateDialog(originView: View? = null) {
         val dialogBinding = DialogRotateBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftAngle = editState.rotationAngle
         var draftFlipH = editState.flipH
@@ -367,11 +378,12 @@ class ImageStudioDialogController(
         }
 
         dialogBinding.btnRotateApply.setOnClickListener {
-            editState.rotationAngle = draftAngle
-            editState.flipH = draftFlipH
-            editState.flipV = draftFlipV
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.rotationAngle = draftAngle
+                editState.flipH = draftFlipH
+                editState.flipV = draftFlipV
+                onEditsChanged()
+            })
         }
         dialogBinding.btnRotateReset.setOnClickListener {
             draftAngle = 0f
@@ -380,14 +392,19 @@ class ImageStudioDialogController(
             dialogBinding.sliderRotateAngle.value = 0f
             updateRotatePreview()
         }
-        dialogBinding.btnRotateCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnRotateClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnRotateCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnRotateClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    fun showTextWatermarkDialog() {
+    fun showTextWatermarkDialog(originView: View? = null) {
         val dialogBinding = DialogTextWatermarkBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftText = editState.watermarkText
         var draftSize = editState.watermarkSize
@@ -627,28 +644,34 @@ class ImageStudioDialogController(
         }
 
         dialogBinding.btnWatermarkApply.setOnClickListener {
-            editState.watermarkText = draftText
-            editState.watermarkSize = draftSize
-            editState.watermarkPosition = draftPosition
-            editState.watermarkColor = draftColor
-            editState.watermarkOpacity = draftOpacity
-            editState.watermarkFont = draftFont
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.watermarkText = draftText
+                editState.watermarkSize = draftSize
+                editState.watermarkPosition = draftPosition
+                editState.watermarkColor = draftColor
+                editState.watermarkOpacity = draftOpacity
+                editState.watermarkFont = draftFont
+                onEditsChanged()
+            })
         }
         dialogBinding.btnWatermarkReset.setOnClickListener {
             draftText = ""
             dialogBinding.etWatermarkText.setText("")
             updateWatermarkPreview()
         }
-        dialogBinding.btnWatermarkCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnWatermarkClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnWatermarkCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnWatermarkClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    fun showColorFilterDialog() {
+    fun showColorFilterDialog(originView: View? = null) {
         val dialogBinding = DialogColorFilterBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftFilter = editState.filter
         var draftBgType = editState.bgType
@@ -708,10 +731,11 @@ class ImageStudioDialogController(
         }
 
         dialogBinding.btnFilterApply.setOnClickListener {
-            editState.filter = draftFilter
-            editState.bgType = draftBgType
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.filter = draftFilter
+                editState.bgType = draftBgType
+                onEditsChanged()
+            })
         }
         dialogBinding.btnFilterReset.setOnClickListener {
             draftFilter = "Default"
@@ -720,14 +744,19 @@ class ImageStudioDialogController(
             dialogBinding.chipBgTrans.isChecked = true
             updateFilterPreview()
         }
-        dialogBinding.btnFilterCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnFilterClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnFilterCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnFilterClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    fun showExifDialog() {
+    fun showExifDialog(originView: View? = null) {
         val dialogBinding = DialogExifBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftStripExif = editState.stripExif
         var draftMake = editState.exifMake
@@ -763,17 +792,20 @@ class ImageStudioDialogController(
         }
 
         dialogBinding.btnExifDone.setOnClickListener {
-            editState.stripExif = draftStripExif
-            editState.exifMake = dialogBinding.etExifMake.text.toString().trim()
-            editState.exifModel = dialogBinding.etExifModel.text.toString().trim()
-            editState.exifSoftware = dialogBinding.etExifSoftware.text.toString().trim()
-            editState.exifDateTime = dialogBinding.etExifDateTime.text.toString().trim()
-            editState.exifGps = dialogBinding.etExifGps.text.toString().trim()
-            onEditsChanged()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.stripExif = draftStripExif
+                editState.exifMake = dialogBinding.etExifMake.text.toString().trim()
+                editState.exifModel = dialogBinding.etExifModel.text.toString().trim()
+                editState.exifSoftware = dialogBinding.etExifSoftware.text.toString().trim()
+                editState.exifDateTime = dialogBinding.etExifDateTime.text.toString().trim()
+                editState.exifGps = dialogBinding.etExifGps.text.toString().trim()
+                onEditsChanged()
+            })
         }
 
-        dialogBinding.btnExifClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnExifClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 }

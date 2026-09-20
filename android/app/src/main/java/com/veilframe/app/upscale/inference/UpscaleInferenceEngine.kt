@@ -46,7 +46,6 @@ class UpscaleInferenceEngine(
 
             // 3. Capability-aware execution path validation
             if (model.capability == ModelCapability.FACE_RESTORATION) {
-                // Face restoration models (CodeFormer) require aligned portrait face crops and do not support arbitrary tiled super-resolution
                 if (!model.tileCompatible) {
                     require(srcW == model.minInputDimension && srcH == model.minInputDimension) {
                         "Model ${model.name} is a specialized face restoration model (${model.capability}) requiring aligned ${model.minInputDimension}×${model.minInputDimension} face crops. Arbitrary tiled super-resolution is rejected before inference."
@@ -63,6 +62,7 @@ class UpscaleInferenceEngine(
     interface InferenceProgressListener {
         fun onProgress(currentTile: Int, totalTiles: Int, percent: Int)
         fun onStatus(message: String)
+        fun onStage(stage: String, currentTile: Int, totalTiles: Int) {}
     }
 
     suspend fun upscale(
@@ -88,11 +88,13 @@ class UpscaleInferenceEngine(
         try {
             ensureActive()
             listener?.onStatus("Preparing processing pipeline...")
+            listener?.onStage("Preparing", 0, 1)
 
             val resultBitmap = when (model.type) {
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
                     listener?.onProgress(0, 1, 0)
+                    listener?.onStage("Rescaling", 0, 1)
                     val targetW = srcW * targetScale
                     val targetH = srcH * targetScale
                     val res = when (model.id) {
@@ -101,6 +103,7 @@ class UpscaleInferenceEngine(
                         else -> AlgorithmicUpscaler.scaleLanczos3(source, targetW, targetH)
                     }
                     listener?.onProgress(1, 1, 100)
+                    listener?.onStage("Complete", 1, 1)
                     res
                 }
                 ModelType.AI_ONNX -> {
@@ -112,6 +115,7 @@ class UpscaleInferenceEngine(
                     }
 
                     listener?.onStatus("Loading ${model.name} weights...")
+                    listener?.onStage("Initializing neural runtime", 0, 1)
                     val runtime = OnnxUpscaleRuntime(modelFile, model.nativeScale)
 
                     try {
@@ -134,30 +138,49 @@ class UpscaleInferenceEngine(
                         }
                         listener?.onStatus("Ready: ${model.name} ($scaleDesc via ${runtime.executionProvider}, tile: ${effectiveTileSize}px)")
 
+                        // Calculate total tiles and resolve bounded parallel worker count
+                        val tileCount = tileProcessor.calculateTiles(srcW, srcH).size.coerceAtLeast(1)
+                        val estimatedPerWorkerBytes = (effectiveTileSize.toLong() * effectiveTileSize.toLong() * 4L * 6L) // input + output + buffers
+                        val workers = WorkerPolicy.resolve(
+                            backend = runtime.backendInfo.backend,
+                            memoryBudgetBytes = plan.estimatedWorkingSetBytes,
+                            perWorkerBytes = estimatedPerWorkerBytes,
+                            tileCount = tileCount
+                        )
+
                         var lastTileMs = 0L
                         val aiResult = tileProcessor.processTiles(
                             source = source,
                             scale = targetScale,
-                            onTileInfer = { tile, row, col ->
+                            workers = workers,
+                            onTileInfer = { tile, row, col, index, total ->
                                 val t0 = System.currentTimeMillis()
-                                val baseTile = runtime.runTile(tile, row, col)
-                                val finalTile = if (extraScale > 1) {
-                                    val refinedW = baseTile.width * extraScale
-                                    val refinedH = baseTile.height * extraScale
-                                    val refined = AlgorithmicUpscaler.scaleLanczos3(baseTile, refinedW, refinedH)
-                                    baseTile.recycle()
-                                    refined
+                                listener?.onStage("Neural inference", index + 1, total)
+                                listener?.onStatus("Tile ${index + 1} of $total: Running neural inference via ${runtime.executionProvider}...")
+
+                                val baseProcessed = runtime.runTile(tile, row, col)
+
+                                val finalProcessed = if (extraScale > 1) {
+                                    listener?.onStage("Lanczos refinement", index + 1, total)
+                                    val baseBmp = baseProcessed.bitmap
+                                    val refinedW = baseBmp.width * extraScale
+                                    val refinedH = baseBmp.height * extraScale
+                                    val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
+                                    baseBmp.recycle()
+                                    ProcessedTile(refinedBmp, targetScale)
                                 } else {
-                                    baseTile
+                                    baseProcessed
                                 }
+
                                 lastTileMs = System.currentTimeMillis() - t0
-                                finalTile
+                                listener?.onStage("Composing", index + 1, total)
+                                finalProcessed
                             },
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0
                                 listener?.onProgress(current, total, pct)
                                 val timeInfo = if (lastTileMs > 0) " (${lastTileMs}ms)" else ""
-                                listener?.onStatus("Processing tile $current / $total$timeInfo • ${runtime.executionProvider}")
+                                listener?.onStatus("Processed tile $current of $total$timeInfo • ${runtime.executionProvider}")
                             }
                         )
 

@@ -62,7 +62,9 @@ class MainNavigationController(
         binding.scrollHome.visibility = View.VISIBLE
         binding.scrollTool.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.layoutImageStudio.root.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
+        binding.layoutVideoStudio.root.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
         binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
@@ -83,7 +85,9 @@ class MainNavigationController(
         binding.scrollHome.visibility = View.GONE
         binding.scrollTool.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE
+        binding.layoutImageStudio.root.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
+        binding.layoutVideoStudio.root.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
         binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
@@ -102,7 +106,9 @@ class MainNavigationController(
         binding.scrollHome.visibility = View.GONE
         binding.scrollTool.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.layoutImageStudio.root.visibility = View.VISIBLE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
+        binding.layoutVideoStudio.root.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.GONE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
         binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
@@ -121,7 +127,9 @@ class MainNavigationController(
         binding.scrollHome.visibility = View.GONE
         binding.scrollTool.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.layoutImageStudio.root.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.GONE
+        binding.layoutVideoStudio.root.visibility = View.VISIBLE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
         binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
         binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE

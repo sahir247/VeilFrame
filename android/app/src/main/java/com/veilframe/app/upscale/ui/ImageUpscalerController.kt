@@ -23,6 +23,8 @@ import com.veilframe.app.databinding.DialogModelRequiredBinding
 import com.veilframe.app.databinding.DialogUpscaleModelManagerBinding
 import com.veilframe.app.databinding.DialogUpscaleModelSelectorBinding
 import com.veilframe.app.databinding.LayoutImageUpscalerBinding
+import com.veilframe.app.ui.motion.ExpressiveMotion
+import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.upscale.download.ModelDownloadManager
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.model.ModelType
@@ -77,14 +79,29 @@ class ImageUpscalerController(
     private var downloadJob: Job? = null
 
     fun init() {
+        // Apply Material 3 Expressive tactile touch bounce across all interactive controls
+        val interactiveBounceViews = listOf(
+            upscalerBinding.btnUpscalerBack,
+            upscalerBinding.btnUpscalerModelManager,
+            upscalerBinding.btnUpscalerPickImage,
+            upscalerBinding.cardUpscalerSelectImage,
+            upscalerBinding.btnUpscalerChangeImage,
+            upscalerBinding.btnUpscalerChangeModel,
+            upscalerBinding.btnUpscalerExecute,
+            upscalerBinding.btnUpscalerCancel,
+            upscalerBinding.btnUpscalerSave,
+            upscalerBinding.btnUpscalerShare
+        )
+        interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
+
         // Navigation back
         upscalerBinding.btnUpscalerBack.setOnClickListener {
             onBackRequested()
         }
 
-        // Model Manager Dialog button
+        // Model Manager Dialog button (morphs from button)
         upscalerBinding.btnUpscalerModelManager.setOnClickListener {
-            showModelManagerDialog()
+            showModelManagerDialog(upscalerBinding.btnUpscalerModelManager)
         }
 
         // Image pickers
@@ -104,14 +121,14 @@ class ImageUpscalerController(
         // Scale ChipGroup
         setupScales()
 
-        // Explicit Model Selector
+        // Explicit Model Selector (morphs from change model button)
         upscalerBinding.btnUpscalerChangeModel.setOnClickListener {
-            showModelSelectorDialog()
+            showModelSelectorDialog(upscalerBinding.btnUpscalerChangeModel)
         }
 
-        // Execution button
+        // Execution button (morphs to required dialog if needed)
         upscalerBinding.btnUpscalerExecute.setOnClickListener {
-            startUpscalingFlow()
+            startUpscalingFlow(upscalerBinding.btnUpscalerExecute)
         }
 
         // Cancel button
@@ -297,7 +314,7 @@ class ImageUpscalerController(
         updateModelDisplay()
     }
 
-    private fun startUpscalingFlow() {
+    private fun startUpscalingFlow(originView: View? = null) {
         val src = sourceBitmap ?: run {
             Toast.makeText(activity, "Please select an image first", Toast.LENGTH_SHORT).show()
             return
@@ -307,11 +324,11 @@ class ImageUpscalerController(
         if (repository.isModelInstalled(model)) {
             executeUpscaling(src, model, targetScale)
         } else {
-            showModelRequiredDialog(model)
+            showModelRequiredDialog(model, originView)
         }
     }
 
-    private fun showModelRequiredDialog(model: UpscaleModel) {
+    private fun showModelRequiredDialog(model: UpscaleModel, originView: View? = null) {
         val dialogBinding = DialogModelRequiredBinding.inflate(LayoutInflater.from(activity))
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogBinding.root)
@@ -323,11 +340,15 @@ class ImageUpscalerController(
         dialogBinding.tvModelReqMessage.text =
             "The selected preset uses the neural network model ${model.name} ($sizeMb). Would you like to download it now over your current connection to proceed?"
 
-        dialogBinding.btnModelReqClose.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnModelReqCancel.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnModelReqClose.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
+        dialogBinding.btnModelReqCancel.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
 
         dialogBinding.btnModelReqUseLanczos.setOnClickListener {
-            dialog.dismiss()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             explicitModel = UpscaleModelRegistry.LANCZOS
             updateModelDisplay()
             sourceBitmap?.let { src -> executeUpscaling(src, UpscaleModelRegistry.LANCZOS, targetScale) }
@@ -361,7 +382,7 @@ class ImageUpscalerController(
 
                     override fun onSuccess(m: UpscaleModel, destinationFile: File) {
                         scope.launch(Dispatchers.Main) {
-                            dialog.dismiss()
+                            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
                             updateModelDisplay()
                             onLog("[UPSCALER] Model ${m.name} successfully downloaded and verified.")
                             sourceBitmap?.let { src -> executeUpscaling(src, m, targetScale) }
@@ -382,7 +403,7 @@ class ImageUpscalerController(
             }
         }
 
-        dialog.show()
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
     private fun executeUpscaling(src: Bitmap, model: UpscaleModel, scale: Int) {
@@ -414,6 +435,14 @@ class ImageUpscalerController(
                             onLog("[UPSCALER] $message")
                         }
                     }
+
+                    override fun onStage(stage: String, currentTile: Int, totalTiles: Int) {
+                        scope.launch(Dispatchers.Main) {
+                            if (totalTiles > 1) {
+                                upscalerBinding.tvUpscalerProgressStatus.text = "$stage: Tile $currentTile of $totalTiles"
+                            }
+                        }
+                    }
                 }
             )
 
@@ -430,6 +459,7 @@ class ImageUpscalerController(
                         upscalerBinding.tvUpscalerBadge.text = "UPSCALED (${scale}×)"
                         upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                         upscalerBinding.layoutUpscalerResults.visibility = View.VISIBLE
+                        ExpressiveMotion.playJellyBounce(upscalerBinding.btnUpscalerSave)
 
                         val mp = (upscaled.width * upscaled.height) / 1_000_000.0
                         onLog(
@@ -469,14 +499,16 @@ class ImageUpscalerController(
         Toast.makeText(activity, "Cancelled", Toast.LENGTH_SHORT).show()
     }
 
-    fun showModelSelectorDialog() {
+    fun showModelSelectorDialog(originView: View? = null) {
         val dialogBinding = DialogUpscaleModelSelectorBinding.inflate(LayoutInflater.from(activity))
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogBinding.root)
             .setCancelable(true)
             .create()
 
-        dialogBinding.btnModelSelectorClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnModelSelectorClose.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
 
         // Select current option
         when (explicitModel?.id) {
@@ -501,21 +533,23 @@ class ImageUpscalerController(
             }
             explicitModel = selectedModel
             updateModelDisplay()
-            dialog.dismiss()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             onLog("[UPSCALER] Model explicitly selected: ${selectedModel?.name ?: "Auto"}")
         }
 
-        dialog.show()
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
-    fun showModelManagerDialog() {
+    fun showModelManagerDialog(originView: View? = null) {
         val dialogBinding = DialogUpscaleModelManagerBinding.inflate(LayoutInflater.from(activity))
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogBinding.root)
             .setCancelable(true)
             .create()
 
-        dialogBinding.btnModelManagerClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnModelManagerClose.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
 
         fun refreshCards() {
             val usedBytes = repository.getTotalStorageUsedBytes()
@@ -692,7 +726,7 @@ class ImageUpscalerController(
             updateModelDisplay()
         }
 
-        dialog.show()
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
     private fun saveUpscaledImage() {

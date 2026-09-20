@@ -35,6 +35,8 @@ import com.veilframe.app.tools.JobState
 import com.veilframe.app.tools.ToolExecutionController
 import com.veilframe.app.tools.ToolMode
 import com.veilframe.app.tools.ToolSessionManager
+import com.veilframe.app.ui.motion.ExpressiveMotion
+import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.updates.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -519,8 +521,42 @@ class MainActivity : AppCompatActivity() {
         // Theme & Appearance actions
         binding.btnToggleTheme.setOnClickListener { toggleTheme() }
         binding.btnToolToggleTheme.setOnClickListener { toggleTheme() }
-        binding.btnSettings.setOnClickListener { showThemeSettingsDialog() }
-        binding.btnToolSettings.setOnClickListener { showThemeSettingsDialog() }
+        binding.btnSettings.setOnClickListener { showThemeSettingsDialog(binding.btnSettings) }
+        binding.btnToolSettings.setOnClickListener { showThemeSettingsDialog(binding.btnToolSettings) }
+
+        // Material 3 Expressive Motion: tactile touch bounce on all primary interactive views
+        val interactiveBounceViews = listOf(
+            binding.btnToggleTheme,
+            binding.btnToolToggleTheme,
+            binding.btnSettings,
+            binding.btnToolSettings,
+            binding.cardToolAi,
+            binding.cardToolVideo,
+            binding.cardToolImage,
+            binding.cardToolFolder,
+            binding.cardToolImageStudio,
+            binding.cardToolVideoStudio,
+            binding.cardToolImageUpscaler,
+            binding.cardToolMarkdownViewer,
+            binding.btnCheckUpdates,
+            binding.btnRepairApp,
+            binding.btnLinkGithub,
+            binding.btnLinkDocs,
+            binding.btnLinkChangelog,
+            binding.btnLinkAbout,
+            binding.btnPickFolder,
+            binding.btnPickFile,
+            binding.btnClearTarget,
+            binding.btnChangeTarget,
+            binding.btnToggleConsole,
+            binding.btnExecute,
+            binding.btnExportResult,
+            binding.btnShareResult,
+            binding.btnResultSave,
+            binding.btnResultShare,
+            binding.btnResultPreview
+        )
+        interactiveBounceViews.forEach { ExpressiveMotion.applyTouchBounce(it) }
 
         // Home Dashboard Tool Cards - DISTINCT CLEANER WORKFLOWS
         binding.cardToolAi.setOnClickListener {
@@ -861,7 +897,7 @@ class MainActivity : AppCompatActivity() {
         com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next)
     }
 
-    private fun showThemeSettingsDialog() {
+    private fun showThemeSettingsDialog(originView: View? = null) {
         if (isFinishing || isDestroyed) return
         val dialogView = layoutInflater.inflate(R.layout.dialog_theme_settings, null)
         val dialog = MaterialAlertDialogBuilder(this)
@@ -939,10 +975,14 @@ class MainActivity : AppCompatActivity() {
             com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
         }
 
-        dialogView.findViewById<View>(R.id.btnThemeSettingsClose)?.setOnClickListener { dialog.dismiss() }
-        dialogView.findViewById<View>(R.id.btnApplyTheme)?.setOnClickListener { dialog.dismiss() }
+        dialogView.findViewById<View>(R.id.btnThemeSettingsClose)?.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogView, originView)
+        }
+        dialogView.findViewById<View>(R.id.btnApplyTheme)?.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogView, originView)
+        }
 
-        dialog.show()
+        MorphDialogController.showWithMorph(dialog, dialogView, originView)
     }
 
     private fun openWebUrl(url: String) {

@@ -4,16 +4,20 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * High-performance tiled inference processor with boundary tile handling,
- * spatial overlap, and zero-allocation core-region extraction.
+ * spatial overlap, and bounded parallel workers (ImageToolbox architecture).
  *
- * Rather than blending overlapping tiles in Kotlin CPU loops, each tile is extracted
- * with overlap margin to prevent neural boundary distortion, and only the pristine
- * central "core" is blitted into the output canvas via native Skia drawBitmap.
+ * Each tile is extracted with an overlap margin to prevent edge distortion,
+ * and only the pristine central "core" is blitted into the output canvas via native Skia.
  */
 class UpscaleTileProcessor(
     val tileSize: Int = 384,
@@ -21,6 +25,7 @@ class UpscaleTileProcessor(
 ) {
 
     data class TileArea(
+        val index: Int,
         val col: Int,
         val row: Int,
         val x: Int,
@@ -38,6 +43,7 @@ class UpscaleTileProcessor(
         val halfOverlap = overlap / 2
         val step = (tileSize - overlap).coerceAtLeast(1)
 
+        var index = 0
         var row = 0
         var y = 0
         while (y < imageHeight) {
@@ -62,6 +68,7 @@ class UpscaleTileProcessor(
 
                 tiles.add(
                     TileArea(
+                        index = index++,
                         col = col,
                         row = row,
                         x = x,
@@ -89,7 +96,8 @@ class UpscaleTileProcessor(
     suspend fun processTiles(
         source: Bitmap,
         scale: Int,
-        onTileInfer: suspend (tile: Bitmap, row: Int, col: Int) -> Bitmap,
+        workers: Int = 1,
+        onTileInfer: suspend (tile: Bitmap, row: Int, col: Int, index: Int, total: Int) -> ProcessedTile,
         onProgress: (current: Int, total: Int) -> Unit
     ): Bitmap = withContext(Dispatchers.Default) {
         val srcW = source.width
@@ -98,36 +106,33 @@ class UpscaleTileProcessor(
         // If source fits entirely in a single tile without splitting
         if (srcW <= tileSize && srcH <= tileSize) {
             onProgress(0, 1)
-            val result = onTileInfer(source, 0, 0)
+            val processed = onTileInfer(source, 0, 0, 0, 1)
             onProgress(1, 1)
-            return@withContext result
+            return@withContext processed.bitmap
         }
 
         val tileAreas = calculateTiles(srcW, srcH)
         val totalTiles = tileAreas.size
 
-        val outW = srcW * scale
-        val outH = srcH * scale
+        val targetWLong = srcW.toLong() * scale
+        val targetHLong = srcH.toLong() * scale
+        require(targetWLong <= Int.MAX_VALUE && targetHLong <= Int.MAX_VALUE) {
+            "Target resolution (${targetWLong}x${targetHLong}) exceeds integer limit."
+        }
+        val outW = targetWLong.toInt()
+        val outH = targetHLong.toInt()
+
         val outputBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outputBitmap)
-        val srcRect = Rect()
-        val dstRect = Rect()
+        val canvasLock = Any()
 
-        for ((index, tile) in tileAreas.withIndex()) {
-            ensureActive()
-            onProgress(index, totalTiles)
+        onProgress(0, totalTiles)
+        val completedCount = AtomicInteger(0)
 
-            // Extract tile from source image
-            val srcTile = Bitmap.createBitmap(source, tile.x, tile.y, tile.width, tile.height)
-            val processedTile = try {
-                onTileInfer(srcTile, tile.row, tile.col)
-            } finally {
-                if (srcTile != source) srcTile.recycle()
-            }
-
-            // Copy valid core directly into aggregated output canvas via native drawBitmap
-            val actualScaleX = processedTile.width / tile.width
-            val actualScaleY = processedTile.height / tile.height
+        fun drawProcessedTileCore(tile: TileArea, processed: ProcessedTile) {
+            val processedTile = processed.bitmap
+            val actualScaleX = processed.outputScale
+            val actualScaleY = processed.outputScale
 
             val srcCoreX = tile.coreX * actualScaleX
             val srcCoreY = tile.coreY * actualScaleY
@@ -137,12 +142,52 @@ class UpscaleTileProcessor(
             val dstX = (tile.x + tile.coreX) * actualScaleX
             val dstY = (tile.y + tile.coreY) * actualScaleY
 
-            srcRect.set(srcCoreX, srcCoreY, srcCoreX + srcCoreW, srcCoreY + srcCoreH)
-            dstRect.set(dstX, dstY, dstX + srcCoreW, dstY + srcCoreH)
+            val srcRect = Rect(srcCoreX, srcCoreY, srcCoreX + srcCoreW, srcCoreY + srcCoreH)
+            val dstRect = Rect(dstX, dstY, dstX + srcCoreW, dstY + srcCoreH)
 
-            canvas.drawBitmap(processedTile, srcRect, dstRect, null)
-            processedTile.recycle()
-            onProgress(index + 1, totalTiles)
+            synchronized(canvasLock) {
+                canvas.drawBitmap(processedTile, srcRect, dstRect, null)
+            }
+            if (processedTile != source) {
+                processedTile.recycle()
+            }
+        }
+
+        if (workers <= 1) {
+            for (tile in tileAreas) {
+                ensureActive()
+                val srcTile = Bitmap.createBitmap(source, tile.x, tile.y, tile.width, tile.height)
+                val processedTile = try {
+                    onTileInfer(srcTile, tile.row, tile.col, tile.index, totalTiles)
+                } finally {
+                    if (srcTile != source) srcTile.recycle()
+                }
+
+                drawProcessedTileCore(tile, processedTile)
+                val done = completedCount.incrementAndGet()
+                onProgress(done, totalTiles)
+            }
+        } else {
+            val gate = Semaphore(workers)
+            coroutineScope {
+                for (tile in tileAreas) {
+                    launch {
+                        gate.withPermit {
+                            ensureActive()
+                            val srcTile = Bitmap.createBitmap(source, tile.x, tile.y, tile.width, tile.height)
+                            val processedTile = try {
+                                onTileInfer(srcTile, tile.row, tile.col, tile.index, totalTiles)
+                            } finally {
+                                if (srcTile != source) srcTile.recycle()
+                            }
+
+                            drawProcessedTileCore(tile, processedTile)
+                            val done = completedCount.incrementAndGet()
+                            onProgress(done, totalTiles)
+                        }
+                    }
+                }
+            }
         }
 
         outputBitmap

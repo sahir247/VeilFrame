@@ -25,6 +25,9 @@ import com.veilframe.app.databinding.DialogVideoSpeedBinding
 import com.veilframe.app.databinding.DialogVideoTrimBinding
 import com.veilframe.app.databinding.LayoutVideoStudioBinding
 import com.veilframe.app.media.preview.VideoColorFilterHelper
+import com.veilframe.app.ui.motion.ExpressiveMotion
+import com.veilframe.app.ui.motion.MotionSpec
+import com.veilframe.app.ui.motion.MorphDialogController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -310,16 +313,20 @@ class VideoStudioController(
             }
         }
 
-        // Tool buttons
-        binding.toolVidTrim.setOnClickListener { showTrimDialog() }
-        binding.toolVidScale.setOnClickListener { showScaleDialog() }
-        binding.toolVidColor.setOnClickListener { showColorDialog() }
-        binding.toolVidSpeed.setOnClickListener { showSpeedDialog() }
-        binding.toolVidAspect.setOnClickListener { showAspectDialog() }
-        binding.toolVidAudio.setOnClickListener { showAudioDialog() }
+        // Tool buttons with origin views for transformational morphing
+        binding.toolVidTrim.setOnClickListener { showTrimDialog(binding.toolVidTrim) }
+        binding.toolVidScale.setOnClickListener { showScaleDialog(binding.toolVidScale) }
+        binding.toolVidColor.setOnClickListener { showColorDialog(binding.toolVidColor) }
+        binding.toolVidSpeed.setOnClickListener { showSpeedDialog(binding.toolVidSpeed) }
+        binding.toolVidAspect.setOnClickListener { showAspectDialog(binding.toolVidAspect) }
+        binding.toolVidAudio.setOnClickListener { showAudioDialog(binding.toolVidAudio) }
 
         // Compression execution
         binding.btnVidExecute.setOnClickListener { handleExecute() }
+
+        // Floating Action Dock wiring
+        binding.btnFloatingExecute.setOnClickListener { binding.btnVidExecute.performClick() }
+        binding.btnFloatingShare.setOnClickListener { binding.btnVidShareResult.performClick() }
 
         // Result save & share
         binding.btnVidSaveResult.setOnClickListener {
@@ -329,6 +336,54 @@ class VideoStudioController(
         binding.btnVidShareResult.setOnClickListener {
             val f = lastResultFile
             if (f != null && f.exists()) onShareFileRequest(f, "video/*")
+        }
+
+        // Attach Material 3 Expressive tactile bounce
+        val interactiveControls = listOf(
+            binding.toolVidTrim,
+            binding.toolVidScale,
+            binding.toolVidColor,
+            binding.toolVidSpeed,
+            binding.toolVidAspect,
+            binding.toolVidAudio,
+            binding.btnVidExecute,
+            binding.btnFloatingExecute,
+            binding.btnFloatingShare,
+            binding.btnVidSaveResult,
+            binding.btnVidShareResult,
+            binding.btnVidResetAllEdits,
+            binding.btnSelectVideo,
+            binding.btnVidAddMore,
+            binding.btnVidClearAll,
+            binding.btnVidRemoveFile,
+            binding.btnPlayerPlayPause,
+            binding.btnPlayerReplay,
+            binding.btnPlayerMute
+        )
+        interactiveControls.forEach { v ->
+            ExpressiveMotion.applyTouchBounce(v)
+        }
+
+        // Floating Action Dock scroll-merging
+        val thresholdPx = MotionSpec.DOCK_THRESHOLD_DP * binding.root.resources.displayMetrics.density
+        var lastScrollY = 0
+
+        binding.scrollVideoStudio.setOnScrollChangeListener { v, _, scrollY, _, _ ->
+            val diff = Math.abs(scrollY - lastScrollY)
+            if (diff < MotionSpec.SCROLL_DEADZONE_PX) return@setOnScrollChangeListener
+            lastScrollY = scrollY
+
+            val child = binding.scrollVideoStudio.getChildAt(0) ?: return@setOnScrollChangeListener
+            val scrollBottom = scrollY + v.height
+            val totalHeight = child.height
+            val distanceToBottom = totalHeight - scrollBottom
+
+            val progress = (1.0f - (distanceToBottom / thresholdPx)).coerceIn(0.0f, 1.0f)
+            ExpressiveMotion.updateDockProgress(
+                floatingDock = binding.cardFloatingActionDock,
+                dockedActions = binding.btnVidExecute,
+                progress = progress
+            )
         }
     }
 
@@ -957,6 +1012,7 @@ class VideoStudioController(
                 binding.tvVidSummaryAudio.visibility = View.GONE
             }
         }
+        syncFloatingDockState()
     }
 
     fun resetEdits() {
@@ -1123,9 +1179,12 @@ class VideoStudioController(
 
                         val destMsg = if (safManager.videoDestinationUri != null) "\nSaved to: ${safManager.videoDestinationName}" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount video(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
+                        ExpressiveMotion.playJellyBounce(binding.btnVidExecute)
+                        ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
                     } else {
                         Toast.makeText(activity, "Video compression failed to produce output", Toast.LENGTH_LONG).show()
                     }
+                    syncFloatingDockState()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -1180,9 +1239,10 @@ class VideoStudioController(
     }
 
     // Tool Dialogs
-    private fun showTrimDialog() {
+    private fun showTrimDialog(originView: View? = null) {
         val dialogBinding = DialogVideoTrimBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         val trimPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(activity).build()
         dialogBinding.trimPlayerView.player = trimPlayer
@@ -1303,26 +1363,27 @@ class VideoStudioController(
         }
 
         dialogBinding.btnTrimApply.setOnClickListener {
-            val sSec = dialogBinding.rangeSliderTrim.values[0]
-            val eSec = dialogBinding.rangeSliderTrim.values[1]
-            editState.trimStartMs = (sSec * 1000).toLong()
-            editState.trimEndMs = (eSec * 1000).toLong()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                val sSec = dialogBinding.rangeSliderTrim.values[0]
+                val eSec = dialogBinding.rangeSliderTrim.values[1]
+                editState.trimStartMs = (sSec * 1000).toLong()
+                editState.trimEndMs = (eSec * 1000).toLong()
 
-            binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
-            binding.tvPlayerTotalDuration.text = formatDuration(editState.trimEndMs)
+                binding.tvVidTrimDurationLabel.text = "Trimmed: ${formatDuration(editState.trimmedDurationMs)}"
+                binding.tvPlayerTotalDuration.text = formatDuration(editState.trimEndMs)
 
-            updateSliderSafely(
-                binding.playerScrubber,
-                sSec,
-                eSec.coerceAtLeast(sSec + 0.1f),
-                sSec
-            )
+                updateSliderSafely(
+                    binding.playerScrubber,
+                    sSec,
+                    eSec.coerceAtLeast(sSec + 0.1f),
+                    sSec
+                )
 
-            playerController.setTrimBounds(editState.trimStartMs, editState.trimEndMs)
-            playerController.seekTo(editState.trimStartMs)
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+                playerController.setTrimBounds(editState.trimStartMs, editState.trimEndMs)
+                playerController.seekTo(editState.trimStartMs)
+                refreshStats()
+                updateEditSummary()
+            })
         }
 
         dialogBinding.btnTrimReset.setOnClickListener {
@@ -1344,11 +1405,14 @@ class VideoStudioController(
             playerController.seekTo(0L)
             refreshStats()
             updateEditSummary()
-            dialog.dismiss()
         }
 
-        dialogBinding.btnTrimCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnTrimClose.setOnClickListener { dialog.dismiss() }
+        dialogBinding.btnTrimCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnTrimClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
 
         dialog.setOnDismissListener {
             tickerJob.cancel()
@@ -1357,12 +1421,13 @@ class VideoStudioController(
             dialogBinding.trimPlayerView.player = null
         }
 
-        dialog.show()
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    private fun showScaleDialog() {
+    private fun showScaleDialog(originView: View? = null) {
         val dialogBinding = DialogVideoScaleBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftScale = editState.scalePreset
 
@@ -1382,17 +1447,18 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoScaleApply.setOnClickListener {
-            editState.scalePreset = draftScale
-            when (editState.scalePreset) {
-                "1080p (Full HD)" -> binding.chipVidRes1080p.isChecked = true
-                "720p (HD)" -> binding.chipVidRes720p.isChecked = true
-                "480p (SD Compact)" -> binding.chipVidRes480p.isChecked = true
-                "360p (Ultra Small)" -> binding.chipVidRes360p.isChecked = true
-                else -> binding.chipVidResOriginal.isChecked = true
-            }
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.scalePreset = draftScale
+                when (editState.scalePreset) {
+                    "1080p (Full HD)" -> binding.chipVidRes1080p.isChecked = true
+                    "720p (HD)" -> binding.chipVidRes720p.isChecked = true
+                    "480p (SD Compact)" -> binding.chipVidRes480p.isChecked = true
+                    "360p (Ultra Small)" -> binding.chipVidRes360p.isChecked = true
+                    else -> binding.chipVidResOriginal.isChecked = true
+                }
+                refreshStats()
+                updateEditSummary()
+            })
         }
 
         dialogBinding.btnVideoScaleReset.setOnClickListener {
@@ -1400,9 +1466,13 @@ class VideoStudioController(
             dialogBinding.chipScaleOriginal.isChecked = true
         }
 
-        dialogBinding.btnVideoScaleCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoScaleClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnVideoScaleCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnVideoScaleClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
     private fun applyColorProfile(profileId: String) {
@@ -1410,9 +1480,10 @@ class VideoStudioController(
         VideoColorFilterHelper.applyColorProfileToImageView(binding.imgVidPreview, profileId)
     }
 
-    private fun showColorDialog() {
+    private fun showColorDialog(originView: View? = null) {
         val dialogBinding = DialogVideoColorBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftProfile = editState.colorProfile
 
@@ -1472,12 +1543,12 @@ class VideoStudioController(
 
         dialogBinding.btnColorCancel.setOnClickListener {
             applyColorProfile(editState.colorProfile)
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
 
         dialogBinding.btnColorClose.setOnClickListener {
             applyColorProfile(editState.colorProfile)
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
 
         dialog.setOnCancelListener {
@@ -1485,19 +1556,21 @@ class VideoStudioController(
         }
 
         dialogBinding.btnColorApply.setOnClickListener {
-            editState.colorProfile = draftProfile
-            applyColorProfile(editState.colorProfile)
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.colorProfile = draftProfile
+                applyColorProfile(editState.colorProfile)
+                refreshStats()
+                updateEditSummary()
+            })
         }
 
-        dialog.show()
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    private fun showSpeedDialog() {
+    private fun showSpeedDialog(originView: View? = null) {
         val dialogBinding = DialogVideoSpeedBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftSpeed = editState.speed
 
@@ -1525,12 +1598,13 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoSpeedApply.setOnClickListener {
-            editState.speed = draftSpeed
-            binding.tvPlayerSpeedBadge.text = "${editState.speed}×"
-            playerController.setSpeed(editState.speed)
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.speed = draftSpeed
+                binding.tvPlayerSpeedBadge.text = "${editState.speed}×"
+                playerController.setSpeed(editState.speed)
+                refreshStats()
+                updateEditSummary()
+            })
         }
 
         dialogBinding.btnVideoSpeedReset.setOnClickListener {
@@ -1538,14 +1612,19 @@ class VideoStudioController(
             dialogBinding.chipSpeed10.isChecked = true
         }
 
-        dialogBinding.btnVideoSpeedCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoSpeedClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnVideoSpeedCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnVideoSpeedClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    private fun showAspectDialog() {
+    private fun showAspectDialog(originView: View? = null) {
         val dialogBinding = DialogVideoAspectBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftAspect = editState.aspect
         var draftCustomCrop = editState.customCropPercent
@@ -1633,14 +1712,19 @@ class VideoStudioController(
             dialogBinding.chipFlipV.isChecked = false
         }
 
-        dialogBinding.btnVideoAspectCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoAspectClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnVideoAspectCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnVideoAspectClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
-    private fun showAudioDialog() {
+    private fun showAudioDialog(originView: View? = null) {
         val dialogBinding = DialogVideoAudioBinding.inflate(activity.layoutInflater)
         val dialog = MaterialAlertDialogBuilder(activity).setView(dialogBinding.root).create()
+        val morph = MorphDialogController()
 
         var draftAudioMode = editState.audioMode
         var draftChannels = editState.audioChannels
@@ -1687,36 +1771,41 @@ class VideoStudioController(
         }
 
         dialogBinding.btnVideoAudioApply.setOnClickListener {
-            editState.audioMode = draftAudioMode
-            editState.audioChannels = draftChannels
-            editState.audioVolume = draftVolume
+            morph.requestDismiss(dialog, originView, dialogBinding.root, commitAction = {
+                editState.audioMode = draftAudioMode
+                editState.audioChannels = draftChannels
+                editState.audioVolume = draftVolume
 
-            val shouldMute = editState.audioMode == AudioMode.MUTE
-            playerController.setMute(shouldMute)
-            binding.btnPlayerMute.setIconResource(if (shouldMute) R.drawable.ic_audio_volume_off else R.drawable.ic_audio_volume)
-            if (shouldMute) {
-                binding.chipVidAudioRemove.isChecked = true
-            } else {
-                binding.chipVidAudioKeep.isChecked = true
-            }
-            refreshStats()
-            updateEditSummary()
-            dialog.dismiss()
+                val shouldMute = editState.audioMode == AudioMode.MUTE
+                playerController.setMute(shouldMute)
+                binding.btnPlayerMute.setIconResource(if (shouldMute) R.drawable.ic_audio_volume_off else R.drawable.ic_audio_volume)
+                if (shouldMute) {
+                    binding.chipVidAudioRemove.isChecked = true
+                } else {
+                    binding.chipVidAudioKeep.isChecked = true
+                }
+                refreshStats()
+                updateEditSummary()
+            })
         }
 
         dialogBinding.btnVideoAudioReset.setOnClickListener {
             draftAudioMode = AudioMode.KEEP
-            draftVolume = 1.0f
             draftChannels = "keep"
+            draftVolume = 1.0f
             dialogBinding.chipAudioKeep.isChecked = true
             dialogBinding.chipAudioChanKeep.isChecked = true
             dialogBinding.sliderAudioVolume.value = 100f
             dialogBinding.tvAudioVolumeLabel.text = "100%"
         }
 
-        dialogBinding.btnVideoAudioCancel.setOnClickListener { dialog.dismiss() }
-        dialogBinding.btnVideoAudioClose.setOnClickListener { dialog.dismiss() }
-        dialog.show()
+        dialogBinding.btnVideoAudioCancel.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        dialogBinding.btnVideoAudioClose.setOnClickListener {
+            morph.requestDismiss(dialog, originView, dialogBinding.root)
+        }
+        morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
     }
 
     // Helpers
@@ -1764,5 +1853,27 @@ class VideoStudioController(
         val sec = totalSec % 60
         val msTenth = (millis % 1000) / 100
         return String.format(Locale.US, "%02d:%02d.%d", min, sec, msTenth)
+    }
+
+    /**
+     * Synchronizes the floating quick action dock with current media and execution state.
+     */
+    fun syncFloatingDockState() {
+        val hasMedia = (selectedMediaList.isNotEmpty() && currentItem != null)
+        val isBusy = (compressionJob?.isActive == true)
+        val hasResult = (lastResultFile != null && lastResultFile?.exists() == true)
+
+        if (!hasMedia || isBusy) {
+            binding.cardFloatingActionDock.visibility = View.GONE
+            return
+        }
+
+        binding.btnFloatingExecute.text = binding.btnVidExecute.text
+        binding.btnFloatingExecute.isEnabled = binding.btnVidExecute.isEnabled
+        binding.btnFloatingShare.visibility = if (hasResult) View.VISIBLE else View.GONE
+
+        if (binding.cardFloatingActionDock.alpha > 0.05f) {
+            binding.cardFloatingActionDock.visibility = View.VISIBLE
+        }
     }
 }

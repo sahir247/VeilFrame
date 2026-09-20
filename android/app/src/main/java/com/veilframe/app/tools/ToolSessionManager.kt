@@ -9,6 +9,7 @@ import com.google.android.material.chip.ChipGroup
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.storage.SafStorageManager
+import com.veilframe.app.ui.motion.ExpressiveMotion
 
 /**
  * Manages per-tool session states, parameter configuration chips,
@@ -642,6 +643,7 @@ class ToolSessionManager(
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvToolStatusBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+                ExpressiveMotion.playJellyBounce(binding.btnExecute)
             }
             JobState.FAILED, JobState.CANCELLED -> {
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_accent_red))

@@ -26,6 +26,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
+import com.veilframe.app.ui.motion.ExpressiveMotion
+import com.veilframe.app.ui.motion.MotionSpec
 
 /**
  * Controller managing the Mobile Image Studio workspace.
@@ -214,16 +216,20 @@ class ImageStudioController(
             refreshPreview()
         }
 
-        // Tool modal triggers delegated to ImageStudioDialogController
-        binding.toolCrop.setOnClickListener { dialogController.showCropDialog() }
-        binding.toolResize.setOnClickListener { dialogController.showResizeDialog() }
-        binding.toolRotate.setOnClickListener { dialogController.showRotateDialog() }
-        binding.toolColorFilter.setOnClickListener { dialogController.showColorFilterDialog() }
-        binding.toolExif.setOnClickListener { dialogController.showExifDialog() }
-        binding.toolText.setOnClickListener { dialogController.showTextWatermarkDialog() }
+        // Tool modal triggers with origin views for transformational morphing
+        binding.toolCrop.setOnClickListener { dialogController.showCropDialog(binding.toolCrop) }
+        binding.toolResize.setOnClickListener { dialogController.showResizeDialog(binding.toolResize) }
+        binding.toolRotate.setOnClickListener { dialogController.showRotateDialog(binding.toolRotate) }
+        binding.toolColorFilter.setOnClickListener { dialogController.showColorFilterDialog(binding.toolColorFilter) }
+        binding.toolExif.setOnClickListener { dialogController.showExifDialog(binding.toolExif) }
+        binding.toolText.setOnClickListener { dialogController.showTextWatermarkDialog(binding.toolText) }
 
         // Execute / cancel compression
         binding.btnImgExecute.setOnClickListener { handleExecute() }
+
+        // Floating Action Dock wiring
+        binding.btnFloatingExecute.setOnClickListener { binding.btnImgExecute.performClick() }
+        binding.btnFloatingShare.setOnClickListener { binding.btnImgShareResult.performClick() }
 
         // Result save & share
         binding.btnImgSaveResult.setOnClickListener {
@@ -233,6 +239,52 @@ class ImageStudioController(
         binding.btnImgShareResult.setOnClickListener {
             val f = lastResultFile
             if (f != null && f.exists()) onShareFileRequest(f, "image/*")
+        }
+
+        // Attach Material 3 Expressive tactile bounce to interactive controls
+        val interactiveControls = listOf(
+            binding.toolCrop,
+            binding.toolResize,
+            binding.toolRotate,
+            binding.toolColorFilter,
+            binding.toolExif,
+            binding.toolText,
+            binding.btnImgExecute,
+            binding.btnFloatingExecute,
+            binding.btnFloatingShare,
+            binding.btnImgSaveResult,
+            binding.btnImgShareResult,
+            binding.btnImgResetAllEdits,
+            binding.btnImgResetPreview,
+            binding.btnSelectImage,
+            binding.btnImgAddMore,
+            binding.btnImgClearAll,
+            binding.btnImgRemoveFile
+        )
+        interactiveControls.forEach { view ->
+            ExpressiveMotion.applyTouchBounce(view)
+        }
+
+        // Floating Smart Action Dock scroll-merging
+        val thresholdPx = MotionSpec.DOCK_THRESHOLD_DP * binding.root.resources.displayMetrics.density
+        var lastScrollY = 0
+
+        binding.scrollImageStudio.setOnScrollChangeListener { v, _, scrollY, _, _ ->
+            val diff = Math.abs(scrollY - lastScrollY)
+            if (diff < MotionSpec.SCROLL_DEADZONE_PX) return@setOnScrollChangeListener
+            lastScrollY = scrollY
+
+            val child = binding.scrollImageStudio.getChildAt(0) ?: return@setOnScrollChangeListener
+            val scrollBottom = scrollY + v.height
+            val totalHeight = child.height
+            val distanceToBottom = totalHeight - scrollBottom
+
+            val progress = (1.0f - (distanceToBottom / thresholdPx)).coerceIn(0.0f, 1.0f)
+            ExpressiveMotion.updateDockProgress(
+                floatingDock = binding.cardFloatingActionDock,
+                dockedActions = binding.btnImgExecute,
+                progress = progress
+            )
         }
     }
 
@@ -559,6 +611,7 @@ class ImageStudioController(
                 binding.tvImgSummaryExif.visibility = View.GONE
             }
         }
+        syncFloatingDockState()
     }
 
     fun resetEdits() {
@@ -714,9 +767,12 @@ class ImageStudioController(
 
                         val destMsg = if (safManager.imageDestinationUri != null) "\nSaved to: ${safManager.imageDestinationName}" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount image(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
+                        ExpressiveMotion.playJellyBounce(binding.btnImgExecute)
+                        ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
                     } else {
                         Toast.makeText(activity, "Compression failed to produce valid outputs", Toast.LENGTH_LONG).show()
                     }
+                    syncFloatingDockState()
                 }
             } catch (e: Exception) {
                 Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}", e)
@@ -801,5 +857,27 @@ class ImageStudioController(
             unitIndex++
         }
         return String.format(Locale.US, "%.1f %s", size, units[unitIndex])
+    }
+
+    /**
+     * Synchronizes the floating quick action dock with current media and execution state.
+     */
+    fun syncFloatingDockState() {
+        val hasMedia = (selectedMediaList.isNotEmpty() && currentItem != null)
+        val isBusy = (compressionJob?.isActive == true)
+        val hasResult = (lastResultFile != null && lastResultFile?.exists() == true)
+
+        if (!hasMedia || isBusy) {
+            binding.cardFloatingActionDock.visibility = View.GONE
+            return
+        }
+
+        binding.btnFloatingExecute.text = binding.btnImgExecute.text
+        binding.btnFloatingExecute.isEnabled = binding.btnImgExecute.isEnabled
+        binding.btnFloatingShare.visibility = if (hasResult) View.VISIBLE else View.GONE
+
+        if (binding.cardFloatingActionDock.alpha > 0.05f) {
+            binding.cardFloatingActionDock.visibility = View.VISIBLE
+        }
     }
 }

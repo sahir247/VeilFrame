@@ -1,16 +1,20 @@
-<?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/scrollImageStudio"
+    android:id="@+id/containerImageStudio"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:background="@color/vf_bg_dark"
-    android:clipToPadding="false"
-    android:paddingBottom="32dp"
     app:layout_behavior="@string/appbar_scrolling_view_behavior"
     android:visibility="gone">
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollImageStudio"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:background="@color/vf_bg_dark"
+        android:clipToPadding="false"
+        android:paddingBottom="48dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -1275,4 +1279,62 @@
         </LinearLayout>
 
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Floating Smart Action Dock (Scroll-merging quick action pill) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardFloatingActionDock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="@color/vf_surface"
+        app:strokeColor="@color/vf_surface_stroke"
+        app:strokeWidth="1dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFloatingExecute"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:text="Execute"
+                android:textColor="@color/vf_on_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                app:backgroundTint="@color/vf_primary"
+                app:cornerRadius="22dp"
+                app:icon="@drawable/ic_compress"
+                app:iconTint="@color/vf_on_primary"
+                app:iconSize="18dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFloatingShare"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="8dp"
+                android:text="Share"
+                android:textColor="@color/vf_text_primary"
+                android:textSize="13sp"
+                app:cornerRadius="22dp"
+                app:icon="@drawable/ic_action_share"
+                app:iconTint="@color/vf_primary"
+                app:iconSize="18dp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</FrameLayout>
