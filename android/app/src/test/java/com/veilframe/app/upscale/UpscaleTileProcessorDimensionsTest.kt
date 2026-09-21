@@ -248,8 +248,23 @@ class UpscaleTileProcessorDimensionsTest {
         assertEquals(1024, sink.targetWidth)
         assertEquals(1024, sink.targetHeight)
         assertTrue(tempDir.exists())
-        assertEquals(tempDir, sink.complete())
+        sink.complete()
+        // complete() composits and purges scratch directory
+        org.junit.Assert.assertFalse(tempDir.exists())
         sink.close()
-        tempDir.deleteRecursively()
+    }
+
+    @Test
+    fun testStripOutputSinkLifecycle() {
+        val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "test_strip_sink_${System.currentTimeMillis()}")
+        val sink = com.veilframe.app.upscale.inference.StripOutputSink(1024, 1024, 256, tempDir)
+        assertEquals(1024, sink.targetWidth)
+        assertEquals(1024, sink.targetHeight)
+        assertTrue(tempDir.exists())
+        sink.complete()
+        // complete() composits and purges scratch directory
+        org.junit.Assert.assertFalse(tempDir.exists())
+        sink.close()
     }
 }
+

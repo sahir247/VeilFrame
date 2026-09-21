@@ -194,68 +194,79 @@ class UpscaleInferenceEngine(
                         )
                         val outputSink: OutputSink = when (memPlan.outputSinkMode) {
                             OutputSinkMode.TILED_SINK -> {
-                                val scratchDir = File(context.cacheDir, "upscale_scratch_${System.currentTimeMillis()}")
+                                val scratchDir = File(context.cacheDir, "upscale_tiled_${System.currentTimeMillis()}")
                                 TiledIntermediateSink(srcW * targetScale, srcH * targetScale, scratchDir)
                             }
                             OutputSinkMode.STREAMING_STRIP -> {
-                                BitmapOutputSink(srcW * targetScale, srcH * targetScale)
+                                val scratchDir = File(context.cacheDir, "upscale_strip_${System.currentTimeMillis()}")
+                                val stripH = minOf(effectiveTileSize * targetScale, srcH * targetScale)
+                                StripOutputSink(
+                                    targetWidth = srcW * targetScale,
+                                    targetHeight = srcH * targetScale,
+                                    stripHeight = stripH,
+                                    scratchDir = scratchDir
+                                )
                             }
                             OutputSinkMode.MEMORY_BUFFER -> {
                                 BitmapOutputSink(srcW * targetScale, srcH * targetScale)
                             }
                         }
 
-                        val aiResult = tileProcessor.processTiles(
-                            source = source,
-                            scale = targetScale,
-                            workers = executionProfile.workers,
-                            sink = outputSink,
-                            onTileInfer = { tile, row, col, index, total ->
-                                val t0 = System.currentTimeMillis()
-                                listener?.onStage("Neural inference", index + 1, total)
-                                listener?.onStatus("Tile ${index + 1} of $total: Running inference via ${runtime.executionProvider}...")
+                        val aiResult = try {
+                            tileProcessor.processTiles(
+                                source = source,
+                                scale = targetScale,
+                                workers = executionProfile.workers,
+                                sink = outputSink,
+                                onTileInfer = { tile, row, col, index, total ->
+                                    val t0 = System.currentTimeMillis()
+                                    listener?.onStage("Neural inference", index + 1, total)
+                                    listener?.onStatus("Tile ${index + 1} of $total: Running inference via ${runtime.executionProvider}...")
 
-                                val baseProcessed = runtime.runTile(tile, row, col)
-                                val elapsedMs = System.currentTimeMillis() - t0
-                                totalDurationMs.addAndGet(elapsedMs)
-                                baseProcessed
-                            },
-                            onTileRefine = if (scalePlan.requiresRefinement) {
-                                { baseProcessed, row, col, index, total ->
-                                    listener?.onStage("Lanczos refinement", index + 1, total)
-                                    val baseBmp = baseProcessed.bitmap
-                                    val refinedW = baseBmp.width * scalePlan.refinementScale
-                                    val refinedH = baseBmp.height * scalePlan.refinementScale
-                                    val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
-                                    if (!baseBmp.isRecycled) {
-                                        baseBmp.recycle()
+                                    val baseProcessed = runtime.runTile(tile, row, col)
+                                    val elapsedMs = System.currentTimeMillis() - t0
+                                    totalDurationMs.addAndGet(elapsedMs)
+                                    baseProcessed
+                                },
+                                onTileRefine = if (scalePlan.requiresRefinement) {
+                                    { baseProcessed, row, col, index, total ->
+                                        listener?.onStage("Lanczos refinement", index + 1, total)
+                                        val baseBmp = baseProcessed.bitmap
+                                        val refinedW = baseBmp.width * scalePlan.refinementScale
+                                        val refinedH = baseBmp.height * scalePlan.refinementScale
+                                        val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
+                                        if (!baseBmp.isRecycled) {
+                                            baseBmp.recycle()
+                                        }
+                                        ProcessedTile(refinedBmp, targetScale)
                                     }
-                                    ProcessedTile(refinedBmp, targetScale)
+                                } else null,
+                                onProgress = { current, total ->
+                                    val pct = if (total > 0) (current * 100) / total else 0
+                                    listener?.onProgress(current, total, pct)
+
+                                    val done = current.coerceAtLeast(1)
+                                    val avgMs = totalDurationMs.get() / done
+                                    val remainingTiles = (total - current).coerceAtLeast(0)
+                                    val etaSeconds = if (executionProfile.workers > 1) {
+                                        ((remainingTiles * avgMs) / (1000L * executionProfile.workers)).coerceAtLeast(0L)
+                                    } else {
+                                        ((remainingTiles * avgMs) / 1000L).coerceAtLeast(0L)
+                                    }
+
+                                    val etaStr = if (current > 0 && remainingTiles > 0) {
+                                        val sec = String.format(java.util.Locale.US, "%02ds", etaSeconds)
+                                        " • ~$sec left"
+                                    } else ""
+
+                                    listener?.onStatus("Tile $current of $total • ${runtime.executionProvider}$etaStr")
                                 }
-                            } else null,
-                            onProgress = { current, total ->
-                                val pct = if (total > 0) (current * 100) / total else 0
-                                listener?.onProgress(current, total, pct)
+                            )
+                        } finally {
+                            outputSink.close()
+                        }
 
-                                val done = current.coerceAtLeast(1)
-                                val avgMs = totalDurationMs.get() / done
-                                val remainingTiles = (total - current).coerceAtLeast(0)
-                                val etaSeconds = if (executionProfile.workers > 1) {
-                                    ((remainingTiles * avgMs) / (1000L * executionProfile.workers)).coerceAtLeast(0L)
-                                } else {
-                                    ((remainingTiles * avgMs) / 1000L).coerceAtLeast(0L)
-                                }
-
-                                val etaStr = if (current > 0 && remainingTiles > 0) {
-                                    val sec = String.format(java.util.Locale.US, "%02ds", etaSeconds)
-                                    " • ~$sec left"
-                                } else ""
-
-                                listener?.onStatus("Tile $current of $total • ${runtime.executionProvider}$etaStr")
-                            }
-                        )
-
-                        aiResult
+                        aiResult ?: throw IllegalStateException("Upscale failed: Output sink produced null bitmap")
                     } finally {
                         runtime.close()
                     }
