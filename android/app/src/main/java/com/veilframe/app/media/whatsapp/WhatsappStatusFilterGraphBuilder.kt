@@ -1,5 +1,6 @@
 package com.veilframe.app.media.whatsapp
 
+import com.veilframe.app.media.CropSpec
 import java.util.Locale
 
 /**
@@ -8,6 +9,7 @@ import java.util.Locale
  * Supports:
  * - Verified HDR to SDR Hable tone mapping into BT.709
  * - 9:16 Status crop-to-fill canvas targeting selected resolution (720x1280 for HD, 1080x1920 for FHD)
+ * - Custom normalized CropSpec
  * - Orientation, flip, rotation, and speed transforms
  * - Normalized yuv420p pixel format terminating at [vout]
  */
@@ -24,6 +26,7 @@ object WhatsappStatusFilterGraphBuilder {
         srcWidth: Int = 0,
         srcHeight: Int = 0,
         aspect: String = "Original",
+        cropSpec: CropSpec? = null,
         isHdr: Boolean = false,
         flipH: Boolean = false,
         flipV: Boolean = false,
@@ -55,6 +58,15 @@ object WhatsappStatusFilterGraphBuilder {
             90 -> transforms.add("transpose=1")
             180 -> transforms.add("hflip,vflip")
             270 -> transforms.add("transpose=2")
+        }
+
+        // Custom crop if specified
+        if (cropSpec != null && !cropSpec.isIdentity()) {
+            val cropW = String.format(Locale.US, "trunc(iw*%.4f/2)*2", cropSpec.widthFraction)
+            val cropH = String.format(Locale.US, "trunc(ih*%.4f/2)*2", cropSpec.heightFraction)
+            val cropX = String.format(Locale.US, "trunc(iw*%.4f/2)*2", cropSpec.left)
+            val cropY = String.format(Locale.US, "trunc(ih*%.4f/2)*2", cropSpec.top)
+            transforms.add("crop=$cropW:$cropH:$cropX:$cropY")
         }
 
         // Normalize non-square SAR to 1:1 square pixels before scaling

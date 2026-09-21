@@ -5,19 +5,23 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
-import android.graphics.Color
 import android.graphics.Typeface
-import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
+import com.veilframe.app.R
 
 /**
  * Central Theme & Customization Manager for VeilFrame.
  * Coordinates Material You Dynamic Colors, AMOLED True Black, Accent Palettes,
  * and Typography styles with consistent persistence and clear precedence rules.
+ *
+ * Architecture:
+ * - Application.onCreate: set night mode policy only
+ * - Activity.onCreate: super.onCreate() → resolve theme overlay → setContentView()
+ * - Theme changes: persist preference → activity.recreate()
  */
 object ThemeSettingsManager {
 
@@ -30,9 +34,9 @@ object ThemeSettingsManager {
 
     enum class ThemeMode(val displayName: String) {
         SYSTEM("System Default"),
-        LIGHT("Light Mode"),
-        DARK("Matte Dark"),
-        AMOLED("AMOLED True Black")
+        LIGHT("Light"),
+        DARK("Dark"),
+        AMOLED("AMOLED Dark")
     }
 
     enum class AccentPalette(val displayName: String, val hexColor: String) {
@@ -53,14 +57,63 @@ object ThemeSettingsManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
+    /**
+     * Called from Application.onCreate ONLY.
+     * Sets the global night mode policy. Does NOT apply DynamicColors globally.
+     */
     fun init(application: Application) {
-        val prefs = getPrefs(application)
         val mode = getThemeMode(application)
         applyNightMode(mode)
+    }
 
+    /**
+     * Called from Activity.onCreate AFTER super.onCreate() but BEFORE setContentView().
+     * Resolves and applies the concrete theme overlay per-Activity:
+     * 1. If Dynamic Color is enabled and available, apply DynamicColors
+     * 2. Otherwise, apply the selected palette overlay
+     * 3. If AMOLED mode, layer the AMOLED overlay on top
+     */
+    fun applyActivityTheme(activity: Activity) {
+        val prefs = getPrefs(activity)
         val dynamicEnabled = prefs.getBoolean(KEY_DYNAMIC_COLOR, true)
+        val mode = getThemeMode(activity)
+
         if (dynamicEnabled && DynamicColors.isDynamicColorAvailable()) {
-            DynamicColors.applyToActivitiesIfAvailable(application)
+            // Apply Material You dynamic colors per-Activity
+            DynamicColors.applyIfAvailable(activity)
+        } else {
+            // Apply the selected palette overlay
+            val palette = getAccentPalette(activity)
+            val paletteOverlayRes = getPaletteOverlayRes(palette)
+            if (paletteOverlayRes != 0) {
+                activity.theme.applyStyle(paletteOverlayRes, true)
+            }
+        }
+
+        // Layer AMOLED overlay on top if active
+        if (mode == ThemeMode.AMOLED && isNightModeActive(activity)) {
+            activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
+        }
+
+        // Apply typography
+        val typo = getTypographyStyle(activity)
+        if (typo != TypographyStyle.DEFAULT) {
+            // Typography is applied post-inflation via applyTypography()
+        }
+    }
+
+    /**
+     * Called post-setContentView to apply custom typography to the view tree.
+     */
+    fun applyTypography(activity: Activity) {
+        val typo = getTypographyStyle(activity)
+        if (typo != TypographyStyle.DEFAULT) {
+            val tf = when (typo) {
+                TypographyStyle.MONOSPACE -> Typeface.MONOSPACE
+                TypographyStyle.SERIF -> Typeface.SERIF
+                else -> Typeface.DEFAULT
+            }
+            applyTypefaceRecursively(activity.window.decorView, tf)
         }
     }
 
@@ -73,9 +126,13 @@ object ThemeSettingsManager {
         }
     }
 
-    fun setThemeMode(context: Context, mode: ThemeMode) {
-        getPrefs(context).edit().putString(KEY_THEME_MODE, mode.name).apply()
+    /**
+     * Sets theme mode, persists, applies night mode, and recreates the activity.
+     */
+    fun setThemeMode(activity: Activity, mode: ThemeMode) {
+        getPrefs(activity).edit().putString(KEY_THEME_MODE, mode.name).apply()
         applyNightMode(mode)
+        activity.recreate()
     }
 
     fun isDynamicColorEnabled(context: Context): Boolean {
@@ -83,8 +140,12 @@ object ThemeSettingsManager {
         return getPrefs(context).getBoolean(KEY_DYNAMIC_COLOR, true)
     }
 
-    fun setDynamicColorEnabled(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
+    /**
+     * Sets dynamic color preference and recreates the activity.
+     */
+    fun setDynamicColorEnabled(activity: Activity, enabled: Boolean) {
+        getPrefs(activity).edit().putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
+        activity.recreate()
     }
 
     fun getAccentPalette(context: Context): AccentPalette {
@@ -96,8 +157,12 @@ object ThemeSettingsManager {
         }
     }
 
-    fun setAccentPalette(context: Context, palette: AccentPalette) {
-        getPrefs(context).edit().putString(KEY_ACCENT_PALETTE, palette.name).apply()
+    /**
+     * Sets accent palette and recreates the activity.
+     */
+    fun setAccentPalette(activity: Activity, palette: AccentPalette) {
+        getPrefs(activity).edit().putString(KEY_ACCENT_PALETTE, palette.name).apply()
+        activity.recreate()
     }
 
     fun getTypographyStyle(context: Context): TypographyStyle {
@@ -109,8 +174,12 @@ object ThemeSettingsManager {
         }
     }
 
-    fun setTypographyStyle(context: Context, style: TypographyStyle) {
-        getPrefs(context).edit().putString(KEY_TYPOGRAPHY, style.name).apply()
+    /**
+     * Sets typography style and recreates the activity.
+     */
+    fun setTypographyStyle(activity: Activity, style: TypographyStyle) {
+        getPrefs(activity).edit().putString(KEY_TYPOGRAPHY, style.name).apply()
+        activity.recreate()
     }
 
     fun applyNightMode(mode: ThemeMode) {
@@ -123,6 +192,10 @@ object ThemeSettingsManager {
 
     fun isAmoledActive(context: Context): Boolean {
         if (getThemeMode(context) != ThemeMode.AMOLED) return false
+        return isNightModeActive(context)
+    }
+
+    private fun isNightModeActive(context: Context): Boolean {
         val currentNightMode = AppCompatDelegate.getDefaultNightMode()
         return if (currentNightMode == AppCompatDelegate.MODE_NIGHT_UNSPECIFIED) {
             (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -132,29 +205,15 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Applies custom theme adjustments (AMOLED True Black & Typography) to the activity window.
+     * Maps AccentPalette enum to the corresponding style resource ID.
      */
-    fun applyActivityTheme(activity: Activity) {
-        val isAmoled = isAmoledActive(activity)
-        if (isAmoled) {
-            activity.window.decorView.setBackgroundColor(Color.BLACK)
-            activity.window.statusBarColor = Color.BLACK
-            activity.window.navigationBarColor = Color.BLACK
-
-            val rootId = activity.resources.getIdentifier("rootCoordinator", "id", activity.packageName)
-            if (rootId != 0) {
-                activity.findViewById<View>(rootId)?.setBackgroundColor(Color.BLACK)
-            }
-        }
-
-        val typo = getTypographyStyle(activity)
-        if (typo != TypographyStyle.DEFAULT) {
-            val tf = when (typo) {
-                TypographyStyle.MONOSPACE -> Typeface.MONOSPACE
-                TypographyStyle.SERIF -> Typeface.SERIF
-                else -> Typeface.DEFAULT
-            }
-            applyTypefaceRecursively(activity.window.decorView, tf)
+    private fun getPaletteOverlayRes(palette: AccentPalette): Int {
+        return when (palette) {
+            AccentPalette.MONOCHROME -> R.style.ThemeOverlay_VeilFrame_Palette_Monochrome
+            AccentPalette.SAGE -> R.style.ThemeOverlay_VeilFrame_Palette_Sage
+            AccentPalette.OCEAN -> R.style.ThemeOverlay_VeilFrame_Palette_Ocean
+            AccentPalette.AMBER -> R.style.ThemeOverlay_VeilFrame_Palette_Amber
+            AccentPalette.VIOLET -> R.style.ThemeOverlay_VeilFrame_Palette_Violet
         }
     }
 

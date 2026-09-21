@@ -77,9 +77,11 @@ class ImageStudioController(
 
     // Fast downscaled copy (max 1280px) for smooth 60fps live preview & modal interactions
     private var previewSourceBitmap: Bitmap? = null
+    private var currentResultPreviewBitmap: Bitmap? = null
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
+    private var activeGeneration: Long = 0L
     private lateinit var floatingDockController: FloatingDockStateController
 
     // Race-condition guard for async image loading
@@ -240,6 +242,9 @@ class ImageStudioController(
                     FloatingActionState.COMPLETED -> {
                         val f = lastResultFile
                         if (f != null && f.exists()) onExportFileRequest(f)
+                    }
+                    FloatingActionState.EMPTY -> {
+                        onPickImageRequest()
                     }
                     else -> handleExecute()
                 }
@@ -421,6 +426,12 @@ class ImageStudioController(
 
     fun selectMediaIndex(index: Int) {
         if (index !in selectedMediaList.indices) return
+        activeGeneration++
+        compressionJob?.cancel()
+        compressionJob = null
+        lastResultFile = null
+        currentResultPreviewBitmap?.recycle()
+        currentResultPreviewBitmap = null
         currentMediaIndex = index
         val item = selectedMediaList[index]
         previewSourceBitmap = item.previewBitmap
@@ -436,6 +447,7 @@ class ImageStudioController(
 
         updateNavigationUi()
         refreshPreview()
+        syncFloatingDockState()
     }
 
     private fun updateNavigationUi() {
@@ -529,19 +541,24 @@ class ImageStudioController(
         val origFullW = item?.origWidth ?: previewBmp.width
         val origFullH = item?.origHeight ?: previewBmp.height
 
-        val targetW = when {
-            editState.resizeWidth > 0 -> editState.resizeWidth
-            editState.resizeScale != 100 -> ((origFullW * editState.resizeScale) / 100).coerceAtLeast(1)
-            else -> origFullW
-        }
-        val targetH = when {
-            editState.resizeHeight > 0 -> editState.resizeHeight
-            editState.resizeScale != 100 -> ((origFullH * editState.resizeScale) / 100).coerceAtLeast(1)
-            else -> origFullH
-        }
+        val plan = ImageTransformEngine.calculateTransformPlan(origFullW, origFullH, editState, outputConfig)
+        val targetW = plan.targetWidth
+        val targetH = plan.targetHeight
 
-        val isPng = outputConfig.format.equals("PNG", ignoreCase = true)
-        if (outputConfig.compressionMode == "target_size") {
+        val isPassport = editState.cropAspect.contains("Passport", ignoreCase = true)
+        val isPng = plan.outputFormat.equals("PNG", ignoreCase = true)
+
+        if (isPassport) {
+            val probeBytes = ImageCompressionEngine.probeEncodeBytes(previewBmp, outputConfig)
+            val displayBytes = if (probeBytes > 0) probeBytes else (targetW * targetH * 0.22).toLong()
+            binding.tvImgQualityLabel.text = "Preset:"
+            binding.tvImgQualityValue.text = "Passport Photo"
+            binding.tvImgAfterSize.text = "~${formatBytes(displayBytes)} ($targetW × $targetH px • JPG)"
+            val ratio = if (originalBytes > 0) {
+                (100.0 - (displayBytes.toDouble() / originalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
+            } else 0
+            binding.tvImgComparisonRatio.text = "Total: ${formatBytes(originalBytes)} → ~${formatBytes(displayBytes)} (-$ratio%)"
+        } else if (outputConfig.compressionMode == "target_size") {
             val targetKb = outputConfig.targetSizeKb ?: 250
             val targetBytes = targetKb.toLong() * 1024L
             binding.tvImgQualityLabel.text = "Target Ceiling:"
@@ -694,13 +711,15 @@ class ImageStudioController(
         val rawName = binding.etImgOutputFilename.text.toString().trim()
         val safeBase = File(rawName).name.substringBeforeLast('.').ifBlank { "compressed_image" }
 
+        val generation = ++activeGeneration
         binding.layoutImgProgress.visibility = View.VISIBLE
         binding.btnImgExecute.text = "Cancel"
-        syncFloatingDockState()
+        floatingDockController.transitionTo(FloatingActionState.PROCESSING)
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
                 var successCount = 0
+                var exportedCount = 0
                 val total = itemsToProcess.size
                 var lastSavedFile: File? = null
                 var totalOriginalBytes = 0L
@@ -765,7 +784,8 @@ class ImageStudioController(
                                     "AVIF" -> "image/avif"
                                     else -> "image/jpeg"
                                 }
-                                safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                                val copied = safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                                if (copied != null) exportedCount++
                             }
                         } else {
                             withContext(Dispatchers.Main) {
@@ -779,14 +799,16 @@ class ImageStudioController(
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress again"
 
                     if (successCount > 0 && lastSavedFile != null && lastSavedFile.exists()) {
                         lastResultFile = lastSavedFile
-                        val finalBmp = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
-                        if (finalBmp != null) {
-                            binding.imgAfterPreview.setImageBitmap(finalBmp)
+                        currentResultPreviewBitmap?.recycle()
+                        currentResultPreviewBitmap = BitmapFactory.decodeFile(lastSavedFile.absolutePath)
+                        if (currentResultPreviewBitmap != null) {
+                            binding.imgAfterPreview.setImageBitmap(currentResultPreviewBitmap)
                         }
                         binding.tvImgAfterSize.text = "${formatBytes(lastSavedFile.length())} (${outputConfig.format})"
                         val ratio = if (totalOriginalBytes > 0) {
@@ -794,21 +816,31 @@ class ImageStudioController(
                         } else 0
                         binding.tvImgComparisonRatio.text = "Saved: ${formatBytes(totalOriginalBytes)} → ${formatBytes(totalCompressedBytes)} (-$ratio%)"
                         binding.tvImgActualStats.visibility = View.VISIBLE
-                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Saved $ratio%"
+                        binding.tvImgActualStats.text = "Processed $successCount of $total images • Exported $exportedCount • Saved $ratio%"
                         binding.layoutImgResultActions.visibility = View.VISIBLE
 
                         val destMsg = if (safManager.imageDestinationUri != null) "\nSaved to: ${safManager.imageDestinationName}" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount image(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                         ExpressiveMotion.playJellyBounce(binding.btnImgExecute)
                         ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
+
+                        floatingDockController.transitionTo(
+                            FloatingActionState.COMPLETED,
+                            actionTitle = "Save Result",
+                            secondaryTitle = "Share"
+                        )
+                        if (destUri != null && exportedCount > 0) {
+                            floatingDockController.onSaved()
+                        }
                     } else {
                         Toast.makeText(activity, "Compression failed to produce valid outputs", Toast.LENGTH_LONG).show()
+                        floatingDockController.transitionTo(FloatingActionState.READY, actionTitle = "Compress")
                     }
-                    syncFloatingDockState()
                 }
             } catch (e: Exception) {
                 Log.e("VeilFrame.ImageStudioController", "Compression failure: ${e.message}", e)
                 withContext(Dispatchers.Main) {
+                    if (generation != activeGeneration) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
                     binding.btnImgExecute.text = "Compress"
                     Toast.makeText(activity, "Image compression error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -819,13 +851,17 @@ class ImageStudioController(
     }
 
     fun clear() {
+        activeGeneration++
         loadToken.incrementAndGet()
         selectedMediaList.forEach { it.previewBitmap?.recycle() }
         selectedMediaList.clear()
         currentMediaIndex = 0
         previewSourceBitmap = null
+        currentResultPreviewBitmap?.recycle()
+        currentResultPreviewBitmap = null
         lastResultFile = null
         compressionJob?.cancel()
+        compressionJob = null
 
         binding.layoutImgNavRow.visibility = View.GONE
         binding.scrollImgThumbnails.visibility = View.GONE

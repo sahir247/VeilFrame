@@ -83,12 +83,9 @@ object VideoProcessor {
             "360p (Ultra Small)" -> "360p"
             else -> null
         }
-        val aspectStr = when (editState.aspect) {
-            "9:16 (Reel / Shorts / TikTok)", "9:16" -> "9:16"
-            "1:1 (Square Feed)", "1:1" -> "1:1"
-            "16:9 (Landscape YouTube)", "16:9" -> "16:9"
-            "4:3 (Classic)", "4:3 (Standard)", "4:3" -> "4:3"
-            "3:4 (Portrait)", "3:4" -> "3:4"
+        val aspectSpec = AspectSpec.fromString(editState.aspect)
+        val aspectStr = when (aspectSpec) {
+            is AspectSpec.Ratio -> "${aspectSpec.widthRatio.toInt()}:${aspectSpec.heightRatio.toInt()}"
             else -> null
         }
         val audioActionStr = when (editState.audioMode) {
@@ -117,11 +114,15 @@ object VideoProcessor {
                 (outputConfig.targetPreset.contains("Status", ignoreCase = true) && !outputConfig.targetPreset.contains("16", ignoreCase = true))
         if (isStatusPreset) {
             val statusResolution = outputConfig.whatsappStatusResolution
+            val cropSpec = if (editState.customCropPercent > 0) {
+                CropSpec.fromCustomCropPercent(editState.customCropPercent)
+            } else null
             return com.veilframe.app.media.whatsapp.WhatsappStatusMediaPipeline.processVideo(
                 srcFile = srcFile,
                 outFile = outFile,
                 resolution = statusResolution,
                 aspect = editState.aspect,
+                cropSpec = cropSpec,
                 trimStartSec = trimStartSec,
                 trimDurationSec = trimDurationSec,
                 flipH = editState.flipH,

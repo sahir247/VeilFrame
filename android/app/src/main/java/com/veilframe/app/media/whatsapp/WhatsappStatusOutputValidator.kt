@@ -22,12 +22,15 @@ data class WhatsappStatusValidationReport(
     val audioCodec: String?,
     val audioSampleRate: Int?,
     val audioBitrateKbps: Int?,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val displayAspectRatio: String = "1:1"
 ) {
+    val error: String? get() = warnings.firstOrNull()
+
     fun toDiagnosticString(): String {
         val sb = StringBuilder()
         sb.append("WhatsApp Status Output Inspection:\n")
-        sb.append("  Dimensions:   ${width}×${height} (9:16 Canvas)\n")
+        sb.append("  Dimensions:   ${width}×${height} (DAR: $displayAspectRatio)\n")
         sb.append("  Video Codec:  $videoCodec (Target: H.264 / libx264)\n")
         sb.append("  Pixel Format: $pixelFormat (Target: yuv420p)\n")
         sb.append("  Frame Rate:   ${String.format(Locale.US, "%.2f", fps)} fps (Target: 29.97)\n")
@@ -56,7 +59,84 @@ object WhatsappStatusOutputValidator {
     private const val TAG = "VeilFrame.StatusValidator"
 
     fun validate(outFile: File, expectedResolution: WhatsappStatusResolution): WhatsappStatusValidationReport {
+        return validate(outFile, WhatsappStatusValidationSpec(resolution = expectedResolution))
+    }
+
+    /**
+     * Validates output metrics directly without invoking FFprobeKit (suitable for pure unit testing and fast checks).
+     */
+    fun validate(
+        actualWidth: Int,
+        actualHeight: Int,
+        fileSizeBytes: Long,
+        spec: WhatsappStatusValidationSpec,
+        videoCodec: String = "h264",
+        pixelFormat: String = WhatsappStatusConstants.PIXEL_FORMAT
+    ): WhatsappStatusValidationReport {
         val warnings = mutableListOf<String>()
+        val expectedResolution = spec.resolution
+
+        // Validate codec
+        if (!videoCodec.equals("h264", ignoreCase = true) && !videoCodec.equals("avc1", ignoreCase = true)) {
+            warnings.add("Unexpected video codec: $videoCodec (expected h264)")
+        }
+
+        // Validate pixel format
+        if (!pixelFormat.equals(WhatsappStatusConstants.PIXEL_FORMAT, ignoreCase = true)) {
+            warnings.add("Unexpected pixel format: $pixelFormat (expected ${WhatsappStatusConstants.PIXEL_FORMAT})")
+        }
+
+        // Bounded-DAR dimension validation
+        val maxDim = maxOf(actualWidth, actualHeight)
+        val minDim = minOf(actualWidth, actualHeight)
+        if (maxDim > expectedResolution.maxLongSide || minDim > expectedResolution.maxShortSide) {
+            warnings.add("Bounded dimension exceeded: ${actualWidth}×${actualHeight} outside ${expectedResolution.maxShortSide}×${expectedResolution.maxLongSide} bounds")
+        }
+
+        // Even dimension check
+        if (actualWidth % 2 != 0 || actualHeight % 2 != 0) {
+            warnings.add("Odd dimensions: ${actualWidth}×${actualHeight} (H.264 requires even dimensions)")
+        }
+
+        // Target DAR tolerance check
+        val expectedDar = spec.expectedTargetDar()
+        val actualDar = if (actualHeight > 0) actualWidth.toDouble() / actualHeight.toDouble() else 1.0
+        val actualDarStr = AspectRatioResolver.formatDar(actualWidth, actualHeight)
+
+        if (expectedDar != null && expectedDar > 0.0 && actualHeight > 0) {
+            val darDiffPercent = Math.abs(actualDar - expectedDar) / expectedDar
+            if (darDiffPercent > 0.03) {
+                warnings.add(String.format(Locale.US, "DAR mismatch: got %.3f (%s), expected %.3f (tolerance 3%%)", actualDar, actualDarStr, expectedDar))
+            }
+        }
+
+        // 16 MiB file size ceiling check
+        if (WhatsappStatusRateControl.exceedsSizeCeiling(fileSizeBytes)) {
+            warnings.add("Output exceeds 16 MiB ceiling: ${String.format(Locale.US, "%.2f", fileSizeBytes / (1024.0 * 1024.0))} MB")
+        }
+
+        return WhatsappStatusValidationReport(
+            isValid = warnings.isEmpty(),
+            videoCodec = videoCodec,
+            pixelFormat = pixelFormat,
+            width = actualWidth,
+            height = actualHeight,
+            fps = 29.97,
+            durationSec = 30.0,
+            sizeBytes = fileSizeBytes,
+            videoBitrateKbps = null,
+            hasAudio = false,
+            audioCodec = null,
+            audioSampleRate = null,
+            audioBitrateKbps = null,
+            warnings = warnings,
+            displayAspectRatio = actualDarStr
+        )
+    }
+
+    fun validate(outFile: File, spec: WhatsappStatusValidationSpec): WhatsappStatusValidationReport {
+        val warnings = mutableListOf<String>()
+        val expectedResolution = spec.resolution
         var videoCodec = "unknown"
         var pixelFormat = "unknown"
         var width = 0
@@ -85,7 +165,8 @@ object WhatsappStatusOutputValidator {
                 audioCodec = null,
                 audioSampleRate = null,
                 audioBitrateKbps = null,
-                warnings = warnings
+                warnings = warnings,
+                displayAspectRatio = "0:0"
             )
         }
 
@@ -144,9 +225,36 @@ object WhatsappStatusOutputValidator {
             warnings.add("Unexpected pixel format: $pixelFormat (expected ${WhatsappStatusConstants.PIXEL_FORMAT})")
         }
 
-        // Validate dimensions match requested Status canvas
-        if (width != expectedResolution.width || height != expectedResolution.height) {
-            warnings.add("Canvas dimension mismatch: got ${width}×${height}, expected ${expectedResolution.width}×${expectedResolution.height}")
+        // Bounded-DAR dimension validation
+        // HD: maxOf(w,h) <= 1280 && minOf(w,h) <= 720; FHD: maxOf(w,h) <= 1920 && minOf(w,h) <= 1080
+        // Square (e.g. 720×720) is 100% valid
+        val maxDim = maxOf(width, height)
+        val minDim = minOf(width, height)
+        if (maxDim > expectedResolution.maxLongSide || minDim > expectedResolution.maxShortSide) {
+            warnings.add("Bounded dimension exceeded: ${width}×${height} outside ${expectedResolution.maxShortSide}×${expectedResolution.maxLongSide} bounds")
+        }
+
+        // Even dimension check (required for H.264 / yuv420p)
+        if (width % 2 != 0 || height % 2 != 0) {
+            warnings.add("Odd dimensions: ${width}×${height} (H.264 requires even dimensions)")
+        }
+
+        // Target DAR tolerance check (within 3% tolerance)
+        val expectedDar = spec.expectedTargetDar()
+        val actualDar = if (height > 0) width.toDouble() / height.toDouble() else 1.0
+        val actualDarStr = AspectRatioResolver.formatDar(width, height)
+
+        if (expectedDar != null && expectedDar > 0.0 && height > 0) {
+            val darDiffPercent = Math.abs(actualDar - expectedDar) / expectedDar
+            if (darDiffPercent > 0.03) {
+                warnings.add(String.format(Locale.US, "DAR mismatch: got %.3f (%s), expected %.3f (tolerance 3%%)", actualDar, actualDarStr, expectedDar))
+            }
+        }
+
+        // 16 MiB file size ceiling check
+        val fileSizeBytes = outFile.length()
+        if (WhatsappStatusRateControl.exceedsSizeCeiling(fileSizeBytes)) {
+            warnings.add("Output exceeds 16 MiB ceiling: ${String.format(Locale.US, "%.2f", fileSizeBytes / (1024.0 * 1024.0))} MB")
         }
 
         return WhatsappStatusValidationReport(
@@ -163,7 +271,8 @@ object WhatsappStatusOutputValidator {
             audioCodec = audioCodec,
             audioSampleRate = audioSampleRate,
             audioBitrateKbps = audioBitrateKbps,
-            warnings = warnings
+            warnings = warnings,
+            displayAspectRatio = actualDarStr
         )
     }
 }

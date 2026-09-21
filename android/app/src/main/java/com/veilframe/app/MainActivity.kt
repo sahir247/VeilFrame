@@ -259,6 +259,7 @@ class MainActivity : AppCompatActivity() {
         com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
         val prefs = getSharedPreferences("veilframe_prefs", Context.MODE_PRIVATE)
 
         // Restore cached changelog if available
@@ -275,12 +276,11 @@ class MainActivity : AppCompatActivity() {
             val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             binding.appBarLayout.setPadding(0, statusBarTop, 0, 0)
             binding.containerSettings.setPadding(0, statusBarTop, 0, navBarBottom)
-            binding.bottomActionDock.setPadding(
-                binding.bottomActionDock.paddingStart,
-                binding.bottomActionDock.paddingTop,
-                binding.bottomActionDock.paddingEnd,
-                navBarBottom + 12
-            )
+            val layoutParams = binding.cardCleanerActionDock.layoutParams as? android.view.ViewGroup.MarginLayoutParams
+            if (layoutParams != null) {
+                layoutParams.bottomMargin = navBarBottom + (16 * resources.displayMetrics.density).toInt()
+                binding.cardCleanerActionDock.layoutParams = layoutParams
+            }
             insets
         }
 
@@ -928,7 +928,6 @@ class MainActivity : AppCompatActivity() {
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
             com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode)
-            com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
         }
 
         // 2. Dynamic color toggle with live palette chip disabling

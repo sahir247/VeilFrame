@@ -147,6 +147,12 @@ class FloatingDockStateController(
         }
     }
 
+    fun destroy() {
+        revertSaveRunnable?.let { mainHandler.removeCallbacks(it) }
+        revertSaveRunnable = null
+        mainHandler.removeCallbacksAndMessages(null)
+    }
+
     private fun showDockWithSpring(animate: Boolean) {
         dockCard.visibility = View.VISIBLE
         if (animate) {

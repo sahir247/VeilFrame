@@ -169,6 +169,27 @@ object ImageCompressionEngine {
     }
 
     /**
+     * Performs a fast probe encode of a rendered bitmap (such as 600x600 Passport)
+     * using the exact codec, quality, and metadata parameters to measure concrete size.
+     */
+    fun probeEncodeBytes(
+        bitmap: Bitmap,
+        outputConfig: ImageOutputConfig
+    ): Long {
+        val targetFormat = ImageFormatEncoder.Format.fromString(outputConfig.format)
+        val quality = outputConfig.quality.coerceIn(5, 100)
+        val tempFile = File.createTempFile("vf_probe_", ".${targetFormat.extension}")
+        return try {
+            val ok = ImageFormatEncoder.encodeImage(bitmap, tempFile, targetFormat, quality)
+            if (ok && tempFile.exists()) tempFile.length() else 0L
+        } catch (_: Throwable) {
+            0L
+        } finally {
+            try { tempFile.delete() } catch (_: Throwable) {}
+        }
+    }
+
+    /**
      * Computes empirical, high-precision size estimate for display in UI.
      */
     fun estimateOutputBytes(

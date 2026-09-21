@@ -74,10 +74,21 @@ object WhatsappStatusCommandBuilder {
         baseMaxRateKbps: Int,
         bufSizeKbps: Int,
         isMuted: Boolean = false,
+        trimStartSec: Double = 0.0,
+        trimDurationSec: Double = 0.0,
         threads: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
     ): Array<String> {
         val args = mutableListOf<String>()
         args.add("-y")
+
+        if (trimStartSec > 0.05) {
+            args.add("-ss")
+            args.add(String.format(Locale.US, "%.3f", trimStartSec))
+        }
+        if (trimDurationSec > 0.05) {
+            args.add("-t")
+            args.add(String.format(Locale.US, "%.3f", trimDurationSec))
+        }
 
         args.add("-i")
         args.add(tempIntermediateFile.absolutePath)

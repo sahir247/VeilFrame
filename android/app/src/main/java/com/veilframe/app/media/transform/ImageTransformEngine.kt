@@ -8,6 +8,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.util.Log
+import com.veilframe.app.media.CropSpec
 import com.veilframe.app.media.ImageEditState
 import com.veilframe.app.media.watermark.WatermarkEngine
 
@@ -17,8 +18,79 @@ import com.veilframe.app.media.watermark.WatermarkEngine
  * Crop -> Rotate/Flip -> Resize -> Background Fill -> Color Filter -> Watermark
  */
 object ImageTransformEngine {
+    private const val TAG = "ImageTransformEngine"
 
-    private const val TAG = "VeilFrame.ImageTransformEngine"
+    fun calculateTransformPlan(
+        origFullW: Int,
+        origFullH: Int,
+        state: ImageEditState,
+        outputConfig: com.veilframe.app.media.ImageOutputConfig
+    ): ImageTransformPlan {
+        val isPassport = state.cropAspect.contains("Passport", ignoreCase = true)
+        val cropRect: CropSpec? = if (isPassport) {
+            val minDim = minOf(origFullW, origFullH).toFloat()
+            val left = ((origFullW - minDim) / 2f) / origFullW.toFloat().coerceAtLeast(1f)
+            val top = ((origFullH - minDim) / 2f) / origFullH.toFloat().coerceAtLeast(1f)
+            CropSpec(left, top, 1f - left, 1f - top)
+        } else if (state.isCropped()) {
+            if (state.cropLeft > 0.001f || state.cropTop > 0.001f || state.cropRight < 0.999f || state.cropBottom < 0.999f) {
+                CropSpec(state.cropLeft, state.cropTop, state.cropRight, state.cropBottom)
+            } else {
+                val ratio = when (state.cropAspect) {
+                    "1:1" -> 1.0f
+                    "4:3" -> 4f / 3f
+                    "3:4" -> 3f / 4f
+                    "16:9" -> 16f / 9f
+                    "9:16" -> 9f / 16f
+                    else -> null
+                }
+                if (ratio != null) {
+                    var targetW = origFullW.toFloat()
+                    var targetH = origFullW / ratio
+                    if (targetH > origFullH) {
+                        targetH = origFullH.toFloat()
+                        targetW = origFullH * ratio
+                    }
+                    val left = ((origFullW - targetW) / 2f) / origFullW.toFloat().coerceAtLeast(1f)
+                    val top = ((origFullH - targetH) / 2f) / origFullH.toFloat().coerceAtLeast(1f)
+                    CropSpec(left, top, 1f - left, 1f - top)
+                } else null
+            }
+        } else null
+
+        val targetW: Int
+        val targetH: Int
+        if (isPassport) {
+            targetW = 600
+            targetH = 600
+        } else if (state.resizeWidth > 0 && state.resizeHeight > 0) {
+            targetW = state.resizeWidth.coerceIn(16, 16384)
+            targetH = state.resizeHeight.coerceIn(16, 16384)
+        } else if (state.resizeScale != 100) {
+            val baseW = if (cropRect != null) (origFullW * cropRect.width).toInt() else origFullW
+            val baseH = if (cropRect != null) (origFullH * cropRect.height).toInt() else origFullH
+            targetW = ((baseW * state.resizeScale) / 100).coerceIn(16, 16384)
+            targetH = ((baseH * state.resizeScale) / 100).coerceIn(16, 16384)
+        } else {
+            targetW = if (cropRect != null) (origFullW * cropRect.width).toInt().coerceAtLeast(16) else origFullW
+            targetH = if (cropRect != null) (origFullH * cropRect.height).toInt().coerceAtLeast(16) else origFullH
+        }
+
+        return ImageTransformPlan(
+            sourceWidth = origFullW,
+            sourceHeight = origFullH,
+            cropRect = cropRect,
+            rotationDegrees = state.rotationAngle,
+            flipH = state.flipH,
+            flipV = state.flipV,
+            targetWidth = targetW,
+            targetHeight = targetH,
+            outputFormat = if (isPassport) "JPG" else outputConfig.format,
+            quality = outputConfig.quality,
+            orientationPolicy = OrientationPolicy.NORMALIZE_EXIF,
+            metadataPolicy = if (state.stripExif) MetadataPolicy.STRIP_ALL else MetadataPolicy.CUSTOM_EXIF
+        )
+    }
 
     fun transform(
         src: Bitmap,

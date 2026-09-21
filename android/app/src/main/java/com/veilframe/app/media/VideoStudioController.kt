@@ -84,6 +84,7 @@ class VideoStudioController(
 
     private var compressionJob: Job? = null
     private var isScrubbing: Boolean = false
+    private var activeGeneration: Long = 0L
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
     private lateinit var floatingDockController: FloatingDockStateController
 
@@ -655,6 +656,10 @@ class VideoStudioController(
 
     fun selectMediaIndex(index: Int) {
         if (index !in selectedMediaList.indices) return
+        activeGeneration++
+        compressionJob?.cancel()
+        compressionJob = null
+        lastResultFile = null
         currentMediaIndex = index
         val item = selectedMediaList[index]
 
@@ -698,6 +703,7 @@ class VideoStudioController(
         updateNavigationUi()
         refreshStats()
         updateEditSummary()
+        syncFloatingDockState()
     }
 
     private fun updateNavigationUi() {
@@ -961,9 +967,15 @@ class VideoStudioController(
 
         val estBytes = when (outputConfig.targetPreset) {
             "WhatsApp Status", "WhatsApp (16 MB)" -> {
-                val baseKbps = outputConfig.whatsappStatusResolution.baseMaxRateKbps
-                val totalKbps = (baseKbps * 0.85).toInt() + 128
-                ((totalKbps * 1024L / 8L) * durationSec).toLong()
+                val audioKbps = if (editState.audioMode == AudioMode.MUTE) 0 else 128
+                val effKbps = com.veilframe.app.media.whatsapp.WhatsappStatusRateControl.effectiveMaxRate(
+                    outputConfig.whatsappStatusResolution,
+                    durationSec,
+                    audioKbps
+                )
+                val totalKbps = (effKbps * 0.85).toInt() + audioKbps
+                val rawEst = ((totalKbps * 1024L / 8L) * durationSec).toLong()
+                minOf(rawEst, com.veilframe.app.media.whatsapp.WhatsappStatusRateControl.WHATSAPP_STATUS_SIZE_CEILING_BYTES)
             }
             "Discord (25 MB)" -> {
                 val maxAllowedBytes = (24.5 * 1024 * 1024).toLong()
@@ -1225,13 +1237,17 @@ class VideoStudioController(
             Toast.makeText(activity, "Notice: Active transforms require re-encoding. Stream copy promoted to H.264.", Toast.LENGTH_SHORT).show()
         }
 
+        val generation = ++activeGeneration
         binding.layoutVidProgress.visibility = View.VISIBLE
         binding.btnVidExecute.text = "Cancel"
-        syncFloatingDockState()
+        if (::floatingDockController.isInitialized) {
+            floatingDockController.transitionTo(FloatingActionState.PROCESSING)
+        }
 
         compressionJob = scope.launch(Dispatchers.IO) {
             try {
                 var successCount = 0
+                var exportedCount = 0
                 val total = itemsToProcess.size
                 var lastSavedFile: File? = null
                 var totalOriginalBytes = 0L
@@ -1280,7 +1296,8 @@ class VideoStudioController(
                                 "GIF" -> "image/gif"
                                 else -> "video/mp4"
                             }
-                            safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                            val copied = safManager.copyFileToDocumentTree(outFile, destUri, mime)
+                            if (copied != null) exportedCount++
                         }
                     } else {
                         withContext(Dispatchers.Main) {
@@ -1290,6 +1307,7 @@ class VideoStudioController(
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (generation != activeGeneration) return@withContext
                     binding.layoutVidProgress.visibility = View.GONE
                     binding.btnVidExecute.text = "Compress again"
 
@@ -1301,20 +1319,40 @@ class VideoStudioController(
                             (100.0 - (totalCompressedBytes.toDouble() / totalOriginalBytes.toDouble() * 100.0)).toInt().coerceIn(0, 99)
                         } else 0
                         binding.tvVidActualStats.visibility = View.VISIBLE
-                        binding.tvVidActualStats.text = "Processed $successCount of $total videos • Saved $ratio%"
+                        binding.tvVidActualStats.text = "Processed $successCount of $total videos • Exported $exportedCount • Saved $ratio%"
                         binding.layoutVidResultActions.visibility = View.VISIBLE
 
                         val destMsg = if (safManager.videoDestinationUri != null) "\nSaved to: ${safManager.videoDestinationName}" else ""
                         Toast.makeText(activity, "Successfully compressed $successCount video(s)! (-$ratio%)$destMsg", Toast.LENGTH_SHORT).show()
                         ExpressiveMotion.playJellyBounce(binding.btnVidExecute)
                         ExpressiveMotion.playJellyBounce(binding.btnFloatingExecute)
+
+                        if (::floatingDockController.isInitialized) {
+                            floatingDockController.transitionTo(
+                                FloatingActionState.COMPLETED,
+                                actionTitle = "Save Video",
+                                actionIcon = R.drawable.ic_action_save,
+                                secondaryTitle = "Share",
+                                secondaryIcon = R.drawable.ic_action_share
+                            )
+                            if (destUri != null && exportedCount > 0) {
+                                floatingDockController.onSaved()
+                            }
+                        }
                     } else {
                         Toast.makeText(activity, "Video compression failed to produce output", Toast.LENGTH_LONG).show()
+                        if (::floatingDockController.isInitialized) {
+                            floatingDockController.transitionTo(
+                                FloatingActionState.READY,
+                                actionTitle = "Compress Video",
+                                actionIcon = R.drawable.ic_compress
+                            )
+                        }
                     }
-                    syncFloatingDockState()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (generation != activeGeneration) return@withContext
                     binding.layoutVidProgress.visibility = View.GONE
                     binding.btnVidExecute.text = "Compress"
                     Toast.makeText(activity, "Video compression error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1325,6 +1363,7 @@ class VideoStudioController(
     }
 
     fun clear() {
+        activeGeneration++
         loadToken.incrementAndGet()
         selectedMediaList.forEach { it.thumbnailBitmap?.recycle() }
         selectedMediaList.clear()
@@ -1395,6 +1434,9 @@ class VideoStudioController(
         editState.reset()
         applyAspectRatioPreview()
         updateEditSummary()
+        if (::floatingDockController.isInitialized) {
+            floatingDockController.transitionTo(FloatingActionState.EMPTY)
+        }
     }
 
     // Tool Dialogs

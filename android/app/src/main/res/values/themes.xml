@@ -54,4 +54,62 @@
     <style name="ShapeAppearance.VeilFrame.Pill" parent="ShapeAppearance.Material3.Corner.Full">
         <item name="cornerSize">50%</item>
     </style>
+
+    <!-- AMOLED True Black Overlay (meaningful only in night mode, but defined for consistency) -->
+    <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="colorSurface">#000000</item>
+        <item name="colorSurfaceVariant">#0A0A0C</item>
+        <item name="colorOnSurface">@color/vf_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+
+    <!-- Palette Overlays (Light variants) -->
+    <style name="ThemeOverlay.VeilFrame.Palette.Monochrome" parent="">
+        <item name="colorPrimary">@color/vf_primary</item>
+        <item name="colorOnPrimary">@color/vf_on_primary</item>
+        <item name="colorPrimaryContainer">@color/vf_primary_container</item>
+        <item name="colorSecondary">@color/vf_secondary</item>
+        <item name="colorOnSecondary">@color/vf_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/vf_secondary_container</item>
+    </style>
+
+    <style name="ThemeOverlay.VeilFrame.Palette.Sage" parent="">
+        <item name="colorPrimary">#2E7D32</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#C8E6C9</item>
+        <item name="colorSecondary">#388E3C</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#C8E6C9</item>
+    </style>
+
+    <style name="ThemeOverlay.VeilFrame.Palette.Ocean" parent="">
+        <item name="colorPrimary">#1976D2</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#BBDEFB</item>
+        <item name="colorSecondary">#1E88E5</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#BBDEFB</item>
+    </style>
+
+    <style name="ThemeOverlay.VeilFrame.Palette.Amber" parent="">
+        <item name="colorPrimary">#D97706</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#FDE68A</item>
+        <item name="colorSecondary">#F59E0B</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#FDE68A</item>
+    </style>
+
+    <style name="ThemeOverlay.VeilFrame.Palette.Violet" parent="">
+        <item name="colorPrimary">#7C3AED</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#DDD6FE</item>
+        <item name="colorSecondary">#8B5CF6</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#DDD6FE</item>
+    </style>
 </resources>
+

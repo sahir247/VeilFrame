@@ -10,7 +10,37 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.7 CURRENT (Production Release)
+### v2.2.8 CURRENT (Production Release)
+- **Theming Architecture & Dynamic Color Lifecycle**:
+  - Per-Activity theme lifecycle in `Activity.onCreate` before `setContentView()`, eliminating UI flicker.
+  - Strict AMOLED Dark `#000000` surface themes, status/navigation bars, and high-contrast variant `#0A0A0C`.
+  - Palette styles (`Monochrome`, `Forest Sage`, `Deep Ocean`, `Warm Amber`, `Cyber Violet`) active when Dynamic Color is disabled, seamless Monet Dynamic Color overlay when enabled.
+- **WhatsApp Video Rate Control & Canonical Geometry**:
+  - Non-negotiable 16 MiB size ceiling with iterative dynamic retry loop (up to 2 passes with safety factor `0.92`).
+  - Stage 1 trim verification (`allowedError = maxOf(0.5, requestedDuration * 0.05)`) with automatic fallback to Stage 2 single-pass transcode trim.
+  - Bounded DAR validator with 3% tolerance and strict even dimension invariant `(dimension / 2) * 2`.
+  - Cancellable non-blocking FFmpeg execution via `suspendCancellableCoroutine`.
+  - Source geometry, SAR, and rotation capture via `WhatsappStatusMediaAnalyzer`.
+- **Floating Action Dock State Machine & Generation Token Guard**:
+  - Unified 4-stage reactive controller (`EMPTY` $\to$ `READY` $\to$ `PROCESSING` $\to$ `COMPLETED`) across all tool docks.
+  - Generation token guard (`activeGeneration`) preventing asynchronous race conditions on media switching.
+  - Floating Material card styling with 28dp rounded corners, 10dp elevation, and navigation bar inset responsiveness.
+  - Separate reporting of processed items versus successfully exported files.
+- **Image Studio TransformPlan & Memory Lifecycle**:
+  - Authoritative `ImageTransformPlan` unifying preview, probe estimation, and export parameters.
+  - Passport 600×600 px preset enforcement with strict 1:1 cropping and document export sizing.
+  - Empirical probe encoding for honest pre-export file size estimation.
+  - Explicit bitmap memory lifecycle management with intermediate preview and result bitmap recycling.
+- **Publisher Security & Certificate Verification**:
+  - Dual publisher certificate verification in `AppUpdateManager` supporting installed app signature matching or pinned release certificate fallback.
+- **AI Model Registry & Device-Bound Performance Cache**:
+  - Reclassified experimental SOTA models lacking verified checksums to `DeploymentStatus.ANDROID_EXPERIMENTAL`.
+  - Introduced typed `ModelRuntimeSpec` validating tensor dimension multiples, scale factors, channel formats, and opset requirements.
+  - Device-bound performance caching binding benchmarks to specific SoC hardware architectures (`Build.HARDWARE`).
+- **Foreground Service Job Tracking & Android 15 Support**:
+  - `VeilFrameProcessingService` with structured `ProcessingJob` tracking (`activeJob`), failure propagation, and API 35 `onTimeout()` lifecycle handling.
+
+### v2.2.7 (Previous Release)
 - **WhatsApp Status Bounded Resolution Architecture**:
   - Decoupled resolution scaling from forced 9:16 aspect ratio: HD (1280×720) and FHD (1920×1080) bounded limits.
   - Deterministic DAR preservation for Original aspect mode across all standard ratios without cropping or distortion.

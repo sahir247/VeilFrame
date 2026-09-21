@@ -249,4 +249,107 @@ class WhatsappStatusPipelineTest {
         assertTrue(joined.contains("-r 29.97"))
         assertTrue(joined.contains("-movflags +faststart"))
     }
+
+    @Test
+    fun test16MibSizeCeilingAndRateControl() {
+        val ceilingBytes = WhatsappStatusRateControl.WHATSAPP_STATUS_SIZE_CEILING_BYTES
+        assertEquals(16L * 1024L * 1024L, ceilingBytes)
+
+        val ceilingKbps30s = WhatsappStatusRateControl.sizeCeilingKbps(30.0)
+        assertTrue(ceilingKbps30s in 4000..4500)
+
+        val effectiveHd = WhatsappStatusRateControl.effectiveMaxRate(WhatsappStatusResolution.HD_720P, 30.0)
+        assertEquals(1900, effectiveHd)
+
+        val retryRate = WhatsappStatusRateControl.retryRate(1900, 18L * 1024 * 1024)
+        assertTrue(retryRate < 1900)
+        assertTrue(retryRate >= 100)
+    }
+
+    @Test
+    fun testAspectRatioResolver() {
+        val spec169 = AspectRatioResolver.resolve(1920, 1080)
+        assertEquals(16, spec169.numerator)
+        assertEquals(9, spec169.denominator)
+        assertFalse(spec169.isPortrait)
+
+        val spec916 = AspectRatioResolver.resolve(1080, 1920)
+        assertEquals(9, spec916.numerator)
+        assertEquals(16, spec916.denominator)
+        assertTrue(spec916.isPortrait)
+
+        val spec11 = AspectRatioResolver.resolve(720, 720)
+        assertEquals(1, spec11.numerator)
+        assertEquals(1, spec11.denominator)
+
+        val specSar = AspectRatioResolver.resolve(1440, 1080, sarNum = 4, sarDen = 3)
+        assertEquals(16, specSar.numerator)
+        assertEquals(9, specSar.denominator)
+    }
+
+    @Test
+    fun testOutputValidatorBoundedDarAndSizeCeiling() {
+        val spec = WhatsappStatusValidationSpec(
+            expectedWidth = 1280,
+            expectedHeight = 720,
+            targetAspect = "Original",
+            sourceWidth = 1920,
+            sourceHeight = 1080,
+            maxSizeBytes = WhatsappStatusRateControl.WHATSAPP_STATUS_SIZE_CEILING_BYTES
+        )
+
+        val validResult = WhatsappStatusOutputValidator.validate(
+            actualWidth = 1280,
+            actualHeight = 720,
+            fileSizeBytes = 10L * 1024 * 1024,
+            spec = spec
+        )
+        assertTrue(validResult.isValid)
+
+        val oversizedResult = WhatsappStatusOutputValidator.validate(
+            actualWidth = 1280,
+            actualHeight = 720,
+            fileSizeBytes = 17L * 1024 * 1024,
+            spec = spec
+        )
+        assertFalse(oversizedResult.isValid)
+        assertTrue(oversizedResult.error?.contains("exceeds 16 MiB") == true)
+
+        val oddResult = WhatsappStatusOutputValidator.validate(
+            actualWidth = 1281,
+            actualHeight = 720,
+            fileSizeBytes = 5L * 1024 * 1024,
+            spec = spec
+        )
+        assertFalse(oddResult.isValid)
+
+        val distortedResult = WhatsappStatusOutputValidator.validate(
+            actualWidth = 1000,
+            actualHeight = 720,
+            fileSizeBytes = 5L * 1024 * 1024,
+            spec = spec
+        )
+        assertFalse(distortedResult.isValid)
+    }
+
+    @Test
+    fun testStage2FallbackTrimArguments() {
+        val temp = File("input.mp4")
+        val out = File("out.mp4")
+        val filter = "scale=1280:720,format=yuv420p[vout]"
+
+        val args = WhatsappStatusCommandBuilder.buildStage2Arguments(
+            tempIntermediateFile = temp,
+            outFile = out,
+            filterGraph = filter,
+            baseMaxRateKbps = 1900,
+            bufSizeKbps = 1900,
+            trimStartSec = 3.0,
+            trimDurationSec = 15.0
+        )
+
+        val joined = args.joinToString(" ")
+        assertTrue(joined.contains("-ss 3.000"))
+        assertTrue(joined.contains("-t 15.000"))
+    }
 }

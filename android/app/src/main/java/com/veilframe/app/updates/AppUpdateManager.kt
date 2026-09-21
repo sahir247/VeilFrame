@@ -313,23 +313,26 @@ class AppUpdateManager(
         val isDebugBuild = (activity.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
         if (!isDebugBuild) {
-            // Mandatory Production Trust Anchor: APK MUST be signed by the hard-coded pinned production certificate
+            // Trust Anchor: APK must be signed by EITHER the pinned production certificate OR the installed app certificate
             val normalizedPinned = PINNED_PRODUCTION_CERT_SHA256.lowercase(Locale.ROOT).trim()
-            val matchesPinned = archiveCerts.any { it.equals(normalizedPinned, ignoreCase = true) }
-            if (!matchesPinned) {
-                return "Publisher certificate mismatch! Downloaded APK is not signed by the pinned VeilFrame production certificate."
+            val matchesPinned = normalizedPinned.isNotEmpty() && archiveCerts.any { it.equals(normalizedPinned, ignoreCase = true) }
+            val matchesInstalled = installedCerts.isNotEmpty() && installedCerts.intersect(archiveCerts).isNotEmpty()
+
+            if (!matchesPinned && !matchesInstalled) {
+                return "Publisher certificate mismatch! Downloaded APK is not signed by the pinned VeilFrame production certificate or installed application key."
+            }
+
+            // Secondary: ensure archive cert matches installed cert to prevent INSTALL_FAILED_UPDATE_INCOMPATIBLE
+            if (installedCerts.isNotEmpty() && !matchesInstalled) {
+                return "Package signature mismatch: The update signature does not match the currently installed app certificate."
             }
         }
 
-        // Compatibility check with installed app certificate (prevents Android OS INSTALL_FAILED_UPDATE_INCOMPATIBLE)
-        if (installedCerts.isNotEmpty()) {
+        // Debug build compatibility check
+        if (isDebugBuild && installedCerts.isNotEmpty()) {
             val match = installedCerts.intersect(archiveCerts)
             if (match.isEmpty()) {
-                if (isDebugBuild) {
-                    onLog("[SEC] Debug build: Installed debug cert ($installedCerts) differs from archive cert ($archiveCerts). Allowing OS installer to mediate.")
-                } else {
-                    return "Package signature mismatch: The update signature does not match the currently installed app certificate."
-                }
+                onLog("[SEC] Debug build: Installed debug cert ($installedCerts) differs from archive cert ($archiveCerts). Allowing OS installer to mediate.")
             }
         }
 

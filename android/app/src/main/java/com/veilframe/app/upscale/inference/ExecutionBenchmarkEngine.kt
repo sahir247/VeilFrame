@@ -59,8 +59,12 @@ class ExecutionBenchmarkEngine(
         val peakMemoryBytes: Long,
         val queueContentionDetected: Boolean,
         val isSuccessful: Boolean,
-        val error: String? = null
-    )
+        val error: String? = null,
+        val scalingEfficiency: Double = 1.0
+    ) {
+        val effectiveParallelism: Double
+            get() = profile.workers * scalingEfficiency
+    }
 
     data class BenchmarkBudget(
         val minSamples: Int = 1,
@@ -259,6 +263,9 @@ class ExecutionBenchmarkEngine(
             // If running with multiple workers takes noticeably longer wall-clock time than 1 worker would,
             // or if average tile latency explodes by > 1.8x, the accelerator queue is serialized.
             val contention = workers > 1 && (medianWallClock > avgTileMs * 1.5)
+            val singleTileIdealMs = (avgTileMs * count).coerceAtLeast(1L)
+            val measuredSpeedup = singleTileIdealMs.toDouble() / medianWallClock.toDouble()
+            val efficiency = (measuredSpeedup / workers.toDouble()).coerceIn(0.1, 1.0)
 
             return BenchmarkResult(
                 profile = profile,
@@ -268,7 +275,8 @@ class ExecutionBenchmarkEngine(
                 throughputMpPerSec = throughput,
                 peakMemoryBytes = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()).coerceAtLeast(0L),
                 queueContentionDetected = contention,
-                isSuccessful = true
+                isSuccessful = true,
+                scalingEfficiency = efficiency
             )
         } catch (t: Throwable) {
             val elapsed = SystemClock.elapsedRealtime() - wallClockStart

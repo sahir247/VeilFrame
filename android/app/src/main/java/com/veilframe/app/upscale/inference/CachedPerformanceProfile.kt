@@ -16,6 +16,7 @@ data class PerformanceProfileKey(
     val modelId: String,
     val modelHash: String = "",
     val modelScale: Int,
+    val socHardware: String = "",
     val benchmarkVersion: Int = CURRENT_BENCHMARK_VERSION
 ) {
     companion object {
@@ -41,6 +42,7 @@ data class PerformanceProfileKey(
                 modelId = modelId,
                 modelHash = modelHash,
                 modelScale = modelScale,
+                socHardware = device.hardware,
                 benchmarkVersion = CURRENT_BENCHMARK_VERSION
             )
         }
@@ -48,7 +50,8 @@ data class PerformanceProfileKey(
 
     fun toKeyString(): String {
         val hashPart = if (modelHash.isNotEmpty()) "_h${modelHash.take(8)}" else ""
-        return "${deviceModel.replace(' ', '_')}_api${androidApi}_${abi}_ort${ortVersion}_pb${providerBuildId}_pc${providerConfigurationId}_${modelId}${hashPart}_scale${modelScale}_v${benchmarkVersion}"
+        val socPart = if (socHardware.isNotEmpty() && socHardware != "Unknown") "_soc${socHardware.replace(' ', '_')}" else ""
+        return "${deviceModel.replace(' ', '_')}${socPart}_api${androidApi}_${abi}_ort${ortVersion}_pb${providerBuildId}_pc${providerConfigurationId}_${modelId}${hashPart}_scale${modelScale}_v${benchmarkVersion}"
     }
 }
 

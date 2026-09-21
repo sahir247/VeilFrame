@@ -172,8 +172,8 @@ if IS_MACOS:
         info_plist={
             'CFBundleDisplayName': 'VeilFrame',
             'CFBundleName': 'VeilFrame',
-            'CFBundleShortVersionString': '2.2.7',
-            'CFBundleVersion': '2.2.7',
+            'CFBundleShortVersionString': '2.2.8',
+            'CFBundleVersion': '2.2.8',
             'NSHumanReadableCopyright': 'MIT License',
             'NSHighResolutionCapable': 'True',
             'LSMinimumSystemVersion': '11.0',

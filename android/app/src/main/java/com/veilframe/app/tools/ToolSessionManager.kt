@@ -607,19 +607,26 @@ class ToolSessionManager(
                 binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
                 binding.btnExecute.isEnabled = true
                 binding.btnExecute.alpha = 1.0f
+                binding.btnExportResult.isEnabled = false
+                binding.btnShareResult.isEnabled = false
             }
             JobState.COMPLETE -> {
                 binding.btnExecute.text = "RUN ANOTHER TASK"
                 binding.btnExecute.setIconResource(R.drawable.ic_action_play)
                 binding.btnExecute.isEnabled = true
                 binding.btnExecute.alpha = 1.0f
+                val hasValidOutput = (state.lastGeneratedFile != null && state.lastGeneratedFile!!.exists())
+                binding.btnExportResult.isEnabled = hasValidOutput
+                binding.btnShareResult.isEnabled = hasValidOutput
             }
             else -> {
+                binding.btnExportResult.isEnabled = false
+                binding.btnShareResult.isEnabled = false
                 if (state.selectedUri == null) {
                     binding.btnExecute.text = "SELECT TARGET TO BEGIN"
                     binding.btnExecute.setIconResource(R.drawable.ic_folder_pick)
-                    binding.btnExecute.isEnabled = false
-                    binding.btnExecute.alpha = 0.5f
+                    binding.btnExecute.isEnabled = true
+                    binding.btnExecute.alpha = 1.0f
                 } else {
                     binding.btnExecute.text = getToolExecuteText(currentToolMode)
                     binding.btnExecute.setIconResource(R.drawable.ic_action_play)

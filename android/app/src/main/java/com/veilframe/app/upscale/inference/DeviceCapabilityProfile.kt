@@ -25,6 +25,7 @@ data class DeviceCapabilityProfile(
     val isQualcommSoc: Boolean = false,
     val supportsXnnpack: Boolean,
     val thermalStatus: Int,
+    val hardware: String = "Unknown",
     // Backward-compatible aliases for legacy callers
     val javaHeapBudget: Long = javaHeapHeadroom,
     val nativeProcessBudget: Long = systemAvailableMemory
@@ -76,7 +77,8 @@ data class DeviceCapabilityProfile(
                 supportsNnapiFp16 = api >= Build.VERSION_CODES.Q,
                 isQualcommSoc = isQcom,
                 supportsXnnpack = false,
-                thermalStatus = thermal
+                thermalStatus = thermal,
+                hardware = Build.HARDWARE ?: "Unknown"
             )
         }
     }

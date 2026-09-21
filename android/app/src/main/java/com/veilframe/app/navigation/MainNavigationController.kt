@@ -99,6 +99,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
 
         if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE) {
@@ -129,6 +130,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.VISIBLE
+        binding.cardCleanerActionDock.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -157,6 +159,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
 
@@ -186,6 +189,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
 
@@ -217,6 +221,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -245,6 +250,7 @@ class MainNavigationController(
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {

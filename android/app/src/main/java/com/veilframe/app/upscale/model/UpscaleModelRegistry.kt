@@ -243,7 +243,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.LIGHTWEIGHT_MOBILE,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "Apache-2.0",
         qualityFocus = "Lightweight Space-Aggregation"
     )
@@ -263,7 +263,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.LIGHTWEIGHT_MOBILE,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "Apache-2.0",
         qualityFocus = "Lightweight Space-Aggregation"
     )
@@ -283,7 +283,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.LIGHTWEIGHT_MOBILE,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "MIT",
         qualityFocus = "Spatially-Adaptive Feature Modulation"
     )
@@ -303,7 +303,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.LIGHTWEIGHT_MOBILE,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "MIT",
         qualityFocus = "Ultra-Fast Adaptive Modulation"
     )
@@ -323,7 +323,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.GENERAL_PHOTO,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "MIT",
         qualityFocus = "Blind Super-Resolution + Denoising"
     )
@@ -343,7 +343,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.LIGHTWEIGHT_MOBILE,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "Apache-2.0",
         qualityFocus = "Efficient Edge Attention"
     )
@@ -363,7 +363,7 @@ object UpscaleModelRegistry {
         genre = ModelGenre.PHOTO_FIDELITY,
         capability = ModelCapability.SUPER_RESOLUTION,
         tier = ModelTier.TIER_A_NATIVE,
-        deploymentStatus = DeploymentStatus.ANDROID_NATIVE,
+        deploymentStatus = DeploymentStatus.ANDROID_EXPERIMENTAL,
         license = "Apache-2.0",
         qualityFocus = "Progressive Frequency Decomposition"
     )

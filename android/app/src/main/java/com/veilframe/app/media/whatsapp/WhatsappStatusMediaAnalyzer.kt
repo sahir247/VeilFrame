@@ -20,7 +20,8 @@ data class WhatsappMediaAnalysis(
     val audioCodec: String?,
     val audioSampleRate: Int?,
     val audioBitrateKbps: Int?,
-    val rotation: Int
+    val rotation: Int,
+    val sampleAspectRatio: String = "1:1"
 )
 
 /**
@@ -44,6 +45,7 @@ object WhatsappStatusMediaAnalyzer {
         var audioSampleRate: Int? = null
         var audioBitrateKbps: Int? = null
         var rotation = 0
+        var sampleAspectRatio = "1:1"
 
         // 1. Attempt FFprobeKit inspection for deep color space and codec details
         try {
@@ -82,6 +84,12 @@ object WhatsappStatusMediaAnalyzer {
                             primaries.contains("bt2020") || space.contains("bt2020")
                         ) {
                             isHdr = true
+                        }
+
+                        // Capture SAR (sample_aspect_ratio)
+                        val sar = stream.getStringProperty("sample_aspect_ratio")
+                        if (!sar.isNullOrBlank() && sar != "0:1" && sar != "N/A") {
+                            sampleAspectRatio = sar
                         }
                     } else if (stream.type == "audio") {
                         hasAudio = true
@@ -137,7 +145,8 @@ object WhatsappStatusMediaAnalyzer {
             audioCodec = audioCodec,
             audioSampleRate = audioSampleRate,
             audioBitrateKbps = audioBitrateKbps,
-            rotation = rotation
+            rotation = rotation,
+            sampleAspectRatio = sampleAspectRatio
         )
     }
 }
