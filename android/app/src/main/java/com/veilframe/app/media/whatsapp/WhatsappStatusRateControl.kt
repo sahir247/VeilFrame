@@ -44,7 +44,7 @@ object WhatsappStatusRateControl {
     fun sizeCeilingKbps(durationSec: Double, audioKbps: Int = WhatsappStatusConstants.AUDIO_BITRATE_KBPS): Int {
         val safeDur = if (durationSec.isNaN() || durationSec <= 0.1) 10.0 else durationSec
         val totalBudgetBits = WHATSAPP_STATUS_SIZE_CEILING_BYTES * 8L
-        val audioBits = audioKbps.toLong() * 1000L * safeDur.toLong()
+        val audioBits = (audioKbps.toDouble() * 1000.0 * safeDur).toLong()
         val availableVideoBits = totalBudgetBits - audioBits - CONTAINER_RESERVE_BITS
         return if (availableVideoBits > 0) {
             (availableVideoBits / (safeDur * 1000.0)).toInt().coerceAtLeast(100)

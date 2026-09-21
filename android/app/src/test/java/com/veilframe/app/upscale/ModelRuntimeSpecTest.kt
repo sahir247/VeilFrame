@@ -65,4 +65,47 @@ class ModelRuntimeSpecTest {
             assertEquals("${model.id} must have ANDROID_NATIVE status", DeploymentStatus.ANDROID_NATIVE, model.deploymentStatus)
         }
     }
+
+    @Test
+    fun testIndependentInputOutputSpecs() {
+        val spec = ModelRuntimeSpec(
+            sha256 = "dummy_sha",
+            scaleFactor = 4,
+            inputColorOrder = ColorOrder.RGB,
+            inputNormalization = NormalizationSpec.ZERO_TO_ONE,
+            outputColorOrder = ColorOrder.BGR,
+            outputRange = com.veilframe.app.upscale.model.OutputRangeSpec.NEG_ONE_TO_ONE
+        )
+        assertEquals(ColorOrder.RGB, spec.inputColorOrder)
+        assertEquals(NormalizationSpec.ZERO_TO_ONE, spec.inputNormalization)
+        assertEquals(ColorOrder.BGR, spec.outputColorOrder)
+        assertEquals(com.veilframe.app.upscale.model.OutputRangeSpec.NEG_ONE_TO_ONE, spec.outputRange)
+    }
+
+    @Test
+    fun testUpscaleModelToRuntimeSpecConversion() {
+        val model = UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X
+        val spec = model.toRuntimeSpec()
+        assertEquals(4, spec.scaleFactor)
+        assertEquals(3, spec.inputChannels)
+        assertEquals(3, spec.outputChannels)
+        assertEquals(ColorOrder.RGB, spec.inputColorOrder)
+        assertEquals(NormalizationSpec.ZERO_TO_ONE, spec.inputNormalization)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun testToRuntimeSpecRejectsUnsupportedInputChannelOrder() {
+        val badModel = UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X.copy(
+            inputChannelOrder = "YUV"
+        )
+        badModel.toRuntimeSpec()
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun testToRuntimeSpecRejectsUnsupportedNormalization() {
+        val badModel = UpscaleModelRegistry.REAL_ESRGAN_GENERAL_4X.copy(
+            inputNormalizationRange = "INVALID_RANGE"
+        )
+        badModel.toRuntimeSpec()
+    }
 }

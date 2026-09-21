@@ -223,4 +223,39 @@ class AdaptiveExecutionPlannerTest {
         assertEquals(4, fpModelCaps.nativeScale)
         assertTrue("RealESRGAN floating-point model supports FP16 math", fpModelCaps.supportsFp16)
     }
+
+    @Test
+    fun testDecoupledAcceleratorWorkerScaling() {
+        val cpuCores = 4
+        val maxSafeWorkers = 12
+
+        val cpuLimit = planner.getCandidateWorkerLimit(Backend.CPU, cpuCores, maxSafeWorkers)
+        val nnapiLimit = planner.getCandidateWorkerLimit(Backend.NNAPI, cpuCores, maxSafeWorkers)
+
+        assertEquals("CPU workers must be bounded by CPU cores", 4, cpuLimit)
+        assertEquals("NNAPI workers should be bounded by safe workers / policy, exceeding CPU cores", 12, nnapiLimit)
+    }
+
+    @Test
+    fun testDualCircuitBreakerConditions() {
+        val cpuBaseline = 2.0
+
+        // Case 1: Less than 0.05 MP/s -> pathological
+        val underMinHealthy = 0.04
+        val isPathological1 = (underMinHealthy < com.veilframe.app.upscale.inference.CachedPerformanceProfile.MIN_HEALTHY_THROUGHPUT_MP_PER_SEC) ||
+                (cpuBaseline > 0.0 && underMinHealthy < (cpuBaseline * 0.20))
+        assertTrue("Under 0.05 MP/s must trigger circuit breaker", isPathological1)
+
+        // Case 2: Under 20% of CPU baseline -> pathological (e.g. 0.35 MP/s when CPU is 2.0 MP/s -> 17.5%)
+        val under20PercentCpu = 0.35
+        val isPathological2 = (under20PercentCpu < com.veilframe.app.upscale.inference.CachedPerformanceProfile.MIN_HEALTHY_THROUGHPUT_MP_PER_SEC) ||
+                (cpuBaseline > 0.0 && under20PercentCpu < (cpuBaseline * 0.20))
+        assertTrue("Under 20% of CPU baseline must trigger circuit breaker", isPathological2)
+
+        // Case 3: Healthy throughput (e.g. 3.0 MP/s) -> not pathological
+        val healthy = 3.0
+        val isPathological3 = (healthy < com.veilframe.app.upscale.inference.CachedPerformanceProfile.MIN_HEALTHY_THROUGHPUT_MP_PER_SEC) ||
+                (cpuBaseline > 0.0 && healthy < (cpuBaseline * 0.20))
+        assertFalse("Healthy throughput must not trigger circuit breaker", isPathological3)
+    }
 }

@@ -352,4 +352,40 @@ class WhatsappStatusPipelineTest {
         assertTrue(joined.contains("-ss 3.000"))
         assertTrue(joined.contains("-t 15.000"))
     }
+
+    @Test
+    fun testSarGeometryAdjustment() {
+        // Anamorphic video: 1440x1080 stored with SAR 4:3 (display DAR 16:9 -> 1920x1080)
+        val filterWithSar = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
+            resolution = WhatsappStatusResolution.HD_720P,
+            srcWidth = 1440,
+            srcHeight = 1080,
+            aspect = "Original",
+            sar = 4.0 / 3.0
+        )
+        // With SAR 4:3, display width is 1920, so HD 720p Original bounds scale to 1280x720
+        assertTrue("Filter should scale to 1280:720 with SAR 4:3", filterWithSar.contains("scale=1280:720"))
+        assertTrue(filterWithSar.contains("setsar=1"))
+
+        // Without SAR adjustment (square 1:1 pixels), 1440x1080 remains 4:3 and scales to 960x720
+        val filterWithoutSar = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
+            resolution = WhatsappStatusResolution.HD_720P,
+            srcWidth = 1440,
+            srcHeight = 1080,
+            aspect = "Original",
+            sar = 1.0
+        )
+        assertTrue("Filter should scale to 960:720 with SAR 1.0", filterWithoutSar.contains("scale=960:720"))
+    }
+
+    @Test
+    fun testAudioBitsDoublePrecision() {
+        // Test with fractional duration to verify floating-point accuracy
+        val ceiling14_5 = WhatsappStatusRateControl.sizeCeilingKbps(14.5, audioKbps = 128)
+        val ceiling30_0 = WhatsappStatusRateControl.sizeCeilingKbps(30.0, audioKbps = 128)
+
+        assertTrue(ceiling14_5 > ceiling30_0)
+        assertTrue(ceiling14_5 > 8000)
+        assertTrue(ceiling30_0 in 4000..4500)
+    }
 }

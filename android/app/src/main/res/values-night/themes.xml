@@ -58,4 +58,8 @@
         <item name="colorOnSecondary">#1A0E33</item>
         <item name="colorSecondaryContainer">#2E1A5C</item>
     </style>
+
+    <style name="Widget.VeilFrame.LinearProgressIndicator" parent="Widget.Material3.LinearProgressIndicator">
+        <item name="trackCornerRadius">8dp</item>
+    </style>
 </resources>

@@ -111,5 +111,9 @@
         <item name="colorOnSecondary">#FFFFFF</item>
         <item name="colorSecondaryContainer">#DDD6FE</item>
     </style>
+
+    <style name="Widget.VeilFrame.LinearProgressIndicator" parent="Widget.Material3.LinearProgressIndicator">
+        <item name="trackCornerRadius">8dp</item>
+    </style>
 </resources>
 

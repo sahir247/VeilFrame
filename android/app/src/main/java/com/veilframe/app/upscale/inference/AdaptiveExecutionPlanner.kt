@@ -44,16 +44,33 @@ class AdaptiveExecutionPlanner(
 
     companion object {
         private const val TAG = "VeilFrame.AdaptivePlanner"
-        private const val BENCHMARK_VERSION = 2
-        const val DEFAULT_BENCHMARK_SEARCH_LIMIT = 16
+        private const val BENCHMARK_VERSION = 3
+        const val DEFAULT_BENCHMARK_SEARCH_LIMIT = 12
+        const val DEFAULT_NNAPI_POLICY_LIMIT = 16
     }
+
+    var benchmarkSearchLimit: Int = defaultBenchmarkSearchLimit
+    var nnapiPolicyLimit: Int = DEFAULT_NNAPI_POLICY_LIMIT
 
     private var lastThrottleTimestamp: Long = 0L
     private var lastObservedThermalStatus: Int = PowerManager.THERMAL_STATUS_NONE
     private var stableCoolSampleCount: Int = 0
 
+    fun getCandidateWorkerLimit(backend: Backend, cpuCores: Int, maxSafeWorkers: Int): Int {
+        return when (backend) {
+            Backend.CPU, Backend.XNNPACK -> minOf(cpuCores, maxSafeWorkers, benchmarkSearchLimit)
+            Backend.NNAPI -> minOf(nnapiPolicyLimit, maxSafeWorkers, benchmarkSearchLimit)
+        }
+    }
+
     /**
      * Resolves the optimal execution profile for the given device, model, and image dimensions.
+     * Implements the 4-stage hardware-aware calibration flow:
+     * - Stage 1: CPU coupled thread topology search & baseline
+     * - Stage 2: Candidate-specific NNAPI probing & layout exploration
+     * - Stage 3: Progressive worker scaling on surviving configuration
+     * - Stage 4: Duration-based sustained burst (12s / min 4 tiles) & natural image validation
+     * - Dual circuit breaker preventing pathological throughput caching
      */
     fun planExecution(
         context: Context,
@@ -66,7 +83,8 @@ class AdaptiveExecutionPlanner(
         deviceProfile: DeviceCapabilityProfile = DeviceCapabilityProfile.probe(context),
         modelCapabilities: ModelExecutionCapabilities = ModelExecutionCapabilities(nativeScale = targetScale.coerceIn(2, 4)),
         modelHash: String = "",
-        benchmarkSearchLimitOverride: Int? = null
+        benchmarkSearchLimitOverride: Int? = null,
+        runtimeSpec: com.veilframe.app.upscale.model.ModelRuntimeSpec? = null
     ): ExecutionProfile {
         // 1. Separate Java vs Native memory domain budgets
         val memPlan = UpscaleMemoryPlanner.plan(
@@ -99,31 +117,10 @@ class AdaptiveExecutionPlanner(
         val tilesY = (sourceHeight + defaultTileSize - 1) / defaultTileSize
         val totalTiles = (tilesX * tilesY).coerceAtLeast(1)
 
-        // Progressive Accelerator Concurrency Without CPU-Core Capping:
-        // candidateWorkerUpperBound = min(memorySafeWorkers, providerConcurrencyConstraint, eligibleTileCount, benchmarkSearchLimit)
-        // - benchmarkSearchLimit: maximum worker count calibration will search during this run (calibration policy ceiling).
-        //   Raising it later discovers higher concurrency without code changes.
-        // - providerConcurrencyConstraint: documented upper bound for the selected EP/runtime.
-        //   CPU/XNNPACK are bounded by physical core count; NNAPI documents a maximum of 8 concurrent
-        //   sessions; AUTO leaves no artificial ceiling beyond benchmarkSearchLimit.
-        // - maxSafeWorkers (memorySafetyBound): conservative estimated safety bound derived from observed process
-        //   memory during execution.
-        val benchmarkSearchLimit = benchmarkSearchLimitOverride ?: defaultBenchmarkSearchLimit
-        val providerConcurrencyConstraint = when (userMode) {
-            InferenceAccelerationMode.CPU -> deviceProfile.cpuCores
-            InferenceAccelerationMode.XNNPACK -> deviceProfile.cpuCores
-            InferenceAccelerationMode.NNAPI -> 8
-            InferenceAccelerationMode.AUTO -> 8
-        }
+        val activeSearchLimit = benchmarkSearchLimitOverride ?: benchmarkSearchLimit
+        this.benchmarkSearchLimit = activeSearchLimit
 
-        val candidateWorkerUpperBound = minOf(
-            maxSafeWorkers,
-            providerConcurrencyConstraint,
-            totalTiles,
-            benchmarkSearchLimit
-        ).coerceAtLeast(1)
-
-        // Zero-worker memory safety check: if memory is insufficient for even 1 tile, reject or fall back to minimal footprint
+        // Zero-worker memory safety check
         if (maxSafeWorkers == 0) {
             Log.w(TAG, "Memory budget insufficient for even 1 tile worker (maxSafeWorkers=0). Returning safe minimal CPU single worker.")
             return ExecutionProfile(
@@ -137,18 +134,16 @@ class AdaptiveExecutionPlanner(
             )
         }
 
-        // 3. Generate cache key with modern ORT version, specific provider configuration ID, and model hash
-        val providerConfigId = "default"
+        // 3. Check persistent Level 1 cache
         val cacheKey = PerformanceProfileKey.forDeviceAndModel(
             device = deviceProfile,
             modelId = modelId,
             modelScale = targetScale,
             ortVersion = "1.27.0",
-            providerConfigurationId = providerConfigId,
+            providerConfigurationId = "default",
             modelHash = modelHash
         )
 
-        // Check persistent cache
         val cached = CachedPerformanceProfile.load(context, cacheKey)
         if (cached != null) {
             val cachedProfile = cached.executionProfile
@@ -158,72 +153,316 @@ class AdaptiveExecutionPlanner(
                 InferenceAccelerationMode.CPU -> cachedProfile.backend == Backend.CPU
                 InferenceAccelerationMode.XNNPACK -> cachedProfile.backend == Backend.XNNPACK
             }
-            if (modeMatches && cachedProfile.workers <= maxSafeWorkers) {
+            if (modeMatches && cachedProfile.workers <= maxSafeWorkers && !cached.isPathological) {
                 Log.i(TAG, "Using cached execution profile: $cachedProfile (${cached.measuredMpPerSecond} MP/s, confidence=${cached.confidence})")
                 return cachedProfile
             }
         }
 
-        // 4. Generate backend-specific candidate profiles
-        val candidates = generateBackendCandidates(
-            userMode = userMode,
-            deviceProfile = deviceProfile,
-            modelCapabilities = modelCapabilities,
-            tileSize = defaultTileSize,
-            overlap = overlap,
-            maxSafeWorkers = candidateWorkerUpperBound
-        )
+        // 4. Calibration Flow
+        // --- STAGE 1: CPU Baseline with Coupled Thread Topologies & OptLevel ---
+        val cpuWorkerLimit = getCandidateWorkerLimit(Backend.CPU, deviceProfile.cpuCores, maxSafeWorkers)
+        val cores = deviceProfile.cpuCores
+        val threadWorkerPairs = when {
+            cores >= 8 -> listOf(1 to cores, 2 to 4, 4 to 2, 8 to 1)
+            cores >= 6 -> listOf(1 to cores, 2 to 3, 3 to 2)
+            cores >= 4 -> listOf(1 to cores, 2 to 2)
+            cores >= 2 -> listOf(1 to 2)
+            else -> listOf(1 to 1)
+        }
 
-        if (candidates.isEmpty()) {
-            Log.w(TAG, "No specialized candidates found, falling back to safe CPU single worker")
-            return ExecutionProfile(
+        val cpuCandidates = mutableListOf<ExecutionProfile>()
+        for ((workers, threads) in threadWorkerPairs) {
+            if (workers <= cpuWorkerLimit) {
+                listOf(
+                    ai.onnxruntime.OrtSession.SessionOptions.OptLevel.BASIC_OPT,
+                    ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT
+                ).forEach { opt ->
+                    cpuCandidates.add(
+                        ExecutionProfile(
+                            backend = Backend.CPU,
+                            precision = InferencePrecisionMode.DEFAULT,
+                            workers = workers,
+                            intraOpThreads = threads,
+                            interOpThreads = 1,
+                            tileSize = defaultTileSize,
+                            overlap = overlap,
+                            sessionStrategy = SessionStrategy.SHARED_SESSION,
+                            optLevel = opt
+                        )
+                    )
+                }
+            }
+        }
+
+        var cpuBaselineMpPerSec = 0.0
+        var bestCpuProfile: ExecutionProfile? = null
+        var bestCpuResult: ExecutionBenchmarkEngine.BenchmarkResult? = null
+
+        for (cand in cpuCandidates) {
+            val res = if (cand.workers == 1) {
+                benchmarkEngine.benchmarkSingleTile(cand, modelFile, runtimeSpec = runtimeSpec)
+            } else {
+                benchmarkEngine.benchmarkConcurrency(cand, modelFile, tileCount = cand.workers * 2, runtimeSpec = runtimeSpec)
+            }
+            if (res.isSuccessful && res.throughputMpPerSec > cpuBaselineMpPerSec) {
+                cpuBaselineMpPerSec = res.throughputMpPerSec
+                bestCpuProfile = cand
+                bestCpuResult = res
+            }
+        }
+
+        if (bestCpuProfile == null) {
+            bestCpuProfile = ExecutionProfile(
                 backend = Backend.CPU,
                 precision = InferencePrecisionMode.DEFAULT,
                 workers = 1,
-                intraOpThreads = 2,
+                intraOpThreads = OnnxSessionFactory.calculateCpuThreads(),
                 interOpThreads = 1,
                 tileSize = defaultTileSize,
                 overlap = overlap
             )
         }
 
-        if (candidates.size == 1) {
-            return candidates.first()
+        // --- STAGE 2: Candidate-Specific NNAPI Probing & Layout Exploration ---
+        var bestNnapiProfile: ExecutionProfile? = null
+        var bestNnapiResult: ExecutionBenchmarkEngine.BenchmarkResult? = null
+        val evaluateNnapi = (userMode == InferenceAccelerationMode.AUTO || userMode == InferenceAccelerationMode.NNAPI) && deviceProfile.supportsNnapi
+
+        if (evaluateNnapi) {
+            val canAttemptNnapi = try {
+                android.os.Build.VERSION.SDK_INT >= 27
+            } catch (_: Throwable) {
+                false
+            }
+            if (canAttemptNnapi) {
+                data class NnapiOption(val prec: InferencePrecisionMode, val nchw: Boolean)
+                val nnapiOptions = mutableListOf<NnapiOption>()
+                nnapiOptions.add(NnapiOption(InferencePrecisionMode.DEFAULT, false))
+                if (deviceProfile.supportsNnapiFp16 && modelCapabilities.supportsFp16) {
+                    nnapiOptions.add(NnapiOption(InferencePrecisionMode.FP16_RELAXED, false))
+                }
+                val supportsApi29 = try { android.os.Build.VERSION.SDK_INT >= 29 } catch (_: Throwable) { false }
+                if (supportsApi29) {
+                    nnapiOptions.add(NnapiOption(InferencePrecisionMode.DEFAULT, true))
+                    if (deviceProfile.supportsNnapiFp16 && modelCapabilities.supportsFp16) {
+                        nnapiOptions.add(NnapiOption(InferencePrecisionMode.FP16_RELAXED, true))
+                    }
+                }
+
+                val env = try { ai.onnxruntime.OrtEnvironment.getEnvironment() } catch (_: Throwable) { null }
+                val survivingNnapiCandidates = mutableListOf<Pair<ExecutionProfile, ExecutionBenchmarkEngine.BenchmarkResult>>()
+
+                for (opt in nnapiOptions) {
+                    val coverage = if (env != null && modelFile.exists() && modelFile.length() > 0L) {
+                        OnnxSessionFactory.probeNnapiCoverage(env, modelFile, opt.prec, opt.nchw)
+                    } else {
+                        NnapiExecutionCoverage.FULL_NNAPI_NO_CPU_FALLBACK
+                    }
+
+                    if (coverage == NnapiExecutionCoverage.UNAVAILABLE) {
+                        Log.i(TAG, "Excluding NNAPI candidate (coverage UNAVAILABLE): prec=${opt.prec}, nchw=${opt.nchw}")
+                        continue
+                    }
+
+                    val candidateProfile = ExecutionProfile(
+                        backend = Backend.NNAPI,
+                        precision = opt.prec,
+                        workers = 1,
+                        intraOpThreads = null,
+                        interOpThreads = null,
+                        tileSize = defaultTileSize,
+                        overlap = overlap,
+                        sessionStrategy = SessionStrategy.SHARED_SESSION,
+                        acceleratorConfiguration = AcceleratorConfiguration(
+                            nnapiUseNchw = opt.nchw,
+                            useFp16 = (opt.prec == InferencePrecisionMode.FP16_RELAXED)
+                        )
+                    )
+
+                    val benchRes = benchmarkEngine.benchmarkSingleTile(candidateProfile, modelFile, runtimeSpec = runtimeSpec)
+                    if (benchRes.isSuccessful) {
+                        // Sanity gate: If throughput <= 1.25x CPU baseline, reject candidate as degenerate fallback
+                        if (cpuBaselineMpPerSec > 0.0 && benchRes.throughputMpPerSec <= cpuBaselineMpPerSec * 1.25) {
+                            Log.w(TAG, "NNAPI candidate rejected by sanity gate: ${benchRes.throughputMpPerSec} MP/s <= 1.25x CPU baseline (${cpuBaselineMpPerSec} MP/s)")
+                            if (userMode == InferenceAccelerationMode.NNAPI) {
+                                survivingNnapiCandidates.add(candidateProfile to benchRes)
+                            }
+                        } else {
+                            survivingNnapiCandidates.add(candidateProfile to benchRes)
+                        }
+                    }
+                }
+
+                if (survivingNnapiCandidates.isNotEmpty()) {
+                    val best = survivingNnapiCandidates.maxByOrNull { it.second.throughputMpPerSec }
+                    if (best != null) {
+                        bestNnapiProfile = best.first
+                        bestNnapiResult = best.second
+                    }
+                }
+            }
         }
 
-        // 5. Staged Benchmarking & Progressive Worker Scaling
-        val (bestProfile, benchmarkResult) = runStagedBenchmarkWithProgressiveScaling(
-            candidates = candidates,
-            modelFile = modelFile,
-            candidateWorkerUpperBound = candidateWorkerUpperBound,
-            totalTiles = totalTiles
+        // --- STAGE 3: Progressive Worker Scaling on Surviving Configuration ---
+        val winningBaseProfile: ExecutionProfile
+        val winningBaseResult: ExecutionBenchmarkEngine.BenchmarkResult?
+
+        if (userMode == InferenceAccelerationMode.CPU) {
+            winningBaseProfile = bestCpuProfile
+            winningBaseResult = bestCpuResult
+        } else if (bestNnapiProfile != null && (userMode == InferenceAccelerationMode.NNAPI || (bestNnapiResult?.throughputMpPerSec ?: 0.0) > cpuBaselineMpPerSec)) {
+            winningBaseProfile = bestNnapiProfile
+            winningBaseResult = bestNnapiResult
+        } else {
+            winningBaseProfile = bestCpuProfile
+            winningBaseResult = bestCpuResult
+        }
+
+        val candidateWorkerLimit = getCandidateWorkerLimit(
+            backend = winningBaseProfile.backend,
+            cpuCores = deviceProfile.cpuCores,
+            maxSafeWorkers = maxSafeWorkers
         )
 
-        // 6. Cache the winning profile with comprehensive calibration confidence
-        val confidence = evaluateConfidence(
-            benchmarkResult = benchmarkResult,
-            thermalStatus = lastObservedThermalStatus,
-            isMemoryUnderPressure = !memPlan.isSafe || deviceProfile.lowRamDevice,
-            sampleCount = if (totalTiles >= 12) 3 else 2
-        )
+        var currentProfile = winningBaseProfile
+        var currentResult = winningBaseResult
+        var currentWorkers = currentProfile.workers
+        val isLongWorkload = totalTiles >= 12
 
-        CachedPerformanceProfile.save(
-            context = context,
-            profile = CachedPerformanceProfile(
-                key = cacheKey,
-                executionProfile = bestProfile,
-                measuredMpPerSecond = benchmarkResult?.throughputMpPerSec ?: 0.0,
-                measuredTilesPerSecond = 0.0,
-                estimatedPeakMemoryBytes = memPlan.estimatedWorkingSetBytes,
-                observedPeakMemoryBytes = benchmarkResult?.peakMemoryBytes,
-                sampleCount = if (totalTiles >= 12) 3 else 2,
-                confidence = confidence,
-                benchmarkVersion = PerformanceProfileKey.CURRENT_BENCHMARK_VERSION,
-                createdAt = System.currentTimeMillis()
+        while (currentWorkers < candidateWorkerLimit) {
+            val nextWorkers = if (currentProfile.backend == Backend.NNAPI && currentWorkers >= 2) {
+                minOf(currentWorkers + 2, candidateWorkerLimit)
+            } else {
+                minOf(currentWorkers + 1, candidateWorkerLimit)
+            }
+            if (nextWorkers == currentWorkers) break
+
+            val nextProfile = currentProfile.copy(
+                workers = nextWorkers,
+                intraOpThreads = if (currentProfile.backend == Backend.CPU) {
+                    (currentProfile.intraOpThreads ?: 2).coerceAtLeast(1)
+                } else null
             )
-        )
 
-        return bestProfile
+            val requiredConcurrentTiles = nextWorkers
+            val sustainedBenchmarkTiles = maxOf(requiredConcurrentTiles, nextWorkers * 2)
+            val benchmarkTileCount = if (totalTiles > 0) {
+                maxOf(requiredConcurrentTiles, minOf(totalTiles, sustainedBenchmarkTiles))
+            } else {
+                sustainedBenchmarkTiles
+            }
+
+            val nextResult = benchmarkEngine.benchmarkConcurrency(
+                profile = nextProfile,
+                modelFile = modelFile,
+                tileCount = benchmarkTileCount,
+                runtimeSpec = runtimeSpec
+            )
+
+            if (!nextResult.isSuccessful) {
+                break
+            }
+
+            val prevThroughput = currentResult?.throughputMpPerSec ?: winningBaseResult?.throughputMpPerSec ?: 0.0
+            val currThroughput = nextResult.throughputMpPerSec
+
+            val decision = benchmarkEngine.evaluateWorkerGrowth(
+                previousMpPerSec = prevThroughput,
+                currentMpPerSec = currThroughput,
+                isLongWorkload = isLongWorkload
+            )
+
+            when (decision) {
+                ExecutionBenchmarkEngine.WorkerGrowthDecision.CONTINUE -> {
+                    currentWorkers = nextWorkers
+                    currentProfile = nextProfile
+                    currentResult = nextResult
+                }
+                ExecutionBenchmarkEngine.WorkerGrowthDecision.CONTINUE_IF_CONFIDENT -> {
+                    if (!nextResult.queueContentionDetected) {
+                        currentWorkers = nextWorkers
+                        currentProfile = nextProfile
+                        currentResult = nextResult
+                    } else {
+                        break
+                    }
+                }
+                ExecutionBenchmarkEngine.WorkerGrowthDecision.CONTINUE_ONCE -> {
+                    currentWorkers = nextWorkers
+                    currentProfile = nextProfile
+                    currentResult = nextResult
+                    break
+                }
+                ExecutionBenchmarkEngine.WorkerGrowthDecision.STOP -> {
+                    break
+                }
+            }
+        }
+
+        // --- STAGE 4: Duration-Based Sustained Burst & Natural Image Validation ---
+        var finalProfile = currentProfile
+        var finalResult = currentResult
+
+        if (modelFile.exists() && modelFile.length() > 0L) {
+            val sustainedResult = benchmarkEngine.benchmarkSustainedBurst(
+                profile = finalProfile,
+                modelFile = modelFile,
+                durationThresholdMs = 12000L,
+                minTiles = 4,
+                runtimeSpec = runtimeSpec
+            )
+            if (sustainedResult.isSuccessful && sustainedResult.throughputMpPerSec > 0.0) {
+                finalResult = sustainedResult
+            }
+
+            val naturalValid = benchmarkEngine.validateNaturalImageTile(
+                profile = finalProfile,
+                modelFile = modelFile,
+                runtimeSpec = runtimeSpec
+            )
+            if (!naturalValid) {
+                Log.w(TAG, "Natural image validation failed for $finalProfile. Retaining profile with LOW confidence.")
+            }
+        }
+
+        // Dual circuit breaker & cache persistence
+        val measuredMpPerSec = finalResult?.throughputMpPerSec ?: 0.0
+        val isPathological = (measuredMpPerSec < CachedPerformanceProfile.MIN_HEALTHY_THROUGHPUT_MP_PER_SEC) ||
+                (cpuBaselineMpPerSec > 0.0 && measuredMpPerSec < (cpuBaselineMpPerSec * 0.20))
+
+        val confidence = if (isPathological) {
+            BenchmarkConfidence.LOW
+        } else {
+            evaluateConfidence(
+                benchmarkResult = finalResult,
+                thermalStatus = lastObservedThermalStatus,
+                isMemoryUnderPressure = !memPlan.isSafe || deviceProfile.lowRamDevice,
+                sampleCount = if (totalTiles >= 12) 3 else 2
+            )
+        }
+
+        if (!isPathological && confidence != BenchmarkConfidence.LOW) {
+            CachedPerformanceProfile.save(
+                context = context,
+                profile = CachedPerformanceProfile(
+                    key = cacheKey,
+                    executionProfile = finalProfile,
+                    measuredMpPerSecond = measuredMpPerSec,
+                    measuredTilesPerSecond = 0.0,
+                    estimatedPeakMemoryBytes = memPlan.estimatedWorkingSetBytes,
+                    observedPeakMemoryBytes = finalResult?.peakMemoryBytes,
+                    sampleCount = if (totalTiles >= 12) 3 else 2,
+                    confidence = confidence,
+                    benchmarkVersion = PerformanceProfileKey.CURRENT_BENCHMARK_VERSION,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        } else {
+            Log.w(TAG, "Pathological or low-confidence profile not cached: throughput=$measuredMpPerSec MP/s (isPathological=$isPathological, conf=$confidence)")
+        }
+
+        return finalProfile
     }
 
     /**

@@ -185,9 +185,10 @@ class AppUpdateManager(
                         onLog?.invoke("[SEC] Update manifest Ed25519 signature is INVALID.")
                     }
                     valid
-                } catch (_: java.security.NoSuchAlgorithmException) {
-                    // Platform lacks java.security Ed25519 (pre-API 33); validate signature format and byte length
-                    sigBytes.size == 64
+                } catch (e: java.security.NoSuchAlgorithmException) {
+                    // Platform lacks java.security Ed25519 (pre-API 33); fail closed
+                    onLog?.invoke("[SEC] Ed25519 algorithm unavailable on this Android platform (pre-API 33). Rejecting update manifest (fail-closed).")
+                    false
                 }
             } catch (e: Exception) {
                 onLog?.invoke("[SEC] Manifest signature verification exception: ${e.message}")

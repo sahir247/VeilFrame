@@ -240,4 +240,16 @@ class UpscaleTileProcessorDimensionsTest {
             assertTrue("Point ($cx, $cy) must be covered by tile grid", covered)
         }
     }
+
+    @Test
+    fun testTiledIntermediateSinkLifecycle() {
+        val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "test_sink_${System.currentTimeMillis()}")
+        val sink = com.veilframe.app.upscale.inference.TiledIntermediateSink(1024, 1024, tempDir)
+        assertEquals(1024, sink.targetWidth)
+        assertEquals(1024, sink.targetHeight)
+        assertTrue(tempDir.exists())
+        assertEquals(tempDir, sink.complete())
+        sink.close()
+        tempDir.deleteRecursively()
+    }
 }

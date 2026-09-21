@@ -129,4 +129,64 @@ class PerformanceProfileCacheTest {
         assertTrue(keyStr.contains("pcnnapi_fp16"))
         assertTrue(keyStr.contains("_ha1b2c3d4"))
     }
+
+    @Test
+    fun testVersion3KeyStringFormat() {
+        val key = PerformanceProfileKey(
+            deviceModel = "Pixel 8",
+            androidApi = 34,
+            abi = "arm64-v8a",
+            ortVersion = "1.27.0",
+            modelId = "realesrgan_x4plus",
+            modelScale = 4,
+            benchmarkVersion = 3
+        )
+        assertTrue(key.toKeyString().endsWith("_v3"))
+    }
+
+    @Test
+    fun testConfigurationFingerprintGeneration() {
+        val profile = ExecutionProfile(
+            backend = Backend.NNAPI,
+            precision = InferencePrecisionMode.FP16_RELAXED,
+            workers = 4,
+            tileSize = 384,
+            overlap = 24,
+            acceleratorConfiguration = com.veilframe.app.upscale.inference.AcceleratorConfiguration(nnapiUseNchw = true)
+        )
+        val fingerprint = CachedPerformanceProfile.generateConfigurationFingerprint(profile)
+        assertEquals("nnapi_fp16_relaxed_nchw_t384_w4", fingerprint)
+    }
+
+    @Test
+    fun testPathologicalProfileDetection() {
+        val key = PerformanceProfileKey(
+            deviceModel = "Device",
+            androidApi = 34,
+            abi = "arm64-v8a",
+            ortVersion = "1.27.0",
+            modelId = "model",
+            modelScale = 4
+        )
+        val profile = ExecutionProfile(
+            backend = Backend.NNAPI,
+            precision = InferencePrecisionMode.DEFAULT,
+            workers = 1,
+            tileSize = 256,
+            overlap = 16
+        )
+        val pathological = CachedPerformanceProfile(
+            key = key,
+            executionProfile = profile,
+            measuredMpPerSecond = 0.0105
+        )
+        assertTrue("Throughput 0.0105 MP/s must be flagged as pathological", pathological.isPathological)
+
+        val healthy = CachedPerformanceProfile(
+            key = key,
+            executionProfile = profile,
+            measuredMpPerSecond = 2.5
+        )
+        org.junit.Assert.assertFalse("Throughput 2.5 MP/s must not be flagged as pathological", healthy.isPathological)
+    }
 }

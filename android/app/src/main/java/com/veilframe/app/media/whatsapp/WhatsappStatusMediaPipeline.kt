@@ -113,7 +113,21 @@ object WhatsappStatusMediaPipeline {
 
             Log.i(TAG, "WhatsApp Status Rate Control: Mode=${resolution.displayName}, Duration=${String.format(Locale.US, "%.2f", effectiveDuration)}s, EffectiveRate=${currentRate}k, BufSize=${currentBufSize}k")
 
-            // Step 3: Build Filter Graph (handling HDR to SDR, crop, rotation, etc.)
+            // Step 3: Build Filter Graph (handling HDR to SDR, crop, rotation, SAR, etc.)
+            val parsedSar = try {
+                val sarStr = analysis.sampleAspectRatio
+                if (sarStr.contains(":")) {
+                    val parts = sarStr.split(":")
+                    val num = parts[0].toDoubleOrNull() ?: 1.0
+                    val den = parts[1].toDoubleOrNull() ?: 1.0
+                    if (den != 0.0) num / den else 1.0
+                } else {
+                    sarStr.toDoubleOrNull() ?: 1.0
+                }
+            } catch (_: Throwable) {
+                1.0
+            }
+
             val filterGraph = WhatsappStatusFilterGraphBuilder.buildVideoFilterGraph(
                 resolution = resolution,
                 srcWidth = analysis.width,
@@ -125,7 +139,8 @@ object WhatsappStatusMediaPipeline {
                 flipV = flipV,
                 rotate = rotate,
                 speed = speed,
-                colorProfile = colorProfile
+                colorProfile = colorProfile,
+                sar = parsedSar
             )
 
             // Step 4: Stage 1 — Prepare Clip (Trim / Remux with -c copy)

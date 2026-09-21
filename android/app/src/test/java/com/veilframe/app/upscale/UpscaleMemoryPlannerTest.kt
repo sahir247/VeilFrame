@@ -87,4 +87,48 @@ class UpscaleMemoryPlannerTest {
 
         assertEquals(sharedBreakdown.runtimeSessionBytes * 2, poolBreakdown.runtimeSessionBytes)
     }
+
+    @Test
+    fun testStageAwareBudgeting4xAiWith8xTarget() {
+        val headroom = 1024L * 1024 * 1024
+        val breakdown4xAi = UpscaleMemoryPlanner.calculateWorkerBudget(
+            availableHeadroomBytes = headroom,
+            sourceWidth = 1000,
+            sourceHeight = 1000,
+            scale = 8,
+            aiScale = 4,
+            tileSize = 256,
+            isAiModel = true
+        )
+
+        val breakdown8xPure = UpscaleMemoryPlanner.calculateWorkerBudget(
+            availableHeadroomBytes = headroom,
+            sourceWidth = 1000,
+            sourceHeight = 1000,
+            scale = 8,
+            aiScale = 8,
+            tileSize = 256,
+            isAiModel = true
+        )
+
+        assertTrue(
+            "4x AI stage should require less transient worker memory than 8x pure neural",
+            breakdown4xAi.perWorkerEstimatedBytes < breakdown8xPure.perWorkerEstimatedBytes
+        )
+    }
+
+    @Test
+    fun testStreamingStripModeSelectionForLargeImages() {
+        val plan = UpscaleMemoryPlanner.plan(
+            sourceWidth = 3840,
+            sourceHeight = 2160,
+            scale = 4,
+            isAiModel = true,
+            aiScale = 4
+        )
+        assertTrue(
+            plan.outputSinkMode == com.veilframe.app.upscale.inference.OutputSinkMode.STREAMING_STRIP ||
+            plan.outputSinkMode == com.veilframe.app.upscale.inference.OutputSinkMode.TILED_SINK
+        )
+    }
 }

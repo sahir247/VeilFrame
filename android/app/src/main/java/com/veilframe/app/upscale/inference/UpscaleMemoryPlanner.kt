@@ -1,13 +1,22 @@
 package com.veilframe.app.upscale.inference
 
 /**
+ * Output storage strategy planned to bound RAM consumption.
+ */
+enum class OutputSinkMode {
+    MEMORY_BUFFER,
+    STREAMING_STRIP,
+    TILED_SINK
+}
+
+/**
  * Calculates memory budgets and plans optimal tile sizes to avoid Android OutOfMemory errors.
- * Uses genuine memory-derived budgets rather than hardcoded RAM-class tiers, protected
- * by an emergency hard ceiling against catastrophic inputs.
+ * Uses genuine stage-aware memory planning rather than whole-output monolithic budgeting,
+ * protected by an emergency hard ceiling against catastrophic inputs.
  */
 object UpscaleMemoryPlanner {
 
-    // Emergency absolute upper guard against pathological inputs (production value configurable pending stress testing)
+    // Emergency absolute upper guard against pathological inputs
     @Volatile
     var emergencyMaxOutputPixels: Long = 100_000_000L
 
@@ -37,7 +46,8 @@ object UpscaleMemoryPlanner {
         val maxOutputBitmapBytes: Long = 0L,
         val budgetBreakdown: MemoryBudgetBreakdown? = null,
         val isSafe: Boolean,
-        val warningMessage: String? = null
+        val warningMessage: String? = null,
+        val outputSinkMode: OutputSinkMode = OutputSinkMode.MEMORY_BUFFER
     )
 
     fun plan(
@@ -45,13 +55,14 @@ object UpscaleMemoryPlanner {
         sourceHeight: Int,
         scale: Int,
         isAiModel: Boolean = false,
+        aiScale: Int = scale,
         deviceProfile: DeviceCapabilityProfile? = null
     ): MemoryPlan {
         val srcPixels = sourceWidth.toLong() * sourceHeight.toLong()
         val targetWidth = sourceWidth.toLong() * scale
         val targetHeight = sourceHeight.toLong() * scale
         val outPixels = targetWidth * targetHeight
-        val outputBitmapBytes = outPixels * 4L // ARGB_8888 is 4 bytes per pixel
+        val fullOutputBitmapBytes = outPixels * 4L // ARGB_8888 is 4 bytes per pixel
 
         val runtime = Runtime.getRuntime()
         val maxMemory = runtime.maxMemory()
@@ -59,40 +70,13 @@ object UpscaleMemoryPlanner {
         val freeMemoryInHeap = runtime.freeMemory()
         val usedMemory = totalMemory - freeMemoryInHeap
         val freeJavaMemory = (maxMemory - usedMemory).coerceAtLeast(64L * 1024 * 1024L)
-        // System available memory signal (not an exact per-process native budget)
         val systemAvailableMemory = deviceProfile?.systemAvailableMemory ?: deviceProfile?.nativeProcessBudget ?: freeJavaMemory
         val freeMb = freeJavaMemory / (1024 * 1024)
 
         // Dynamically compute safe budget: max 70% of available memory for the output bitmap
         val safeBitmapMemoryLimit = (freeJavaMemory * 0.70).toLong().coerceAtLeast(128L * 1024 * 1024L)
 
-        if (outPixels > emergencyMaxOutputPixels) {
-            val outMp = String.format(java.util.Locale.US, "%.1f", outPixels / 1_000_000.0)
-            return MemoryPlan(
-                tileSize = 256,
-                overlap = 16,
-                estimatedWorkingSetBytes = outputBitmapBytes,
-                maxOutputBitmapBytes = safeBitmapMemoryLimit,
-                isSafe = false,
-                warningMessage = "Target resolution ($scale× = ${targetWidth}×${targetHeight}, ${outMp} MP) exceeds emergency safety ceiling. Please crop or downscale."
-            )
-        }
-
-        if (outputBitmapBytes > safeBitmapMemoryLimit) {
-            val outMp = String.format(java.util.Locale.US, "%.1f", outPixels / 1_000_000.0)
-            val outMb = outputBitmapBytes / (1024 * 1024)
-            val limitMb = safeBitmapMemoryLimit / (1024 * 1024)
-            return MemoryPlan(
-                tileSize = 256,
-                overlap = 16,
-                estimatedWorkingSetBytes = outputBitmapBytes,
-                maxOutputBitmapBytes = safeBitmapMemoryLimit,
-                isSafe = false,
-                warningMessage = "Target resolution ($scale× = ${targetWidth}×${targetHeight}, ${outMp} MP, ~$outMb MB) exceeds available memory budget (~$limitMb MB). Please select a lower scale or crop."
-            )
-        }
-
-        // Adaptive default candidate tile size based on available memory headroom
+        // Adaptive candidate tile size based on available memory headroom
         val (tileSize, overlap) = if (isAiModel) {
             when {
                 freeMb >= 512 -> 384 to 24
@@ -106,6 +90,28 @@ object UpscaleMemoryPlanner {
             }
         }
 
+        // Determine output sink mode
+        val stripHeight = minOf(tileSize * scale, targetHeight.toInt())
+        val stripBytes = targetWidth * stripHeight * 4L
+        val sinkMode = when {
+            fullOutputBitmapBytes <= safeBitmapMemoryLimit -> OutputSinkMode.MEMORY_BUFFER
+            stripBytes <= safeBitmapMemoryLimit -> OutputSinkMode.STREAMING_STRIP
+            else -> OutputSinkMode.TILED_SINK
+        }
+
+        if (outPixels > emergencyMaxOutputPixels) {
+            val outMp = String.format(java.util.Locale.US, "%.1f", outPixels / 1_000_000.0)
+            return MemoryPlan(
+                tileSize = tileSize,
+                overlap = overlap,
+                estimatedWorkingSetBytes = fullOutputBitmapBytes,
+                maxOutputBitmapBytes = safeBitmapMemoryLimit,
+                isSafe = false,
+                warningMessage = "Target resolution ($scale× = ${targetWidth}×${targetHeight}, ${outMp} MP) exceeds emergency safety ceiling. Please crop or downscale.",
+                outputSinkMode = sinkMode
+            )
+        }
+
         val breakdown = calculateWorkerBudget(
             availableHeadroomBytes = freeJavaMemory,
             nativeHeadroomBytes = systemAvailableMemory,
@@ -113,7 +119,9 @@ object UpscaleMemoryPlanner {
             sourceHeight = sourceHeight,
             scale = scale,
             tileSize = tileSize,
-            isAiModel = isAiModel
+            isAiModel = isAiModel,
+            aiScale = aiScale,
+            outputSinkMode = sinkMode
         )
 
         val estimatedWorkingSet = breakdown.sourceBitmapBytes + breakdown.outputBitmapBytes +
@@ -127,7 +135,8 @@ object UpscaleMemoryPlanner {
                 maxOutputBitmapBytes = safeBitmapMemoryLimit,
                 budgetBreakdown = breakdown,
                 isSafe = false,
-                warningMessage = "Insufficient memory headroom to safely accommodate even a single tile worker. Please reduce tile size or resolution."
+                warningMessage = "Insufficient memory headroom to safely accommodate even a single tile worker. Please reduce tile size or resolution.",
+                outputSinkMode = sinkMode
             )
         }
 
@@ -137,7 +146,8 @@ object UpscaleMemoryPlanner {
             estimatedWorkingSetBytes = estimatedWorkingSet,
             maxOutputBitmapBytes = safeBitmapMemoryLimit,
             budgetBreakdown = breakdown,
-            isSafe = true
+            isSafe = true,
+            outputSinkMode = sinkMode
         )
     }
 
@@ -145,9 +155,8 @@ object UpscaleMemoryPlanner {
      * Calculates the dedicated memory budget available for concurrent tile workers,
      * maintaining decoupled Java heap and native process memory accounts.
      *
-     * Java budget = Java headroom - Java persistent allocations (Source + Output Bitmaps)
-     * Native budget = Native headroom - ORT/session/provider allocations
-     * memorySafeWorkers = min(floor(JavaBudget / JavaPerWorker), floor(NativeBudget / NativePerWorker))
+     * In hybrid pipelines (e.g. 4× AI + 2× Lanczos -> 8× final), neural workers process
+     * at [aiScale] (4×), keeping worker memory decoupled from the final 8× output spike.
      */
     fun calculateWorkerBudget(
         availableHeadroomBytes: Long,
@@ -157,48 +166,72 @@ object UpscaleMemoryPlanner {
         scale: Int,
         tileSize: Int,
         isAiModel: Boolean,
-        sessionStrategy: SessionStrategy = SessionStrategy.SHARED_SESSION
+        aiScale: Int = scale,
+        outputSinkMode: OutputSinkMode = OutputSinkMode.MEMORY_BUFFER,
+        sessionStrategy: SessionStrategy = SessionStrategy.SHARED_SESSION,
+        candidateWorkerLimit: Int = 16
     ): MemoryBudgetBreakdown {
         val srcBitmapBytes = sourceWidth.toLong() * sourceHeight.toLong() * 4L
-        val outBitmapBytes = (sourceWidth.toLong() * scale) * (sourceHeight.toLong() * scale) * 4L
+        val persistentSinkBytes = when (outputSinkMode) {
+            OutputSinkMode.MEMORY_BUFFER -> (sourceWidth.toLong() * scale) * (sourceHeight.toLong() * scale) * 4L
+            OutputSinkMode.STREAMING_STRIP -> {
+                val stripH = minOf(tileSize * scale, sourceHeight * scale)
+                (sourceWidth.toLong() * scale) * stripH.toLong() * 4L
+            }
+            OutputSinkMode.TILED_SINK -> 0L
+        }
+
         val baseRuntimeBytes = if (isAiModel) 48L * 1024 * 1024L else 8L * 1024 * 1024L
         val runtimeSessionBytes = if (sessionStrategy == SessionStrategy.SESSION_POOL) baseRuntimeBytes * 2 else baseRuntimeBytes
         val safetyReserveBytes = (availableHeadroomBytes * 0.15).toLong().coerceAtLeast(32L * 1024 * 1024L)
 
-        // Decoupled Java budget
-        val javaBudget = (availableHeadroomBytes - srcBitmapBytes - outBitmapBytes - safetyReserveBytes).coerceAtLeast(0L)
-        // Decoupled Native budget
+        // Decoupled Java and Native budgets
+        val javaBudget = (availableHeadroomBytes - srcBitmapBytes - persistentSinkBytes - safetyReserveBytes).coerceAtLeast(0L)
         val nativeBudget = (nativeHeadroomBytes - runtimeSessionBytes - safetyReserveBytes).coerceAtLeast(0L)
 
-        // Estimated memory consumption per concurrent tile worker
-        val tileInBytes = tileSize.toLong() * tileSize.toLong() * 3L * 4L // Float32 input tensor buffer (Native)
-        val tileOutPixels = (tileSize.toLong() * scale) * (tileSize.toLong() * scale)
-        val tileOutBytes = tileOutPixels * 4L // ARGB tile bitmap (Java Heap)
-        val onnxActivationEstimateBytes = if (isAiModel) tileOutBytes * 3L else 0L // Native workspace
+        // Worker transient peak modeling around neural AI stage (aiScale)
+        val t = tileSize.toLong()
+        val srcTilePixels = t * t
+        val aiTilePixels = (t * aiScale) * (t * aiScale)
+        val aiTileOutputBytes = aiTilePixels * 4L
 
-        val javaPerWorker = tileOutBytes.coerceAtLeast(1L)
-        val nativePerWorker = (tileInBytes + onnxActivationEstimateBytes).coerceAtLeast(1L)
-        val perWorkerTotal = (javaPerWorker + nativePerWorker)
+        // Java transient per AI worker: srcPixels + alpha + dstPixels + output bitmap
+        val javaPerWorker = (srcTilePixels * 8L) + (aiTileOutputBytes * 2L)
 
-        val javaSafeWorkers = (javaBudget / javaPerWorker).toInt().coerceAtLeast(0)
-        val nativeSafeWorkers = (nativeBudget / nativePerWorker).toInt().coerceAtLeast(0)
+        // Native transient per AI worker: input direct buffer + ONNX activations estimate
+        val nativePerWorker = (srcTilePixels * 12L) + (if (isAiModel) aiTileOutputBytes * 3L else 0L)
+        val perWorkerTotal = javaPerWorker + nativePerWorker
 
-        // Minimum of Java and Native safe workers without arbitrary 1..4 cap
-        val maxSafeWorkers = minOf(javaSafeWorkers, nativeSafeWorkers)
+        // Iterative worker solver accounting for reorder buffer byte ceiling
+        var safeWorkers = 0
+        for (w in 1..candidateWorkerLimit) {
+            val reorderQueueBytes = minOf(w * 2, 8) * aiTileOutputBytes
+            val totalJavaNeeded = (w * javaPerWorker) + reorderQueueBytes
+            val totalNativeNeeded = w * nativePerWorker
+            if (totalJavaNeeded <= javaBudget && totalNativeNeeded <= nativeBudget) {
+                safeWorkers = w
+            } else {
+                break
+            }
+        }
+
+        if (safeWorkers == 0 && javaBudget >= javaPerWorker && nativeBudget >= nativePerWorker) {
+            safeWorkers = 1
+        }
 
         return MemoryBudgetBreakdown(
             availableHeadroomBytes = availableHeadroomBytes,
             javaBudgetBytes = javaBudget,
             nativeBudgetBytes = nativeBudget,
             sourceBitmapBytes = srcBitmapBytes,
-            outputBitmapBytes = outBitmapBytes,
+            outputBitmapBytes = persistentSinkBytes,
             runtimeSessionBytes = runtimeSessionBytes,
             safetyReserveBytes = safetyReserveBytes,
             workerBudgetBytes = minOf(javaBudget, nativeBudget),
             perWorkerEstimatedBytes = perWorkerTotal,
             javaPerWorkerBytes = javaPerWorker,
             nativePerWorkerBytes = nativePerWorker,
-            maxMemorySafeWorkers = maxSafeWorkers
+            maxMemorySafeWorkers = safeWorkers
         )
     }
 }

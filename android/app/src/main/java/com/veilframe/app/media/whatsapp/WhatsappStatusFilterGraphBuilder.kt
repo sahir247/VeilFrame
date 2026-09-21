@@ -32,10 +32,12 @@ object WhatsappStatusFilterGraphBuilder {
         flipV: Boolean = false,
         rotate: Int = 0,
         speed: Float = 1.0f,
-        colorProfile: String = "Original"
+        colorProfile: String = "Original",
+        sar: Double = 1.0
     ): String {
-        val effW = if (rotate == 90 || rotate == 270) srcHeight else srcWidth
-        val effH = if (rotate == 90 || rotate == 270) srcWidth else srcHeight
+        val displayW = if (sar > 0.0 && sar != 1.0) (srcWidth * sar).toInt() else srcWidth
+        val effW = if (rotate == 90 || rotate == 270) srcHeight else displayW
+        val effH = if (rotate == 90 || rotate == 270) displayW else srcHeight
         val (targetW, targetH) = resolution.calculateBoundedDimensions(effW, effH, aspect)
 
         val filterChains = mutableListOf<String>()

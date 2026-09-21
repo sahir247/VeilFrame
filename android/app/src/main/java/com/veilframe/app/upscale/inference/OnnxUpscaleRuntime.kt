@@ -9,6 +9,10 @@ import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import android.graphics.Bitmap
 import android.util.Log
+import com.veilframe.app.upscale.model.ColorOrder
+import com.veilframe.app.upscale.model.ModelRuntimeSpec
+import com.veilframe.app.upscale.model.NormalizationSpec
+import com.veilframe.app.upscale.model.OutputRangeSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -22,10 +26,11 @@ import kotlin.coroutines.resumeWithException
  * Production-grade ONNX Runtime wrapper for Real-ESRGAN and modern super-resolution models.
  *
  * Upgraded with ImageToolbox-proven architecture:
- * - Session configuration handled via OnnxSessionFactory (NNAPI with CPU_DISABLED + optimized ORT CPU fallback)
+ * - Session configuration handled via OnnxSessionFactory (NNAPI candidate probing + optimized ORT CPU fallback)
  * - Cancellable inference via OrtSession.RunOptions (native termination upon coroutine cancellation)
  * - Explicit ProcessedTile contract (guaranteed output scale)
  * - Bit-exact FP16/FP32 direct buffers with zero-copy plane packing
+ * - ModelRuntimeSpec validation: channel ordering, normalization range, and shape invariants
  * - Dimension overflow safety checks (Long arithmetic before allocations)
  * - Per-tile execution telemetry for latency diagnostics
  */
@@ -35,13 +40,18 @@ class OnnxUpscaleRuntime(
     mode: InferenceAccelerationMode = InferenceAccelerationMode.AUTO,
     precision: InferencePrecisionMode = InferencePrecisionMode.DEFAULT,
     customIntraOpThreads: Int? = null,
-    customInterOpThreads: Int? = null
+    customInterOpThreads: Int? = null,
+    providerConfiguration: Map<String, String> = emptyMap(),
+    acceleratorConfiguration: AcceleratorConfiguration = AcceleratorConfiguration(),
+    optLevel: OrtSession.SessionOptions.OptLevel? = null,
+    val runtimeSpec: ModelRuntimeSpec? = null
 ) : AutoCloseable {
 
     constructor(
         modelFile: File,
         scale: Int,
-        profile: ExecutionProfile
+        profile: ExecutionProfile,
+        runtimeSpec: ModelRuntimeSpec? = null
     ) : this(
         modelFile = modelFile,
         scale = scale,
@@ -52,7 +62,11 @@ class OnnxUpscaleRuntime(
         },
         precision = profile.precision,
         customIntraOpThreads = profile.intraOpThreads,
-        customInterOpThreads = profile.interOpThreads
+        customInterOpThreads = profile.interOpThreads,
+        providerConfiguration = profile.providerConfiguration,
+        acceleratorConfiguration = profile.acceleratorConfiguration,
+        optLevel = profile.optLevel,
+        runtimeSpec = runtimeSpec
     )
 
     companion object {
@@ -82,6 +96,15 @@ class OnnxUpscaleRuntime(
     val expectedHeight: Long
     val expectedWidth: Long
 
+    @Volatile
+    private var activeRunOptions: OrtSession.RunOptions? = null
+
+    fun requestTermination() {
+        try {
+            activeRunOptions?.setTerminate(true)
+        } catch (_: Throwable) {}
+    }
+
     init {
         val sessionResult = OnnxSessionFactory.createSession(
             env = env,
@@ -89,7 +112,10 @@ class OnnxUpscaleRuntime(
             mode = mode,
             precision = precision,
             customIntraOpThreads = customIntraOpThreads,
-            customInterOpThreads = customInterOpThreads
+            customInterOpThreads = customInterOpThreads,
+            providerConfiguration = providerConfiguration,
+            acceleratorConfiguration = acceleratorConfiguration,
+            optLevel = optLevel
         )
         session = sessionResult.session
         optionsHolder = sessionResult.options
@@ -134,6 +160,13 @@ class OnnxUpscaleRuntime(
             isDynamicSpatial = true
         }
 
+        // Validate ModelRuntimeSpec if supplied
+        if (runtimeSpec != null) {
+            if (inputRank >= 4 && expectedChannels > 0 && expectedChannels.toInt() != runtimeSpec.inputChannels) {
+                throw IllegalStateException("Model ${modelFile.name} input channel mismatch: expected ${runtimeSpec.inputChannels}, got $expectedChannels")
+            }
+        }
+
         Log.i(
             TAG,
             "Loaded model '${modelFile.name}' on $executionProvider: input=$inputName [${inputShape.joinToString(",")}], output=$outputName [${outputShape.joinToString(",")}], dynamic=$isDynamicSpatial"
@@ -150,6 +183,7 @@ class OnnxUpscaleRuntime(
         crossinline action: (OrtSession.RunOptions) -> OrtSession.Result
     ): OrtSession.Result = suspendCancellableCoroutine { continuation ->
         val runOptions = OrtSession.RunOptions()
+        activeRunOptions = runOptions
 
         continuation.invokeOnCancellation {
             try {
@@ -168,10 +202,23 @@ class OnnxUpscaleRuntime(
         }.onFailure { throwable ->
             continuation.resumeWithException(throwable)
         }.also {
+            activeRunOptions = null
             try {
                 runOptions.close()
             } catch (_: Throwable) {}
         }
+    }
+
+    private fun normalizeInputPixel(v: Int, spec: NormalizationSpec): Float = when (spec) {
+        NormalizationSpec.ZERO_TO_ONE -> v / 255.0f
+        NormalizationSpec.NEG_ONE_TO_ONE -> (v / 127.5f) - 1.0f
+        NormalizationSpec.ZERO_TO_255 -> v.toFloat()
+    }
+
+    private fun denormalizeOutput(v: Float, range: OutputRangeSpec): Int = when (range) {
+        OutputRangeSpec.ZERO_TO_ONE -> (v * 255.0f).toInt().coerceIn(0, 255)
+        OutputRangeSpec.NEG_ONE_TO_ONE -> (((v + 1.0f) * 0.5f) * 255.0f).toInt().coerceIn(0, 255)
+        OutputRangeSpec.ZERO_TO_255 -> v.toInt().coerceIn(0, 255)
     }
 
     /**
@@ -226,8 +273,15 @@ class OnnxUpscaleRuntime(
         val alphaChannel = if (hasAlpha) FloatArray(actualW * actualH) else null
 
         val tensorShape = longArrayOf(1L, 3L, targetInH.toLong(), targetInW.toLong())
-        val gOffset = targetPixelCount
-        val bOffset = 2 * targetPixelCount
+
+        val inColorOrder = runtimeSpec?.inputColorOrder ?: ColorOrder.RGB
+        val inNorm = runtimeSpec?.inputNormalization ?: NormalizationSpec.ZERO_TO_ONE
+        val outColorOrder = runtimeSpec?.outputColorOrder ?: ColorOrder.RGB
+        val outRange = runtimeSpec?.outputRange ?: OutputRangeSpec.ZERO_TO_ONE
+
+        val c0Offset = 0
+        val c1Offset = targetPixelCount
+        val c2Offset = 2 * targetPixelCount
 
         val inputTensor: OnnxTensor = when (inputType) {
             OnnxJavaType.FLOAT16 -> {
@@ -239,14 +293,18 @@ class OnnxUpscaleRuntime(
                     for (x in 0 until targetInW) {
                         val clampX = if (x < actualW) x else actualW - 1
                         val pixel = srcPixels[srcRowOffset + clampX]
-                        val r = ((pixel ushr 16) and 0xff) / 255.0f
-                        val g = ((pixel ushr 8) and 0xff) / 255.0f
-                        val b = (pixel and 0xff) / 255.0f
+                        val r = normalizeInputPixel((pixel ushr 16) and 0xff, inNorm)
+                        val g = normalizeInputPixel((pixel ushr 8) and 0xff, inNorm)
+                        val b = normalizeInputPixel(pixel and 0xff, inNorm)
                         val idx = dstIdx + x
 
-                        shortBuffer.put(idx, Float16Utils.floatToHalf(r))
-                        shortBuffer.put(gOffset + idx, Float16Utils.floatToHalf(g))
-                        shortBuffer.put(bOffset + idx, Float16Utils.floatToHalf(b))
+                        val c0 = if (inColorOrder == ColorOrder.RGB) r else b
+                        val c1 = g
+                        val c2 = if (inColorOrder == ColorOrder.RGB) b else r
+
+                        shortBuffer.put(c0Offset + idx, Float16Utils.floatToHalf(c0))
+                        shortBuffer.put(c1Offset + idx, Float16Utils.floatToHalf(c1))
+                        shortBuffer.put(c2Offset + idx, Float16Utils.floatToHalf(c2))
                     }
                 }
                 shortBuffer.rewind()
@@ -261,14 +319,18 @@ class OnnxUpscaleRuntime(
                     for (x in 0 until targetInW) {
                         val clampX = if (x < actualW) x else actualW - 1
                         val pixel = srcPixels[srcRowOffset + clampX]
-                        val r = (pixel ushr 16) and 0xff
-                        val g = (pixel ushr 8) and 0xff
-                        val b = pixel and 0xff
+                        val r = normalizeInputPixel((pixel ushr 16) and 0xff, inNorm)
+                        val g = normalizeInputPixel((pixel ushr 8) and 0xff, inNorm)
+                        val b = normalizeInputPixel(pixel and 0xff, inNorm)
                         val idx = dstIdx + x
 
-                        flatFloats[idx] = r / 255.0f
-                        flatFloats[gOffset + idx] = g / 255.0f
-                        flatFloats[bOffset + idx] = b / 255.0f
+                        val c0 = if (inColorOrder == ColorOrder.RGB) r else b
+                        val c1 = g
+                        val c2 = if (inColorOrder == ColorOrder.RGB) b else r
+
+                        flatFloats[c0Offset + idx] = c0
+                        flatFloats[c1Offset + idx] = c1
+                        flatFloats[c2Offset + idx] = c2
                     }
                 }
                 val floatBuffer = FloatBuffer.wrap(flatFloats)
@@ -348,9 +410,13 @@ class OnnxUpscaleRuntime(
                                     (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
                                 } else 255
 
-                                val r = (fb.get(rowOffset + x) * 255.0f).toInt().coerceIn(0, 255)
-                                val g = (fb.get(outChannelStride + rowOffset + x) * 255.0f).toInt().coerceIn(0, 255)
-                                val b = (fb.get(2 * outChannelStride + rowOffset + x) * 255.0f).toInt().coerceIn(0, 255)
+                                val c0 = fb.get(rowOffset + x)
+                                val c1 = fb.get(outChannelStride + rowOffset + x)
+                                val c2 = fb.get(2 * outChannelStride + rowOffset + x)
+
+                                val r = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c0 else c2, outRange)
+                                val g = denormalizeOutput(c1, outRange)
+                                val b = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c2 else c0, outRange)
 
                                 dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                             }
@@ -368,13 +434,13 @@ class OnnxUpscaleRuntime(
                                     (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
                                 } else 255
 
-                                val rHalf = sb.get(rowOffset + x)
-                                val gHalf = sb.get(outChannelStride + rowOffset + x)
-                                val bHalf = sb.get(2 * outChannelStride + rowOffset + x)
+                                val c0 = Float16Utils.halfToFloat(sb.get(rowOffset + x))
+                                val c1 = Float16Utils.halfToFloat(sb.get(outChannelStride + rowOffset + x))
+                                val c2 = Float16Utils.halfToFloat(sb.get(2 * outChannelStride + rowOffset + x))
 
-                                val r = (Float16Utils.halfToFloat(rHalf) * 255.0f).toInt().coerceIn(0, 255)
-                                val g = (Float16Utils.halfToFloat(gHalf) * 255.0f).toInt().coerceIn(0, 255)
-                                val b = (Float16Utils.halfToFloat(bHalf) * 255.0f).toInt().coerceIn(0, 255)
+                                val r = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c0 else c2, outRange)
+                                val g = denormalizeOutput(c1, outRange)
+                                val b = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c2 else c0, outRange)
 
                                 dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                             }
@@ -396,9 +462,13 @@ class OnnxUpscaleRuntime(
                                     (alphaChannel[srcY * actualW + srcX] * 255.0f).toInt().coerceIn(0, 255)
                                 } else 255
 
-                                val r = (batch[0][y][x] * 255.0f).toInt().coerceIn(0, 255)
-                                val g = (batch[1][y][x] * 255.0f).toInt().coerceIn(0, 255)
-                                val b = (batch[2][y][x] * 255.0f).toInt().coerceIn(0, 255)
+                                val c0 = batch[0][y][x]
+                                val c1 = batch[1][y][x]
+                                val c2 = batch[2][y][x]
+
+                                val r = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c0 else c2, outRange)
+                                val g = denormalizeOutput(c1, outRange)
+                                val b = denormalizeOutput(if (outColorOrder == ColorOrder.RGB) c2 else c0, outRange)
 
                                 dstPixels[dstIdx++] = (alphaVal shl 24) or (r shl 16) or (g shl 8) or b
                             }

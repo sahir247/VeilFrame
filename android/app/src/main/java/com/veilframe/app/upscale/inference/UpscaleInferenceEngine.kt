@@ -7,6 +7,7 @@ import com.veilframe.app.upscale.model.ModelCapability
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRepository
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -114,6 +115,23 @@ class UpscaleInferenceEngine(
                         )
                     }
 
+                    // Cryptographic model SHA-256 verification
+                    if (model.sha256.isNotEmpty()) {
+                        val actualSha = com.veilframe.app.upscale.download.ModelDownloadVerifier.calculateSha256(modelFile)
+                        if (!actualSha.equals(model.sha256, ignoreCase = true)) {
+                            return@withContext Result.failure(
+                                IllegalStateException("Model ${model.name} SHA-256 mismatch: expected ${model.sha256}, actual $actualSha")
+                            )
+                        }
+                    }
+
+                    val runtimeSpec = try {
+                        model.toRuntimeSpec()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Notice parsing model runtime spec: ${e.message}")
+                        null
+                    }
+
                     listener?.onStatus("Planning adaptive execution profile...")
                     listener?.onStage("Planning execution", 0, 1)
 
@@ -133,12 +151,19 @@ class UpscaleInferenceEngine(
                         targetScale = targetScale,
                         sourceWidth = srcW,
                         sourceHeight = srcH,
-                        modelCapabilities = modelCaps
+                        modelCapabilities = modelCaps,
+                        modelHash = model.sha256,
+                        runtimeSpec = runtimeSpec
                     )
 
                     listener?.onStatus("Loading ${model.name} weights...")
                     listener?.onStage("Initializing neural runtime", 0, 1)
-                    val runtime = OnnxUpscaleRuntime(modelFile, model.nativeScale, executionProfile)
+                    val runtime = OnnxUpscaleRuntime(
+                        modelFile = modelFile,
+                        scale = model.nativeScale,
+                        profile = executionProfile,
+                        runtimeSpec = runtimeSpec
+                    )
 
                     try {
                         ensureActive()
@@ -161,34 +186,53 @@ class UpscaleInferenceEngine(
 
                         val totalDurationMs = java.util.concurrent.atomic.AtomicLong(0L)
 
+                        val memPlan = UpscaleMemoryPlanner.plan(
+                            sourceWidth = srcW,
+                            sourceHeight = srcH,
+                            scale = targetScale,
+                            isAiModel = true
+                        )
+                        val outputSink: OutputSink = when (memPlan.outputSinkMode) {
+                            OutputSinkMode.TILED_SINK -> {
+                                val scratchDir = File(context.cacheDir, "upscale_scratch_${System.currentTimeMillis()}")
+                                TiledIntermediateSink(srcW * targetScale, srcH * targetScale, scratchDir)
+                            }
+                            OutputSinkMode.STREAMING_STRIP -> {
+                                BitmapOutputSink(srcW * targetScale, srcH * targetScale)
+                            }
+                            OutputSinkMode.MEMORY_BUFFER -> {
+                                BitmapOutputSink(srcW * targetScale, srcH * targetScale)
+                            }
+                        }
+
                         val aiResult = tileProcessor.processTiles(
                             source = source,
                             scale = targetScale,
                             workers = executionProfile.workers,
+                            sink = outputSink,
                             onTileInfer = { tile, row, col, index, total ->
                                 val t0 = System.currentTimeMillis()
                                 listener?.onStage("Neural inference", index + 1, total)
                                 listener?.onStatus("Tile ${index + 1} of $total: Running inference via ${runtime.executionProvider}...")
 
                                 val baseProcessed = runtime.runTile(tile, row, col)
-
-                                val finalProcessed = if (scalePlan.requiresRefinement) {
+                                val elapsedMs = System.currentTimeMillis() - t0
+                                totalDurationMs.addAndGet(elapsedMs)
+                                baseProcessed
+                            },
+                            onTileRefine = if (scalePlan.requiresRefinement) {
+                                { baseProcessed, row, col, index, total ->
                                     listener?.onStage("Lanczos refinement", index + 1, total)
                                     val baseBmp = baseProcessed.bitmap
                                     val refinedW = baseBmp.width * scalePlan.refinementScale
                                     val refinedH = baseBmp.height * scalePlan.refinementScale
                                     val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
-                                    baseBmp.recycle()
+                                    if (!baseBmp.isRecycled) {
+                                        baseBmp.recycle()
+                                    }
                                     ProcessedTile(refinedBmp, targetScale)
-                                } else {
-                                    baseProcessed
                                 }
-
-                                val elapsedMs = System.currentTimeMillis() - t0
-                                totalDurationMs.addAndGet(elapsedMs)
-                                listener?.onStage("Composing", index + 1, total)
-                                finalProcessed
-                            },
+                            } else null,
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0
                                 listener?.onProgress(current, total, pct)

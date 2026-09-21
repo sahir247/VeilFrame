@@ -1,11 +1,15 @@
 package com.veilframe.app.upscale.inference
 
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import org.json.JSONObject
 
 /**
  * Non-sensitive device and model fingerprint key used to index cached benchmark results.
+ * Alias CalibrationIdentity for level-1 cache lookup.
  */
+typealias CalibrationIdentity = PerformanceProfileKey
+
 data class PerformanceProfileKey(
     val deviceModel: String,
     val androidApi: Int,
@@ -20,7 +24,7 @@ data class PerformanceProfileKey(
     val benchmarkVersion: Int = CURRENT_BENCHMARK_VERSION
 ) {
     companion object {
-        const val CURRENT_BENCHMARK_VERSION = 2
+        const val CURRENT_BENCHMARK_VERSION = 3
 
         fun forDeviceAndModel(
             device: DeviceCapabilityProfile,
@@ -78,13 +82,23 @@ data class CachedPerformanceProfile(
     val sampleCount: Int = 1,
     val confidence: BenchmarkConfidence = BenchmarkConfidence.HIGH,
     val benchmarkVersion: Int = PerformanceProfileKey.CURRENT_BENCHMARK_VERSION,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val configurationFingerprint: String = generateConfigurationFingerprint(executionProfile)
 ) {
-    // Backward compatibility for existing telemetry code
     val measuredPeakMemoryBytes: Long get() = observedPeakMemoryBytes ?: estimatedPeakMemoryBytes ?: 0L
+    val isPathological: Boolean get() = measuredMpPerSecond < MIN_HEALTHY_THROUGHPUT_MP_PER_SEC
 
     companion object {
         private const val PREFS_NAME = "veilframe_perf_profiles"
+        const val MIN_HEALTHY_THROUGHPUT_MP_PER_SEC = 0.05
+
+        fun generateConfigurationFingerprint(profile: ExecutionProfile): String {
+            val backend = profile.backend.name.lowercase()
+            val prec = profile.precision.name.lowercase()
+            val layout = if (profile.acceleratorConfiguration.nnapiUseNchw) "nchw" else "default"
+            val intra = profile.intraOpThreads?.let { "_intra$it" } ?: ""
+            return "${backend}_${prec}_${layout}_t${profile.tileSize}_w${profile.workers}$intra"
+        }
 
         fun load(context: Context, key: PerformanceProfileKey): CachedPerformanceProfile? {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -92,6 +106,13 @@ data class CachedPerformanceProfile(
             return try {
                 val json = JSONObject(jsonStr)
                 if (json.optInt("benchmarkVersion", 0) != key.benchmarkVersion) return null
+
+                val mpPerSec = json.getDouble("measuredMpPerSecond")
+                // Circuit breaker: auto-evict pathological cached profiles
+                if (mpPerSec < MIN_HEALTHY_THROUGHPUT_MP_PER_SEC) {
+                    prefs.edit().remove(key.toKeyString()).apply()
+                    return null
+                }
 
                 val epJson = json.getJSONObject("executionProfile")
                 val backend = Backend.valueOf(epJson.getString("backend"))
@@ -109,6 +130,23 @@ data class CachedPerformanceProfile(
                     pJson.keys().forEach { k -> provConfig[k] = pJson.getString(k) }
                 }
 
+                val accelConfig = if (epJson.has("acceleratorConfiguration")) {
+                    val aJson = epJson.getJSONObject("acceleratorConfiguration")
+                    val nchw = aJson.optBoolean("nnapiUseNchw", false)
+                    val fp16 = aJson.optBoolean("useFp16", false)
+                    AcceleratorConfiguration(nnapiUseNchw = nchw, useFp16 = fp16)
+                } else {
+                    AcceleratorConfiguration()
+                }
+
+                val optLevel = if (epJson.has("optLevel")) {
+                    try {
+                        OrtSession.SessionOptions.OptLevel.valueOf(epJson.getString("optLevel"))
+                    } catch (_: Throwable) {
+                        null
+                    }
+                } else null
+
                 val ep = ExecutionProfile(
                     backend = backend,
                     precision = precision,
@@ -118,7 +156,9 @@ data class CachedPerformanceProfile(
                     tileSize = tileSize,
                     overlap = overlap,
                     sessionStrategy = sessionStrategy,
-                    providerConfiguration = provConfig
+                    providerConfiguration = provConfig,
+                    acceleratorConfiguration = accelConfig,
+                    optLevel = optLevel
                 )
 
                 val obsPeak = if (json.has("observedPeakMemoryBytes")) json.optLong("observedPeakMemoryBytes") else null
@@ -132,14 +172,15 @@ data class CachedPerformanceProfile(
                 CachedPerformanceProfile(
                     key = key,
                     executionProfile = ep,
-                    measuredMpPerSecond = json.getDouble("measuredMpPerSecond"),
+                    measuredMpPerSecond = mpPerSec,
                     measuredTilesPerSecond = json.optDouble("measuredTilesPerSecond", 0.0),
                     estimatedPeakMemoryBytes = estPeak,
                     observedPeakMemoryBytes = obsPeak,
                     sampleCount = json.optInt("sampleCount", 1),
                     confidence = conf,
                     benchmarkVersion = json.optInt("benchmarkVersion", key.benchmarkVersion),
-                    createdAt = json.optLong("createdAt", System.currentTimeMillis())
+                    createdAt = json.optLong("createdAt", System.currentTimeMillis()),
+                    configurationFingerprint = json.optString("configurationFingerprint", generateConfigurationFingerprint(ep))
                 )
             } catch (_: Throwable) {
                 null
@@ -147,11 +188,15 @@ data class CachedPerformanceProfile(
         }
 
         fun save(context: Context, profile: CachedPerformanceProfile) {
+            // Do not save pathological throughputs
+            if (profile.isPathological) return
+
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val json = JSONObject().apply {
                 put("benchmarkVersion", profile.benchmarkVersion)
                 put("measuredMpPerSecond", profile.measuredMpPerSecond)
                 put("measuredTilesPerSecond", profile.measuredTilesPerSecond)
+                put("configurationFingerprint", profile.configurationFingerprint)
                 profile.estimatedPeakMemoryBytes?.let { put("estimatedPeakMemoryBytes", it) }
                 profile.observedPeakMemoryBytes?.let { put("observedPeakMemoryBytes", it) }
                 put("sampleCount", profile.sampleCount)
@@ -167,12 +212,19 @@ data class CachedPerformanceProfile(
                     put("tileSize", profile.executionProfile.tileSize)
                     put("overlap", profile.executionProfile.overlap)
                     put("sessionStrategy", profile.executionProfile.sessionStrategy.name)
+                    profile.executionProfile.optLevel?.let { put("optLevel", it.name) }
 
                     if (profile.executionProfile.providerConfiguration.isNotEmpty()) {
                         val pJson = JSONObject()
                         profile.executionProfile.providerConfiguration.forEach { (k, v) -> pJson.put(k, v) }
                         put("providerConfiguration", pJson)
                     }
+
+                    val aJson = JSONObject().apply {
+                        put("nnapiUseNchw", profile.executionProfile.acceleratorConfiguration.nnapiUseNchw)
+                        put("useFp16", profile.executionProfile.acceleratorConfiguration.useFp16)
+                    }
+                    put("acceleratorConfiguration", aJson)
                 }
                 put("executionProfile", epJson)
             }

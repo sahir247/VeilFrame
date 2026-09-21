@@ -291,6 +291,7 @@ class ImageUpscalerController(
                 val modelFile = repository.getModelFile(model.id)
                 val benchmarkEngine = com.veilframe.app.upscale.inference.ExecutionBenchmarkEngine()
                 val planner = com.veilframe.app.upscale.inference.AdaptiveExecutionPlanner(benchmarkEngine)
+                val runtimeSpec = try { model.toRuntimeSpec() } catch (_: Exception) { null }
                 val profile = withContext(Dispatchers.Default) {
                     planner.planExecution(
                         context = activity,
@@ -298,13 +299,40 @@ class ImageUpscalerController(
                         modelId = model.id,
                         targetScale = targetScale,
                         sourceWidth = 1024,
-                        sourceHeight = 1024
+                        sourceHeight = 1024,
+                        modelHash = model.sha256,
+                        runtimeSpec = runtimeSpec
                     )
                 }
+                val cached = com.veilframe.app.upscale.inference.CachedPerformanceProfile.load(
+                    activity,
+                    com.veilframe.app.upscale.inference.PerformanceProfileKey.forDeviceAndModel(
+                        device = devProfile,
+                        modelId = model.id,
+                        modelScale = targetScale,
+                        modelHash = model.sha256
+                    )
+                )
                 withContext(Dispatchers.Main) {
                     upscalerBinding.btnRunUpscaleBenchmark.isEnabled = true
-                    upscalerBinding.tvDiagExecutionProfile.text = "Profile: ${profile.backend} • ${profile.workers} workers • ${profile.tileSize}px tiles"
-                    upscalerBinding.tvDiagThroughput.text = "Throughput: Calibrated optimal profile (${profile.backend}, ${profile.workers} workers)"
+                    val backendDesc = when (profile.backend) {
+                        com.veilframe.app.upscale.inference.Backend.NNAPI -> {
+                            val layoutDesc = if (profile.acceleratorConfiguration.nnapiUseNchw) "NNAPI NCHW mode" else "NNAPI default layout"
+                            val precDesc = if (profile.precision == com.veilframe.app.upscale.inference.InferencePrecisionMode.FP16_RELAXED) "FP16" else "FP32"
+                            "$layoutDesc ($precDesc)"
+                        }
+                        com.veilframe.app.upscale.inference.Backend.CPU -> "ORT CPU (${profile.intraOpThreads ?: devProfile.cpuCores} threads)"
+                        com.veilframe.app.upscale.inference.Backend.XNNPACK -> "XNNPACK (${profile.intraOpThreads ?: 1} threads)"
+                    }
+                    val throughputDesc = if (cached != null) {
+                        String.format(java.util.Locale.US, "%.2f MP/s • %s", cached.measuredMpPerSecond, cached.confidence.name)
+                    } else {
+                        "Calibrated optimal profile (${profile.backend}, ${profile.workers} workers)"
+                    }
+                    upscalerBinding.tvDiagBackend.text = "Active Backend: $backendDesc"
+                    val threadCoupling = profile.intraOpThreads?.let { " • ${it}T" } ?: ""
+                    upscalerBinding.tvDiagExecutionProfile.text = "Profile: W${profile.workers} • ${profile.tileSize}px tiles$threadCoupling"
+                    upscalerBinding.tvDiagThroughput.text = "Throughput: $throughputDesc"
                     Toast.makeText(activity, "Calibration complete: ${profile.backend}, ${profile.workers} workers", Toast.LENGTH_SHORT).show()
                 }
             }

@@ -131,4 +131,22 @@ class AppUpdateManagerTest {
         }
         assertFalse("Malformed signature must fail verification", AppUpdateManager.verifyManifestSignature(malformedSigJson))
     }
+
+    @Test
+    fun testVerifyManifestSignature_PreApi33FailClosedOrInvalidSignature() {
+        val logs = mutableListOf<String>()
+        val jsonWithInvalidSig = JSONObject().apply {
+            put("versionCode", 228)
+            put("versionName", "2.2.8")
+            put("signature", java.util.Base64.getEncoder().encodeToString(ByteArray(64) { 0x01 }))
+        }
+        val result = AppUpdateManager.verifyManifestSignature(jsonWithInvalidSig) { log ->
+            logs.add(log)
+        }
+        assertFalse("Manifest with invalid signature or on pre-API 33 must fail closed", result)
+        assertTrue(
+            "Must log either INVALID signature, algorithm unavailable, or exception",
+            logs.any { it.contains("INVALID") || it.contains("unavailable") || it.contains("fail-closed") || it.contains("exception") }
+        )
+    }
 }

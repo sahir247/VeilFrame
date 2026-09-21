@@ -53,6 +53,12 @@ data class BackendCapability(
     val configurationId: String = backend.name
 )
 
+enum class NnapiExecutionCoverage {
+    FULL_NNAPI_NO_CPU_FALLBACK,
+    PARTIAL_NNAPI_WITH_ORT_CPU_FALLBACK,
+    UNAVAILABLE
+}
+
 /**
  * Structured diagnostic metadata describing the active inference backend.
  * Uses truthful provider reporting without claiming generic "GPU" or unobserved fallback.
@@ -67,9 +73,19 @@ data class InferenceBackendInfo(
     val intraOpThreads: Int? = null,
     val interOpThreads: Int? = null,
     val providerConfiguration: Map<String, String> = emptyMap(),
+    val nnapiExecutionCoverage: NnapiExecutionCoverage? = null,
+    val nnapiUseNchw: Boolean = false,
     val displayLabel: String = when {
-        backend == Backend.NNAPI && cpuFallbackEnabled -> "NNAPI • CPU fallback enabled"
-        backend == Backend.NNAPI -> "NNAPI"
+        backend == Backend.NNAPI -> {
+            val layout = if (nnapiUseNchw) "NCHW mode" else "default layout"
+            val coverage = when (nnapiExecutionCoverage) {
+                NnapiExecutionCoverage.FULL_NNAPI_NO_CPU_FALLBACK -> "Full graph / no CPU fallback"
+                NnapiExecutionCoverage.PARTIAL_NNAPI_WITH_ORT_CPU_FALLBACK -> "Partial graph / CPU fallback"
+                NnapiExecutionCoverage.UNAVAILABLE -> "Unavailable"
+                null -> if (cpuFallbackEnabled) "CPU fallback enabled" else "Full graph"
+            }
+            "NNAPI $layout • $coverage"
+        }
         backend == Backend.XNNPACK -> "XNNPACK"
         else -> "ORT CPU"
     }
