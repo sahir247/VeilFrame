@@ -2,6 +2,7 @@ package com.veilframe.app.upscale.inference
 
 import ai.onnxruntime.NodeInfo
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
 import android.util.Log
 import com.veilframe.app.upscale.inference.ImageTensor.Companion.firstImageTensor
 
@@ -31,6 +32,10 @@ class ModelInfo(
     val expectedHeight: Int? = inputTensor.height
     val isScuNetColor = modelName.startsWith("scunet_color")
     val isNonChunkable = disableChunking
+
+    val supportsStrength: Boolean = inputInfoMap.any { (name, nodeInfo) ->
+        name != inputName && (nodeInfo.info as? TensorInfo)?.shape?.withResolvedUnknowns()?.contentEquals(longArrayOf(1L, 1L)) == true
+    }
 
     val minSpatialSize = spatialSizeMap.entries.find {
         modelName.contains(it.key, ignoreCase = true)

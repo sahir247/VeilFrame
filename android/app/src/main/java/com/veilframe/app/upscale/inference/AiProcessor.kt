@@ -34,8 +34,31 @@ class AiProcessor(
         inputBitmap: Bitmap,
         modelName: String,
         scaleFactor: Int? = null,
+        params: UpscaleInferenceParams = UpscaleInferenceParams(),
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onStatus: ((String) -> Unit)? = null
+    ): Bitmap = processImage(
+        session = session,
+        inputBitmap = inputBitmap,
+        modelName = modelName,
+        scaleFactor = scaleFactor,
+        chunkSize = params.chunkSize,
+        overlap = params.overlap,
+        strength = params.strength,
+        disableChunking = !params.enableChunking,
+        parallelWorkers = params.parallelWorkers,
+        onProgress = onProgress,
+        onStatus = onStatus
+    )
+
+    suspend fun processImage(
+        session: OrtSession,
+        inputBitmap: Bitmap,
+        modelName: String,
+        scaleFactor: Int? = null,
         chunkSize: Int = 512,
         overlap: Int = 16,
+        strength: Float = 65f,
         disableChunking: Boolean = false,
         parallelWorkers: Int = 0,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
@@ -47,6 +70,7 @@ class AiProcessor(
             explicitScale = scaleFactor,
             chunkSize = chunkSize,
             overlap = overlap,
+            strength = strength,
             disableChunking = disableChunking
         )
 

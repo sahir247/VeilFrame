@@ -409,13 +409,169 @@ object UpscaleModelRegistry {
         qualityFocus = "Server-Grade Unconstrained Attention"
     )
 
-    val ALL_MODELS: List<UpscaleModel> = listOf(
+    // VeilFrame SOTA Expansion Models
+    val REAL_ESRGAN_X4V3 = UpscaleModel(
+        id = "realesrgan-x4v3",
+        name = "Real-ESRGAN x4v3",
+        description = "Advanced ultra-compact general photo super-resolution with high-frequency detail synthesis.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 2_621_440L,
+        downloadUrl = "${HF_UPSCALE_BASE}RealESRGAN-x4v3.ort",
+        sha256 = "8dbd9c316f436c6e1d35a11ed29dbea0ce8f5b5b3ef082c9358ec93603a0398b",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_quality"),
+        isBuiltIn = false,
+        genre = ModelGenre.GENERAL_PHOTO,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "BSD-3-Clause",
+        qualityFocus = "Ultra-Fast Photorealistic Detail"
+    )
+
+    val REAL_ESRNET_X4PLUS = UpscaleModel(
+        id = "realesrnet-x4plus",
+        name = "RealESRNet x4 Plus",
+        description = "High-fidelity non-adversarial ESRNet baseline model producing smooth, artifact-free textures.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 35_437_480L,
+        downloadUrl = "${HF_UPSCALE_BASE}RealESRNet_x4plus.ort",
+        sha256 = "ed82b5cd61a6281db0eafa722c92803cecbf9eda8c88194c058e93e21407d38f",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_quality"),
+        isBuiltIn = false,
+        genre = ModelGenre.PHOTO_FIDELITY,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "BSD-3-Clause",
+        qualityFocus = "Artifact-Free Smooth Texture"
+    )
+
+    val REAL_ESR_ANIME_VIDEO_4V3 = UpscaleModel(
+        id = "realesr-animevideo-4v3",
+        name = "RealESR AnimeVideo x4v3",
+        description = "Extremely lightweight and fast model specialized for animation frames and anime video.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 2_495_473L,
+        downloadUrl = "https://huggingface.co/T8RIN/imagetoolbox-models/resolve/main/onnx/enhance/upscalers/RealESR-AnimeVideo-x4v3.onnx",
+        sha256 = "3d2dc0af5e2cdf3a31655c4c673df9ad74f14775d74237bd0dc68fc885bd6841",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("anime"),
+        isBuiltIn = false,
+        genre = ModelGenre.ANIME_MANGA,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "BSD-3-Clause",
+        qualityFocus = "Ultra-Fast Anime Video Frame Restoration"
+    )
+
+    val REAL_ESRGAN_ANIME_4B = UpscaleModel(
+        id = "realesrgan-anime-4b",
+        name = "Real-ESRGAN Anime 4B",
+        description = "High-speed compact 4-block neural network optimized for anime, manga, and clean digital illustrations.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 5_241_720L,
+        downloadUrl = "${HF_UPSCALE_BASE}RealESRGAN_x4plus_anime_4B32F.ort",
+        sha256 = "ca05a00f6cb42fb1fdf03e3b132ae792a83d748fc8df0c0fa62f67e798385fd7",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("anime"),
+        isBuiltIn = false,
+        genre = ModelGenre.ANIME_MANGA,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "BSD-3-Clause",
+        qualityFocus = "Ultra-Fast Anime Super-Resolution"
+    )
+
+    val ULTRASHARP_4X_LITE = UpscaleModel(
+        id = "ultrasharp-4x-lite",
+        name = "UltraSharp x4 V2 Lite",
+        description = "State-of-the-art detail sharpness and texture restoration in an optimized FP16 package.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 4,
+        sizeBytes = 16_055_408L,
+        downloadUrl = "${HF_UPSCALE_BASE}x4-UltraSharpV2_Lite_fp16_op17.ort",
+        sha256 = "f65092e0ee88c41bdbb1eb633aa4014479599228c150f796e85d429aea4d43a0",
+        supportedOutputScales = listOf(4, 8),
+        recommendedPresetIds = listOf("photo_quality"),
+        isBuiltIn = false,
+        genre = ModelGenre.PHOTO_FIDELITY,
+        capability = ModelCapability.SUPER_RESOLUTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "Custom Open Model",
+        qualityFocus = "SOTA Sharpness & Micro-Textures"
+    )
+
+    val FBCNN_COLOR = UpscaleModel(
+        id = "fbcnn-color",
+        name = "FBCNN Color (JPEG Deblock)",
+        description = "JPEG artifact reduction and color restoration with adjustable compression strength conditioning.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 1,
+        sizeBytes = 72_137_624L,
+        downloadUrl = "https://huggingface.co/T8RIN/imagetoolbox-models/resolve/main/onnx/enhance/fbcnn/fbcnn_color_fp16.onnx",
+        sha256 = "2f913d80ea425a77030ca0fa087bb7b952a2335165bb01f6ecb34efefef74026",
+        supportedOutputScales = listOf(1, 2, 4),
+        recommendedPresetIds = listOf("compression_cleaner"),
+        isBuiltIn = false,
+        genre = ModelGenre.JPEG_WEB,
+        capability = ModelCapability.JPEG_ARTIFACT_REDUCTION,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "JPEG Artifact & Blocking Removal"
+    )
+
+    val SCUNET_COLOR_GAN = UpscaleModel(
+        id = "scunet-color-gan",
+        name = "SCUNet Color GAN (Denoise)",
+        description = "Practical deep universal image denoising via Swin-Conv-UNet architecture.",
+        type = ModelType.AI_ONNX,
+        nativeScale = 1,
+        sizeBytes = 28_022_384L,
+        downloadUrl = "https://huggingface.co/T8RIN/imagetoolbox-models/resolve/main/onnx/enhance/scunet/scunet_color-GAN.onnx",
+        sha256 = "c6c19f6a62450ba759908cf00a653bbdf1c469b6a957fe1a5eb23b123d9b4bfa",
+        supportedOutputScales = listOf(1, 2, 4),
+        recommendedPresetIds = listOf("denoise"),
+        isBuiltIn = false,
+        genre = ModelGenre.GENERAL_PHOTO,
+        capability = ModelCapability.DENOISING,
+        tier = ModelTier.TIER_A_NATIVE,
+        license = "Apache-2.0",
+        qualityFocus = "Universal Deep Color Denoising"
+    )
+
+    // Dynamic Custom Imported Models Registry
+    private val customModels = java.util.concurrent.ConcurrentHashMap<String, UpscaleModel>()
+
+    fun registerCustomModel(model: UpscaleModel) {
+        customModels[model.id] = model
+    }
+
+    fun unregisterCustomModel(modelId: String): Boolean {
+        return customModels.remove(modelId) != null
+    }
+
+    fun clearCustomModels() {
+        customModels.clear()
+    }
+
+    val STATIC_ALL_MODELS: List<UpscaleModel> = listOf(
         LANCZOS,
         BICUBIC,
         NEAREST,
         REAL_ESRGAN_GENERAL_2X,
         REAL_ESRGAN_GENERAL_4X,
+        REAL_ESRGAN_X4V3,
+        REAL_ESRNET_X4PLUS,
         REAL_ESRGAN_ANIME_4X,
+        REAL_ESRGAN_ANIME_4B,
+        REAL_ESR_ANIME_VIDEO_4V3,
+        ULTRASHARP_4X_LITE,
+        FBCNN_COLOR,
+        SCUNET_COLOR_GAN,
         REAL_CUGAN_4X,
         SWINIR_REALSR_4X,
         REAL_PLKSR_4X,
@@ -432,23 +588,30 @@ object UpscaleModelRegistry {
         CODEFORMER
     )
 
+    val ALL_MODELS: List<UpscaleModel>
+        get() = STATIC_ALL_MODELS + customModels.values
+
     /**
      * Selectable models for Android on-device execution.
      * Excludes Tier C / Reference-Only workstation models.
      */
-    val SELECTABLE_MODELS: List<UpscaleModel> = ALL_MODELS.filter {
-        it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY && it.tier != ModelTier.TIER_C_DESKTOP
-    }
+    val SELECTABLE_MODELS: List<UpscaleModel>
+        get() = ALL_MODELS.filter {
+            it.deploymentStatus != DeploymentStatus.REFERENCE_ONLY && it.tier != ModelTier.TIER_C_DESKTOP
+        }
 
-    val AI_MODELS: List<UpscaleModel> = SELECTABLE_MODELS.filter { it.type == ModelType.AI_ONNX }
+    val AI_MODELS: List<UpscaleModel>
+        get() = SELECTABLE_MODELS.filter { it.type == ModelType.AI_ONNX }
 
-    val BUILT_IN_MODELS: List<UpscaleModel> = ALL_MODELS.filter { it.isBuiltIn }
+    val BUILT_IN_MODELS: List<UpscaleModel>
+        get() = ALL_MODELS.filter { it.isBuiltIn }
 
-    val REFERENCE_MODELS: List<UpscaleModel> = ALL_MODELS.filter {
-        it.deploymentStatus == DeploymentStatus.REFERENCE_ONLY || it.tier == ModelTier.TIER_C_DESKTOP
-    }
+    val REFERENCE_MODELS: List<UpscaleModel>
+        get() = ALL_MODELS.filter {
+            it.deploymentStatus == DeploymentStatus.REFERENCE_ONLY || it.tier == ModelTier.TIER_C_DESKTOP
+        }
 
     fun getModelById(id: String): UpscaleModel? {
-        return ALL_MODELS.find { it.id.equals(id, ignoreCase = true) }
+        return customModels[id] ?: ALL_MODELS.find { it.id.equals(id, ignoreCase = true) }
     }
 }

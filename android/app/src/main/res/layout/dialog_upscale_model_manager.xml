@@ -81,6 +81,17 @@
                         android:text="0 of 3 AI Models Installed"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnImportCustomModel"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Import Custom Model (.ort / .onnx)"
+                        android:textColor="@color/vf_accent_blue"
+                        app:icon="@drawable/ic_file_pick"
+                        app:iconTint="@color/vf_accent_blue" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

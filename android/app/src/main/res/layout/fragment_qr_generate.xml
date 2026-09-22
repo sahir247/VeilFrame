@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- QR Preview -->
+        <ImageView
+            android:id="@+id/qr_preview_image"
+            android:layout_width="240dp"
+            android:layout_height="240dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/rounded_card_bg"
+            android:elevation="4dp"
+            android:scaleType="fitCenter"
+            android:padding="8dp" />
+
+        <!-- Content Input -->
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Content (URL, text, WiFi…)">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/qr_content_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionDone"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <View android:layout_height="12dp" android:layout_width="match_parent" />
+
+        <!-- Style Spinner -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Style"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:layout_marginBottom="4dp" />
+        <Spinner
+            android:id="@+id/qr_style_spinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/spinner_border_bg"
+            android:padding="10dp" />
+
+        <View android:layout_height="12dp" android:layout_width="match_parent" />
+
+        <!-- Color row -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <Button
+                android:id="@+id/qr_fg_color_btn"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="Foreground" />
+            <Button
+                android:id="@+id/qr_bg_color_btn"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Background" />
+        </LinearLayout>
+
+        <View android:layout_height="8dp" android:layout_width="match_parent" />
+
+        <!-- Image row -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <Button
+                android:id="@+id/qr_logo_btn"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="Logo"
+                app:icon="@drawable/ic_tab_image" />
+            <Button
+                android:id="@+id/qr_bg_image_btn"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="BG Image"
+                app:icon="@drawable/ic_tab_image" />
+        </LinearLayout>
+
+        <View android:layout_height="16dp" android:layout_width="match_parent" />
+
+        <!-- Save / Share row -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <Button
+                android:id="@+id/qr_save_btn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="Save"
+                app:icon="@drawable/ic_action_save" />
+            <Button
+                android:id="@+id/qr_share_btn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Share"
+                app:icon="@drawable/ic_action_share" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

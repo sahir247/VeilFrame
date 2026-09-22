@@ -33,6 +33,7 @@ class ToolExecutionController(
     private val safStorageManager: SafStorageManager,
     private val scope: CoroutineScope,
     private val onOpenFilePicker: () -> Unit,
+    private val onOpenFolderPicker: () -> Unit,
     private val onLog: (String) -> Unit,
     private val getImageStudioController: () -> ImageStudioController?,
     private val getVideoStudioController: () -> VideoStudioController?
@@ -56,7 +57,12 @@ class ToolExecutionController(
 
         val uri = state.selectedUri
         if (uri == null) {
-            onOpenFilePicker()
+            // AI Bundle and Folder Scanner work on directories — open folder picker
+            if (sessionManager.currentToolMode in listOf(ToolMode.AI_BUNDLE, ToolMode.FOLDER_SCANNER)) {
+                onOpenFolderPicker()
+            } else {
+                onOpenFilePicker()
+            }
             return
         }
 

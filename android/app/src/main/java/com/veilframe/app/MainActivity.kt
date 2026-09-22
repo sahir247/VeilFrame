@@ -227,6 +227,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val modelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            imageUpscalerController.handleCustomModelImport(uri)
+        }
+    }
+
     // Dedicated Tools SAF and Photo Picker Activity Result Launchers
     private val visualMediaPickerLauncher = registerForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -426,10 +434,12 @@ class MainActivity : AppCompatActivity() {
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
             onOpenFilePicker = { openFilePickerForCurrentTool() },
+            onOpenFolderPicker = { folderPickerLauncher.launch(null) },
             onLog = { msg -> consoleLogController.log(msg) },
             getImageStudioController = { if (::imageStudioController.isInitialized) imageStudioController else null },
             getVideoStudioController = { if (::videoStudioController.isInitialized) videoStudioController else null }
         )
+        setupToolScrollDockBehavior()
 
         appUpdateManager = AppUpdateManager(
             activity = this,
@@ -514,7 +524,9 @@ class MainActivity : AppCompatActivity() {
             onBackRequested = { navigationController.showHomeScreen() },
             onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
             onLog = { msg -> consoleLogController.log(msg) }
-        )
+        ).apply {
+            onImportCustomModelRequested = { modelPickerLauncher.launch("*/*") }
+        }
 
         imageStudioController.initWorkspace()
         videoStudioController.initWorkspace()
@@ -592,6 +604,10 @@ class MainActivity : AppCompatActivity() {
             openImageUpscaler()
         }
 
+        binding.cardToolQr.setOnClickListener {
+            openQrStudio()
+        }
+
         // In-App Updates & Repair Button
         binding.btnCheckUpdates.setOnClickListener {
             appUpdateManager.checkForUpdates(isUserInitiated = true)
@@ -656,6 +672,42 @@ class MainActivity : AppCompatActivity() {
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
     }
 
+    /**
+     * Hides [cardCleanerActionDock] when the user scrolls to within ~48dp of the bottom of
+     * [scrollTool], and shows it again when scrolling back toward the top.
+     * Uses a simple alpha + translationY animation consistent with the rest of the Motion system.
+     */
+    private fun setupToolScrollDockBehavior() {
+        binding.scrollTool.setOnScrollChangeListener(
+            androidx.core.widget.NestedScrollView.OnScrollChangeListener { sv, _, scrollY, _, _ ->
+                val child = sv.getChildAt(0) ?: return@OnScrollChangeListener
+                // 120px ≈ 48dp — dock starts hiding when this close to the bottom
+                val atBottom = scrollY >= child.height - sv.height - 120
+                val dock = binding.cardCleanerActionDock
+                if (dock.visibility != android.view.View.VISIBLE) return@OnScrollChangeListener
+                if (atBottom) {
+                    // Slide + fade out
+                    dock.animate()
+                        .translationY(dock.height.toFloat() + 32f)
+                        .alpha(0f)
+                        .setDuration(220)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .withEndAction { dock.visibility = android.view.View.INVISIBLE }
+                        .start()
+                } else {
+                    // Slide + fade in
+                    dock.visibility = android.view.View.VISIBLE
+                    dock.animate()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(250)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
+            }
+        )
+    }
+
     private fun launchExportCurrentArtifact() {
         val file = toolSessionManager.currentState.lastGeneratedFile
         if (file != null && file.exists()) {
@@ -713,6 +765,22 @@ class MainActivity : AppCompatActivity() {
         toolSessionManager.currentToolMode = ToolMode.IMAGE_UPSCALER
         navigationController.showImageUpscalerScreen()
         consoleLogController.log("[UI] Opened Image Upscaler workspace.")
+    }
+
+    fun openQrStudio() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showQrStudioScreen()
+        if (supportFragmentManager.findFragmentById(R.id.fragmentQrStudio) == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.fragmentQrStudio, com.veilframe.app.qr.ui.QrStudioFragment())
+                .commit()
+        }
+        consoleLogController.log("[UI] Opened QR Studio workspace.")
     }
 
     fun openMarkdownViewer(uri: Uri, title: String? = null) {
@@ -899,10 +967,15 @@ class MainActivity : AppCompatActivity() {
             else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
         }
         com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next)
+        // Toolbar toggle: immediate recreate (not inside settings panel)
+        com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
+        recreate()
     }
 
     private fun openSettingsOverlay() {
         if (isFinishing || isDestroyed) return
+        // Reset so only changes made in THIS session trigger a recreate on close
+        com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
         val panelBinding = binding.layoutSettingsPanel
 
         val rootInsets = ViewCompat.getRootWindowInsets(binding.rootCoordinator)
@@ -994,13 +1067,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 5. Hardware diagnostics live telemetry
-        val profile = com.veilframe.app.upscale.inference.DeviceCapabilityProfile.probe(this)
-        val availMb = profile.availableMemoryBytes / (1024 * 1024)
-        val totalMb = profile.totalMemoryBytes / (1024 * 1024)
-        panelBinding.tvSettingsHardwareCores.text = "CPU Cores: ${profile.cpuCores} (Active HW Threads)"
-        panelBinding.tvSettingsHardwareMemory.text = "RAM Headroom: ~${availMb} MB (Total: ${totalMb} MB)"
-        panelBinding.tvSettingsHardwareNnapi.text = "NNAPI: ${if (profile.supportsNnapi) "Supported (NPU/GPU Accelerator)" else "Unsupported / CPU Fallback"}"
-        panelBinding.tvSettingsHardwareAcceleration.text = "Acceleration: ${if (profile.supportsNnapiFp16) "NNAPI FP16 Relaxed + Multi-Threaded CPU" else "NNAPI Standard + CPU"}"
+        val actManager = getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val memInfo = android.app.ActivityManager.MemoryInfo().also { actManager?.getMemoryInfo(it) }
+        val availMb = memInfo.availMem / (1024 * 1024)
+        val totalMb = memInfo.totalMem / (1024 * 1024)
+        val cpuCores = Runtime.getRuntime().availableProcessors()
+        panelBinding.tvSettingsHardwareCores.text = "CPU Cores: $cpuCores (Active HW Threads)"
+        panelBinding.tvSettingsHardwareMemory.text = "RAM Headroom: ~$availMb MB (Total: $totalMb MB)"
+        panelBinding.tvSettingsHardwareNnapi.text = "Engine: VeilFrame SOTA ONNX"
+        panelBinding.tvSettingsHardwareAcceleration.text = "Acceleration: Multi-Threaded CPU (ONNX Runtime)"
 
         // 6. Close and dismissal bindings
         panelBinding.btnSettingsClose.setOnClickListener { closeSettingsOverlay() }
@@ -1027,6 +1102,11 @@ class MainActivity : AppCompatActivity() {
             settingsContainer = binding.containerSettings,
             scrimView = binding.scrimSettings
         )
+        // Apply any pending theme/palette/typography changes as a single recreate()
+        // AFTER the close animation (~300ms), so the panel is fully dismissed first.
+        if (com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()) {
+            binding.rootCoordinator.postDelayed({ recreate() }, 320L)
+        }
     }
 
     private fun openWebUrl(url: String) {

@@ -358,7 +358,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="NNAPI: Probing..."
+                        android:text="Engine: VeilFrame SOTA ONNX"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="11sp"
                         android:fontFamily="monospace" />
@@ -368,7 +368,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Acceleration: NNAPI (NPU/GPU) + Multi-Threaded CPU"
+                        android:text="Acceleration: Multi-Threaded CPU (ONNX Runtime)"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:fontFamily="monospace" />

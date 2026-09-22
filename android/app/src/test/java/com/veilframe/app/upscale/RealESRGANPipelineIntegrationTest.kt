@@ -1,21 +1,27 @@
 package com.veilframe.app.upscale
 
 import ai.onnxruntime.OnnxJavaType
-import com.veilframe.app.upscale.inference.OnnxUpscaleRuntime
-import com.veilframe.app.upscale.inference.UpscaleTileProcessor
+import com.veilframe.app.upscale.inference.ModelInfo
+import com.veilframe.app.upscale.inference.OnnxSessionManager
+import com.veilframe.app.upscale.inference.TileGrid
+import com.veilframe.app.upscale.inference.TileFiles
+import com.veilframe.app.upscale.inference.UpscaleInferenceParams
+import com.veilframe.app.upscale.model.UpscaleModelRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 
 /**
  * End-to-end integration test verifying:
- * 1. 1272x2800 input produces exactly 5088x11200 for 4x scaling
+ * 1. 1272x2800 input produces exactly 5088x11200 for 4x scaling using VeilFrame TileGrid
  * 2. Boundary tile (312x400) inference compatibility on both RealESRGAN_x4plus.ort and RealESRGAN_x2plus.ort
- * 3. Exact output dimensions derived from output tensor
- * 4. Float16 tensor validation and offline execution
+ * 3. Exact output dimensions derived from output tensor and padding contract
+ * 4. VeilFrame inference parameters configuration and validation
+ * 5. Registry contains all VeilFrame SOTA models
  */
 class RealESRGANPipelineIntegrationTest {
 
@@ -34,19 +40,31 @@ class RealESRGANPipelineIntegrationTest {
         val srcH = 2800
         val scale = 4
 
-        val processor = UpscaleTileProcessor(tileSize = 512, overlap = 32)
-        val tiles = processor.calculateTiles(srcW, srcH)
+        val grid = TileGrid.from(
+            imageWidth = srcW,
+            imageHeight = srcH,
+            tileLimit = 512,
+            overlap = 32
+        )
+
+        assertEquals(3, grid.columns)
+        assertEquals(6, grid.rows)
+        assertEquals(480, grid.step) // 512 - 32
+
+        val tiles = grid.tiles { index ->
+            TileFiles(File("in_$index.png"), File("out_$index.png"))
+        }
 
         assertEquals("Expected 18 tiles for 1272x2800 with 512 tile and 32 overlap", 18, tiles.size)
 
         // Validate final right-bottom boundary tile
         val lastTile = tiles.last()
-        assertEquals(2, lastTile.col)
-        assertEquals(5, lastTile.row)
-        assertEquals(960, lastTile.x)
-        assertEquals(2400, lastTile.y)
-        assertEquals(312, lastTile.width)
-        assertEquals(400, lastTile.height)
+        assertEquals(2, lastTile.position.column)
+        assertEquals(5, lastTile.position.row)
+        assertEquals(960, lastTile.area.x)
+        assertEquals(2400, lastTile.area.y)
+        assertEquals(312, lastTile.area.width)
+        assertEquals(400, lastTile.area.height)
 
         // Verify output dimension math
         val expectedOutW = srcW * scale
@@ -54,14 +72,14 @@ class RealESRGANPipelineIntegrationTest {
         assertEquals(5088, expectedOutW)
         assertEquals(11200, expectedOutH)
 
-        // Verify each tile's scaled footprint
+        // Verify each tile's scaled footprint reaches exact bounds
         var maxObservedX = 0
         var maxObservedY = 0
         for (t in tiles) {
-            val startX = t.x * scale
-            val startY = t.y * scale
-            val scaledW = t.width * scale
-            val scaledH = t.height * scale
+            val startX = t.area.x * scale
+            val startY = t.area.y * scale
+            val scaledW = t.area.width * scale
+            val scaledH = t.area.height * scale
             val endX = startX + scaledW
             val endY = startY + scaledH
 
@@ -76,17 +94,22 @@ class RealESRGANPipelineIntegrationTest {
     @Test
     fun testRealESRGAN_x4plus_BoundaryTileCompatibility() {
         val modelFile = findModelFile("RealESRGAN_x4plus.ort") ?: return
-        val runtime = OnnxUpscaleRuntime(modelFile, scale = 4)
+        val session = OnnxSessionManager.createSession(modelFile)
 
         try {
-            // Verify model inspection metadata
-            assertEquals("input", runtime.inputName)
-            assertEquals(OnnxJavaType.FLOAT16, runtime.inputType)
-            assertEquals("output", runtime.outputName)
-            assertEquals(OnnxJavaType.FLOAT16, runtime.outputType)
+            val info = ModelInfo(
+                session = session,
+                modelName = modelFile.name,
+                explicitScale = 4
+            )
+
+            assertEquals("input", info.inputName)
+            assertEquals(3, info.inputChannels)
+            assertEquals(3, info.outputChannels)
+            assertEquals(4, info.scaleFactor)
+            assertTrue("Expected Float16 precision for RealESRGAN_x4plus", info.isFp16)
 
             // Simulate the 312x400 boundary tile in 1272x2800 image
-            // We verify that input tensor preparation with FLOAT16 produces no ORT_INVALID_ARGUMENT
             val actualW = 312
             val actualH = 400
             val targetH = actualH
@@ -98,30 +121,33 @@ class RealESRGANPipelineIntegrationTest {
             assertEquals(400L, tensorShape[2])
             assertEquals(312L, tensorShape[3])
         } finally {
-            runtime.close()
+            session.close()
         }
     }
 
     @Test
     fun testRealESRGAN_x2plus_BoundaryTileCompatibility() {
         val modelFile = findModelFile("RealESRGAN_x2plus.ort") ?: return
-        val runtime = OnnxUpscaleRuntime(modelFile, scale = 2)
+        val session = OnnxSessionManager.createSession(modelFile)
 
         try {
-            assertEquals("input", runtime.inputName)
-            assertEquals(OnnxJavaType.FLOAT16, runtime.inputType)
-            assertEquals("output", runtime.outputName)
-            assertEquals(OnnxJavaType.FLOAT16, runtime.outputType)
-            assertEquals(2, runtime.scale)
+            val info = ModelInfo(
+                session = session,
+                modelName = modelFile.name,
+                explicitScale = 2
+            )
+
+            assertEquals("input", info.inputName)
+            assertEquals(3, info.inputChannels)
+            assertEquals(3, info.outputChannels)
+            assertEquals(2, info.scaleFactor)
         } finally {
-            runtime.close()
+            session.close()
         }
     }
 
     @Test
     fun testFixedModelPaddingContractMath() {
-        // Test Requirement 3: If model has fixed spatial dimensions [1,3,512,512],
-        // actual tile 312x400 pads to 512x512, runs inference to 2048x2048, crops to 1248x1600.
         val actualW = 312
         val actualH = 400
         val fixedModelW = 512
@@ -142,5 +168,64 @@ class RealESRGANPipelineIntegrationTest {
         val croppedOutH = actualH * scale
         assertEquals(1248, croppedOutW)
         assertEquals(1600, croppedOutH)
+    }
+
+    @Test
+    fun testUpscaleInferenceParamsDefaultsAndValidation() {
+        val params = UpscaleInferenceParams()
+        assertEquals(512, params.chunkSize)
+        assertEquals(32, params.overlap)
+        assertEquals(65f, params.strength, 0.001f)
+        assertTrue(params.enableChunking)
+        assertTrue(params.parallelWorkers in 0..8)
+
+        // Invalid chunkSize
+        try {
+            UpscaleInferenceParams(chunkSize = 0)
+            fail("Expected IllegalArgumentException for chunkSize = 0")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("chunkSize must be positive") == true)
+        }
+
+        // Invalid overlap >= chunkSize / 2
+        try {
+            UpscaleInferenceParams(chunkSize = 100, overlap = 50)
+            fail("Expected IllegalArgumentException for overlap >= chunkSize / 2")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("overlap (50) must be less than half of chunkSize") == true)
+        }
+
+        // Invalid strength
+        try {
+            UpscaleInferenceParams(strength = 105f)
+            fail("Expected IllegalArgumentException for strength > 100")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("strength must be between 0 and 100") == true)
+        }
+    }
+
+    @Test
+    fun testSotaModelsRegistered() {
+        assertNotNull(UpscaleModelRegistry.REAL_ESRGAN_X4V3)
+        assertEquals(4, UpscaleModelRegistry.REAL_ESRGAN_X4V3.nativeScale)
+        assertEquals("Real-ESRGAN x4v3", UpscaleModelRegistry.REAL_ESRGAN_X4V3.name)
+
+        assertNotNull(UpscaleModelRegistry.REAL_ESRNET_X4PLUS)
+        assertEquals(4, UpscaleModelRegistry.REAL_ESRNET_X4PLUS.nativeScale)
+
+        assertNotNull(UpscaleModelRegistry.REAL_ESRGAN_ANIME_4B)
+        assertEquals(4, UpscaleModelRegistry.REAL_ESRGAN_ANIME_4B.nativeScale)
+
+        assertNotNull(UpscaleModelRegistry.REAL_ESR_ANIME_VIDEO_4V3)
+        assertEquals(4, UpscaleModelRegistry.REAL_ESR_ANIME_VIDEO_4V3.nativeScale)
+
+        assertNotNull(UpscaleModelRegistry.ULTRASHARP_4X_LITE)
+        assertEquals(4, UpscaleModelRegistry.ULTRASHARP_4X_LITE.nativeScale)
+
+        assertNotNull(UpscaleModelRegistry.FBCNN_COLOR)
+        assertEquals(1, UpscaleModelRegistry.FBCNN_COLOR.nativeScale)
+
+        assertNotNull(UpscaleModelRegistry.SCUNET_COLOR_GAN)
+        assertEquals(1, UpscaleModelRegistry.SCUNET_COLOR_GAN.nativeScale)
     }
 }

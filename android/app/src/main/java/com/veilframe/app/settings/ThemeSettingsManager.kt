@@ -21,9 +21,24 @@ import com.veilframe.app.R
  * Architecture:
  * - Application.onCreate: set night mode policy only
  * - Activity.onCreate: super.onCreate() → resolve theme overlay → setContentView()
- * - Theme changes: persist preference → activity.recreate()
+ * - Theme changes: persist preference, set pendingRecreate=true → caller decides when to recreate
+ *   (typically deferred until the settings panel is dismissed via Done/back).
  */
 object ThemeSettingsManager {
+
+    /** True when at least one theme pref changed during an open settings session.
+     *  The caller (MainActivity.closeSettingsOverlay) should call [consumePendingRecreate]
+     *  after the close animation to apply a single activity.recreate().
+     */
+    var pendingRecreate: Boolean = false
+        private set
+
+    /** Consumes and clears the flag, returning whether a recreate is needed. */
+    fun consumePendingRecreate(): Boolean {
+        val needed = pendingRecreate
+        pendingRecreate = false
+        return needed
+    }
 
     private const val PREFS_NAME = "veilframe_theme_prefs"
 
@@ -127,12 +142,13 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Sets theme mode, persists, applies night mode, and recreates the activity.
+     * Persists the theme mode and applies night mode immediately (safe without recreate).
+     * Sets [pendingRecreate] so the caller can recreate once the settings panel is dismissed.
      */
     fun setThemeMode(activity: Activity, mode: ThemeMode) {
         getPrefs(activity).edit().putString(KEY_THEME_MODE, mode.name).apply()
         applyNightMode(mode)
-        activity.recreate()
+        pendingRecreate = true
     }
 
     fun isDynamicColorEnabled(context: Context): Boolean {
@@ -141,11 +157,12 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Sets dynamic color preference and recreates the activity.
+     * Persists the dynamic color preference.
+     * Sets [pendingRecreate] so the caller can recreate once the settings panel is dismissed.
      */
     fun setDynamicColorEnabled(activity: Activity, enabled: Boolean) {
         getPrefs(activity).edit().putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
-        activity.recreate()
+        pendingRecreate = true
     }
 
     fun getAccentPalette(context: Context): AccentPalette {
@@ -158,11 +175,12 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Sets accent palette and recreates the activity.
+     * Persists the accent palette selection.
+     * Sets [pendingRecreate] so the caller can recreate once the settings panel is dismissed.
      */
     fun setAccentPalette(activity: Activity, palette: AccentPalette) {
         getPrefs(activity).edit().putString(KEY_ACCENT_PALETTE, palette.name).apply()
-        activity.recreate()
+        pendingRecreate = true
     }
 
     fun getTypographyStyle(context: Context): TypographyStyle {
@@ -175,11 +193,12 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Sets typography style and recreates the activity.
+     * Persists the typography style selection.
+     * Sets [pendingRecreate] so the caller can recreate once the settings panel is dismissed.
      */
     fun setTypographyStyle(activity: Activity, style: TypographyStyle) {
         getPrefs(activity).edit().putString(KEY_TYPOGRAPHY, style.name).apply()
-        activity.recreate()
+        pendingRecreate = true
     }
 
     fun applyNightMode(mode: ThemeMode) {

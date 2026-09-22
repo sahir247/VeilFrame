@@ -78,6 +78,38 @@ fun float16ToFloat(fp16: Short): Float {
     return intBitsToFloat(sign or ((exponent - 15 + 127) shl 23) or (mantissa shl 13))
 }
 
+fun smoothStep(
+    position: Int,
+    length: Int
+): Float {
+    val x = (position.toFloat() / (length - 1).coerceAtLeast(1)).coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
+}
+
+fun mixColors(
+    from: Int,
+    to: Int,
+    amount: Float
+): Int {
+    val keep = 1f - amount
+    val aFrom = (from ushr 24) and 0xff
+    val rFrom = (from ushr 16) and 0xff
+    val gFrom = (from ushr 8) and 0xff
+    val bFrom = from and 0xff
+
+    val aTo = (to ushr 24) and 0xff
+    val rTo = (to ushr 16) and 0xff
+    val gTo = (to ushr 8) and 0xff
+    val bTo = to and 0xff
+
+    val a = (keep * aFrom + amount * aTo).toInt().coerceIn(0, 255)
+    val r = (keep * rFrom + amount * rTo).toInt().coerceIn(0, 255)
+    val g = (keep * gFrom + amount * gTo).toInt().coerceIn(0, 255)
+    val b = (keep * bFrom + amount * bTo).toInt().coerceIn(0, 255)
+
+    return (a shl 24) or (r shl 16) or (g shl 8) or b
+}
+
 fun createStrengthTensor(
     env: OrtEnvironment,
     strength: Float,

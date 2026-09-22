@@ -79,6 +79,10 @@ class MainNavigationController(
             binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
             binding.layoutImageUpscaler.scrollImageUpscaler.translationX = 0f
         }
+        if (activeView != binding.fragmentQrStudio) {
+            binding.fragmentQrStudio.visibility = View.GONE
+            binding.fragmentQrStudio.translationX = 0f
+        }
     }
 
     fun showHomeScreen() {
@@ -92,6 +96,7 @@ class MainNavigationController(
             ScreenState.VIDEO_STUDIO -> binding.layoutVideoStudio.root
             ScreenState.IMAGE_UPSCALER -> binding.layoutImageUpscaler.scrollImageUpscaler
             ScreenState.MARKDOWN_VIEWER -> binding.layoutMarkdownViewer.layoutMarkdownRoot
+            ScreenState.QR_STUDIO -> binding.fragmentQrStudio
             ScreenState.HOME -> null
         }
         previousScreen = currentScreen
@@ -265,6 +270,35 @@ class MainNavigationController(
             binding.layoutImageUpscaler.scrollImageUpscaler.alpha = 1.0f
             binding.layoutImageUpscaler.scrollImageUpscaler.translationX = 0f
             hideAllToolViewsExcept(binding.layoutImageUpscaler.scrollImageUpscaler)
+        }
+    }
+
+    fun showQrStudioScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME)
+        previousScreen = currentScreen
+        currentScreen = ScreenState.QR_STUDIO
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.fragmentQrStudio)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.fragmentQrStudio
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.fragmentQrStudio.visibility = View.VISIBLE
+            binding.fragmentQrStudio.alpha = 1.0f
+            binding.fragmentQrStudio.translationX = 0f
+            hideAllToolViewsExcept(binding.fragmentQrStudio)
         }
     }
 }

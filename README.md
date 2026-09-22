@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.7-blue.svg" alt="Version" /></a>
+  <a href="https://github.com/sahir247/VeilFrame"><img src="https://img.shields.io/badge/version-2.2.8-blue.svg" alt="Version" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android-blue.svg" alt="Platform" /></a>
   <a href="https://python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-green.svg" alt="Python" /></a>
   <a href="https://github.com/"><img src="https://img.shields.io/badge/CLI-veilframe-informational.svg" alt="CLI" /></a>

@@ -68,4 +68,61 @@ class UpscaleModelRegistryTest {
             assertTrue(model.supportedOutputScales.containsAll(listOf(2, 4, 8)))
         }
     }
+
+    @Test
+    fun testSotaExpansionModelsMetadata() {
+        val x4v3 = UpscaleModelRegistry.REAL_ESRGAN_X4V3
+        assertEquals(4, x4v3.nativeScale)
+        assertEquals(ModelCapability.SUPER_RESOLUTION, x4v3.capability)
+        assertEquals(ModelGenre.GENERAL_PHOTO, x4v3.genre)
+
+        val anime4b = UpscaleModelRegistry.REAL_ESRGAN_ANIME_4B
+        assertEquals(4, anime4b.nativeScale)
+        assertEquals(ModelCapability.SUPER_RESOLUTION, anime4b.capability)
+        assertEquals(ModelGenre.ANIME_MANGA, anime4b.genre)
+
+        val ultrasharp = UpscaleModelRegistry.ULTRASHARP_4X_LITE
+        assertEquals(4, ultrasharp.nativeScale)
+        assertEquals(ModelCapability.SUPER_RESOLUTION, ultrasharp.capability)
+        assertEquals(ModelGenre.PHOTO_FIDELITY, ultrasharp.genre)
+
+        val fbcnn = UpscaleModelRegistry.FBCNN_COLOR
+        assertEquals(1, fbcnn.nativeScale)
+        assertEquals(ModelCapability.JPEG_ARTIFACT_REDUCTION, fbcnn.capability)
+        assertEquals(ModelGenre.JPEG_WEB, fbcnn.genre)
+
+        val scunet = UpscaleModelRegistry.SCUNET_COLOR_GAN
+        assertEquals(1, scunet.nativeScale)
+        assertEquals(ModelCapability.DENOISING, scunet.capability)
+        assertEquals(ModelGenre.GENERAL_PHOTO, scunet.genre)
+    }
+
+    @Test
+    fun testDynamicCustomModelRegistration() {
+        UpscaleModelRegistry.clearCustomModels()
+
+        val customModel = com.veilframe.app.upscale.model.UpscaleModel(
+            id = "custom-test-model",
+            name = "Test Custom Model",
+            description = "Imported test model",
+            type = com.veilframe.app.upscale.model.ModelType.AI_ONNX,
+            nativeScale = 4,
+            sizeBytes = 12345L,
+            sha256 = "abc123",
+            supportedOutputScales = listOf(4, 8),
+            genre = ModelGenre.CUSTOM_IMPORTED,
+            isImported = true
+        )
+
+        UpscaleModelRegistry.registerCustomModel(customModel)
+        val fetched = UpscaleModelRegistry.getModelById("custom-test-model")
+        assertEquals(customModel, fetched)
+        assertTrue(UpscaleModelRegistry.ALL_MODELS.contains(customModel))
+        assertTrue(UpscaleModelRegistry.AI_MODELS.contains(customModel))
+
+        val removed = UpscaleModelRegistry.unregisterCustomModel("custom-test-model")
+        assertTrue(removed)
+        assertEquals(null, UpscaleModelRegistry.getModelById("custom-test-model"))
+    }
 }
+

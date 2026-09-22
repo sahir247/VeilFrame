@@ -36,7 +36,8 @@ data class UpscaleModel(
     val outputChannelOrder: String = "RGB",
     val outputNormalizationRange: String = "[0.0, 1.0]",
     val tileCompatible: Boolean = true,
-    val minInputDimension: Int = 16
+    val minInputDimension: Int = 16,
+    val isImported: Boolean = false
 ) {
     /**
      * Backward-compatibility accessor for existing tests and call sites.
@@ -110,7 +111,8 @@ enum class ModelGenre {
     ANIME_MANGA,
     PORTRAIT_FACE,
     LIGHTWEIGHT_MOBILE,
-    ALGORITHMIC_FAST
+    ALGORITHMIC_FAST,
+    CUSTOM_IMPORTED
 }
 
 enum class ModelCapability {

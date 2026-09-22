@@ -9,5 +9,6 @@ enum class ScreenState {
     IMAGE_STUDIO,
     VIDEO_STUDIO,
     MARKDOWN_VIEWER,
-    IMAGE_UPSCALER
+    IMAGE_UPSCALER,
+    QR_STUDIO
 }

@@ -70,6 +70,14 @@ class UpscaleInferenceEngine(
         source: Bitmap,
         model: UpscaleModel,
         targetScale: Int,
+        listener: InferenceProgressListener?
+    ): Result<Bitmap> = upscale(source, model, targetScale, UpscaleInferenceParams(), listener)
+
+    suspend fun upscale(
+        source: Bitmap,
+        model: UpscaleModel,
+        targetScale: Int,
+        params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: InferenceProgressListener? = null
     ): Result<Bitmap> = withContext(Dispatchers.Default) {
         val srcW = source.width
@@ -77,14 +85,6 @@ class UpscaleInferenceEngine(
 
         // Validate execution plan: scales, dimensions, and capability constraints
         validateExecutionPlan(srcW, srcH, model, targetScale)
-
-        // Check memory safety plan
-        val isAiModel = (model.type == ModelType.AI_ONNX)
-        val plan = UpscaleMemoryPlanner.plan(srcW, srcH, targetScale, isAiModel = isAiModel)
-        if (!plan.isSafe) {
-            val err = plan.warningMessage ?: "Image resolution exceeds device memory budget."
-            return@withContext Result.failure(IllegalArgumentException(err))
-        }
 
         try {
             ensureActive()
@@ -145,8 +145,7 @@ class UpscaleInferenceEngine(
                             inputBitmap = source,
                             modelName = modelFile.name,
                             scaleFactor = model.nativeScale,
-                            chunkSize = 512,
-                            overlap = 16,
+                            params = params,
                             onProgress = { current, total ->
                                 val pct = if (total > 0) (current * 100) / total else 0
                                 listener?.onProgress(current, total, pct)

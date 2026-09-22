@@ -72,7 +72,7 @@
                     android:paddingEnd="8dp"
                     android:paddingTop="3dp"
                     android:paddingBottom="3dp"
-                    android:text="v2.2.7"
+                    android:text="v2.2.8"
                     android:textColor="@color/vf_secondary"
                     android:textSize="10sp"
                     android:textStyle="bold" />
@@ -392,7 +392,7 @@
                 android:id="@+id/cardToolImageUpscaler"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
@@ -445,6 +445,68 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Image Upscaler"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Tool 4: QR Code Studio -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardToolQr"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_tool_qr"
+                        android:contentDescription="QR Code Studio Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="QR CODE STUDIO"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Generate styled QR codes with 11 artistic rendering modes, logos, and safe CameraX scanning."
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open QR Studio"
                         app:tint="@color/vf_secondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -2081,6 +2143,15 @@
     <include
         android:id="@+id/layoutImageUpscaler"
         layout="@layout/layout_image_upscaler" />
+
+    <!-- ================================================================= -->
+    <!-- QR STUDIO — 8th tool (Fragment host)                              -->
+    <!-- ================================================================= -->
+    <FrameLayout
+        android:id="@+id/fragmentQrStudio"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->
