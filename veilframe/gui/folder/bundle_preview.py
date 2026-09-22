@@ -61,11 +61,11 @@ class BundlePreviewDialog(QDialog):
         top_lay.addStretch()
 
         # Token metrics
-        lbl_tokens = QLabel(f"⚡ Tokens: {self.result.total_tokens:,}")
+        lbl_tokens = QLabel(f"Tokens: {self.result.total_tokens:,}")
         lbl_tokens.setStyleSheet("color: #22c55e; font-weight: 700; font-size: 12px;")
         top_lay.addWidget(lbl_tokens)
 
-        lbl_files = QLabel(f"📁 Files: {self.result.included_count} included ({self.result.excluded_count} excluded)")
+        lbl_files = QLabel(f"Files: {self.result.included_count} included ({self.result.excluded_count} excluded)")
         lbl_files.setStyleSheet("color: #94a3b8; font-size: 11px;")
         top_lay.addWidget(lbl_files)
 
@@ -145,7 +145,7 @@ class BundlePreviewDialog(QDialog):
         if isinstance(self.result.content, str):
             clipboard = QGuiApplication.clipboard()
             clipboard.setText(self.result.content)
-            self.lbl_feedback.setText("✓ Copied full bundle to clipboard!")
+            self.lbl_feedback.setText("Copied full bundle to clipboard!")
             QTimer.singleShot(3000, lambda: self.lbl_feedback.setText(""))
 
     def _on_save(self) -> None:

@@ -2,7 +2,33 @@
 
 ## v2.2.8 — September 2026
 
-VeilFrame v2.2.8 delivers an authoritative architectural correctness and security update across the entire application stack. Key highlights include dynamic theming with per-Activity lifecycle management and pure AMOLED black (`#000000`) surfaces, an iterative rate-controlled WhatsApp video pipeline with a non-negotiable 16 MiB ceiling, Stage 1 trim verification with automated fallback to single-pass transcode, a race-condition-free Floating Action Dock with generation token guards, authoritative `ImageTransformPlan` with Passport 600×600 px preset enforcement, probe encoding, proactive bitmap lifecycle recycling, dual publisher certificate verification in `AppUpdateManager`, model registry classification for experimental neural models, device-bound AI planner caching, and structured `ProcessingJob` foreground service management.
+VeilFrame v2.2.8 delivers an authoritative architectural update across the application stack. Highlights include the launch of the **QR Code Studio (8th Native Mobile Tool)** with 11 artistic visual rendering modes, live CameraX viewfinder scanning, and safe 11-format payload parsing; dynamic theming with per-Activity lifecycle management and pure AMOLED black (`#000000`) surfaces; an iterative rate-controlled WhatsApp video pipeline with a non-negotiable 16 MiB ceiling; floating dock scroll-to-bottom hide behavior; folder-picker binding for Folder Analyzer and AI Bundle; authoritative `ImageTransformPlan` with Passport 600x600 px preset enforcement; dual publisher certificate verification; and complete zero-emoji compliance with a pure SVG vector iconography system.
+
+- **QR Code Studio (8th Tool) & 11 Artistic Visual Renderers:**
+  - **11 Visual Rendering Modes:** Complete implementation of artistic rendering styles inspired by EFQRCode:
+    1. `Basic`: Standard rectangular and rounded modules with configurable corner shapes.
+    2. `Bubble`: Organic clustered circles with separate outline and core coloration.
+    3. `2.5D`: Isometric 3D projection rendering top, left, and right illuminated cube faces.
+    4. `DSJ`: Concentric circular DJ turntable position markers.
+    5. `Image Fill`: Module-level image texture fill via hardware `BitmapShader`.
+    6. `Image Overlay`: Full background image compositing with contrast-preserving module masks.
+    7. `Image Resample`: Pixelated image sampling into the QR grid with luminance weighting.
+    8. `Line`: Interconnected horizontal and vertical stripe geometry.
+    9. `Random Rectangle`: Seeded pseudo-random rectangular jitter for artistic layouts.
+    10. `Function`: Procedural mathematical shape generation based on module coordinates.
+    11. `Style Function`: Dynamic functional style compositing with secondary modulation.
+  - **Live CameraX Viewfinder Scanner:** Real-time frame analysis using ZXing `PlanarYUVLuminanceSource`, custom reticle overlay (`QrScanOverlayView`), and gallery photo static image decoding.
+  - **Comprehensive Safe Payload Parser (11 Formats):** Automated parsing and safe intent dispatch for Wi-Fi, UPI payments, URLs (with IDN homograph phishing defense), Phone (`tel:`), SMS (`smsto:`), Email (`mailto:`), Geo coordinates (`geo:`), Contacts (vCard/MeCard), Calendar events, and OtpAuth tokens.
+  - **Multi-Format Vector & Raster Exporter:** High-resolution PNG, JPEG, SVG path data, and PDF vector document export.
+
+- **Floating Action Dock Refinements & Folder Pickers:**
+  - **Scroll-to-Bottom Auto-Hide:** Floating action dock dynamically hides when scrolling down to the bottom of the workspace to prevent content obstruction, reappearing instantly when scrolling up.
+  - **Folder Picker Binding:** Folder Analyzer and AI Bundle tools now explicitly bind to directory selection (`ACTION_OPEN_DOCUMENT_TREE`) from the floating action bar.
+  - **Generation Token Guard:** Implemented `activeGeneration` token verification across Video Studio, Image Studio, and Cleaner tools, guaranteeing that stale asynchronous tasks cannot overwrite state.
+
+- **Strict Zero-Emoji & Pure SVG Iconography:**
+  - Complete elimination of unicode emojis across all UI layouts, Kotlin controllers, Python backends, console telemetry, and Markdown documentation.
+  - Dedicated 24x24 vector SVG icon set for all tool workspaces (`qr.svg`, `upscale.svg`, `video_studio.svg`, `image_studio.svg`, `folder.svg`, `ai.svg`, `markdown.svg`, `security.svg`).
 
 - **Dynamic Theming & AMOLED True Black Surfaces:**
   - **Per-Activity Theme Lifecycle:** Restructured theme and dynamic color application directly in `Activity.onCreate` before `setContentView()`, eliminating startup theme flashes and ensuring seamless runtime palette switching.
@@ -16,15 +42,9 @@ VeilFrame v2.2.8 delivers an authoritative architectural correctness and securit
   - **Non-Blocking Cancellable FFmpeg:** Uses `suspendCancellableCoroutine` to enable instant cancellation of active encoding sessions.
   - **SAR & Rotation Tracking:** Extracts sample aspect ratio (`sample_aspect_ratio`) and display matrix rotation in `WhatsappStatusMediaAnalyzer`.
 
-- **Floating Action Dock State Machine & Generation Token Guard:**
-  - **Generation Token Guard:** Implemented `activeGeneration` token verification across Video Studio, Image Studio, and Cleaner tools, guaranteeing that stale asynchronous encoding or export tasks cannot overwrite the state of a newly selected media item.
-  - **Unified 4-Stage State Machine:** Explicit reactive state transitions (`EMPTY` $\to$ `READY` $\to$ `PROCESSING` $\to$ `COMPLETED`) across all tool docks.
-  - **Floating Dock UI Refinement:** Upgraded cleaner dock to a floating `MaterialCardView` with 28dp corner radius, 10dp elevation, and dynamic navigation bar inset padding.
-  - **Exported vs. Processed Metrics:** Studio docks now cleanly track and report separate counters for processed items versus successfully exported files.
-
 - **Image Studio Authoritative TransformPlan & Memory Lifecycle:**
   - **Authoritative `ImageTransformPlan`:** Unifies preview rendering, probe estimation, and export parameters into a single immutable specification.
-  - **Passport 600×600 Preset Enforcement:** Enforces strict 1:1 aspect constraint in cropping and exports directly to 600×600 px dimensions for visa and passport document compliance.
+  - **Passport 600x600 Preset Enforcement:** Enforces strict 1:1 aspect constraint in cropping and exports directly to 600x600 px dimensions for visa and passport document compliance.
   - **Empirical Probe Encoding:** Directly probe-encodes rendered bitmaps with the target codec, quality, and metadata policy for honest file size estimation.
   - **Proactive Bitmap Recycling:** Explicitly recycles intermediate preview and result bitmaps before allocating new bitmaps or exiting tools, eliminating native memory leaks.
 
@@ -44,7 +64,7 @@ VeilFrame v2.2.8 delivers an authoritative architectural correctness and securit
 
 - Existing Android installations upgrade cleanly via the in-app updater verifying against `update.json` version `2.2.8` (`versionCode = 228`) with mandatory SHA-256 and signing certificate validation.
 - WhatsApp Status video processing strictly guarantees outputs under 16 MiB with automatic iterative retry and trim fallback.
-- Image Studio Passport preset guarantees 600×600 px output dimensions.
+- Image Studio Passport preset guarantees 600x600 px output dimensions.
 
 ### Downloads and installation
 
@@ -72,7 +92,7 @@ pip install veilframe-2.2.8-py3-none-any.whl
 ## Previous releases
 
 ### v2.2.7 — September 2026
-**WhatsApp HD/FHD bounded resolution, 4-stage Floating Action Dock, Passport 600×600 preset, AMOLED Dark theming & 2025–2026 AI super-resolution model lineup.**
+**WhatsApp HD/FHD bounded resolution, 4-stage Floating Action Dock, Passport 600x600 preset, AMOLED Dark theming & 2025–2026 AI super-resolution model lineup.**
 Decoupled WhatsApp Status from forced 9:16 with deterministic DAR preservation and even-dimension invariants; added zero-QNN compliance, adaptive hardware-aware AI inference, and 24dp card radii across all 8 tool cards.
 
 ### v2.2.6 — September 2026

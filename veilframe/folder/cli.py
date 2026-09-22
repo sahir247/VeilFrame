@@ -272,7 +272,7 @@ def cmd_folder_ai(args: argparse.Namespace) -> None:
         "Primary Languages": ", ".join(scan_res.languages) if scan_res.languages else "Unknown",
     }
     if scan_res.security_alerts:
-        card_data["Security Alerts"] = f"⚠️ {len(scan_res.security_alerts)} potential secrets detected & masked"
+        card_data["Security Alerts"] = f"[Alert] {len(scan_res.security_alerts)} potential secrets detected & masked"
     if bundle_res.output_path:
         card_data["Saved To"] = bundle_res.output_path
         if os.path.exists(bundle_res.output_path):

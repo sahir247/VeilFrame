@@ -431,7 +431,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="✓ Built-in • 0 MB download • High-speed algorithmic scaling"
+                        android:text="Built-in • 0 MB download • High-speed algorithmic scaling"
                         android:textColor="@color/vf_accent_green"
                         android:textSize="11sp" />
                 </LinearLayout>

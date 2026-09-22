@@ -698,6 +698,48 @@ The research attribution benchmark suite (`research/attribution_benchmarks/`) pr
 
 ---
 
+---
+
+## QR Code Studio & Safe Payload Subsystem (v2.2.8 Architecture)
+
+VeilFrame v2.2.8 integrates the **QR Code Studio (8th Tool)** (`com.veilframe.app.qr.*`), providing an offline creative generation engine with 11 artistic rendering modes and a live CameraX scanner with defensive payload validation:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                     QR CODE STUDIO & SAFE PAYLOAD SUBSYSTEM (v2.2.8)                             │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│        11 ARTISTIC RENDERERS         │          DEFENSIVE SCANNER & SAFE PAYLOAD ENGINE          │
+│                                      │                                                           │
+│ • Basic: Custom corner module shapes │ • CameraX Analysis: Live PlanarYUV Luminance Stream       │
+│ • Bubble: Organic clustered circles  │ • Reticle Overlay: Dynamic viewport target tracking       │
+│ • 2.5D: Isometric 3D cube projection │ • Gallery Photo Decoder: Local lossless RGB parsing       │
+│ • DSJ: Turntable concentric markers  │ • 11-Format Safe Payload Parser:                          │
+│ • Image Fill: Hardware BitmapShader  │   - Wi-Fi (WPA/WPA2/WPA3 credentials)                     │
+│ • Image Overlay: Dynamic mask blend  │   - UPI Payment Strings (with merchant verification)      │
+│ • Image Resample: Luminance grid map │   - URL with IDN homograph phishing defenses              │
+│ • Line: Interlocking stripe geometry │   - Phone (tel:), SMS (smsto:), Email (mailto:)           │
+│ • Random Rectangle: Pseudo-jitter    │   - Geo Coordinates, vCard/MeCard, Calendar, OtpAuth     │
+│ • Function: Polar coordinate shapes  │ • Intent Gate: Mandatory user confirmation prior to firing│
+│ • Style Function: Modulated function │ • Multi-Format Exporter: PNG, JPEG, vector SVG & PDF      │
+└──────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
+
+### 1. Matrix Generation & The 11 Visual Renderers
+- **`QrGenerator` Core Pipeline:** Employs ZXing `QRCodeWriter` with explicit Reed-Solomon Error Correction (`L`, `M`, `Q`, `H`), encoding content into a normalized `QrMatrix` abstraction.
+- **Position Detection Pattern (PDP) Isolation:** Finder patterns (outer $7 \times 7$ rings, $5 \times 5$ separators, and $3 \times 3$ inner cores) are isolated from alignment and data patterns, allowing distinctive foreground and background styling without sacrificing barcode readability.
+- **Hardware Shader Acceleration:** `ImageFillRenderer` binds user-selected textures to Android `BitmapShader` with clamp tiling, scaling raster textures across individual modules without multi-pass canvas blits.
+- **Cubic Projection Math:** `Renderer25D` projects isometric coordinate vertices rendering lit polygonal paths with distinct shading tones for true 3D spatial depth.
+
+### 2. Defensive Payload Parsing & Phishing Countermeasures
+- **IDN Homograph & Punycode Normalization:** Web URLs are scrutinized for mixed Cyrillic/Latin homoglyphs and Punycode spoofing (`xn--`) before displaying host identities.
+- **Opaque URI Query Parsing:** Manual query parameter decoding for opaque URI schemes (`mailto:`, `sms:`), handling malformed query delimiters without throwing unhandled parsing exceptions.
+- **Strict Intent Guard:** Scanning an external action payload (payment, dialer, browser URL) presents an immutable breakdown card; intents are never dispatched automatically without explicit user authorization.
+
+### 3. Vector Path Exporter (Pure SVG & PDF)
+- **Zero Pixelation Guarantee:** In addition to high-resolution raster export (PNG and JPEG up to 2048x2048 px), `QrExporter` compiles the active matrix into clean, uncompressed vector SVG `<path>` and `<rect>` elements and PDF document streams.
+
+---
+
 ## Summary of System Invariants
 
 1. **Zero Silent Modification:** Every byte modification is constrained by an explicit, self-describing mathematical policy budget or privacy contract.

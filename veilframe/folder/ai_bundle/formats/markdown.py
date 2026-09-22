@@ -68,7 +68,7 @@ def render_markdown_bundle(
 
     # Security Warnings Callout
     if scan_result.security_alerts:
-        parts.append("## ⚠️ Security Alerts\n")
+        parts.append("## Security Alerts\n")
         parts.append("> [!WARNING]")
         parts.append("> Potential secrets or sensitive credentials detected:")
         for alert in scan_result.security_alerts:

@@ -285,7 +285,7 @@ object FolderScannerEngine {
             val safePath = TextUtils.htmlEncode(f.relativePath)
             val safeHash = TextUtils.htmlEncode(f.sha256 ?: "N/A")
             val secretsBadge = if (f.detectedSecrets.isNotEmpty()) {
-                "<span style=\"color:#EF4444;font-weight:bold;\">⚠ ${f.detectedSecrets.size} secret(s)</span>"
+                "<span style=\"color:#EF4444;font-weight:bold;\">[ALERT] ${f.detectedSecrets.size} secret(s)</span>"
             } else {
                 "<span style=\"color:#10B981;\">Clean</span>"
             }
@@ -357,7 +357,7 @@ object FolderScannerEngine {
         sb.append("| Relative Path | Size | SHA-256 | Status |\n")
         sb.append("| :--- | :--- | :--- | :--- |\n")
         for (f in r.files) {
-            val status = if (f.detectedSecrets.isNotEmpty()) "⚠ ${f.detectedSecrets.size} secrets" else "Clean"
+            val status = if (f.detectedSecrets.isNotEmpty()) "[ALERT] ${f.detectedSecrets.size} secrets" else "Clean"
             val safePath = f.relativePath.replace("|", "\\|").replace("`", "")
             sb.append("| $safePath | ${formatBytes(f.sizeBytes)} | `${f.sha256 ?: "N/A"}` | $status |\n")
         }

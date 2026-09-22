@@ -233,7 +233,7 @@ class AIProgramListerPanel(QWidget):
         # Security warnings
         if result.security_alerts:
             self.lbl_sec_warning.setText(
-                f"⚠️ {len(result.security_alerts)} potential secret(s) detected. Automatically masked/excluded."
+                f"[Alert] {len(result.security_alerts)} potential secret(s) detected. Automatically masked/excluded."
             )
             self.sec_banner.show()
         else:
@@ -320,7 +320,7 @@ class AIProgramListerPanel(QWidget):
             pct_str = f" ({pct:.1f}%)"
 
         self.lbl_token_gauge.setText(
-            f"⚡ {len(included):,} files selected • ~{tokens:,}{budget_str} tokens{pct_str}"
+            f"{len(included):,} files selected • ~{tokens:,}{budget_str} tokens{pct_str}"
         )
 
     def _apply_tree_filter(self, text: str) -> None:

@@ -65,7 +65,7 @@ def populate_ai_tree_item(item: QTreeWidgetItem, f: FileRecord) -> None:
     # Col 0: Relative Path / Name
     name_display = f.relative_path
     if f.is_entry_point:
-        name_display = f"★ {name_display} (Entry Point)"
+        name_display = f"[Entry Point] {name_display}"
     item.setText(0, name_display)
 
     # Col 1: Category Badge

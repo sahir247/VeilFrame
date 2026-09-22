@@ -607,7 +607,7 @@ class ImageStudioController(
 
             if (editState.isCropped() || (editState.cropAspect != "Free" && editState.cropAspect != "Original")) {
                 binding.tvImgSummaryCrop.visibility = View.VISIBLE
-                binding.tvImgSummaryCrop.text = "✓ Crop: ${editState.cropAspect}"
+                binding.tvImgSummaryCrop.text = "Crop: ${editState.cropAspect}"
             } else {
                 binding.tvImgSummaryCrop.visibility = View.GONE
             }
@@ -616,10 +616,10 @@ class ImageStudioController(
                 binding.tvImgSummaryRotate.visibility = View.VISIBLE
                 val flipStr = if (editState.flipH && editState.flipV) "Flip H+V" else if (editState.flipH) "Flip Horizontal" else "Flip Vertical"
                 val rotStr = if (editState.rotationAngle != 0f) "Rotate ${editState.rotationAngle.toInt()}° • $flipStr" else flipStr
-                binding.tvImgSummaryRotate.text = "✓ $rotStr"
+                binding.tvImgSummaryRotate.text = rotStr
             } else if (editState.rotationAngle != 0f) {
                 binding.tvImgSummaryRotate.visibility = View.VISIBLE
-                binding.tvImgSummaryRotate.text = "✓ Rotate: ${editState.rotationAngle.toInt()}°"
+                binding.tvImgSummaryRotate.text = "Rotate: ${editState.rotationAngle.toInt()}°"
             } else {
                 binding.tvImgSummaryRotate.visibility = View.GONE
             }

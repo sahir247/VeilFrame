@@ -773,7 +773,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Crop       Free"
+                        android:text="Crop       Free"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -782,7 +782,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Resize     100%"
+                        android:text="Resize     100%"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -791,7 +791,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Rotate     0°"
+                        android:text="Rotate     0°"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -800,7 +800,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Filter     Default"
+                        android:text="Filter     Default"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -808,7 +808,7 @@
                         android:id="@+id/tvImgSummaryExif"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✓ EXIF       Original"
+                        android:text="EXIF       Original"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
                 </LinearLayout>

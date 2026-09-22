@@ -657,7 +657,7 @@ class ToolExecutionController(
 
             onLog("[OK] Audit report created: ${outputFile.name} ($scanSummary)")
             if (scanResult.totalSecretsFound > 0) {
-                onLog("[WARN] ⚠ Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
+                onLog("[WARN] Detected ${scanResult.totalSecretsFound} secret(s) flagged in report.")
             }
             onLog("[EXPORT] Output ready for saving or sharing.")
             sessionManager.updatePrimaryActionDock(state)

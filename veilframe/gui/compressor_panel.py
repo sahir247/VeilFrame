@@ -1039,9 +1039,9 @@ class MediaCompressorPanel(QWidget):
         orig_str = f"{orig_sz / (1024*1024):.2f} MB" if orig_sz > 1024*1024 else f"{orig_sz / 1024:.1f} KB"
         out_str = f"{out_sz / (1024*1024):.2f} MB" if out_sz > 1024*1024 else f"{out_sz / 1024:.1f} KB"
 
-        self.lbl_status.setText("Compression finished successfully ✓")
+        self.lbl_status.setText("Compression finished successfully.")
         self.lbl_result_summary.setText(
-            f"✓ Complete: {orig_str} → {out_str} ({savings:+.1f}% space saved)\nSaved to: {self.dst_path.name}"
+            f"Complete: {orig_str} -> {out_str} ({savings:+.1f}% space saved)\nSaved to: {self.dst_path.name}"
         )
         self.result_frame.show()
 

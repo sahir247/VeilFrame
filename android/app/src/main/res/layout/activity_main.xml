@@ -1768,7 +1768,7 @@
                         android:id="@+id/tvPrivacyImpact1"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✓ Camera EXIF, GPS coordinates &amp; serials stripped"
+                        android:text="• Camera EXIF, GPS coordinates &amp; serials stripped"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:layout_marginBottom="4dp" />
@@ -1777,7 +1777,7 @@
                         android:id="@+id/tvPrivacyImpact2"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✓ Bitstream repacked &amp; sensor PRNU noise mitigated"
+                        android:text="• Bitstream repacked &amp; sensor PRNU noise mitigated"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp"
                         android:layout_marginBottom="4dp" />
@@ -1786,7 +1786,7 @@
                         android:id="@+id/tvPrivacyImpact3"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✓ 100% on-device execution (zero cloud telemetry)"
+                        android:text="• 100% on-device execution (zero cloud telemetry)"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="11sp" />
                 </LinearLayout>

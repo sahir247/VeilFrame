@@ -908,7 +908,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Trim       Original (10.0s)"
+                        android:text="Trim       Original (10.0s)"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -917,7 +917,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Scale      1080p (Original)"
+                        android:text="Scale      1080p (Original)"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -926,7 +926,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Aspect     Original (16:9)"
+                        android:text="Aspect     Original (16:9)"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -935,7 +935,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Speed      1.0×"
+                        android:text="Speed      1.0×"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -944,7 +944,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
-                        android:text="✓ Audio      Preserved"
+                        android:text="Audio      Preserved"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp" />
 
@@ -952,7 +952,7 @@
                         android:id="@+id/tvVidSummaryColor"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="✓ Colour     Original"
+                        android:text="Colour     Original"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:visibility="gone" />

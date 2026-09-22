@@ -11,6 +11,18 @@
 ## Release Milestones & Architecture Status
 
 ### v2.2.8 CURRENT (Production Release)
+- **QR Code Studio (8th Native Mobile Tool) & 11 Artistic Renderers**:
+  - Full suite of 11 artistic visual rendering styles inspired by EFQRCode (Basic, Bubble, 2.5D Isometric, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function).
+  - Live CameraX Viewfinder scanner with `QrScanOverlayView` reticle tracking and gallery photo static image decoding.
+  - Comprehensive Safe Payload Parser supporting 11 schema formats (Wi-Fi, UPI payments, URLs with IDN homograph phishing defense, Phone, SMS, Email, Geo, vCard, MeCard, Event, OtpAuth).
+  - Export engine supporting high-resolution PNG, JPEG, SVG path data, and PDF documents.
+- **Floating Action Dock Refinements & Folder Pickers**:
+  - Scroll-to-bottom auto-hide: floating action dock hides automatically when scrolling down to the bottom of the workspace, reappearing when scrolling up.
+  - Folder picker binding: Folder Analyzer and AI Bundle tools explicitly bind to folder selection (`ACTION_OPEN_DOCUMENT_TREE`) from the floating action bar.
+  - Generation token guard (`activeGeneration`) preventing asynchronous race conditions on media switching.
+- **Strict Zero-Emoji Policy & Pure SVG Iconography**:
+  - Zero unicode emojis across all layouts, controllers, logs, and markdown documentation.
+  - Universal adoption of vector SVG icons across all tool workspaces and documentation headings.
 - **Theming Architecture & Dynamic Color Lifecycle**:
   - Per-Activity theme lifecycle in `Activity.onCreate` before `setContentView()`, eliminating UI flicker.
   - Strict AMOLED Dark `#000000` surface themes, status/navigation bars, and high-contrast variant `#0A0A0C`.
@@ -23,12 +35,11 @@
   - Source geometry, SAR, and rotation capture via `WhatsappStatusMediaAnalyzer`.
 - **Floating Action Dock State Machine & Generation Token Guard**:
   - Unified 4-stage reactive controller (`EMPTY` $\to$ `READY` $\to$ `PROCESSING` $\to$ `COMPLETED`) across all tool docks.
-  - Generation token guard (`activeGeneration`) preventing asynchronous race conditions on media switching.
   - Floating Material card styling with 28dp rounded corners, 10dp elevation, and navigation bar inset responsiveness.
   - Separate reporting of processed items versus successfully exported files.
 - **Image Studio TransformPlan & Memory Lifecycle**:
   - Authoritative `ImageTransformPlan` unifying preview, probe estimation, and export parameters.
-  - Passport 600×600 px preset enforcement with strict 1:1 cropping and document export sizing.
+  - Passport 600x600 px preset enforcement with strict 1:1 cropping and document export sizing.
   - Empirical probe encoding for honest pre-export file size estimation.
   - Explicit bitmap memory lifecycle management with intermediate preview and result bitmap recycling.
 - **Publisher Security & Certificate Verification**:

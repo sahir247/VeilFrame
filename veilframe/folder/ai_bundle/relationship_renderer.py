@@ -63,6 +63,6 @@ def render_project_relationships(
     if cycles:
         lines.append("\nCIRCULAR DEPENDENCIES DETECTED:")
         for cyc in cycles[:5]:
-            lines.append(f"  ⚠️  {' -> '.join(cyc)}")
+            lines.append(f"  [Cycle] {' -> '.join(cyc)}")
 
     return "\n".join(lines) if lines else "No internal module imports discovered."
