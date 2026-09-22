@@ -258,4 +258,98 @@ class AdaptiveExecutionPlannerTest {
                 (cpuBaseline > 0.0 && healthy < (cpuBaseline * 0.20))
         assertFalse("Healthy throughput must not trigger circuit breaker", isPathological3)
     }
+
+    @Test
+    fun testOperationalProfileResolver() {
+        val dummyModel = java.io.File("RealESRGAN_x4plus.ort")
+
+        // 1. 4-core device -> 1 worker baseline
+        val dev4Core = DeviceCapabilityProfile(
+            manufacturer = "Generic",
+            model = "A10",
+            cpuCores = 4,
+            supportedAbis = listOf("arm64-v8a"),
+            totalMemoryBytes = 4L * 1024 * 1024 * 1024,
+            availableMemoryBytes = 1L * 1024 * 1024 * 1024,
+            apiLevel = 30,
+            lowRamDevice = false,
+            supportsNnapi = false,
+            supportsNnapiFp16 = false,
+            supportsXnnpack = false,
+            thermalStatus = 0
+        )
+        val prof4Core = planner.resolveOperationalProfile(
+            modelFile = dummyModel,
+            targetScale = 4,
+            userMode = InferenceAccelerationMode.CPU,
+            deviceProfile = dev4Core,
+            nativeBudgetBytes = 512L * 1024 * 1024,
+            maxSafeWorkers = 4,
+            defaultTileSize = 256,
+            overlap = 16,
+            totalTiles = 10
+        )
+        assertEquals("4-core device should resolve 1 worker baseline", 1, prof4Core.workers)
+        assertEquals(Backend.CPU, prof4Core.backend)
+        assertEquals(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.NO_OPT, prof4Core.optLevel)
+
+        // 2. 6-core device -> 2 workers baseline
+        val dev6Core = dev4Core.copy(cpuCores = 6)
+        val prof6Core = planner.resolveOperationalProfile(
+            modelFile = dummyModel,
+            targetScale = 4,
+            userMode = InferenceAccelerationMode.CPU,
+            deviceProfile = dev6Core,
+            nativeBudgetBytes = 1024L * 1024 * 1024,
+            maxSafeWorkers = 4,
+            defaultTileSize = 256,
+            overlap = 16,
+            totalTiles = 10
+        )
+        assertEquals("6-core device should resolve 2 workers baseline", 2, prof6Core.workers)
+
+        // 3. 8-core device with moderate memory -> 4 workers baseline
+        val dev8Core = dev4Core.copy(cpuCores = 8, supportsNnapi = true, apiLevel = 34)
+        val prof8Core = planner.resolveOperationalProfile(
+            modelFile = dummyModel,
+            targetScale = 4,
+            userMode = InferenceAccelerationMode.AUTO,
+            deviceProfile = dev8Core,
+            nativeBudgetBytes = 2L * 1024 * 1024 * 1024,
+            maxSafeWorkers = 4,
+            defaultTileSize = 256,
+            overlap = 16,
+            totalTiles = 10
+        )
+        assertEquals("8-core device with moderate memory should resolve 4 workers", 4, prof8Core.workers)
+        assertEquals(Backend.NNAPI, prof8Core.backend)
+
+        // 4. Flagship 8-core device with >4 GB native headroom -> up to 6 workers
+        val profFlagship = planner.resolveOperationalProfile(
+            modelFile = dummyModel,
+            targetScale = 4,
+            userMode = InferenceAccelerationMode.AUTO,
+            deviceProfile = dev8Core,
+            nativeBudgetBytes = 6L * 1024 * 1024 * 1024,
+            maxSafeWorkers = 8,
+            defaultTileSize = 256,
+            overlap = 16,
+            totalTiles = 10
+        )
+        assertEquals("Flagship with >4GB headroom and 8 cores should allow up to 6 workers", 6, profFlagship.workers)
+
+        // 5. Total tiles clamping (e.g. image only needs 2 tiles -> max 2 workers)
+        val profClamped = planner.resolveOperationalProfile(
+            modelFile = dummyModel,
+            targetScale = 4,
+            userMode = InferenceAccelerationMode.AUTO,
+            deviceProfile = dev8Core,
+            nativeBudgetBytes = 6L * 1024 * 1024 * 1024,
+            maxSafeWorkers = 8,
+            defaultTileSize = 256,
+            overlap = 16,
+            totalTiles = 2
+        )
+        assertEquals("Worker count must be clamped by totalTiles (2 tiles -> 2 workers)", 2, profClamped.workers)
+    }
 }

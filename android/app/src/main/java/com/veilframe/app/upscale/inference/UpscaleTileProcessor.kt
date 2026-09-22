@@ -436,11 +436,37 @@ class TiledIntermediateSink(
     }
 
     override fun complete(): SinkResult {
+        var finalBmp: Bitmap? = previewBitmap
+        if (finalBmp == null || finalBmp.width < targetWidth) {
+            val fullBmp = try {
+                Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+            } catch (_: Throwable) {
+                null
+            }
+            if (fullBmp != null) {
+                for (meta in tileMetaList) {
+                    val tileFile = File(scratchDir, "tile_${meta.index}.raw")
+                    if (tileFile.exists()) {
+                        val tilePixels = IntArray(meta.width * meta.height)
+                        try {
+                            tileFile.inputStream().buffered().use { fis ->
+                                val byteBuf = java.nio.ByteBuffer.allocate(tilePixels.size * 4)
+                                fis.read(byteBuf.array())
+                                byteBuf.asIntBuffer().get(tilePixels)
+                            }
+                            fullBmp.setPixels(tilePixels, 0, meta.width, meta.dstX, meta.dstY, meta.width, meta.height)
+                        } catch (_: Throwable) {}
+                    }
+                }
+                finalBmp = fullBmp
+            }
+        }
+
         // Purge scratch files
         scratchDir.deleteRecursively()
         return SinkResult(
-            outputFile = targetOutputFile,
-            previewBitmap = previewBitmap,
+            outputFile = targetOutputFile.takeIf { it.exists() },
+            previewBitmap = finalBmp ?: previewBitmap,
             width = targetWidth,
             height = targetHeight
         )
