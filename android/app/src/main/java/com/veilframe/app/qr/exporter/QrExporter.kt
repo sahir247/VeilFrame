@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrMatrix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -17,9 +19,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Handles saving QR code bitmaps to the device gallery or an arbitrary URI.
- *
- * All operations are suspending and must be called from a coroutine context.
+ * Handles exporting QR codes as PNG, JPEG (with lossy compression warning),
+ * and vector SVG.
  */
 object QrExporter {
 
@@ -29,10 +30,8 @@ object QrExporter {
     }
 
     /**
-     * Saves [bitmap] to the device Pictures/VeilFrame gallery via MediaStore (API 29+)
-     * or legacy file IO (API 28 and below).
-     *
-     * @return The [Uri] of the saved image, or null on failure.
+     * Saves [bitmap] to the device Pictures/VeilFrame gallery.
+     * Note: For JPEG format, lossy compression artifacts may degrade QR scanning reliability.
      */
     suspend fun saveToGallery(
         context: Context,
@@ -56,7 +55,8 @@ object QrExporter {
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 bitmap.compress(format, quality, out)
             }
-            cv.clear(); cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+            cv.clear()
+            cv.put(MediaStore.Images.Media.IS_PENDING, 0)
             context.contentResolver.update(uri, cv, null, null)
             uri
         } else {
@@ -70,7 +70,44 @@ object QrExporter {
     }
 
     /**
-     * Opens the system share sheet for [bitmap].
+     * Saves true vector SVG markup to the Downloads or Documents directory.
+     */
+    suspend fun saveSvg(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign
+    ): Uri? = withContext(Dispatchers.IO) {
+        val svgData = SvgExporter.generateSvg(matrix, design)
+        val name = timestampName("svg")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cv = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
+                put(MediaStore.Downloads.MIME_TYPE, "image/svg+xml")
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                ?: return@withContext null
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(svgData.toByteArray(Charsets.UTF_8))
+            }
+            cv.clear()
+            cv.put(MediaStore.Downloads.IS_PENDING, 0)
+            context.contentResolver.update(uri, cv, null, null)
+            uri
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
+            dir.mkdirs()
+            val file = File(dir, name)
+            FileOutputStream(file).use { out -> out.write(svgData.toByteArray(Charsets.UTF_8)) }
+            Uri.fromFile(file)
+        }
+    }
+
+    /**
+     * Opens system share sheet for [bitmap].
      */
     suspend fun share(context: Context, bitmap: Bitmap) {
         val uri = saveToGallery(context, bitmap) ?: return

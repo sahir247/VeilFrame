@@ -18,18 +18,60 @@
             android:layout_width="240dp"
             android:layout_height="240dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="12dp"
             android:background="@drawable/rounded_card_bg"
             android:elevation="4dp"
             android:scaleType="fitCenter"
             android:padding="8dp" />
+
+        <!-- Live Scanability Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/qr_scanability_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/qr_scanability_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceTitleSmall"
+                    android:text="[PASS] Scan-ready" />
+
+                <TextView
+                    android:id="@+id/qr_scanability_details"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:text="Validated with ZXing Java validator (4-module quiet zone)" />
+
+                <Button
+                    android:id="@+id/qr_auto_repair_btn"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:visibility="gone"
+                    android:text="Auto-Repair Design" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Content Input -->
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Content (URL, text, WiFi…)">
+            android:hint="Content (URL, text, WiFi)">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/qr_content_input"
                 android:layout_width="match_parent"
@@ -44,7 +86,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Style"
+            android:text="Style (EFQRCode 11 Modes)"
             android:textAppearance="?attr/textAppearanceLabelMedium"
             android:layout_marginBottom="4dp" />
         <Spinner
@@ -53,6 +95,48 @@
             android:layout_height="wrap_content"
             android:background="@drawable/spinner_border_bg"
             android:padding="10dp" />
+
+        <View android:layout_height="12dp" android:layout_width="match_parent" />
+
+        <!-- Resolution and Error Correction Row -->
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginEnd="8dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Resolution"
+                    android:textAppearance="?attr/textAppearanceLabelSmall" />
+                <Spinner
+                    android:id="@+id/qr_resolution_spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/spinner_border_bg"
+                    android:padding="8dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Error Correction"
+                    android:textAppearance="?attr/textAppearanceLabelSmall" />
+                <Spinner
+                    android:id="@+id/qr_ec_spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/spinner_border_bg"
+                    android:padding="8dp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <View android:layout_height="12dp" android:layout_width="match_parent" />
 
@@ -107,9 +191,17 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="Save"
+                android:layout_marginEnd="4dp"
+                android:text="Save PNG"
                 app:icon="@drawable/ic_action_save" />
+            <Button
+                android:id="@+id/qr_save_svg_btn"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Save SVG" />
             <Button
                 android:id="@+id/qr_share_btn"
                 android:layout_width="0dp"

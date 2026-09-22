@@ -1,6 +1,8 @@
 package com.veilframe.app.qr
 
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.ModuleType
 import org.junit.Assert.*
 import org.junit.Test
 

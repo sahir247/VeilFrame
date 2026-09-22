@@ -2,37 +2,105 @@ package com.veilframe.app.qr
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.encoder.QrEncoder
+import com.veilframe.app.qr.model.BackgroundStyle
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.renderer.*
+import com.veilframe.app.qr.validation.ScanabilityReport
+import com.veilframe.app.qr.validation.ScanabilityValidator
+import kotlinx.coroutines.runBlocking
 
 /**
- * Public entry point for QR code generation.
- *
- * Usage:
- * ```kotlin
- * val params = QrStyleParams(
- *     outputSize = 512,
- *     style = QrStyle.BUBBLE,
- *     foreground = Color.BLACK,
- *     background = Color.WHITE,
- *     logo = myLogoBitmap
- * )
- * val bitmap: Bitmap = QrGenerator.generate("https://example.com", params)
- * ```
- *
- * All rendering is synchronous (call from a background coroutine).
+ * Typed result of a QR code generation operation.
+ */
+sealed interface QrRenderResult {
+    data class Success(
+        val bitmap: Bitmap,
+        val report: ScanabilityReport,
+        val matrix: QrMatrix,
+        val design: QrDesign
+    ) : QrRenderResult
+
+    data class Failure(
+        val error: String,
+        val throwable: Throwable? = null
+    ) : QrRenderResult
+}
+
+/**
+ * Public entry point for QR code generation in VeilFrame.
  */
 object QrGenerator {
 
     /**
-     * Generates a QR code bitmap for the given [content] using the visual
-     * style described by [params].
-     *
-     * @param content   The string to encode (URL, text, WiFi SSID string, etc.)
-     * @param params    Visual and size parameters.
-     * @param ecLevel   Error correction level (default M — ~15% recovery).
-     *                  Use H for QR codes with a logo overlay.
-     * @throws IllegalArgumentException if content is blank.
+     * Modern domain generation entry point returning typed [QrRenderResult]
+     * with automated structural and decode scanability validation.
+     */
+    fun generateWithResult(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        if (content.isBlank()) {
+            return QrRenderResult.Failure("QR content must not be blank")
+        }
+
+        try {
+            val isAggressive = design.effects.is25D || design.imageFillMode
+            val ecLevel = design.correction.toZxingLevel(
+                hasLogo = design.logo?.bitmap != null,
+                isAggressiveStyle = isAggressive
+            )
+
+            val encoded = QrEncoder.encode(content, ecLevel)
+            val matrix = encoded.matrix
+            val size = design.outputSize.coerceIn(256, 4096)
+
+            val geometry = QrGeometry(
+                matrixSize = matrix.size,
+                outputWidth = size,
+                outputHeight = size,
+                quietZoneModules = design.quietZoneModules
+            )
+
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val context = RenderContext()
+
+            // 1. Draw Canvas Background (including Quiet Zone margins)
+            drawBackground(canvas, design.background, size, context)
+
+            // 2. Obtain renderer
+            val renderer: QrRenderer = getRendererForDesign(design)
+
+            // 3. Render QR Code
+            renderer.render(matrix, design, canvas, geometry, context)
+
+            // 4. Validate scanability (Fast validator)
+            val report = runBlocking {
+                ScanabilityValidator.validateFast(bitmap, design, matrix, content)
+            }
+
+            return QrRenderResult.Success(
+                bitmap = bitmap,
+                report = report,
+                matrix = matrix,
+                design = design
+            )
+        } catch (t: Throwable) {
+            return QrRenderResult.Failure(t.message ?: "Failed to generate QR code", t)
+        }
+    }
+
+    /**
+     * Legacy synchronous generation overload returning a raw [Bitmap].
      */
     fun generate(
         content: String,
@@ -41,34 +109,16 @@ object QrGenerator {
     ): Bitmap {
         require(content.isNotBlank()) { "QR content must not be blank" }
 
-        val matrix = QrMatrix(content, ecLevel)
-        val n = matrix.size
-        val cellSize = params.outputSize.toFloat() / n
-
-        val bitmap = Bitmap.createBitmap(params.outputSize, params.outputSize, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        val renderer: com.veilframe.app.qr.renderer.QrRenderer = when (params.style) {
-            QrStyle.BASIC            -> BasicRenderer()
-            QrStyle.BUBBLE           -> BubbleRenderer()
-            QrStyle.D25              -> Renderer25D()
-            QrStyle.DSJ              -> DsjRenderer()
-            QrStyle.IMAGE_FILL       -> ImageFillRenderer()
-            QrStyle.IMAGE            -> ImageRenderer()
-            QrStyle.IMAGE_RESAMPLE   -> ResampleImageRenderer()
-            QrStyle.LINE             -> LineRenderer()
-            QrStyle.RANDOM_RECTANGLE -> RandomRectangleRenderer()
-            QrStyle.FUNCTION         -> FunctionRenderer()
-            QrStyle.STYLE_FUNCTION   -> StyleFunctionRenderer()
+        val design = QrDesign.fromQrStyleParams(params)
+        val result = generateWithResult(content, design)
+        return when (result) {
+            is QrRenderResult.Success -> result.bitmap
+            is QrRenderResult.Failure -> throw IllegalStateException(result.error, result.throwable)
         }
-
-        renderer.render(matrix, params, canvas, cellSize)
-        return bitmap
     }
 
     /**
      * Generates a QR code as a PNG [ByteArray].
-     * Convenience overload that calls [generate] then compresses to PNG.
      */
     fun generatePng(
         content: String,
@@ -84,7 +134,6 @@ object QrGenerator {
 
     /**
      * Generates a QR code as a JPEG [ByteArray].
-     * Use for smaller file sizes when transparency is not needed.
      */
     fun generateJpeg(
         content: String,
@@ -96,5 +145,64 @@ object QrGenerator {
         bmp.compress(Bitmap.CompressFormat.JPEG, quality, baos)
         bmp.recycle()
         return baos.toByteArray()
+    }
+
+    private fun drawBackground(
+        canvas: Canvas,
+        background: BackgroundStyle,
+        size: Int,
+        context: RenderContext
+    ) {
+        when (background) {
+            is BackgroundStyle.Solid -> {
+                canvas.drawColor(background.color)
+            }
+            is BackgroundStyle.LinearGradient -> {
+                val paint = context.fillPaint
+                paint.reset()
+                paint.isAntiAlias = true
+                paint.shader = LinearGradient(
+                    0f, 0f, size.toFloat(), size.toFloat(),
+                    background.startColor, background.endColor,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+            }
+            is BackgroundStyle.RadialGradient -> {
+                val paint = context.fillPaint
+                paint.reset()
+                paint.isAntiAlias = true
+                paint.shader = RadialGradient(
+                    size / 2f, size / 2f, size / 2f,
+                    background.centerColor, background.edgeColor,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+            }
+            is BackgroundStyle.Image -> {
+                // Clear with white first, then draw background image with specified alpha
+                canvas.drawColor(Color.WHITE)
+                val paint = context.tempPaint
+                paint.reset()
+                paint.alpha = (background.alpha.coerceIn(0f, 1f) * 255).toInt()
+                canvas.drawBitmap(background.bitmap, null, android.graphics.Rect(0, 0, size, size), paint)
+            }
+            BackgroundStyle.Transparent -> {
+                // Keep transparent ARGB_8888
+            }
+        }
+    }
+
+    private fun getRendererForDesign(design: QrDesign): QrRenderer {
+        return when {
+            design.effects.is25D -> Renderer25D()
+            design.imageFillMode -> ImageFillRenderer()
+            design.backgroundImage != null -> ImageRenderer()
+            design.moduleStyle.connected -> DsjRenderer()
+            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.CIRCLE -> BubbleRenderer()
+            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.LINE -> LineRenderer()
+            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.ORGANIC -> RandomRectangleRenderer()
+            else -> BasicRenderer()
+        }
     }
 }

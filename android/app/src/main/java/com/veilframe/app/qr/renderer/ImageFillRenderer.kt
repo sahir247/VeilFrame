@@ -1,80 +1,133 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Bitmap
-import android.graphics.BitmapShader
 import android.graphics.Canvas
-import android.graphics.Paint
+import android.graphics.Color
 import android.graphics.RectF
-import android.graphics.Shader
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.BackgroundStyle
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 5 — IMAGE_FILL
+ * Style 5 — IMAGE_FILL (Visual Grammar: Image-Based Illustration/Texture)
  *
- * The background image is tiled as a BitmapShader over each dark module cell.
- * Each dark module samples its color directly from the underlying image,
- * creating a "data mosaic" where the full image is visible through the QR pattern.
+ * Implements polarity-preserving luminance mapping:
+ * Source photograph pixels are sampled per-module, but their luminance is
+ * non-linearly mapped into a strictly dark range:
+ * - Bright source areas (sky, highlights, white hair) -> still-dark module (V <= 0.35)
+ * - Dark source areas -> deeper dark module (V <= 0.10)
  *
- * Light modules reveal the plain background color (or white), providing
- * the contrast needed for scanning.
- *
- * Mirrors EFQRCodeStyleImageFill.swift: the image is scaled to fill the full
- * QR canvas and sampled per-module using a CLAMP/REPEAT BitmapShader.
+ * Preserves the full artistic color tone and variation of the illustration
+ * while preventing dark modules from washing out to white or breaking scanning.
  */
 class ImageFillRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val totalSize = (n * cs).toInt()
+        val scale = design.moduleStyle.scale.coerceIn(0.6f, 1.0f)
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
 
-        // Draw modules using image shader if backgroundImage is provided,
-        // otherwise fall back to solid foreground color
-        val bgImage = params.backgroundImage
-        val modulePaint: Paint = if (bgImage != null) {
-            val scaled = Bitmap.createScaledBitmap(bgImage, totalSize, totalSize, true)
-            val shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { this.shader = shader }
-        } else {
-            solidPaint(params.foreground)
+        val bgImage = design.backgroundImage ?: (design.background as? BackgroundStyle.Image)?.bitmap
+
+        if (bgImage == null) {
+            BasicRenderer().render(matrix, design, canvas, geometry, context)
+            return
         }
 
-        val scale = params.dataScale.coerceIn(0.5f, 1.0f)
+        // 1. Draw high-contrast finders
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = design.eyeStyle.outerColor ?: fgColor,
+            innerColor = design.eyeStyle.innerColor ?: fgColor,
+            backgroundColor = bgColor,
+            context = context
+        )
 
+        val hsv = FloatArray(3)
+        val paint = context.fillPaint
+
+        val imgW = bgImage.width
+        val imgH = bgImage.height
+
+        // 2. Sample and render each module with luminance-mapped color
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
-                val type = matrix.typeAt(col, row)
-                val x = col * cs; val y = row * cs
-
-                when (type) {
-                    ModuleType.POS_CENTER -> {
-                        // Position patterns: solid color for reliable scanning
-                        val p = solidPaint(params.positionColor ?: params.foreground)
-                        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            style = Paint.Style.STROKE; strokeWidth = cs * 0.9f
-                            color = params.positionColor ?: params.foreground
-                        }
-                        val cx2 = x + cs * 0.5f; val cy2 = y + cs * 0.5f
-                        canvas.drawCircle(cx2, cy2, cs * 3f, ring)
-                        canvas.drawCircle(cx2, cy2, cs * 1.5f, p)
-                    }
-                    ModuleType.POS_OTHER -> {}
-                    else -> {
-                        val half = cs * scale / 2f
-                        val cx2 = x + cs / 2f; val cy2 = y + cs / 2f
-                        canvas.drawRoundRect(
-                            RectF(cx2 - half, cy2 - half, cx2 + half, cy2 + half),
-                            half * 0.3f, half * 0.3f, modulePaint
-                        )
-                    }
+                // Exclude finders and separators (already rendered)
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue
                 }
+
+                val type = matrix.functionMask[col, row]
+                val rect = geometry.moduleRect(col, row, scale)
+
+                if (type == FunctionPatternType.TIMING ||
+                    type == FunctionPatternType.ALIGNMENT_CENTER ||
+                    type == FunctionPatternType.ALIGNMENT_OTHER
+                ) {
+                    // Timing & Alignment: preserve solid foreground
+                    paint.reset()
+                    paint.isAntiAlias = true
+                    paint.style = android.graphics.Paint.Style.FILL
+                    paint.color = fgColor
+                    canvas.drawRoundRect(rect, rect.width() * 0.2f, rect.width() * 0.2f, paint)
+                    continue
+                }
+
+                // Sample image pixel mapped from normalized QR coordinates
+                val sampleX = ((col.toFloat() / n) * imgW).toInt().coerceIn(0, imgW - 1)
+                val sampleY = ((row.toFloat() / n) * imgH).toInt().coerceIn(0, imgH - 1)
+                val pixel = bgImage.getPixel(sampleX, sampleY)
+
+                Color.colorToHSV(pixel, hsv)
+                val sourceBrightness = hsv[2] // 0.0 to 1.0
+
+                // Strict luminance compression: Map 0.0..1.0 to 0.05..0.35
+                // Guarantees dark module polarity even over pure white image highlights
+                val mappedBrightness = 0.05f + (sourceBrightness * 0.28f)
+                hsv[2] = mappedBrightness
+
+                // Slightly boost saturation so image colors remain vivid at lower value
+                hsv[1] = (hsv[1] * 1.25f).coerceAtMost(1.0f)
+
+                val mappedColor = Color.HSVToColor(hsv)
+
+                paint.reset()
+                paint.isAntiAlias = true
+                paint.style = android.graphics.Paint.Style.FILL
+                paint.color = mappedColor
+
+                val rx = rect.width() * 0.25f
+                canvas.drawRoundRect(rect, rx, rx, paint)
             }
         }
 
-        drawLogo(canvas, params, totalSize)
+        // 3. Draw center logo
+        drawLogo(canvas, design, geometry, context)
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        val context = RenderContext()
+        render(matrix, design, canvas, geometry, context)
     }
 }

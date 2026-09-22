@@ -38,6 +38,10 @@ import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.scanner.PayloadParser
 import com.veilframe.app.qr.scanner.QrAction
 import com.veilframe.app.qr.scanner.QrScanner
+import com.veilframe.app.qr.scanner.action.QrActionExecutor
+import android.text.Editable
+import android.text.TextWatcher
+import com.veilframe.app.qr.model.ErrorCorrectionChoice
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
@@ -119,49 +123,140 @@ class QrGenerateTabFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val contentInput = view.findViewById<EditText>(R.id.qr_content_input)
-        val styleSpinner = view.findViewById<Spinner>(R.id.qr_style_spinner)
-        val previewImage = view.findViewById<ImageView>(R.id.qr_preview_image)
-        val saveBtn      = view.findViewById<Button>(R.id.qr_save_btn)
-        val shareBtn     = view.findViewById<Button>(R.id.qr_share_btn)
-        val logoBtn      = view.findViewById<Button>(R.id.qr_logo_btn)
-        val bgImageBtn   = view.findViewById<Button>(R.id.qr_bg_image_btn)
-        val fgColorBtn   = view.findViewById<Button>(R.id.qr_fg_color_btn)
-        val bgColorBtn   = view.findViewById<Button>(R.id.qr_bg_color_btn)
+        val previewImage       = view.findViewById<ImageView>(R.id.qr_preview_image)
+        val scanabilityCard    = view.findViewById<MaterialCardView>(R.id.qr_scanability_card)
+        val scanabilityStatus  = view.findViewById<TextView>(R.id.qr_scanability_status)
+        val scanabilityDetails = view.findViewById<TextView>(R.id.qr_scanability_details)
+        val autoRepairBtn      = view.findViewById<Button>(R.id.qr_auto_repair_btn)
 
-        // All 11 artistic styles
-        val styleNames = QrStyle.values().map {
+        val contentInput       = view.findViewById<EditText>(R.id.qr_content_input)
+        val styleSpinner       = view.findViewById<Spinner>(R.id.qr_style_spinner)
+        val resSpinner         = view.findViewById<Spinner>(R.id.qr_resolution_spinner)
+        val ecSpinner          = view.findViewById<Spinner>(R.id.qr_ec_spinner)
+
+        val fgColorBtn         = view.findViewById<Button>(R.id.qr_fg_color_btn)
+        val bgColorBtn         = view.findViewById<Button>(R.id.qr_bg_color_btn)
+        val logoBtn            = view.findViewById<Button>(R.id.qr_logo_btn)
+        val bgImageBtn         = view.findViewById<Button>(R.id.qr_bg_image_btn)
+
+        val saveBtn            = view.findViewById<Button>(R.id.qr_save_btn)
+        val saveSvgBtn         = view.findViewById<Button>(R.id.qr_save_svg_btn)
+        val shareBtn           = view.findViewById<Button>(R.id.qr_share_btn)
+
+        // 1. Style Spinner (11 EFQRCode Styles)
+        val styles = QrStyle.values()
+        val styleNames = styles.map {
             it.name.replace('_', ' ').lowercase().replaceFirstChar { c -> c.uppercase() }
         }
         styleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, styleNames)
+        styleSpinner.setSelection(styles.indexOf(vm.state.value.style).coerceAtLeast(0))
         styleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                vm.updateStyle(QrStyle.values()[pos])
+                if (vm.state.value.style != styles[pos]) {
+                    vm.updateStyle(styles[pos])
+                }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        // 2. Resolution Spinner
+        val resLabels = arrayOf("512 x 512", "1024 x 1024", "2048 x 2048")
+        val resValues = intArrayOf(512, 1024, 2048)
+        resSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, resLabels)
+        val currentResIdx = resValues.indexOf(vm.state.value.outputSize).coerceAtLeast(0)
+        resSpinner.setSelection(currentResIdx)
+        resSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (vm.state.value.outputSize != resValues[pos]) {
+                    vm.updateOutputSize(resValues[pos])
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        // 3. Error Correction Spinner
+        val ecOptions = listOf(
+            "Auto" to ErrorCorrectionChoice.AUTO,
+            "Low (7%)" to ErrorCorrectionChoice.L,
+            "Medium (15%)" to ErrorCorrectionChoice.M,
+            "Quartile (25%)" to ErrorCorrectionChoice.Q,
+            "High (30%)" to ErrorCorrectionChoice.H
+        )
+        val ecLabels = ecOptions.map { it.first }
+        ecSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, ecLabels)
+        val currentEcIdx = ecOptions.indexOfFirst { it.second == vm.state.value.ecChoice }.coerceAtLeast(0)
+        ecSpinner.setSelection(currentEcIdx)
+        ecSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val selectedEc = ecOptions[pos].second
+                if (vm.state.value.ecChoice != selectedEc) {
+                    vm.updateErrorCorrection(selectedEc)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        // 4. Content Input with debounced live updates
         contentInput.setText(vm.state.value.content)
+        contentInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val text = s?.toString() ?: ""
+                if (text != vm.state.value.content) {
+                    vm.updateContent(text)
+                }
+            }
+        })
         contentInput.setOnEditorActionListener { tv, _, _ ->
             vm.updateContent(tv.text.toString())
             false
         }
-        contentInput.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) vm.updateContent(contentInput.text.toString())
-        }
 
-        saveBtn.setOnClickListener  { vm.saveToGallery() }
-        shareBtn.setOnClickListener { vm.share() }
-        logoBtn.setOnClickListener  { logoPickerLauncher.launch("image/*") }
-        bgImageBtn.setOnClickListener { bgImagePickerLauncher.launch("image/*") }
+        // 5. Actions & Buttons
+        autoRepairBtn.setOnClickListener { vm.autoRepair() }
+        saveBtn.setOnClickListener      { vm.saveToGallery() }
+        saveSvgBtn.setOnClickListener   { vm.saveSvg() }
+        shareBtn.setOnClickListener     { vm.share() }
+        logoBtn.setOnClickListener      { logoPickerLauncher.launch("image/*") }
+        bgImageBtn.setOnClickListener   { bgImagePickerLauncher.launch("image/*") }
 
         fgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = true) }
         bgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = false) }
 
+        // 6. Observe ViewModel State
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.state.collect { state ->
                     state.bitmap?.let { previewImage.setImageBitmap(it) }
+
+                    // Update Live Scanability Card
+                    state.scanabilityReport?.let { report ->
+                        if (report.isScanReady) {
+                            scanabilityStatus.text = "[PASS] Scan-ready"
+                            scanabilityStatus.setTextColor(0xFF16A34A.toInt()) // Green
+                            scanabilityDetails.text = "ZXing verified in ${report.decodeResult.latencyMs}ms"
+                            autoRepairBtn.visibility = View.GONE
+                        } else {
+                            scanabilityStatus.text = "[FAIL] Scan risk detected"
+                            scanabilityStatus.setTextColor(0xFFDC2626.toInt()) // Red
+                            val reason = report.decodeResult.error
+                                ?: report.warnings.firstOrNull()
+                                ?: "Decoder could not read image"
+                            scanabilityDetails.text = reason
+                            autoRepairBtn.visibility = if (report.repairSuggestions.isNotEmpty()) View.VISIBLE else View.GONE
+                        }
+                    } ?: run {
+                        scanabilityStatus.text = "[INFO] Validating..."
+                        scanabilityStatus.setTextColor(0xFF6B7280.toInt())
+                        scanabilityDetails.text = "Running ZXing deterministic decoder"
+                        autoRepairBtn.visibility = View.GONE
+                    }
+
+                    state.repairNotice?.let { notice ->
+                        Toast.makeText(requireContext(), "Auto-Repair: $notice", Toast.LENGTH_SHORT).show()
+                    }
+
                     state.saveResult?.let { msg ->
                         Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
                         vm.clearSaveResult()
@@ -319,8 +414,8 @@ class QrScanTabFragment : Fragment() {
     private fun formatActionSummary(action: QrAction): String = when (action) {
         is QrAction.Url -> action.uri
         is QrAction.Wifi -> "SSID: ${action.ssid} (Type: ${action.type})"
-        is QrAction.Contact -> "${action.name ?: "Contact"}: ${action.phone ?: action.email ?: ""}"
-        is QrAction.UpiPayment -> "UPI: ${action.pa} (${action.amount ?: "No amount"})"
+        is QrAction.Contact -> "${action.name ?: "Contact"}: ${action.phones.firstOrNull() ?: action.emails.firstOrNull() ?: ""}"
+        is QrAction.UpiPayment -> "UPI: ${action.payeeAddress} (${action.amount ?: "No amount"})"
         is QrAction.Phone -> "Phone: ${action.number}"
         is QrAction.Sms -> "SMS: ${action.number}"
         is QrAction.Email -> "Email: ${action.address}"
@@ -332,60 +427,9 @@ class QrScanTabFragment : Fragment() {
 
     private fun executeAction(action: QrAction) {
         try {
-            when (action) {
-                is QrAction.Url -> {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(action.uri))
-                    startActivity(intent)
-                }
-                is QrAction.Phone -> {
-                    val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}"))
-                    startActivity(intent)
-                }
-                is QrAction.Sms -> {
-                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${action.number}")).apply {
-                        action.message?.let { putExtra("sms_body", it) }
-                    }
-                    startActivity(intent)
-                }
-                is QrAction.Email -> {
-                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${action.address}")).apply {
-                        action.subject?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
-                        action.body?.let { putExtra(Intent.EXTRA_TEXT, it) }
-                    }
-                    startActivity(intent)
-                }
-                is QrAction.Geo -> {
-                    val uri = Uri.parse("geo:${action.lat},${action.lon}?q=${action.lat},${action.lon}(${Uri.encode(action.label ?: "Location")})")
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
-                }
-                is QrAction.Wifi -> {
-                    val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Wi-Fi Password", action.password))
-                    Toast.makeText(requireContext(), "Wi-Fi password copied to clipboard!", Toast.LENGTH_LONG).show()
-                }
-                is QrAction.UpiPayment -> {
-                    val uri = Uri.parse("upi://pay?pa=${action.pa}" +
-                            (action.pn?.let { "&pn=${Uri.encode(it)}" } ?: "") +
-                            (action.amount?.let { "&am=$it" } ?: "") +
-                            (action.currency?.let { "&cu=$it" } ?: "") +
-                            (action.note?.let { "&tn=${Uri.encode(it)}" } ?: ""))
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
-                }
-                is QrAction.Raw, is QrAction.Contact, is QrAction.CalendarEvent, is QrAction.OtpAuth -> {
-                    val textToCopy = when (action) {
-                        is QrAction.Raw -> action.text
-                        is QrAction.Contact -> "${action.name.orEmpty()} ${action.phone.orEmpty()} ${action.email.orEmpty()}".trim()
-                        is QrAction.CalendarEvent -> "${action.title.orEmpty()} ${action.description.orEmpty()}".trim()
-                        is QrAction.OtpAuth -> "Secret: ${action.secret.orEmpty()}"
-                        else -> ""
-                    }
-                    val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("QR Content", textToCopy))
-                    Toast.makeText(requireContext(), "Copied to clipboard!", Toast.LENGTH_SHORT).show()
-                }
-            }
+            QrActionExecutor.execute(requireContext(), action)
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Unable to open action: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "Unable to execute action: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 

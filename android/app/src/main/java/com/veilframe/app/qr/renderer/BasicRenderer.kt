@@ -3,167 +3,147 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import com.veilframe.app.qr.ModuleShape
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.ModuleShape
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.QrVisualGeometry
 import com.veilframe.app.qr.QrStyleParams
-import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * Style 1 — BASIC
+ * Style 1 — BASIC (Visual Grammar: Geometric)
  *
- * Classic QR code with per-zone customizable module shapes:
- *   - Data modules: rectangle | circle | rounded-rect | random-circle
- *   - Alignment patterns: rectangle | circle | rounded-rect
- *   - Timing patterns: rectangle | circle | rounded-rect
- *   - Position detection patterns: rectangle | circle | rounded-rect | planets | DSJ cross
- *
- * Mirrors EFQRCodeStyleBasic.swift's writeQRCode() logic, translated to
- * Android Canvas/Paint calls with a cell-size coordinate system.
+ * Implements clean geometric module rendering:
+ * - Square, Rounded, Circle, Dot, Squircle, Diamond, Hex
+ * - High-contrast canonical finder patterns via [FinderRenderer]
+ * - Allocation-free execution via [RenderContext]
  */
 class BasicRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        // Fill background
-        canvas.drawColor(params.background)
-
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val fgPaint = solidPaint(params.foreground)
-        val posPaint = solidPaint(params.positionColor ?: params.foreground)
-        val rng = Random(42L)
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
+        val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+        val shape = design.moduleStyle.shape
 
+        // 1. Draw finders first with protected canonical geometry
+        val eyeOuter = design.eyeStyle.outerColor ?: fgColor
+        val eyeInner = design.eyeStyle.innerColor ?: fgColor
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = eyeOuter,
+            innerColor = eyeInner,
+            backgroundColor = bgColor,
+            context = context
+        )
+
+        val fgPaint = context.obtainFill(fgColor)
+        val rng = Random(design.effects.seed)
+
+        // 2. Draw remaining modules (Timing, Alignment, Data)
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
-                val type = matrix.typeAt(col, row)
-                val cx = (col + 0.5f) * cellSize
-                val cy = (row + 0.5f) * cellSize
-                val left = col * cellSize
-                val top  = row * cellSize
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue // Already handled by FinderRenderer
+                }
 
-                when (type) {
-                    ModuleType.POS_CENTER -> drawPositionCenter(canvas, col, row, n, cellSize, params, posPaint)
-                    ModuleType.POS_OTHER  -> { /* drawn by drawPositionCenter as a group */ }
-                    ModuleType.ALIGN_CENTER, ModuleType.ALIGN_OTHER ->
-                        drawShapedModule(canvas, cx, cy, left, top, cellSize, 0.9f, params.alignShape, fgPaint)
-                    ModuleType.TIMING ->
-                        drawShapedModule(canvas, cx, cy, left, top, cellSize, 0.85f, params.timingShape, fgPaint)
-                    ModuleType.DATA ->
-                        drawDataModule(canvas, cx, cy, left, top, cellSize, params, fgPaint, rng)
+                val rect = geometry.moduleRect(col, row, scale)
+                val type = matrix.functionMask[col, row]
+
+                when {
+                    type == FunctionPatternType.TIMING -> {
+                        // Timing pattern: preserve crisp contrast
+                        drawModuleShape(canvas, rect, ModuleShape.ROUNDED, 0.2f, fgPaint, context)
+                    }
+                    type == FunctionPatternType.ALIGNMENT_CENTER || type == FunctionPatternType.ALIGNMENT_OTHER -> {
+                        // Alignment pattern
+                        drawModuleShape(canvas, rect, ModuleShape.ROUNDED, 0.25f, fgPaint, context)
+                    }
+                    else -> {
+                        // Regular Data module
+                        drawModuleShape(canvas, rect, shape, design.moduleStyle.cornerRadiusFraction, fgPaint, context, rng)
+                    }
                 }
             }
         }
 
-        drawLogo(canvas, params, (n * cellSize).toInt())
+        // 3. Composite center logo if configured
+        drawLogo(canvas, design, geometry, context)
     }
 
-    // --- Position detection pattern (7×7 finder square) ---
-    private fun drawPositionCenter(
-        canvas: Canvas, cx: Int, cy: Int, n: Int,
-        cs: Float, params: QrStyleParams, paint: Paint
+    private fun drawModuleShape(
+        canvas: Canvas,
+        rect: RectF,
+        shape: ModuleShape,
+        cornerFraction: Float,
+        paint: Paint,
+        context: RenderContext,
+        rng: Random? = null
     ) {
-        val posColor = params.positionColor ?: params.foreground
-        val posSize = params.positionColor?.let { 1.0f } ?: 1.0f
-        val x = cx * cs; val y = cy * cs
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val w = rect.width()
 
-        when (params.positionShape) {
-            ModuleShape.RECTANGLE -> {
-                // Outer square ring (stroke)
-                val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE; strokeWidth = cs * 0.9f; color = posColor
-                }
-                canvas.drawRect(x - 2.5f * cs, y - 2.5f * cs, x + 3.5f * cs, y + 3.5f * cs, ring)
-                // Inner filled square (3 modules wide)
-                val fill = solidPaint(posColor)
-                canvas.drawRect(x - cs, y - cs, x + 2f * cs, y + 2f * cs, fill)
-            }
-            ModuleShape.ROUND -> {
-                val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE; strokeWidth = cs * 0.9f; color = posColor
-                }
-                canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f, cs * 3f, ring)
-                canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f, cs * 1.5f, solidPaint(posColor))
-            }
-            ModuleShape.ROUNDED_RECTANGLE -> {
-                val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE; strokeWidth = cs * 0.9f; color = posColor
-                }
-                val r = cs * 1.2f
-                canvas.drawRoundRect(
-                    RectF(x - 2.5f * cs, y - 2.5f * cs, x + 3.5f * cs, y + 3.5f * cs), r, r, ring
-                )
-                canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f, cs * 1.5f, solidPaint(posColor))
-            }
-            ModuleShape.PLANETS -> {
-                // Central dot + dashed orbit ring + two satellite dots on each axis
-                val fill = solidPaint(posColor)
-                canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f, cs * 1.5f, fill)
-                val orbit = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE; strokeWidth = cs * 0.15f; color = posColor
-                    pathEffect = android.graphics.DashPathEffect(floatArrayOf(cs * 0.5f, cs * 0.5f), 0f)
-                }
-                canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f, cs * 3f, orbit)
-                listOf(-3f, 3f).forEach { offset ->
-                    canvas.drawCircle(x + cs * 0.5f + offset * cs, y + cs * 0.5f, cs * 0.5f, fill)
-                    canvas.drawCircle(x + cs * 0.5f, y + cs * 0.5f + offset * cs, cs * 0.5f, fill)
-                }
-            }
-            ModuleShape.DSJ -> {
-                // DSJ cross: center block + four arm stubs
-                val fill = solidPaint(posColor)
-                val w = cs * 3f
-                canvas.drawRect(x - cs, y - cs, x - cs + w, y - cs + w, fill)
-                // Left, Right, Top, Bottom stubs
-                canvas.drawRect(x - cs * 3f, y - cs, x - cs * 2f, y - cs + w, fill)
-                canvas.drawRect(x - cs + w, y - cs, x - cs + w + cs, y - cs + w, fill)
-                canvas.drawRect(x - cs, y - cs * 3f, x - cs + w, y - cs * 2f, fill)
-                canvas.drawRect(x - cs, y - cs + w, x - cs + w, y - cs + w + cs, fill)
-            }
-        }
-    }
-
-    // --- Data & misc module shapes ---
-    private fun drawShapedModule(
-        canvas: Canvas, cx: Float, cy: Float,
-        left: Float, top: Float,
-        cs: Float, scale: Float,
-        shape: ModuleShape, paint: Paint
-    ) {
-        val half = cs * scale / 2f
-        val l = cx - half; val t = cy - half
-        val r = cx + half; val b = cy + half
         when (shape) {
-            ModuleShape.RECTANGLE, ModuleShape.DSJ ->
-                canvas.drawRect(l, t, r, b, paint)
-            ModuleShape.ROUND ->
-                canvas.drawCircle(cx, cy, half, paint)
-            ModuleShape.ROUNDED_RECTANGLE ->
-                canvas.drawRoundRect(RectF(l, t, r, b), half / 2f, half / 2f, paint)
-            ModuleShape.PLANETS ->
-                canvas.drawCircle(cx, cy, half, paint)
+            ModuleShape.SQUARE -> {
+                canvas.drawRect(rect, paint)
+            }
+            ModuleShape.ROUNDED -> {
+                val rx = w * cornerFraction
+                canvas.drawRoundRect(rect, rx, rx, paint)
+            }
+            ModuleShape.CIRCLE -> {
+                canvas.drawCircle(cx, cy, w / 2f, paint)
+            }
+            ModuleShape.DOT -> {
+                val r = (w / 2f) * 0.75f
+                canvas.drawCircle(cx, cy, r, paint)
+            }
+            ModuleShape.SQUIRCLE -> {
+                val path = QrVisualGeometry.createSquirclePath(rect, context.tempPath1)
+                canvas.drawPath(path, paint)
+            }
+            ModuleShape.DIAMOND -> {
+                val path = QrVisualGeometry.createDiamondPath(rect, context.tempPath1)
+                canvas.drawPath(path, paint)
+            }
+            ModuleShape.HEX -> {
+                val path = QrVisualGeometry.createHexagonPath(rect, context.tempPath1)
+                canvas.drawPath(path, paint)
+            }
+            ModuleShape.ORGANIC -> {
+                // Deterministic variable radius circle
+                val factor = rng?.let { it.nextDouble(0.6, 1.0).toFloat() } ?: 0.85f
+                canvas.drawCircle(cx, cy, (w / 2f) * factor, paint)
+            }
+            else -> {
+                canvas.drawRect(rect, paint)
+            }
         }
     }
 
-    private fun drawDataModule(
-        canvas: Canvas, cx: Float, cy: Float,
-        left: Float, top: Float,
-        cs: Float, params: QrStyleParams,
-        paint: Paint, rng: Random
-    ) {
-        val scale = params.dataScale.coerceIn(0.1f, 1.0f)
-        val half = cs * scale / 2f
-        val l = cx - half; val t = cy - half; val r = cx + half; val b = cy + half
-
-        when (params.dataShape) {
-            ModuleShape.RECTANGLE, ModuleShape.PLANETS, ModuleShape.DSJ ->
-                canvas.drawRect(l, t, r, b, paint)
-            ModuleShape.ROUND -> {
-                val randomR = half * rng.nextFloat().coerceIn(0.33f, 1.0f)
-                canvas.drawCircle(cx, cy, randomR, paint)
-            }
-            ModuleShape.ROUNDED_RECTANGLE ->
-                canvas.drawRoundRect(RectF(l, t, r, b), half / 2f, half / 2f, paint)
-        }
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0 // Legacy caller specified exact matrix canvas
+        )
+        val context = RenderContext()
+        render(matrix, design, canvas, geometry, context)
     }
 }

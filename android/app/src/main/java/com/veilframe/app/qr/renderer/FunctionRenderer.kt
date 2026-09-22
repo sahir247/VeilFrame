@@ -5,7 +5,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.QrMatrix.ModuleType
 import com.veilframe.app.qr.QrStyleParams
 import kotlin.math.PI
 import kotlin.math.cos

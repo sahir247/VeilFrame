@@ -1,12 +1,11 @@
 package com.veilframe.app.qr.scanner
 
+import java.math.BigDecimal
 import java.net.URI
+import java.net.URLDecoder
 
 /**
- * Registry of QR payload parsers.
- *
- * Parsers are evaluated in priority order; the first match wins.
- * Falls back to [QrAction.Raw] for unrecognized content.
+ * Robust parser for QR payload contents into structured [QrAction] instances.
  */
 object PayloadParser {
 
@@ -25,67 +24,151 @@ object PayloadParser {
             ?: QrAction.Raw(t)
     }
 
-    // WIFI:T:WPA;S:SSID;P:pass;H:true;;
+    /**
+     * Wi-Fi parser supporting escaped characters: \;, \:, \\, \,
+     * Format: WIFI:T:WPA;S:My\;SSID;P:Pass\;123;H:false;;
+     */
     private fun parseWifi(t: String): QrAction.Wifi? {
         if (!t.startsWith("WIFI:", ignoreCase = true)) return null
-        fun extract(key: String) = Regex("$key:([^;]*);", RegexOption.IGNORE_CASE)
-            .find(t)?.groupValues?.getOrNull(1) ?: ""
+
+        val content = t.substring(5)
+        val fields = mutableMapOf<String, String>()
+
+        var i = 0
+        while (i < content.length) {
+            val colonIdx = content.indexOf(':', i)
+            if (colonIdx == -1) break
+            val key = content.substring(i, colonIdx).uppercase()
+
+            val sb = StringBuilder()
+            var j = colonIdx + 1
+            var escaped = false
+            while (j < content.length) {
+                val c = content[j]
+                if (escaped) {
+                    sb.append(c)
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else if (c == ';') {
+                    break
+                } else {
+                    sb.append(c)
+                }
+                j++
+            }
+            fields[key] = sb.toString()
+            i = j + 1
+        }
+
+        val ssid = fields["S"] ?: return null
+        val password = fields["P"] ?: ""
+        val type = fields["T"]?.ifBlank { "WPA" } ?: "WPA"
+        val hidden = fields["H"].equals("true", ignoreCase = true)
+
         return QrAction.Wifi(
-            ssid = extract("S"),
-            password = extract("P"),
-            type = extract("T").ifBlank { "WPA" },
-            hidden = extract("H").equals("true", ignoreCase = true)
+            ssid = ssid,
+            password = password,
+            type = type,
+            hidden = hidden
         )
     }
 
-    // upi://pay?pa=...&pn=...&am=...
+    /**
+     * UPI Payment parser preserving the complete lossless raw query map.
+     * Example: upi://pay?pa=merchant@upi&pn=Merchant&am=150.00&cu=INR&tn=Order123&mc=5411
+     */
     private fun parseUpi(t: String): QrAction.UpiPayment? {
         if (!t.startsWith("upi://", ignoreCase = true)) return null
         val uri = try { URI(t) } catch (_: Exception) { return null }
-        val q = uri.query?.split("&")?.associate {
-            val (k, v) = it.split("=", limit = 2).let { p -> Pair(p[0], p.getOrElse(1) { "" }) }
-            k to java.net.URLDecoder.decode(v, "UTF-8")
-        } ?: return null
+
+        val rawParams = uri.query?.split("&")?.associate {
+            val parts = it.split("=", limit = 2)
+            val key = parts[0]
+            val value = if (parts.size > 1) {
+                try { URLDecoder.decode(parts[1], "UTF-8") } catch (_: Exception) { parts[1] }
+            } else ""
+            key to value
+        } ?: emptyMap()
+
+        val pa = rawParams["pa"] ?: return null
+        val pn = rawParams["pn"]
+        val amStr = rawParams["am"]
+        val cu = rawParams["cu"] ?: "INR"
+        val tn = rawParams["tn"]
+
+        val amount = amStr?.let {
+            try { BigDecimal(it) } catch (_: Exception) { null }
+        }
+
         return QrAction.UpiPayment(
-            pa = q["pa"] ?: return null,
-            pn = q["pn"], amount = q["am"], currency = q["cu"], note = q["tn"]
+            payeeAddress = pa,
+            payeeName = pn,
+            amount = amount,
+            currency = cu,
+            note = tn,
+            rawParameters = rawParams
         )
     }
 
-    // otpauth://totp/Issuer:account?secret=...&issuer=...
+    /**
+     * OTPAuth parser: otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA1&digits=6&period=30
+     */
     private fun parseOtpAuth(t: String): QrAction.OtpAuth? {
         if (!t.startsWith("otpauth://", ignoreCase = true)) return null
         val uri = try { URI(t) } catch (_: Exception) { return null }
         val type = uri.host ?: "totp"
         val path = uri.path?.trimStart('/') ?: ""
-        val (issuer, account) = if (':' in path) path.split(":", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-                                else null to path
-        val query = uri.query?.split("&")?.associate {
-            val (k, v) = it.split("=", limit = 2).let { p -> Pair(p[0], p.getOrElse(1) { "" }) }
+
+        val (pathIssuer, account) = if (':' in path) {
+            val parts = path.split(":", limit = 2)
+            parts[0] to parts.getOrElse(1) { "" }
+        } else {
+            null to path
+        }
+
+        val rawParams = uri.query?.split("&")?.associate {
+            val parts = it.split("=", limit = 2)
+            val k = parts[0]
+            val v = if (parts.size > 1) {
+                try { URLDecoder.decode(parts[1], "UTF-8") } catch (_: Exception) { parts[1] }
+            } else ""
             k to v
         } ?: emptyMap()
+
+        val secret = rawParams["secret"]
+        val issuer = rawParams["issuer"] ?: pathIssuer
+        val algorithm = rawParams["algorithm"] ?: "SHA1"
+        val digits = rawParams["digits"]?.toIntOrNull() ?: 6
+        val period = rawParams["period"]?.toIntOrNull() ?: 30
+
         return QrAction.OtpAuth(
-            issuer = issuer ?: query["issuer"],
+            issuer = issuer,
             account = account.ifBlank { null },
-            secret = query["secret"],
-            type = type
+            secret = secret,
+            type = type,
+            algorithm = algorithm,
+            digits = digits,
+            period = period
         )
     }
 
-    // SMSTO:+123:hello  or  sms:+123?body=hello
     private fun parseSms(t: String): QrAction.Sms? {
         val smsto = Regex("^smsto:([^:]+):?(.*)", RegexOption.IGNORE_CASE).find(t)
-        if (smsto != null) return QrAction.Sms(smsto.groupValues[1], smsto.groupValues[2].ifBlank { null })
+        if (smsto != null) {
+            return QrAction.Sms(smsto.groupValues[1], smsto.groupValues[2].ifBlank { null })
+        }
         if (!t.startsWith("sms:", ignoreCase = true)) return null
         val after = t.substring(4)
         val parts = after.split("?", limit = 2)
         val number = parts[0]
         val body = parts.getOrNull(1)?.split("&")?.find { it.startsWith("body=", ignoreCase = true) }
-            ?.substringAfter("body=")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+            ?.substringAfter("body=")?.let {
+                try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+            }
         return QrAction.Sms(number, body)
     }
 
-    // mailto:user@example.com?subject=Hi&body=Hello
     private fun parseEmail(t: String): QrAction.Email? {
         if (!t.startsWith("mailto:", ignoreCase = true)) return null
         val after = t.substring(7)
@@ -93,7 +176,7 @@ object PayloadParser {
         val address = parts[0]
         val q = parts.getOrNull(1)?.split("&")?.associate {
             val p = it.split("=", limit = 2)
-            p[0].lowercase() to java.net.URLDecoder.decode(p.getOrElse(1) { "" }, "UTF-8")
+            p[0].lowercase() to (try { URLDecoder.decode(p.getOrElse(1) { "" }, "UTF-8") } catch (_: Exception) { "" })
         } ?: emptyMap()
         return QrAction.Email(
             address = address,
@@ -102,54 +185,102 @@ object PayloadParser {
         )
     }
 
-    // geo:lat,lon or geo:lat,lon?q=...
     private fun parseGeo(t: String): QrAction.Geo? {
         if (!t.startsWith("geo:", ignoreCase = true)) return null
-        val m = Regex("geo:(-?\\d+\\.?\\d*),(-?\\d+\\.?\\d*)(?:\\?q=(.*))?", RegexOption.IGNORE_CASE).find(t) ?: return null
-        return QrAction.Geo(
-            lat = m.groupValues[1].toDoubleOrNull() ?: return null,
-            lon = m.groupValues[2].toDoubleOrNull() ?: return null,
-            label = m.groupValues.getOrNull(3)?.ifBlank { null }
-        )
+        val after = t.substring(4).split("?", limit = 2)[0]
+        val coords = after.split(",")
+        if (coords.size < 2) return null
+        val lat = coords[0].toDoubleOrNull() ?: return null
+        val lon = coords[1].toDoubleOrNull() ?: return null
+        val q = t.substringAfter("q=", "").ifBlank { null }
+        return QrAction.Geo(lat, lon, q)
     }
 
-    // BEGIN:VCARD or MECARD:N:...;
     private fun parseContact(t: String): QrAction.Contact? {
-        if (!t.startsWith("BEGIN:VCARD", ignoreCase = true) &&
-            !t.startsWith("MECARD:", ignoreCase = true)) return null
-        fun vcard(key: String) = Regex("^$key[^:]*:(.+)$", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
-            .find(t)?.groupValues?.getOrNull(1)?.trim()
-        fun mecard(key: String) = Regex("$key:([^;]*);?").find(t)?.groupValues?.getOrNull(1)
-        return if (t.startsWith("BEGIN:VCARD", ignoreCase = true)) {
-            QrAction.Contact(name = vcard("FN"), phone = vcard("TEL"), email = vcard("EMAIL"), org = vcard("ORG"))
-        } else {
-            QrAction.Contact(name = mecard("N"), phone = mecard("TEL"), email = mecard("EMAIL"), org = null)
+        if (t.startsWith("BEGIN:VCARD", ignoreCase = true)) {
+            val lines = t.lines()
+            var name: String? = null
+            val phones = mutableListOf<String>()
+            val emails = mutableListOf<String>()
+            var org: String? = null
+            var title: String? = null
+
+            for (line in lines) {
+                val upper = line.uppercase()
+                when {
+                    upper.startsWith("FN:") -> name = line.substring(3).trim()
+                    upper.startsWith("TEL") && ':' in line -> phones.add(line.substringAfter(':').trim())
+                    upper.startsWith("EMAIL") && ':' in line -> emails.add(line.substringAfter(':').trim())
+                    upper.startsWith("ORG:") -> org = line.substring(4).trim()
+                    upper.startsWith("TITLE:") -> title = line.substring(6).trim()
+                }
+            }
+            return QrAction.Contact(name, phones, emails, org, title)
         }
+
+        if (t.startsWith("MECARD:", ignoreCase = true)) {
+            val phones = mutableListOf<String>()
+            val emails = mutableListOf<String>()
+            var name: String? = null
+            var org: String? = null
+
+            Regex("([A-Z]+):([^;]*)").findAll(t.substring(7)).forEach { m ->
+                val k = m.groupValues[1]
+                val v = m.groupValues[2]
+                when (k) {
+                    "N" -> name = v
+                    "TEL" -> phones.add(v)
+                    "EMAIL" -> emails.add(v)
+                    "ORG" -> org = v
+                }
+            }
+            return QrAction.Contact(name, phones, emails, org)
+        }
+
+        return null
     }
 
-    // BEGIN:VEVENT
     private fun parseCalendar(t: String): QrAction.CalendarEvent? {
         if (!t.startsWith("BEGIN:VEVENT", ignoreCase = true)) return null
-        fun field(key: String) = Regex("^$key:(.+)$", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
-            .find(t)?.groupValues?.getOrNull(1)?.trim()
+        fun findProp(p: String) = Regex("$p:(.*)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.trim()
         return QrAction.CalendarEvent(
-            title = field("SUMMARY"), dtStart = field("DTSTART"), dtEnd = field("DTEND"),
-            location = field("LOCATION"), description = field("DESCRIPTION")
+            title = findProp("SUMMARY"),
+            dtStart = findProp("DTSTART"),
+            dtEnd = findProp("DTEND"),
+            location = findProp("LOCATION"),
+            description = findProp("DESCRIPTION")
         )
     }
 
-    // tel:+123...
     private fun parsePhone(t: String): QrAction.Phone? {
         if (!t.startsWith("tel:", ignoreCase = true)) return null
-        return QrAction.Phone(t.removePrefix("tel:").removePrefix("tel://"))
+        return QrAction.Phone(t.substring(4).trim())
     }
 
-    // http:// or https://
+    /**
+     * URL classification with factual UrlDisposition.
+     */
     private fun parseUrl(t: String): QrAction.Url? {
-        if (!t.startsWith("http://", ignoreCase = true) && !t.startsWith("https://", ignoreCase = true)) return null
-        val risk = if (t.startsWith("http://")) 1 else 0  // plain HTTP = low risk flag
-        // IDN / punycode detection
-        val idn = try { URI(t).host?.contains("xn--") == true } catch (_: Exception) { false }
-        return QrAction.Url(t, riskScore = risk + if (idn) 2 else 0)
+        val uri = try { URI(t) } catch (_: Exception) { return null }
+        val scheme = uri.scheme?.lowercase() ?: return null
+
+        if (scheme != "http" && scheme != "https") {
+            return null
+        }
+
+        val host = uri.host ?: ""
+        val disposition = when {
+            host.startsWith("xn--") -> UrlDisposition.PUNYCODE
+            host.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$""")) -> UrlDisposition.IP_HOST
+            scheme == "https" -> UrlDisposition.HTTPS
+            scheme == "http" -> UrlDisposition.HTTP
+            else -> UrlDisposition.UNSUPPORTED_SCHEME
+        }
+
+        return QrAction.Url(
+            uri = t,
+            disposition = disposition,
+            host = host.ifBlank { null }
+        )
     }
 }

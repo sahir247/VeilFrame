@@ -3,107 +3,138 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 8 — LINE (Horizontal/vertical stripe patterns)
+ * Style 8 — LINE (Visual Grammar: Geometric Lines)
  *
- * Dark modules that are horizontally adjacent are merged into a single
- * horizontal stripe. Similarly, vertically adjacent modules become vertical
- * stripes. Isolated modules are small squares.
- *
- * The horizontal stripe color and vertical stripe color can be set independently
- * via [QrStyleParams.lineHorizontalColor] / [QrStyleParams.lineVerticalColor].
- *
- * Mirrors EFQRCodeStyleLine.swift's run-length merge logic.
+ * Implements EFQRCodeStyleLine:
+ * - Horizontally contiguous data modules merge into rounded horizontal lines.
+ * - Vertically contiguous data modules merge into rounded vertical lines.
+ * - Isolated modules render as smooth circles.
+ * - Finders rendered via [FinderRenderer].
  */
 class LineRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val hColor = params.lineHorizontalColor ?: params.foreground
-        val vColor = params.lineVerticalColor   ?: params.foreground
-        val hPaint = solidPaint(hColor)
-        val vPaint = solidPaint(vColor)
-        val posPaint = solidPaint(params.positionColor ?: params.foreground)
+        val cs = geometry.moduleSize
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
 
-        val usedH = Array(n) { BooleanArray(n) }
-        val usedV = Array(n) { BooleanArray(n) }
+        // 1. Draw finders
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = design.eyeStyle.outerColor ?: fgColor,
+            innerColor = design.eyeStyle.innerColor ?: fgColor,
+            backgroundColor = bgColor,
+            context = context
+        )
 
-        // Draw position detection patterns first
+        val strokePaint = context.obtainStroke(fgColor, cs * 0.80f, Paint.Cap.ROUND)
+        val fillPaint = context.obtainFill(fgColor)
+
+        val used = Array(n) { BooleanArray(n) }
+
+        // Reserve protected function modules
         for (col in 0 until n) {
             for (row in 0 until n) {
-                if (matrix.typeAt(col, row) == ModuleType.POS_CENTER && matrix.isDark(col, row)) {
-                    val x = col * cs; val y = row * cs
-                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        style = Paint.Style.STROKE; strokeWidth = cs * 0.9f
-                        color = params.positionColor ?: params.foreground
+                if (matrix.functionMask.isProtected(col, row)) {
+                    used[col][row] = true
+                    // Timing strips and alignment
+                    if (matrix.isDark(col, row) && !matrix.functionMask.isFinder(col, row) && !matrix.functionMask.isSeparator(col, row)) {
+                        val (cx, cy) = geometry.moduleCenter(col, row)
+                        canvas.drawCircle(cx, cy, cs * 0.40f, fillPaint)
                     }
-                    canvas.drawRect(x - 2.5f * cs, y - 2.5f * cs, x + 3.5f * cs, y + 3.5f * cs, ring)
-                    canvas.drawRect(x - cs, y - cs, x + 2f * cs, y + 2f * cs, posPaint)
                 }
             }
         }
 
-        // Horizontal runs
+        // 2. Horizontal runs
         for (row in 0 until n) {
             var col = 0
             while (col < n) {
-                val type = matrix.typeAt(col, row)
-                if (type == ModuleType.POS_CENTER || type == ModuleType.POS_OTHER) { col++; continue }
-                if (!matrix.isDark(col, row)) { col++; continue }
-                // Extend run
+                if (used[col][row] || !matrix.isDark(col, row)) {
+                    col++
+                    continue
+                }
+
                 var end = col + 1
-                while (end < n && matrix.isDark(end, row)
-                    && matrix.typeAt(end, row) != ModuleType.POS_CENTER
-                    && matrix.typeAt(end, row) != ModuleType.POS_OTHER
-                    && !usedH[end][row]) {
+                while (end < n && !used[end][row] && matrix.isDark(end, row)) {
                     end++
                 }
-                val runLen = end - col
-                if (runLen >= 2) {
-                    val y = row * cs; val x1 = col * cs; val x2 = end * cs
-                    val pad = cs * 0.07f
-                    canvas.drawRoundRect(RectF(x1 + pad, y + pad, x2 - pad, y + cs - pad), cs * 0.3f, cs * 0.3f, hPaint)
-                    for (c in col until end) usedH[c][row] = true
+
+                val runLength = end - col
+                if (runLength >= 2) {
+                    val (x1, y) = geometry.moduleCenter(col, row)
+                    val (x2, _) = geometry.moduleCenter(end - 1, row)
+                    canvas.drawLine(x1, y, x2, y, strokePaint)
+                    for (c in col until end) {
+                        used[c][row] = true
+                    }
                 }
                 col = end
             }
         }
 
-        // Vertical runs (only for cells not already drawn horizontally)
+        // 3. Vertical runs
         for (col in 0 until n) {
             var row = 0
             while (row < n) {
-                val type = matrix.typeAt(col, row)
-                if (type == ModuleType.POS_CENTER || type == ModuleType.POS_OTHER) { row++; continue }
-                if (!matrix.isDark(col, row) || usedH[col][row]) { row++; continue }
+                if (used[col][row] || !matrix.isDark(col, row)) {
+                    row++
+                    continue
+                }
+
                 var end = row + 1
-                while (end < n && matrix.isDark(col, end)
-                    && matrix.typeAt(col, end) != ModuleType.POS_CENTER
-                    && matrix.typeAt(col, end) != ModuleType.POS_OTHER
-                    && !usedH[col][end] && !usedV[col][end]) {
+                while (end < n && !used[col][end] && matrix.isDark(col, end)) {
                     end++
                 }
-                val runLen = end - row
-                if (runLen >= 2) {
-                    val x = col * cs; val y1 = row * cs; val y2 = end * cs
-                    val pad = cs * 0.07f
-                    canvas.drawRoundRect(RectF(x + pad, y1 + pad, x + cs - pad, y2 - pad), cs * 0.3f, cs * 0.3f, vPaint)
-                    for (r in row until end) usedV[col][r] = true
+
+                val runLength = end - row
+                if (runLength >= 2) {
+                    val (x, y1) = geometry.moduleCenter(col, row)
+                    val (_, y2) = geometry.moduleCenter(col, end - 1)
+                    canvas.drawLine(x, y1, x, y2, strokePaint)
+                    for (r in row until end) {
+                        used[col][r] = true
+                    }
                 } else {
-                    // Isolated cell
-                    val x = col * cs + cs * 0.1f; val y = row * cs + cs * 0.1f
-                    canvas.drawRoundRect(RectF(x, y, x + cs * 0.8f, y + cs * 0.8f), cs * 0.2f, cs * 0.2f, hPaint)
+                    // Single isolated dark cell -> circle
+                    val (cx, cy) = geometry.moduleCenter(col, row)
+                    canvas.drawCircle(cx, cy, cs * 0.40f, fillPaint)
+                    used[col][row] = true
                 }
                 row = end
             }
         }
 
-        drawLogo(canvas, params, (n * cs).toInt())
+        // 4. Logo
+        drawLogo(canvas, design, geometry, context)
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        val context = RenderContext()
+        render(matrix, design, canvas, geometry, context)
     }
 }

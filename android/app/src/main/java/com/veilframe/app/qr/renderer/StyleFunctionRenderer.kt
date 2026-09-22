@@ -6,7 +6,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.QrMatrix.ModuleType
 import com.veilframe.app.qr.QrStyleParams
 
 /**

@@ -132,6 +132,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
 
+    // Google ML Kit Barcode Scanning (bundled model for 100% offline QR scanning)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")
 
