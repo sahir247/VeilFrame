@@ -125,151 +125,53 @@ class UpscaleInferenceEngine(
                         }
                     }
 
-                    val runtimeSpec = try {
-                        model.toRuntimeSpec()
-                    } catch (e: Exception) {
-                        return@withContext Result.failure(
-                            IllegalStateException("Model '${model.name}' has invalid runtime specification: ${e.message}", e)
-                        )
+                    listener?.onStatus("Initializing neural session...")
+                    listener?.onStage("Loading Model", 0, 1)
+
+                    val session = withContext(Dispatchers.IO) {
+                        OnnxSessionManager.createSession(modelFile)
                     }
-
-                    listener?.onStatus("Planning adaptive execution profile...")
-                    listener?.onStage("Planning execution", 0, 1)
-
-                    val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
-                    val planner = AdaptiveExecutionPlanner()
-                    val modelCaps = ModelExecutionCapabilities(
-                        nativeScale = model.nativeScale,
-                        supportedOutputScales = model.supportedOutputScales,
-                        minSpatialSize = model.minInputDimension,
-                        tileCompatible = model.tileCompatible
-                    )
-
-                    val executionProfile = planner.planExecution(
-                        context = context,
-                        modelFile = modelFile,
-                        modelId = model.id,
-                        targetScale = targetScale,
-                        sourceWidth = srcW,
-                        sourceHeight = srcH,
-                        modelCapabilities = modelCaps,
-                        modelHash = model.sha256,
-                        runtimeSpec = runtimeSpec
-                    )
-
-                    listener?.onStatus("Loading ${model.name} weights...")
-                    listener?.onStage("Initializing neural runtime", 0, 1)
-                    val runtime = OnnxUpscaleRuntime(
-                        modelFile = modelFile,
-                        scale = model.nativeScale,
-                        profile = executionProfile,
-                        runtimeSpec = runtimeSpec
-                    )
 
                     try {
                         ensureActive()
-                        val effectiveTileSize = if (!runtime.isDynamicSpatial && runtime.expectedWidth > 0L) {
-                            minOf(executionProfile.tileSize, runtime.expectedWidth.toInt())
-                        } else {
-                            executionProfile.tileSize
-                        }
-                        val tileProcessor = UpscaleTileProcessor(
-                            tileSize = effectiveTileSize,
-                            overlap = executionProfile.overlap
+                        val processor = AiProcessor(context)
+                        val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
+
+                        listener?.onStatus("Running ${model.name}...")
+                        listener?.onStage("Neural Inference", 0, 1)
+
+                        val aiBitmap = processor.processImage(
+                            session = session,
+                            inputBitmap = source,
+                            modelName = modelFile.name,
+                            scaleFactor = model.nativeScale,
+                            chunkSize = 512,
+                            overlap = 16,
+                            onProgress = { current, total ->
+                                val pct = if (total > 0) (current * 100) / total else 0
+                                listener?.onProgress(current, total, pct)
+                                listener?.onStage("Neural Inference", current, total)
+                            },
+                            onStatus = { msg ->
+                                listener?.onStatus(msg)
+                            }
                         )
 
-                        val scaleDesc = if (scalePlan.requiresRefinement) {
-                            "${scalePlan.aiScale}× AI + ${scalePlan.refinementScale}× Lanczos refinement"
+                        if (scalePlan.requiresRefinement) {
+                            listener?.onStatus("Applying Lanczos refinement (${scalePlan.refinementScale}×)...")
+                            listener?.onStage("Refinement", 1, 1)
+                            val refinedW = aiBitmap.width * scalePlan.refinementScale
+                            val refinedH = aiBitmap.height * scalePlan.refinementScale
+                            val refinedBitmap = AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH)
+                            if (!aiBitmap.isRecycled) {
+                                aiBitmap.recycle()
+                            }
+                            refinedBitmap
                         } else {
-                            "${targetScale}× AI"
+                            aiBitmap
                         }
-                        listener?.onStatus("Ready: ${model.name} ($scaleDesc via ${runtime.executionProvider}, ${executionProfile.workers} workers, tile: ${effectiveTileSize}px)")
-
-                        val totalDurationMs = java.util.concurrent.atomic.AtomicLong(0L)
-
-                        val memPlan = UpscaleMemoryPlanner.plan(
-                            sourceWidth = srcW,
-                            sourceHeight = srcH,
-                            scale = targetScale,
-                            isAiModel = true
-                        )
-                        val outputSink: OutputSink = when (memPlan.outputSinkMode) {
-                            OutputSinkMode.TILED_SINK -> {
-                                val scratchDir = File(context.cacheDir, "upscale_tiled_${System.currentTimeMillis()}")
-                                TiledIntermediateSink(srcW * targetScale, srcH * targetScale, scratchDir)
-                            }
-                            OutputSinkMode.STREAMING_STRIP -> {
-                                val scratchDir = File(context.cacheDir, "upscale_strip_${System.currentTimeMillis()}")
-                                val stripH = minOf(effectiveTileSize * targetScale, srcH * targetScale)
-                                StripOutputSink(
-                                    targetWidth = srcW * targetScale,
-                                    targetHeight = srcH * targetScale,
-                                    stripHeight = stripH,
-                                    scratchDir = scratchDir
-                                )
-                            }
-                            OutputSinkMode.MEMORY_BUFFER -> {
-                                BitmapOutputSink(srcW * targetScale, srcH * targetScale)
-                            }
-                        }
-
-                        val aiResult = try {
-                            tileProcessor.processTiles(
-                                source = source,
-                                scale = targetScale,
-                                workers = executionProfile.workers,
-                                sink = outputSink,
-                                onTileInfer = { tile, row, col, index, total ->
-                                    val t0 = System.currentTimeMillis()
-                                    listener?.onStage("Neural inference", index + 1, total)
-                                    listener?.onStatus("Tile ${index + 1} of $total: Running inference via ${runtime.executionProvider}...")
-
-                                    val baseProcessed = runtime.runTile(tile, row, col)
-                                    val elapsedMs = System.currentTimeMillis() - t0
-                                    totalDurationMs.addAndGet(elapsedMs)
-                                    baseProcessed
-                                },
-                                onTileRefine = if (scalePlan.requiresRefinement) {
-                                    { baseProcessed, row, col, index, total ->
-                                        listener?.onStage("Lanczos refinement", index + 1, total)
-                                        val baseBmp = baseProcessed.bitmap
-                                        val refinedW = baseBmp.width * scalePlan.refinementScale
-                                        val refinedH = baseBmp.height * scalePlan.refinementScale
-                                        val refinedBmp = AlgorithmicUpscaler.scaleLanczos3(baseBmp, refinedW, refinedH)
-                                        if (!baseBmp.isRecycled) {
-                                            baseBmp.recycle()
-                                        }
-                                        ProcessedTile(refinedBmp, targetScale)
-                                    }
-                                } else null,
-                                onProgress = { current, total ->
-                                    val pct = if (total > 0) (current * 100) / total else 0
-                                    listener?.onProgress(current, total, pct)
-
-                                    val done = current.coerceAtLeast(1)
-                                    val avgMs = totalDurationMs.get() / done
-                                    val remainingTiles = (total - current).coerceAtLeast(0)
-                                    val etaSeconds = if (executionProfile.workers > 1) {
-                                        ((remainingTiles * avgMs) / (1000L * executionProfile.workers)).coerceAtLeast(0L)
-                                    } else {
-                                        ((remainingTiles * avgMs) / 1000L).coerceAtLeast(0L)
-                                    }
-
-                                    val etaStr = if (current > 0 && remainingTiles > 0) {
-                                        val sec = String.format(java.util.Locale.US, "%02ds", etaSeconds)
-                                        " • ~$sec left"
-                                    } else ""
-
-                                    listener?.onStatus("Tile $current of $total • ${runtime.executionProvider}$etaStr")
-                                }
-                            )
-                        } finally {
-                            outputSink.close()
-                        }
-
-                        aiResult.previewBitmap ?: throw IllegalStateException("Upscale failed: Output sink produced null preview bitmap")
                     } finally {
-                        runtime.close()
+                        session.close()
                     }
                 }
             }
