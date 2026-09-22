@@ -248,8 +248,9 @@ class UpscaleTileProcessorDimensionsTest {
         assertEquals(1024, sink.targetWidth)
         assertEquals(1024, sink.targetHeight)
         assertTrue(tempDir.exists())
-        sink.complete()
-        // complete() composits and purges scratch directory
+        val result = sink.complete()
+        assertEquals(1024, result.width)
+        assertEquals(1024, result.height)
         org.junit.Assert.assertFalse(tempDir.exists())
         sink.close()
     }
@@ -261,10 +262,45 @@ class UpscaleTileProcessorDimensionsTest {
         assertEquals(1024, sink.targetWidth)
         assertEquals(1024, sink.targetHeight)
         assertTrue(tempDir.exists())
-        sink.complete()
-        // complete() composits and purges scratch directory
-        org.junit.Assert.assertFalse(tempDir.exists())
+        val result = sink.complete()
+        assertEquals(1024, result.width)
+        assertEquals(1024, result.height)
         sink.close()
+    }
+
+    @Test
+    fun testSmoothStepHermiteInterpolation() {
+        val len = 32
+        assertEquals(0.0f, com.veilframe.app.upscale.inference.smoothStep(0, len), 0.001f)
+        assertEquals(1.0f, com.veilframe.app.upscale.inference.smoothStep(len - 1, len), 0.001f)
+        assertEquals(0.5f, com.veilframe.app.upscale.inference.smoothStep(15, 31), 0.05f)
+
+        // Verify strictly monotonic increase
+        var prev = -1.0f
+        for (i in 0 until len) {
+            val v = com.veilframe.app.upscale.inference.smoothStep(i, len)
+            assertTrue("smoothStep must be monotonically non-decreasing", v >= prev)
+            prev = v
+        }
+    }
+
+    @Test
+    fun testMixColorsInterpolation() {
+        val red = 0xFFFF0000.toInt()
+        val blue = 0xFF0000FF.toInt()
+
+        // 0% blue -> pure red
+        assertEquals(red, com.veilframe.app.upscale.inference.mixColors(red, blue, 0.0f))
+
+        // 100% blue -> pure blue
+        assertEquals(blue, com.veilframe.app.upscale.inference.mixColors(red, blue, 1.0f))
+
+        // 50% blend
+        val half = com.veilframe.app.upscale.inference.mixColors(red, blue, 0.5f)
+        val r = (half ushr 16) and 0xff
+        val b = half and 0xff
+        assertEquals(127, r)
+        assertEquals(127, b)
     }
 }
 

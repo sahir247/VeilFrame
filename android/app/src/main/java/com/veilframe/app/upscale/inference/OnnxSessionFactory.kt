@@ -90,8 +90,12 @@ object OnnxSessionFactory {
         val intraOpThreads = customIntraOpThreads ?: calculateCpuThreads()
         val interOpThreads = customInterOpThreads ?: 1
 
+        val isOrtModel = modelFile.name.endsWith(".ort", ignoreCase = true)
+        val defaultOptLevel = if (isOrtModel) OrtSession.SessionOptions.OptLevel.NO_OPT else OrtSession.SessionOptions.OptLevel.ALL_OPT
+        val effectiveOptLevel = if (isOrtModel) OrtSession.SessionOptions.OptLevel.NO_OPT else (optLevel ?: defaultOptLevel)
+
         if (mode == InferenceAccelerationMode.CPU) {
-            return createCpuSession(env, modelFile, intraOpThreads, interOpThreads, mode, optLevel)
+            return createCpuSession(env, modelFile, intraOpThreads, interOpThreads, mode, effectiveOptLevel)
         }
 
         // Check if NNAPI can be attempted (Android 8.1+ / API 27+)
@@ -106,7 +110,7 @@ object OnnxSessionFactory {
             val nnapiOptions = OrtSession.SessionOptions().apply {
                 setIntraOpNumThreads(intraOpThreads)
                 setInterOpNumThreads(interOpThreads)
-                setOptimizationLevel(optLevel ?: OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                setOptimizationLevel(effectiveOptLevel)
                 setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
                 setMemoryPatternOptimization(true)
             }
@@ -318,13 +322,16 @@ object OnnxSessionFactory {
         mode: InferenceAccelerationMode,
         optLevel: OrtSession.SessionOptions.OptLevel? = null
     ): SessionResult {
+        val isOrtModel = modelFile.name.endsWith(".ort", ignoreCase = true)
+        val defaultOptLevel = if (isOrtModel) OrtSession.SessionOptions.OptLevel.NO_OPT else OrtSession.SessionOptions.OptLevel.BASIC_OPT
+        val effectiveOptLevel = if (isOrtModel) OrtSession.SessionOptions.OptLevel.NO_OPT else (optLevel ?: defaultOptLevel)
         val cpuOptions = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(intraOpThreads)
             setInterOpNumThreads(interOpThreads)
-            setOptimizationLevel(optLevel ?: OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+            setOptimizationLevel(effectiveOptLevel)
         }
         val session = env.createSession(modelFile.absolutePath, cpuOptions)
-        val desc = "ORT CPU ($intraOpThreads threads, optLevel=${optLevel ?: OrtSession.SessionOptions.OptLevel.BASIC_OPT})"
+        val desc = "ORT CPU ($intraOpThreads threads, optLevel=$effectiveOptLevel)"
         Log.i(TAG, "Created session with $desc")
         return SessionResult(
             session = session,

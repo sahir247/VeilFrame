@@ -128,8 +128,9 @@ class UpscaleInferenceEngine(
                     val runtimeSpec = try {
                         model.toRuntimeSpec()
                     } catch (e: Exception) {
-                        Log.w(TAG, "Notice parsing model runtime spec: ${e.message}")
-                        null
+                        return@withContext Result.failure(
+                            IllegalStateException("Model '${model.name}' has invalid runtime specification: ${e.message}", e)
+                        )
                     }
 
                     listener?.onStatus("Planning adaptive execution profile...")
@@ -266,7 +267,7 @@ class UpscaleInferenceEngine(
                             outputSink.close()
                         }
 
-                        aiResult ?: throw IllegalStateException("Upscale failed: Output sink produced null bitmap")
+                        aiResult.previewBitmap ?: throw IllegalStateException("Upscale failed: Output sink produced null preview bitmap")
                     } finally {
                         runtime.close()
                     }

@@ -44,7 +44,7 @@ class AdaptiveExecutionPlanner(
 
     companion object {
         private const val TAG = "VeilFrame.AdaptivePlanner"
-        private const val BENCHMARK_VERSION = 3
+        private const val BENCHMARK_VERSION = PerformanceProfileKey.CURRENT_BENCHMARK_VERSION
         const val DEFAULT_BENCHMARK_SEARCH_LIMIT = 12
         const val DEFAULT_NNAPI_POLICY_LIMIT = 16
     }
@@ -171,13 +171,20 @@ class AdaptiveExecutionPlanner(
             else -> listOf(1 to 1)
         }
 
+        val isOrtModel = modelFile.name.endsWith(".ort", ignoreCase = true)
+        val optLevelsToTest = if (isOrtModel) {
+            listOf(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.NO_OPT)
+        } else {
+            listOf(
+                ai.onnxruntime.OrtSession.SessionOptions.OptLevel.BASIC_OPT,
+                ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT
+            )
+        }
+
         val cpuCandidates = mutableListOf<ExecutionProfile>()
         for ((workers, threads) in threadWorkerPairs) {
             if (workers <= cpuWorkerLimit) {
-                listOf(
-                    ai.onnxruntime.OrtSession.SessionOptions.OptLevel.BASIC_OPT,
-                    ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT
-                ).forEach { opt ->
+                optLevelsToTest.forEach { opt ->
                     cpuCandidates.add(
                         ExecutionProfile(
                             backend = Backend.CPU,
@@ -198,12 +205,18 @@ class AdaptiveExecutionPlanner(
         var cpuBaselineMpPerSec = 0.0
         var bestCpuProfile: ExecutionProfile? = null
         var bestCpuResult: ExecutionBenchmarkEngine.BenchmarkResult? = null
+        val maxAllowedCandidateMemory = javaBudgetBytes + nativeBudgetBytes
 
         for (cand in cpuCandidates) {
             val res = if (cand.workers == 1) {
                 benchmarkEngine.benchmarkSingleTile(cand, modelFile, runtimeSpec = runtimeSpec)
             } else {
                 benchmarkEngine.benchmarkConcurrency(cand, modelFile, tileCount = cand.workers * 2, runtimeSpec = runtimeSpec)
+            }
+            // Memory pressure guard: reject candidate if observed memory exceeds safe budget
+            if (res.peakMemoryBytes > maxAllowedCandidateMemory && cand.workers > 1) {
+                Log.w(TAG, "Rejecting candidate $cand: memory pressure exceeded (${res.peakMemoryBytes / 1024 / 1024}MB > ${maxAllowedCandidateMemory / 1024 / 1024}MB budget)")
+                continue
             }
             if (res.isSuccessful && res.throughputMpPerSec > cpuBaselineMpPerSec) {
                 cpuBaselineMpPerSec = res.throughputMpPerSec

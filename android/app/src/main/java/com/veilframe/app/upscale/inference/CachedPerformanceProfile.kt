@@ -24,7 +24,7 @@ data class PerformanceProfileKey(
     val benchmarkVersion: Int = CURRENT_BENCHMARK_VERSION
 ) {
     companion object {
-        const val CURRENT_BENCHMARK_VERSION = 3
+        const val CURRENT_BENCHMARK_VERSION = 4
 
         fun forDeviceAndModel(
             device: DeviceCapabilityProfile,
@@ -97,7 +97,13 @@ data class CachedPerformanceProfile(
             val prec = profile.precision.name.lowercase()
             val layout = if (profile.acceleratorConfiguration.nnapiUseNchw) "nchw" else "default"
             val intra = profile.intraOpThreads?.let { "_intra$it" } ?: ""
-            return "${backend}_${prec}_${layout}_t${profile.tileSize}_w${profile.workers}$intra"
+            val inter = profile.interOpThreads?.let { "_inter$it" } ?: ""
+            val opt = profile.optLevel?.let { "_opt${it.name.lowercase()}" } ?: ""
+            val provHash = if (profile.providerConfiguration.isNotEmpty()) {
+                val sorted = profile.providerConfiguration.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
+                "_prov" + Integer.toHexString(sorted.hashCode())
+            } else ""
+            return "${backend}_${prec}_${layout}_t${profile.tileSize}_o${profile.overlap}_w${profile.workers}$intra$inter$opt$provHash"
         }
 
         fun load(context: Context, key: PerformanceProfileKey): CachedPerformanceProfile? {

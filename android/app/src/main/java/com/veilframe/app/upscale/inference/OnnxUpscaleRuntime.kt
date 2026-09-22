@@ -96,13 +96,16 @@ class OnnxUpscaleRuntime(
     val expectedHeight: Long
     val expectedWidth: Long
 
-    @Volatile
-    private var activeRunOptions: OrtSession.RunOptions? = null
+    val tensorInfo: ModelTensorInfo
+    private val activeRunOptionsMap = java.util.concurrent.ConcurrentHashMap<Long, OrtSession.RunOptions>()
+    private val runIdGenerator = java.util.concurrent.atomic.AtomicLong(0)
 
     fun requestTermination() {
-        try {
-            activeRunOptions?.setTerminate(true)
-        } catch (_: Throwable) {}
+        for (options in activeRunOptionsMap.values) {
+            try {
+                options.setTerminate(true)
+            } catch (_: Throwable) {}
+        }
     }
 
     init {
@@ -122,59 +125,41 @@ class OnnxUpscaleRuntime(
         backendInfo = sessionResult.backendInfo
         executionProvider = backendInfo.providerDescription
 
-        // Inspect ONNX model input metadata
-        val inputEntry = session.inputInfo.entries.firstOrNull()
-            ?: throw IllegalStateException("ONNX model ${modelFile.name} has no input tensors.")
-        inputName = inputEntry.key
-        val inputNodeInfo: NodeInfo = inputEntry.value
-        val inputTensorInfo = (inputNodeInfo.info as? TensorInfo)
-            ?: throw IllegalStateException("ONNX input $inputName is not a TensorInfo.")
-
-        inputType = inputTensorInfo.type
-        inputShape = inputTensorInfo.shape
+        // Dynamically inspect ONNX model tensors using ModelTensorInfo
+        tensorInfo = ModelTensorInfo.inspect(session, modelFile.name)
+        inputName = tensorInfo.imageInputName
+        inputType = tensorInfo.inputType
+        val inNode = session.inputInfo[inputName]?.info as? TensorInfo
+        inputShape = inNode?.shape ?: longArrayOf(1L, tensorInfo.inputChannels.toLong(), -1L, -1L)
         inputRank = inputShape.size
 
-        // Inspect ONNX model output metadata
-        val outputEntry = session.outputInfo.entries.firstOrNull()
-            ?: throw IllegalStateException("ONNX model ${modelFile.name} has no output tensors.")
-        outputName = outputEntry.key
-        val outputNodeInfo: NodeInfo = outputEntry.value
-        val outputTensorInfo = (outputNodeInfo.info as? TensorInfo)
-            ?: throw IllegalStateException("ONNX output $outputName is not a TensorInfo.")
-
-        outputType = outputTensorInfo.type
-        outputShape = outputTensorInfo.shape
+        outputName = tensorInfo.imageOutputName
+        outputType = tensorInfo.outputType
+        val outNode = session.outputInfo[outputName]?.info as? TensorInfo
+        outputShape = outNode?.shape ?: longArrayOf(1L, tensorInfo.outputChannels.toLong(), -1L, -1L)
         outputRank = outputShape.size
 
-        if (inputRank >= 4) {
-            expectedBatch = inputShape[0]
-            expectedChannels = inputShape[1]
-            expectedHeight = inputShape[2]
-            expectedWidth = inputShape[3]
-            isDynamicSpatial = (expectedHeight <= 0L || expectedWidth <= 0L)
-        } else {
-            expectedBatch = 1L
-            expectedChannels = 3L
-            expectedHeight = -1L
-            expectedWidth = -1L
-            isDynamicSpatial = true
-        }
+        expectedBatch = if (inputRank >= 1 && inputShape[0] > 0L) inputShape[0] else 1L
+        expectedChannels = tensorInfo.inputChannels.toLong()
+        expectedHeight = tensorInfo.fixedHeight?.toLong() ?: -1L
+        expectedWidth = tensorInfo.fixedWidth?.toLong() ?: -1L
+        isDynamicSpatial = tensorInfo.isDynamicSpatial
 
         // Validate ModelRuntimeSpec if supplied
         if (runtimeSpec != null) {
-            if (inputRank >= 4 && expectedChannels > 0 && expectedChannels.toInt() != runtimeSpec.inputChannels) {
+            if (expectedChannels > 0 && expectedChannels.toInt() != runtimeSpec.inputChannels) {
                 throw IllegalStateException("Model ${modelFile.name} input channel mismatch: expected ${runtimeSpec.inputChannels}, got $expectedChannels")
             }
         }
 
         Log.i(
             TAG,
-            "Loaded model '${modelFile.name}' on $executionProvider: input=$inputName [${inputShape.joinToString(",")}], output=$outputName [${outputShape.joinToString(",")}], dynamic=$isDynamicSpatial"
+            "Loaded model '${modelFile.name}' on $executionProvider: input=$inputName [${inputShape.joinToString(",")}], output=$outputName [${outputShape.joinToString(",")}], dynamic=$isDynamicSpatial, candidateScale=${tensorInfo.candidateScale}x"
         )
     }
 
     /**
-     * Executes ONNX inference with responsive cancellation via OrtSession.RunOptions.
+     * Executes ONNX inference with responsive multi-worker cancellation via OrtSession.RunOptions.
      * When the calling coroutine is cancelled, OrtSession.RunOptions.setTerminate(true) is invoked,
      * immediately aborting in-progress inference on native threads.
      */
@@ -182,8 +167,9 @@ class OnnxUpscaleRuntime(
     private suspend inline fun runInferenceCancellable(
         crossinline action: (OrtSession.RunOptions) -> OrtSession.Result
     ): OrtSession.Result = suspendCancellableCoroutine { continuation ->
+        val runId = runIdGenerator.incrementAndGet()
         val runOptions = OrtSession.RunOptions()
-        activeRunOptions = runOptions
+        activeRunOptionsMap[runId] = runOptions
 
         continuation.invokeOnCancellation {
             try {
@@ -202,7 +188,7 @@ class OnnxUpscaleRuntime(
         }.onFailure { throwable ->
             continuation.resumeWithException(throwable)
         }.also {
-            activeRunOptions = null
+            activeRunOptionsMap.remove(runId)
             try {
                 runOptions.close()
             } catch (_: Throwable) {}
@@ -228,7 +214,8 @@ class OnnxUpscaleRuntime(
     suspend fun runTile(
         tileBitmap: Bitmap,
         row: Int = 0,
-        col: Int = 0
+        col: Int = 0,
+        strength: Float = 100f
     ): ProcessedTile = withContext(Dispatchers.Default) {
         val t0 = System.currentTimeMillis()
         val actualW = tileBitmap.width
@@ -339,6 +326,32 @@ class OnnxUpscaleRuntime(
             else -> throw UnsupportedOperationException("Unsupported ONNX input tensor type: $inputType")
         }
 
+        val inputsToClose = mutableListOf<OnnxTensor>()
+        inputsToClose.add(inputTensor)
+
+        val inputMap = mutableMapOf<String, OnnxTensor>()
+        inputMap[inputName] = inputTensor
+
+        // Append auxiliary control inputs (e.g. strength for FBCNN / style transfer)
+        for ((auxName, auxInfo) in tensorInfo.auxiliaryInputs) {
+            val shape = auxInfo.shape
+            val isFloat = (auxInfo.type == OnnxJavaType.FLOAT || auxInfo.type == OnnxJavaType.FLOAT16)
+            if (isFloat && (shape.contentEquals(longArrayOf(1L, 1L)) || shape.contentEquals(longArrayOf(1L)))) {
+                val sVal = strength / 100f
+                val auxTensor = if (auxInfo.type == OnnxJavaType.FLOAT16) {
+                    val sb = ShortBuffer.allocate(1)
+                    sb.put(Float16Utils.floatToHalf(sVal))
+                    sb.rewind()
+                    OnnxTensor.createTensor(env, sb, shape, OnnxJavaType.FLOAT16)
+                } else {
+                    val fb = FloatBuffer.wrap(floatArrayOf(sVal))
+                    OnnxTensor.createTensor(env, fb, shape)
+                }
+                inputsToClose.add(auxTensor)
+                inputMap[auxName] = auxTensor
+            }
+        }
+
         val tTensor = System.currentTimeMillis() - t0
 
         try {
@@ -347,7 +360,7 @@ class OnnxUpscaleRuntime(
             val tInfer0 = System.currentTimeMillis()
             val result = try {
                 runInferenceCancellable { runOptions ->
-                    session.run(mapOf(inputName to inputTensor), runOptions)
+                    session.run(inputMap, runOptions)
                 }
             } catch (e: OrtException) {
                 val expectedStr = if (isDynamicSpatial) "[1,3,H,W] (Dynamic)" else "[1,3,$targetInH,$targetInW]"
@@ -491,7 +504,9 @@ class OnnxUpscaleRuntime(
                 )
             }
         } finally {
-            inputTensor.close()
+            inputsToClose.forEach { tensor ->
+                try { tensor.close() } catch (_: Throwable) {}
+            }
         }
     }
 

@@ -131,7 +131,7 @@ class PerformanceProfileCacheTest {
     }
 
     @Test
-    fun testVersion3KeyStringFormat() {
+    fun testVersion4KeyStringFormat() {
         val key = PerformanceProfileKey(
             deviceModel = "Pixel 8",
             androidApi = 34,
@@ -139,9 +139,9 @@ class PerformanceProfileCacheTest {
             ortVersion = "1.27.0",
             modelId = "realesrgan_x4plus",
             modelScale = 4,
-            benchmarkVersion = 3
+            benchmarkVersion = 4
         )
-        assertTrue(key.toKeyString().endsWith("_v3"))
+        assertTrue(key.toKeyString().endsWith("_v4"))
     }
 
     @Test
@@ -155,7 +155,7 @@ class PerformanceProfileCacheTest {
             acceleratorConfiguration = com.veilframe.app.upscale.inference.AcceleratorConfiguration(nnapiUseNchw = true)
         )
         val fingerprint = CachedPerformanceProfile.generateConfigurationFingerprint(profile)
-        assertEquals("nnapi_fp16_relaxed_nchw_t384_w4", fingerprint)
+        assertEquals("nnapi_fp16_relaxed_nchw_t384_o24_w4", fingerprint)
     }
 
     @Test

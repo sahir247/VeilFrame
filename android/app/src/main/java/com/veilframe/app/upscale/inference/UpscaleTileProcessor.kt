@@ -10,9 +10,52 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Result produced by an OutputSink upon completion.
+ *
+ * Invariant: Full-resolution output dimensions must never imply a full-resolution
+ * Android Bitmap allocation. For high-resolution outputs, `outputFile` contains the
+ * authoritative, full-resolution artifact, while `previewBitmap` provides a bounded
+ * disposable preview strictly for UI rendering.
+ */
+data class SinkResult(
+    val outputFile: File?,
+    val previewBitmap: Bitmap?,
+    val width: Int,
+    val height: Int
+) {
+    /**
+     * Backward-compatible accessor for callers expecting a Bitmap directly.
+     */
+    val bitmap: Bitmap? get() = previewBitmap
+}
+
+/**
+ * Cubic Hermite polynomial smooth interpolation: 3x^2 - 2x^3.
+ * Eliminates boundary step artifacts across tile overlaps.
+ */
+fun smoothStep(position: Int, length: Int): Float {
+    if (length <= 1) return 1f
+    val x = (position.toFloat() / (length - 1)).coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
+}
+
+/**
+ * Linear color interpolation between two ARGB 8888 packed color integers.
+ */
+fun mixColors(from: Int, to: Int, amount: Float): Int {
+    val keep = 1f - amount
+    val a = (keep * ((from ushr 24) and 0xff) + amount * ((to ushr 24) and 0xff)).toInt().coerceIn(0, 255)
+    val r = (keep * ((from ushr 16) and 0xff) + amount * ((to ushr 16) and 0xff)).toInt().coerceIn(0, 255)
+    val g = (keep * ((from ushr 8) and 0xff) + amount * ((to ushr 8) and 0xff)).toInt().coerceIn(0, 255)
+    val b = (keep * (from and 0xff) + amount * (to and 0xff)).toInt().coerceIn(0, 255)
+    return (a shl 24) or (r shl 16) or (g shl 8) or b
+}
 
 /**
  * Output sink abstraction decoupling memory storage from tiled neural execution.
@@ -20,13 +63,16 @@ import java.util.concurrent.atomic.AtomicInteger
 interface OutputSink : AutoCloseable {
     val targetWidth: Int
     val targetHeight: Int
-    fun writeTileCore(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile)
-    fun complete(): Bitmap?
+    fun writeTile(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile)
+    fun writeTileCore(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
+        writeTile(tile, processed)
+    }
+    fun complete(): SinkResult
 }
 
 /**
- * In-memory bitmap output sink. Blits tile cores directly to a destination Canvas.
- * Synchronously consumes pixels and immediately recycles the processed tile bitmap.
+ * In-memory bitmap output sink with polynomial Hermite SmoothStep blending.
+ * For images whose target resolution fits safely within Android Dalvik heap headroom.
  */
 class BitmapOutputSink(
     override val targetWidth: Int,
@@ -34,106 +80,183 @@ class BitmapOutputSink(
 ) : OutputSink {
     val outputBitmap: Bitmap? = try {
         Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-    } catch (oom: OutOfMemoryError) {
-        val maxDim = maxOf(targetWidth, targetHeight)
-        val factor = 4096.0f / maxDim
-        val downsampledW = (targetWidth * factor).toInt().coerceAtLeast(1)
-        val downsampledH = (targetHeight * factor).toInt().coerceAtLeast(1)
-        Bitmap.createBitmap(downsampledW, downsampledH, Bitmap.Config.ARGB_8888)
-    } catch (t: Throwable) {
+    } catch (_: OutOfMemoryError) {
+        null
+    } catch (_: Throwable) {
         null
     }
-    private val canvas = outputBitmap?.let { Canvas(it) }
-    private val canvasLock = Any()
+    private val lock = Any()
 
-    override fun writeTileCore(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
+    override fun writeTile(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
         val processedTile = processed.bitmap
         val scale = processed.outputScale
+        val targetX = tile.x * scale
+        val targetY = tile.y * scale
+        val width = processedTile.width
+        val height = processedTile.height
+        val blendWidth = (tile.overlap * scale).coerceAtLeast(1)
 
-        val srcCoreX = tile.coreX * scale
-        val srcCoreY = tile.coreY * scale
-        val srcCoreW = tile.coreWidth * scale
-        val srcCoreH = tile.coreHeight * scale
+        val shouldBlendLeft = tile.col > 0
+        val shouldBlendTop = tile.row > 0
 
-        val dstX = (tile.x + tile.coreX) * scale
-        val dstY = (tile.y + tile.coreY) * scale
+        val bmp = outputBitmap
+        if (bmp != null) {
+            synchronized(lock) {
+                if (!shouldBlendLeft && !shouldBlendTop) {
+                    Canvas(bmp).drawBitmap(processedTile, targetX.toFloat(), targetY.toFloat(), null)
+                } else {
+                    val existing = IntArray(width * height)
+                    bmp.getPixels(existing, 0, width, targetX, targetY, width, height)
+                    val incoming = IntArray(width * height)
+                    processedTile.getPixels(incoming, 0, width, 0, 0, width, height)
 
-        val srcRect = Rect(srcCoreX, srcCoreY, srcCoreX + srcCoreW, srcCoreY + srcCoreH)
-        val dstRect = Rect(dstX, dstY, dstX + srcCoreW, dstY + srcCoreH)
+                    for (localY in 0 until height) {
+                        val mixTop = shouldBlendTop && localY < blendWidth
+                        val blendTop = if (mixTop) smoothStep(localY, blendWidth) else 1f
 
-        synchronized(canvasLock) {
-            canvas?.drawBitmap(processedTile, srcRect, dstRect, null)
+                        for (localX in 0 until width) {
+                            val mixLeft = shouldBlendLeft && localX < blendWidth
+                            if (!mixLeft && !mixTop) continue
+
+                            val blendLeft = if (mixLeft) smoothStep(localX, blendWidth) else 1f
+                            val blend = minOf(blendLeft, blendTop)
+                            val idx = localY * width + localX
+                            incoming[idx] = mixColors(existing[idx], incoming[idx], blend)
+                        }
+                    }
+                    bmp.setPixels(incoming, 0, width, targetX, targetY, width, height)
+                }
+            }
         }
 
-        // Strict ownership: sink has copied pixels, immediately recycle processed tile
         if (!processedTile.isRecycled) {
             processedTile.recycle()
         }
     }
 
-    override fun complete(): Bitmap? = outputBitmap
+    override fun complete(): SinkResult {
+        return SinkResult(
+            outputFile = null,
+            previewBitmap = outputBitmap,
+            width = targetWidth,
+            height = targetHeight
+        )
+    }
+
     override fun close() {}
 }
 
 /**
- * Streaming strip output sink. Maintains a bounded strip canvas in RAM and emits
- * completed vertical strips to disk or streaming consumer.
- * Assembles the final output image sequentially upon completion without holding
- * the uncompressed full-resolution bitmap in memory during inference.
+ * Streaming strip output sink with Edge-Band Persistence.
+ *
+ * Maintains a bounded strip canvas in RAM and streams committed rows directly to
+ * an authoritative disk artifact (`outputFile`), while maintaining an optional bounded
+ * disposable preview bitmap (up to 2048px) for UI rendering.
+ *
+ * Edge-Band Persistence Invariant:
+ * The bottom overlap band of Strip N is retained in memory as the top overlap band of
+ * Strip N+1, achieving smooth Hermite polynomial blending across vertical boundaries
+ * without saving redundant 4×/8× tiles on disk.
  */
 class StripOutputSink(
     override val targetWidth: Int,
     override val targetHeight: Int,
     val stripHeight: Int,
     val scratchDir: File = File(System.getProperty("java.io.tmpdir"), "strip_scratch_${System.currentTimeMillis()}"),
+    val outputFile: File? = null,
+    val maxPreviewDimension: Int = 2048,
     val onStripReady: ((Bitmap, stripIndex: Int) -> Unit)? = null
 ) : OutputSink {
-    data class StripRecord(
-        val index: Int,
-        val top: Int,
-        val height: Int
-    )
 
     private val safeStripHeight = stripHeight.coerceIn(16, targetHeight)
     private var currentStripIndex = 0
     private var currentStripTop = 0
+
+    private val targetOutputFile = outputFile ?: File(scratchDir, "upscale_output_${targetWidth}x${targetHeight}.raw")
+    private var outputStream: FileOutputStream? = null
+
+    // Bounded preview bitmap for UI display
+    val previewBitmap: Bitmap?
+    private val previewCanvas: Canvas?
+    private val previewScaleFactor: Float
+
+    // Strip working canvas
     private var stripBitmap: Bitmap? = try {
         Bitmap.createBitmap(targetWidth, safeStripHeight, Bitmap.Config.ARGB_8888)
-    } catch (oom: OutOfMemoryError) {
-        Bitmap.createBitmap(targetWidth.coerceAtMost(2048), safeStripHeight.coerceAtMost(256), Bitmap.Config.ARGB_8888)
-    } catch (t: Throwable) {
+    } catch (_: Throwable) {
         null
     }
     private var stripCanvas: Canvas? = stripBitmap?.let { Canvas(it) }
+
+    // Edge-band persistence buffer: bottom overlap band of previous strip
+    private var retainedOverlapBand: IntArray? = null
+    private var retainedOverlapHeight: Int = 0
+
     private val lock = Any()
-    private val stripRecords = Collections.synchronizedList(mutableListOf<StripRecord>())
 
     init {
         scratchDir.mkdirs()
+        targetOutputFile.parentFile?.mkdirs()
+        outputStream = FileOutputStream(targetOutputFile)
+
+        val maxDim = maxOf(targetWidth, targetHeight)
+        if (maxDim > maxPreviewDimension) {
+            previewScaleFactor = maxPreviewDimension.toFloat() / maxDim.toFloat()
+            val pW = (targetWidth * previewScaleFactor).toInt().coerceAtLeast(1)
+            val pH = (targetHeight * previewScaleFactor).toInt().coerceAtLeast(1)
+            previewBitmap = try { Bitmap.createBitmap(pW, pH, Bitmap.Config.ARGB_8888) } catch (_: Throwable) { null }
+        } else {
+            previewScaleFactor = 1.0f
+            previewBitmap = try { Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888) } catch (_: Throwable) { null }
+        }
+        previewCanvas = previewBitmap?.let { Canvas(it) }
     }
 
-    override fun writeTileCore(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
+    override fun writeTile(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
         val processedTile = processed.bitmap
         val scale = processed.outputScale
-        val tileTop = (tile.y + tile.coreY) * scale
-        val coreH = tile.coreHeight * scale
-        val coreW = tile.coreWidth * scale
+        val tileTop = tile.y * scale
+        val width = processedTile.width
+        val height = processedTile.height
+        val blendWidth = (tile.overlap * scale).coerceAtLeast(1)
 
         synchronized(lock) {
             while (tileTop >= currentStripTop + safeStripHeight && currentStripTop + safeStripHeight < targetHeight) {
-                flushStrip()
+                flushStrip(tile.overlap * scale)
             }
 
-            val srcRect = Rect(
-                tile.coreX * scale,
-                tile.coreY * scale,
-                (tile.coreX + tile.coreWidth) * scale,
-                (tile.coreY + tile.coreHeight) * scale
-            )
-            val dstY = tileTop - currentStripTop
-            val dstX = (tile.x + tile.coreX) * scale
-            val dstRect = Rect(dstX, dstY, dstX + coreW, dstY + coreH)
-            stripCanvas?.drawBitmap(processedTile, srcRect, dstRect, null)
+            val bmp = stripBitmap
+            if (bmp != null) {
+                val dstX = tile.x * scale
+                val dstY = tileTop - currentStripTop
+                val shouldBlendLeft = tile.col > 0
+                val shouldBlendTop = (currentStripTop > 0 || tile.row > 0) && dstY < (retainedOverlapHeight.takeIf { it > 0 } ?: blendWidth)
+
+                if (!shouldBlendLeft && !shouldBlendTop) {
+                    stripCanvas?.drawBitmap(processedTile, dstX.toFloat(), dstY.toFloat(), null)
+                } else {
+                    val existing = IntArray(width * height)
+                    bmp.getPixels(existing, 0, width, dstX, dstY, width, height)
+                    val incoming = IntArray(width * height)
+                    processedTile.getPixels(incoming, 0, width, 0, 0, width, height)
+
+                    for (localY in 0 until height) {
+                        val mixTop = shouldBlendTop && localY < blendWidth
+                        val blendTop = if (mixTop) smoothStep(localY, blendWidth) else 1f
+
+                        for (localX in 0 until width) {
+                            val mixLeft = shouldBlendLeft && localX < blendWidth
+                            if (!mixLeft && !mixTop) continue
+
+                            val blendLeft = if (mixLeft) smoothStep(localX, blendWidth) else 1f
+                            val blend = minOf(blendLeft, blendTop)
+                            val idx = localY * width + localX
+                            incoming[idx] = mixColors(existing[idx], incoming[idx], blend)
+                        }
+                    }
+                    bmp.setPixels(incoming, 0, width, dstX, dstY, width, height)
+                }
+            }
         }
 
         if (!processedTile.isRecycled) {
@@ -141,43 +264,65 @@ class StripOutputSink(
         }
     }
 
-    private fun flushStrip() {
+    private fun flushStrip(overlapPixels: Int) {
         val actualH = minOf(safeStripHeight, targetHeight - currentStripTop)
         if (actualH <= 0) return
 
-        val stripIndex = currentStripIndex
-        val stripTop = currentStripTop
+        val bmp = stripBitmap ?: return
+        onStripReady?.invoke(bmp, currentStripIndex)
 
-        val bmp = stripBitmap
-        if (bmp != null) {
-            onStripReady?.invoke(bmp, stripIndex)
+        val isLastStrip = (currentStripTop + actualH >= targetHeight)
+        val commitH = if (isLastStrip) actualH else (actualH - overlapPixels).coerceAtLeast(1)
 
-            val stripFile = File(scratchDir, "strip_${stripIndex}.raw")
-            val pixels = IntArray(targetWidth * actualH)
-            bmp.getPixels(pixels, 0, targetWidth, 0, 0, targetWidth, actualH)
+        // 1. Commit committed rows to authoritative disk artifact
+        val commitPixels = IntArray(targetWidth * commitH)
+        bmp.getPixels(commitPixels, 0, targetWidth, 0, 0, targetWidth, commitH)
 
-            stripFile.outputStream().buffered().use { fos ->
-                val byteBuf = java.nio.ByteBuffer.allocate(pixels.size * 4)
-                byteBuf.asIntBuffer().put(pixels)
-                fos.write(byteBuf.array())
-            }
+        val byteBuf = java.nio.ByteBuffer.allocate(commitPixels.size * 4)
+        byteBuf.asIntBuffer().put(commitPixels)
+        outputStream?.write(byteBuf.array())
 
-            stripRecords.add(StripRecord(stripIndex, stripTop, actualH))
+        // 2. Update progressive preview bitmap
+        if (previewCanvas != null && previewBitmap != null) {
+            val srcRect = Rect(0, 0, targetWidth, commitH)
+            val dstRect = Rect(
+                0,
+                (currentStripTop * previewScaleFactor).toInt(),
+                previewBitmap.width,
+                ((currentStripTop + commitH) * previewScaleFactor).toInt()
+            )
+            previewCanvas.drawBitmap(bmp, srcRect, dstRect, null)
+        }
+
+        // 3. Edge-Band Persistence: retain the bottom overlap rows in memory for next strip
+        if (!isLastStrip && overlapPixels > 0) {
+            val overlapBand = IntArray(targetWidth * overlapPixels)
+            bmp.getPixels(overlapBand, 0, targetWidth, 0, actualH - overlapPixels, targetWidth, overlapPixels)
+            retainedOverlapBand = overlapBand
+            retainedOverlapHeight = overlapPixels
+
+            // Prepare next strip canvas with the retained overlap band at top
+            bmp.eraseColor(0)
+            bmp.setPixels(overlapBand, 0, targetWidth, 0, 0, targetWidth, overlapPixels)
+        } else {
+            retainedOverlapBand = null
+            retainedOverlapHeight = 0
+            bmp.eraseColor(0)
         }
 
         currentStripIndex++
-        currentStripTop += safeStripHeight
-        val nextH = minOf(safeStripHeight, targetHeight - currentStripTop)
-        if (nextH > 0) {
-            stripBitmap?.eraseColor(0)
-        }
+        currentStripTop += commitH
     }
 
-    override fun complete(): Bitmap? {
+    override fun complete(): SinkResult {
         synchronized(lock) {
             if (currentStripTop < targetHeight) {
-                flushStrip()
+                flushStrip(0)
             }
+            try {
+                outputStream?.flush()
+                outputStream?.close()
+            } catch (_: Throwable) {}
         }
 
         stripBitmap?.let {
@@ -185,68 +330,25 @@ class StripOutputSink(
                 it.recycle()
             }
         }
+        stripBitmap = null
 
-        val outputBitmap: Bitmap? = try {
-            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        } catch (oom: OutOfMemoryError) {
-            val maxDim = maxOf(targetWidth, targetHeight)
-            val factor = 4096.0f / maxDim
-            val downsampledW = (targetWidth * factor).toInt().coerceAtLeast(1)
-            val downsampledH = (targetHeight * factor).toInt().coerceAtLeast(1)
-            Bitmap.createBitmap(downsampledW, downsampledH, Bitmap.Config.ARGB_8888)
-        } catch (t: Throwable) {
-            null
-        }
-
-        if (outputBitmap == null) {
-            scratchDir.deleteRecursively()
-            return null
-        }
-
-        val canvas = Canvas(outputBitmap)
-        val isDownsampled = outputBitmap.width != targetWidth || outputBitmap.height != targetHeight
-        val scaleFactor = if (isDownsampled) outputBitmap.width.toFloat() / targetWidth.toFloat() else 1.0f
-
-        try {
-            val sortedStrips = synchronized(stripRecords) { stripRecords.sortedBy { it.index } }
-            for (rec in sortedStrips) {
-                val stripFile = File(scratchDir, "strip_${rec.index}.raw")
-                if (!stripFile.exists()) continue
-
-                val numPixels = targetWidth * rec.height
-                val bytes = stripFile.readBytes()
-                val byteBuf = java.nio.ByteBuffer.wrap(bytes)
-                val pixels = IntArray(numPixels)
-                byteBuf.asIntBuffer().get(pixels)
-
-                val stripBmp = Bitmap.createBitmap(targetWidth, rec.height, Bitmap.Config.ARGB_8888)
-                stripBmp.setPixels(pixels, 0, targetWidth, 0, 0, targetWidth, rec.height)
-
-                if (isDownsampled) {
-                    val dstRect = Rect(
-                        0,
-                        (rec.top * scaleFactor).toInt(),
-                        outputBitmap.width,
-                        ((rec.top + rec.height) * scaleFactor).toInt()
-                    )
-                    canvas.drawBitmap(stripBmp, null, dstRect, null)
-                } else {
-                    canvas.drawBitmap(stripBmp, 0f, rec.top.toFloat(), null)
-                }
-
-                if (!stripBmp.isRecycled) {
-                    stripBmp.recycle()
-                }
-                stripFile.delete()
-            }
-        } finally {
+        // Clean up transient scratch files if target was custom, or leave output artifact intact
+        if (outputFile != null) {
             scratchDir.deleteRecursively()
         }
 
-        return outputBitmap
+        return SinkResult(
+            outputFile = targetOutputFile,
+            previewBitmap = previewBitmap,
+            width = targetWidth,
+            height = targetHeight
+        )
     }
 
     override fun close() {
+        try {
+            outputStream?.close()
+        } catch (_: Throwable) {}
         stripBitmap?.let {
             if (!it.isRecycled) {
                 it.recycle()
@@ -257,41 +359,57 @@ class StripOutputSink(
 }
 
 /**
- * Tiled intermediate storage sink. Persists raw tile core pixel blocks directly
- * to a scratch directory on disk for ultra-high-resolution images without RAM exhaustion.
- * The complete() method executes the final compositor to stitch tiles into the final Bitmap.
+ * Tiled intermediate storage sink for extreme-scale image processing.
+ * Persists raw tile blocks to disk and constructs the final artifact stream.
  */
 class TiledIntermediateSink(
     override val targetWidth: Int,
     override val targetHeight: Int,
-    val scratchDir: File
+    val scratchDir: File,
+    val outputFile: File? = null
 ) : OutputSink {
     data class TileMeta(
         val index: Int,
         val dstX: Int,
         val dstY: Int,
-        val coreW: Int,
-        val coreH: Int
+        val width: Int,
+        val height: Int
     )
 
     private val tileMetaList = Collections.synchronizedList(mutableListOf<TileMeta>())
+    private val targetOutputFile = outputFile ?: File(scratchDir, "tiled_output_${targetWidth}x${targetHeight}.raw")
+
+    // Bounded preview bitmap for UI display
+    val previewBitmap: Bitmap?
+    private val previewCanvas: Canvas?
+    private val previewScaleFactor: Float
 
     init {
         scratchDir.mkdirs()
+        val maxDim = maxOf(targetWidth, targetHeight)
+        if (maxDim > 2048) {
+            previewScaleFactor = 2048.0f / maxDim.toFloat()
+            val pW = (targetWidth * previewScaleFactor).toInt().coerceAtLeast(1)
+            val pH = (targetHeight * previewScaleFactor).toInt().coerceAtLeast(1)
+            previewBitmap = try { Bitmap.createBitmap(pW, pH, Bitmap.Config.ARGB_8888) } catch (_: Throwable) { null }
+        } else {
+            previewScaleFactor = 1.0f
+            previewBitmap = try { Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888) } catch (_: Throwable) { null }
+        }
+        previewCanvas = previewBitmap?.let { Canvas(it) }
     }
 
-    override fun writeTileCore(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
+    override fun writeTile(tile: UpscaleTileProcessor.TileArea, processed: ProcessedTile) {
         val processedTile = processed.bitmap
         val scale = processed.outputScale
-        val coreW = tile.coreWidth * scale
-        val coreH = tile.coreHeight * scale
-        val dstX = (tile.x + tile.coreX) * scale
-        val dstY = (tile.y + tile.coreY) * scale
+        val width = processedTile.width
+        val height = processedTile.height
+        val dstX = tile.x * scale
+        val dstY = tile.y * scale
 
         val tileFile = File(scratchDir, "tile_${tile.index}.raw")
-
-        val pixels = IntArray(coreW * coreH)
-        processedTile.getPixels(pixels, 0, coreW, tile.coreX * scale, tile.coreY * scale, coreW, coreH)
+        val pixels = IntArray(width * height)
+        processedTile.getPixels(pixels, 0, width, 0, 0, width, height)
 
         tileFile.outputStream().buffered().use { fos ->
             val byteBuf = java.nio.ByteBuffer.allocate(pixels.size * 4)
@@ -299,72 +417,33 @@ class TiledIntermediateSink(
             fos.write(byteBuf.array())
         }
 
-        tileMetaList.add(TileMeta(tile.index, dstX, dstY, coreW, coreH))
+        tileMetaList.add(TileMeta(tile.index, dstX, dstY, width, height))
+
+        // Progressively draw into preview
+        if (previewCanvas != null && previewBitmap != null) {
+            val dstRect = Rect(
+                (dstX * previewScaleFactor).toInt(),
+                (dstY * previewScaleFactor).toInt(),
+                ((dstX + width) * previewScaleFactor).toInt(),
+                ((dstY + height) * previewScaleFactor).toInt()
+            )
+            previewCanvas.drawBitmap(processedTile, null, dstRect, null)
+        }
 
         if (!processedTile.isRecycled) {
             processedTile.recycle()
         }
     }
 
-    override fun complete(): Bitmap? {
-        val outputBitmap: Bitmap? = try {
-            Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-        } catch (oom: OutOfMemoryError) {
-            val maxDim = maxOf(targetWidth, targetHeight)
-            val factor = 4096.0f / maxDim
-            val downsampledW = (targetWidth * factor).toInt().coerceAtLeast(1)
-            val downsampledH = (targetHeight * factor).toInt().coerceAtLeast(1)
-            Bitmap.createBitmap(downsampledW, downsampledH, Bitmap.Config.ARGB_8888)
-        } catch (t: Throwable) {
-            null
-        }
-
-        if (outputBitmap == null) {
-            scratchDir.deleteRecursively()
-            return null
-        }
-
-        val canvas = Canvas(outputBitmap)
-        val isDownsampled = outputBitmap.width != targetWidth || outputBitmap.height != targetHeight
-        val scaleFactor = if (isDownsampled) outputBitmap.width.toFloat() / targetWidth.toFloat() else 1.0f
-
-        try {
-            val sortedTiles = synchronized(tileMetaList) { tileMetaList.sortedBy { it.index } }
-            for (meta in sortedTiles) {
-                val tileFile = File(scratchDir, "tile_${meta.index}.raw")
-                if (!tileFile.exists()) continue
-
-                val numPixels = meta.coreW * meta.coreH
-                val bytes = tileFile.readBytes()
-                val byteBuf = java.nio.ByteBuffer.wrap(bytes)
-                val pixels = IntArray(numPixels)
-                byteBuf.asIntBuffer().get(pixels)
-
-                val tileBmp = Bitmap.createBitmap(meta.coreW, meta.coreH, Bitmap.Config.ARGB_8888)
-                tileBmp.setPixels(pixels, 0, meta.coreW, 0, 0, meta.coreW, meta.coreH)
-
-                if (isDownsampled) {
-                    val dstRect = Rect(
-                        (meta.dstX * scaleFactor).toInt(),
-                        (meta.dstY * scaleFactor).toInt(),
-                        ((meta.dstX + meta.coreW) * scaleFactor).toInt(),
-                        ((meta.dstY + meta.coreH) * scaleFactor).toInt()
-                    )
-                    canvas.drawBitmap(tileBmp, null, dstRect, null)
-                } else {
-                    canvas.drawBitmap(tileBmp, meta.dstX.toFloat(), meta.dstY.toFloat(), null)
-                }
-
-                if (!tileBmp.isRecycled) {
-                    tileBmp.recycle()
-                }
-                tileFile.delete()
-            }
-        } finally {
-            scratchDir.deleteRecursively()
-        }
-
-        return outputBitmap
+    override fun complete(): SinkResult {
+        // Purge scratch files
+        scratchDir.deleteRecursively()
+        return SinkResult(
+            outputFile = targetOutputFile,
+            previewBitmap = previewBitmap,
+            width = targetWidth,
+            height = targetHeight
+        )
     }
 
     override fun close() {
@@ -375,11 +454,6 @@ class TiledIntermediateSink(
 /**
  * High-performance tiled inference processor with boundary tile handling,
  * spatial overlap, and bounded parallel workers (ImageToolbox architecture).
- *
- * Implements:
- * - Bounded work queue with exactly W workers (Channel<TileArea>).
- * - Decoupled neural stage and refinement stage (AI worker pool -> bounded intermediate queue -> refinement worker -> sink).
- * - Reorder backpressure bounding concurrent pending tiles and byte volume.
  */
 class UpscaleTileProcessor(
     val tileSize: Int = 384,
@@ -394,10 +468,11 @@ class UpscaleTileProcessor(
         val y: Int,
         val width: Int,
         val height: Int,
-        val coreX: Int,
-        val coreY: Int,
-        val coreWidth: Int,
-        val coreHeight: Int
+        val overlap: Int = 24,
+        val coreX: Int = 0,
+        val coreY: Int = 0,
+        val coreWidth: Int = width,
+        val coreHeight: Int = height
     )
 
     fun calculateTiles(imageWidth: Int, imageHeight: Int): List<TileArea> {
@@ -437,6 +512,7 @@ class UpscaleTileProcessor(
                         y = y,
                         width = tileW,
                         height = tileH,
+                        overlap = overlap,
                         coreX = coreLocalX,
                         coreY = coreLocalY,
                         coreWidth = coreW,
@@ -463,7 +539,7 @@ class UpscaleTileProcessor(
         onTileInfer: suspend (tile: Bitmap, row: Int, col: Int, index: Int, total: Int) -> ProcessedTile,
         onTileRefine: (suspend (baseProcessed: ProcessedTile, row: Int, col: Int, index: Int, total: Int) -> ProcessedTile)? = null,
         onProgress: (current: Int, total: Int) -> Unit
-    ): Bitmap? = withContext(Dispatchers.Default) {
+    ): SinkResult = withContext(Dispatchers.Default) {
         val srcW = source.width
         val srcH = source.height
 
@@ -476,8 +552,8 @@ class UpscaleTileProcessor(
             } else {
                 baseProcessed
             }
-            val singleTileArea = TileArea(0, 0, 0, 0, 0, srcW, srcH, 0, 0, srcW, srcH)
-            sink.writeTileCore(singleTileArea, finalProcessed)
+            val singleTileArea = TileArea(0, 0, 0, 0, 0, srcW, srcH, overlap, 0, 0, srcW, srcH)
+            sink.writeTile(singleTileArea, finalProcessed)
             onProgress(1, 1)
             return@withContext sink.complete()
         }
@@ -489,7 +565,7 @@ class UpscaleTileProcessor(
         onProgress(0, totalTiles)
         val completedCount = AtomicInteger(0)
 
-        // Bounded queues
+        // Bounded work channels
         val tileChannel = Channel<TileArea>(capacity = safeWorkers * 2)
         val intermediateChannel = Channel<Pair<TileArea, ProcessedTile>>(capacity = minOf(safeWorkers * 2, 8))
 
@@ -523,7 +599,7 @@ class UpscaleTileProcessor(
                 }
             }
 
-            // Consumer: single refinement & sink worker to keep 8x memory footprint minimal (max 1 8x tile at a time)
+            // Consumer: single refinement & sink worker keeping memory footprint bounded
             launch {
                 val reorderMap = ConcurrentHashMap<Int, Pair<TileArea, ProcessedTile>>()
                 val nextExpectedIndex = AtomicInteger(0)
@@ -537,17 +613,16 @@ class UpscaleTileProcessor(
                         baseProcessed
                     }
 
-                    // For BitmapOutputSink, writing disjoint tile cores can proceed directly
                     if (sink is BitmapOutputSink) {
-                        sink.writeTileCore(tile, finalProcessed)
+                        sink.writeTile(tile, finalProcessed)
                         val done = completedCount.incrementAndGet()
                         onProgress(done, totalTiles)
                     } else {
-                        // For ordered sinks (Strip / Tiled), reorder sequentially
+                        // For ordered streaming sinks (Strip / Tiled), reorder sequentially
                         reorderMap[tile.index] = tile to finalProcessed
                         while (reorderMap.containsKey(nextExpectedIndex.get())) {
                             val nextPair = reorderMap.remove(nextExpectedIndex.get())!!
-                            sink.writeTileCore(nextPair.first, nextPair.second)
+                            sink.writeTile(nextPair.first, nextPair.second)
                             nextExpectedIndex.incrementAndGet()
                             val done = completedCount.incrementAndGet()
                             onProgress(done, totalTiles)
