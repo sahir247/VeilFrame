@@ -208,6 +208,25 @@ object SvgExporter {
                 val sy = String.format(Locale.US, "%.3f", (row + qz) + dy * (1.0 / 3.0))
                 sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
             }
+            // Render protected timing and alignment modules for 3x3 resample
+            val timingFill = timingHex ?: dataFill
+            val alignFill = alignmentHex ?: dataFill
+            for (col in 0 until matrix.size) {
+                for (row in 0 until matrix.size) {
+                    if (!matrix.isDark(col, row)) continue
+                    val role = matrix.roleAt(col, row)
+                    val x = col + qz
+                    val y = row + qz
+                    val offset = (1.0 - scale) / 2.0
+                    val mx = x + offset
+                    val my = y + offset
+                    if (role == QrModuleRole.TIMING) {
+                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                    } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
+                    }
+                }
+            }
         } else if (isMaskedWithSource) {
             val sourceBmp = design.imageSource.bitmap!!
             val srcBase64 = bitmapToBase64(sourceBmp)

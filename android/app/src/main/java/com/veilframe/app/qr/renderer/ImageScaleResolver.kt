@@ -35,29 +35,39 @@ class ArrayPixelSource(
 }
 
 /**
+ * Result of a normalized coordinate pixel sample, containing the resolved ARGB color
+ * and an explicit [isPadding] flag indicating whether the sample landed in an ASPECT_FIT margin.
+ */
+data class PixelSample(
+    val color: Int,
+    val isPadding: Boolean = false
+)
+
+/**
  * Shared image coordinate and scale-mode resolver.
  *
  * Implements authoritative mathematical scaling semantics for QR stencils and resamplers:
  * - [ImageScaleMode.CENTER_CROP]: Crops source from center to destination aspect ratio without distortion.
  * - [ImageScaleMode.ASPECT_FILL]: Scales source until destination is completely covered, preserving aspect ratio and cropping overflow.
  * - [ImageScaleMode.ASPECT_FIT]: Scales entire source inside destination, letterboxing/pillarboxing.
- *   Areas outside the fitted image are strictly defined as solid white (RGBA = 255, 255, 255, 255).
+ *   Areas outside the fitted image are strictly defined as solid white (RGBA = 255, 255, 255, 255)
+ *   and flagged with `isPadding = true` so stochastic dither emission is unconditionally suppressed.
  * - [ImageScaleMode.STRETCH]: Fits destination bounds directly; aspect ratio may distort.
  */
 object ImageScaleResolver {
 
     /**
-     * Samples a pixel at normalized coordinate ([u], [v]) in [0.0f, 1.0f] according to [mode].
+     * Samples a pixel and its padding state at normalized coordinate ([u], [v]) in [0.0f, 1.0f] according to [mode].
      *
      * In [ImageScaleMode.ASPECT_FIT], coordinates falling outside the fitted source aspect ratio
-     * strictly return solid white (0xFFFFFFFF).
+     * strictly return solid white (0xFFFFFFFF) with [PixelSample.isPadding] = true.
      */
-    fun samplePixel(
+    fun sample(
         source: PixelSource,
         u: Float,
         v: Float,
         mode: ImageScaleMode
-    ): Int {
+    ): PixelSample {
         val bw = source.width.coerceAtLeast(1)
         val bh = source.height.coerceAtLeast(1)
         val srcRatio = bw.toFloat() / bh.toFloat()
@@ -66,7 +76,7 @@ object ImageScaleResolver {
             ImageScaleMode.STRETCH -> {
                 val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
                 val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                source.getPixel(sx, sy)
+                PixelSample(source.getPixel(sx, sy), isPadding = false)
             }
 
             ImageScaleMode.ASPECT_FIT -> {
@@ -74,23 +84,23 @@ object ImageScaleResolver {
                     val fitH = 1.0f / srcRatio
                     val offsetY = (1.0f - fitH) / 2.0f
                     if (v < offsetY || v >= offsetY + fitH) {
-                        0xFFFFFFFF.toInt() // Pure white in letterbox padding
+                        PixelSample(0xFFFFFFFF.toInt(), isPadding = true) // Pure white in letterbox padding
                     } else {
                         val normV = (v - offsetY) / fitH
                         val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
                         val sy = (normV.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                        source.getPixel(sx, sy)
+                        PixelSample(source.getPixel(sx, sy), isPadding = false)
                     }
                 } else {
                     val fitW = 1.0f * srcRatio
                     val offsetX = (1.0f - fitW) / 2.0f
                     if (u < offsetX || u >= offsetX + fitW) {
-                        0xFFFFFFFF.toInt() // Pure white in pillarbox padding
+                        PixelSample(0xFFFFFFFF.toInt(), isPadding = true) // Pure white in pillarbox padding
                     } else {
                         val normU = (u - offsetX) / fitW
                         val sx = (normU.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
                         val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                        source.getPixel(sx, sy)
+                        PixelSample(source.getPixel(sx, sy), isPadding = false)
                     }
                 }
             }
@@ -102,18 +112,28 @@ object ImageScaleResolver {
                     val normU = offsetX + u.coerceIn(0f, 1f) * visibleRatio
                     val sx = (normU * (bw - 1)).toInt().coerceIn(0, bw - 1)
                     val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                    source.getPixel(sx, sy)
+                    PixelSample(source.getPixel(sx, sy), isPadding = false)
                 } else {
                     val visibleRatio = srcRatio
                     val offsetY = (1.0f - visibleRatio) / 2.0f
                     val normV = offsetY + v.coerceIn(0f, 1f) * visibleRatio
                     val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
                     val sy = (normV * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                    source.getPixel(sx, sy)
+                    PixelSample(source.getPixel(sx, sy), isPadding = false)
                 }
             }
         }
     }
+
+    /**
+     * Backward-compatible helper returning raw ARGB Int.
+     */
+    fun samplePixel(
+        source: PixelSource,
+        u: Float,
+        v: Float,
+        mode: ImageScaleMode
+    ): Int = sample(source, u, v, mode).color
 
     /**
      * Resolves source crop rect and destination drawing rect.

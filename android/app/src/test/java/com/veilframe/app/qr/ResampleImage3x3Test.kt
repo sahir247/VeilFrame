@@ -112,32 +112,76 @@ class ResampleImage3x3Test {
         // 1. Wide image (2:1 aspect ratio) fitted into square -> Letterboxed with top & bottom white margins
         val widePixels = createTestPixelSource(100, 50, 0xFF000000.toInt()) // Pure black
 
-        // Inside the fitted image (u = 0.5, v = 0.5) -> sampled pixel is BLACK
-        val insideWide = ImageScaleResolver.samplePixel(widePixels, 0.5f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFF000000.toInt(), insideWide)
+        // Inside the fitted image (u = 0.5, v = 0.5) -> sampled pixel is BLACK, isPadding = false
+        val insideSampleWide = ImageScaleResolver.sample(widePixels, 0.5f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFF000000.toInt(), insideSampleWide.color)
+        assertFalse(insideSampleWide.isPadding)
 
-        // In the top padding margin (u = 0.5, v = 0.1) -> sampled pixel MUST be pure solid WHITE
-        val topPadding = ImageScaleResolver.samplePixel(widePixels, 0.5f, 0.1f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFFFFFFFF.toInt(), topPadding)
+        // In the top padding margin (u = 0.5, v = 0.1) -> sampled pixel MUST be pure solid WHITE, isPadding = true
+        val topPadding = ImageScaleResolver.sample(widePixels, 0.5f, 0.1f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFFFFFFFF.toInt(), topPadding.color)
+        assertTrue(topPadding.isPadding)
 
-        // In the bottom padding margin (u = 0.5, v = 0.9) -> sampled pixel MUST be pure solid WHITE
-        val bottomPadding = ImageScaleResolver.samplePixel(widePixels, 0.5f, 0.9f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFFFFFFFF.toInt(), bottomPadding)
+        // In the bottom padding margin (u = 0.5, v = 0.9) -> sampled pixel MUST be pure solid WHITE, isPadding = true
+        val bottomPadding = ImageScaleResolver.sample(widePixels, 0.5f, 0.9f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFFFFFFFF.toInt(), bottomPadding.color)
+        assertTrue(bottomPadding.isPadding)
 
         // 2. Tall image (1:2 aspect ratio) fitted into square -> Pillarboxed with left & right white margins
         val tallPixels = createTestPixelSource(50, 100, 0xFF000000.toInt()) // Pure black
 
-        // Inside the fitted image (u = 0.5, v = 0.5) -> sampled pixel is BLACK
-        val insideTall = ImageScaleResolver.samplePixel(tallPixels, 0.5f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFF000000.toInt(), insideTall)
+        // Inside the fitted image (u = 0.5, v = 0.5) -> sampled pixel is BLACK, isPadding = false
+        val insideSampleTall = ImageScaleResolver.sample(tallPixels, 0.5f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFF000000.toInt(), insideSampleTall.color)
+        assertFalse(insideSampleTall.isPadding)
 
-        // In the left padding margin (u = 0.1, v = 0.5) -> sampled pixel MUST be pure solid WHITE
-        val leftPadding = ImageScaleResolver.samplePixel(tallPixels, 0.1f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFFFFFFFF.toInt(), leftPadding)
+        // In the left padding margin (u = 0.1, v = 0.5) -> sampled pixel MUST be pure solid WHITE, isPadding = true
+        val leftPadding = ImageScaleResolver.sample(tallPixels, 0.1f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFFFFFFFF.toInt(), leftPadding.color)
+        assertTrue(leftPadding.isPadding)
 
-        // In the right padding margin (u = 0.9, v = 0.5) -> sampled pixel MUST be pure solid WHITE
-        val rightPadding = ImageScaleResolver.samplePixel(tallPixels, 0.9f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        assertEquals(0xFFFFFFFF.toInt(), rightPadding)
+        // In the right padding margin (u = 0.9, v = 0.5) -> sampled pixel MUST be pure solid WHITE, isPadding = true
+        val rightPadding = ImageScaleResolver.sample(tallPixels, 0.9f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertEquals(0xFFFFFFFF.toInt(), rightPadding.color)
+        assertTrue(rightPadding.isPadding)
+    }
+
+    @Test
+    fun testAspectFitExplicitPaddingSuppressionUnderExtremeExposure() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/PADDING-INVARIANT", ErrorCorrectionLevel.H)
+        // 2:1 wide pure black image fitted into square matrix
+        // Top and bottom 25% are letterbox padding
+        val widePixels = createTestPixelSource(200, 100, 0xFF000000.toInt())
+
+        // Use extreme negative exposure and high contrast that would otherwise shift white pixels to dark:
+        // threshold = ((1.0 - 0.8 - 0.5) * 3.0 + 0.5) = -0.9 * 3.0 + 0.5 = -0.4 -> coerced to 0.0
+        // Without explicit padding suppression, pure white pixels (1.0) would yield threshold 0.0,
+        // causing 100% of white padding subpixels to trigger rnd > 0.0 and emit photo dither dots!
+        val extremeStyle = ImageSourceStyle(
+            scaleMode = ImageScaleMode.ASPECT_FIT,
+            exposure = -0.8f,
+            contrast = 2.0f
+        )
+
+        val paddingSubpixels = mutableListOf<String>()
+
+        ResampleSubpixelEngine.traverseSubpixels(matrix, widePixels, extremeStyle, seed = 42L) { col, row, subX, subY, isCenterAnchor ->
+            if (isCenterAnchor) return@traverseSubpixels // Center anchor is the QR data bit itself
+
+            val v = (subY + 0.5f) / (3 * matrix.size).toFloat()
+            // In 2:1 wide image with ASPECT_FIT, fitted height is 0.5, offsetY is 0.25
+            // So v < 0.25 or v >= 0.75 is the letterbox padding margin
+            if (v < 0.25f || v >= 0.75f) {
+                paddingSubpixels.add("subX=$subX,subY=$subY,v=$v")
+            }
+        }
+
+        // Thanks to explicit isPadding suppression, ZERO stochastic dots are emitted in the padding margins!
+        assertEquals(
+            "Explicit ASPECT_FIT padding suppression must yield zero photo dots in margins under extreme exposure/contrast",
+            0,
+            paddingSubpixels.size
+        )
     }
 
     @Test

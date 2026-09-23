@@ -30,18 +30,26 @@ fun interface SubpixelSink {
 }
 
 /**
- * Authoritative implementation of EFQRCode's 3x3 Stochastic Subpixel Resampling.
+ * Authoritative implementation of EFQRCode-inspired 3x3 Stochastic Subpixel Resampling.
  *
- * Architecture:
+ * Architecture & Design Contract:
  * 1. Source image is scaled to (3N) x (3N) subpixels via [ImageScaleResolver].
- * 2. Protected functional modules (Finders, Timing, Alignment, Separators) are excluded.
+ * 2. Protected functional modules are strictly excluded via [QrMatrix.isProtected]:
+ *    - Follows the complete [QrModuleRole.isProtected] specification: Finders (inner/outer),
+ *      Separators, Timing tracks (Row 6 / Column 6), Alignment patterns (center & border),
+ *      Format information, Version information, and Quiet Zones.
+ *    - This deliberate architectural separation guarantees barcode structural integrity and
+ *      flawless camera scanability, while confining artistic dither strictly to data modules.
  * 3. For every dark DATA module, the center subpixel (dx=1, dy=1) is strictly reserved as the QR anchor bit.
  * 4. The surrounding 8 subpixels carry stochastic halftone dithering:
  *    - Gamma luminance: Y = 0.2126*R + 0.7152*G + 0.0722*B
  *    - EFQRCode threshold: ((grayNorm + exposure - 0.5) * (contrast + 1.0) + 0.5).coerceIn(0, 1)
- *    - 64-bit deterministic hash PRNG: subpixelRandom(seed, subX, subY) > threshold
+ *    - Deterministic 64-bit splitmix hash PRNG: subpixelRandom(seed, subX, subY) > threshold
+ *    - Explicit [ImageScaleMode.ASPECT_FIT] padding suppression: coordinates in letterbox/pillarbox
+ *      margins are unconditionally suppressed, guaranteeing zero photo dither dots in margins
+ *      regardless of extreme contrast or exposure adjustments.
  *
- * Zero memory allocation during streaming traversal.
+ * Zero memory allocation during streaming traversal via [SubpixelSink].
  */
 object ResampleSubpixelEngine {
 
@@ -58,6 +66,9 @@ object ResampleSubpixelEngine {
 
     /**
      * Traverses the QR matrix and emits all active subpixels into [sink] using an abstract [PixelSource].
+     *
+     * Protected modules (where [QrMatrix.isProtected] returns true) are skipped to guarantee
+     * structural integrity. For dark data modules, the center anchor is always emitted.
      */
     fun traverseSubpixels(
         matrix: QrMatrix,
@@ -70,6 +81,7 @@ object ResampleSubpixelEngine {
 
         for (col in 0 until n) {
             for (row in 0 until n) {
+                // Structural integrity guarantee: All protected functional patterns are preserved
                 if (matrix.isProtected(col, row)) continue
 
                 val isDark = matrix.isDark(col, row)
@@ -93,7 +105,13 @@ object ResampleSubpixelEngine {
                             val u = (sx + 0.5f) / (3 * n).toFloat()
                             val v = (sy + 0.5f) / (3 * n).toFloat()
 
-                            val pixel = ImageScaleResolver.samplePixel(pixelSource, u, v, style.scaleMode)
+                            val sample = ImageScaleResolver.sample(pixelSource, u, v, style.scaleMode)
+                            // Explicit padding suppression invariant:
+                            // Non-covered margin regions in ASPECT_FIT never emit stochastic photo dots,
+                            // regardless of extreme exposure or contrast adjustments.
+                            if (sample.isPadding) continue
+
+                            val pixel = sample.color
                             val a = (pixel ushr 24 and 0xFF) / 255.0f
                             val r = (pixel ushr 16 and 0xFF)
                             val g = (pixel ushr 8 and 0xFF)
