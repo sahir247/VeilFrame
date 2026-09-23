@@ -156,12 +156,30 @@ object ShapeGeometry {
                 }
             }
 
-            // Organic / Connected blob
+            // Organic / Connected blob (100% path parity with createOrganicBlobPath)
             shape == ModuleShape.ORGANIC || shape == ModuleShape.CONNECTED || design.style == QrStyle.CONNECTED_ORGANIC -> {
                 val neighbors = module.neighbors
-                val r = (scale * 0.42).toString()
-                val rx = if (neighbors.isIsolated) r else (scale * 0.22).toString()
-                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />"""
+                val r = scale * 0.45
+                val rTL = if (!neighbors.up && !neighbors.left) r else 0.0
+                val rTR = if (!neighbors.up && !neighbors.right) r else 0.0
+                val rBR = if (!neighbors.down && !neighbors.right) r else 0.0
+                val rBL = if (!neighbors.down && !neighbors.left) r else 0.0
+
+                fun f(v: Double) = String.format(Locale.US, "%.3f", v)
+
+                val d = buildString {
+                    append("M ").append(f(mx + rTL)).append(" ").append(f(my))
+                    append(" L ").append(f(mx + scale - rTR)).append(" ").append(f(my))
+                    if (rTR > 0) append(" A ").append(f(rTR)).append(" ").append(f(rTR)).append(" 0 0 1 ").append(f(mx + scale)).append(" ").append(f(my + rTR))
+                    append(" L ").append(f(mx + scale)).append(" ").append(f(my + scale - rBR))
+                    if (rBR > 0) append(" A ").append(f(rBR)).append(" ").append(f(rBR)).append(" 0 0 1 ").append(f(mx + scale - rBR)).append(" ").append(f(my + scale))
+                    append(" L ").append(f(mx + rBL)).append(" ").append(f(my + scale))
+                    if (rBL > 0) append(" A ").append(f(rBL)).append(" ").append(f(rBL)).append(" 0 0 1 ").append(f(mx)).append(" ").append(f(my + scale - rBL))
+                    append(" L ").append(f(mx)).append(" ").append(f(my + rTL))
+                    if (rTL > 0) append(" A ").append(f(rTL)).append(" ").append(f(rTL)).append(" 0 0 1 ").append(f(mx + rTL)).append(" ").append(f(my))
+                    append(" Z")
+                }
+                """<path d="$d" fill="$fill" />"""
             }
 
             // Circle or Dot
@@ -170,10 +188,11 @@ object ShapeGeometry {
                 """<circle cx="$cx" cy="$cy" r="$r" fill="$fill" />"""
             }
 
-            // Pill
+            // Pill (100% parity with Canvas rx = width / 2, ry = height * 0.25)
             shape == ModuleShape.PILL -> {
-                val rx = scale * 0.45
-                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />"""
+                val rx = scale / 2.0
+                val ry = scale * 0.25
+                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" ry="$ry" fill="$fill" />"""
             }
 
             // Rounded
@@ -182,16 +201,36 @@ object ShapeGeometry {
                 """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />"""
             }
 
-            // Squircle
+            // Squircle (100% cubic Bézier parity with createSquirclePath)
             shape == ModuleShape.SQUIRCLE -> {
-                val rx = scale * 0.35
-                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />"""
+                fun px(x: Double) = String.format(Locale.US, "%.3f", mx + (x / 100.0) * scale)
+                fun py(y: Double) = String.format(Locale.US, "%.3f", my + (y / 100.0) * scale)
+
+                val d = "M ${px(32.048565)} ${py(0.0)} " +
+                        "L ${px(67.951435)} ${py(0.0)} " +
+                        "C ${px(79.0954192)} ${py(0.0)} ${px(83.1364972)} ${py(1.16032014)} ${px(87.2105713)} ${py(3.3391588)} " +
+                        "C ${px(91.2846454)} ${py(5.51799746)} ${px(94.4820025)} ${py(8.71535463)} ${px(96.6608412)} ${py(12.7894287)} " +
+                        "C ${px(98.8396799)} ${py(16.8635028)} ${px(100.0)} ${py(20.9045808)} ${px(100.0)} ${py(32.048565)} " +
+                        "L ${px(100.0)} ${py(67.951435)} " +
+                        "C ${px(100.0)} ${py(79.0954192)} ${px(98.8396799)} ${py(83.1364972)} ${px(96.6608412)} ${py(87.2105713)} " +
+                        "C ${px(94.4820025)} ${py(91.2846454)} ${px(91.2846454)} ${py(94.4820025)} ${px(87.2105713)} ${py(96.6608412)} " +
+                        "C ${px(83.1364972)} ${py(98.8396799)} ${px(79.0954192)} ${py(100.0)} ${px(67.951435)} ${py(100.0)} " +
+                        "L ${px(32.048565)} ${py(100.0)} " +
+                        "C ${px(20.9045808)} ${py(100.0)} ${px(16.8635028)} ${py(98.8396799)} ${px(12.7894287)} ${py(96.6608412)} " +
+                        "C ${px(8.71535463)} ${py(94.4820025)} ${px(5.51799746)} ${py(91.2846454)} ${px(3.3391588)} ${py(87.2105713)} " +
+                        "C ${px(1.16032014)} ${py(83.1364972)} ${px(0.0)} ${py(79.0954192)} ${px(0.0)} ${py(67.951435)} " +
+                        "L ${px(0.0)} ${py(32.048565)} " +
+                        "C ${px(0.0)} ${py(20.9045808)} ${px(1.16032014)} ${py(16.8635028)} ${px(3.3391588)} ${py(12.7894287)} " +
+                        "C ${px(5.51799746)} ${py(8.71535463)} ${px(8.71535463)} ${py(5.51799746)} ${px(12.7894287)} ${py(3.3391588)} " +
+                        "C ${px(16.8635028)} ${py(1.16032014)} ${px(20.9045808)} ${py(0.0)} ${px(32.048565)} ${py(0.0)} Z"
+                """<path d="$d" fill="$fill" />"""
             }
 
             // Bubble
             shape == ModuleShape.BUBBLE -> {
                 val rx = scale * 0.42
-                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />"""
+                val ry = scale * 0.42
+                """<rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" ry="$ry" fill="$fill" />"""
             }
 
             // Star (5-pointed star = 10 vertices)

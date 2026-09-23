@@ -58,8 +58,6 @@ open class ComposableQrRenderer : BaseQrRenderer() {
         if (design.style == QrStyle.IMAGE_RESAMPLE) {
             val sourceBitmap = design.imageSource.bitmap
             if (sourceBitmap != null && !sourceBitmap.isRecycled) {
-                val subW = (geometry.moduleSize / 3f) * 1.02f
-                val subH = (geometry.moduleSize / 3f) * 1.02f
                 val fgPaint = context.obtainFill(design.palette.foreground)
 
                 ResampleSubpixelEngine.traverseSubpixels(
@@ -68,12 +66,16 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                     style = design.imageSource,
                     seed = 42L
                 ) { col, row, subX, subY, _ ->
-                    val baseRect = geometry.moduleRect(col, row, scale = 1.0f)
-                    val dx = subX % 3
-                    val dy = subY % 3
-                    val left = baseRect.left + dx * (geometry.moduleSize / 3f)
-                    val top = baseRect.top + dy * (geometry.moduleSize / 3f)
-                    canvas.drawRect(left, top, left + subW, top + subH, fgPaint)
+                    val rect = SubpixelGeometry.computeCanvasRect(
+                        col = col,
+                        row = row,
+                        offsetX = geometry.offsetX,
+                        offsetY = geometry.offsetY,
+                        moduleSize = geometry.moduleSize,
+                        subX = subX,
+                        subY = subY
+                    )
+                    canvas.drawRect(rect.left, rect.top, rect.left + rect.width, rect.top + rect.height, fgPaint)
                 }
                 return
             }

@@ -7,6 +7,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
+import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.renderer.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -193,7 +194,8 @@ class ResampleImage3x3Test {
         )
         val design = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
-            imageSource = style
+            imageSource = style,
+            quietZoneModules = 4
         )
 
         val geometry = QrGeometry(
@@ -203,26 +205,160 @@ class ResampleImage3x3Test {
             quietZoneModules = 4
         )
 
-        val canvasSubpixels = mutableListOf<String>()
-        val subW = (geometry.moduleSize / 3f) * 1.02f
-        val subH = (geometry.moduleSize / 3f) * 1.02f
-
         val gradientPixels = createGradientPixelSource(100, 100)
+
+        // 1. Compute expected Canvas subpixels via shared SubpixelGeometry
+        val canvasSubpixels = mutableListOf<SubpixelRect>()
         ResampleSubpixelEngine.traverseSubpixels(
             matrix = matrix,
             pixelSource = gradientPixels,
             style = style,
             seed = 42L
         ) { col, row, subX, subY, _ ->
-            val baseRect = geometry.moduleRect(col, row, scale = 1.0f)
-            val dx = subX % 3
-            val dy = subY % 3
-            val left = baseRect.left + dx * (geometry.moduleSize / 3f)
-            val top = baseRect.top + dy * (geometry.moduleSize / 3f)
-            canvasSubpixels.add("x=\"$left\" y=\"$top\"")
+            val rect = SubpixelGeometry.computeCanvasRect(
+                col = col,
+                row = row,
+                offsetX = geometry.offsetX,
+                offsetY = geometry.offsetY,
+                moduleSize = geometry.moduleSize,
+                subX = subX,
+                subY = subY
+            )
+            canvasSubpixels.add(rect)
         }
 
-        assertTrue("Subpixels must have been emitted", canvasSubpixels.isNotEmpty())
+        assertTrue("Canvas subpixels must have been emitted", canvasSubpixels.isNotEmpty())
+
+        // 2. Generate actual SVG output via SvgExporter
+        val svgXml = SvgExporter.generateSvg(matrix, design, pixelSource = gradientPixels)
+        assertNotNull("Generated SVG must not be null", svgXml)
+        assertTrue("SVG must contain SVG root element", svgXml.contains("<svg"))
+
+        // 3. Extract emitted 3x3 subpixel <rect> elements from SVG
+        // Matching: <rect x="X" y="Y" width="W" height="H" fill="..." />
+        val rectRegex = Regex("""<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" fill="[^"]+" />""")
+        val svgRects = rectRegex.findAll(svgXml).map { match ->
+            val x = match.groupValues[1].toFloat()
+            val y = match.groupValues[2].toFloat()
+            val w = match.groupValues[3].toFloat()
+            val h = match.groupValues[4].toFloat()
+            SubpixelRect(x, y, w, h)
+        }.filter { rect ->
+            // Filter to subpixels (width is approximately (1.0/3.0)*1.02 ~ 0.340)
+            rect.width in 0.30f..0.38f
+        }.toList()
+
+        assertEquals(
+            "Canvas and SVG must emit identical number of 3x3 subpixels",
+            canvasSubpixels.size,
+            svgRects.size
+        )
+
+        // 4. Verify exact mathematical coordinate equivalence:
+        // Normalizing Canvas: (x_px - quietZonePx) / moduleSize == x_svg - quietZoneModules
+        for (i in canvasSubpixels.indices) {
+            val cRect = canvasSubpixels[i]
+            val sRect = svgRects[i]
+
+            val canvasNormX = (cRect.left - geometry.offsetX) / geometry.moduleSize
+            val canvasNormY = (cRect.top - geometry.offsetY) / geometry.moduleSize
+            val svgNormX = sRect.left - design.quietZoneModules
+            val svgNormY = sRect.top - design.quietZoneModules
+
+            assertEquals("X normalized coordinate must match exactly between Canvas and SVG", canvasNormX, svgNormX, 0.001f)
+            assertEquals("Y normalized coordinate must match exactly between Canvas and SVG", canvasNormY, svgNormY, 0.001f)
+            assertEquals("Normalized width must match", cRect.width / geometry.moduleSize, sRect.width, 0.001f)
+            assertEquals("Normalized height must match", cRect.height / geometry.moduleSize, sRect.height, 0.001f)
+        }
+    }
+
+    @Test
+    fun testShapeGeometryExactVectorParity() {
+        val design = QrDesign()
+        val dummyModule = QrModule(
+            col = 5,
+            row = 5,
+            isDark = true,
+            role = QrModuleRole.DATA,
+            neighbors = ModuleNeighborhood(up = true, down = false, left = true, right = false)
+        )
+
+        // 1. Pill: must have both rx and ry attributes
+        val pillSvg = ShapeGeometry.buildSvgElement(
+            shape = ModuleShape.PILL,
+            module = dummyModule,
+            cx = 5.5,
+            cy = 5.5,
+            mx = 5.0,
+            my = 5.0,
+            scale = 1.0,
+            fill = "#000000",
+            design = design
+        )
+        assertTrue("Pill SVG must have rx=0.5", pillSvg.contains("rx=\"0.5\""))
+        assertTrue("Pill SVG must have ry=0.25", pillSvg.contains("ry=\"0.25\""))
+
+        // 2. Squircle: must emit cubic Bézier path (M ... C ... Z)
+        val squircleSvg = ShapeGeometry.buildSvgElement(
+            shape = ModuleShape.SQUIRCLE,
+            module = dummyModule,
+            cx = 5.5,
+            cy = 5.5,
+            mx = 5.0,
+            my = 5.0,
+            scale = 1.0,
+            fill = "#000000",
+            design = design
+        )
+        assertTrue("Squircle SVG must be a <path>", squircleSvg.startsWith("<path d=\"M"))
+        assertTrue("Squircle SVG must contain cubic Bézier 'C' segments", squircleSvg.contains(" C "))
+        assertTrue("Squircle SVG must close with 'Z'", squircleSvg.contains(" Z\""))
+
+        // 3. Organic: must emit path with arc segments matching neighbor connectivity
+        val organicSvg = ShapeGeometry.buildSvgElement(
+            shape = ModuleShape.ORGANIC,
+            module = dummyModule,
+            cx = 5.5,
+            cy = 5.5,
+            mx = 5.0,
+            my = 5.0,
+            scale = 1.0,
+            fill = "#000000",
+            design = design
+        )
+        assertTrue("Organic SVG must be a <path>", organicSvg.startsWith("<path d=\"M"))
+        assertTrue("Organic SVG must contain arc 'A' commands for rounded corners", organicSvg.contains(" A "))
+        assertTrue("Organic SVG must close with 'Z'", organicSvg.contains(" Z\""))
+    }
+
+    @Test
+    fun testProtectedModuleGeometryParity() {
+        val circleSvg = ProtectedModuleGeometry.buildSvgElement(
+            shape = ModuleShape.CIRCLE,
+            x = 6.0,
+            y = 6.0,
+            size = 1.0,
+            fill = "#FF0000"
+        )
+        assertEquals("<circle cx=\"6.5\" cy=\"6.5\" r=\"0.5\" fill=\"#FF0000\" />", circleSvg)
+
+        val squareSvg = ProtectedModuleGeometry.buildSvgElement(
+            shape = ModuleShape.SQUARE,
+            x = 6.0,
+            y = 6.0,
+            size = 1.0,
+            fill = "#00FF00"
+        )
+        assertEquals("<rect x=\"6.0\" y=\"6.0\" width=\"1.0\" height=\"1.0\" fill=\"#00FF00\" />", squareSvg)
+
+        val roundedSvg = ProtectedModuleGeometry.buildSvgElement(
+            shape = ModuleShape.ROUNDED,
+            x = 6.0,
+            y = 6.0,
+            size = 1.0,
+            fill = "#0000FF"
+        )
+        assertEquals("<rect x=\"6.0\" y=\"6.0\" width=\"1.0\" height=\"1.0\" rx=\"0.25\" fill=\"#0000FF\" />", roundedSvg)
     }
 
     @Test

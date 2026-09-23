@@ -110,14 +110,7 @@ abstract class BaseQrRenderer : QrRenderer {
         paint: Paint,
         context: RenderContext
     ) {
-        when (shape) {
-            ModuleShape.CIRCLE -> canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width() / 2f, paint)
-            ModuleShape.SQUARE -> canvas.drawRect(rect, paint)
-            else -> {
-                val rx = rect.width() * 0.25f
-                canvas.drawRoundRect(rect, rx, rx, paint)
-            }
-        }
+        ProtectedModuleGeometry.drawCanvas(canvas, rect, shape, paint)
     }
 
     open fun renderAlignment(
@@ -150,14 +143,7 @@ abstract class BaseQrRenderer : QrRenderer {
         paint: Paint,
         context: RenderContext
     ) {
-        when (shape) {
-            ModuleShape.CIRCLE -> canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width() / 2f, paint)
-            ModuleShape.SQUARE -> canvas.drawRect(rect, paint)
-            else -> {
-                val rx = rect.width() * 0.25f
-                canvas.drawRoundRect(rect, rx, rx, paint)
-            }
-        }
+        ProtectedModuleGeometry.drawCanvas(canvas, rect, shape, paint)
     }
 
     abstract fun renderDataModules(

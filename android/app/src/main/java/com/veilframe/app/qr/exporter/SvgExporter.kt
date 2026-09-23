@@ -26,7 +26,11 @@ import java.util.Locale
  */
 object SvgExporter {
 
-    fun generateSvg(matrix: QrMatrix, design: QrDesign): String {
+    fun generateSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
+    ): String {
         val qz = design.quietZoneModules
         val totalSize = matrix.size + (2 * qz)
         val fgHex = hexColor(design.palette.foreground)
@@ -190,40 +194,67 @@ object SvgExporter {
         val d25RightHex = hexColor(design.depthStyle.rightColor)
         val d25Depth = design.depthStyle.depth * 0.35
 
-        val isResampleWithSource = design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled
+        val resolvedResampleSource = pixelSource ?: if (design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
+            com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!)
+        } else null
+        val isResampleWithSource = design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && resolvedResampleSource != null
         val isMaskedWithSource = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled
 
         if (isResampleWithSource) {
-            val subW = String.format(Locale.US, "%.3f", (1.0 / 3.0) * 1.02)
-            val subH = String.format(Locale.US, "%.3f", (1.0 / 3.0) * 1.02)
             com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
                 matrix = matrix,
-                source = design.imageSource.bitmap,
+                pixelSource = resolvedResampleSource,
                 style = design.imageSource,
                 seed = 42L
             ) { col, row, subX, subY, _ ->
-                val dx = subX % 3
-                val dy = subY % 3
-                val sx = String.format(Locale.US, "%.3f", (col + qz) + dx * (1.0 / 3.0))
-                val sy = String.format(Locale.US, "%.3f", (row + qz) + dy * (1.0 / 3.0))
+                val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
+                    col = col,
+                    row = row,
+                    quietZone = qz,
+                    subX = subX,
+                    subY = subY
+                )
+                val sx = String.format(Locale.US, "%.3f", rect.left)
+                val sy = String.format(Locale.US, "%.3f", rect.top)
+                val subW = String.format(Locale.US, "%.3f", rect.width)
+                val subH = String.format(Locale.US, "%.3f", rect.height)
                 sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
             }
             // Render protected timing and alignment modules for 3x3 resample
             val timingFill = timingHex ?: dataFill
             val alignFill = alignmentHex ?: dataFill
+            val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
+            val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
             for (col in 0 until matrix.size) {
                 for (row in 0 until matrix.size) {
                     if (!matrix.isDark(col, row)) continue
                     val role = matrix.roleAt(col, row)
                     val x = col + qz
                     val y = row + qz
-                    val offset = (1.0 - scale) / 2.0
-                    val mx = x + offset
-                    val my = y + offset
                     if (role == QrModuleRole.TIMING) {
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                        val offset = (1.0 - timingScale) / 2.0
+                        val mx = x + offset
+                        val my = y + offset
+                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                            shape = design.timingStyle.shape,
+                            x = mx,
+                            y = my,
+                            size = timingScale,
+                            fill = timingFill
+                        )
+                        sb.append("""  $elem""").append("\n")
                     } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
+                        val offset = (1.0 - alignScale) / 2.0
+                        val mx = x + offset
+                        val my = y + offset
+                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                            shape = design.alignmentStyle.shape,
+                            x = mx,
+                            y = my,
+                            size = alignScale,
+                            fill = alignFill
+                        )
+                        sb.append("""  $elem""").append("\n")
                     }
                 }
             }
@@ -245,19 +276,38 @@ object SvgExporter {
             if (design.imageSource.scope == com.veilframe.app.qr.model.ImageMaskScope.DATA_ONLY) {
                 val timingFill = timingHex ?: dataFill
                 val alignFill = alignmentHex ?: dataFill
+                val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
+                val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
                 for (col in 0 until matrix.size) {
                     for (row in 0 until matrix.size) {
                         if (!matrix.isDark(col, row)) continue
                         val role = matrix.roleAt(col, row)
                         val x = col + qz
                         val y = row + qz
-                        val offset = (1.0 - scale) / 2.0
-                        val mx = x + offset
-                        val my = y + offset
                         if (role == QrModuleRole.TIMING) {
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                            val offset = (1.0 - timingScale) / 2.0
+                            val mx = x + offset
+                            val my = y + offset
+                            val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                                shape = design.timingStyle.shape,
+                                x = mx,
+                                y = my,
+                                size = timingScale,
+                                fill = timingFill
+                            )
+                            sb.append("""  $elem""").append("\n")
                         } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
+                            val offset = (1.0 - alignScale) / 2.0
+                            val mx = x + offset
+                            val my = y + offset
+                            val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                                shape = design.alignmentStyle.shape,
+                                x = mx,
+                                y = my,
+                                size = alignScale,
+                                fill = alignFill
+                            )
+                            sb.append("""  $elem""").append("\n")
                         }
                     }
                 }
@@ -281,19 +331,38 @@ object SvgExporter {
             // Render timing and alignment for bubble cluster
             val timingFill = timingHex ?: dataFill
             val alignFill = alignmentHex ?: dataFill
+            val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
+            val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
             for (col in 0 until matrix.size) {
                 for (row in 0 until matrix.size) {
                     if (!matrix.isDark(col, row)) continue
                     val role = matrix.roleAt(col, row)
                     val x = col + qz
                     val y = row + qz
-                    val offset = (1.0 - scale) / 2.0
-                    val mx = x + offset
-                    val my = y + offset
                     if (role == QrModuleRole.TIMING) {
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                        val offset = (1.0 - timingScale) / 2.0
+                        val mx = x + offset
+                        val my = y + offset
+                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                            shape = design.timingStyle.shape,
+                            x = mx,
+                            y = my,
+                            size = timingScale,
+                            fill = timingFill
+                        )
+                        sb.append("""  $elem""").append("\n")
                     } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
+                        val offset = (1.0 - alignScale) / 2.0
+                        val mx = x + offset
+                        val my = y + offset
+                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                            shape = design.alignmentStyle.shape,
+                            x = mx,
+                            y = my,
+                            size = alignScale,
+                            fill = alignFill
+                        )
+                        sb.append("""  $elem""").append("\n")
                     }
                 }
             }
