@@ -84,15 +84,29 @@ object SvgExporter {
                         }
                     }
                 } else {
-                    val maskScale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+                    val maskScale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
                     val maskOffset = (1.0 - maskScale) / 2.0
                     for (col in 0 until matrix.size) {
                         for (row in 0 until matrix.size) {
                             if (!matrix.isDark(col, row)) continue
                             if (design.imageSource.scope == com.veilframe.app.qr.model.ImageMaskScope.DATA_ONLY && matrix.isProtected(col, row)) continue
+                            val module = matrix.moduleAt(col, row)
                             val mx = col + qz + maskOffset
                             val my = row + qz + maskOffset
-                            sb.append("""      <rect x="$mx" y="$my" width="$maskScale" height="$maskScale" fill="white" />""").append("\n")
+                            val cx = col + qz + 0.5
+                            val cy = row + qz + 0.5
+                            val elem = com.veilframe.app.qr.renderer.ShapeGeometry.buildSvgElement(
+                                shape = design.moduleStyle.shape,
+                                module = module,
+                                cx = cx,
+                                cy = cy,
+                                mx = mx,
+                                my = my,
+                                scale = maskScale,
+                                fill = "white",
+                                design = design
+                            )
+                            sb.append("      ").append(elem).append("\n")
                         }
                     }
                 }
@@ -168,7 +182,7 @@ object SvgExporter {
         }
 
         // 4. Data & Functional Modules
-        val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+        val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
         val shape = design.moduleStyle.shape
         val is25D = design.effects.is25D || design.style == com.veilframe.app.qr.QrStyle.D25
 
@@ -176,21 +190,37 @@ object SvgExporter {
         val d25RightHex = hexColor(design.depthStyle.rightColor)
         val d25Depth = design.depthStyle.depth * 0.35
 
-        if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED) {
-            val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
-            if (sourceBmp != null) {
-                val srcBase64 = bitmapToBase64(sourceBmp)
-                if (srcBase64.isNotEmpty()) {
-                    val opacity = String.format(Locale.US, "%.2f", design.imageSource.opacity)
-                    val maskAlpha = String.format(Locale.US, "%.2f", design.imageSource.maskAlpha)
-                    val maskColorHex = hexColor(design.imageSource.maskColor)
-                    sb.append("""  <g mask="url(#qrDataMask)">""").append("\n")
-                    sb.append("""    <image href="data:image/png;base64,$srcBase64" x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" preserveAspectRatio="xMidYMid slice" opacity="$opacity" />""").append("\n")
-                    if (design.imageSource.maskAlpha > 0f) {
-                        sb.append("""    <rect x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" fill="$maskColorHex" opacity="$maskAlpha" />""").append("\n")
-                    }
-                    sb.append("""  </g>""").append("\n")
+        val isResampleWithSource = design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled
+        val isMaskedWithSource = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled
+
+        if (isResampleWithSource) {
+            val subW = String.format(Locale.US, "%.3f", (1.0 / 3.0) * 1.02)
+            val subH = String.format(Locale.US, "%.3f", (1.0 / 3.0) * 1.02)
+            com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+                matrix = matrix,
+                source = design.imageSource.bitmap,
+                style = design.imageSource,
+                seed = 42L
+            ) { col, row, subX, subY, _ ->
+                val dx = subX % 3
+                val dy = subY % 3
+                val sx = String.format(Locale.US, "%.3f", (col + qz) + dx * (1.0 / 3.0))
+                val sy = String.format(Locale.US, "%.3f", (row + qz) + dy * (1.0 / 3.0))
+                sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
+            }
+        } else if (isMaskedWithSource) {
+            val sourceBmp = design.imageSource.bitmap!!
+            val srcBase64 = bitmapToBase64(sourceBmp)
+            if (srcBase64.isNotEmpty()) {
+                val opacity = String.format(Locale.US, "%.2f", design.imageSource.opacity)
+                val maskAlpha = String.format(Locale.US, "%.2f", design.imageSource.maskAlpha)
+                val maskColorHex = hexColor(design.imageSource.maskColor)
+                sb.append("""  <g mask="url(#qrDataMask)">""").append("\n")
+                sb.append("""    <image href="data:image/png;base64,$srcBase64" x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" preserveAspectRatio="xMidYMid slice" opacity="$opacity" />""").append("\n")
+                if (design.imageSource.maskAlpha > 0f) {
+                    sb.append("""    <rect x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" fill="$maskColorHex" opacity="$maskAlpha" />""").append("\n")
                 }
+                sb.append("""  </g>""").append("\n")
             }
             // If DATA_ONLY, also render timing and alignment modules
             if (design.imageSource.scope == com.veilframe.app.qr.model.ImageMaskScope.DATA_ONLY) {
@@ -266,7 +296,7 @@ object SvgExporter {
                     val fill = when {
                         role == QrModuleRole.TIMING && timingHex != null -> timingHex
                         (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignmentHex != null -> alignmentHex
-                        isSampled && bgBmp != null -> hexColor(com.veilframe.app.qr.renderer.FillEngine.resolveModuleColor(module, matrix.size, design))
+                        isSampled && design.imageSource.bitmap != null -> hexColor(com.veilframe.app.qr.renderer.FillEngine.resolveModuleColor(module, matrix.size, design))
                         else -> dataFill
                     }
 
@@ -291,82 +321,18 @@ object SvgExporter {
                         sb.append("""  <polygon points="$ptsRight" fill="$d25RightHex" />""").append("\n")
                     }
 
-                    when {
-                        // Line style
-                        shape == ModuleShape.LINE || design.style == com.veilframe.app.qr.QrStyle.LINE -> {
-                            val strokeW = scale * design.lineStyle.thicknessFraction.coerceIn(0.15f, 0.9f)
-                            when (design.lineStyle.direction) {
-                                com.veilframe.app.qr.model.LineDirection.VERTICAL -> {
-                                    sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                }
-                                com.veilframe.app.qr.model.LineDirection.CROSS -> {
-                                    sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                    sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                }
-                                com.veilframe.app.qr.model.LineDirection.X -> {
-                                    sb.append("""  <line x1="$mx" y1="$my" x2="${mx + scale}" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                    sb.append("""  <line x1="${mx + scale}" y1="$my" x2="$mx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                }
-                                else -> {
-                                    sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                }
-                            }
-                        }
-                        // Organic / Connected blob
-                        shape == ModuleShape.ORGANIC || shape == ModuleShape.CONNECTED || design.style == com.veilframe.app.qr.QrStyle.CONNECTED_ORGANIC -> {
-                            val neighbors = module.neighbors
-                            val r = (scale * 0.42).toString()
-                            val rx = if (neighbors.isIsolated) r else (scale * 0.22).toString()
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                        }
-                        // Circle or Dot
-                        shape == ModuleShape.CIRCLE || shape == ModuleShape.DOT -> {
-                            val r = (scale / 2.0) * (if (shape == ModuleShape.DOT) 0.75 else 1.0)
-                            sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.PILL -> {
-                            val rx = scale * 0.45
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.ROUNDED -> {
-                            val rx = scale * 0.25
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.SQUIRCLE -> {
-                            val rx = scale * 0.35
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.BUBBLE -> {
-                            val rx = scale * 0.42
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.STAR -> {
-                            val outerR = scale / 2.0
-                            val innerR = outerR * 0.45
-                            val pts = (0 until 10).joinToString(" ") { i ->
-                                val r = if (i % 2 == 0) outerR else innerR
-                                val angle = -Math.PI / 2.0 + (i * Math.PI / 5.0)
-                                val px = cx + r * Math.cos(angle)
-                                val py = cy + r * Math.sin(angle)
-                                "${String.format(Locale.US, "%.2f", px)},${String.format(Locale.US, "%.2f", py)}"
-                            }
-                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.DIAMOND -> {
-                            val half = scale / 2.0
-                            val pts = "${cx},${cy - half} ${cx + half},${cy} ${cx},${cy + half} ${cx - half},${cy}"
-                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                        }
-                        shape == ModuleShape.HEX -> {
-                            val half = scale / 2.0
-                            val qtr = half * 0.5
-                            val pts = "${cx},${cy - half} ${cx + half},${cy - qtr} ${cx + half},${cy + qtr} ${cx},${cy + half} ${cx - half},${cy + qtr} ${cx - half},${cy - qtr}"
-                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                        }
-                        else -> {
-                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" fill="$fill" />""").append("\n")
-                        }
-                    }
+                    val elem = com.veilframe.app.qr.renderer.ShapeGeometry.buildSvgElement(
+                        shape = shape,
+                        module = module,
+                        cx = cx,
+                        cy = cy,
+                        mx = mx,
+                        my = my,
+                        scale = scale,
+                        fill = fill,
+                        design = design
+                    )
+                    sb.append("  ").append(elem).append("\n")
                 }
             }
         }

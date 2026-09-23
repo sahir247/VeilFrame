@@ -33,6 +33,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val logoFraction: Float = 0.20f,
         val backgroundImage: Bitmap? = null,
         val backgroundImageAlpha: Float = 0.25f,
+        val sourceImage: Bitmap? = null,
+        val sourceImageScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+        val sourceImageOpacity: Float = 1.0f,
+        val sourceImageContrast: Float = 0.0f,
+        val sourceImageExposure: Float = 0.0f,
         val bitmap: Bitmap? = null,
         val matrix: QrMatrix? = null,
         val design: QrDesign? = null,
@@ -112,6 +117,36 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
+    fun updateSourceImage(bmp: Bitmap?) {
+        _state.value = _state.value.copy(sourceImage = bmp, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun removeSourceImage() {
+        _state.value = _state.value.copy(sourceImage = null, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateSourceImageScaleMode(mode: ImageScaleMode) {
+        _state.value = _state.value.copy(sourceImageScaleMode = mode)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateSourceImageOpacity(opacity: Float) {
+        _state.value = _state.value.copy(sourceImageOpacity = opacity.coerceIn(0.05f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateSourceImageContrast(contrast: Float) {
+        _state.value = _state.value.copy(sourceImageContrast = contrast.coerceIn(-1.0f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateSourceImageExposure(exposure: Float) {
+        _state.value = _state.value.copy(sourceImageExposure = exposure.coerceIn(-1.0f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
     fun terminateSession() {
         generateJob?.cancel()
         generateJob = null
@@ -127,6 +162,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val bgBmp = s.backgroundImage
         if (bgBmp != null && !bgBmp.isRecycled) {
             bgBmp.recycle()
+        }
+        val srcBmp = s.sourceImage
+        if (srcBmp != null && !srcBmp.isRecycled) {
+            srcBmp.recycle()
         }
         _state.value = UiState(content = "")
     }
@@ -207,10 +246,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     private fun buildDesignFromState(s: UiState): QrDesign {
         val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
 
+        val moduleFill = when {
+            s.style == QrStyle.IMAGE_RESAMPLE -> ModuleFill.IMAGE_SAMPLED
+            s.style == QrStyle.IMAGE_FILL -> ModuleFill.IMAGE_MASKED
+            else -> ModuleFill.SOLID
+        }
+        val moduleShape = when {
+            s.style == QrStyle.BUBBLE -> ModuleShape.BUBBLE_CLUSTER
+            else -> def.defaultModuleShape
+        }
+
         return QrDesign(
             correction = s.ecChoice,
             moduleStyle = ModuleStyle(
-                shape = def.defaultModuleShape,
+                shape = moduleShape,
+                fill = moduleFill,
                 scale = 0.85f,
                 cornerRadiusFraction = 0.0f,
                 connected = s.style == QrStyle.DSJ
@@ -243,7 +293,20 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,
             imageFillMode = def.imageFillMode,
-            style = s.style
+            style = s.style,
+            imageSource = ImageSourceStyle(
+                source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
+                scaleMode = s.sourceImageScaleMode,
+                opacity = s.sourceImageOpacity,
+                contrast = s.sourceImageContrast,
+                exposure = s.sourceImageExposure
+            ),
+            backgroundLayer = BackgroundLayer(
+                enabled = s.backgroundImage != null,
+                color = s.background,
+                bitmap = s.backgroundImage,
+                opacity = s.backgroundImageAlpha
+            )
         )
     }
 

@@ -10,6 +10,8 @@ import android.graphics.Shader
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.encoder.QrEncoder
 import com.veilframe.app.qr.model.BackgroundStyle
+import com.veilframe.app.qr.model.ModuleFill
+import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
@@ -242,6 +244,13 @@ object QrGenerator {
     }
 
     private fun getRendererForDesign(design: QrDesign): QrRenderer {
-        return QrStyleRegistry.getRenderer(design.style)
+        return if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED ||
+            design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER ||
+            design.style == QrStyle.IMAGE_RESAMPLE
+        ) {
+            ComposableQrRenderer()
+        } else {
+            QrStyleRegistry.getRenderer(design.style)
+        }
     }
 }

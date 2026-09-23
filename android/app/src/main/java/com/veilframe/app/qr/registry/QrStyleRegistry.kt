@@ -78,7 +78,7 @@ object QrStyleRegistry {
             displayName = "Image Resample",
             defaultModuleShape = ModuleShape.SQUARE,
             defaultFinderStyle = FinderStyle.CLASSIC,
-            requiresBackgroundImage = true,
+            requiresBackgroundImage = false,
             rendererFactory = { ResampleImageRenderer() }
         ),
         QrStyle.LINE to QrStyleDefinition(

@@ -801,8 +801,18 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="6dp"
                 android:text="Logo"
+                app:icon="@drawable/ic_tab_image" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_source_image_btn"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:text="QR Photo"
                 app:icon="@drawable/ic_tab_image" />
 
             <com.google.android.material.button.MaterialButton
@@ -811,9 +821,117 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="BG Image"
+                android:text="Backdrop"
                 app:icon="@drawable/ic_tab_image" />
         </LinearLayout>
+
+        <!-- Dynamic Source Image / QR Photo Controls Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_source_image_controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="1dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="?attr/colorSurfaceVariant">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="QR Photo (Source Image)"
+                        android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_remove_source_img_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Remove"
+                        app:icon="@drawable/ic_close" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Scale Mode"
+                    android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                <Spinner
+                    android:id="@+id/qr_source_scale_spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/spinner_border_bg"
+                    android:padding="8dp" />
+
+                <TextView
+                    android:id="@+id/qr_source_contrast_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Contrast: 0.00"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_source_contrast_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="-1.0"
+                    android:valueTo="1.0"
+                    android:stepSize="0.05"
+                    android:value="0.0" />
+
+                <TextView
+                    android:id="@+id/qr_source_exposure_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Exposure: 0.00"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_source_exposure_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="-1.0"
+                    android:valueTo="1.0"
+                    android:stepSize="0.05"
+                    android:value="0.0" />
+
+                <TextView
+                    android:id="@+id/qr_source_opacity_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Opacity: 100%"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_source_opacity_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="5"
+                    android:valueTo="100"
+                    android:stepSize="5"
+                    android:value="100" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Dynamic Background Image Controls Card -->
         <com.google.android.material.card.MaterialCardView

@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
@@ -53,9 +54,35 @@ open class ComposableQrRenderer : BaseQrRenderer() {
     ) {
         val n = matrix.size
 
-        // 1. IMAGE_MASKED: Stenciled photo fill through dark module paths
+        // 1. IMAGE_RESAMPLE: 3x3 Stochastic subpixel sampling (EFQRCode parity)
+        if (design.style == QrStyle.IMAGE_RESAMPLE) {
+            val sourceBitmap = design.imageSource.bitmap
+            if (sourceBitmap != null && !sourceBitmap.isRecycled) {
+                val subW = (geometry.moduleSize / 3f) * 1.02f
+                val subH = (geometry.moduleSize / 3f) * 1.02f
+                val fgPaint = context.obtainFill(design.palette.foreground)
+
+                ResampleSubpixelEngine.traverseSubpixels(
+                    matrix = matrix,
+                    source = sourceBitmap,
+                    style = design.imageSource,
+                    seed = 42L
+                ) { col, row, subX, subY, _ ->
+                    val baseRect = geometry.moduleRect(col, row, scale = 1.0f)
+                    val dx = subX % 3
+                    val dy = subY % 3
+                    val left = baseRect.left + dx * (geometry.moduleSize / 3f)
+                    val top = baseRect.top + dy * (geometry.moduleSize / 3f)
+                    canvas.drawRect(left, top, left + subW, top + subH, fgPaint)
+                }
+                return
+            }
+            // If no source image provided: falls through to normal foreground data fill
+        }
+
+        // 2. IMAGE_MASKED: Stenciled photo fill through dark module paths (Strictly imageSource.bitmap)
         if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED) {
-            val sourceBitmap = design.imageSource.bitmap ?: design.backgroundImage
+            val sourceBitmap = design.imageSource.bitmap
             if (sourceBitmap != null && !sourceBitmap.isRecycled) {
                 val maskPath = context.tempPath3.apply { reset() }
                 val scope = design.imageSource.scope
@@ -81,25 +108,23 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                 canvas.clipPath(maskPath)
 
                 val dstRect = geometry.dataRegionBounds()
+                val (srcRect, finalDstRect) = ImageScaleResolver.resolveSrcDst(
+                    sourceBitmap.width,
+                    sourceBitmap.height,
+                    dstRect,
+                    design.imageSource.scaleMode
+                )
 
-                val bw = sourceBitmap.width
-                val bh = sourceBitmap.height
-                val srcRect = when (design.imageSource.scaleMode) {
-                    ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
-                        val minDim = minOf(bw, bh)
-                        val sx = (bw - minDim) / 2
-                        val sy = (bh - minDim) / 2
-                        Rect(sx, sy, sx + minDim, sy + minDim)
-                    }
-                    ImageScaleMode.STRETCH -> Rect(0, 0, bw, bh)
-                    ImageScaleMode.ASPECT_FIT -> null
+                if (design.imageSource.scaleMode == ImageScaleMode.ASPECT_FIT) {
+                    // Solid white fill in letterbox padding
+                    canvas.drawRect(dstRect, context.obtainFill(Color.WHITE))
                 }
 
-                val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
                     alpha = (design.imageSource.opacity.coerceIn(0f, 1f) * 255).toInt()
                 }
 
-                canvas.drawBitmap(sourceBitmap, srcRect, dstRect, imagePaint)
+                canvas.drawBitmap(sourceBitmap, srcRect, finalDstRect, imagePaint)
 
                 // Optional maskColor tint
                 if (design.imageSource.maskAlpha > 0f) {
@@ -112,6 +137,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                 canvas.restore()
                 return
             }
+            // If no source image provided: falls through to normal foreground data fill
         }
 
         // 2. BUBBLE_CLUSTER: Hierarchical circular clustering

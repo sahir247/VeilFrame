@@ -41,6 +41,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.veilframe.app.R
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
+import com.veilframe.app.qr.model.ImageScaleMode
 import com.veilframe.app.qr.model.QrPresetFormatter
 import com.veilframe.app.qr.scanner.PayloadParser
 import com.veilframe.app.qr.scanner.QrAction
@@ -170,6 +171,33 @@ class QrGenerateTabFragment : Fragment() {
         }
     }
 
+    private val sourceImagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val ctx = context ?: return@launch
+            val bmp = try {
+                ctx.contentResolver.openInputStream(uri)?.use { stream ->
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeStream(stream, null, options)
+                    val sampleSize = calculateInSampleSize(options, 1024, 1024)
+                    ctx.contentResolver.openInputStream(uri)?.use { s2 ->
+                        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                        BitmapFactory.decodeStream(s2, null, decodeOpts)
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                if (isAdded && bmp != null) {
+                    vm.updateSourceImage(bmp)
+                }
+            }
+        }
+    }
+
     private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
         val (height: Int, width: Int) = options.outHeight to options.outWidth
         var inSampleSize = 1
@@ -264,9 +292,20 @@ class QrGenerateTabFragment : Fragment() {
         val fgColorBtn         = view.findViewById<MaterialButton>(R.id.qr_fg_color_btn)
         val bgColorBtn         = view.findViewById<MaterialButton>(R.id.qr_bg_color_btn)
         val logoBtn            = view.findViewById<MaterialButton>(R.id.qr_logo_btn)
+        val sourceImgBtn       = view.findViewById<MaterialButton>(R.id.qr_source_image_btn)
         val bgImageBtn         = view.findViewById<MaterialButton>(R.id.qr_bg_image_btn)
 
         // Dynamic Customization Cards
+        val cardSourceControls = view.findViewById<MaterialCardView>(R.id.card_source_image_controls)
+        val removeSourceBtn    = view.findViewById<MaterialButton>(R.id.qr_remove_source_img_btn)
+        val sourceScaleSpinner = view.findViewById<Spinner>(R.id.qr_source_scale_spinner)
+        val sourceContrastSlider = view.findViewById<Slider>(R.id.qr_source_contrast_slider)
+        val sourceContrastLabel = view.findViewById<TextView>(R.id.qr_source_contrast_label)
+        val sourceExposureSlider = view.findViewById<Slider>(R.id.qr_source_exposure_slider)
+        val sourceExposureLabel = view.findViewById<TextView>(R.id.qr_source_exposure_label)
+        val sourceOpacitySlider = view.findViewById<Slider>(R.id.qr_source_opacity_slider)
+        val sourceOpacityLabel = view.findViewById<TextView>(R.id.qr_source_opacity_label)
+
         val cardBgControls     = view.findViewById<MaterialCardView>(R.id.card_bg_image_controls)
         val removeBgBtn        = view.findViewById<MaterialButton>(R.id.qr_remove_bg_btn)
         val bgOpacitySlider    = view.findViewById<Slider>(R.id.qr_bg_opacity_slider)
@@ -280,6 +319,22 @@ class QrGenerateTabFragment : Fragment() {
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
         val saveSvgBtn         = view.findViewById<MaterialButton>(R.id.qr_save_svg_btn)
         val shareBtn           = view.findViewById<MaterialButton>(R.id.qr_share_btn)
+
+        // Setup Source Scale Spinner
+        val scaleOptions = arrayOf("Aspect Fill", "Aspect Fit", "Center Crop", "Stretch")
+        val scaleEnums = arrayOf(
+            ImageScaleMode.ASPECT_FILL,
+            ImageScaleMode.ASPECT_FIT,
+            ImageScaleMode.CENTER_CROP,
+            ImageScaleMode.STRETCH
+        )
+        sourceScaleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, scaleOptions)
+        sourceScaleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                vm.updateSourceImageScaleMode(scaleEnums[pos.coerceIn(0, scaleEnums.size - 1)])
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
 
         // Helper to compile active preset into payload
         fun compileActivePreset() {
@@ -516,12 +571,35 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        removeSourceBtn.setOnClickListener {
+            vm.removeSourceImage()
+        }
+        sourceContrastSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateSourceImageContrast(value)
+                sourceContrastLabel.text = String.format(java.util.Locale.US, "Contrast: %.2f", value)
+            }
+        }
+        sourceExposureSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateSourceImageExposure(value)
+                sourceExposureLabel.text = String.format(java.util.Locale.US, "Exposure: %.2f", value)
+            }
+        }
+        sourceOpacitySlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateSourceImageOpacity(value / 100f)
+                sourceOpacityLabel.text = "Opacity: ${value.toInt()}%"
+            }
+        }
+
         // 5. Actions & Buttons
         autoRepairBtn.setOnClickListener { vm.autoRepair() }
         saveBtn.setOnClickListener      { vm.saveToGallery() }
         saveSvgBtn.setOnClickListener   { vm.saveSvg() }
         shareBtn.setOnClickListener     { vm.share() }
         logoBtn.setOnClickListener      { logoPickerLauncher.launch("image/*") }
+        sourceImgBtn.setOnClickListener { sourceImagePickerLauncher.launch("image/*") }
         bgImageBtn.setOnClickListener   { bgImagePickerLauncher.launch("image/*") }
 
         fgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = true) }
@@ -541,6 +619,20 @@ class QrGenerateTabFragment : Fragment() {
                         bgOpacityLabel.text = "Opacity: $opacityPct%"
                     } else {
                         cardBgControls.visibility = View.GONE
+                    }
+
+                    // Dynamic Source Image (QR Photo) Card
+                    if (state.sourceImage != null) {
+                        cardSourceControls.visibility = View.VISIBLE
+                        sourceContrastSlider.value = state.sourceImageContrast
+                        sourceContrastLabel.text = String.format(java.util.Locale.US, "Contrast: %.2f", state.sourceImageContrast)
+                        sourceExposureSlider.value = state.sourceImageExposure
+                        sourceExposureLabel.text = String.format(java.util.Locale.US, "Exposure: %.2f", state.sourceImageExposure)
+                        val opacityPct = (state.sourceImageOpacity * 100f).toInt().coerceIn(5, 100)
+                        sourceOpacitySlider.value = opacityPct.toFloat()
+                        sourceOpacityLabel.text = "Opacity: $opacityPct%"
+                    } else {
+                        cardSourceControls.visibility = View.GONE
                     }
 
                     // Dynamic Logo Card

@@ -25,9 +25,9 @@ object FillEngine {
     ): Int {
         val defaultFg = design.palette.foreground
 
-        // 1. Image sampling mode
-        val sampleBitmap = design.backgroundLayer.bitmap ?: design.backgroundImage
-        if (sampleBitmap != null && (design.moduleStyle.fill == ModuleFill.IMAGE_SAMPLED || design.imageFillMode || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL)) {
+        // 1. Image sampling mode (Strictly imageSource.bitmap, zero background fallback)
+        val sampleBitmap = design.imageSource.bitmap
+        if (sampleBitmap != null && !sampleBitmap.isRecycled && (design.moduleStyle.fill == ModuleFill.IMAGE_SAMPLED || design.imageFillMode || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL)) {
             val normX = (module.col.toFloat() + 0.5f) / matrixSize.toFloat()
             val normY = (module.row.toFloat() + 0.5f) / matrixSize.toFloat()
             val bx = (normX * (sampleBitmap.width - 1)).toInt().coerceIn(0, sampleBitmap.width - 1)
@@ -48,7 +48,7 @@ object FillEngine {
             return pixel
         }
 
-        // 2. Default foreground
+        // 2. Default foreground (clean fallback when no source image provided)
         return defaultFg
     }
 
