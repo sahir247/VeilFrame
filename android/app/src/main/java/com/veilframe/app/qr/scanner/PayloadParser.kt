@@ -80,8 +80,11 @@ object PayloadParser {
      */
     private fun parseUpi(t: String): QrAction.UpiPayment? {
         if (!t.startsWith("upi://", ignoreCase = true)) return null
-        val uri = try { URI(t) } catch (_: Exception) { return null }
-        val queryString = uri.rawQuery ?: t.substringAfter('?', "")
+        val uri = try { URI(t) } catch (_: Exception) { null }
+        val host = uri?.host ?: t.removePrefix("upi://").substringBefore('?').substringBefore('/')
+        if (!host.equals("pay", ignoreCase = true)) return null
+
+        val queryString = uri?.rawQuery ?: t.substringAfter('?', "")
         if (queryString.isBlank()) return null
 
         val rawParams = queryString.split("&").filter { it.isNotBlank() }.associate {
@@ -94,6 +97,10 @@ object PayloadParser {
         }
 
         val pa = rawParams["pa"] ?: return null
+        if (pa.isBlank() || !pa.contains('@') || pa.startsWith('@') || pa.endsWith('@')) {
+            return null
+        }
+
         val pn = rawParams["pn"]
         val amStr = rawParams["am"]
         val cu = rawParams["cu"] ?: "INR"
@@ -118,9 +125,12 @@ object PayloadParser {
      */
     private fun parseOtpAuth(t: String): QrAction.OtpAuth? {
         if (!t.startsWith("otpauth://", ignoreCase = true)) return null
-        val uri = try { URI(t) } catch (_: Exception) { return null }
-        val type = uri.host ?: "totp"
-        val path = uri.path?.trimStart('/') ?: ""
+        val uri = try { URI(t) } catch (_: Exception) { null }
+        val type = uri?.host ?: t.removePrefix("otpauth://").substringBefore('/').substringBefore('?')
+        if (!type.equals("totp", ignoreCase = true) && !type.equals("hotp", ignoreCase = true)) {
+            return null
+        }
+        val path = uri?.path?.trimStart('/') ?: t.substringAfter("://").substringAfter('/').substringBefore('?')
 
         val (pathIssuer, account) = if (':' in path) {
             val parts = path.split(":", limit = 2)
@@ -129,16 +139,21 @@ object PayloadParser {
             null to path
         }
 
-        val rawParams = uri.query?.split("&")?.associate {
+        val queryString = uri?.rawQuery ?: t.substringAfter('?', "")
+        val rawParams = queryString.split("&").filter { it.isNotBlank() }.associate {
             val parts = it.split("=", limit = 2)
-            val k = parts[0]
+            val k = try { URLDecoder.decode(parts[0], "UTF-8") } catch (_: Exception) { parts[0] }
             val v = if (parts.size > 1) {
                 try { URLDecoder.decode(parts[1], "UTF-8") } catch (_: Exception) { parts[1] }
             } else ""
             k to v
-        } ?: emptyMap()
+        }
 
         val secret = rawParams["secret"]
+        if (secret.isNullOrBlank()) {
+            return null
+        }
+
         val issuer = rawParams["issuer"] ?: pathIssuer
         val algorithm = rawParams["algorithm"] ?: "SHA1"
         val digits = rawParams["digits"]?.toIntOrNull() ?: 6
@@ -148,7 +163,7 @@ object PayloadParser {
             issuer = issuer,
             account = account.ifBlank { null },
             secret = secret,
-            type = type,
+            type = type.lowercase(),
             algorithm = algorithm,
             digits = digits,
             period = period
@@ -189,12 +204,21 @@ object PayloadParser {
 
     private fun parseGeo(t: String): QrAction.Geo? {
         if (!t.startsWith("geo:", ignoreCase = true)) return null
-        val after = t.substring(4).split("?", limit = 2)[0]
-        val coords = after.split(",")
+        val after = t.substring(4)
+        val coordsAndQuery = after.split("?", limit = 2)
+        val coords = coordsAndQuery[0].split(",")
         if (coords.size < 2) return null
         val lat = coords[0].toDoubleOrNull() ?: return null
         val lon = coords[1].toDoubleOrNull() ?: return null
-        val q = t.substringAfter("q=", "").ifBlank { null }
+
+        val queryPart = coordsAndQuery.getOrNull(1)
+        val qRaw = queryPart?.split("&")
+            ?.find { it.startsWith("q=", ignoreCase = true) }
+            ?.substringAfter("q=")
+        val q = qRaw?.let {
+            try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+        }?.ifBlank { null }
+
         return QrAction.Geo(lat, lon, q)
     }
 

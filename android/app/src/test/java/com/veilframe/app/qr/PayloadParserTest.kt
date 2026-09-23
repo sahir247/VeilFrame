@@ -184,4 +184,41 @@ class PayloadParserTest {
         assertEquals("Room 404, Building A", event.location)
         assertTrue(event.description?.contains("\nDiscussing VeilFrame updates") == true)
     }
+
+    @Test
+    fun testParseGeoWithEncodedQueryAndAdditionalParams() {
+        val raw = "geo:37.7749,-122.4194?q=San%20Francisco%20City%20Hall&z=15"
+        val action = PayloadParser.parse(raw)
+        assertTrue("Expected QrAction.Geo", action is QrAction.Geo)
+        val geo = action as QrAction.Geo
+        assertEquals(37.7749, geo.lat, 0.0001)
+        assertEquals(-122.4194, geo.lon, 0.0001)
+        assertEquals("San Francisco City Hall", geo.label)
+    }
+
+    @Test
+    fun testParseUpiValidationRejectsInvalidHostOrVpa() {
+        // Invalid host (not 'pay')
+        val invalidHost = "upi://transfer?pa=merchant@upi&pn=Store"
+        val action1 = PayloadParser.parse(invalidHost)
+        assertTrue("Invalid UPI host should fall back to Raw", action1 is QrAction.Raw)
+
+        // Invalid VPA (no '@' sign)
+        val invalidVpa = "upi://pay?pa=not-a-valid-vpa&pn=Store"
+        val action2 = PayloadParser.parse(invalidVpa)
+        assertTrue("Invalid VPA without @ should fall back to Raw", action2 is QrAction.Raw)
+    }
+
+    @Test
+    fun testParseOtpAuthRequiresSecretAndValidType() {
+        // Missing secret
+        val noSecret = "otpauth://totp/VeilFrame:alice@example.com?issuer=VeilFrame"
+        val action1 = PayloadParser.parse(noSecret)
+        assertTrue("OTPAuth without secret should fall back to Raw", action1 is QrAction.Raw)
+
+        // Invalid type (neither totp nor hotp)
+        val invalidType = "otpauth://custom/VeilFrame:alice@example.com?secret=JBSWY3DPEHPK3PXP"
+        val action2 = PayloadParser.parse(invalidType)
+        assertTrue("OTPAuth with invalid type should fall back to Raw", action2 is QrAction.Raw)
+    }
 }

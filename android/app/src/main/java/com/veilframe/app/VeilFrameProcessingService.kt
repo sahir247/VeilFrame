@@ -40,12 +40,39 @@ class VeilFrameProcessingService : Service() {
         const val ACTION_PROCESS_VIDEO = "com.veilframe.action.PROCESS_VIDEO"
         const val EXTRA_INPUT_PATH = "extra_input_path"
         const val EXTRA_OUTPUT_PATH = "extra_output_path"
+        const val EXTRA_INPUT_URI = "extra_input_uri"
+        const val EXTRA_OUTPUT_URI = "extra_output_uri"
         const val EXTRA_JOB_ID = "extra_job_id"
         const val EXTRA_JOB_TYPE = "extra_job_type"
 
         @Volatile
         var activeJob: ProcessingJob? = null
             private set
+
+        fun startVideoCleaning(context: Context, inputPath: String, outputPath: String, jobId: UUID = UUID.randomUUID()) {
+            val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
+                action = ACTION_PROCESS_VIDEO
+                putExtra(EXTRA_INPUT_PATH, inputPath)
+                putExtra(EXTRA_OUTPUT_PATH, outputPath)
+                putExtra(EXTRA_JOB_ID, jobId.toString())
+                putExtra(EXTRA_JOB_TYPE, JobType.METADATA_STRIP.name)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun startVideoCleaning(context: Context, inputUri: Uri, outputUri: Uri, jobId: UUID = UUID.randomUUID()) {
+            val intent = Intent(context, VeilFrameProcessingService::class.java).apply {
+                action = ACTION_PROCESS_VIDEO
+                putExtra(EXTRA_INPUT_URI, inputUri)
+                putExtra(EXTRA_OUTPUT_URI, outputUri)
+                putExtra(EXTRA_INPUT_PATH, inputUri.toString())
+                putExtra(EXTRA_OUTPUT_PATH, outputUri.toString())
+                putExtra(EXTRA_JOB_ID, jobId.toString())
+                putExtra(EXTRA_JOB_TYPE, JobType.METADATA_STRIP.name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
     }
 
     override fun onCreate() {
@@ -57,6 +84,35 @@ class VeilFrameProcessingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val inputPath = intent?.getStringExtra(EXTRA_INPUT_PATH) ?: ""
         val outputPath = intent?.getStringExtra(EXTRA_OUTPUT_PATH) ?: ""
+
+        val inputUriExtra: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra(EXTRA_INPUT_URI, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra(EXTRA_INPUT_URI)
+        }
+
+        val outputUriExtra: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra(EXTRA_OUTPUT_URI, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra(EXTRA_OUTPUT_URI)
+        }
+
+        val inputUri = inputUriExtra ?: if (inputPath.startsWith("content://") || inputPath.startsWith("file://")) {
+            Uri.parse(inputPath)
+        } else if (inputPath.isNotEmpty()) {
+            Uri.fromFile(File(inputPath))
+        } else {
+            Uri.EMPTY
+        }
+
+        val outputUri = outputUriExtra ?: if (outputPath.startsWith("content://") || outputPath.startsWith("file://")) {
+            Uri.parse(outputPath)
+        } else if (outputPath.isNotEmpty()) {
+            Uri.fromFile(File(outputPath))
+        } else null
+
         val jobIdStr = intent?.getStringExtra(EXTRA_JOB_ID)
         val jobId = try {
             if (!jobIdStr.isNullOrEmpty()) UUID.fromString(jobIdStr) else UUID.randomUUID()
@@ -69,9 +125,6 @@ class VeilFrameProcessingService : Service() {
         } catch (_: Exception) {
             JobType.VIDEO_COMPRESSION
         }
-
-        val inputUri = Uri.fromFile(File(inputPath))
-        val outputUri = if (outputPath.isNotEmpty()) Uri.fromFile(File(outputPath)) else null
 
         val current = activeJob
         if (current != null && current.state == JobState.RUNNING) {
@@ -110,8 +163,28 @@ class VeilFrameProcessingService : Service() {
 
         serviceScope.launch {
             try {
-                if (inputPath.isNotEmpty() && outputPath.isNotEmpty()) {
-                    val ok = mediaBackend.cleanVideo(inputPath, outputPath)
+                val effectiveInPath = if (inputUri.scheme == "content") {
+                    try {
+                        com.arthenica.ffmpegkit.FFmpegKitConfig.getSafParameterForRead(this@VeilFrameProcessingService, inputUri)
+                    } catch (_: Exception) {
+                        inputPath
+                    }
+                } else {
+                    inputPath
+                }
+
+                val effectiveOutPath = if (outputUri != null && outputUri.scheme == "content") {
+                    try {
+                        com.arthenica.ffmpegkit.FFmpegKitConfig.getSafParameterForWrite(this@VeilFrameProcessingService, outputUri)
+                    } catch (_: Exception) {
+                        outputPath
+                    }
+                } else {
+                    outputPath
+                }
+
+                if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
+                    val ok = mediaBackend.cleanVideo(effectiveInPath, effectiveOutPath)
                     if (ok) {
                         activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
                     } else {

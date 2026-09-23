@@ -878,7 +878,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🔒 100% Local"
+                            android:text="100% Local"
                             android:textColor="@color/vf_accent_green"
                             android:textSize="12sp"
                             android:textStyle="bold" />
@@ -901,7 +901,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🛡️ Forensic Grade"
+                            android:text="Forensic Grade"
                             android:textColor="@color/vf_accent_green"
                             android:textSize="12sp"
                             android:textStyle="bold" />
@@ -1038,7 +1038,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.7"
+                android:text="WHAT'S NEW IN v2.2.8"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"

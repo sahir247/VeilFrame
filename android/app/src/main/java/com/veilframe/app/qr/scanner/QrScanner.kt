@@ -51,17 +51,29 @@ class QrScanner(
         }
     }
 
+    @Volatile
+    private var cachedYBuffer: ByteArray? = null
+
+    private fun getOrCreateYBuffer(size: Int): ByteArray {
+        val current = cachedYBuffer
+        return if (current != null && current.size >= size) {
+            current
+        } else {
+            val newBuf = ByteArray(size)
+            cachedYBuffer = newBuf
+            newBuf
+        }
+    }
+
     @ExperimentalGetImage
     override fun analyze(imageProxy: ImageProxy) {
-        // 1. Frame gate throttling (~8-10 processed FPS). Unselected frames are closed immediately.
-        if (!controller.shouldProcessFrame(imageProxy)) {
-            return
-        }
+        // 1. Frame gate throttling (~8-10 processed FPS) & single-flight acquisition.
+        // If not acquired, imageProxy is closed inside acquireFrameToken.
+        val token = controller.acquireFrameToken(imageProxy) ?: return
 
         val mediaImage = imageProxy.image
         if (mediaImage == null) {
-            controller.finishFrameProcessing()
-            imageProxy.close()
+            controller.finishFrameProcessing(token)
             return
         }
 
@@ -72,27 +84,59 @@ class QrScanner(
             val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
             mlKitScanner.process(inputImage)
                 .addOnSuccessListener { barcodes ->
-                    val detected = barcodes.firstOrNull()?.rawValue
+                    if (!controller.isTokenActive(token)) {
+                        token.close()
+                        return@addOnSuccessListener
+                    }
+
+                    // Prioritize barcode closest to the viewfinder center
+                    val centerX = inputImage.width / 2f
+                    val centerY = inputImage.height / 2f
+                    val bestBarcode = if (barcodes.size > 1) {
+                        barcodes.minByOrNull { b ->
+                            val box = b.boundingBox
+                            if (box != null) {
+                                val dx = box.centerX() - centerX
+                                val dy = box.centerY() - centerY
+                                dx * dx + dy * dy
+                            } else {
+                                Float.MAX_VALUE
+                            }
+                        }
+                    } else {
+                        barcodes.firstOrNull()
+                    }
+
+                    val detected = bestBarcode?.rawValue
                     if (detected != null) {
                         if (controller.onPayloadDecoded(detected)) {
                             onResult(detected)
                         }
-                        finalizeFrame(imageProxy)
+                        controller.finishFrameProcessing(token)
                     } else {
                         // ML Kit found no barcode -> Fallback to ZXing
-                        fallbackToZxing(imageProxy, mediaImage)
+                        fallbackToZxing(token, mediaImage)
                     }
                 }
                 .addOnFailureListener {
+                    if (!controller.isTokenActive(token)) {
+                        token.close()
+                        return@addOnFailureListener
+                    }
                     // Fallback to ZXing on ML Kit error
-                    fallbackToZxing(imageProxy, mediaImage)
+                    fallbackToZxing(token, mediaImage)
                 }
         } catch (_: Exception) {
-            fallbackToZxing(imageProxy, mediaImage)
+            fallbackToZxing(token, mediaImage)
         }
     }
 
-    private fun fallbackToZxing(imageProxy: ImageProxy, mediaImage: android.media.Image) {
+    private fun fallbackToZxing(token: FrameToken, mediaImage: android.media.Image) {
+        if (!controller.isTokenActive(token)) {
+            token.close()
+            return
+        }
+
         try {
             val width = mediaImage.width
             val height = mediaImage.height
@@ -101,26 +145,33 @@ class QrScanner(
             val rowStride = yPlane.rowStride
             val pixelStride = yPlane.pixelStride
 
-            // Pack stride-aware Y-plane into contiguous byte array
-            val packedY = ByteArray(width * height)
+            // Stride-aware Y-plane packing into pooled contiguous byte array (avoids ~2MB GC allocation/frame)
+            val packedY = getOrCreateYBuffer(width * height)
             yBuffer.rewind()
 
             if (rowStride == width && pixelStride == 1) {
-                yBuffer.get(packedY)
+                yBuffer.get(packedY, 0, width * height)
             } else {
                 for (row in 0 until height) {
                     val rowStart = row * rowStride
+                    val rowDest = row * width
                     for (col in 0 until width) {
-                        packedY[row * width + col] = yBuffer.get(rowStart + (col * pixelStride))
+                        packedY[rowDest + col] = yBuffer.get(rowStart + (col * pixelStride))
                     }
                 }
             }
 
+            // Central 70% reticle ROI to accelerate binarization and focus on viewfinder area
+            val cropLeft = (width * 0.15f).toInt()
+            val cropTop = (height * 0.15f).toInt()
+            val cropW = (width * 0.70f).toInt()
+            val cropH = (height * 0.70f).toInt()
+
             val source = PlanarYUVLuminanceSource(
                 packedY,
                 width, height,
-                0, 0,
-                width, height,
+                cropLeft, cropTop,
+                cropW, cropH,
                 false
             )
             val binary = BinaryBitmap(HybridBinarizer(source))
@@ -134,25 +185,21 @@ class QrScanner(
             controller.onFrameMiss()
         } finally {
             zxingReader.reset()
-            finalizeFrame(imageProxy)
-        }
-    }
-
-    private fun finalizeFrame(imageProxy: ImageProxy) {
-        try {
-            controller.finishFrameProcessing()
-            imageProxy.close()
-        } catch (_: Exception) {
-            // Frame might already be closed
+            controller.finishFrameProcessing(token)
         }
     }
 
     companion object {
         /**
          * Synchronously decodes a QR code from a [Bitmap] (e.g. gallery pick).
+         * Features multi-stage decoding:
+         * 1. Downscaled bitmap (<=1280px) for standard photos.
+         * 2. High-resolution center crop for high-density or distant QR codes in full photos.
+         * 3. Full-resolution pass if memory allows.
          */
         fun decode(bitmap: Bitmap): String? {
-            val bmp = if (bitmap.width > 1280 || bitmap.height > 1280) {
+            // Stage 1: Try downscaled (<= 1280px)
+            val scaledBmp = if (bitmap.width > 1280 || bitmap.height > 1280) {
                 val scale = 1280f / maxOf(bitmap.width, bitmap.height)
                 val targetW = (bitmap.width * scale).toInt().coerceAtLeast(1)
                 val targetH = (bitmap.height * scale).toInt().coerceAtLeast(1)
@@ -160,6 +207,43 @@ class QrScanner(
             } else {
                 bitmap
             }
+
+            val stage1Result = decodeInternal(scaledBmp)
+            if (scaledBmp != bitmap) {
+                scaledBmp.recycle()
+            }
+            if (stage1Result != null) {
+                return stage1Result
+            }
+
+            // Stage 2: If downscaling failed and original is high-res, try central 65% crop of full-res image
+            if (bitmap.width > 1280 || bitmap.height > 1280) {
+                try {
+                    val cropW = (bitmap.width * 0.65f).toInt()
+                    val cropH = (bitmap.height * 0.65f).toInt()
+                    val cropX = (bitmap.width - cropW) / 2
+                    val cropY = (bitmap.height - cropH) / 2
+                    val centerCrop = Bitmap.createBitmap(bitmap, cropX, cropY, cropW, cropH)
+                    val stage2Result = decodeInternal(centerCrop)
+                    centerCrop.recycle()
+                    if (stage2Result != null) {
+                        return stage2Result
+                    }
+                } catch (_: Exception) {}
+
+                // Stage 3: Full-resolution pass
+                try {
+                    val stage3Result = decodeInternal(bitmap)
+                    if (stage3Result != null) {
+                        return stage3Result
+                    }
+                } catch (_: Exception) {}
+            }
+
+            return null
+        }
+
+        private fun decodeInternal(bmp: Bitmap): String? {
             return try {
                 val pixels = IntArray(bmp.width * bmp.height)
                 bmp.getPixels(pixels, 0, bmp.width, 0, 0, bmp.width, bmp.height)
@@ -176,10 +260,6 @@ class QrScanner(
                 res.text
             } catch (_: Exception) {
                 null
-            } finally {
-                if (bmp != bitmap) {
-                    bmp.recycle()
-                }
             }
         }
     }

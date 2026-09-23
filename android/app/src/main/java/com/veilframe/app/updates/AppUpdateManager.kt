@@ -530,6 +530,10 @@ class AppUpdateManager(
                     }
                 }
 
+                if (apkExpectedSha256.isBlank() || !apkExpectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                    onLog("[SEC] Notice: No explicit APK SHA-256 digest provided in release manifest; relying on mandatory APK signing certificate pinning verification.")
+                }
+
                 // 4. Bounds checking
                 val isUpdateAvailable = remoteVersionCode > installedVersionCode
                 val canProceedWithInstall = (isUpdateAvailable || isRepairMode) && apkDownloadUrl.isNotEmpty()
@@ -593,7 +597,7 @@ class AppUpdateManager(
                     } else if (isRepairMode) {
                         Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
-                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.7" } catch (_: Exception) { "2.2.7" }
+                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.8" } catch (_: Exception) { "2.2.8" }
                         binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Up to date"
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
@@ -609,7 +613,7 @@ class AppUpdateManager(
                         if (isUserInitiated) {
                             Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
-                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.7" } catch (_: Exception) { "2.2.7" }
+                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.8" } catch (_: Exception) { "2.2.8" }
                             binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_text_secondary))
                         }

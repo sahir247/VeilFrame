@@ -65,7 +65,11 @@ object QrExporter {
             dir.mkdirs()
             val file = File(dir, name)
             FileOutputStream(file).use { out -> bitmap.compress(format, quality, out) }
-            Uri.fromFile(file)
+            try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
         }
     }
 
@@ -122,7 +126,11 @@ object QrExporter {
             dir.mkdirs()
             val file = File(dir, name)
             FileOutputStream(file).use { out -> out.write(svgData.toByteArray(Charsets.UTF_8)) }
-            Uri.fromFile(file)
+            try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
         }
     }
 

@@ -15,8 +15,27 @@ enum class ScannerState {
 }
 
 /**
+ * Represents an exclusive lease on a single camera frame analysis flight.
+ * Guaranteed idempotent closing of [imageProxy].
+ */
+class FrameToken(
+    val id: Long,
+    private val imageProxy: ImageProxy
+) {
+    private val isClosed = AtomicBoolean(false)
+
+    fun close() {
+        if (isClosed.compareAndSet(false, true)) {
+            try {
+                imageProxy.close()
+            } catch (_: Exception) {}
+        }
+    }
+}
+
+/**
  * Controller orchestrating the CameraX frame pipeline, state machine,
- * and duplicate suppression.
+ * single-flight token concurrency, and duplicate suppression.
  *
  * Invariant: CameraX may deliver frames at 30/60 FPS; processing is deliberately
  * throttled to ~8–10 processed frames/sec. Dropped frames are closed immediately.
@@ -30,7 +49,10 @@ class ScannerController(
     private val _state = MutableStateFlow(ScannerState.IDLE)
     val state: StateFlow<ScannerState> = _state.asStateFlow()
 
-    private val isAnalyzing = AtomicBoolean(false)
+    private val tokenGenerator = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile
+    private var activeTokenId: Long = 0L
+    @Volatile
     private var lastAnalyzedTimeMs = 0L
 
     private var lastCandidatePayload: String? = null
@@ -40,38 +62,73 @@ class ScannerController(
     private var lastPresentedTimeMs = 0L
 
     /**
-     * Determines whether the given [imageProxy] should be processed or closed immediately.
-     * Returns true if the frame is selected for analysis; otherwise closes the proxy and returns false.
+     * Attempts to acquire an exclusive [FrameToken] for processing the given [imageProxy].
+     * If throttled or another frame is actively analyzing within its timeout window, closes [imageProxy] and returns null.
      */
-    fun shouldProcessFrame(imageProxy: ImageProxy): Boolean {
+    fun acquireFrameToken(imageProxy: ImageProxy): FrameToken? {
         val now = System.currentTimeMillis()
 
-        // 0. Watchdog guard: if previous analysis stalled without callback, force release
-        if (isAnalyzing.get() && now - lastAnalyzedTimeMs > analysisTimeoutMs) {
-            isAnalyzing.set(false)
-        }
+        synchronized(this) {
+            // Watchdog guard: if previous analysis stalled past timeout, invalidate it
+            if (activeTokenId != 0L && now - lastAnalyzedTimeMs > analysisTimeoutMs) {
+                activeTokenId = 0L
+            }
 
-        // 1. Throttle frame rate to ~8-10 FPS
-        if (now - lastAnalyzedTimeMs < frameThrottleMs) {
-            imageProxy.close()
-            return false
-        }
+            // 1. Throttle frame rate to ~8-10 FPS
+            if (now - lastAnalyzedTimeMs < frameThrottleMs) {
+                imageProxy.close()
+                return null
+            }
 
-        // 2. Concurrency guard: don't queue frames if decoder is still running
-        if (!isAnalyzing.compareAndSet(false, true)) {
-            imageProxy.close()
-            return false
-        }
+            // 2. Concurrency guard: single-flight in progress
+            if (activeTokenId != 0L) {
+                imageProxy.close()
+                return null
+            }
 
-        lastAnalyzedTimeMs = now
+            val nextId = tokenGenerator.incrementAndGet()
+            activeTokenId = nextId
+            lastAnalyzedTimeMs = now
+            return FrameToken(nextId, imageProxy)
+        }
+    }
+
+    /**
+     * Checks if the given [token] is still the active, non-expired flight.
+     */
+    fun isTokenActive(token: FrameToken): Boolean {
+        return activeTokenId == token.id
+    }
+
+    /**
+     * Completes frame processing for [token]. Only releases the concurrency lock if [token] owns the active flight.
+     * Safely closes the underlying imageProxy.
+     */
+    fun finishFrameProcessing(token: FrameToken) {
+        synchronized(this) {
+            if (activeTokenId == token.id) {
+                activeTokenId = 0L
+            }
+        }
+        token.close()
+    }
+
+    /**
+     * Legacy helper for callers not utilizing FrameToken.
+     */
+    fun shouldProcessFrame(imageProxy: ImageProxy): Boolean {
+        val token = acquireFrameToken(imageProxy) ?: return false
+        // Keep activeTokenId set and close proxy only when finishFrameProcessing is called
         return true
     }
 
     /**
-     * Must be called in a finally block after frame processing completes.
+     * Legacy release for callers not utilizing FrameToken.
      */
     fun finishFrameProcessing() {
-        isAnalyzing.set(false)
+        synchronized(this) {
+            activeTokenId = 0L
+        }
     }
 
     /**
@@ -121,11 +178,14 @@ class ScannerController(
     }
 
     fun reset() {
-        isAnalyzing.set(false)
-        candidateFrameCount = 0
-        lastCandidatePayload = null
-        lastPresentedPayload = null
-        lastPresentedTimeMs = 0L
-        _state.value = ScannerState.IDLE
+        synchronized(this) {
+            activeTokenId = 0L
+            lastAnalyzedTimeMs = 0L
+            candidateFrameCount = 0
+            lastCandidatePayload = null
+            lastPresentedPayload = null
+            lastPresentedTimeMs = 0L
+            _state.value = ScannerState.IDLE
+        }
     }
 }

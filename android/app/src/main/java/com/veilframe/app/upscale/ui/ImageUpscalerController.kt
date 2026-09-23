@@ -946,7 +946,11 @@ class ImageUpscalerController(
                     FileOutputStream(outFile).use { fos ->
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
                     }
-                    savedUri = Uri.fromFile(outFile)
+                    savedUri = try {
+                        FileProvider.getUriForFile(activity, "${activity.packageName}.provider", outFile)
+                    } catch (_: Exception) {
+                        Uri.fromFile(outFile)
+                    }
                 }
 
                 withContext(Dispatchers.Main) {

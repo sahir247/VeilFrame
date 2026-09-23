@@ -1123,7 +1123,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.2.7
+                VeilFrame v2.2.8
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution

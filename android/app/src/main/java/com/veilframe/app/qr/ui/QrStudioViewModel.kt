@@ -94,7 +94,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateLogoFraction(fraction: Float) {
         _state.value = _state.value.copy(logoFraction = fraction.coerceIn(0.10f, 0.35f))
-        regenerate(debounceMs = 0)
+        regenerate(debounceMs = 120)
     }
 
     fun updateBackgroundImage(bmp: Bitmap?) {
@@ -109,15 +109,24 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateBackgroundImageAlpha(alpha: Float) {
         _state.value = _state.value.copy(backgroundImageAlpha = alpha.coerceIn(0.05f, 1.0f))
-        regenerate(debounceMs = 0)
+        regenerate(debounceMs = 120)
     }
 
     fun terminateSession() {
         generateJob?.cancel()
         generateJob = null
-        val bmp = _state.value.bitmap
+        val s = _state.value
+        val bmp = s.bitmap
         if (bmp != null && !bmp.isRecycled) {
             bmp.recycle()
+        }
+        val logo = s.logo
+        if (logo != null && !logo.isRecycled) {
+            logo.recycle()
+        }
+        val bgBmp = s.backgroundImage
+        if (bgBmp != null && !bgBmp.isRecycled) {
+            bgBmp.recycle()
         }
         _state.value = UiState(content = "")
     }
