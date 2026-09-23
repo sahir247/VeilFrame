@@ -220,9 +220,9 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
+                android:layout_marginBottom="16dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="16dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
@@ -235,20 +235,19 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="PRIVACY FORENSICS &amp; AI BUNDLER"
+                        android:text="VEILFRAME"
                         android:textColor="@color/vf_primary"
-                        android:textSize="12sp"
+                        android:textSize="13sp"
                         android:textStyle="bold"
-                        android:letterSpacing="0.06" />
+                        android:letterSpacing="0.08" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:text="Inspect, sanitize, and package your digital assets with 100% on-device local execution."
+                        android:layout_marginTop="4dp"
+                        android:text="100% on-device privacy forensics, media studios &amp; offline AI"
                         android:textColor="@color/vf_text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="3dp" />
+                        android:textSize="12sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -311,7 +310,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Visual video compressor, trimming, rotation, resolution scaling, speed, and size constraints."
+                            android:text="Trim, scale, rotate &amp; compress video"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -373,7 +372,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Crop, resize, rotate, color filter presets, EXIF editing, and deep compression."
+                            android:text="Crop, filter presets, EXIF &amp; compression"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -435,7 +434,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="AI super-resolution (Real-ESRGAN &amp; Lanczos) with tiled inference and 100% offline privacy."
+                            android:text="Offline AI super-resolution (Real-ESRGAN)"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -497,7 +496,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Generate styled QR codes with 11 artistic rendering modes, logos, and safe CameraX scanning."
+                            android:text="12 artistic styles, presets &amp; safe scanner"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -522,7 +521,7 @@
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
-            <!-- Tool 4: Video Cleaner -->
+            <!-- Tool 5: Video Cleaner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolVideo"
                 android:layout_width="match_parent"
@@ -570,7 +569,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Scrub bitstream metadata and protect against sensor fingerprinting."
+                            android:text="Scrub bitstream metadata &amp; sensor noise"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -584,7 +583,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 5: Image Cleaner -->
+            <!-- Tool 6: Image Cleaner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolImage"
                 android:layout_width="match_parent"
@@ -632,7 +631,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Strip EXIF, GPS coordinates, camera maker notes, and thumbnails."
+                            android:text="Strip EXIF, GPS &amp; camera maker notes"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -657,7 +656,7 @@
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
 
-            <!-- Tool 6: Folder Scanner -->
+            <!-- Tool 7: Folder Scanner -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolFolder"
                 android:layout_width="match_parent"
@@ -705,7 +704,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Perform deep forensic directory audits, secret scans, and duplicate hunts."
+                            android:text="Forensic audits, secrets &amp; duplicate hunt"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -719,7 +718,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 7: AI Bundle -->
+            <!-- Tool 8: AI Bundle -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolAi"
                 android:layout_width="match_parent"
@@ -767,7 +766,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Package source code into token-budgeted LLM analysis bundles."
+                            android:text="Source code LLM analysis bundler"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -781,7 +780,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Tool 8: Markdown Viewer -->
+            <!-- Tool 9: Markdown Viewer -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardToolMarkdownViewer"
                 android:layout_width="match_parent"
@@ -825,13 +824,13 @@
                             android:textStyle="bold"
                             android:letterSpacing="0.04" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="3dp"
-                                android:text="Read &amp; edit GFM docs with live preview, offline Mermaid, KaTeX, TOC, code copy, and New MD Maker."
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="GFM preview, Mermaid, KaTeX &amp; editor"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <ImageView
@@ -843,12 +842,12 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Core Capabilities -->
+            <!-- Core Guarantees -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="CORE CAPABILITIES"
+                android:layout_marginBottom="10dp"
+                android:text="CORE GUARANTEES"
                 android:textColor="@color/vf_text_muted"
                 android:textSize="11sp"
                 android:textStyle="bold"
@@ -859,78 +858,62 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="12dp"
+                app:cardCornerRadius="16dp"
                 app:strokeColor="@color/vf_surface_stroke"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="horizontal"
+                    android:padding="16dp"
+                    android:baselineAligned="false">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="LOCAL PROCESSING"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:layout_marginBottom="12dp"
-                        android:text="Your files stay on your device. Zero external API calls or cloud telemetry."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:layout_weight="1"
+                        android:orientation="vertical">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="PRIVACY FIRST"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:layout_marginBottom="12dp"
-                        android:text="Sensitive credentials, API keys, and device identifiers are masked or removed."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔒 100% Local"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="FORENSIC ANALYSIS"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:layout_marginBottom="12dp"
-                        android:text="SHA-256 integrity, PRNU sensor noise mitigation, and duplicate hunting."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Zero cloud telemetry"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="AUDITABLE REPORTS"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Real-time execution telemetry and structured multi-format export."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🛡️ Forensic Grade"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="SHA-256 verified"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

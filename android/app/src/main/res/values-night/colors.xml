@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- VeilFrame Minimal Monochrome Dark Theme Palette -->
-    <!-- Base Surfaces (Deep matte obsidian & subtle graphite) -->
-    <color name="vf_bg_dark">#101012</color>
-    <color name="vf_surface">#18181C</color>
-    <color name="vf_surface_variant">#222228</color>
-    <color name="vf_surface_stroke">#2E2E36</color>
+    <!-- Base Surfaces (True AMOLED pitch black & subtle high-contrast surfaces) -->
+    <color name="vf_bg_dark">#000000</color>
+    <color name="vf_surface">#000000</color>
+    <color name="vf_surface_variant">#0D0D10</color>
+    <color name="vf_surface_stroke">#1C1C20</color>
     
     <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
     <color name="vf_primary">#E4E4E7</color>
@@ -39,9 +39,9 @@
     <color name="vf_text_muted">#71717A</color>
     
     <!-- Console / Telemetry (Deep matte background & calm monospace text) -->
-    <color name="vf_console_bg">#0C0C0E</color>
+    <color name="vf_console_bg">#000000</color>
     <color name="vf_console_text">#D4D4D8</color>
-    <color name="ic_launcher_background">#101012</color>
+    <color name="ic_launcher_background">#000000</color>
 
     <!-- Brand Emblem Vectors -->
     <color name="vf_brand_shield">#E4E4E7</color>

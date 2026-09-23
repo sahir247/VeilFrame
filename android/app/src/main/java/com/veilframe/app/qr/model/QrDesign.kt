@@ -5,6 +5,7 @@ import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.registry.QrStyleRegistry
 
 enum class ErrorCorrectionChoice {
     AUTO, L, M, Q, H;
@@ -133,29 +134,32 @@ data class QrDesign(
     val quietZoneModules: Int = 4,
     val outputSize: Int = 512,
     val backgroundImage: Bitmap? = null,
-    val imageFillMode: Boolean = false
+    val backgroundImageAlpha: Float = 0.25f,
+    val imageFillMode: Boolean = false,
+    val style: QrStyle = QrStyle.BASIC,
+    val timingColor: Int? = null,
+    val alignmentColor: Int? = null
 ) {
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {
+            val def = QrStyleRegistry.get(params.style)
             val isRound = params.dataShape == com.veilframe.app.qr.ModuleShape.ROUND ||
                 params.dataShape == com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE
-            val moduleShape = when (params.style) {
-                QrStyle.BASIC -> if (isRound) ModuleShape.ROUNDED else ModuleShape.SQUARE
-                QrStyle.BUBBLE -> ModuleShape.CIRCLE
-                QrStyle.LINE -> ModuleShape.LINE
-                QrStyle.RANDOM_RECTANGLE -> ModuleShape.ORGANIC
-                QrStyle.DSJ -> ModuleShape.CONNECTED
-                QrStyle.D25 -> ModuleShape.SQUARE
-                else -> ModuleShape.SQUARE
+
+            val moduleShape = if (params.style == QrStyle.BASIC && isRound) {
+                ModuleShape.ROUNDED
+            } else {
+                def.defaultModuleShape
             }
 
-            val finderStyle = when (params.style) {
-                QrStyle.DSJ -> FinderStyle.DSJ
-                QrStyle.BUBBLE -> FinderStyle.CIRCLE
-                else -> if (isRound) FinderStyle.ROUNDED else FinderStyle.CLASSIC
+            val finderStyle = if (params.style == QrStyle.BASIC && isRound) {
+                FinderStyle.ROUNDED
+            } else {
+                def.defaultFinderStyle
             }
 
-            val is25D = params.style == QrStyle.D25
+            val is25D = def.is25D
+            val imageFillMode = def.imageFillMode
             val hasGradient = params.gradientStart != null && params.gradientEnd != null
 
             return QrDesign(
@@ -163,7 +167,8 @@ data class QrDesign(
                 moduleStyle = ModuleStyle(
                     shape = moduleShape,
                     scale = params.dataScale.coerceIn(0.5f, 1.0f),
-                    cornerRadiusFraction = if (isRound) 0.35f else 0.0f
+                    cornerRadiusFraction = if (isRound) 0.35f else 0.0f,
+                    connected = params.style == QrStyle.DSJ
                 ),
                 eyeStyle = EyeStyle(
                     style = finderStyle,
@@ -197,7 +202,9 @@ data class QrDesign(
                 quietZoneModules = 4,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,
-                imageFillMode = params.style == QrStyle.IMAGE_FILL || params.style == QrStyle.IMAGE
+                backgroundImageAlpha = params.backgroundImageAlpha,
+                imageFillMode = imageFillMode,
+                style = params.style
             )
         }
     }

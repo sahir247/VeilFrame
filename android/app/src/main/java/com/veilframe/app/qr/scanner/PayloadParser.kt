@@ -81,15 +81,17 @@ object PayloadParser {
     private fun parseUpi(t: String): QrAction.UpiPayment? {
         if (!t.startsWith("upi://", ignoreCase = true)) return null
         val uri = try { URI(t) } catch (_: Exception) { return null }
+        val queryString = uri.rawQuery ?: t.substringAfter('?', "")
+        if (queryString.isBlank()) return null
 
-        val rawParams = uri.query?.split("&")?.associate {
+        val rawParams = queryString.split("&").filter { it.isNotBlank() }.associate {
             val parts = it.split("=", limit = 2)
-            val key = parts[0]
+            val key = try { URLDecoder.decode(parts[0], "UTF-8") } catch (_: Exception) { parts[0] }
             val value = if (parts.size > 1) {
                 try { URLDecoder.decode(parts[1], "UTF-8") } catch (_: Exception) { parts[1] }
             } else ""
             key to value
-        } ?: emptyMap()
+        }
 
         val pa = rawParams["pa"] ?: return null
         val pn = rawParams["pn"]
@@ -198,8 +200,19 @@ object PayloadParser {
 
     private fun parseContact(t: String): QrAction.Contact? {
         if (t.startsWith("BEGIN:VCARD", ignoreCase = true)) {
-            val lines = t.lines()
+            val rawLines = t.lines()
+            val lines = mutableListOf<String>()
+            for (line in rawLines) {
+                if (lines.isNotEmpty() && (line.startsWith(" ") || line.startsWith("\t"))) {
+                    val lastIdx = lines.size - 1
+                    lines[lastIdx] = lines[lastIdx] + line
+                } else {
+                    lines.add(line)
+                }
+            }
+
             var name: String? = null
+            var nFallback: String? = null
             val phones = mutableListOf<String>()
             val emails = mutableListOf<String>()
             var org: String? = null
@@ -208,31 +221,77 @@ object PayloadParser {
             for (line in lines) {
                 val upper = line.uppercase()
                 when {
-                    upper.startsWith("FN:") -> name = line.substring(3).trim()
-                    upper.startsWith("TEL") && ':' in line -> phones.add(line.substringAfter(':').trim())
-                    upper.startsWith("EMAIL") && ':' in line -> emails.add(line.substringAfter(':').trim())
-                    upper.startsWith("ORG:") -> org = line.substring(4).trim()
-                    upper.startsWith("TITLE:") -> title = line.substring(6).trim()
+                    upper.startsWith("FN:") || upper.startsWith("FN;") -> {
+                        name = unescapeVCard(line.substringAfter(':').trim())
+                    }
+                    upper.startsWith("N:") || upper.startsWith("N;") -> {
+                        val nRaw = line.substringAfter(':').trim()
+                        val parts = nRaw.split(';').map { unescapeVCard(it).trim() }.filter { it.isNotEmpty() }
+                        if (parts.isNotEmpty()) {
+                            nFallback = if (parts.size >= 2) "${parts[1]} ${parts[0]}".trim() else parts[0]
+                        }
+                    }
+                    upper.startsWith("TEL:") || upper.startsWith("TEL;") -> {
+                        phones.add(line.substringAfter(':').trim())
+                    }
+                    upper.startsWith("EMAIL:") || upper.startsWith("EMAIL;") -> {
+                        emails.add(line.substringAfter(':').trim())
+                    }
+                    upper.startsWith("ORG:") || upper.startsWith("ORG;") -> {
+                        org = unescapeVCard(line.substringAfter(':').trim())
+                    }
+                    upper.startsWith("TITLE:") || upper.startsWith("TITLE;") -> {
+                        title = unescapeVCard(line.substringAfter(':').trim())
+                    }
                 }
             }
-            return QrAction.Contact(name, phones, emails, org, title)
+            return QrAction.Contact(
+                name = name ?: nFallback,
+                phones = phones,
+                emails = emails,
+                org = org,
+                title = title
+            )
         }
 
         if (t.startsWith("MECARD:", ignoreCase = true)) {
+            val content = t.substring(7)
             val phones = mutableListOf<String>()
             val emails = mutableListOf<String>()
             var name: String? = null
             var org: String? = null
 
-            Regex("([A-Z]+):([^;]*)").findAll(t.substring(7)).forEach { m ->
-                val k = m.groupValues[1]
-                val v = m.groupValues[2]
-                when (k) {
-                    "N" -> name = v
-                    "TEL" -> phones.add(v)
-                    "EMAIL" -> emails.add(v)
-                    "ORG" -> org = v
+            var i = 0
+            while (i < content.length) {
+                val colonIdx = content.indexOf(':', i)
+                if (colonIdx == -1) break
+                val tag = content.substring(i, colonIdx).trim().uppercase()
+
+                val sb = StringBuilder()
+                var j = colonIdx + 1
+                var escaped = false
+                while (j < content.length) {
+                    val c = content[j]
+                    if (escaped) {
+                        sb.append(c)
+                        escaped = false
+                    } else if (c == '\\') {
+                        escaped = true
+                    } else if (c == ';') {
+                        break
+                    } else {
+                        sb.append(c)
+                    }
+                    j++
                 }
+                val value = sb.toString().trim()
+                when (tag) {
+                    "N" -> name = value.replace("\\;", ";").replace("\\,", ",")
+                    "TEL" -> phones.add(value)
+                    "EMAIL" -> emails.add(value)
+                    "ORG" -> org = value.replace("\\;", ";").replace("\\,", ",")
+                }
+                i = j + 1
             }
             return QrAction.Contact(name, phones, emails, org)
         }
@@ -241,8 +300,34 @@ object PayloadParser {
     }
 
     private fun parseCalendar(t: String): QrAction.CalendarEvent? {
-        if (!t.startsWith("BEGIN:VEVENT", ignoreCase = true)) return null
-        fun findProp(p: String) = Regex("$p:(.*)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.trim()
+        if (!t.startsWith("BEGIN:VEVENT", ignoreCase = true) &&
+            !t.contains("BEGIN:VEVENT", ignoreCase = true)
+        ) return null
+
+        val rawLines = t.lines()
+        val lines = mutableListOf<String>()
+        for (line in rawLines) {
+            if (lines.isNotEmpty() && (line.startsWith(" ") || line.startsWith("\t"))) {
+                val lastIdx = lines.size - 1
+                lines[lastIdx] = lines[lastIdx] + line
+            } else {
+                lines.add(line)
+            }
+        }
+
+        fun findProp(p: String): String? {
+            val prefix1 = "$p:".uppercase()
+            val prefix2 = "$p;".uppercase()
+            for (line in lines) {
+                val upper = line.uppercase()
+                if (upper.startsWith(prefix1) || upper.startsWith(prefix2)) {
+                    val rawVal = line.substringAfter(':').trim()
+                    return unescapeVCard(rawVal)
+                }
+            }
+            return null
+        }
+
         return QrAction.CalendarEvent(
             title = findProp("SUMMARY"),
             dtStart = findProp("DTSTART"),
@@ -258,19 +343,54 @@ object PayloadParser {
     }
 
     /**
-     * URL classification with factual UrlDisposition.
+     * URL classification with factual UrlDisposition, punycode and IDN homograph detection.
      */
     private fun parseUrl(t: String): QrAction.Url? {
-        val uri = try { URI(t) } catch (_: Exception) { return null }
-        val scheme = uri.scheme?.lowercase() ?: return null
-
-        if (scheme != "http" && scheme != "https") {
-            return null
+        val scheme = when {
+            t.startsWith("https://", ignoreCase = true) -> "https"
+            t.startsWith("http://", ignoreCase = true) -> "http"
+            else -> return null
         }
 
-        val host = uri.host ?: ""
+        // Handle potential non-ASCII unicode domains that fail strict RFC 2396 URI parsing
+        val uri = try {
+            URI(t)
+        } catch (_: Exception) {
+            try {
+                val afterScheme = t.substring(scheme.length + 3)
+                val slashIdx = afterScheme.indexOfAny(charArrayOf('/', '?', '#'))
+                val hostPart = if (slashIdx != -1) afterScheme.substring(0, slashIdx) else afterScheme
+                val rest = if (slashIdx != -1) afterScheme.substring(slashIdx) else ""
+                val hostOnly = hostPart.substringBefore(':')
+                val portPart = if (':' in hostPart) ":" + hostPart.substringAfter(':') else ""
+                val asciiHost = java.net.IDN.toASCII(hostOnly, java.net.IDN.ALLOW_UNASSIGNED)
+                URI("$scheme://$asciiHost$portPart$rest")
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        val host = if (uri != null && !uri.host.isNullOrBlank()) {
+            uri.host
+        } else {
+            val afterScheme = t.substring(scheme.length + 3)
+            val slashIdx = afterScheme.indexOfAny(charArrayOf('/', '?', '#'))
+            val hostPart = if (slashIdx != -1) afterScheme.substring(0, slashIdx) else afterScheme
+            hostPart.substringBefore(':')
+        }
+
+        val asciiHost = try {
+            java.net.IDN.toASCII(host, java.net.IDN.ALLOW_UNASSIGNED)
+        } catch (_: Exception) {
+            host
+        }
+
+        val isPunycodeOrIdn = asciiHost.split('.').any { it.startsWith("xn--", ignoreCase = true) } ||
+                host.split('.').any { it.startsWith("xn--", ignoreCase = true) } ||
+                host.any { it.code > 127 }
+
         val disposition = when {
-            host.startsWith("xn--") -> UrlDisposition.PUNYCODE
+            isPunycodeOrIdn -> UrlDisposition.PUNYCODE
             host.matches(Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$""")) -> UrlDisposition.IP_HOST
             scheme == "https" -> UrlDisposition.HTTPS
             scheme == "http" -> UrlDisposition.HTTP
@@ -282,5 +402,12 @@ object PayloadParser {
             disposition = disposition,
             host = host.ifBlank { null }
         )
+    }
+
+    private fun unescapeVCard(value: String): String {
+        return value
+            .replace("\\n", "\n", ignoreCase = true)
+            .replace("\\r", "\r", ignoreCase = true)
+            .replace(Regex("""\\([,;\\&:])""")) { it.groupValues[1] }
     }
 }

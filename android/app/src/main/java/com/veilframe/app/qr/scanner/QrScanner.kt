@@ -25,7 +25,7 @@ import com.google.zxing.common.HybridBinarizer
 class QrScanner(
     private val controller: ScannerController = ScannerController(),
     private val onResult: (String) -> Unit
-) : ImageAnalysis.Analyzer {
+) : ImageAnalysis.Analyzer, java.io.Closeable {
 
     // Bundled offline ML Kit barcode client
     private val mlKitScanner by lazy {
@@ -33,6 +33,12 @@ class QrScanner(
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
             .build()
         BarcodeScanning.getClient(options)
+    }
+
+    override fun close() {
+        try {
+            mlKitScanner.close()
+        } catch (_: Exception) {}
     }
 
     // Secondary fallback ZXing reader
@@ -146,23 +152,34 @@ class QrScanner(
          * Synchronously decodes a QR code from a [Bitmap] (e.g. gallery pick).
          */
         fun decode(bitmap: Bitmap): String? {
-            val pixels = IntArray(bitmap.width * bitmap.height)
-            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            val source = RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
-            val binary = BinaryBitmap(HybridBinarizer(source))
-            val reader = MultiFormatReader().apply {
-                setHints(mapOf(
-                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                    DecodeHintType.TRY_HARDER to true
-                ))
+            val bmp = if (bitmap.width > 1280 || bitmap.height > 1280) {
+                val scale = 1280f / maxOf(bitmap.width, bitmap.height)
+                val targetW = (bitmap.width * scale).toInt().coerceAtLeast(1)
+                val targetH = (bitmap.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+            } else {
+                bitmap
             }
             return try {
+                val pixels = IntArray(bmp.width * bmp.height)
+                bmp.getPixels(pixels, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+                val source = RGBLuminanceSource(bmp.width, bmp.height, pixels)
+                val binary = BinaryBitmap(HybridBinarizer(source))
+                val reader = MultiFormatReader().apply {
+                    setHints(mapOf(
+                        DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                        DecodeHintType.TRY_HARDER to true
+                    ))
+                }
                 val res = reader.decode(binary)
                 reader.reset()
                 res.text
             } catch (_: Exception) {
-                reader.reset()
                 null
+            } finally {
+                if (bmp != bitmap) {
+                    bmp.recycle()
+                }
             }
         }
     }

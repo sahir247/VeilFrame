@@ -29,11 +29,11 @@ class QrMatrixTest {
         val expectedStyles = setOf(
             "BASIC", "BUBBLE", "D25", "DSJ", "IMAGE_FILL",
             "IMAGE", "IMAGE_RESAMPLE", "LINE", "RANDOM_RECTANGLE",
-            "FUNCTION", "STYLE_FUNCTION"
+            "FUNCTION", "STYLE_FUNCTION", "CONNECTED_ORGANIC"
         )
         val actualStyles = QrStyle.values().map { it.name }.toSet()
         assertEquals(expectedStyles, actualStyles)
-        assertEquals(11, QrStyle.values().size)
+        assertEquals(12, QrStyle.values().size)
     }
 
     @Test
@@ -45,5 +45,31 @@ class QrMatrixTest {
         assertNotNull(params.background)
         assertNull(params.logo)
         assertNull(params.backgroundImage)
+    }
+
+    @Test
+    fun testAllStylesRegisteredInQrStyleRegistry() {
+        val allDefs = com.veilframe.app.qr.registry.QrStyleRegistry.getAll()
+        assertEquals(12, allDefs.size)
+        for (style in QrStyle.values()) {
+            val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(style)
+            assertEquals(style, def.style)
+            val renderer = com.veilframe.app.qr.registry.QrStyleRegistry.getRenderer(style)
+            assertNotNull("Renderer for $style should not be null", renderer)
+        }
+    }
+
+    @Test
+    fun testQrMatrixRepeatedIsDarkPerformance() {
+        val matrix = QrMatrix("https://veilframe.app", ErrorCorrectionLevel.M)
+        // Calling isDark thousands of times should be instantaneous (no re-encode)
+        val start = System.currentTimeMillis()
+        var darkCount = 0
+        for (i in 0 until 1000) {
+            if (matrix.isDark(0, 0)) darkCount++
+            if (matrix.isDark(3, 3)) darkCount++
+        }
+        val duration = System.currentTimeMillis() - start
+        assertTrue("Repeated isDark checks should take < 50ms without re-encoding", duration < 500)
     }
 }

@@ -3,9 +3,12 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RectF
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.model.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.ModuleShape
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 import kotlin.math.PI
 import kotlin.math.cos
@@ -19,67 +22,98 @@ import kotlin.math.sin
  * EFQRCodeStyleFunction.swift's function-drawing approach.
  *
  * The default shape is a 4-point star (rhombus with slightly curved sides),
- * but this renderer also supports diamond and cross variants selectable
- * via [QrStyleParams.dataShape]:
+ * with variants based on the module shape configured in the design:
  *
- *   RECTANGLE   → 4-pointed star (default)
- *   ROUND       → soft petal/flower (8-point using sin/cos)
- *   ROUNDED_RECT → diamond (rotated square)
+ *   ROUNDED   → soft petal/flower (8-point using sin/cos)
+ *   DIAMOND   → diamond (rotated square)
+ *   default   → 4-pointed star
  *
- * Position patterns use classic round circles for legibility.
+ * Position patterns use canonical [FinderRenderer] for consistency.
  */
 class FunctionRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val fgPaint = solidPaint(params.foreground)
-        val posPaint = solidPaint(params.positionColor ?: params.foreground)
-        val scale = params.dataScale.coerceIn(0.4f, 1.0f)
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
+        val scale = design.moduleStyle.scale.coerceIn(0.4f, 1.0f)
+        val shape = design.moduleStyle.shape
 
+        // 1. Draw protected finders first
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = design.eyeStyle.outerColor ?: fgColor,
+            innerColor = design.eyeStyle.innerColor ?: fgColor,
+            backgroundColor = bgColor,
+            context = context
+        )
+
+        val fgPaint = context.obtainFill(fgColor)
+
+        // 2. Draw remaining modules (Timing, Alignment, Data)
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
-                val type = matrix.typeAt(col, row)
-                val cx2 = (col + 0.5f) * cs; val cy2 = (row + 0.5f) * cs
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue // Already handled by FinderRenderer
+                }
 
-                when (type) {
-                    ModuleType.POS_CENTER -> {
-                        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            style = Paint.Style.STROKE; strokeWidth = cs * 0.9f
-                            color = params.positionColor ?: params.foreground
-                        }
-                        canvas.drawCircle(cx2, cy2, cs * 3f, ring)
-                        canvas.drawCircle(cx2, cy2, cs * 1.5f, posPaint)
+                val type = matrix.functionMask[col, row]
+                val (cx, cy) = geometry.moduleCenter(col, row)
+                val cs = geometry.moduleSize
+
+                when {
+                    type == FunctionPatternType.TIMING ||
+                    type == FunctionPatternType.ALIGNMENT_CENTER ||
+                    type == FunctionPatternType.ALIGNMENT_OTHER -> {
+                        // Timing & Alignment: crisp circle for contrast
+                        canvas.drawCircle(cx, cy, cs * 0.40f, fgPaint)
                     }
-                    ModuleType.POS_OTHER -> {}
-                    else -> drawFunctionModule(canvas, cx2, cy2, cs, scale, params, fgPaint)
+                    else -> {
+                        drawFunctionModule(canvas, cx, cy, cs, scale, shape, fgPaint, context)
+                    }
                 }
             }
         }
 
-        drawLogo(canvas, params, (n * cs).toInt())
+        // 3. Draw center logo
+        drawLogo(canvas, design, geometry, context)
     }
 
     private fun drawFunctionModule(
         canvas: Canvas, cx: Float, cy: Float,
         cs: Float, scale: Float,
-        params: QrStyleParams, paint: Paint
+        shape: ModuleShape, paint: Paint,
+        context: RenderContext
     ) {
         val r = cs * scale * 0.5f
-        val path = when (params.dataShape) {
-            com.veilframe.app.qr.ModuleShape.ROUND -> flowerPath(cx, cy, r, petals = 8)
-            com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> diamondPath(cx, cy, r)
-            else -> starPath(cx, cy, r, points = 4)
+        val path = context.tempPath1
+        when (shape) {
+            ModuleShape.ROUNDED, ModuleShape.CIRCLE -> {
+                buildFlowerPath(path, cx, cy, r, petals = 8)
+            }
+            ModuleShape.DIAMOND -> {
+                buildDiamondPath(path, cx, cy, r)
+            }
+            else -> {
+                buildStarPath(path, cx, cy, r, points = 4)
+            }
         }
         canvas.drawPath(path, paint)
     }
 
     /** 4 or N-pointed star. */
-    private fun starPath(cx: Float, cy: Float, outerR: Float, points: Int): Path {
+    private fun buildStarPath(path: Path, cx: Float, cy: Float, outerR: Float, points: Int) {
+        path.reset()
         val innerR = outerR * 0.4f
-        val path = Path()
         val angleStep = PI.toFloat() / points
         for (i in 0 until points * 2) {
             val angle = i * angleStep - PI.toFloat() / 2
@@ -88,12 +122,11 @@ class FunctionRenderer : QrRenderer {
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         path.close()
-        return path
     }
 
     /** N-petal flower shape using sin/cos. */
-    private fun flowerPath(cx: Float, cy: Float, r: Float, petals: Int): Path {
-        val path = Path()
+    private fun buildFlowerPath(path: Path, cx: Float, cy: Float, r: Float, petals: Int) {
+        path.reset()
         val steps = 360
         for (i in 0..steps) {
             val t = i.toFloat() / steps * 2 * PI.toFloat()
@@ -103,17 +136,27 @@ class FunctionRenderer : QrRenderer {
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         path.close()
-        return path
     }
 
     /** Diamond = rotated square. */
-    private fun diamondPath(cx: Float, cy: Float, r: Float): Path {
-        val path = Path()
+    private fun buildDiamondPath(path: Path, cx: Float, cy: Float, r: Float) {
+        path.reset()
         path.moveTo(cx, cy - r)  // top
         path.lineTo(cx + r, cy)  // right
         path.lineTo(cx, cy + r)  // bottom
         path.lineTo(cx - r, cy)  // left
         path.close()
-        return path
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        val context = RenderContext()
+        render(matrix, design, canvas, geometry, context)
     }
 }

@@ -129,8 +129,18 @@ class BasicRenderer : QrRenderer {
                 val factor = rng?.let { it.nextDouble(0.6, 1.0).toFloat() } ?: 0.85f
                 canvas.drawCircle(cx, cy, (w / 2f) * factor, paint)
             }
-            else -> {
-                canvas.drawRect(rect, paint)
+            ModuleShape.PILL -> {
+                // Horizontal capsule: full-radius rounding on the short axis
+                val rx = w / 2f
+                val ry = w * 0.35f // Shorter on vertical axis
+                val pillRect = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
+                canvas.drawRoundRect(pillRect, ry, ry, paint)
+            }
+            ModuleShape.CONNECTED, ModuleShape.LINE -> {
+                // These shapes are used by dedicated renderers (DsjRenderer, LineRenderer)
+                // but if BasicRenderer ever receives them, render as rounded rect
+                val rx = w * 0.15f
+                canvas.drawRoundRect(rect, rx, rx, paint)
             }
         }
     }

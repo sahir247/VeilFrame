@@ -17,7 +17,8 @@ enum class QrStyle {
     LINE,               // Horizontal/vertical stripe patterns
     RANDOM_RECTANGLE,   // Randomized rectangle modules with noise
     FUNCTION,           // Function-based custom module shapes
-    STYLE_FUNCTION      // Style-level function override
+    STYLE_FUNCTION,     // Style-level function override
+    CONNECTED_ORGANIC   // Organic graph-connected module paths
 }
 
 /** Shape options for individual module zones (position patterns, data modules, etc.). */

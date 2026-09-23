@@ -113,12 +113,24 @@ class MainNavigationController(
                 toolView = outgoingToolView
             ) {
                 hideAllToolViewsExcept(null)
+                if (previousScreen == ScreenState.QR_STUDIO) {
+                    val qrFrag = activity.supportFragmentManager.findFragmentById(binding.fragmentQrStudio.id)
+                    if (qrFrag != null) {
+                        activity.supportFragmentManager.beginTransaction().remove(qrFrag).commitAllowingStateLoss()
+                    }
+                }
             }
         } else {
             binding.scrollHome.visibility = View.VISIBLE
             binding.scrollHome.alpha = 1.0f
             binding.scrollHome.translationX = 0f
             hideAllToolViewsExcept(null)
+            if (previousScreen == ScreenState.QR_STUDIO) {
+                val qrFrag = activity.supportFragmentManager.findFragmentById(binding.fragmentQrStudio.id)
+                if (qrFrag != null) {
+                    activity.supportFragmentManager.beginTransaction().remove(qrFrag).commitAllowingStateLoss()
+                }
+            }
         }
 
         onHomeScreenEntered()

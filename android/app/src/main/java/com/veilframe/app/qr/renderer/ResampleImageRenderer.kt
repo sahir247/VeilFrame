@@ -4,10 +4,13 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.RectF
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.model.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.BackgroundStyle
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
@@ -23,55 +26,104 @@ import com.veilframe.app.qr.QrStyleParams
  */
 class ResampleImageRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val totalSize = (n * cs).toInt()
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
+        val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+        val hsv = FloatArray(3)
 
-        // Downsample background image to n×n
-        val thumb: Bitmap? = params.backgroundImage?.let {
-            Bitmap.createScaledBitmap(it, n, n, true)
+        val bgImage = design.backgroundImage ?: (design.background as? BackgroundStyle.Image)?.bitmap
+
+        if (bgImage == null) {
+            // Fallback to basic rendering if no image provided
+            BasicRenderer().render(matrix, design, canvas, geometry, context)
+            return
         }
 
-        val scale = params.dataScale.coerceIn(0.5f, 1.0f)
+        // 1. Draw protected finders first
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = design.eyeStyle.outerColor ?: fgColor,
+            innerColor = design.eyeStyle.innerColor ?: fgColor,
+            backgroundColor = bgColor,
+            context = context
+        )
 
+        // Downsample background image to n×n
+        val thumb: Bitmap = Bitmap.createScaledBitmap(bgImage, n, n, true)
+
+        val paint = context.fillPaint
+
+        // 2. Draw remaining modules (Timing, Alignment, Data)
         for (col in 0 until n) {
             for (row in 0 until n) {
-                val type = matrix.typeAt(col, row)
-                val dark = matrix.isDark(col, row)
-                val x = col * cs; val y = row * cs
-                val cx2 = x + cs * 0.5f; val cy2 = y + cs * 0.5f
+                if (!matrix.isDark(col, row)) continue
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue // Already handled by FinderRenderer
+                }
 
-                when (type) {
-                    ModuleType.POS_CENTER -> {
-                        if (!dark) continue
-                        val p = solidPaint(params.positionColor ?: params.foreground)
-                        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            style = Paint.Style.STROKE; strokeWidth = cs * 0.9f
-                            color = params.positionColor ?: params.foreground
-                        }
-                        canvas.drawRect(x - 2.5f * cs, y - 2.5f * cs, x + 3.5f * cs, y + 3.5f * cs, ring)
-                        canvas.drawRect(x - cs, y - cs, x + 2f * cs, y + 2f * cs, p)
+                val type = matrix.functionMask[col, row]
+                val rect = geometry.moduleRect(col, row, scale)
+
+                when {
+                    type == FunctionPatternType.TIMING ||
+                    type == FunctionPatternType.ALIGNMENT_CENTER ||
+                    type == FunctionPatternType.ALIGNMENT_OTHER -> {
+                        // Timing & Alignment: preserve solid foreground for contrast
+                        paint.reset()
+                        paint.isAntiAlias = true
+                        paint.style = Paint.Style.FILL
+                        paint.color = fgColor
+                        canvas.drawRoundRect(rect, rect.width() * 0.2f, rect.width() * 0.2f, paint)
                     }
-                    ModuleType.POS_OTHER -> {}
                     else -> {
-                        if (!dark) continue
                         // Sample color from downsampled image at (col, row)
-                        val moduleColor: Int = if (thumb != null && col < thumb.width && row < thumb.height) {
-                            thumb.getPixel(col, row)
+                        val moduleColor: Int = if (col < thumb.width && row < thumb.height) {
+                            val pixel = thumb.getPixel(col, row)
+                            // Apply luminance compression to guarantee dark polarity
+                            Color.colorToHSV(pixel, hsv)
+                            hsv[2] = 0.05f + (hsv[2] * 0.50f) // Map 0..1 → 0.05..0.55
+                            hsv[1] = (hsv[1] * 1.15f).coerceAtMost(1.0f)
+                            Color.HSVToColor(hsv)
                         } else {
-                            params.foreground
+                            fgColor
                         }
-                        val paint = solidPaint(moduleColor)
-                        val half = cs * scale / 2f
-                        canvas.drawRect(cx2 - half, cy2 - half, cx2 + half, cy2 + half, paint)
+
+                        paint.reset()
+                        paint.isAntiAlias = true
+                        paint.style = Paint.Style.FILL
+                        paint.color = moduleColor
+                        val rx = rect.width() * 0.15f
+                        canvas.drawRoundRect(rect, rx, rx, paint)
                     }
                 }
             }
         }
 
-        thumb?.recycle()
-        drawLogo(canvas, params, totalSize)
+        thumb.recycle()
+
+        // 3. Draw center logo
+        drawLogo(canvas, design, geometry, context)
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        val context = RenderContext()
+        render(matrix, design, canvas, geometry, context)
     }
 }

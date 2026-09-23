@@ -18,6 +18,13 @@ object BitmapCache {
         override fun sizeOf(key: String, bitmap: Bitmap): Int {
             return bitmap.byteCount
         }
+
+        override fun entryRemoved(evicted: Boolean, key: String, oldValue: Bitmap, newValue: Bitmap?) {
+            super.entryRemoved(evicted, key, oldValue, newValue)
+            if (evicted && oldValue != newValue && !oldValue.isRecycled) {
+                oldValue.recycle()
+            }
+        }
     }
 
     /**
@@ -36,7 +43,7 @@ object BitmapCache {
             return source
         }
 
-        val key = "${source.hashCode()}_${safeW}x${safeH}_$filter"
+        val key = "${source.generationId}_${System.identityHashCode(source)}_${source.width}x${source.height}_${safeW}x${safeH}_$filter"
         synchronized(cache) {
             val cached = cache.get(key)
             if (cached != null && !cached.isRecycled) {

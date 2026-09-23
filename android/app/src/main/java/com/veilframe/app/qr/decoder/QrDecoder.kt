@@ -29,16 +29,17 @@ data class DecodeResult(
 /**
  * Universal interface for QR decoders.
  */
-interface QrDecoder {
+interface QrDecoder : java.io.Closeable {
     val id: String
     suspend fun decode(bitmap: Bitmap): DecodeResult
+    override fun close() {}
 }
 
 /**
  * Deterministic generator-side validator using ZXing Java.
  *
  * Configured per technical requirements:
- * - Reuses configured [MultiFormatReader] with decodeWithState().
+ * - Thread-safe per-thread [MultiFormatReader] with decodeWithState().
  * - Sets [DecodeHintType.POSSIBLE_FORMATS] to QR_CODE.
  * - Sets [DecodeHintType.TRY_HARDER] to true.
  * - Strictly OMITS [DecodeHintType.PURE_BARCODE] because artistic QRs feature
@@ -48,12 +49,14 @@ class ZxingQrDecoder : QrDecoder {
 
     override val id: String = "ZXing-Java"
 
-    private val reader = MultiFormatReader().apply {
-        val hints = mapOf(
-            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-            DecodeHintType.TRY_HARDER to true
-        )
-        setHints(hints)
+    private val threadLocalReader = ThreadLocal.withInitial {
+        MultiFormatReader().apply {
+            val hints = mapOf(
+                DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                DecodeHintType.TRY_HARDER to true
+            )
+            setHints(hints)
+        }
     }
 
     override suspend fun decode(bitmap: Bitmap): DecodeResult {
@@ -64,6 +67,7 @@ class ZxingQrDecoder : QrDecoder {
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
         val source = RGBLuminanceSource(width, height, pixels)
+        val reader = threadLocalReader.get()!!
 
         // Pass 1: Standard HybridBinarizer (adaptive thresholding)
         try {
@@ -104,6 +108,10 @@ class ZxingQrDecoder : QrDecoder {
                 decoderId = id
             )
         }
+    }
+
+    override fun close() {
+        threadLocalReader.remove()
     }
 }
 
@@ -174,5 +182,11 @@ class MlKitQrDecoder : QrDecoder {
                 )
             )
         }
+    }
+
+    override fun close() {
+        try {
+            scanner.close()
+        } catch (_: Exception) {}
     }
 }

@@ -24,7 +24,8 @@ enum class ScannerState {
 class ScannerController(
     private val frameThrottleMs: Long = 100L, // ~10 processed FPS
     private val duplicateCooldownMs: Long = 2500L,
-    private val requiredStableFrames: Int = 2
+    private val requiredStableFrames: Int = 2,
+    private val analysisTimeoutMs: Long = 1500L
 ) {
     private val _state = MutableStateFlow(ScannerState.IDLE)
     val state: StateFlow<ScannerState> = _state.asStateFlow()
@@ -44,6 +45,11 @@ class ScannerController(
      */
     fun shouldProcessFrame(imageProxy: ImageProxy): Boolean {
         val now = System.currentTimeMillis()
+
+        // 0. Watchdog guard: if previous analysis stalled without callback, force release
+        if (isAnalyzing.get() && now - lastAnalyzedTimeMs > analysisTimeoutMs) {
+            isAnalyzing.set(false)
+        }
 
         // 1. Throttle frame rate to ~8-10 FPS
         if (now - lastAnalyzedTimeMs < frameThrottleMs) {
@@ -78,6 +84,8 @@ class ScannerController(
         // Duplicate suppression window
         if (payload == lastPresentedPayload && now - lastPresentedTimeMs < duplicateCooldownMs) {
             _state.value = ScannerState.COOLDOWN
+            candidateFrameCount = 0
+            lastCandidatePayload = null
             return false
         }
 
@@ -90,14 +98,17 @@ class ScannerController(
         }
 
         if (candidateFrameCount >= requiredStableFrames) {
-            _state.value = ScannerState.STABLE
             lastPresentedPayload = payload
             lastPresentedTimeMs = now
-            _state.value = ScannerState.PRESENTED
+            _state.value = ScannerState.STABLE
             return true
         }
 
         return false
+    }
+
+    fun markPresented() {
+        _state.value = ScannerState.PRESENTED
     }
 
     fun onFrameMiss() {

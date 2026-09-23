@@ -5,6 +5,7 @@
     <!-- AMOLED True Black Overlay -->
     <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
         <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
         <item name="colorSurface">#000000</item>
         <item name="colorSurfaceVariant">#0A0A0C</item>
         <item name="colorOnSurface">@color/vf_text_primary</item>

@@ -13,6 +13,7 @@ import com.veilframe.app.qr.model.BackgroundStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.renderer.*
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.validation.ScanabilityValidator
@@ -194,15 +195,6 @@ object QrGenerator {
     }
 
     private fun getRendererForDesign(design: QrDesign): QrRenderer {
-        return when {
-            design.effects.is25D -> Renderer25D()
-            design.imageFillMode -> ImageFillRenderer()
-            design.backgroundImage != null -> ImageRenderer()
-            design.moduleStyle.connected -> DsjRenderer()
-            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.CIRCLE -> BubbleRenderer()
-            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.LINE -> LineRenderer()
-            design.moduleStyle.shape == com.veilframe.app.qr.model.ModuleShape.ORGANIC -> RandomRectangleRenderer()
-            else -> BasicRenderer()
-        }
+        return QrStyleRegistry.getRenderer(design.style)
     }
 }

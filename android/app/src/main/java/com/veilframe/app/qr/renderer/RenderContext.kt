@@ -24,6 +24,7 @@ class RenderContext {
 
     val tempPaint: Paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
+    val tempRectF: RectF = RectF()
     val tempRectF1: RectF = RectF()
     val tempRectF2: RectF = RectF()
     val tempPath1: Path = Path()
@@ -63,6 +64,7 @@ class RenderContext {
         tempPath1.reset()
         tempPath2.reset()
         tempMatrix.reset()
+        tempRectF.setEmpty()
         tempRectF1.setEmpty()
         tempRectF2.setEmpty()
     }

@@ -1,9 +1,9 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
-import android.graphics.RectF
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.model.QrMatrix.ModuleType
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 import kotlin.random.Random
 
@@ -12,59 +12,79 @@ import kotlin.random.Random
  *
  * Each dark data module is drawn as a rectangle with randomly jittered
  * size (within ±15% of cell size) and a slight random position offset.
- * The jitter seed is deterministic via [QrStyleParams.randomRectSeed]
+ * The jitter seed is deterministic via [design.effects.seed]
  * so re-renders are reproducible.
  *
- * Position patterns are drawn as solid squares for reliable scanning.
- *
- * Mirrors EFQRCodeStyleRandomRectangle.swift's randomized-rect approach.
+ * Position patterns are drawn via canonical [FinderRenderer] for reliable scanning.
+ * Allocation-free implementation using [RenderContext].
  */
 class RandomRectangleRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val rng = Random(params.randomRectSeed)
-        val fgPaint = solidPaint(params.foreground)
-        val posPaint = solidPaint(params.positionColor ?: params.foreground)
+        val cs = geometry.moduleSize
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
+        val baseScale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
 
+        // 1. Draw finders first with protected canonical geometry
+        val eyeOuter = design.eyeStyle.outerColor ?: fgColor
+        val eyeInner = design.eyeStyle.innerColor ?: fgColor
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = design.eyeStyle.style,
+            outerColor = eyeOuter,
+            innerColor = eyeInner,
+            backgroundColor = bgColor,
+            context = context
+        )
+
+        val fgPaint = context.obtainFill(fgColor)
+        val rng = Random(design.effects.seed)
+
+        // 2. Data and functional modules
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
-                val type = matrix.typeAt(col, row)
-                val x = col * cs; val y = row * cs
-
-                when (type) {
-                    ModuleType.POS_CENTER -> {
-                        val ring = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            style = android.graphics.Paint.Style.STROKE; strokeWidth = cs * 0.9f
-                            color = params.positionColor ?: params.foreground
-                        }
-                        canvas.drawRect(x - 2.5f * cs, y - 2.5f * cs, x + 3.5f * cs, y + 3.5f * cs, ring)
-                        canvas.drawRect(x - cs, y - cs, x + 2f * cs, y + 2f * cs, posPaint)
-                    }
-                    ModuleType.POS_OTHER -> {}
-                    else -> {
-                        // Random size: base scale ± 15%
-                        val baseScale = params.dataScale.coerceIn(0.5f, 1.0f)
-                        val jitter = rng.nextFloat() * 0.3f - 0.15f     // [-0.15, +0.15]
-                        val scale = (baseScale + jitter).coerceIn(0.25f, 1.0f)
-                        // Random offset within the cell (up to ±10%)
-                        val dx = (rng.nextFloat() - 0.5f) * cs * 0.1f
-                        val dy = (rng.nextFloat() - 0.5f) * cs * 0.1f
-                        val half = cs * scale / 2f
-                        val cx2 = x + cs * 0.5f + dx; val cy2 = y + cs * 0.5f + dy
-                        val r = half * rng.nextFloat().coerceIn(0.1f, 0.4f) // corner radius
-                        canvas.drawRoundRect(
-                            RectF(cx2 - half, cy2 - half, cx2 + half, cy2 + half),
-                            r, r, fgPaint
-                        )
-                    }
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue
                 }
+
+                val x = geometry.offsetX + col * cs
+                val y = geometry.offsetY + row * cs
+
+                val jitter = rng.nextFloat() * 0.3f - 0.15f // [-0.15, +0.15]
+                val scale = (baseScale + jitter).coerceIn(0.25f, 1.0f)
+                val dx = (rng.nextFloat() - 0.5f) * cs * 0.1f
+                val dy = (rng.nextFloat() - 0.5f) * cs * 0.1f
+                val half = cs * scale / 2f
+                val cx = x + cs * 0.5f + dx
+                val cy = y + cs * 0.5f + dy
+                val r = half * rng.nextFloat().coerceIn(0.1f, 0.4f)
+
+                context.tempRectF.set(cx - half, cy - half, cx + half, cy + half)
+                canvas.drawRoundRect(context.tempRectF, r, r, fgPaint)
             }
         }
 
-        drawLogo(canvas, params, (n * cs).toInt())
+        drawLogo(canvas, design, geometry, context)
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        render(matrix, design, canvas, geometry, RenderContext())
     }
 }

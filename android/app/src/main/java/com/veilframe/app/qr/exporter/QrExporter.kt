@@ -70,6 +70,26 @@ object QrExporter {
     }
 
     /**
+     * Validates [bitmap] with strict scanability gate prior to saving.
+     */
+    suspend fun saveToGalleryValidated(
+        context: Context,
+        bitmap: Bitmap,
+        content: String,
+        design: QrDesign,
+        matrix: QrMatrix,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        quality: Int = 100
+    ): Pair<Uri?, com.veilframe.app.qr.validation.ScanabilityReport> {
+        val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bitmap, design, matrix, content)
+        if (!report.isScanReady) {
+            return Pair(null, report)
+        }
+        val uri = saveToGallery(context, bitmap, format, quality)
+        return Pair(uri, report)
+    }
+
+    /**
      * Saves true vector SVG markup to the Downloads or Documents directory.
      */
     suspend fun saveSvg(
@@ -116,6 +136,9 @@ object QrExporter {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share QR Code"))
+        val chooser = Intent.createChooser(intent, "Share QR Code").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
     }
 }

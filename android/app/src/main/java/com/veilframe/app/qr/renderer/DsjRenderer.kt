@@ -1,71 +1,85 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
-import android.graphics.RectF
-import com.veilframe.app.qr.QrMatrix
-import com.veilframe.app.qr.model.QrMatrix.ModuleType
+import android.graphics.Paint
+import com.veilframe.app.qr.model.FinderStyle
+import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
+import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
  * Style 4 — DSJ (DJ-cross)
  *
- * Each dark position detection pattern is rendered as a cross/DSJ shape:
- * center block + four cardinal arm stubs (like a DJ mixer layout).
+ * Each dark position detection pattern is rendered as a cross/DSJ shape
+ * via [FinderRenderer] with [FinderStyle.DSJ].
  *
  * Data modules use the same DSJ cross motif scaled to a single cell:
  * the center square and four tiny protruding tabs.
  *
  * Mirrors EFQRCodeStyleDSJ.swift position-pattern rendering and extends it
  * to all data modules for a consistent aesthetic.
+ * Allocation-free implementation using [RenderContext].
  */
 class DsjRenderer : QrRenderer {
 
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        canvas.drawColor(params.background)
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
         val n = matrix.size
-        val cs = cellSize
-        val fg = solidPaint(params.foreground)
-        val pos = solidPaint(params.positionColor ?: params.foreground)
-        val scale = params.dataScale.coerceIn(0.5f, 1.0f)
+        val cs = geometry.moduleSize
+        val fgColor = design.palette.foreground
+        val bgColor = design.palette.background
+        val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
 
+        // 1. Draw DSJ finders
+        val eyeOuter = design.eyeStyle.outerColor ?: fgColor
+        val eyeInner = design.eyeStyle.innerColor ?: fgColor
+        FinderRenderer.renderFinders(
+            canvas = canvas,
+            geometry = geometry,
+            style = FinderStyle.DSJ,
+            outerColor = eyeOuter,
+            innerColor = eyeInner,
+            backgroundColor = bgColor,
+            context = context
+        )
+
+        val fgPaint = context.obtainFill(fgColor)
+
+        // 2. Data and functional modules
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
-                val type = matrix.typeAt(col, row)
-                val x = col * cs; val y = row * cs
-                val cx = x + cs * 0.5f; val cy = y + cs * 0.5f
-
-                when (type) {
-                    ModuleType.POS_CENTER -> drawDsjPosition(canvas, cx, cy, cs, pos)
-                    ModuleType.POS_OTHER  -> { /* position pattern drawn as group from CENTER */ }
-                    else -> drawDsjData(canvas, cx, cy, cs, scale, fg)
+                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                    continue
                 }
+
+                val x = geometry.offsetX + col * cs
+                val y = geometry.offsetY + row * cs
+                val cx = x + cs * 0.5f
+                val cy = y + cs * 0.5f
+
+                drawDsjData(canvas, cx, cy, cs, scale, fgPaint)
             }
         }
 
-        drawLogo(canvas, params, (n * cs).toInt())
-    }
-
-    /** DSJ position: central 3×3 block + 4 arm stubs extending ±3 cells. */
-    private fun drawDsjPosition(canvas: Canvas, cx: Float, cy: Float, cs: Float, paint: android.graphics.Paint) {
-        val half = cs * 1.5f   // half of 3-cell central block
-        val stubW = cs * 0.6f  // width of arm stub
-        val stubLen = cs * 0.8f
-
-        // Central block
-        canvas.drawRect(cx - half, cy - half, cx + half, cy + half, paint)
-        // Left arm
-        canvas.drawRect(cx - half - stubLen, cy - stubW / 2f, cx - half, cy + stubW / 2f, paint)
-        // Right arm
-        canvas.drawRect(cx + half, cy - stubW / 2f, cx + half + stubLen, cy + stubW / 2f, paint)
-        // Top arm
-        canvas.drawRect(cx - stubW / 2f, cy - half - stubLen, cx + stubW / 2f, cy - half, paint)
-        // Bottom arm
-        canvas.drawRect(cx - stubW / 2f, cy + half, cx + stubW / 2f, cy + half + stubLen, paint)
+        drawLogo(canvas, design, geometry, context)
     }
 
     /** DSJ data: mini cross in each dark cell. */
-    private fun drawDsjData(canvas: Canvas, cx: Float, cy: Float, cs: Float, scale: Float, paint: android.graphics.Paint) {
+    private fun drawDsjData(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        cs: Float,
+        scale: Float,
+        paint: Paint
+    ) {
         val half = cs * scale * 0.5f
         val armW = half * 0.35f
 
@@ -77,5 +91,16 @@ class DsjRenderer : QrRenderer {
         canvas.drawRect(cx - armW, cy + half, cx + armW, cy + half + tab, paint)  // bottom
         canvas.drawRect(cx - half - tab, cy - armW, cx - half, cy + armW, paint)  // left
         canvas.drawRect(cx + half, cy - armW, cx + half + tab, cy + armW, paint)  // right
+    }
+
+    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * cellSize).toInt(),
+            outputHeight = (matrix.size * cellSize).toInt(),
+            quietZoneModules = 0
+        )
+        render(matrix, design, canvas, geometry, RenderContext())
     }
 }

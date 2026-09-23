@@ -48,13 +48,18 @@ class QrMatrix(
     }
 
     /**
-     * Convenience constructor that encodes [content] synchronously.
+     * Convenience constructor that encodes [content] synchronously exactly once.
      */
     constructor(content: String, ecLevel: ErrorCorrectionLevel = ErrorCorrectionLevel.M) : this(
-        size = QrEncoder.encode(content, ecLevel).matrix.size,
-        version = QrEncoder.encode(content, ecLevel).version,
+        encoded = QrEncoder.encode(content, ecLevel).matrix,
+        ecLevel = ecLevel
+    )
+
+    private constructor(encoded: QrMatrix, ecLevel: ErrorCorrectionLevel) : this(
+        size = encoded.size,
+        version = encoded.version,
         errorCorrection = ecLevel,
-        isDarkPredicate = { c, r -> QrEncoder.encode(content, ecLevel).matrix.isDark(c, r) }
+        isDarkPredicate = { c, r -> encoded.isDark(c, r) }
     )
 }
 

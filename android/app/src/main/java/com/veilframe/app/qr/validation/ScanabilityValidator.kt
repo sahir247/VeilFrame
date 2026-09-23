@@ -163,6 +163,8 @@ object ScanabilityValidator {
 
         val isScanReady = quietZoneOk &&
                 contrastReport.isContrastAdequate &&
+                finderReport.findersIntact &&
+                finderReport.separatorsClear &&
                 !logoReport.hasProtectedOverlap &&
                 logoReport.isWithinErrorCorrectionCapacity &&
                 decodeMatches
@@ -188,7 +190,7 @@ object ScanabilityValidator {
         val darkLuminances = mutableListOf<Float>()
         val lightLuminances = mutableListOf<Float>()
 
-        val step = maxOf(1, matrix.size / 20) // Sample sample grid
+        val step = maxOf(1, matrix.size / 20) // Sample grid
         for (row in 0 until matrix.size step step) {
             for (col in 0 until matrix.size step step) {
                 val (cx, cy) = geometry.moduleCenter(col, row)
@@ -237,39 +239,89 @@ object ScanabilityValidator {
         )
     }
 
+    private fun getModuleLuminance(bitmap: Bitmap, geometry: QrGeometry, col: Int, row: Int): Float {
+        val (cx, cy) = geometry.moduleCenter(col, row)
+        val px = cx.toInt().coerceIn(0, bitmap.width - 1)
+        val py = cy.toInt().coerceIn(0, bitmap.height - 1)
+        val pixel = bitmap.getPixel(px, py)
+        val r = Color.red(pixel)
+        val g = Color.green(pixel)
+        val b = Color.blue(pixel)
+        return (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
+    }
+
     private fun verifyFinderIntegrity(
         bitmap: Bitmap,
         geometry: QrGeometry,
         matrix: QrMatrix
     ): FinderIntegrityReport {
-        // Sample all 3 finders: TL, BL, TR
+        val n = matrix.size
         val finderCenters = listOf(
             Pair(3, 3),
-            Pair(3, matrix.size - 4),
-            Pair(matrix.size - 4, 3)
+            Pair(3, n - 4),
+            Pair(n - 4, 3)
         )
 
         var allIntact = true
-        for ((fcCol, fcRow) in finderCenters) {
-            val (cx, cy) = geometry.moduleCenter(fcCol, fcRow)
-            val px = cx.toInt().coerceIn(0, bitmap.width - 1)
-            val py = cy.toInt().coerceIn(0, bitmap.height - 1)
-            val pixel = bitmap.getPixel(px, py)
+        var separatorsClear = true
 
-            // Center of finder MUST be dark
-            val r = Color.red(pixel)
-            val g = Color.green(pixel)
-            val b = Color.blue(pixel)
-            val lum = (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
-            if (lum > 0.55f) {
+        for ((fcCol, fcRow) in finderCenters) {
+            val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow)
+            // Center core MUST be dark
+            if (coreLum > 0.60f) {
+                allIntact = false
+                break
+            }
+
+            // Light ring (radius 2) should be lighter than core
+            val lightRingLums = listOf(
+                getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow),
+                getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow),
+                getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1)),
+                getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1))
+            )
+            val avgLightRing = lightRingLums.average().toFloat()
+            if (avgLightRing < coreLum || avgLightRing < 0.35f) {
+                allIntact = false
+                break
+            }
+
+            // Outer ring (radius 3) should be darker than light ring
+            val outerRingLums = listOf(
+                getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow),
+                getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow),
+                getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1)),
+                getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1))
+            )
+            val avgOuterRing = outerRingLums.average().toFloat()
+            if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
                 allIntact = false
                 break
             }
         }
 
+        // Check top-left separator modules
+        var separatorDarkCount = 0
+        var totalSeparatorSamples = 0
+        for (r in 0..7) {
+            if (7 < n && r < n) {
+                totalSeparatorSamples++
+                if (getModuleLuminance(bitmap, geometry, 7, r) < 0.40f) separatorDarkCount++
+            }
+        }
+        for (c in 0..7) {
+            if (c < n && 7 < n) {
+                totalSeparatorSamples++
+                if (getModuleLuminance(bitmap, geometry, c, 7) < 0.40f) separatorDarkCount++
+            }
+        }
+        if (totalSeparatorSamples > 0 && separatorDarkCount.toFloat() / totalSeparatorSamples > 0.35f) {
+            separatorsClear = false
+        }
+
         return FinderIntegrityReport(
             findersIntact = allIntact,
-            separatorsClear = true
+            separatorsClear = separatorsClear
         )
     }
 

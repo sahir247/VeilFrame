@@ -10,6 +10,9 @@
     <!-- Legacy read-only access for Android 12 and below (API <= 32) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Legacy write access for Android 9 and below (API <= 28) for QrExporter public directory writes -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- Foreground service permissions for asynchronous processing and worker notifications -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -20,6 +23,11 @@
     <!-- In-App GitHub Releases updates & APK installation -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Wi-Fi QR network auto-connect and status inspection -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- Explicit package visibility for APK installer on Android 11+ (API 30+) -->
     <queries>
         <intent>
