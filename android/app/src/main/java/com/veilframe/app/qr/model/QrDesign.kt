@@ -38,7 +38,20 @@ enum class ModuleShape {
     DIAMOND,
     HEX,
     LINE,
-    SQUIRCLE
+    SQUIRCLE,
+    STAR,
+    BUBBLE,
+    CUSTOM
+}
+
+enum class ModuleFill {
+    SOLID,
+    LINEAR_GRADIENT,
+    RADIAL_GRADIENT,
+    SWEEP_GRADIENT,
+    IMAGE,
+    IMAGE_SAMPLED,
+    NOISE
 }
 
 enum class FinderStyle {
@@ -82,9 +95,22 @@ sealed interface BackgroundStyle {
 
 data class ModuleStyle(
     val shape: ModuleShape = ModuleShape.SQUARE,
+    val fill: ModuleFill = ModuleFill.SOLID,
     val scale: Float = 1.0f,
     val cornerRadiusFraction: Float = 0.25f,
     val connected: Boolean = false
+)
+
+data class TimingStyle(
+    val shape: ModuleShape = ModuleShape.ROUNDED,
+    val color: Int? = null,
+    val scale: Float = 1.0f
+)
+
+data class AlignmentStyle(
+    val shape: ModuleShape = ModuleShape.ROUNDED,
+    val color: Int? = null,
+    val scale: Float = 1.0f
 )
 
 data class EyeStyle(
@@ -138,7 +164,9 @@ data class QrDesign(
     val imageFillMode: Boolean = false,
     val style: QrStyle = QrStyle.BASIC,
     val timingColor: Int? = null,
-    val alignmentColor: Int? = null
+    val alignmentColor: Int? = null,
+    val timingStyle: TimingStyle = TimingStyle(color = timingColor),
+    val alignmentStyle: AlignmentStyle = AlignmentStyle(color = alignmentColor)
 ) {
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {
@@ -162,10 +190,30 @@ data class QrDesign(
             val imageFillMode = def.imageFillMode
             val hasGradient = params.gradientStart != null && params.gradientEnd != null
 
+            val moduleFill = when {
+                params.style == QrStyle.IMAGE_RESAMPLE -> ModuleFill.IMAGE_SAMPLED
+                imageFillMode -> ModuleFill.IMAGE
+                hasGradient -> ModuleFill.LINEAR_GRADIENT
+                else -> ModuleFill.SOLID
+            }
+
+            val timingShape = when (params.timingShape) {
+                com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
+                com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
+                else -> ModuleShape.ROUNDED
+            }
+
+            val alignShape = when (params.alignShape) {
+                com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
+                com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
+                else -> ModuleShape.ROUNDED
+            }
+
             return QrDesign(
                 correction = if (params.logo != null) ErrorCorrectionChoice.H else ErrorCorrectionChoice.AUTO,
                 moduleStyle = ModuleStyle(
                     shape = moduleShape,
+                    fill = moduleFill,
                     scale = params.dataScale.coerceIn(0.5f, 1.0f),
                     cornerRadiusFraction = if (isRound) 0.35f else 0.0f,
                     connected = params.style == QrStyle.DSJ
@@ -204,7 +252,11 @@ data class QrDesign(
                 backgroundImage = params.backgroundImage,
                 backgroundImageAlpha = params.backgroundImageAlpha,
                 imageFillMode = imageFillMode,
-                style = params.style
+                style = params.style,
+                timingColor = params.timingColor,
+                alignmentColor = params.alignmentColor,
+                timingStyle = TimingStyle(shape = timingShape, color = params.timingColor),
+                alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor)
             )
         }
     }

@@ -21,6 +21,9 @@ class QrGeometry(
     val offsetX: Float = (outputWidth - (totalModules * moduleSize)) / 2f + (quietZoneModules * moduleSize)
     val offsetY: Float = (outputHeight - (totalModules * moduleSize)) / 2f + (quietZoneModules * moduleSize)
 
+    val contentWidth: Float get() = matrixSize * moduleSize
+    val contentHeight: Float get() = matrixSize * moduleSize
+
     /**
      * Returns the bounding rectangle in output pixels for the module at (col, row).
      */

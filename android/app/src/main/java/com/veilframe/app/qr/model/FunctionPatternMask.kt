@@ -34,6 +34,25 @@ class FunctionPatternMask(val size: Int, val version: Int) {
     }
 
     /**
+     * Maps the module at (col, row) to canonical [QrModuleRole].
+     */
+    fun roleAt(col: Int, row: Int): QrModuleRole {
+        if (col !in 0 until size || row !in 0 until size) return QrModuleRole.QUIET_ZONE
+        return when (mask[col][row]) {
+            FunctionPatternType.FINDER_CORE,
+            FunctionPatternType.FINDER_LIGHT -> QrModuleRole.FINDER_INNER
+            FunctionPatternType.FINDER_OUTER -> QrModuleRole.FINDER_OUTER
+            FunctionPatternType.SEPARATOR -> QrModuleRole.SEPARATOR
+            FunctionPatternType.TIMING -> QrModuleRole.TIMING
+            FunctionPatternType.ALIGNMENT_CENTER -> QrModuleRole.ALIGNMENT_CENTER
+            FunctionPatternType.ALIGNMENT_OTHER -> QrModuleRole.ALIGNMENT_BORDER
+            FunctionPatternType.FORMAT -> QrModuleRole.FORMAT
+            FunctionPatternType.VERSION -> QrModuleRole.VERSION
+            FunctionPatternType.DATA -> QrModuleRole.DATA
+        }
+    }
+
+    /**
      * Returns true if the module at (col, row) is part of a protected functional pattern
      * that must maintain strict contrast and geometry for barcode decoders.
      */

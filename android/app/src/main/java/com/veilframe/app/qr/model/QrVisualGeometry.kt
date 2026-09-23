@@ -154,4 +154,36 @@ object QrVisualGeometry {
 
         return Faces25D(topPath, leftPath, rightPath)
     }
+
+    /**
+     * Constructs a 5-pointed star path fitting the given rectangle.
+     */
+    fun createStarPath(rect: RectF, path: Path = Path()): Path {
+        path.reset()
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val outerR = minOf(rect.width(), rect.height()) / 2f
+        val innerR = outerR * 0.45f
+
+        for (i in 0 until 10) {
+            val r = if (i % 2 == 0) outerR else innerR
+            val angle = -Math.PI / 2.0 + (i * Math.PI / 5.0)
+            val x = (cx + r * Math.cos(angle)).toFloat()
+            val y = (cy + r * Math.sin(angle)).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        return path
+    }
+
+    /**
+     * Constructs an organic bubble path with soft pill/squircle rounding.
+     */
+    fun createBubblePath(rect: RectF, path: Path = Path()): Path {
+        path.reset()
+        val rx = rect.width() * 0.42f
+        val ry = rect.height() * 0.42f
+        path.addRoundRect(rect, rx, ry, Path.Direction.CW)
+        return path
+    }
 }

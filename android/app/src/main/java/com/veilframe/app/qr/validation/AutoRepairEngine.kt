@@ -81,7 +81,7 @@ object AutoRepairEngine {
                 }
 
                 RepairReason.REDUCE_DEFORMATION -> {
-                    if (design.moduleStyle.shape == ModuleShape.ORGANIC || design.moduleStyle.shape == ModuleShape.LINE) {
+                    if (design.moduleStyle.shape != ModuleShape.SQUARE && design.moduleStyle.shape != ModuleShape.ROUNDED) {
                         design = design.copy(
                             moduleStyle = design.moduleStyle.copy(shape = ModuleShape.ROUNDED, cornerRadiusFraction = 0.25f)
                         )

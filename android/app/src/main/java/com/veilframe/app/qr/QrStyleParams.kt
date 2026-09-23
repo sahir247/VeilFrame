@@ -83,4 +83,7 @@ data class QrStyleParams(
     // --- Gradient (optional, applied over rendered bitmap) ---
     val gradientStart: Int? = null,
     val gradientEnd: Int? = null,
+    // --- Per-zone colors ---
+    val timingColor: Int? = null,
+    val alignmentColor: Int? = null
 )

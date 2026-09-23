@@ -1,87 +1,82 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.RectF
-import com.veilframe.app.qr.model.FinderStyle
-import com.veilframe.app.qr.model.FunctionPatternType
-import com.veilframe.app.qr.model.ModuleShape
-import com.veilframe.app.qr.model.QrDesign
-import com.veilframe.app.qr.model.QrGeometry
-import com.veilframe.app.qr.model.QrMatrix
-import com.veilframe.app.qr.model.QrVisualGeometry
-import com.veilframe.app.qr.QrStyleParams
+import android.graphics.Shader
+import com.veilframe.app.qr.model.*
 import kotlin.random.Random
 
 /**
  * Style 1 — BASIC (Visual Grammar: Geometric)
  *
  * Implements clean geometric module rendering:
- * - Square, Rounded, Circle, Dot, Squircle, Diamond, Hex
+ * - Square, Rounded, Circle, Dot, Squircle, Diamond, Hex, Star, Bubble
  * - High-contrast canonical finder patterns via [FinderRenderer]
+ * - Protected structural lifecycle via [BaseQrRenderer]
+ * - Module fill options (Solid, Linear Gradient, Radial Gradient)
  * - Allocation-free execution via [RenderContext]
  */
-class BasicRenderer : QrRenderer {
+class BasicRenderer : BaseQrRenderer() {
 
-    override fun render(
+    override fun renderDataModules(
+        canvas: Canvas,
         matrix: QrMatrix,
         design: QrDesign,
-        canvas: Canvas,
         geometry: QrGeometry,
         context: RenderContext
     ) {
         val n = matrix.size
         val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
         val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
         val shape = design.moduleStyle.shape
+        val fill = design.moduleStyle.fill
 
-        // 1. Draw finders first with protected canonical geometry
-        val eyeOuter = design.eyeStyle.outerColor ?: fgColor
-        val eyeInner = design.eyeStyle.innerColor ?: fgColor
-        FinderRenderer.renderFinders(
-            canvas = canvas,
-            geometry = geometry,
-            style = design.eyeStyle.style,
-            outerColor = eyeOuter,
-            innerColor = eyeInner,
-            backgroundColor = bgColor,
-            context = context
-        )
+        val hasGradient = fill == ModuleFill.LINEAR_GRADIENT || fill == ModuleFill.RADIAL_GRADIENT ||
+            (design.palette.gradientType != GradientType.NONE &&
+                design.palette.gradientStart != null && design.palette.gradientEnd != null)
 
         val fgPaint = context.obtainFill(fgColor)
-        val rng = Random(design.effects.seed)
 
-        // 2. Draw remaining modules (Timing, Alignment, Data)
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                if (!matrix.isDark(col, row)) continue
-                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
-                    continue // Already handled by FinderRenderer
-                }
+        if (hasGradient) {
+            val startColor = design.palette.gradientStart ?: fgColor
+            val endColor = design.palette.gradientEnd ?: fgColor
+            val isRadial = fill == ModuleFill.RADIAL_GRADIENT || design.palette.gradientType == GradientType.RADIAL
 
-                val rect = geometry.moduleRect(col, row, scale)
-                val type = matrix.functionMask[col, row]
-
-                when {
-                    type == FunctionPatternType.TIMING -> {
-                        // Timing pattern: preserve crisp contrast
-                        drawModuleShape(canvas, rect, ModuleShape.ROUNDED, 0.2f, fgPaint, context)
-                    }
-                    type == FunctionPatternType.ALIGNMENT_CENTER || type == FunctionPatternType.ALIGNMENT_OTHER -> {
-                        // Alignment pattern
-                        drawModuleShape(canvas, rect, ModuleShape.ROUNDED, 0.25f, fgPaint, context)
-                    }
-                    else -> {
-                        // Regular Data module
-                        drawModuleShape(canvas, rect, shape, design.moduleStyle.cornerRadiusFraction, fgPaint, context, rng)
-                    }
-                }
+            fgPaint.shader = if (isRadial) {
+                RadialGradient(
+                    geometry.offsetX + geometry.contentWidth / 2f,
+                    geometry.offsetY + geometry.contentHeight / 2f,
+                    maxOf(geometry.contentWidth, geometry.contentHeight) / 2f,
+                    startColor,
+                    endColor,
+                    Shader.TileMode.CLAMP
+                )
+            } else {
+                LinearGradient(
+                    geometry.offsetX, geometry.offsetY,
+                    geometry.offsetX + geometry.contentWidth, geometry.offsetY + geometry.contentHeight,
+                    startColor,
+                    endColor,
+                    Shader.TileMode.CLAMP
+                )
             }
         }
 
-        // 3. Composite center logo if configured
-        drawLogo(canvas, design, geometry, context)
+        val rng = Random(design.effects.seed)
+
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (!matrix.isDark(col, row)) continue
+                // Skip protected patterns (handled by BaseQrRenderer)
+                if (matrix.isProtected(col, row)) continue
+
+                val rect = geometry.moduleRect(col, row, scale)
+                drawModuleShape(canvas, rect, shape, design.moduleStyle.cornerRadiusFraction, fgPaint, context, rng)
+            }
+        }
     }
 
     private fun drawModuleShape(
@@ -124,36 +119,28 @@ class BasicRenderer : QrRenderer {
                 val path = QrVisualGeometry.createHexagonPath(rect, context.tempPath1)
                 canvas.drawPath(path, paint)
             }
+            ModuleShape.STAR -> {
+                val path = QrVisualGeometry.createStarPath(rect, context.tempPath1)
+                canvas.drawPath(path, paint)
+            }
+            ModuleShape.BUBBLE -> {
+                val path = QrVisualGeometry.createBubblePath(rect, context.tempPath1)
+                canvas.drawPath(path, paint)
+            }
             ModuleShape.ORGANIC -> {
-                // Deterministic variable radius circle
                 val factor = rng?.let { it.nextDouble(0.6, 1.0).toFloat() } ?: 0.85f
                 canvas.drawCircle(cx, cy, (w / 2f) * factor, paint)
             }
             ModuleShape.PILL -> {
-                // Horizontal capsule: full-radius rounding on the short axis
                 val rx = w / 2f
-                val ry = w * 0.35f // Shorter on vertical axis
+                val ry = w * 0.35f
                 val pillRect = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
                 canvas.drawRoundRect(pillRect, ry, ry, paint)
             }
-            ModuleShape.CONNECTED, ModuleShape.LINE -> {
-                // These shapes are used by dedicated renderers (DsjRenderer, LineRenderer)
-                // but if BasicRenderer ever receives them, render as rounded rect
+            ModuleShape.CONNECTED, ModuleShape.LINE, ModuleShape.CUSTOM -> {
                 val rx = w * 0.15f
                 canvas.drawRoundRect(rect, rx, rx, paint)
             }
         }
-    }
-
-    override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
-        val design = QrDesign.fromQrStyleParams(params)
-        val geometry = QrGeometry(
-            matrixSize = matrix.size,
-            outputWidth = (matrix.size * cellSize).toInt(),
-            outputHeight = (matrix.size * cellSize).toInt(),
-            quietZoneModules = 0 // Legacy caller specified exact matrix canvas
-        )
-        val context = RenderContext()
-        render(matrix, design, canvas, geometry, context)
     }
 }

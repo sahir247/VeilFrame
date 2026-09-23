@@ -15,6 +15,7 @@ import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.renderer.*
+import com.veilframe.app.qr.validation.AutoRepairEngine
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.validation.ScanabilityValidator
 import kotlinx.coroutines.runBlocking
@@ -98,6 +99,52 @@ object QrGenerator {
         } catch (t: Throwable) {
             return QrRenderResult.Failure(t.message ?: "Failed to generate QR code", t)
         }
+    }
+
+    /**
+     * Generates a QR code with an automated closed-loop repair feedback pipeline.
+     *
+     * If the candidate visual style fails scanability checks or real ZXing decode tests,
+     * the [AutoRepairEngine] automatically refines parameters (restores quiet zones,
+     * increases contrast, softens extreme shapes, elevates error correction) across up to
+     * [maxAttempts] iterations until a verified scannable QR is produced.
+     */
+    fun generateWithAutoRepair(
+        content: String,
+        design: QrDesign = QrDesign(),
+        maxAttempts: Int = 3
+    ): QrRenderResult {
+        if (content.isBlank()) {
+            return QrRenderResult.Failure("QR content must not be blank")
+        }
+
+        var currentDesign = design
+        var lastSuccess: QrRenderResult.Success? = null
+        val repairTrail = mutableListOf<String>()
+
+        for (attempt in 1..maxAttempts) {
+            val result = generateWithResult(content, currentDesign)
+            when (result) {
+                is QrRenderResult.Failure -> return result
+                is QrRenderResult.Success -> {
+                    lastSuccess = result
+                    // Check if decode succeeded and report is scan-ready
+                    if (result.report.isScanReady && result.report.decodeResult.success) {
+                        return result
+                    }
+                    if (attempt < maxAttempts) {
+                        val repair = AutoRepairEngine.repair(currentDesign, result.report, content)
+                        if (repair.changesApplied.isEmpty() || repair.repairedDesign == currentDesign) {
+                            break
+                        }
+                        repairTrail.addAll(repair.changesApplied)
+                        currentDesign = repair.repairedDesign
+                    }
+                }
+            }
+        }
+
+        return lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
     }
 
     /**
