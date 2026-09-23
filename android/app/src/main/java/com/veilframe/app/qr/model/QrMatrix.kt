@@ -26,13 +26,62 @@ enum class QrModuleRole {
 }
 
 /**
+ * 8-way spatial connectivity matrix for a QR module.
+ *
+ * Models topological relationships with adjacent modules (orthogonal and diagonal),
+ * enabling organic blob rendering, directional capsuling, and smooth corner filleting
+ * while respecting the discrete module grid.
+ */
+data class ModuleNeighborhood(
+    val up: Boolean = false,
+    val down: Boolean = false,
+    val left: Boolean = false,
+    val right: Boolean = false,
+    val upLeft: Boolean = false,
+    val upRight: Boolean = false,
+    val downLeft: Boolean = false,
+    val downRight: Boolean = false
+) {
+    /** True if module has no dark orthogonal neighbors. */
+    val isIsolated: Boolean get() = !up && !down && !left && !right
+
+    /** True if module connects horizontally but not vertically. */
+    val isHorizontalLine: Boolean get() = (left || right) && !up && !down
+
+    /** True if module connects vertically but not horizontally. */
+    val isVerticalLine: Boolean get() = (up || down) && !left && !right
+
+    /** True if module connects in all 4 cardinal directions. */
+    val isCross: Boolean get() = up && down && left && right
+
+    /** Number of cardinal orthogonal connections (0 to 4). */
+    val orthogonalCount: Int
+        get() = (if (up) 1 else 0) + (if (down) 1 else 0) + (if (left) 1 else 0) + (if (right) 1 else 0)
+
+    /** Number of diagonal connections (0 to 4). */
+    val diagonalCount: Int
+        get() = (if (upLeft) 1 else 0) + (if (upRight) 1 else 0) + (if (downLeft) 1 else 0) + (if (downRight) 1 else 0)
+
+    /** Corner detection flags. */
+    val isCornerTopLeft: Boolean get() = !up && !left && (down && right)
+    val isCornerTopRight: Boolean get() = !up && !right && (down && left)
+    val isCornerBottomLeft: Boolean get() = !down && !left && (up && right)
+    val isCornerBottomRight: Boolean get() = !down && !right && (up && left)
+    val isCorner: Boolean get() = isCornerTopLeft || isCornerTopRight || isCornerBottomLeft || isCornerBottomRight
+
+    /** T-Junction detection flags. */
+    val isTJunction: Boolean get() = orthogonalCount == 3
+}
+
+/**
  * Logical representation of a single QR module in the matrix.
  */
 data class QrModule(
     val col: Int,
     val row: Int,
     val isDark: Boolean,
-    val role: QrModuleRole
+    val role: QrModuleRole,
+    val neighbors: ModuleNeighborhood = ModuleNeighborhood()
 ) {
     val isProtected: Boolean get() = role.isProtected
 }
@@ -70,12 +119,32 @@ class QrMatrix(
     /** Returns the functional or data role of the module at (col, row). */
     fun roleAt(col: Int, row: Int): QrModuleRole = functionMask.roleAt(col, row)
 
-    /** Returns the complete [QrModule] descriptor at (col, row). */
+    /** Computes the 8-way spatial neighborhood for the module at (col, row). */
+    fun neighborhoodAt(
+        col: Int,
+        row: Int,
+        predicate: (c: Int, r: Int) -> Boolean = { c, r -> isDark(c, r) }
+    ): ModuleNeighborhood {
+        fun safe(c: Int, r: Int): Boolean = c in 0 until size && r in 0 until size && predicate(c, r)
+        return ModuleNeighborhood(
+            up = safe(col, row - 1),
+            down = safe(col, row + 1),
+            left = safe(col - 1, row),
+            right = safe(col + 1, row),
+            upLeft = safe(col - 1, row - 1),
+            upRight = safe(col + 1, row - 1),
+            downLeft = safe(col - 1, row + 1),
+            downRight = safe(col + 1, row + 1)
+        )
+    }
+
+    /** Returns the complete [QrModule] descriptor at (col, row), including spatial neighborhood. */
     fun moduleAt(col: Int, row: Int): QrModule = QrModule(
         col = col,
         row = row,
         isDark = isDark(col, row),
-        role = roleAt(col, row)
+        role = roleAt(col, row),
+        neighbors = neighborhoodAt(col, row)
     )
 
     /** True if the module is part of a protected functional pattern. */

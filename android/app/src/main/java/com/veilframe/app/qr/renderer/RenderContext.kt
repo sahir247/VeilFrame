@@ -29,6 +29,8 @@ class RenderContext {
     val tempRectF2: RectF = RectF()
     val tempPath1: Path = Path()
     val tempPath2: Path = Path()
+    val tempPath3: Path = Path()
+    val tempPath4: Path = Path()
     val tempMatrix: Matrix = Matrix()
 
     val cornerRadiiBuffer: FloatArray = FloatArray(8)
@@ -63,6 +65,8 @@ class RenderContext {
     fun reset() {
         tempPath1.reset()
         tempPath2.reset()
+        tempPath3.reset()
+        tempPath4.reset()
         tempMatrix.reset()
         tempRectF.setEmpty()
         tempRectF1.setEmpty()

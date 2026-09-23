@@ -186,4 +186,177 @@ object QrVisualGeometry {
         path.addRoundRect(rect, rx, ry, Path.Direction.CW)
         return path
     }
+
+    /**
+     * Constructs an organic connected blob path that smoothly merges with adjacent modules
+     * based on its [ModuleNeighborhood].
+     */
+    fun createOrganicBlobPath(rect: RectF, neighbors: ModuleNeighborhood, path: Path = Path()): Path {
+        path.reset()
+        val w = rect.width()
+        val h = rect.height()
+        val r = minOf(w, h) * 0.45f
+
+        // Independent corner radii based on adjacent connections:
+        // A corner is rounded if NEITHER of its orthogonal edges has a neighbor.
+        val rTL = if (!neighbors.up && !neighbors.left) r else 0f
+        val rTR = if (!neighbors.up && !neighbors.right) r else 0f
+        val rBR = if (!neighbors.down && !neighbors.right) r else 0f
+        val rBL = if (!neighbors.down && !neighbors.left) r else 0f
+
+        val radii = floatArrayOf(
+            rTL, rTL,
+            rTR, rTR,
+            rBR, rBR,
+            rBL, rBL
+        )
+        path.addRoundRect(rect, radii, Path.Direction.CW)
+        return path
+    }
+
+    /**
+     * Constructs a directional line module path with optional round end-caps.
+     */
+    fun createLinePath(
+        rect: RectF,
+        direction: LineDirection,
+        thicknessFraction: Float = 0.5f,
+        roundCaps: Boolean = true,
+        path: Path = Path()
+    ): Path {
+        path.reset()
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val w = rect.width()
+        val h = rect.height()
+        val halfT = (minOf(w, h) * thicknessFraction.coerceIn(0.1f, 1.0f)) / 2f
+        val radius = if (roundCaps) halfT else 0f
+
+        when (direction) {
+            LineDirection.HORIZONTAL -> {
+                val lineRect = RectF(rect.left, cy - halfT, rect.right, cy + halfT)
+                path.addRoundRect(lineRect, radius, radius, Path.Direction.CW)
+            }
+            LineDirection.VERTICAL -> {
+                val lineRect = RectF(cx - halfT, rect.top, cx + halfT, rect.bottom)
+                path.addRoundRect(lineRect, radius, radius, Path.Direction.CW)
+            }
+            LineDirection.CROSS -> {
+                val hRect = RectF(rect.left, cy - halfT, rect.right, cy + halfT)
+                val vRect = RectF(cx - halfT, rect.top, cx + halfT, rect.bottom)
+                path.addRoundRect(hRect, radius, radius, Path.Direction.CW)
+                path.addRoundRect(vRect, radius, radius, Path.Direction.CW)
+            }
+            LineDirection.X -> {
+                // Diagonal cross path
+                val diagR = halfT * 0.8f
+                // First diagonal (\)
+                path.moveTo(rect.left, rect.top + halfT)
+                path.lineTo(rect.left + halfT, rect.top)
+                path.lineTo(rect.right, rect.bottom - halfT)
+                path.lineTo(rect.right - halfT, rect.bottom)
+                path.close()
+                // Second diagonal (/)
+                val path2 = Path()
+                path2.moveTo(rect.right - halfT, rect.top)
+                path2.lineTo(rect.right, rect.top + halfT)
+                path2.lineTo(rect.left + halfT, rect.bottom)
+                path2.lineTo(rect.left, rect.bottom - halfT)
+                path2.close()
+                path.op(path2, Path.Op.UNION)
+            }
+            LineDirection.DIAGONAL_FORWARD -> {
+                // Forward diagonal (/)
+                path.moveTo(rect.right - halfT, rect.top)
+                path.lineTo(rect.right, rect.top + halfT)
+                path.lineTo(rect.left + halfT, rect.bottom)
+                path.lineTo(rect.left, rect.bottom - halfT)
+                path.close()
+            }
+            LineDirection.DIAGONAL_BACKWARD -> {
+                // Backward diagonal (\)
+                path.moveTo(rect.left, rect.top + halfT)
+                path.lineTo(rect.left + halfT, rect.top)
+                path.lineTo(rect.right, rect.bottom - halfT)
+                path.lineTo(rect.right - halfT, rect.bottom)
+                path.close()
+            }
+            LineDirection.LOOP -> {
+                val oval = RectF(cx - halfT * 1.5f, cy - halfT * 1.5f, cx + halfT * 1.5f, cy + halfT * 1.5f)
+                path.addOval(oval, Path.Direction.CW)
+            }
+        }
+        return path
+    }
+
+    /**
+     * Constructs a composite DSJ geometry consisting of a central cross and an X.
+     */
+    fun createCompositeDSJ(
+        rect: RectF,
+        lineThickness: Float = 0.22f,
+        crossScale: Float = 0.85f,
+        path: Path = Path()
+    ): Path {
+        path.reset()
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val w = rect.width() * crossScale
+        val h = rect.height() * crossScale
+        val halfW = w / 2f
+        val halfH = h / 2f
+        val halfT = (minOf(w, h) * lineThickness) / 2f
+
+        // Horizontal bar
+        path.addRect(cx - halfW, cy - halfT, cx + halfW, cy + halfT, Path.Direction.CW)
+        // Vertical bar
+        path.addRect(cx - halfT, cy - halfH, cx + halfT, cy + halfH, Path.Direction.CW)
+
+        // Center dot
+        val centerSize = halfT * 1.8f
+        path.addRect(cx - centerSize, cy - centerSize, cx + centerSize, cy + centerSize, Path.Direction.CW)
+        return path
+    }
+
+    /**
+     * Constructs grid-aligned 2.5D extruded isometric faces.
+     *
+     * The top face aligns exactly to the QR module grid footprint to guarantee 100% scanability,
+     * while the extruded side and bottom faces provide isometric depth.
+     */
+    fun createGridAligned25DFaces(
+        rect: RectF,
+        depth: Float,
+        angleDegrees: Float = 45f,
+        topPath: Path = Path(),
+        leftPath: Path = Path(),
+        rightPath: Path = Path()
+    ): Faces25D {
+        topPath.reset()
+        leftPath.reset()
+        rightPath.reset()
+
+        val radians = Math.toRadians(angleDegrees.toDouble())
+        val dx = (depth * rect.width() * 0.4f * Math.cos(radians)).toFloat()
+        val dy = (depth * rect.height() * 0.4f * Math.sin(radians)).toFloat()
+
+        // Top face is exactly aligned with the QR module grid
+        topPath.addRect(rect, Path.Direction.CW)
+
+        // Extruded Left / Bottom-Left face
+        leftPath.moveTo(rect.left, rect.bottom)
+        leftPath.lineTo(rect.left + dx, rect.bottom + dy)
+        leftPath.lineTo(rect.right + dx, rect.bottom + dy)
+        leftPath.lineTo(rect.right, rect.bottom)
+        leftPath.close()
+
+        // Extruded Right face
+        rightPath.moveTo(rect.right, rect.top)
+        rightPath.lineTo(rect.right + dx, rect.top + dy)
+        rightPath.lineTo(rect.right + dx, rect.bottom + dy)
+        rightPath.lineTo(rect.right, rect.bottom)
+        rightPath.close()
+
+        return Faces25D(topPath, leftPath, rightPath)
+    }
 }

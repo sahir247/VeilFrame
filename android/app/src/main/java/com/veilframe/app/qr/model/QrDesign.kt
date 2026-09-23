@@ -146,6 +146,85 @@ data class EffectStyle(
     val seed: Long = 42L
 )
 
+enum class LineDirection {
+    HORIZONTAL,
+    VERTICAL,
+    CROSS,
+    X,
+    DIAGONAL_FORWARD,
+    DIAGONAL_BACKWARD,
+    LOOP
+}
+
+data class LineStyle(
+    val direction: LineDirection = LineDirection.HORIZONTAL,
+    val thicknessFraction: Float = 0.5f,
+    val lengthFraction: Float = 1.0f,
+    val roundCaps: Boolean = true
+)
+
+data class DepthStyle(
+    val depth: Float = 0.5f,
+    val angleDegrees: Float = 45f,
+    val topColor: Int = Color.BLACK,
+    val leftColor: Int = 0x33000000,
+    val rightColor: Int = 0x99000000.toInt()
+)
+
+enum class FunctionType {
+    WAVE,
+    RADIAL,
+    RIPPLE,
+    NOISE,
+    SPIRAL,
+    CHECKER,
+    ORGANIC,
+    RANDOM
+}
+
+data class FunctionStyle(
+    val type: FunctionType = FunctionType.WAVE,
+    val frequency: Float = 0.5f,
+    val amplitude: Float = 0.25f,
+    val phase: Float = 0f,
+    val scale: Float = 1.0f,
+    val seed: Long = 42L,
+    val rotationDegrees: Float = 0f
+)
+
+data class RandomJitterStyle(
+    val seed: Long = 42L,
+    val scaleJitter: Float = 0.25f,
+    val offsetJitter: Float = 0.15f,
+    val colorJitter: Float = 0.1f
+)
+
+enum class ModulePrimitive {
+    RECT,
+    CIRCLE,
+    LINE,
+    CROSS,
+    X,
+    POLYGON,
+    PATH
+}
+
+data class CompositePrimitiveStyle(
+    val primitives: List<ModulePrimitive> = listOf(ModulePrimitive.CROSS, ModulePrimitive.X),
+    val lineThickness: Float = 0.2f,
+    val crossScale: Float = 1.0f
+)
+
+data class BackgroundLayer(
+    val enabled: Boolean = true,
+    val color: Int = Color.WHITE,
+    val bitmap: Bitmap? = null,
+    val opacity: Float = 1.0f,
+    val scale: Float = 1.0f,
+    val blurRadius: Float = 0f,
+    val tintColor: Int? = null
+)
+
 /**
  * Domain specification of complete QR visual design intent.
  */
@@ -166,7 +245,22 @@ data class QrDesign(
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
     val timingStyle: TimingStyle = TimingStyle(color = timingColor),
-    val alignmentStyle: AlignmentStyle = AlignmentStyle(color = alignmentColor)
+    val alignmentStyle: AlignmentStyle = AlignmentStyle(color = alignmentColor),
+    val lineStyle: LineStyle = LineStyle(),
+    val depthStyle: DepthStyle = DepthStyle(
+        depth = effects.dataHeightRatio,
+        topColor = effects.topColor,
+        leftColor = effects.leftColor,
+        rightColor = effects.rightColor
+    ),
+    val functionStyle: FunctionStyle = FunctionStyle(seed = effects.seed),
+    val jitterStyle: RandomJitterStyle = RandomJitterStyle(seed = effects.seed),
+    val compositeStyle: CompositePrimitiveStyle = CompositePrimitiveStyle(),
+    val backgroundLayer: BackgroundLayer = BackgroundLayer(
+        color = palette.background,
+        bitmap = backgroundImage,
+        opacity = backgroundImageAlpha
+    )
 ) {
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {
@@ -256,7 +350,37 @@ data class QrDesign(
                 timingColor = params.timingColor,
                 alignmentColor = params.alignmentColor,
                 timingStyle = TimingStyle(shape = timingShape, color = params.timingColor),
-                alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor)
+                alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor),
+                lineStyle = LineStyle(
+                    direction = LineDirection.HORIZONTAL,
+                    thicknessFraction = 0.5f,
+                    lengthFraction = 1.0f,
+                    roundCaps = true
+                ),
+                depthStyle = DepthStyle(
+                    depth = params.d25DataHeight,
+                    angleDegrees = 45f,
+                    topColor = params.d25TopColor,
+                    leftColor = params.d25LeftColor,
+                    rightColor = params.d25RightColor
+                ),
+                functionStyle = FunctionStyle(
+                    type = FunctionType.WAVE,
+                    seed = params.randomRectSeed
+                ),
+                jitterStyle = RandomJitterStyle(
+                    seed = params.randomRectSeed
+                ),
+                compositeStyle = CompositePrimitiveStyle(
+                    primitives = if (params.style == QrStyle.DSJ) listOf(ModulePrimitive.LINE, ModulePrimitive.CROSS, ModulePrimitive.X)
+                                 else listOf(ModulePrimitive.CROSS, ModulePrimitive.X)
+                ),
+                backgroundLayer = BackgroundLayer(
+                    enabled = true,
+                    color = params.background,
+                    bitmap = params.backgroundImage,
+                    opacity = params.backgroundImageAlpha
+                )
             )
         }
     }
