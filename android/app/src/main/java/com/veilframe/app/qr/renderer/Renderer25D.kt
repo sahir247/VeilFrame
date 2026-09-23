@@ -1,27 +1,30 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
-import android.graphics.Matrix
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.RectF
-import com.veilframe.app.qr.model.FinderStyle
-import com.veilframe.app.qr.model.FunctionPatternType
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.QrModuleRole
 import com.veilframe.app.qr.QrStyleParams
 import kotlin.math.sqrt
 
 /**
- * Style 3 — 2.5D ISOMETRIC (Visual Grammar: 3D Projection)
+ * Style 3 — 2.5D ISOMETRIC (EFQRCodeStyle25D Parity)
  *
- * Implements isometric bounding-box fitting:
- * 1. Maps matrix coordinates through the isometric projection matrix.
- * 2. Computes the tight axis-aligned bounding box of all projected 3D columns.
- * 3. Scales and translates the entire 3D projection to fit cleanly within
- *    the canvas while preserving the 4-module quiet zone margin on all borders.
- * 4. Eliminates clipping and maintains decoder-friendly finder alignment.
+ * Implements EFQRCode axonometric isometric projection:
+ * Matrix: `matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)`
+ * ViewBox: `x = -nCount, y = -nCount/2, width = nCount*2, height = nCount*2`
+ *
+ * Each dark module is extruded into a 3D isometric block with:
+ * - Top Face: Rhombus mapped with [topColor]
+ * - Left Face: Skewed parallelogram extending down by [height] with [leftColor]
+ * - Right Face: Skewed parallelogram extending down by [height] with [rightColor]
+ *
+ * Modules are drawn in diagonal wave order (col + row from 0 to 2*(N-1))
+ * guaranteeing painter's-algorithm visibility without z-fighting.
  */
 class Renderer25D : QrRenderer {
 
@@ -33,140 +36,114 @@ class Renderer25D : QrRenderer {
         context: RenderContext
     ) {
         val n = matrix.size
-        val topColor = design.effects.topColor
-        val leftColor = design.effects.leftColor
-        val rightColor = design.effects.rightColor
+        val topColor = design.depthStyle.topColor
+        val leftColor = design.depthStyle.leftColor
+        val rightColor = design.depthStyle.rightColor
 
-        val dataH = design.effects.dataHeightRatio.coerceIn(0.2f, 1.5f)
-        val posH = design.effects.positionHeightRatio.coerceIn(0.3f, 2.0f)
+        val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
+        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
 
-        // Raw isometric projection matrix:
-        // [ cos(30°),  cos(30°), 0 ]
-        // [ -sin(30°), sin(30°), 0 ]
-        // [ 0,         0,        1 ]
+        // Isometric constants matching EFQRCode:
+        // matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)
+        // viewBox: [-n, -n/2, 2*n, 2*n]
         val sq3h = (sqrt(3.0) / 2.0).toFloat()
-        val rawMatrix = Matrix().apply {
-            setValues(floatArrayOf(
-                sq3h,  sq3h, 0f,
-                -0.5f, 0.5f, 0f,
-                0f,    0f,   1f
-            ))
+
+        val vbX = -n.toFloat()
+        val vbY = -n.toFloat() / 2.0f
+        val vbW = n.toFloat() * 2.0f
+        val vbH = n.toFloat() * 2.0f
+
+        val scaleX = geometry.outputWidth.toFloat() / vbW
+        val scaleY = geometry.outputHeight.toFloat() / vbH
+        val scale = minOf(scaleX, scaleY)
+        val transX = (geometry.outputWidth.toFloat() - vbW * scale) / 2f
+        val transY = (geometry.outputHeight.toFloat() - vbH * scale) / 2f
+
+        fun screenX(u: Float, v: Float): Float {
+            val isoX = sq3h * (u - v)
+            return (isoX - vbX) * scale + transX
         }
 
-        // 1. Compute projection bounding box for the entire matrix grid
-        // Vertices of the base grid plus maximum extrusion height
-        val maxH = maxOf(dataH, posH)
-        val testPoints = floatArrayOf(
-            0f, 0f,
-            n.toFloat(), 0f,
-            n.toFloat(), n.toFloat(),
-            0f, n.toFloat(),
-            0f, -maxH,
-            n.toFloat(), -maxH,
-            n.toFloat(), n.toFloat() - maxH,
-            0f, n.toFloat() - maxH
-        )
-        rawMatrix.mapPoints(testPoints)
-
-        var minX = Float.MAX_VALUE
-        var maxX = -Float.MAX_VALUE
-        var minY = Float.MAX_VALUE
-        var maxY = -Float.MAX_VALUE
-
-        for (i in 0 until testPoints.size step 2) {
-            val px = testPoints[i]
-            val py = testPoints[i + 1]
-            if (px < minX) minX = px
-            if (px > maxX) maxX = px
-            if (py < minY) minY = py
-            if (py > maxY) maxY = py
-        }
-
-        val projW = maxX - minX
-        val projH = maxY - minY
-
-        // Fit within target area (output size minus 2 * quiet zone margin)
-        val targetSize = geometry.outputWidth - (2f * geometry.quietZoneModules * geometry.moduleSize)
-        val fitScale = minOf(targetSize / projW, targetSize / projH)
-
-        // Translation to center projected QR inside output canvas
-        val centerX = geometry.outputWidth / 2f
-        val centerY = geometry.outputHeight / 2f
-        val projCenterX = (minX + maxX) / 2f * fitScale
-        val projCenterY = (minY + maxY) / 2f * fitScale
-        val transX = centerX - projCenterX
-        val transY = centerY - projCenterY
-
-        val finalTransform = Matrix().apply {
-            set(rawMatrix)
-            postScale(fitScale, fitScale)
-            postTranslate(transX, transY)
+        fun screenY(u: Float, v: Float, z: Float): Float {
+            val isoY = 0.5f * (u + v) + z
+            return (isoY - vbY) * scale + transY
         }
 
         val topPaint = context.obtainFill(topColor)
-        val leftPaint = context.tempPaint.apply {
-            reset()
-            isAntiAlias = true
-            style = Paint.Style.FILL
-            color = leftColor
-        }
-        val rightPaint = context.fillPaint.apply {
-            reset()
-            isAntiAlias = true
-            style = Paint.Style.FILL
-            color = rightColor
-        }
+        val leftPaint = context.obtainFill(leftColor)
+        val rightPaint = context.obtainFill(rightColor)
 
-        val pts = FloatArray(8)
+        val polyPath = Path()
 
-        // 2. Draw 2.5D modules in topological order (back to front: row 0..n, col 0..n)
-        for (col in 0 until n) {
-            for (row in 0 until n) {
+        // Iterate in diagonal wave order (col + row from 0 to 2*(n-1))
+        // Back-to-front painter's order ensures foreground blocks properly occlude background blocks
+        for (diagonal in 0 until (2 * n - 1)) {
+            val minCol = maxOf(0, diagonal - (n - 1))
+            val maxCol = minOf(n - 1, diagonal)
+
+            for (col in minCol..maxCol) {
+                val row = diagonal - col
                 if (!matrix.isDark(col, row)) continue
-                val isPos = matrix.functionMask.isFinder(col, row)
-                val h = if (isPos) posH else dataH
 
-                val x = col.toFloat()
-                val y = row.toFloat()
+                val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
+                    matrix.roleAt(col, row) == QrModuleRole.FINDER_OUTER ||
+                    matrix.functionMask.isFinder(col, row)
 
-                // Top Face (diamond)
-                pts[0] = x;     pts[1] = y - h
-                pts[2] = x + 1; pts[3] = y - h
-                pts[4] = x + 1; pts[5] = y + 1 - h
-                pts[6] = x;     pts[7] = y + 1 - h
-                finalTransform.mapPoints(pts)
-                drawPolygon(canvas, pts, topPaint, context.tempPath1)
+                val h = if (isPosition) posH else dataH
+                val c = col.toFloat()
+                val r = row.toFloat()
 
-                // Left Face
-                pts[0] = x;     pts[1] = y - h
-                pts[2] = x;     pts[3] = y + 1 - h
-                pts[4] = x;     pts[5] = y + 1
-                pts[6] = x;     pts[7] = y
-                finalTransform.mapPoints(pts)
-                drawPolygon(canvas, pts, leftPaint, context.tempPath1)
+                // Top Face Vertices: (c, r, 0), (c+1, r, 0), (c+1, r+1, 0), (c, r+1, 0)
+                val p0x = screenX(c, r)
+                val p0y = screenY(c, r, 0f)
+                val p1x = screenX(c + 1f, r)
+                val p1y = screenY(c + 1f, r, 0f)
+                val p2x = screenX(c + 1f, r + 1f)
+                val p2y = screenY(c + 1f, r + 1f, 0f)
+                val p3x = screenX(c, r + 1f)
+                val p3y = screenY(c, r + 1f, 0f)
 
-                // Right Face
-                pts[0] = x;     pts[1] = y + 1 - h
-                pts[2] = x + 1; pts[3] = y + 1 - h
-                pts[4] = x + 1; pts[5] = y + 1
-                pts[6] = x;     pts[7] = y + 1
-                finalTransform.mapPoints(pts)
-                drawPolygon(canvas, pts, rightPaint, context.tempPath1)
+                // 1. Draw Top Face
+                polyPath.reset()
+                polyPath.moveTo(p0x, p0y)
+                polyPath.lineTo(p1x, p1y)
+                polyPath.lineTo(p2x, p2y)
+                polyPath.lineTo(p3x, p3y)
+                polyPath.close()
+                canvas.drawPath(polyPath, topPaint)
+
+                // Left Face Vertices: (c+1, r, 0), (c+1, r+1, 0), (c+1, r+1, h), (c+1, r, h)
+                val l2x = screenX(c + 1f, r + 1f)
+                val l2y = screenY(c + 1f, r + 1f, h)
+                val l3x = screenX(c + 1f, r)
+                val l3y = screenY(c + 1f, r, h)
+
+                // 2. Draw Left Face
+                polyPath.reset()
+                polyPath.moveTo(p1x, p1y)
+                polyPath.lineTo(p2x, p2y)
+                polyPath.lineTo(l2x, l2y)
+                polyPath.lineTo(l3x, l3y)
+                polyPath.close()
+                canvas.drawPath(polyPath, leftPaint)
+
+                // Right Face Vertices: (c, r+1, 0), (c+1, r+1, 0), (c+1, r+1, h), (c, r+1, h)
+                val r3x = screenX(c, r + 1f)
+                val r3y = screenY(c, r + 1f, h)
+
+                // 3. Draw Right Face
+                polyPath.reset()
+                polyPath.moveTo(p3x, p3y)
+                polyPath.lineTo(p2x, p2y)
+                polyPath.lineTo(l2x, l2y)
+                polyPath.lineTo(r3x, r3y)
+                polyPath.close()
+                canvas.drawPath(polyPath, rightPaint)
             }
         }
 
-        // 3. Composite center logo
+        // Draw Center Logo if present
         drawLogo(canvas, design, geometry, context)
-    }
-
-    private fun drawPolygon(canvas: Canvas, pts: FloatArray, paint: Paint, path: Path) {
-        path.reset()
-        path.moveTo(pts[0], pts[1])
-        path.lineTo(pts[2], pts[3])
-        path.lineTo(pts[4], pts[5])
-        path.lineTo(pts[6], pts[7])
-        path.close()
-        canvas.drawPath(path, paint)
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

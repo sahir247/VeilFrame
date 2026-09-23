@@ -111,10 +111,11 @@ data class ImageSourceStyle(
     val scaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val scope: ImageMaskScope = ImageMaskScope.DATA_ONLY,
     val opacity: Float = 1.0f,
-    val contrast: Float = 1.0f,
+    val contrast: Float = 0.0f, // EFQRCode default: 0.0f ((contrast + 1) = 1.0 multiplier)
     val exposure: Float = 0.0f,
-    val maskColor: Int = Color.BLACK,
-    val maskAlpha: Float = 0.1f
+    val maskColor: Int = 0x1A000000,
+    val maskAlpha: Float = 0.1f,
+    val allowTransparent: Boolean = true
 ) {
     val bitmap: Bitmap? get() = (source as? ImageSource.Memory)?.bitmap
 }
@@ -184,8 +185,8 @@ data class EffectStyle(
     val topColor: Int = Color.BLACK,
     val leftColor: Int = 0x33000000,
     val rightColor: Int = 0x99000000.toInt(),
-    val dataHeightRatio: Float = 0.5f,
-    val positionHeightRatio: Float = 0.75f,
+    val dataHeightRatio: Float = 1.0f,
+    val positionHeightRatio: Float = 1.0f,
     val seed: Long = 42L
 )
 
@@ -207,7 +208,8 @@ data class LineStyle(
 )
 
 data class DepthStyle(
-    val depth: Float = 0.5f,
+    val depth: Float = 1.0f,
+    val positionDepth: Float = 1.0f,
     val angleDegrees: Float = 45f,
     val topColor: Int = Color.BLACK,
     val leftColor: Int = 0x33000000,
@@ -301,6 +303,20 @@ data class QrDesign(
     val compositeStyle: CompositePrimitiveStyle = CompositePrimitiveStyle(),
     val imageSource: ImageSourceStyle = ImageSourceStyle(),
     val clusterStyle: BubbleClusterStyle = BubbleClusterStyle(),
+    val allowTransparent: Boolean = true,
+    val dataColorDark: Int = Color.BLACK,
+    val dataColorLight: Int = Color.WHITE,
+    val positionDarkColor: Int = Color.BLACK,
+    val positionLightColor: Int = Color.WHITE,
+    val positionSize: Float = 1.0f,
+    val timingDarkColor: Int = Color.BLACK,
+    val timingLightColor: Int = Color.WHITE,
+    val timingSize: Float = 1.0f,
+    val alignDarkColor: Int = Color.BLACK,
+    val alignLightColor: Int = Color.WHITE,
+    val alignSize: Float = 1.0f,
+    val imageFillBackgroundColor: Int = Color.WHITE,
+    val imageFillMaskColor: Int = 0x1A000000,
     val backgroundLayer: BackgroundLayer = BackgroundLayer(
         color = palette.background,
         bitmap = backgroundImage,
@@ -348,6 +364,9 @@ data class QrDesign(
                 else -> ModuleShape.ROUNDED
             }
 
+            val isImageStyle = params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_FILL || params.style == QrStyle.IMAGE_RESAMPLE
+            val resolvedSourceImage = params.sourceImage ?: if (isImageStyle) params.backgroundImage else null
+
             return QrDesign(
                 correction = if (params.logo != null) ErrorCorrectionChoice.H else ErrorCorrectionChoice.AUTO,
                 moduleStyle = ModuleStyle(
@@ -359,8 +378,8 @@ data class QrDesign(
                 ),
                 eyeStyle = EyeStyle(
                     style = finderStyle,
-                    outerColor = params.foreground,
-                    innerColor = params.foreground
+                    outerColor = params.positionColor ?: params.foreground,
+                    innerColor = params.positionColor ?: params.foreground
                 ),
                 palette = PaletteStyle(
                     foreground = params.foreground,
@@ -369,7 +388,7 @@ data class QrDesign(
                     gradientEnd = params.gradientEnd,
                     gradientType = if (hasGradient) GradientType.LINEAR else GradientType.NONE
                 ),
-                background = if (params.backgroundImage != null) {
+                background = if (params.backgroundImage != null && !isImageStyle) {
                     BackgroundStyle.Image(params.backgroundImage, params.backgroundImageAlpha)
                 } else {
                     BackgroundStyle.Solid(params.background)
@@ -382,9 +401,11 @@ data class QrDesign(
                 } else null,
                 effects = EffectStyle(
                     is25D = is25D,
-                    topColor = params.foreground,
-                    leftColor = 0x33000000,
-                    rightColor = 0x99000000.toInt()
+                    topColor = params.d25TopColor,
+                    leftColor = params.d25LeftColor,
+                    rightColor = params.d25RightColor,
+                    dataHeightRatio = params.d25DataHeight,
+                    positionHeightRatio = params.d25PositionHeight
                 ),
                 quietZoneModules = 4,
                 outputSize = params.outputSize,
@@ -404,6 +425,7 @@ data class QrDesign(
                 ),
                 depthStyle = DepthStyle(
                     depth = params.d25DataHeight,
+                    positionDepth = params.d25PositionHeight,
                     angleDegrees = 45f,
                     topColor = params.d25TopColor,
                     leftColor = params.d25LeftColor,
@@ -420,14 +442,40 @@ data class QrDesign(
                     primitives = if (params.style == QrStyle.DSJ) listOf(ModulePrimitive.LINE, ModulePrimitive.CROSS, ModulePrimitive.X)
                                  else listOf(ModulePrimitive.CROSS, ModulePrimitive.X)
                 ),
-                imageSource = if (params.backgroundImage != null && (params.style == QrStyle.IMAGE_RESAMPLE || imageFillMode)) {
-                    ImageSourceStyle(source = ImageSource.Memory(params.backgroundImage))
+                imageSource = if (resolvedSourceImage != null) {
+                    ImageSourceStyle(
+                        source = ImageSource.Memory(resolvedSourceImage),
+                        opacity = params.sourceImageAlpha,
+                        contrast = 0.0f,
+                        exposure = 0.0f,
+                        maskColor = params.imageFillMaskColor,
+                        allowTransparent = params.imageAllowTransparent
+                    )
                 } else {
-                    ImageSourceStyle()
+                    ImageSourceStyle(
+                        contrast = 0.0f,
+                        exposure = 0.0f,
+                        maskColor = params.imageFillMaskColor,
+                        allowTransparent = params.imageAllowTransparent
+                    )
                 },
                 clusterStyle = BubbleClusterStyle(seed = params.randomRectSeed),
+                allowTransparent = params.imageAllowTransparent,
+                dataColorDark = params.imageDataDarkColor,
+                dataColorLight = params.imageDataLightColor,
+                positionDarkColor = params.imagePositionDarkColor,
+                positionLightColor = params.imagePositionLightColor,
+                positionSize = params.imagePositionSize,
+                timingDarkColor = params.imageTimingDarkColor,
+                timingLightColor = params.imageTimingLightColor,
+                timingSize = params.imageTimingSize,
+                alignDarkColor = params.imageAlignDarkColor,
+                alignLightColor = params.imageAlignLightColor,
+                alignSize = params.imageAlignSize,
+                imageFillBackgroundColor = params.imageFillBackgroundColor,
+                imageFillMaskColor = params.imageFillMaskColor,
                 backgroundLayer = BackgroundLayer(
-                    enabled = true,
+                    enabled = params.backgroundImage != null,
                     color = params.background,
                     bitmap = params.backgroundImage,
                     opacity = params.backgroundImageAlpha

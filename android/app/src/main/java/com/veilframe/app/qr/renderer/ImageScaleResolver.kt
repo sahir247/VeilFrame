@@ -239,4 +239,21 @@ object ImageScaleResolver {
 
         return output
     }
+
+    /**
+     * Draws [bitmap] scaled according to [mode] within [dstBounds] onto [canvas] with [alpha].
+     */
+    fun drawScaledBitmap(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        dstBounds: RectF,
+        mode: ImageScaleMode,
+        alpha: Float = 1.0f
+    ) {
+        val (srcRect, dstRect) = resolveSrcDst(bitmap.width, bitmap.height, dstBounds, mode)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            this.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+        }
+        canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+    }
 }

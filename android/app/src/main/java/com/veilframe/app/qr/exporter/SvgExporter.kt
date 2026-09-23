@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.exporter
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.util.Base64
 import com.veilframe.app.qr.model.FinderStyle
 import com.veilframe.app.qr.model.GradientType
@@ -50,6 +51,16 @@ object SvgExporter {
         val isRadial = design.palette.gradientType == GradientType.RADIAL ||
             design.moduleStyle.fill == ModuleFill.RADIAL_GRADIENT
         val dataFill = if (hasGradient) "url(#qrGrad)" else fgHex
+
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_FILL) {
+            return generateImageFillSvg(matrix, design, qz, totalSize)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE) {
+            return generateImageSvg(matrix, design, qz, totalSize)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.D25) {
+            return generate25DSvg(matrix, design)
+        }
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
@@ -131,59 +142,7 @@ object SvgExporter {
         }
 
         // 3. Finders (TL: 0,0; BL: 0, n-7; TR: n-7, 0) offset by qz
-        val finders = listOf(
-            Pair(qz, qz),
-            Pair(qz, qz + matrix.size - 7),
-            Pair(qz + matrix.size - 7, qz)
-        )
-
-        for ((fx, fy) in finders) {
-            val cx = fx + 3.5
-            val cy = fy + 3.5
-
-            when (design.eyeStyle.style) {
-                FinderStyle.CIRCLE -> {
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="3.5" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="2.5" fill="$bgHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
-                }
-                FinderStyle.ROUNDED -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="2" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="1.5" fill="$bgHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
-                }
-                FinderStyle.SOFT -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
-                }
-                FinderStyle.FRAME -> {
-                    sb.append("""  <rect x="${fx + 0.4}" y="${fy + 0.4}" width="6.2" height="6.2" rx="1" fill="none" stroke="$eyeOuterHex" stroke-width="0.8" />""").append("\n")
-                    val pts = "${cx},${cy - 1.5} ${cx + 1.5},${cy} ${cx},${cy + 1.5} ${cx - 1.5},${cy}"
-                    sb.append("""  <polygon points="$pts" fill="$eyeInnerHex" />""").append("\n")
-                }
-                FinderStyle.PLANETS -> {
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.35" stroke-dasharray="0.5,0.5" />""").append("\n")
-                    sb.append("""  <circle cx="${cx - 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="${cx + 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy - 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy + 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                }
-                FinderStyle.DSJ -> {
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 1.5}" width="3" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 3.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx + 2.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 3.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy + 2.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
-                }
-                else -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
-                }
-            }
-        }
+        appendFinders(sb, design, qz, matrix.size, fgHex, bgHex, eyeOuterHex, eyeInnerHex)
 
         // 4. Data & Functional Modules
         val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
@@ -426,21 +385,7 @@ object SvgExporter {
         }
 
         // 5. Embedded Logo (if present)
-        design.logo?.bitmap?.let { logoBmp ->
-            val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.35f)
-            val logoSize = totalSize * fraction
-            val logoX = (totalSize - logoSize) / 2.0
-            val logoY = (totalSize - logoSize) / 2.0
-
-            // White / custom backing card for high contrast
-            val cardPadding = 0.5
-            sb.append("""  <rect x="${logoX - cardPadding}" y="${logoY - cardPadding}" width="${logoSize + 2 * cardPadding}" height="${logoSize + 2 * cardPadding}" rx="1.5" fill="$bgHex" />""").append("\n")
-
-            val base64 = bitmapToBase64(logoBmp)
-            if (base64.isNotEmpty()) {
-                sb.append("""  <image href="data:image/png;base64,$base64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet" />""").append("\n")
-            }
-        }
+        appendLogo(sb, design, totalSize, bgHex)
 
         sb.append("</svg>")
         return sb.toString()
@@ -450,6 +395,9 @@ object SvgExporter {
         return String.format(Locale.US, "#%06X", 0xFFFFFF and color)
     }
 
+    private fun colorAlpha(color: Int): Float = ((color ushr 24) and 0xFF) / 255f
+    private fun colorAlphaInt(color: Int): Int = (color ushr 24) and 0xFF
+
     private fun bitmapToBase64(bitmap: Bitmap): String {
         return try {
             val stream = ByteArrayOutputStream()
@@ -457,6 +405,312 @@ object SvgExporter {
             Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
         } catch (_: Throwable) {
             ""
+        }
+    }
+
+    private fun generateImageFillSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qz: Int,
+        totalSize: Int
+    ): String {
+        val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
+        val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
+        val bgHex = hexColor(design.imageFillBackgroundColor)
+        val bgAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillBackgroundColor))
+        val maskHex = hexColor(design.imageFillMaskColor)
+        val maskAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillMaskColor))
+        val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
+
+        val sb = StringBuilder()
+        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
+        sb.append("  <defs>\n")
+        sb.append("""    <mask id="hole">""").append("\n")
+        sb.append("""      <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="black"/>""").append("\n")
+        for (col in 0 until matrix.size) {
+            for (row in 0 until matrix.size) {
+                if (matrix.isDark(col, row)) {
+                    val mx = String.format(Locale.US, "%.2f", col + qz - 0.01)
+                    val my = String.format(Locale.US, "%.2f", row + qz - 0.01)
+                    sb.append("""      <rect x="$mx" y="$my" width="1.02" height="1.02" fill="white"/>""").append("\n")
+                }
+            }
+        }
+        sb.append("    </mask>\n")
+        sb.append("  </defs>\n")
+        sb.append("""  <g x="0" y="0" width="$totalSize" height="$totalSize" mask="url(#hole)">""").append("\n")
+        sb.append("""    <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
+        if (imageBase64.isNotEmpty()) {
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+        }
+        sb.append("""    <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
+        sb.append("  </g>\n")
+
+        appendLogo(sb, design, totalSize, bgHex)
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun generateImageSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qz: Int,
+        totalSize: Int
+    ): String {
+        val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
+        val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
+        val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
+        val n = matrix.size
+        val bgHex = hexColor(design.palette.background)
+
+        val sb = StringBuilder()
+        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
+        sb.append("  <defs>\n")
+        sb.append("""    <mask id="hole">""").append("\n")
+        sb.append("""      <rect x="$qz" y="$qz" width="$n" height="$n" fill="white"/>""").append("\n")
+        sb.append("""      <rect x="$qz" y="$qz" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="${n - 8 + qz}" y="$qz" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="$qz" y="${n - 8 + qz}" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("    </mask>\n")
+        sb.append("  </defs>\n")
+
+        // Canvas background
+        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex"/>""").append("\n")
+
+        // Transparent pre-pass
+        if (design.allowTransparent) {
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.roleAt(col, row) != QrModuleRole.DATA) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) design.dataColorDark else design.dataColorLight
+                    val alpha = colorAlphaInt(color)
+                    if (alpha == 0) continue
+                    val hex = hexColor(color)
+                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val x = col + qz
+                    val y = row + qz
+                    sb.append("""  <rect opacity="$op" width="1" height="1" fill="$hex" x="$x" y="$y"/>""").append("\n")
+                }
+            }
+        }
+
+        // Image layer with #hole mask
+        sb.append("""  <g x="$qz" y="$qz" width="$n" height="$n" mask="url(#hole)">""").append("\n")
+        if (imageBase64.isNotEmpty()) {
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qz" y="$qz" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+        }
+        sb.append("  </g>\n")
+
+        // Finders (with 8x8 posLightColor backing)
+        val posLightHex = hexColor(design.positionLightColor)
+        val posLightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.positionLightColor))
+        val finderBgs = listOf(
+            Pair(qz, qz),
+            Pair(qz + n - 8, qz),
+            Pair(qz, qz + n - 8)
+        )
+        for ((bx, by) in finderBgs) {
+            sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bx" y="$by" fill="$posLightHex"/>""").append("\n")
+        }
+
+        val eyeOuterHex = design.eyeStyle.outerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
+        val eyeInnerHex = design.eyeStyle.innerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
+        appendFinders(sb, design, qz, n, eyeOuterHex, bgHex, eyeOuterHex, eyeInnerHex)
+
+        // Timing modules
+        val timingDarkHex = hexColor(design.timingDarkColor)
+        val timingLightHex = hexColor(design.timingLightColor)
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
+                val isDark = matrix.isDark(col, row)
+                val color = if (isDark) design.timingDarkColor else design.timingLightColor
+                val alpha = colorAlphaInt(color)
+                if (alpha == 0) continue
+                val hex = if (isDark) timingDarkHex else timingLightHex
+                val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                val tOffset = (1.0 - design.timingSize) / 2.0
+                val tx = String.format(Locale.US, "%.2f", col + qz + tOffset)
+                val ty = String.format(Locale.US, "%.2f", row + qz + tOffset)
+                val ts = String.format(Locale.US, "%.2f", design.timingSize)
+                sb.append("""  <rect opacity="$op" width="$ts" height="$ts" x="$tx" y="$ty" fill="$hex"/>""").append("\n")
+            }
+        }
+
+        // Alignment modules
+        val alignDarkHex = hexColor(design.alignDarkColor)
+        val alignLightHex = hexColor(design.alignLightColor)
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                val role = matrix.roleAt(col, row)
+                if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
+                val isDark = matrix.isDark(col, row)
+                val color = if (isDark) design.alignDarkColor else design.alignLightColor
+                val alpha = colorAlphaInt(color)
+                if (alpha == 0) continue
+                val hex = if (isDark) alignDarkHex else alignLightHex
+                val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                val aOffset = (1.0 - design.alignSize) / 2.0
+                val ax = String.format(Locale.US, "%.2f", col + qz + aOffset)
+                val ay = String.format(Locale.US, "%.2f", row + qz + aOffset)
+                val asize = String.format(Locale.US, "%.2f", design.alignSize)
+                sb.append("""  <rect opacity="$op" width="$asize" height="$asize" x="$ax" y="$ay" fill="$hex"/>""").append("\n")
+            }
+        }
+
+        // Data modules on top of image
+        val dataDarkHex = hexColor(design.dataColorDark)
+        val dataLightHex = hexColor(design.dataColorLight)
+        val dScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
+        val dOffset = (1.0 - dScale) / 2.0
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) != QrModuleRole.DATA) continue
+                val isDark = matrix.isDark(col, row)
+                val color = if (isDark) design.dataColorDark else design.dataColorLight
+                val alpha = colorAlphaInt(color)
+                if (alpha == 0) continue
+                val hex = if (isDark) dataDarkHex else dataLightHex
+                val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                val dx = String.format(Locale.US, "%.2f", col + qz + dOffset)
+                val dy = String.format(Locale.US, "%.2f", row + qz + dOffset)
+                val ds = String.format(Locale.US, "%.2f", dScale)
+                sb.append("""  <rect opacity="$op" width="$ds" height="$ds" x="$dx" y="$dy" fill="$hex"/>""").append("\n")
+            }
+        }
+
+        appendLogo(sb, design, totalSize, bgHex)
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun generate25DSvg(matrix: QrMatrix, design: QrDesign): String {
+        val n = matrix.size
+        val matrixString = "matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"
+        val topHex = hexColor(design.depthStyle.topColor)
+        val topAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.topColor))
+        val leftHex = hexColor(design.depthStyle.leftColor)
+        val leftAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.leftColor))
+        val rightHex = hexColor(design.depthStyle.rightColor)
+        val rightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.rightColor))
+        val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
+        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
+        val bgHex = hexColor(design.palette.background)
+
+        val vbX = -n
+        val vbY = -n / 2.0
+        val vbW = n * 2.0
+        val vbH = n * 2.0
+
+        val sb = StringBuilder()
+        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbX $vbY $vbW $vbH" width="100%" height="100%">""").append("\n")
+        sb.append("""  <rect x="$vbX" y="$vbY" width="$vbW" height="$vbH" fill="$bgHex" />""").append("\n")
+
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (!matrix.isDark(col, row)) continue
+                val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
+                    matrix.roleAt(col, row) == QrModuleRole.FINDER_OUTER ||
+                    matrix.functionMask.isFinder(col, row)
+                val h = if (isPosition) posH else dataH
+                val hStr = String.format(Locale.US, "%.2f", h)
+
+                // Top face
+                sb.append("""  <rect opacity="$topAlpha" width="1" height="1" fill="$topHex" x="$col" y="$row" transform="$matrixString"/>""").append("\n")
+                // Left face
+                sb.append("""  <rect opacity="$leftAlpha" width="$hStr" height="1" fill="$leftHex" x="0" y="0" transform="${matrixString}translate(${col + 1},$row) skewY(45)"/>""").append("\n")
+                // Right face
+                sb.append("""  <rect opacity="$rightAlpha" width="1" height="$hStr" fill="$rightHex" x="0" y="0" transform="${matrixString}translate($col,${row + 1}) skewX(45)"/>""").append("\n")
+            }
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun appendFinders(
+        sb: StringBuilder,
+        design: QrDesign,
+        qz: Int,
+        matrixSize: Int,
+        fgHex: String,
+        bgHex: String,
+        eyeOuterHex: String,
+        eyeInnerHex: String
+    ) {
+        val finders = listOf(
+            Pair(qz, qz),
+            Pair(qz, qz + matrixSize - 7),
+            Pair(qz + matrixSize - 7, qz)
+        )
+
+        for ((fx, fy) in finders) {
+            val cx = fx + 3.5
+            val cy = fy + 3.5
+
+            when (design.eyeStyle.style) {
+                FinderStyle.CIRCLE -> {
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="3.5" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="2.5" fill="$bgHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                }
+                FinderStyle.ROUNDED -> {
+                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="2" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="1.5" fill="$bgHex" />""").append("\n")
+                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
+                }
+                FinderStyle.SOFT -> {
+                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                }
+                FinderStyle.FRAME -> {
+                    sb.append("""  <rect x="${fx + 0.4}" y="${fy + 0.4}" width="6.2" height="6.2" rx="1" fill="none" stroke="$eyeOuterHex" stroke-width="0.8" />""").append("\n")
+                    val pts = "${cx},${cy - 1.5} ${cx + 1.5},${cy} ${cx},${cy + 1.5} ${cx - 1.5},${cy}"
+                    sb.append("""  <polygon points="$pts" fill="$eyeInnerHex" />""").append("\n")
+                }
+                FinderStyle.PLANETS -> {
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.35" stroke-dasharray="0.5,0.5" />""").append("\n")
+                    sb.append("""  <circle cx="${cx - 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="${cx + 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="${cy - 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="${cy + 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
+                }
+                FinderStyle.DSJ -> {
+                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 1.5}" width="3" height="3" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - 3.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx + 2.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 3.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - 1.5}" y="${cy + 2.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
+                }
+                else -> {
+                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
+                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
+                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                }
+            }
+        }
+    }
+
+    private fun appendLogo(sb: StringBuilder, design: QrDesign, totalSize: Int, bgHex: String) {
+        design.logo?.bitmap?.let { logoBmp ->
+            val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.35f)
+            val logoSize = totalSize * fraction
+            val logoX = (totalSize - logoSize) / 2.0
+            val logoY = (totalSize - logoSize) / 2.0
+
+            val cardPadding = 0.5
+            sb.append("""  <rect x="${logoX - cardPadding}" y="${logoY - cardPadding}" width="${logoSize + 2 * cardPadding}" height="${logoSize + 2 * cardPadding}" rx="1.5" fill="$bgHex" />""").append("\n")
+
+            val base64 = bitmapToBase64(logoBmp)
+            if (base64.isNotEmpty()) {
+                sb.append("""  <image href="data:image/png;base64,$base64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet" />""").append("\n")
+            }
         }
     }
 }

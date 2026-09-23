@@ -3,26 +3,26 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import com.veilframe.app.qr.model.BackgroundStyle
-import com.veilframe.app.qr.model.FinderStyle
-import com.veilframe.app.qr.model.FunctionPatternType
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 5 — IMAGE_FILL (Visual Grammar: Image-Based Illustration/Texture)
+ * Style 5 — IMAGE_FILL (EFQRCodeStyleImageFill Parity)
  *
- * Implements polarity-preserving luminance mapping:
- * Source photograph pixels are sampled per-module, but their luminance is
- * non-linearly mapped into a strictly dark range:
- * - Bright source areas (sky, highlights, white hair) -> still-dark module (V <= 0.35)
- * - Dark source areas -> deeper dark module (V <= 0.10)
+ * Implements EFQRCode continuous image masking:
+ * `<mask id="hole">...<rect width="1.02" height="1.02" fill="white"/>...</mask>`
+ * `<g mask="url(#hole)"><rect fill="backgroundColor"/><image .../><rect fill="maskColor"/></g>`
  *
- * Preserves the full artistic color tone and variation of the illustration
- * while preventing dark modules from washing out to white or breaking scanning.
+ * The source image is continuous across the QR code area and revealed through the dark-module
+ * stencil mask, combined with a base [backgroundColor] and an overlay [maskColor] tint.
+ * Modules are NOT individually sampled; the full visual gradient of the continuous image shines through.
  */
 class ImageFillRenderer : QrRenderer {
 
@@ -33,89 +33,66 @@ class ImageFillRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
-        val n = matrix.size
-        val scale = design.moduleStyle.scale.coerceIn(0.6f, 1.0f)
-        val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
+        val sourceImage = design.imageSource.bitmap
+            ?: design.backgroundImage
+            ?: (design.background as? BackgroundStyle.Image)?.bitmap
 
-        val bgImage = design.backgroundImage ?: (design.background as? BackgroundStyle.Image)?.bitmap
-
-        if (bgImage == null) {
+        if (sourceImage == null) {
             BasicRenderer().render(matrix, design, canvas, geometry, context)
             return
         }
 
-        // 1. Draw high-contrast finders
-        FinderRenderer.renderFinders(
-            canvas = canvas,
-            geometry = geometry,
-            style = design.eyeStyle.style,
-            outerColor = design.eyeStyle.outerColor ?: fgColor,
-            innerColor = design.eyeStyle.innerColor ?: fgColor,
-            backgroundColor = bgColor,
-            context = context
-        )
+        val n = matrix.size
+        val mSize = geometry.moduleSize
+        val x0 = geometry.offsetX
+        val y0 = geometry.offsetY
+        val dataBounds = geometry.dataRegionBounds()
 
-        val hsv = FloatArray(3)
-        val paint = context.fillPaint
+        val bgColor = design.imageFillBackgroundColor
+        val maskColor = design.imageFillMaskColor
+        val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
+        val imageMode = design.imageSource.scaleMode
 
-        val imgW = bgImage.width
-        val imgH = bgImage.height
+        // 1. Offscreen layer for masked QR stencil
+        val layerId = canvas.saveLayer(dataBounds, null)
 
-        // 2. Sample and render each module with luminance-mapped color
+        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion (matching EF's 1.02 size)
+        val maskPaint = context.obtainFill(Color.WHITE)
+        val antiGap = 0.01f * mSize
+
         for (col in 0 until n) {
             for (row in 0 until n) {
-                if (!matrix.isDark(col, row)) continue
-                // Exclude finders and separators (already rendered)
-                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
-                    continue
+                if (matrix.isDark(col, row)) {
+                    val left = x0 + col * mSize - antiGap
+                    val top = y0 + row * mSize - antiGap
+                    val right = x0 + (col + 1) * mSize + antiGap
+                    val bottom = y0 + (row + 1) * mSize + antiGap
+                    canvas.drawRect(left, top, right, bottom, maskPaint)
                 }
-
-                val type = matrix.functionMask[col, row]
-                val rect = geometry.moduleRect(col, row, scale)
-
-                if (type == FunctionPatternType.TIMING ||
-                    type == FunctionPatternType.ALIGNMENT_CENTER ||
-                    type == FunctionPatternType.ALIGNMENT_OTHER
-                ) {
-                    // Timing & Alignment: preserve solid foreground
-                    paint.reset()
-                    paint.isAntiAlias = true
-                    paint.style = android.graphics.Paint.Style.FILL
-                    paint.color = fgColor
-                    canvas.drawRoundRect(rect, rect.width() * 0.2f, rect.width() * 0.2f, paint)
-                    continue
-                }
-
-                // Sample image pixel mapped from normalized QR coordinates
-                val sampleX = ((col.toFloat() / n) * imgW).toInt().coerceIn(0, imgW - 1)
-                val sampleY = ((row.toFloat() / n) * imgH).toInt().coerceIn(0, imgH - 1)
-                val pixel = bgImage.getPixel(sampleX, sampleY)
-
-                Color.colorToHSV(pixel, hsv)
-                val sourceBrightness = hsv[2] // 0.0 to 1.0
-
-                // Strict luminance compression: Map 0.0..1.0 to 0.05..0.35
-                // Guarantees dark module polarity even over pure white image highlights
-                val mappedBrightness = 0.05f + (sourceBrightness * 0.28f)
-                hsv[2] = mappedBrightness
-
-                // Slightly boost saturation so image colors remain vivid at lower value
-                hsv[1] = (hsv[1] * 1.25f).coerceAtMost(1.0f)
-
-                val mappedColor = Color.HSVToColor(hsv)
-
-                paint.reset()
-                paint.isAntiAlias = true
-                paint.style = android.graphics.Paint.Style.FILL
-                paint.color = mappedColor
-
-                val rx = rect.width() * 0.25f
-                canvas.drawRoundRect(rect, rx, rx, paint)
             }
         }
 
-        // 3. Draw center logo
+        // 3. Composite continuous fill content using SRC_IN
+        val contentPaint = Paint().apply {
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        }
+        val contentLayer = canvas.saveLayer(dataBounds, contentPaint)
+
+        // 3a. Solid backgroundColor across QR area
+        val bgPaint = context.obtainFill(bgColor)
+        canvas.drawRect(dataBounds, bgPaint)
+
+        // 3b. Continuous scaled image across QR area
+        ImageScaleResolver.drawScaledBitmap(canvas, sourceImage, dataBounds, imageMode, imageAlpha)
+
+        // 3c. Solid maskColor tint overlay across QR area
+        val tintPaint = context.obtainFill(maskColor)
+        canvas.drawRect(dataBounds, tintPaint)
+
+        canvas.restoreToCount(contentLayer)
+        canvas.restoreToCount(layerId)
+
+        // 4. Center Logo if present
         drawLogo(canvas, design, geometry, context)
     }
 

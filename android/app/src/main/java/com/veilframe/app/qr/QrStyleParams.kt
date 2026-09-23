@@ -63,15 +63,36 @@ data class QrStyleParams(
     /** Logo size as fraction of output size (0.0–0.33). */
     val logoFraction: Float = 0.22f,
     /** Optional background image (used by IMAGE* and IMAGE_FILL styles). */
+    /** Optional background image (used by backdrop and legacy styles). */
     val backgroundImage: Bitmap? = null,
     /** Blend alpha for background image overlay (0.0–1.0). */
     val backgroundImageAlpha: Float = 0.85f,
-    // --- 2.5D specific ---
+    /** Source image specifically for IMAGE, IMAGE_FILL, and IMAGE_RESAMPLE styles (distinct from backdrop). */
+    val sourceImage: Bitmap? = null,
+    /** Alpha for the style source image (0.0–1.0). */
+    val sourceImageAlpha: Float = 1.0f,
+    // --- 2.5D specific (EFQRCodeStyle25D) ---
     val d25TopColor: Int = Color.BLACK,
-    val d25LeftColor: Int = Color.DKGRAY,
-    val d25RightColor: Int = 0xFF888888.toInt(),
-    val d25DataHeight: Float = 0.5f,
-    val d25PositionHeight: Float = 0.5f,
+    val d25LeftColor: Int = 0x33000000,
+    val d25RightColor: Int = 0x99000000.toInt(),
+    val d25DataHeight: Float = 1.0f,
+    val d25PositionHeight: Float = 1.0f,
+    // --- IMAGE style specific (EFQRCodeStyleImage) ---
+    val imageAllowTransparent: Boolean = true,
+    val imageDataDarkColor: Int = Color.BLACK,
+    val imageDataLightColor: Int = Color.WHITE,
+    val imagePositionDarkColor: Int = Color.BLACK,
+    val imagePositionLightColor: Int = Color.WHITE,
+    val imagePositionSize: Float = 1.0f,
+    val imageTimingDarkColor: Int = Color.BLACK,
+    val imageTimingLightColor: Int = Color.WHITE,
+    val imageTimingSize: Float = 1.0f,
+    val imageAlignDarkColor: Int = Color.BLACK,
+    val imageAlignLightColor: Int = Color.WHITE,
+    val imageAlignSize: Float = 1.0f,
+    // --- IMAGE_FILL style specific (EFQRCodeStyleImageFill) ---
+    val imageFillBackgroundColor: Int = Color.WHITE,
+    val imageFillMaskColor: Int = 0x1A000000, // 10% black
     // --- Bubble specific ---
     val bubbleOutlineColor: Int = 0xFF8ED1FC.toInt(),
     val bubbleCenterColor: Int = Color.WHITE,

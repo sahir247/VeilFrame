@@ -156,7 +156,7 @@ class ComposableQrEngineTest {
         )
         val svg25D = SvgExporter.generateSvg(matrix, design25D)
         assertTrue(svg25D.contains("<svg"))
-        assertTrue(svg25D.contains("<polygon points="))
+        assertTrue(svg25D.contains("matrix(0.866025") || svg25D.contains("<polygon points="))
 
         // 2. Test Directional Line SVG markup
         val designLine = QrDesign(
