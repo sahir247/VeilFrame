@@ -52,6 +52,75 @@ open class ComposableQrRenderer : BaseQrRenderer() {
         context: RenderContext
     ) {
         val n = matrix.size
+
+        // 1. IMAGE_MASKED: Stenciled photo fill through dark module paths
+        if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED) {
+            val sourceBitmap = design.imageSource.bitmap ?: design.backgroundImage
+            if (sourceBitmap != null && !sourceBitmap.isRecycled) {
+                val maskPath = context.tempPath3.apply { reset() }
+                val scope = design.imageSource.scope
+
+                if (design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER) {
+                    val clusters = BubbleClusterEngine.computeClusters(matrix, design)
+                    BubbleClusterRenderer.buildClusterPath(clusters, geometry, maskPath)
+                } else {
+                    for (col in 0 until n) {
+                        for (row in 0 until n) {
+                            if (!matrix.isDark(col, row)) continue
+                            if (scope == ImageMaskScope.DATA_ONLY && matrix.isProtected(col, row)) continue
+
+                            val module = matrix.moduleAt(col, row)
+                            val baseRect = geometry.moduleRect(col, row, design.moduleStyle.scale)
+                            ShapeEngine.buildModulePath(module, baseRect, design, context.tempPath1)
+                            maskPath.addPath(context.tempPath1)
+                        }
+                    }
+                }
+
+                canvas.save()
+                canvas.clipPath(maskPath)
+
+                val dstRect = geometry.dataRegionBounds()
+
+                val bw = sourceBitmap.width
+                val bh = sourceBitmap.height
+                val srcRect = when (design.imageSource.scaleMode) {
+                    ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
+                        val minDim = minOf(bw, bh)
+                        val sx = (bw - minDim) / 2
+                        val sy = (bh - minDim) / 2
+                        Rect(sx, sy, sx + minDim, sy + minDim)
+                    }
+                    ImageScaleMode.STRETCH -> Rect(0, 0, bw, bh)
+                    ImageScaleMode.ASPECT_FIT -> null
+                }
+
+                val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+                    alpha = (design.imageSource.opacity.coerceIn(0f, 1f) * 255).toInt()
+                }
+
+                canvas.drawBitmap(sourceBitmap, srcRect, dstRect, imagePaint)
+
+                // Optional maskColor tint
+                if (design.imageSource.maskAlpha > 0f) {
+                    val tintPaint = context.obtainFill(design.imageSource.maskColor).apply {
+                        alpha = (design.imageSource.maskAlpha.coerceIn(0f, 1f) * 255).toInt()
+                    }
+                    canvas.drawRect(dstRect, tintPaint)
+                }
+
+                canvas.restore()
+                return
+            }
+        }
+
+        // 2. BUBBLE_CLUSTER: Hierarchical circular clustering
+        if (design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER) {
+            val clusters = BubbleClusterEngine.computeClusters(matrix, design)
+            BubbleClusterRenderer.render(canvas, clusters, geometry, design, context)
+            return
+        }
+
         val path = context.tempPath4
         val is25D = design.effects.is25D || design.style == QrStyle.D25
 

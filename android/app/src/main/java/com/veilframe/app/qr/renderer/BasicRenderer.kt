@@ -137,7 +137,7 @@ class BasicRenderer : BaseQrRenderer() {
                 val pillRect = RectF(cx - rx, cy - ry, cx + rx, cy + ry)
                 canvas.drawRoundRect(pillRect, ry, ry, paint)
             }
-            ModuleShape.CONNECTED, ModuleShape.LINE, ModuleShape.CUSTOM -> {
+            ModuleShape.CONNECTED, ModuleShape.LINE, ModuleShape.BUBBLE_CLUSTER, ModuleShape.CUSTOM -> {
                 val rx = w * 0.15f
                 canvas.drawRoundRect(rect, rx, rx, paint)
             }

@@ -51,19 +51,52 @@ object SvgExporter {
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
 
-        // 1. Defs (Gradients)
-        if (hasGradient) {
+        // 1. Defs (Gradients & Masks)
+        val isMasked = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED
+        if (hasGradient || isMasked) {
             sb.append("  <defs>\n")
-            if (isRadial) {
-                sb.append("""    <radialGradient id="qrGrad" cx="50%" cy="50%" r="50%">""").append("\n")
-                sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
-                sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
-                sb.append("    </radialGradient>\n")
-            } else {
-                sb.append("""    <linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%">""").append("\n")
-                sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
-                sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
-                sb.append("    </linearGradient>\n")
+            if (hasGradient) {
+                if (isRadial) {
+                    sb.append("""    <radialGradient id="qrGrad" cx="50%" cy="50%" r="50%">""").append("\n")
+                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
+                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
+                    sb.append("    </radialGradient>\n")
+                } else {
+                    sb.append("""    <linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%">""").append("\n")
+                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
+                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
+                    sb.append("    </linearGradient>\n")
+                }
+            }
+            if (isMasked) {
+                sb.append("""    <mask id="qrDataMask">""").append("\n")
+                sb.append("""      <rect width="$totalSize" height="$totalSize" fill="black" />""").append("\n")
+                if (design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER) {
+                    val clusters = com.veilframe.app.qr.renderer.BubbleClusterEngine.computeClusters(matrix, design)
+                    for (cluster in clusters) {
+                        if (cluster.isAmbient) continue
+                        val cx = cluster.cx + qz
+                        val cy = cluster.cy + qz
+                        val r = cluster.radius
+                        sb.append("""      <circle cx="$cx" cy="$cy" r="$r" fill="white" />""").append("\n")
+                        if (cluster.hasInnerDot && cluster.innerRadius > 0f) {
+                            sb.append("""      <circle cx="$cx" cy="$cy" r="${cluster.innerRadius}" fill="white" />""").append("\n")
+                        }
+                    }
+                } else {
+                    val maskScale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+                    val maskOffset = (1.0 - maskScale) / 2.0
+                    for (col in 0 until matrix.size) {
+                        for (row in 0 until matrix.size) {
+                            if (!matrix.isDark(col, row)) continue
+                            if (design.imageSource.scope == com.veilframe.app.qr.model.ImageMaskScope.DATA_ONLY && matrix.isProtected(col, row)) continue
+                            val mx = col + qz + maskOffset
+                            val my = row + qz + maskOffset
+                            sb.append("""      <rect x="$mx" y="$my" width="$maskScale" height="$maskScale" fill="white" />""").append("\n")
+                        }
+                    }
+                }
+                sb.append("    </mask>\n")
             }
             sb.append("  </defs>\n")
         }
@@ -143,122 +176,196 @@ object SvgExporter {
         val d25RightHex = hexColor(design.depthStyle.rightColor)
         val d25Depth = design.depthStyle.depth * 0.35
 
-        for (col in 0 until matrix.size) {
-            for (row in 0 until matrix.size) {
-                if (!matrix.isDark(col, row)) continue
-                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
-                    continue
+        if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED) {
+            val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
+            if (sourceBmp != null) {
+                val srcBase64 = bitmapToBase64(sourceBmp)
+                if (srcBase64.isNotEmpty()) {
+                    val opacity = String.format(Locale.US, "%.2f", design.imageSource.opacity)
+                    val maskAlpha = String.format(Locale.US, "%.2f", design.imageSource.maskAlpha)
+                    val maskColorHex = hexColor(design.imageSource.maskColor)
+                    sb.append("""  <g mask="url(#qrDataMask)">""").append("\n")
+                    sb.append("""    <image href="data:image/png;base64,$srcBase64" x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" preserveAspectRatio="xMidYMid slice" opacity="$opacity" />""").append("\n")
+                    if (design.imageSource.maskAlpha > 0f) {
+                        sb.append("""    <rect x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" fill="$maskColorHex" opacity="$maskAlpha" />""").append("\n")
+                    }
+                    sb.append("""  </g>""").append("\n")
                 }
-
-                val x = col + qz
-                val y = row + qz
-                val module = matrix.moduleAt(col, row)
-
-                // Per-zone color override: Timing, Alignment, or Sampled Image
-                val role = matrix.roleAt(col, row)
-                val isSampled = design.moduleStyle.fill == ModuleFill.IMAGE_SAMPLED || design.imageFillMode || design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
-                val fill = when {
-                    role == QrModuleRole.TIMING && timingHex != null -> timingHex
-                    (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignmentHex != null -> alignmentHex
-                    isSampled && bgBmp != null -> hexColor(com.veilframe.app.qr.renderer.FillEngine.resolveModuleColor(module, matrix.size, design))
-                    else -> dataFill
-                }
-
-                val offset = (1.0 - scale) / 2.0
-                val mx = x + offset
-                val my = y + offset
-                val cx = x + 0.5
-                val cy = y + 0.5
-
-                // 2.5D Isometric extruded side faces in SVG
-                if (is25D) {
-                    val ptsLeft = "${String.format(Locale.US, "%.2f", mx)},${String.format(Locale.US, "%.2f", my + scale)} " +
-                            "${String.format(Locale.US, "%.2f", mx + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
-                            "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
-                            "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my + scale)}"
-                    sb.append("""  <polygon points="$ptsLeft" fill="$d25LeftHex" />""").append("\n")
-
-                    val ptsRight = "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my)} " +
-                            "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + d25Depth)} " +
-                            "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
-                            "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my + scale)}"
-                    sb.append("""  <polygon points="$ptsRight" fill="$d25RightHex" />""").append("\n")
-                }
-
-                when {
-                    // Line style
-                    shape == ModuleShape.LINE || design.style == com.veilframe.app.qr.QrStyle.LINE -> {
-                        val strokeW = scale * design.lineStyle.thicknessFraction.coerceIn(0.15f, 0.9f)
-                        when (design.lineStyle.direction) {
-                            com.veilframe.app.qr.model.LineDirection.VERTICAL -> {
-                                sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                            }
-                            com.veilframe.app.qr.model.LineDirection.CROSS -> {
-                                sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                            }
-                            com.veilframe.app.qr.model.LineDirection.X -> {
-                                sb.append("""  <line x1="$mx" y1="$my" x2="${mx + scale}" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                                sb.append("""  <line x1="${mx + scale}" y1="$my" x2="$mx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                            }
-                            else -> {
-                                sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
-                            }
+            }
+            // If DATA_ONLY, also render timing and alignment modules
+            if (design.imageSource.scope == com.veilframe.app.qr.model.ImageMaskScope.DATA_ONLY) {
+                val timingFill = timingHex ?: dataFill
+                val alignFill = alignmentHex ?: dataFill
+                for (col in 0 until matrix.size) {
+                    for (row in 0 until matrix.size) {
+                        if (!matrix.isDark(col, row)) continue
+                        val role = matrix.roleAt(col, row)
+                        val x = col + qz
+                        val y = row + qz
+                        val offset = (1.0 - scale) / 2.0
+                        val mx = x + offset
+                        val my = y + offset
+                        if (role == QrModuleRole.TIMING) {
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                        } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
                         }
                     }
-                    // Organic / Connected blob
-                    shape == ModuleShape.ORGANIC || shape == ModuleShape.CONNECTED || design.style == com.veilframe.app.qr.QrStyle.CONNECTED_ORGANIC -> {
-                        val neighbors = module.neighbors
-                        val r = (scale * 0.42).toString()
-                        val rx = if (neighbors.isIsolated) r else (scale * 0.22).toString()
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                }
+            }
+        } else if (shape == ModuleShape.BUBBLE_CLUSTER) {
+            val clusters = com.veilframe.app.qr.renderer.BubbleClusterEngine.computeClusters(matrix, design)
+            for (cluster in clusters) {
+                val cx = cluster.cx + qz
+                val cy = cluster.cy + qz
+                val r = cluster.radius
+                if (cluster.isSolid) {
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$dataFill" />""").append("\n")
+                } else {
+                    val strokeW = if (cluster.strokeWidthRatio > 0f) String.format(Locale.US, "%.2f", cluster.strokeWidthRatio) else "0.35"
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$bgHex" stroke="$dataFill" stroke-width="$strokeW" />""").append("\n")
+                    if (cluster.hasInnerDot && cluster.innerRadius > 0f) {
+                        sb.append("""  <circle cx="$cx" cy="$cy" r="${cluster.innerRadius}" fill="$dataFill" />""").append("\n")
                     }
-                    // Circle or Dot
-                    shape == ModuleShape.CIRCLE || shape == ModuleShape.DOT -> {
-                        val r = (scale / 2.0) * (if (shape == ModuleShape.DOT) 0.75 else 1.0)
-                        sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$fill" />""").append("\n")
+                }
+            }
+            // Render timing and alignment for bubble cluster
+            val timingFill = timingHex ?: dataFill
+            val alignFill = alignmentHex ?: dataFill
+            for (col in 0 until matrix.size) {
+                for (row in 0 until matrix.size) {
+                    if (!matrix.isDark(col, row)) continue
+                    val role = matrix.roleAt(col, row)
+                    val x = col + qz
+                    val y = row + qz
+                    val offset = (1.0 - scale) / 2.0
+                    val mx = x + offset
+                    val my = y + offset
+                    if (role == QrModuleRole.TIMING) {
+                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$timingFill" />""").append("\n")
+                    } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="${scale * 0.25}" fill="$alignFill" />""").append("\n")
                     }
-                    shape == ModuleShape.PILL -> {
-                        val rx = scale * 0.45
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                }
+            }
+        } else {
+            for (col in 0 until matrix.size) {
+                for (row in 0 until matrix.size) {
+                    if (!matrix.isDark(col, row)) continue
+                    if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
+                        continue
                     }
-                    shape == ModuleShape.ROUNDED -> {
-                        val rx = scale * 0.25
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+
+                    val x = col + qz
+                    val y = row + qz
+                    val module = matrix.moduleAt(col, row)
+
+                    // Per-zone color override: Timing, Alignment, or Sampled Image
+                    val role = matrix.roleAt(col, row)
+                    val isSampled = design.moduleStyle.fill == ModuleFill.IMAGE_SAMPLED || design.imageFillMode || design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
+                    val fill = when {
+                        role == QrModuleRole.TIMING && timingHex != null -> timingHex
+                        (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignmentHex != null -> alignmentHex
+                        isSampled && bgBmp != null -> hexColor(com.veilframe.app.qr.renderer.FillEngine.resolveModuleColor(module, matrix.size, design))
+                        else -> dataFill
                     }
-                    shape == ModuleShape.SQUIRCLE -> {
-                        val rx = scale * 0.35
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+
+                    val offset = (1.0 - scale) / 2.0
+                    val mx = x + offset
+                    val my = y + offset
+                    val cx = x + 0.5
+                    val cy = y + 0.5
+
+                    // 2.5D Isometric extruded side faces in SVG
+                    if (is25D) {
+                        val ptsLeft = "${String.format(Locale.US, "%.2f", mx)},${String.format(Locale.US, "%.2f", my + scale)} " +
+                                "${String.format(Locale.US, "%.2f", mx + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
+                                "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
+                                "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my + scale)}"
+                        sb.append("""  <polygon points="$ptsLeft" fill="$d25LeftHex" />""").append("\n")
+
+                        val ptsRight = "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my)} " +
+                                "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + d25Depth)} " +
+                                "${String.format(Locale.US, "%.2f", mx + scale + d25Depth)},${String.format(Locale.US, "%.2f", my + scale + d25Depth)} " +
+                                "${String.format(Locale.US, "%.2f", mx + scale)},${String.format(Locale.US, "%.2f", my + scale)}"
+                        sb.append("""  <polygon points="$ptsRight" fill="$d25RightHex" />""").append("\n")
                     }
-                    shape == ModuleShape.BUBBLE -> {
-                        val rx = scale * 0.42
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
-                    }
-                    shape == ModuleShape.STAR -> {
-                        val outerR = scale / 2.0
-                        val innerR = outerR * 0.45
-                        val pts = (0 until 10).joinToString(" ") { i ->
-                            val r = if (i % 2 == 0) outerR else innerR
-                            val angle = -Math.PI / 2.0 + (i * Math.PI / 5.0)
-                            val px = cx + r * Math.cos(angle)
-                            val py = cy + r * Math.sin(angle)
-                            "${String.format(Locale.US, "%.2f", px)},${String.format(Locale.US, "%.2f", py)}"
+
+                    when {
+                        // Line style
+                        shape == ModuleShape.LINE || design.style == com.veilframe.app.qr.QrStyle.LINE -> {
+                            val strokeW = scale * design.lineStyle.thicknessFraction.coerceIn(0.15f, 0.9f)
+                            when (design.lineStyle.direction) {
+                                com.veilframe.app.qr.model.LineDirection.VERTICAL -> {
+                                    sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                }
+                                com.veilframe.app.qr.model.LineDirection.CROSS -> {
+                                    sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                    sb.append("""  <line x1="$cx" y1="$my" x2="$cx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                }
+                                com.veilframe.app.qr.model.LineDirection.X -> {
+                                    sb.append("""  <line x1="$mx" y1="$my" x2="${mx + scale}" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                    sb.append("""  <line x1="${mx + scale}" y1="$my" x2="$mx" y2="${my + scale}" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                }
+                                else -> {
+                                    sb.append("""  <line x1="$mx" y1="$cy" x2="${mx + scale}" y2="$cy" stroke="$fill" stroke-width="$strokeW" stroke-linecap="round" />""").append("\n")
+                                }
+                            }
                         }
-                        sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                    }
-                    shape == ModuleShape.DIAMOND -> {
-                        val half = scale / 2.0
-                        val pts = "${cx},${cy - half} ${cx + half},${cy} ${cx},${cy + half} ${cx - half},${cy}"
-                        sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                    }
-                    shape == ModuleShape.HEX -> {
-                        val half = scale / 2.0
-                        val qtr = half * 0.5
-                        val pts = "${cx},${cy - half} ${cx + half},${cy - qtr} ${cx + half},${cy + qtr} ${cx},${cy + half} ${cx - half},${cy + qtr} ${cx - half},${cy - qtr}"
-                        sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
-                    }
-                    else -> {
-                        sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" fill="$fill" />""").append("\n")
+                        // Organic / Connected blob
+                        shape == ModuleShape.ORGANIC || shape == ModuleShape.CONNECTED || design.style == com.veilframe.app.qr.QrStyle.CONNECTED_ORGANIC -> {
+                            val neighbors = module.neighbors
+                            val r = (scale * 0.42).toString()
+                            val rx = if (neighbors.isIsolated) r else (scale * 0.22).toString()
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                        }
+                        // Circle or Dot
+                        shape == ModuleShape.CIRCLE || shape == ModuleShape.DOT -> {
+                            val r = (scale / 2.0) * (if (shape == ModuleShape.DOT) 0.75 else 1.0)
+                            sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.PILL -> {
+                            val rx = scale * 0.45
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.ROUNDED -> {
+                            val rx = scale * 0.25
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.SQUIRCLE -> {
+                            val rx = scale * 0.35
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.BUBBLE -> {
+                            val rx = scale * 0.42
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" rx="$rx" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.STAR -> {
+                            val outerR = scale / 2.0
+                            val innerR = outerR * 0.45
+                            val pts = (0 until 10).joinToString(" ") { i ->
+                                val r = if (i % 2 == 0) outerR else innerR
+                                val angle = -Math.PI / 2.0 + (i * Math.PI / 5.0)
+                                val px = cx + r * Math.cos(angle)
+                                val py = cy + r * Math.sin(angle)
+                                "${String.format(Locale.US, "%.2f", px)},${String.format(Locale.US, "%.2f", py)}"
+                            }
+                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.DIAMOND -> {
+                            val half = scale / 2.0
+                            val pts = "${cx},${cy - half} ${cx + half},${cy} ${cx},${cy + half} ${cx - half},${cy}"
+                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
+                        }
+                        shape == ModuleShape.HEX -> {
+                            val half = scale / 2.0
+                            val qtr = half * 0.5
+                            val pts = "${cx},${cy - half} ${cx + half},${cy - qtr} ${cx + half},${cy + qtr} ${cx},${cy + half} ${cx - half},${cy + qtr} ${cx - half},${cy - qtr}"
+                            sb.append("""  <polygon points="$pts" fill="$fill" />""").append("\n")
+                        }
+                        else -> {
+                            sb.append("""  <rect x="$mx" y="$my" width="$scale" height="$scale" fill="$fill" />""").append("\n")
+                        }
                     }
                 }
             }

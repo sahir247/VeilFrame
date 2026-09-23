@@ -41,6 +41,7 @@ enum class ModuleShape {
     SQUIRCLE,
     STAR,
     BUBBLE,
+    BUBBLE_CLUSTER,
     CUSTOM
 }
 
@@ -51,6 +52,7 @@ enum class ModuleFill {
     SWEEP_GRADIENT,
     IMAGE,
     IMAGE_SAMPLED,
+    IMAGE_MASKED,
     NOISE
 }
 
@@ -84,6 +86,47 @@ enum class LogoShape {
     CIRCLE,
     SQUARE
 }
+
+sealed interface ImageSource {
+    data class Uri(val value: String) : ImageSource
+    data class Resource(val id: Int) : ImageSource
+    data class Memory(val bitmap: Bitmap) : ImageSource
+}
+
+enum class ImageScaleMode {
+    ASPECT_FILL,
+    ASPECT_FIT,
+    CENTER_CROP,
+    STRETCH
+}
+
+enum class ImageMaskScope {
+    DATA_ONLY,
+    ALL_MODULES,
+    CUSTOM
+}
+
+data class ImageSourceStyle(
+    val source: ImageSource? = null,
+    val scaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+    val scope: ImageMaskScope = ImageMaskScope.DATA_ONLY,
+    val opacity: Float = 1.0f,
+    val contrast: Float = 1.0f,
+    val exposure: Float = 0.0f,
+    val maskColor: Int = Color.BLACK,
+    val maskAlpha: Float = 0.1f
+) {
+    val bitmap: Bitmap? get() = (source as? ImageSource.Memory)?.bitmap
+}
+
+data class BubbleClusterStyle(
+    val seed: Long = 42L,
+    val ambientBubbles: Boolean = true,
+    val ambientDensity: Float = 0.15f,
+    val ambientMaxRadius: Float = 0.22f,
+    val crossOuterStrokeRatio: Float = 0.45f,
+    val pairStrokeRatio: Float = 0.38f
+)
 
 sealed interface BackgroundStyle {
     data class Solid(val color: Int = Color.WHITE) : BackgroundStyle
@@ -256,6 +299,8 @@ data class QrDesign(
     val functionStyle: FunctionStyle = FunctionStyle(seed = effects.seed),
     val jitterStyle: RandomJitterStyle = RandomJitterStyle(seed = effects.seed),
     val compositeStyle: CompositePrimitiveStyle = CompositePrimitiveStyle(),
+    val imageSource: ImageSourceStyle = ImageSourceStyle(),
+    val clusterStyle: BubbleClusterStyle = BubbleClusterStyle(),
     val backgroundLayer: BackgroundLayer = BackgroundLayer(
         color = palette.background,
         bitmap = backgroundImage,
@@ -375,6 +420,12 @@ data class QrDesign(
                     primitives = if (params.style == QrStyle.DSJ) listOf(ModulePrimitive.LINE, ModulePrimitive.CROSS, ModulePrimitive.X)
                                  else listOf(ModulePrimitive.CROSS, ModulePrimitive.X)
                 ),
+                imageSource = if (params.backgroundImage != null && (params.style == QrStyle.IMAGE_RESAMPLE || imageFillMode)) {
+                    ImageSourceStyle(source = ImageSource.Memory(params.backgroundImage))
+                } else {
+                    ImageSourceStyle()
+                },
+                clusterStyle = BubbleClusterStyle(seed = params.randomRectSeed),
                 backgroundLayer = BackgroundLayer(
                     enabled = true,
                     color = params.background,
