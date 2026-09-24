@@ -96,8 +96,22 @@ data class QrStyleParams(
     // --- Bubble specific ---
     val bubbleOutlineColor: Int = 0xFF8ED1FC.toInt(),
     val bubbleCenterColor: Int = Color.WHITE,
-    // --- Line specific ---
-    val lineVerticalColor: Int? = null,   // null → use foreground
+    // --- DSJ specific (EFQRCodeStyleDSJ) ---
+    val dsjLineSize: Float = 0.7f,
+    val dsjXSize: Float = 0.7f,
+    val dsjHorizontalLineColor: Int = 0xFFF6B506.toInt(),
+    val dsjVerticalLineColor: Int = 0xFFE02020.toInt(),
+    val dsjXColor: Int = 0xFF0B2D97.toInt(),
+    // --- Function specific (EFQRCodeStyleFunction) ---
+    val functionType: com.veilframe.app.qr.model.EfFunctionType = com.veilframe.app.qr.model.EfFunctionType.FADE,
+    val functionDataStyle: com.veilframe.app.qr.model.EfFunctionDataStyle = com.veilframe.app.qr.model.EfFunctionDataStyle.ROUND,
+    val functionDataColor: Int = Color.BLACK,
+    val functionCircleColor: Int = Color.BLACK,
+    // --- Line specific (EFQRCodeStyleLine) ---
+    val lineDirection: com.veilframe.app.qr.model.LineDirection = com.veilframe.app.qr.model.LineDirection.X,
+    val lineThickness: Float = 0.5f,
+    val lineColor: Int? = null,
+    val lineVerticalColor: Int? = null,   // legacy null → use foreground
     val lineHorizontalColor: Int? = null,
     // --- Random Rectangle specific ---
     val randomRectSeed: Long = 42L,

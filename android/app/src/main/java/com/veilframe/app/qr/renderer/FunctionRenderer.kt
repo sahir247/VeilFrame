@@ -1,34 +1,30 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
+import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.model.EfFunctionDataStyle
+import com.veilframe.app.qr.model.EfFunctionType
 import com.veilframe.app.qr.model.FinderStyle
-import com.veilframe.app.qr.model.FunctionPatternType
-import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
-import com.veilframe.app.qr.QrStyleParams
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.sin
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 /**
- * Style 10 — FUNCTION (Function-based custom module shapes)
+ * Style 10 — FUNCTION (Mathematical Function Custom Module Shapes)
  *
- * Each dark data module is rendered as a star/diamond shape whose
- * exact path is computed via a parametric function — mirroring
- * EFQRCodeStyleFunction.swift's function-drawing approach.
- *
- * The default shape is a 4-point star (rhombus with slightly curved sides),
- * with variants based on the module shape configured in the design:
- *
- *   ROUNDED   → soft petal/flower (8-point using sin/cos)
- *   DIAMOND   → diamond (rotated square)
- *   default   → 4-pointed star
- *
- * Position patterns use canonical [FinderRenderer] for consistency.
+ * Implements EFQRCodeStyleFunction with exact mathematical parity:
+ * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [EfPositionPatternGeometry].
+ * - Two canonical mathematical functions:
+ *   1. FADE: Cosine radial gradient function `(1 - cos(PI * dist)) / 6 + 1/5`.
+ *   2. CIRCLE: Concentric circular band ($5/20 < \text{dist} < 8/20$) with dual-colored
+ *      in-band styling across dark and light modules, and optional background ring.
+ * - Supports both ROUND and RECTANGLE module styles.
  */
 class FunctionRenderer : QrRenderer {
 
@@ -39,113 +35,166 @@ class FunctionRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
-        val n = matrix.size
-        val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
-        val scale = design.moduleStyle.scale.coerceIn(0.4f, 1.0f)
-        val shape = design.moduleStyle.shape
+        val nCount = matrix.size
+        val cs = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
 
-        // 1. Draw protected finders first
-        FinderRenderer.renderFinders(
-            canvas = canvas,
-            geometry = geometry,
-            style = design.eyeStyle.style,
-            outerColor = design.eyeStyle.outerColor ?: fgColor,
-            innerColor = design.eyeStyle.innerColor ?: fgColor,
-            backgroundColor = bgColor,
-            context = context
+        val posColor = design.eyeStyle.outerColor ?: design.palette.foreground
+        val posStyle = design.eyeStyle.style
+        val posSize = design.positionSize
+
+        val funcType = design.efFunctionStyle.functionType
+        val dataStyle = design.efFunctionStyle.dataStyle
+        val dataColor = design.efFunctionStyle.dataColor
+        val circleColor = design.efFunctionStyle.circleColor
+
+        // 1. Draw background ring if CIRCLE function + ROUND style
+        if (funcType == EfFunctionType.CIRCLE && dataStyle == EfFunctionDataStyle.ROUND) {
+            val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = circleColor
+                style = Paint.Style.STROKE
+                strokeWidth = (nCount.toFloat() / 15.0f) * cs
+            }
+            val ringCx = ox + (nCount.toFloat() / 2.0f) * cs
+            val ringCy = oy + (nCount.toFloat() / 2.0f) * cs
+            val ringR = (nCount.toFloat() / 2.0f * sqrt(2.0f) * 13.0f / 40.0f) * cs
+            canvas.drawCircle(ringCx, ringCy, ringR, ringPaint)
+        }
+
+        // 2. Draw finders via canonical EF position geometry
+        val finderCenters = listOf(
+            Pair(3, 3),
+            Pair(nCount - 4, 3),
+            Pair(3, nCount - 4)
         )
+        for ((fx, fy) in finderCenters) {
+            EfPositionPatternGeometry.drawCanvas(
+                canvas = canvas,
+                x = fx,
+                y = fy,
+                moduleSize = cs,
+                offsetX = ox,
+                offsetY = oy,
+                style = posStyle,
+                size = posSize,
+                color = posColor
+            )
+        }
 
-        val fgPaint = context.obtainFill(fgColor)
+        val dataPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = dataColor
+            style = Paint.Style.FILL
+        }
+        val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = circleColor
+            style = Paint.Style.FILL
+        }
+        val whiteFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 0.1f * cs
+        }
 
-        // 2. Draw remaining modules (Timing, Alignment, Data)
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                if (!matrix.isDark(col, row)) continue
-                if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
-                    continue // Already handled by FinderRenderer
-                }
+        val centerCoord = (nCount - 1).toFloat() / 2.0f
+        val maxDist = (nCount.toFloat() / 2.0f) * sqrt(2.0f)
 
-                val type = matrix.functionMask[col, row]
-                val (cx, cy) = geometry.moduleCenter(col, row)
-                val cs = geometry.moduleSize
+        // 3. Draw function modules
+        for (x in 0 until nCount) {
+            for (y in 0 until nCount) {
+                if (EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
 
-                when {
-                    type == FunctionPatternType.TIMING ||
-                    type == FunctionPatternType.ALIGNMENT_CENTER ||
-                    type == FunctionPatternType.ALIGNMENT_OTHER -> {
-                        // Timing & Alignment: crisp circle for contrast
-                        canvas.drawCircle(cx, cy, cs * 0.40f, fgPaint)
+                val isDark = matrix.isDark(x, y)
+                val dist = sqrt((centerCoord - x).pow(2) + (centerCoord - y).pow(2)) / maxDist
+
+                when (funcType) {
+                    EfFunctionType.FADE -> {
+                        val sizeF = (1.0f - cos(PI.toFloat() * dist)) / 6.0f + 1.0f / 5.0f
+                        if (isDark) {
+                            when (dataStyle) {
+                                EfFunctionDataStyle.RECTANGLE -> {
+                                    val rectSize = sizeF + 0.2f
+                                    val rx = x + (1.0f - rectSize) / 2.0f
+                                    val ry = y + (1.0f - rectSize) / 2.0f
+                                    canvas.drawRect(
+                                        ox + rx * cs,
+                                        oy + ry * cs,
+                                        ox + (rx + rectSize) * cs,
+                                        oy + (ry + rectSize) * cs,
+                                        dataPaint
+                                    )
+                                }
+                                EfFunctionDataStyle.ROUND -> {
+                                    val cx = ox + (x + 0.5f) * cs
+                                    val cy = oy + (y + 0.5f) * cs
+                                    canvas.drawCircle(cx, cy, sizeF * cs, dataPaint)
+                                }
+                            }
+                        }
                     }
-                    else -> {
-                        drawFunctionModule(canvas, cx, cy, cs, scale, shape, fgPaint, context)
+                    EfFunctionType.CIRCLE -> {
+                        var sizeF: Float
+                        var activeColor = dataColor
+                        var pointVisible = isDark
+
+                        if (dist > 5.0f / 20.0f && dist < 8.0f / 20.0f) {
+                            sizeF = 0.5f
+                            activeColor = circleColor
+                            pointVisible = true
+                        } else {
+                            sizeF = if (dataStyle == EfFunctionDataStyle.RECTANGLE) 0.15f else 0.25f
+                        }
+
+                        if (pointVisible) {
+                            val activePaint = if (activeColor == circleColor) circlePaint else dataPaint
+                            when (dataStyle) {
+                                EfFunctionDataStyle.RECTANGLE -> {
+                                    val baseSize = 2.0f * sizeF + 0.1f
+                                    if (isDark) {
+                                        val rx = x + (1.0f - baseSize) / 2.0f
+                                        val ry = y + (1.0f - baseSize) / 2.0f
+                                        canvas.drawRect(
+                                            ox + rx * cs,
+                                            oy + ry * cs,
+                                            ox + (rx + baseSize) * cs,
+                                            oy + (ry + baseSize) * cs,
+                                            activePaint
+                                        )
+                                    } else {
+                                        val rectSize = baseSize - 0.1f
+                                        val rx = x + (1.0f - rectSize) / 2.0f
+                                        val ry = y + (1.0f - rectSize) / 2.0f
+                                        val left = ox + rx * cs
+                                        val top = oy + ry * cs
+                                        val right = left + rectSize * cs
+                                        val bottom = top + rectSize * cs
+                                        canvas.drawRect(left, top, right, bottom, whiteFillPaint)
+                                        strokePaint.color = activeColor
+                                        canvas.drawRect(left, top, right, bottom, strokePaint)
+                                    }
+                                }
+                                EfFunctionDataStyle.ROUND -> {
+                                    val cx = ox + (x + 0.5f) * cs
+                                    val cy = oy + (y + 0.5f) * cs
+                                    if (isDark) {
+                                        canvas.drawCircle(cx, cy, sizeF * cs, activePaint)
+                                    } else {
+                                        canvas.drawCircle(cx, cy, sizeF * cs, whiteFillPaint)
+                                        strokePaint.color = activeColor
+                                        canvas.drawCircle(cx, cy, sizeF * cs, strokePaint)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 3. Draw center logo
         drawLogo(canvas, design, geometry, context)
-    }
-
-    private fun drawFunctionModule(
-        canvas: Canvas, cx: Float, cy: Float,
-        cs: Float, scale: Float,
-        shape: ModuleShape, paint: Paint,
-        context: RenderContext
-    ) {
-        val r = cs * scale * 0.5f
-        val path = context.tempPath1
-        when (shape) {
-            ModuleShape.ROUNDED, ModuleShape.CIRCLE -> {
-                buildFlowerPath(path, cx, cy, r, petals = 8)
-            }
-            ModuleShape.DIAMOND -> {
-                buildDiamondPath(path, cx, cy, r)
-            }
-            else -> {
-                buildStarPath(path, cx, cy, r, points = 4)
-            }
-        }
-        canvas.drawPath(path, paint)
-    }
-
-    /** 4 or N-pointed star. */
-    private fun buildStarPath(path: Path, cx: Float, cy: Float, outerR: Float, points: Int) {
-        path.reset()
-        val innerR = outerR * 0.4f
-        val angleStep = PI.toFloat() / points
-        for (i in 0 until points * 2) {
-            val angle = i * angleStep - PI.toFloat() / 2
-            val r = if (i % 2 == 0) outerR else innerR
-            val x = cx + r * cos(angle); val y = cy + r * sin(angle)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.close()
-    }
-
-    /** N-petal flower shape using sin/cos. */
-    private fun buildFlowerPath(path: Path, cx: Float, cy: Float, r: Float, petals: Int) {
-        path.reset()
-        val steps = 360
-        for (i in 0..steps) {
-            val t = i.toFloat() / steps * 2 * PI.toFloat()
-            val freq = petals.toFloat()
-            val pR = r * (0.5f + 0.5f * cos(freq * t))
-            val x = cx + pR * cos(t); val y = cy + pR * sin(t)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.close()
-    }
-
-    /** Diamond = rotated square. */
-    private fun buildDiamondPath(path: Path, cx: Float, cy: Float, r: Float) {
-        path.reset()
-        path.moveTo(cx, cy - r)  // top
-        path.lineTo(cx + r, cy)  // right
-        path.lineTo(cx, cy + r)  // bottom
-        path.lineTo(cx - r, cy)  // left
-        path.close()
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

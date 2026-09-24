@@ -194,17 +194,49 @@ enum class LineDirection {
     HORIZONTAL,
     VERTICAL,
     CROSS,
+    LOOPBACK,
+    TOP_LEFT_TO_BOTTOM_RIGHT,
+    TOP_RIGHT_TO_BOTTOM_LEFT,
     X,
-    DIAGONAL_FORWARD,
-    DIAGONAL_BACKWARD,
-    LOOP
+    DIAGONAL_FORWARD, // Alias for TOP_LEFT_TO_BOTTOM_RIGHT
+    DIAGONAL_BACKWARD, // Alias for TOP_RIGHT_TO_BOTTOM_LEFT
+    LOOP // Alias for LOOPBACK
 }
 
 data class LineStyle(
-    val direction: LineDirection = LineDirection.HORIZONTAL,
+    val direction: LineDirection = LineDirection.X,
     val thicknessFraction: Float = 0.5f,
     val lengthFraction: Float = 1.0f,
-    val roundCaps: Boolean = true
+    val roundCaps: Boolean = true,
+    val color: Int? = null,
+    val positionStyle: FinderStyle = FinderStyle.CLASSIC,
+    val positionSize: Float = 1.0f,
+    val positionColor: Int? = null
+)
+
+enum class EfFunctionType {
+    FADE,
+    CIRCLE
+}
+
+enum class EfFunctionDataStyle {
+    ROUND,
+    RECTANGLE
+}
+
+data class EfFunctionStyle(
+    val functionType: EfFunctionType = EfFunctionType.FADE,
+    val dataStyle: EfFunctionDataStyle = EfFunctionDataStyle.ROUND,
+    val dataColor: Int = Color.BLACK,
+    val circleColor: Int = Color.BLACK
+)
+
+data class EfDsjStyle(
+    val lineSize: Float = 0.7f,
+    val xSize: Float = 0.7f,
+    val horizontalLineColor: Int = 0xFFF6B506.toInt(),
+    val verticalLineColor: Int = 0xFFE02020.toInt(),
+    val xColor: Int = 0xFF0B2D97.toInt()
 )
 
 data class DepthStyle(
@@ -317,6 +349,8 @@ data class QrDesign(
     val alignSize: Float = 1.0f,
     val imageFillBackgroundColor: Int = Color.WHITE,
     val imageFillMaskColor: Int = 0x1A000000,
+    val efDsjStyle: EfDsjStyle = EfDsjStyle(),
+    val efFunctionStyle: EfFunctionStyle = EfFunctionStyle(),
     val backgroundLayer: BackgroundLayer = BackgroundLayer(
         color = palette.background,
         bitmap = backgroundImage,
@@ -418,10 +452,27 @@ data class QrDesign(
                 timingStyle = TimingStyle(shape = timingShape, color = params.timingColor),
                 alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor),
                 lineStyle = LineStyle(
-                    direction = LineDirection.HORIZONTAL,
-                    thicknessFraction = 0.5f,
+                    direction = params.lineDirection,
+                    thicknessFraction = params.lineThickness,
                     lengthFraction = 1.0f,
-                    roundCaps = true
+                    roundCaps = true,
+                    color = params.lineColor ?: params.foreground,
+                    positionStyle = finderStyle,
+                    positionSize = params.imagePositionSize,
+                    positionColor = params.positionColor ?: params.foreground
+                ),
+                efDsjStyle = EfDsjStyle(
+                    lineSize = params.dsjLineSize,
+                    xSize = params.dsjXSize,
+                    horizontalLineColor = params.dsjHorizontalLineColor,
+                    verticalLineColor = params.dsjVerticalLineColor,
+                    xColor = params.dsjXColor
+                ),
+                efFunctionStyle = EfFunctionStyle(
+                    functionType = params.functionType,
+                    dataStyle = params.functionDataStyle,
+                    dataColor = params.functionDataColor,
+                    circleColor = params.functionCircleColor
                 ),
                 depthStyle = DepthStyle(
                     depth = params.d25DataHeight,

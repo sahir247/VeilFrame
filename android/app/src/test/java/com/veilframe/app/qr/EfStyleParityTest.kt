@@ -173,4 +173,108 @@ class EfStyleParityTest {
         assertNotNull(decoded)
         assertEquals("ZXing must successfully decode the stenciled QR matrix", payload, decoded.text)
     }
+
+    @Test
+    fun testDsjStyleParameterMappingAndSvgParity() {
+        val matrix = QrMatrix("https://veilframe.app/ef-dsj-parity", ErrorCorrectionLevel.H)
+
+        val params = QrStyleParams(
+            style = QrStyle.DSJ,
+            dsjLineSize = 0.8f,
+            dsjXSize = 0.9f,
+            dsjHorizontalLineColor = 0xFFF6B506.toInt(),
+            dsjVerticalLineColor = 0xFFE02020.toInt(),
+            dsjXColor = 0xFF0B2D97.toInt()
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+
+        assertEquals(QrStyle.DSJ, design.style)
+        assertNotNull(design.efDsjStyle)
+        assertEquals(0.8f, design.efDsjStyle!!.lineSize, 0.001f)
+        assertEquals(0.9f, design.efDsjStyle!!.xSize, 0.001f)
+        assertEquals(0xFFF6B506.toInt(), design.efDsjStyle!!.horizontalLineColor)
+        assertEquals(0xFFE02020.toInt(), design.efDsjStyle!!.verticalLineColor)
+        assertEquals(0xFF0B2D97.toInt(), design.efDsjStyle!!.xColor)
+
+        // Verify SVG Export EFQRCode Parity
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // Verify colors are present in SVG output
+        assertTrue("SVG must contain DSJ horizontal color #F6B506", svg.contains("#F6B506"))
+        assertTrue("SVG must contain DSJ vertical color #E02020", svg.contains("#E02020"))
+        assertTrue("SVG must contain DSJ X color #0B2D97", svg.contains("#0B2D97"))
+        assertTrue("SVG must contain stroke lines for X crosses", svg.contains("<line") || svg.contains("<rect"))
+    }
+
+    @Test
+    fun testFunctionStyleFadeAndCircleSvgParity() {
+        val matrix = QrMatrix("https://veilframe.app/ef-function-parity", ErrorCorrectionLevel.H)
+
+        // Test FADE function
+        val fadeParams = QrStyleParams(
+            style = QrStyle.FUNCTION,
+            functionType = EfFunctionType.FADE,
+            functionDataStyle = EfFunctionDataStyle.ROUND,
+            functionDataColor = 0xFF123456.toInt()
+        )
+        val fadeDesign = QrDesign.fromQrStyleParams(fadeParams)
+        assertEquals(QrStyle.FUNCTION, fadeDesign.style)
+        assertEquals(EfFunctionType.FADE, fadeDesign.efFunctionStyle?.functionType)
+        assertEquals(EfFunctionDataStyle.ROUND, fadeDesign.efFunctionStyle?.dataStyle)
+
+        val fadeSvg = SvgExporter.generateSvg(matrix, fadeDesign)
+        assertTrue("Fade SVG must contain data color #123456", fadeSvg.contains("#123456"))
+        assertTrue("Fade SVG with ROUND style must contain circles", fadeSvg.contains("<circle"))
+
+        // Test CIRCLE function
+        val circleParams = QrStyleParams(
+            style = QrStyle.FUNCTION,
+            functionType = EfFunctionType.CIRCLE,
+            functionDataStyle = EfFunctionDataStyle.ROUND,
+            functionDataColor = 0xFF000000.toInt(),
+            functionCircleColor = 0xFFFF0000.toInt()
+        )
+        val circleDesign = QrDesign.fromQrStyleParams(circleParams)
+        val circleSvg = SvgExporter.generateSvg(matrix, circleDesign)
+
+        assertTrue("Circle SVG must contain circle color #FF0000", circleSvg.contains("#FF0000"))
+        // Background concentric ring has stroke-width = nCount / 15.0 and fill="none"
+        val expectedRingSw = String.format(java.util.Locale.US, "%.3f", matrix.size.toDouble() / 15.0)
+        assertTrue("Circle SVG must contain background concentric ring with stroke-width=$expectedRingSw and fill=none", circleSvg.contains("fill=\"none\"") && circleSvg.contains("stroke-width=\"$expectedRingSw\""))
+    }
+
+    @Test
+    fun testLineStyleGrammarAndSvgParity() {
+        val matrix = QrMatrix("https://veilframe.app/ef-line-parity", ErrorCorrectionLevel.H)
+
+        // Test Horizontal line
+        val horizParams = QrStyleParams(
+            style = QrStyle.LINE,
+            lineDirection = LineDirection.HORIZONTAL,
+            lineThickness = 0.6f,
+            lineColor = 0xFF224466.toInt()
+        )
+        val horizDesign = QrDesign.fromQrStyleParams(horizParams)
+        assertEquals(QrStyle.LINE, horizDesign.style)
+        assertEquals(LineDirection.HORIZONTAL, horizDesign.lineStyle.direction)
+        assertEquals(0.6f, horizDesign.lineStyle.thicknessFraction, 0.001f)
+        assertEquals(0xFF224466.toInt(), horizDesign.lineStyle.color)
+
+        val horizSvg = SvgExporter.generateSvg(matrix, horizDesign)
+        assertTrue("Line SVG must contain line color #224466", horizSvg.contains("#224466"))
+        assertTrue("Line SVG must contain round cap strokes", horizSvg.contains("stroke-linecap=\"round\""))
+        assertTrue("Line SVG must contain <line x1=", horizSvg.contains("<line x1="))
+
+        // Test Cross line
+        val crossParams = QrStyleParams(
+            style = QrStyle.LINE,
+            lineDirection = LineDirection.CROSS,
+            lineThickness = 0.5f,
+            lineColor = 0xFF119988.toInt()
+        )
+        val crossDesign = QrDesign.fromQrStyleParams(crossParams)
+        val crossSvg = SvgExporter.generateSvg(matrix, crossDesign)
+        assertTrue("Cross SVG must contain stroke lines", crossSvg.contains("<line x1="))
+        assertTrue("Cross SVG must contain line color #119988", crossSvg.contains("#119988"))
+    }
 }

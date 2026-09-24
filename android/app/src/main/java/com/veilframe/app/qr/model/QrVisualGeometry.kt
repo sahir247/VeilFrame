@@ -265,7 +265,7 @@ object QrVisualGeometry {
                 path2.close()
                 path.op(path2, Path.Op.UNION)
             }
-            LineDirection.DIAGONAL_FORWARD -> {
+            LineDirection.DIAGONAL_FORWARD, LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT -> {
                 // Forward diagonal (/)
                 path.moveTo(rect.right - halfT, rect.top)
                 path.lineTo(rect.right, rect.top + halfT)
@@ -273,7 +273,7 @@ object QrVisualGeometry {
                 path.lineTo(rect.left, rect.bottom - halfT)
                 path.close()
             }
-            LineDirection.DIAGONAL_BACKWARD -> {
+            LineDirection.DIAGONAL_BACKWARD, LineDirection.TOP_RIGHT_TO_BOTTOM_LEFT -> {
                 // Backward diagonal (\)
                 path.moveTo(rect.left, rect.top + halfT)
                 path.lineTo(rect.left + halfT, rect.top)
@@ -281,7 +281,7 @@ object QrVisualGeometry {
                 path.lineTo(rect.right - halfT, rect.bottom)
                 path.close()
             }
-            LineDirection.LOOP -> {
+            LineDirection.LOOP, LineDirection.LOOPBACK -> {
                 val oval = RectF(cx - halfT * 1.5f, cy - halfT * 1.5f, cx + halfT * 1.5f, cy + halfT * 1.5f)
                 path.addOval(oval, Path.Direction.CW)
             }
