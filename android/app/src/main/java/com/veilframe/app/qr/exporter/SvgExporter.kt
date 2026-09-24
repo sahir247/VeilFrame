@@ -176,18 +176,39 @@ object SvgExporter {
                 com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
                 else -> "xMidYMid slice"
             }
+            val blendStyle = when (design.resampleStyle.backdropBlendMode) {
+                com.veilframe.app.qr.model.BackdropBlendMode.NORMAL -> ""
+                com.veilframe.app.qr.model.BackdropBlendMode.MULTIPLY -> """ style="mix-blend-mode: multiply;""""
+                com.veilframe.app.qr.model.BackdropBlendMode.SCREEN -> """ style="mix-blend-mode: screen;""""
+                com.veilframe.app.qr.model.BackdropBlendMode.OVERLAY -> """ style="mix-blend-mode: overlay;""""
+            }
             if (srcBmp != null && !srcBmp.isRecycled) {
                 val srcBase64 = bitmapToBase64(srcBmp)
                 if (srcBase64.isNotEmpty()) {
-                    sb.append("""  <image href="data:image/png;base64,$srcBase64" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity" />""").append("\n")
+                    sb.append("""  <image href="data:image/png;base64,$srcBase64" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
                 }
             } else if (pixelSource != null || design.imageSource.source != null) {
-                sb.append("""  <image href="#sourceBackdrop" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity" />""").append("\n")
+                sb.append("""  <image href="#sourceBackdrop" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
             }
             val tint = design.resampleStyle.backdropTint
             if (tint != null) {
                 val tintHex = hexColor(tint)
-                sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$tintHex" />""").append("\n")
+                val tintAlpha = String.format(Locale.US, "%.2f", colorAlpha(tint))
+                if (srcBmp != null && !srcBmp.isRecycled) {
+                    val (_, dstRect) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(
+                        srcBmp.width,
+                        srcBmp.height,
+                        android.graphics.RectF(0f, 0f, totalSize.toFloat(), totalSize.toFloat()),
+                        design.resampleStyle.backdropScaleMode
+                    )
+                    val tx = String.format(Locale.US, "%.3f", dstRect.left)
+                    val ty = String.format(Locale.US, "%.3f", dstRect.top)
+                    val tw = String.format(Locale.US, "%.3f", dstRect.width())
+                    val th = String.format(Locale.US, "%.3f", dstRect.height())
+                    sb.append("""  <rect x="$tx" y="$ty" width="$tw" height="$th" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
+                } else {
+                    sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
+                }
             }
         }
 
@@ -203,36 +224,53 @@ object SvgExporter {
         val d25RightHex = hexColor(design.depthStyle.rightColor)
         val d25Depth = design.depthStyle.depth * 0.35
 
-        val resolvedResampleSource = pixelSource ?: if (design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
+        val isResample = design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
+        var preScaledSource: com.veilframe.app.qr.renderer.PreScaledPixelSource? = null
+
+        val resolvedResampleSource = pixelSource ?: if (isResample && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
+            try {
+                preScaledSource = com.veilframe.app.qr.renderer.ImageScaleResolver.createPreScaledSource(
+                    design.imageSource.bitmap!!,
+                    3 * matrix.size,
+                    3 * matrix.size,
+                    design.imageSource.scaleMode
+                )
+                preScaledSource
+            } catch (_: Throwable) {
+                com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!)
+            }
+        } else if (design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
             com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!)
         } else null
-        val isResampleWithSource = design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && resolvedResampleSource != null
+
+        val isResampleWithSource = isResample && resolvedResampleSource != null
         val isMaskedWithSource = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled
 
-        if (isResampleWithSource) {
-            com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
-                matrix = matrix,
-                pixelSource = resolvedResampleSource,
-                style = design.imageSource,
-                seed = design.resampleStyle.seed
-            ) { col, row, subX, subY, _ ->
-                val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
-                    col = col,
-                    row = row,
-                    quietZone = qz,
-                    subX = subX,
-                    subY = subY
-                )
-                val sx = String.format(Locale.US, "%.3f", rect.left)
-                val sy = String.format(Locale.US, "%.3f", rect.top)
-                val subW = String.format(Locale.US, "%.3f", rect.width)
-                val subH = String.format(Locale.US, "%.3f", rect.height)
-                sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
-            }
-            // Render protected timing and alignment modules for 3x3 resample
-            val timingFill = timingHex ?: dataFill
-            val alignFill = alignmentHex ?: dataFill
-            val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
+        try {
+            if (isResampleWithSource) {
+                com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+                    matrix = matrix,
+                    pixelSource = resolvedResampleSource,
+                    style = design.imageSource,
+                    seed = design.resampleStyle.seed
+                ) { col, row, subX, subY, _ ->
+                    val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
+                        col = col,
+                        row = row,
+                        quietZone = qz,
+                        subX = subX,
+                        subY = subY
+                    )
+                    val sx = String.format(Locale.US, "%.3f", rect.left)
+                    val sy = String.format(Locale.US, "%.3f", rect.top)
+                    val subW = String.format(Locale.US, "%.3f", rect.width)
+                    val subH = String.format(Locale.US, "%.3f", rect.height)
+                    sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
+                }
+                // Render protected timing and alignment modules for 3x3 resample
+                val timingFill = timingHex ?: dataFill
+                val alignFill = alignmentHex ?: dataFill
+                val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
             val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
             for (col in 0 until matrix.size) {
                 for (row in 0 until matrix.size) {
@@ -434,6 +472,10 @@ object SvgExporter {
                     sb.append("  ").append(elem).append("\n")
                 }
             }
+        }
+
+        } finally {
+            preScaledSource?.bitmap?.recycle()
         }
 
         // 5. Embedded Logo (if present)
@@ -938,6 +980,8 @@ object SvgExporter {
             Pair(qz + matrixSize - 7, qz)
         )
 
+        val isHollowFinder = (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) || colorAlphaInt(design.palette.background) == 0
+
         for ((fx, fy) in finders) {
             val cx = fx + 3.5
             val cy = fy + 3.5
@@ -945,18 +989,30 @@ object SvgExporter {
             when (design.eyeStyle.style) {
                 FinderStyle.CIRCLE -> {
                     sb.append("""  <circle cx="$cx" cy="$cy" r="3.5" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="2.5" fill="$bgHex" />""").append("\n")
+                    if (!isHollowFinder) {
+                        sb.append("""  <circle cx="$cx" cy="$cy" r="2.5" fill="$bgHex" />""").append("\n")
+                    }
                     sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                 }
                 FinderStyle.ROUNDED -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="2" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="1.5" fill="$bgHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
+                    if (isHollowFinder) {
+                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" rx="2" fill="none" stroke="$eyeOuterHex" stroke-width="1" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
+                    } else {
+                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="2" fill="$eyeOuterHex" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="1.5" fill="$bgHex" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
+                    }
                 }
                 FinderStyle.SOFT -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    if (isHollowFinder) {
+                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" rx="1.5" fill="none" stroke="$eyeOuterHex" stroke-width="1" />""").append("\n")
+                        sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    } else {
+                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
+                        sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    }
                 }
                 FinderStyle.FRAME -> {
                     sb.append("""  <rect x="${fx + 0.4}" y="${fy + 0.4}" width="6.2" height="6.2" rx="1" fill="none" stroke="$eyeOuterHex" stroke-width="0.8" />""").append("\n")
@@ -979,9 +1035,14 @@ object SvgExporter {
                     sb.append("""  <rect x="${cx - 1.5}" y="${cy + 2.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
                 }
                 else -> {
-                    sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
-                    sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                    if (isHollowFinder) {
+                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" fill="none" stroke="$eyeOuterHex" stroke-width="1" rx="0.5" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                    } else {
+                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
+                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                    }
                 }
             }
         }

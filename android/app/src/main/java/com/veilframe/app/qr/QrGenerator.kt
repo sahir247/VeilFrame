@@ -49,7 +49,7 @@ enum class GenerationMode {
      * VeilFrame Art Engine generation mode:
      * - Encodes with [com.veilframe.app.qr.encoder.engine.VeilQrEncoder] (100% matrix identity with art specification).
      * - Bypasses parameter mutation or visual auto-repair for deterministic artistic reproduction.
-     * - Defaults to 0 quiet-zone modules per art backdrop specifications.
+     * - Defaults to 1 quiet-zone module (matching canonical artistic 1-module margin specifications, or explicitQuietZone if set).
      */
     ARTISTIC_ENGINE,
 

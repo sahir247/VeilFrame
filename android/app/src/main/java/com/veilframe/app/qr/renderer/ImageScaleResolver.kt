@@ -28,12 +28,21 @@ class BitmapPixelSource(val bitmap: Bitmap) : PixelSource {
  * Matches canonical pre-rendered 3N x 3N raster context sampling.
  */
 class PreScaledPixelSource(
-    val bitmap: Bitmap,
+    val bitmap: Bitmap? = null,
+    val pixels: IntArray? = null,
+    val targetWidth: Int = bitmap?.width ?: 0,
+    val targetHeight: Int = bitmap?.height ?: 0,
     val contentBounds: RectF? = null
 ) : PixelSource {
-    override val width: Int get() = bitmap.width
-    override val height: Int get() = bitmap.height
-    override fun getPixel(x: Int, y: Int): Int = bitmap.getPixel(x, y)
+    override val width: Int get() = targetWidth
+    override val height: Int get() = targetHeight
+    override fun getPixel(x: Int, y: Int): Int {
+        if (bitmap != null && !bitmap.isRecycled) return bitmap.getPixel(x, y)
+        if (pixels != null && x in 0 until targetWidth && y in 0 until targetHeight) {
+            return pixels[y * targetWidth + x]
+        }
+        return 0xFFFFFFFF.toInt()
+    }
 
     fun isPadding(x: Int, y: Int): Boolean {
         if (contentBounds == null) return false
@@ -93,9 +102,8 @@ object ImageScaleResolver {
 
         return when (mode) {
             ImageScaleMode.STRETCH -> {
-                val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
-                val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                PixelSample(source.getPixel(sx, sy), isPadding = false)
+                val color = sampleBilinear(source, u, v, bw, bh)
+                PixelSample(color, isPadding = false)
             }
 
             ImageScaleMode.ASPECT_FIT -> {
@@ -106,9 +114,8 @@ object ImageScaleResolver {
                         PixelSample(0xFFFFFFFF.toInt(), isPadding = true) // Pure white in letterbox padding
                     } else {
                         val normV = (v - offsetY) / fitH
-                        val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
-                        val sy = (normV.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                        PixelSample(source.getPixel(sx, sy), isPadding = false)
+                        val color = sampleBilinear(source, u, normV, bw, bh)
+                        PixelSample(color, isPadding = false)
                     }
                 } else {
                     val fitW = 1.0f * srcRatio
@@ -117,9 +124,8 @@ object ImageScaleResolver {
                         PixelSample(0xFFFFFFFF.toInt(), isPadding = true) // Pure white in pillarbox padding
                     } else {
                         val normU = (u - offsetX) / fitW
-                        val sx = (normU.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
-                        val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                        PixelSample(source.getPixel(sx, sy), isPadding = false)
+                        val color = sampleBilinear(source, normU, v, bw, bh)
+                        PixelSample(color, isPadding = false)
                     }
                 }
             }
@@ -129,19 +135,80 @@ object ImageScaleResolver {
                     val visibleRatio = 1.0f / srcRatio
                     val offsetX = (1.0f - visibleRatio) / 2.0f
                     val normU = offsetX + u.coerceIn(0f, 1f) * visibleRatio
-                    val sx = (normU * (bw - 1)).toInt().coerceIn(0, bw - 1)
-                    val sy = (v.coerceIn(0f, 1f) * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                    PixelSample(source.getPixel(sx, sy), isPadding = false)
+                    val color = sampleBilinear(source, normU, v, bw, bh)
+                    PixelSample(color, isPadding = false)
                 } else {
                     val visibleRatio = srcRatio
                     val offsetY = (1.0f - visibleRatio) / 2.0f
                     val normV = offsetY + v.coerceIn(0f, 1f) * visibleRatio
-                    val sx = (u.coerceIn(0f, 1f) * (bw - 1)).toInt().coerceIn(0, bw - 1)
-                    val sy = (normV * (bh - 1)).toInt().coerceIn(0, bh - 1)
-                    PixelSample(source.getPixel(sx, sy), isPadding = false)
+                    val color = sampleBilinear(source, u, normV, bw, bh)
+                    PixelSample(color, isPadding = false)
                 }
             }
         }
+    }
+
+    /**
+     * Bilinear interpolation across 4 adjacent source pixels, preventing nearest-neighbor
+     * aliasing and stepping artifacts across high-frequency edges.
+     */
+    private fun sampleBilinear(source: PixelSource, normX: Float, normY: Float, bw: Int, bh: Int): Int {
+        val fx = normX.coerceIn(0f, 1f) * (bw - 1)
+        val fy = normY.coerceIn(0f, 1f) * (bh - 1)
+
+        val x0 = fx.toInt().coerceIn(0, bw - 1)
+        val y0 = fy.toInt().coerceIn(0, bh - 1)
+        val x1 = (x0 + 1).coerceAtMost(bw - 1)
+        val y1 = (y0 + 1).coerceAtMost(bh - 1)
+
+        val wx = fx - x0
+        val wy = fy - y0
+
+        if (wx == 0f && wy == 0f) {
+            return source.getPixel(x0, y0)
+        }
+
+        val c00 = source.getPixel(x0, y0)
+        val c10 = source.getPixel(x1, y0)
+        val c01 = source.getPixel(x0, y1)
+        val c11 = source.getPixel(x1, y1)
+
+        val a0 = (c00 ushr 24) and 0xFF
+        val r0 = (c00 ushr 16) and 0xFF
+        val g0 = (c00 ushr 8) and 0xFF
+        val b0 = c00 and 0xFF
+
+        val a1 = (c10 ushr 24) and 0xFF
+        val r1 = (c10 ushr 16) and 0xFF
+        val g1 = (c10 ushr 8) and 0xFF
+        val b1 = c10 and 0xFF
+
+        val a2 = (c01 ushr 24) and 0xFF
+        val r2 = (c01 ushr 16) and 0xFF
+        val g2 = (c01 ushr 8) and 0xFF
+        val b2 = c01 and 0xFF
+
+        val a3 = (c11 ushr 24) and 0xFF
+        val r3 = (c11 ushr 16) and 0xFF
+        val g3 = (c11 ushr 8) and 0xFF
+        val b3 = c11 and 0xFF
+
+        val topA = a0 * (1f - wx) + a1 * wx
+        val topR = r0 * (1f - wx) + r1 * wx
+        val topG = g0 * (1f - wx) + g1 * wx
+        val topB = b0 * (1f - wx) + b1 * wx
+
+        val botA = a2 * (1f - wx) + a3 * wx
+        val botR = r2 * (1f - wx) + r3 * wx
+        val botG = g2 * (1f - wx) + g3 * wx
+        val botB = b2 * (1f - wx) + b3 * wx
+
+        val a = (topA * (1f - wy) + botA * wy).toInt().coerceIn(0, 255)
+        val r = (topR * (1f - wy) + botR * wy).toInt().coerceIn(0, 255)
+        val g = (topG * (1f - wy) + botG * wy).toInt().coerceIn(0, 255)
+        val b = (topB * (1f - wy) + botB * wy).toInt().coerceIn(0, 255)
+
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
 
     /**
@@ -283,16 +350,36 @@ object ImageScaleResolver {
         }
 
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        val dstIntRect = Rect(
-            dstRect.left.toInt(),
-            dstRect.top.toInt(),
-            dstRect.right.toInt().coerceAtMost(tw),
-            dstRect.bottom.toInt().coerceAtMost(th)
-        )
-        canvas.drawBitmap(source, srcRect, dstIntRect, paint)
+        canvas.drawBitmap(source, srcRect, dstRect, paint)
 
         val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) dstRect else null
-        return PreScaledPixelSource(output, contentBounds)
+        return PreScaledPixelSource(bitmap = output, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
+    }
+
+    /**
+     * Pre-scales an abstract [PixelSource] into a [PreScaledPixelSource] of dimensions [targetWidth] x [targetHeight]
+     * using continuous bilinear filtering and preserving explicit padding bounds.
+     */
+    fun createPreScaledArraySource(
+        source: PixelSource,
+        targetWidth: Int,
+        targetHeight: Int,
+        mode: ImageScaleMode
+    ): PreScaledPixelSource {
+        val tw = targetWidth.coerceAtLeast(1)
+        val th = targetHeight.coerceAtLeast(1)
+        val pixels = IntArray(tw * th)
+        for (y in 0 until th) {
+            val v = (y + 0.5f) / th.toFloat()
+            for (x in 0 until tw) {
+                val u = (x + 0.5f) / tw.toFloat()
+                val sample = sample(source, u, v, mode)
+                pixels[y * tw + x] = sample.color
+            }
+        }
+        val (_, dstRect) = resolveSrcDst(source.width, source.height, RectF(0f, 0f, tw.toFloat(), th.toFloat()), mode)
+        val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) dstRect else null
+        return PreScaledPixelSource(bitmap = null, pixels = pixels, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }
 
     /**

@@ -79,65 +79,78 @@ object ResampleSubpixelEngine {
         sink: SubpixelSink
     ) {
         val n = matrix.size
-        val isPreScaled = pixelSource is PreScaledPixelSource || (pixelSource != null && pixelSource.width == 3 * n && pixelSource.height == 3 * n)
+        val targetDim = 3 * n
+        var preScaledAuto: PreScaledPixelSource? = null
 
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                // 1. Center subpixel (dx=1, dy=1): Reserved for actual QR data bit
-                val centerSubX = 3 * col + 1
-                val centerSubY = 3 * row + 1
-                if (policy.shouldDrawAnchor(matrix, col, row)) {
-                    sink.emit(col, row, centerSubX, centerSubY, isCenterAnchor = true)
+        val effectiveSource: PixelSource? = when {
+            pixelSource == null -> null
+            pixelSource is PreScaledPixelSource -> pixelSource
+            pixelSource.width == targetDim && pixelSource.height == targetDim -> pixelSource
+            pixelSource is BitmapPixelSource -> {
+                try {
+                    preScaledAuto = ImageScaleResolver.createPreScaledSource(pixelSource.bitmap, targetDim, targetDim, style.scaleMode)
+                    preScaledAuto
+                } catch (_: Throwable) {
+                    preScaledAuto = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, style.scaleMode)
+                    preScaledAuto
                 }
+            }
+            else -> {
+                preScaledAuto = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, style.scaleMode)
+                preScaledAuto
+            }
+        }
 
-                // 2. Surrounding 8 subpixels: Stochastic photo dithering
-                if (pixelSource != null) {
-                    for (dx in 0..2) {
-                        for (dy in 0..2) {
-                            if (dx == 1 && dy == 1) continue // Skip center anchor
+        try {
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    // 1. Center subpixel (dx=1, dy=1): Reserved for actual QR data bit
+                    val centerSubX = 3 * col + 1
+                    val centerSubY = 3 * row + 1
+                    if (policy.shouldDrawAnchor(matrix, col, row)) {
+                        sink.emit(col, row, centerSubX, centerSubY, isCenterAnchor = true)
+                    }
 
-                            val sx = 3 * col + dx
-                            val sy = 3 * row + dy
+                    // 2. Surrounding 8 subpixels: Stochastic photo dithering
+                    if (effectiveSource != null) {
+                        for (dx in 0..2) {
+                            for (dy in 0..2) {
+                                if (dx == 1 && dy == 1) continue // Skip center anchor
 
-                            if (!policy.shouldSample(matrix, sx, sy)) continue
+                                val sx = 3 * col + dx
+                                val sy = 3 * row + dy
 
-                            val pixel: Int
-                            if (pixelSource is PreScaledPixelSource) {
-                                if (pixelSource.isPadding(sx, sy)) continue
-                                pixel = pixelSource.getPixel(sx, sy)
-                            } else if (isPreScaled) {
-                                pixel = pixelSource.getPixel(sx, sy)
-                            } else {
-                                val u = (sx + 0.5f) / (3 * n).toFloat()
-                                val v = (sy + 0.5f) / (3 * n).toFloat()
-                                val sample = ImageScaleResolver.sample(pixelSource, u, v, style.scaleMode)
-                                // Explicit padding suppression invariant:
-                                // Non-covered margin regions in ASPECT_FIT never emit stochastic photo dots,
-                                // regardless of extreme exposure or contrast adjustments.
-                                if (sample.isPadding) continue
-                                pixel = sample.color
-                            }
+                                if (!policy.shouldSample(matrix, sx, sy)) continue
 
-                            val a = (pixel ushr 24 and 0xFF) / 255.0f
-                            val r = (pixel ushr 16 and 0xFF)
-                            val g = (pixel ushr 8 and 0xFF)
-                            val b = (pixel and 0xFF)
+                                if (effectiveSource is PreScaledPixelSource && effectiveSource.isPadding(sx, sy)) {
+                                    continue
+                                }
 
-                            val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                            val weightedGray = gray * a + (1.0f - a) * 255.0f
-                            val grayNorm = weightedGray / 255.0f
+                                val pixel = effectiveSource.getPixel(sx, sy)
 
-                            // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
-                            val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
+                                val a = (pixel ushr 24 and 0xFF) / 255.0f
+                                val r = (pixel ushr 16 and 0xFF)
+                                val g = (pixel ushr 8 and 0xFF)
+                                val b = (pixel and 0xFF)
 
-                            val rnd = subpixelRandom(seed, sx, sy)
-                            if (rnd > threshold) {
-                                sink.emit(col, row, sx, sy, isCenterAnchor = false)
+                                val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                                val weightedGray = gray * a + (1.0f - a) * 255.0f
+                                val grayNorm = weightedGray / 255.0f
+
+                                // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
+                                val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
+
+                                val rnd = subpixelRandom(seed, sx, sy)
+                                if (rnd > threshold) {
+                                    sink.emit(col, row, sx, sy, isCenterAnchor = false)
+                                }
                             }
                         }
                     }
                 }
             }
+        } finally {
+            preScaledAuto?.bitmap?.recycle()
         }
     }
 

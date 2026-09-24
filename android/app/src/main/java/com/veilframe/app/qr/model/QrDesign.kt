@@ -339,8 +339,8 @@ data class QrDesign(
     val style: QrStyle = QrStyle.BASIC,
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
-    val timingStyle: TimingStyle = TimingStyle(color = timingColor),
-    val alignmentStyle: AlignmentStyle = AlignmentStyle(color = alignmentColor),
+    val timingStyle: TimingStyle = if (style == QrStyle.IMAGE_RESAMPLE) TimingStyle(shape = ModuleShape.SQUARE, color = timingColor) else TimingStyle(color = timingColor),
+    val alignmentStyle: AlignmentStyle = if (style == QrStyle.IMAGE_RESAMPLE) AlignmentStyle(shape = ModuleShape.SQUARE, color = alignmentColor) else AlignmentStyle(color = alignmentColor),
     val lineStyle: LineStyle = LineStyle(),
     val depthStyle: DepthStyle = DepthStyle(
         depth = effects.dataHeightRatio,
@@ -412,13 +412,13 @@ data class QrDesign(
             val timingShape = when (params.timingShape) {
                 com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
                 com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> ModuleShape.ROUNDED
+                else -> if (params.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             }
 
             val alignShape = when (params.alignShape) {
                 com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
                 com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> ModuleShape.ROUNDED
+                else -> if (params.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             }
 
             val resolvedSourceImage = params.sourceImage

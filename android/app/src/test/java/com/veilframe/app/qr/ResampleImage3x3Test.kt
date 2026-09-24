@@ -640,4 +640,90 @@ class ResampleImage3x3Test {
             }
         }
     }
+
+    @Test
+    fun testArtisticResampleTimingAndAlignmentDefaults() {
+        val resampleDesign = QrDesign(style = QrStyle.IMAGE_RESAMPLE)
+        assertEquals(
+            "IMAGE_RESAMPLE timing shape must default to SQUARE",
+            ModuleShape.SQUARE,
+            resampleDesign.timingStyle.shape
+        )
+        assertEquals(
+            "IMAGE_RESAMPLE alignment shape must default to SQUARE",
+            ModuleShape.SQUARE,
+            resampleDesign.alignmentStyle.shape
+        )
+
+        val profiled = ArtisticResampleProfile.applyProfile(resampleDesign)
+        assertEquals(1, profiled.quietZoneModules)
+        assertEquals(1, profiled.explicitQuietZone)
+        assertEquals(ModuleShape.SQUARE, profiled.timingStyle.shape)
+        assertEquals(ModuleShape.SQUARE, profiled.alignmentStyle.shape)
+        assertTrue(profiled.resampleStyle.useSourceAsBackdrop)
+    }
+
+    @Test
+    fun testHollowFinderSvgParity() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app", QrDesign(style = QrStyle.IMAGE_RESAMPLE))
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // Hollow finders should use stroke on 6x6 rect with fill="none", without white 5x5 background fill
+        assertTrue("SVG should contain hollow stroked finder rectangle", svg.contains("""fill="none" stroke="""))
+        assertFalse(
+            "SVG finders in resample mode must not render opaque 5x5 background rects that obscure the backdrop",
+            svg.contains("""width="5" height="5" fill="#FFFFFF"""")
+        )
+    }
+
+    @Test
+    fun testBilinearSamplingContinuousInterpolation() {
+        // 2x2 test source: Black (0xFF000000) at (0,0), White (0xFFFFFFFF) at (1,1)
+        val pixels = intArrayOf(
+            0xFF000000.toInt(), 0xFF000000.toInt(),
+            0xFF000000.toInt(), 0xFFFFFFFF.toInt()
+        )
+        val source = ArrayPixelSource(2, 2, pixels)
+
+        // Sample at center (0.5, 0.5)
+        val sample = ImageScaleResolver.sample(source, 0.5f, 0.5f, ImageScaleMode.STRETCH)
+        val r = (sample.color ushr 16) and 0xFF
+        val g = (sample.color ushr 8) and 0xFF
+        val b = sample.color and 0xFF
+
+        // Bilinear interpolation blends corner pixels continuously:
+        // (0.5, 0.5) with (0,0)=0, (1,0)=0, (0,1)=0, (1,1)=255 gives ~63 (255 * 0.25)
+        assertTrue("Bilinear interpolation should produce blended intermediate luminance", r in 55..75)
+        assertTrue("Bilinear interpolation should produce blended intermediate luminance", g in 55..75)
+        assertTrue("Bilinear interpolation should produce blended intermediate luminance", b in 55..75)
+    }
+
+    @Test
+    fun testSvgBackdropTintAndBlendParityWithCanvas() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app", QrDesign(style = QrStyle.IMAGE_RESAMPLE))
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123)),
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = true,
+                backdropBlendMode = BackdropBlendMode.MULTIPLY,
+                backdropTint = 0x80FF0000.toInt()
+            )
+        )
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        assertTrue(
+            "SVG must include mix-blend-mode for MULTIPLY backdrop blend mode",
+            svg.contains("""style="mix-blend-mode: multiply;"""")
+        )
+        assertTrue(
+            "SVG must render backdrop tint with matching alpha opacity",
+            svg.contains("""fill="#FF0000" opacity="0.50"""")
+        )
+    }
 }
+

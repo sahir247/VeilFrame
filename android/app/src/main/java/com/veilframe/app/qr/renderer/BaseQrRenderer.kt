@@ -110,7 +110,11 @@ abstract class BaseQrRenderer : QrRenderer {
         context: RenderContext
     ) {
         val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
+        val bgColor = if (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) {
+            android.graphics.Color.TRANSPARENT
+        } else {
+            design.palette.background
+        }
         FinderRenderer.renderFinders(
             canvas = canvas,
             geometry = geometry,

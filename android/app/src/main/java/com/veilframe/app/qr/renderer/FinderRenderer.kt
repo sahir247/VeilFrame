@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import com.veilframe.app.qr.model.FinderStyle
@@ -43,35 +44,67 @@ object FinderRenderer {
     ) {
         val cx = bounds.centerX()
         val cy = bounds.centerY()
+        val isHollow = Color.alpha(backgroundColor) == 0
 
         when (style) {
             FinderStyle.CLASSIC -> {
-                // Outer 7x7 dark box
-                canvas.drawRect(bounds, context.obtainFill(outerColor))
+                if (isHollow) {
+                    // Hollow canonical 7x7 outer frame (stroke 1 module) and 3x3 core.
+                    // Allows continuous backdrop to shine cleanly through the 1-module light ring.
+                    val halfStroke = cellSize * 0.5f
+                    val strokeBounds = RectF(
+                        bounds.left + halfStroke,
+                        bounds.top + halfStroke,
+                        bounds.right - halfStroke,
+                        bounds.bottom - halfStroke
+                    )
+                    canvas.drawRect(strokeBounds, context.obtainStroke(outerColor, cellSize))
+                    val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
+                    canvas.drawRect(core, context.obtainFill(innerColor))
+                } else {
+                    // Outer 7x7 dark box
+                    canvas.drawRect(bounds, context.obtainFill(outerColor))
 
-                // Inner 5x5 light box
-                val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
-                canvas.drawRect(innerLight, context.obtainFill(backgroundColor))
+                    // Inner 5x5 light box
+                    val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
+                    canvas.drawRect(innerLight, context.obtainFill(backgroundColor))
 
-                // Core 3x3 dark box
-                val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
-                canvas.drawRect(core, context.obtainFill(innerColor))
+                    // Core 3x3 dark box
+                    val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
+                    canvas.drawRect(core, context.obtainFill(innerColor))
+                }
             }
 
             FinderStyle.ROUNDED -> {
-                // Outer 7x7 squircle
-                val outerPath = QrVisualGeometry.createSquirclePath(bounds, context.tempPath1)
-                canvas.drawPath(outerPath, context.obtainFill(outerColor))
+                if (isHollow) {
+                    val halfStroke = cellSize * 0.5f
+                    val strokeBounds = RectF(
+                        bounds.left + halfStroke,
+                        bounds.top + halfStroke,
+                        bounds.right - halfStroke,
+                        bounds.bottom - halfStroke
+                    )
+                    val outerPath = QrVisualGeometry.createSquirclePath(strokeBounds, context.tempPath1)
+                    canvas.drawPath(outerPath, context.obtainStroke(outerColor, cellSize))
 
-                // Inner 5x5 light squircle
-                val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
-                val lightPath = QrVisualGeometry.createSquirclePath(innerLight, context.tempPath2)
-                canvas.drawPath(lightPath, context.obtainFill(backgroundColor))
+                    val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
+                    val corePath = QrVisualGeometry.createSquirclePath(core, context.tempPath2)
+                    canvas.drawPath(corePath, context.obtainFill(innerColor))
+                } else {
+                    // Outer 7x7 squircle
+                    val outerPath = QrVisualGeometry.createSquirclePath(bounds, context.tempPath1)
+                    canvas.drawPath(outerPath, context.obtainFill(outerColor))
 
-                // Core 3x3 dark squircle
-                val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
-                val corePath = QrVisualGeometry.createSquirclePath(core, context.tempPath1)
-                canvas.drawPath(corePath, context.obtainFill(innerColor))
+                    // Inner 5x5 light squircle
+                    val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
+                    val lightPath = QrVisualGeometry.createSquirclePath(innerLight, context.tempPath2)
+                    canvas.drawPath(lightPath, context.obtainFill(backgroundColor))
+
+                    // Core 3x3 dark squircle
+                    val core = RectF(bounds.left + (2 * cellSize), bounds.top + (2 * cellSize), bounds.right - (2 * cellSize), bounds.bottom - (2 * cellSize))
+                    val corePath = QrVisualGeometry.createSquirclePath(core, context.tempPath1)
+                    canvas.drawPath(corePath, context.obtainFill(innerColor))
+                }
             }
 
             FinderStyle.CIRCLE -> {
@@ -84,17 +117,30 @@ object FinderRenderer {
             }
 
             FinderStyle.SOFT -> {
-                // Outer rounded rect with gentle radius
-                val corner = cellSize * 1.5f
-                canvas.drawRoundRect(bounds, corner, corner, context.obtainFill(outerColor))
+                if (isHollow) {
+                    val halfStroke = cellSize * 0.5f
+                    val strokeBounds = RectF(
+                        bounds.left + halfStroke,
+                        bounds.top + halfStroke,
+                        bounds.right - halfStroke,
+                        bounds.bottom - halfStroke
+                    )
+                    val corner = cellSize * 1.5f
+                    canvas.drawRoundRect(strokeBounds, corner, corner, context.obtainStroke(outerColor, cellSize))
+                    canvas.drawCircle(cx, cy, 1.5f * cellSize, context.obtainFill(innerColor))
+                } else {
+                    // Outer rounded rect with gentle radius
+                    val corner = cellSize * 1.5f
+                    canvas.drawRoundRect(bounds, corner, corner, context.obtainFill(outerColor))
 
-                // Inner light cutout
-                val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
-                val innerCorner = cellSize * 0.8f
-                canvas.drawRoundRect(innerLight, innerCorner, innerCorner, context.obtainFill(backgroundColor))
+                    // Inner light cutout
+                    val innerLight = RectF(bounds.left + cellSize, bounds.top + cellSize, bounds.right - cellSize, bounds.bottom - cellSize)
+                    val innerCorner = cellSize * 0.8f
+                    canvas.drawRoundRect(innerLight, innerCorner, innerCorner, context.obtainFill(backgroundColor))
 
-                // Core circular dot
-                canvas.drawCircle(cx, cy, 1.5f * cellSize, context.obtainFill(innerColor))
+                    // Core circular dot
+                    canvas.drawCircle(cx, cy, 1.5f * cellSize, context.obtainFill(innerColor))
+                }
             }
 
             FinderStyle.FRAME -> {

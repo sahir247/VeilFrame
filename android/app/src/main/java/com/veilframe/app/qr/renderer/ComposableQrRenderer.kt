@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import androidx.core.graphics.BlendModeCompat
+import androidx.core.graphics.PaintCompat
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.model.*
 
@@ -38,6 +40,12 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                 )
                 val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
                     alpha = (design.resampleStyle.backdropOpacity.coerceIn(0f, 1f) * 255).toInt()
+                    when (design.resampleStyle.backdropBlendMode) {
+                        BackdropBlendMode.NORMAL -> {}
+                        BackdropBlendMode.MULTIPLY -> PaintCompat.setBlendMode(this, BlendModeCompat.MULTIPLY)
+                        BackdropBlendMode.SCREEN -> PaintCompat.setBlendMode(this, BlendModeCompat.SCREEN)
+                        BackdropBlendMode.OVERLAY -> PaintCompat.setBlendMode(this, BlendModeCompat.OVERLAY)
+                    }
                 }
                 canvas.drawBitmap(sourceBitmap, srcRect, dstRect, paint)
                 val tint = design.resampleStyle.backdropTint

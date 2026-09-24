@@ -325,6 +325,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 leftColor = 0x33000000,
                 rightColor = 0x99000000.toInt()
             ),
+            timingStyle = TimingStyle(
+                shape = if (s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+            ),
+            alignmentStyle = AlignmentStyle(
+                shape = if (s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+            ),
             quietZoneModules = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else 4,
             explicitQuietZone = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else null,
             outputSize = effectiveSize,
@@ -388,22 +394,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     fun saveSvg() {
         val content = _state.value.content.ifBlank { "https://example.com" }
         viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val matrix = QrGenerator.generateMatrix(content, exportDesign)
-            val bmp = _state.value.bitmap
-            if (bmp != null) {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bmp, exportDesign, matrix, content)
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign)
+            }
+            val exportBmp = if (renderResult is QrRenderResult.Success) renderResult.bitmap else null
+            if (exportBmp != null) {
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(exportBmp, exportDesign, matrix, content)
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                        scanabilityReport = report
+                        scanabilityReport = report,
+                        isLoading = false
                     )
                     return@launch
                 }
             }
             val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
             _state.value = _state.value.copy(
-                saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed"
+                saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed",
+                isLoading = false
             )
         }
     }
