@@ -189,12 +189,12 @@ class VeilStyleParityTest {
         val design = QrDesign.fromQrStyleParams(params)
 
         assertEquals(QrStyle.DSJ, design.style)
-        assertNotNull(design.efDsjStyle)
-        assertEquals(0.8f, design.efDsjStyle!!.lineSize, 0.001f)
-        assertEquals(0.9f, design.efDsjStyle!!.xSize, 0.001f)
-        assertEquals(0xFFF6B506.toInt(), design.efDsjStyle!!.horizontalLineColor)
-        assertEquals(0xFFE02020.toInt(), design.efDsjStyle!!.verticalLineColor)
-        assertEquals(0xFF0B2D97.toInt(), design.efDsjStyle!!.xColor)
+        assertNotNull(design.veilDsjStyle)
+        assertEquals(0.8f, design.veilDsjStyle!!.lineSize, 0.001f)
+        assertEquals(0.9f, design.veilDsjStyle!!.xSize, 0.001f)
+        assertEquals(0xFFF6B506.toInt(), design.veilDsjStyle!!.horizontalLineColor)
+        assertEquals(0xFFE02020.toInt(), design.veilDsjStyle!!.verticalLineColor)
+        assertEquals(0xFF0B2D97.toInt(), design.veilDsjStyle!!.xColor)
 
         // Verify SVG Export VeilFrame Art Engine Parity
         val svg = SvgExporter.generateSvg(matrix, design)
@@ -213,14 +213,14 @@ class VeilStyleParityTest {
         // Test FADE function
         val fadeParams = QrStyleParams(
             style = QrStyle.FUNCTION,
-            functionType = EfFunctionType.FADE,
-            functionDataStyle = EfFunctionDataStyle.ROUND,
+            functionType = VeilFunctionType.FADE,
+            functionDataStyle = VeilFunctionDataStyle.ROUND,
             functionDataColor = 0xFF123456.toInt()
         )
         val fadeDesign = QrDesign.fromQrStyleParams(fadeParams)
         assertEquals(QrStyle.FUNCTION, fadeDesign.style)
-        assertEquals(EfFunctionType.FADE, fadeDesign.efFunctionStyle?.functionType)
-        assertEquals(EfFunctionDataStyle.ROUND, fadeDesign.efFunctionStyle?.dataStyle)
+        assertEquals(VeilFunctionType.FADE, fadeDesign.veilFunctionStyle?.functionType)
+        assertEquals(VeilFunctionDataStyle.ROUND, fadeDesign.veilFunctionStyle?.dataStyle)
 
         val fadeSvg = SvgExporter.generateSvg(matrix, fadeDesign)
         assertTrue("Fade SVG must contain data color #123456", fadeSvg.contains("#123456"))
@@ -229,8 +229,8 @@ class VeilStyleParityTest {
         // Test CIRCLE function
         val circleParams = QrStyleParams(
             style = QrStyle.FUNCTION,
-            functionType = EfFunctionType.CIRCLE,
-            functionDataStyle = EfFunctionDataStyle.ROUND,
+            functionType = VeilFunctionType.CIRCLE,
+            functionDataStyle = VeilFunctionDataStyle.ROUND,
             functionDataColor = 0xFF000000.toInt(),
             functionCircleColor = 0xFFFF0000.toInt()
         )

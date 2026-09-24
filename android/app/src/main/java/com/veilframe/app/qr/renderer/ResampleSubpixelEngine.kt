@@ -81,8 +81,9 @@ object ResampleSubpixelEngine {
 
         for (col in 0 until n) {
             for (row in 0 until n) {
-                // Structural integrity guarantee: All protected functional patterns are preserved
-                if (matrix.isProtected(col, row)) continue
+                // Functional suppression: 8x8 finders, timing, alignment are excluded from stochastic dithering;
+                // Format and version information participate in stochastic subpixel traversal.
+                if (ArtisticResampleFunctionalMask.isExcluded(col, row, n, matrix.version)) continue
 
                 val isDark = matrix.isDark(col, row)
 

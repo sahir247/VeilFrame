@@ -3,6 +3,7 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.QrStyleParams
 import com.veilframe.app.qr.model.*
 
@@ -61,6 +62,11 @@ abstract class BaseQrRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
+        if (design.style == QrStyle.IMAGE_RESAMPLE) {
+            // In IMAGE_RESAMPLE, format and version modules are rendered with subpixel precision
+            // (center anchors + stochastic dots) rather than solid module blocks.
+            return
+        }
         val formatColor = design.palette.foreground
         val paint = context.obtainFill(formatColor)
         val n = matrix.size

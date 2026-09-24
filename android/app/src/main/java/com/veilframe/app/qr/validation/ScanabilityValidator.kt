@@ -3,6 +3,7 @@ package com.veilframe.app.qr.validation
 import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.decoder.DecodeResult
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
 import com.veilframe.app.qr.model.FunctionPatternType
@@ -97,7 +98,11 @@ object ScanabilityValidator {
         expectedContent: String,
         isStrict: Boolean
     ): ScanabilityReport {
-        val quietZone = design.effectiveQuietZone
+        val quietZone = if (design.style == QrStyle.IMAGE_RESAMPLE) {
+            design.explicitQuietZone ?: 1
+        } else {
+            design.effectiveQuietZone
+        }
         val geometry = QrGeometry(
             matrixSize = matrix.size,
             outputWidth = bitmap.width,
@@ -106,7 +111,7 @@ object ScanabilityValidator {
         )
 
         // 1. Quiet Zone Check
-        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0)
+        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0) || design.style == QrStyle.IMAGE_RESAMPLE
         val quietZoneReport = QuietZoneReport(
             hasFourModuleMargin = quietZone >= 4,
             quietZoneModules = quietZone

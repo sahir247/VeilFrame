@@ -128,7 +128,7 @@ object QrGenerator {
             val matrix = generateMatrix(content, design, mode)
 
             val size = design.outputSize.coerceIn(256, 4096)
-            val quietZone = if (mode == GenerationMode.ARTISTIC_ENGINE) {
+            val quietZone = if (mode == GenerationMode.ARTISTIC_ENGINE || design.style == QrStyle.IMAGE_RESAMPLE) {
                 design.explicitQuietZone ?: 1
             } else {
                 design.effectiveQuietZone

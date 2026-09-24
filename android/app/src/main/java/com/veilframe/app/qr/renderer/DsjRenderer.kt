@@ -78,13 +78,13 @@ class DsjRenderer : QrRenderer {
             )
         }
 
-        val width2 = max(0f, design.efDsjStyle.lineSize)
-        val width1 = max(0f, design.efDsjStyle.xSize)
+        val width2 = max(0f, design.veilDsjStyle.lineSize)
+        val width1 = max(0f, design.veilDsjStyle.xSize)
         val sqrt8 = 2.82842712474619f
 
-        val hColor = design.efDsjStyle.horizontalLineColor
-        val vColor = design.efDsjStyle.verticalLineColor
-        val xColor = design.efDsjStyle.xColor
+        val hColor = design.veilDsjStyle.horizontalLineColor
+        val vColor = design.veilDsjStyle.verticalLineColor
+        val xColor = design.veilDsjStyle.xColor
 
         val available = Array(nCount) { BooleanArray(nCount) { true } }
         val ava2 = Array(nCount) { BooleanArray(nCount) { true } }

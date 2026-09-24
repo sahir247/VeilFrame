@@ -230,24 +230,24 @@ data class LineStyle(
     val positionColor: Int? = null
 )
 
-enum class EfFunctionType {
+enum class VeilFunctionType {
     FADE,
     CIRCLE
 }
 
-enum class EfFunctionDataStyle {
+enum class VeilFunctionDataStyle {
     ROUND,
     RECTANGLE
 }
 
-data class EfFunctionStyle(
-    val functionType: EfFunctionType = EfFunctionType.FADE,
-    val dataStyle: EfFunctionDataStyle = EfFunctionDataStyle.ROUND,
+data class VeilFunctionStyle(
+    val functionType: VeilFunctionType = VeilFunctionType.FADE,
+    val dataStyle: VeilFunctionDataStyle = VeilFunctionDataStyle.ROUND,
     val dataColor: Int = Color.BLACK,
     val circleColor: Int = Color.BLACK
 )
 
-data class EfDsjStyle(
+data class VeilDsjStyle(
     val lineSize: Float = 0.7f,
     val xSize: Float = 0.7f,
     val horizontalLineColor: Int = 0xFFF6B506.toInt(),
@@ -366,8 +366,8 @@ data class QrDesign(
     val alignSize: Float = 1.0f,
     val imageFillBackgroundColor: Int = Color.WHITE,
     val imageFillMaskColor: Int = 0x1A000000,
-    val efDsjStyle: EfDsjStyle = EfDsjStyle(),
-    val efFunctionStyle: EfFunctionStyle = EfFunctionStyle(),
+    val veilDsjStyle: VeilDsjStyle = VeilDsjStyle(),
+    val veilFunctionStyle: VeilFunctionStyle = VeilFunctionStyle(),
     val randomRectColor: Int = 0xFF14AA3C.toInt(),
     val backgroundLayer: BackgroundLayer = BackgroundLayer(
         color = palette.background,
@@ -483,14 +483,14 @@ data class QrDesign(
                     positionSize = params.imagePositionSize,
                     positionColor = params.positionColor ?: params.foreground
                 ),
-                efDsjStyle = EfDsjStyle(
+                veilDsjStyle = VeilDsjStyle(
                     lineSize = params.dsjLineSize,
                     xSize = params.dsjXSize,
                     horizontalLineColor = params.dsjHorizontalLineColor,
                     verticalLineColor = params.dsjVerticalLineColor,
                     xColor = params.dsjXColor
                 ),
-                efFunctionStyle = EfFunctionStyle(
+                veilFunctionStyle = VeilFunctionStyle(
                     functionType = params.functionType,
                     dataStyle = params.functionDataStyle,
                     dataColor = params.functionDataColor,

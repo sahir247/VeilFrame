@@ -103,8 +103,8 @@ data class QrStyleParams(
     val dsjVerticalLineColor: Int = 0xFFE02020.toInt(),
     val dsjXColor: Int = 0xFF0B2D97.toInt(),
     // --- Function specific (VeilFrameStyleFunction) ---
-    val functionType: com.veilframe.app.qr.model.EfFunctionType = com.veilframe.app.qr.model.EfFunctionType.FADE,
-    val functionDataStyle: com.veilframe.app.qr.model.EfFunctionDataStyle = com.veilframe.app.qr.model.EfFunctionDataStyle.ROUND,
+    val functionType: com.veilframe.app.qr.model.VeilFunctionType = com.veilframe.app.qr.model.VeilFunctionType.FADE,
+    val functionDataStyle: com.veilframe.app.qr.model.VeilFunctionDataStyle = com.veilframe.app.qr.model.VeilFunctionDataStyle.ROUND,
     val functionDataColor: Int = Color.BLACK,
     val functionCircleColor: Int = Color.BLACK,
     // --- Line specific (VeilFrameStyleLine) ---

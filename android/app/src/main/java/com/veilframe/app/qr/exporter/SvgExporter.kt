@@ -3,8 +3,8 @@ package com.veilframe.app.qr.exporter
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Base64
-import com.veilframe.app.qr.model.EfFunctionDataStyle
-import com.veilframe.app.qr.model.EfFunctionType
+import com.veilframe.app.qr.model.VeilFunctionDataStyle
+import com.veilframe.app.qr.model.VeilFunctionType
 import com.veilframe.app.qr.model.FinderStyle
 import com.veilframe.app.qr.model.GradientType
 import com.veilframe.app.qr.model.LineDirection
@@ -39,7 +39,11 @@ object SvgExporter {
         design: QrDesign,
         pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
     ): String {
-        val qz = design.effectiveQuietZone
+        val qz = if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
+            design.explicitQuietZone ?: 1
+        } else {
+            design.effectiveQuietZone
+        }
         val totalSize = matrix.size + (2 * qz)
         val fgHex = hexColor(design.palette.foreground)
         val bgHex = hexColor(design.palette.background)
@@ -261,14 +265,7 @@ object SvgExporter {
                         )
                         sb.append("""  $elem""").append("\n")
                     } else if (role == QrModuleRole.FORMAT || role == QrModuleRole.VERSION) {
-                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                            shape = com.veilframe.app.qr.model.ModuleShape.SQUARE,
-                            x = x.toDouble(),
-                            y = y.toDouble(),
-                            size = 1.0,
-                            fill = dataFill
-                        )
-                        sb.append("""  $elem""").append("\n")
+                        // Handled via subpixel precision in traverseSubpixels
                     }
                 }
             }
@@ -724,10 +721,10 @@ object SvgExporter {
         val posStyle = design.eyeStyle.style
         val posSize = design.positionSize
 
-        val funcType = design.efFunctionStyle.functionType
-        val dataStyle = design.efFunctionStyle.dataStyle
-        val dataColor = design.efFunctionStyle.dataColor
-        val circleColor = design.efFunctionStyle.circleColor
+        val funcType = design.veilFunctionStyle.functionType
+        val dataStyle = design.veilFunctionStyle.dataStyle
+        val dataColor = design.veilFunctionStyle.dataColor
+        val circleColor = design.veilFunctionStyle.circleColor
 
         val dataHex = hexColor(dataColor)
         val dataAlpha = String.format(Locale.US, "%.2f", colorAlpha(dataColor))
@@ -742,7 +739,7 @@ object SvgExporter {
         var id = 0
 
         // Background ring if CIRCLE function + ROUND dataStyle
-        if (funcType == EfFunctionType.CIRCLE && dataStyle == EfFunctionDataStyle.ROUND) {
+        if (funcType == VeilFunctionType.CIRCLE && dataStyle == VeilFunctionDataStyle.ROUND) {
             val ringSw = String.format(Locale.US, "%.3f", nCount.toDouble() / 15.0)
             val ringCx = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qz)
             val ringCy = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qz)
@@ -781,11 +778,11 @@ object SvgExporter {
                 val ay = y + qz
 
                 when (funcType) {
-                    EfFunctionType.FADE -> {
+                    VeilFunctionType.FADE -> {
                         val sizeF = (1.0 - kotlin.math.cos(Math.PI * dist)) / 6.0 + 1.0 / 5.0
                         if (isDark) {
                             when (dataStyle) {
-                                EfFunctionDataStyle.RECTANGLE -> {
+                                VeilFunctionDataStyle.RECTANGLE -> {
                                     val rectSize = sizeF + 0.2
                                     val rsStr = String.format(Locale.US, "%.3f", rectSize)
                                     val rx = String.format(Locale.US, "%.3f", ax + (1.0 - rectSize) / 2.0)
@@ -793,7 +790,7 @@ object SvgExporter {
                                     sb.append("""  <rect opacity="$dataAlpha" width="$rsStr" height="$rsStr" key="$id" fill="$dataHex" x="$rx" y="$ry"/>""").append("\n")
                                     id++
                                 }
-                                EfFunctionDataStyle.ROUND -> {
+                                VeilFunctionDataStyle.ROUND -> {
                                     val rStr = String.format(Locale.US, "%.3f", sizeF)
                                     val cx = String.format(Locale.US, "%.3f", ax + 0.5)
                                     val cy = String.format(Locale.US, "%.3f", ay + 0.5)
@@ -803,7 +800,7 @@ object SvgExporter {
                             }
                         }
                     }
-                    EfFunctionType.CIRCLE -> {
+                    VeilFunctionType.CIRCLE -> {
                         var sizeF: Double
                         var activeHex = dataHex
                         var activeAlpha = dataAlpha
@@ -815,12 +812,12 @@ object SvgExporter {
                             activeAlpha = circleAlpha
                             pointVisible = true
                         } else {
-                            sizeF = if (dataStyle == EfFunctionDataStyle.RECTANGLE) 0.15 else 0.25
+                            sizeF = if (dataStyle == VeilFunctionDataStyle.RECTANGLE) 0.15 else 0.25
                         }
 
                         if (pointVisible) {
                             when (dataStyle) {
-                                EfFunctionDataStyle.RECTANGLE -> {
+                                VeilFunctionDataStyle.RECTANGLE -> {
                                     val baseSize = 2.0 * sizeF + 0.1
                                     val bsStr = String.format(Locale.US, "%.3f", baseSize)
                                     val rx = String.format(Locale.US, "%.3f", ax + (1.0 - baseSize) / 2.0)
@@ -837,7 +834,7 @@ object SvgExporter {
                                         id++
                                     }
                                 }
-                                EfFunctionDataStyle.ROUND -> {
+                                VeilFunctionDataStyle.ROUND -> {
                                     val rStr = String.format(Locale.US, "%.3f", sizeF)
                                     val cx = String.format(Locale.US, "%.3f", ax + 0.5)
                                     val cy = String.format(Locale.US, "%.3f", ay + 0.5)

@@ -4,8 +4,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import com.veilframe.app.qr.QrStyleParams
-import com.veilframe.app.qr.model.EfFunctionDataStyle
-import com.veilframe.app.qr.model.EfFunctionType
+import com.veilframe.app.qr.model.VeilFunctionDataStyle
+import com.veilframe.app.qr.model.VeilFunctionType
 import com.veilframe.app.qr.model.FinderStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
@@ -44,13 +44,13 @@ class FunctionRenderer : QrRenderer {
         val posStyle = design.eyeStyle.style
         val posSize = design.positionSize
 
-        val funcType = design.efFunctionStyle.functionType
-        val dataStyle = design.efFunctionStyle.dataStyle
-        val dataColor = design.efFunctionStyle.dataColor
-        val circleColor = design.efFunctionStyle.circleColor
+        val funcType = design.veilFunctionStyle.functionType
+        val dataStyle = design.veilFunctionStyle.dataStyle
+        val dataColor = design.veilFunctionStyle.dataColor
+        val circleColor = design.veilFunctionStyle.circleColor
 
         // 1. Draw background ring if CIRCLE function + ROUND style
-        if (funcType == EfFunctionType.CIRCLE && dataStyle == EfFunctionDataStyle.ROUND) {
+        if (funcType == VeilFunctionType.CIRCLE && dataStyle == VeilFunctionDataStyle.ROUND) {
             val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = circleColor
                 style = Paint.Style.STROKE
@@ -111,11 +111,11 @@ class FunctionRenderer : QrRenderer {
                 val dist = sqrt((centerCoord - x).pow(2) + (centerCoord - y).pow(2)) / maxDist
 
                 when (funcType) {
-                    EfFunctionType.FADE -> {
+                    VeilFunctionType.FADE -> {
                         val sizeF = (1.0f - cos(PI.toFloat() * dist)) / 6.0f + 1.0f / 5.0f
                         if (isDark) {
                             when (dataStyle) {
-                                EfFunctionDataStyle.RECTANGLE -> {
+                                VeilFunctionDataStyle.RECTANGLE -> {
                                     val rectSize = sizeF + 0.2f
                                     val rx = x + (1.0f - rectSize) / 2.0f
                                     val ry = y + (1.0f - rectSize) / 2.0f
@@ -127,7 +127,7 @@ class FunctionRenderer : QrRenderer {
                                         dataPaint
                                     )
                                 }
-                                EfFunctionDataStyle.ROUND -> {
+                                VeilFunctionDataStyle.ROUND -> {
                                     val cx = ox + (x + 0.5f) * cs
                                     val cy = oy + (y + 0.5f) * cs
                                     canvas.drawCircle(cx, cy, sizeF * cs, dataPaint)
@@ -135,7 +135,7 @@ class FunctionRenderer : QrRenderer {
                             }
                         }
                     }
-                    EfFunctionType.CIRCLE -> {
+                    VeilFunctionType.CIRCLE -> {
                         var sizeF: Float
                         var activeColor = dataColor
                         var pointVisible = isDark
@@ -145,13 +145,13 @@ class FunctionRenderer : QrRenderer {
                             activeColor = circleColor
                             pointVisible = true
                         } else {
-                            sizeF = if (dataStyle == EfFunctionDataStyle.RECTANGLE) 0.15f else 0.25f
+                            sizeF = if (dataStyle == VeilFunctionDataStyle.RECTANGLE) 0.15f else 0.25f
                         }
 
                         if (pointVisible) {
                             val activePaint = if (activeColor == circleColor) circlePaint else dataPaint
                             when (dataStyle) {
-                                EfFunctionDataStyle.RECTANGLE -> {
+                                VeilFunctionDataStyle.RECTANGLE -> {
                                     val baseSize = 2.0f * sizeF + 0.1f
                                     if (isDark) {
                                         val rx = x + (1.0f - baseSize) / 2.0f
@@ -176,7 +176,7 @@ class FunctionRenderer : QrRenderer {
                                         canvas.drawRect(left, top, right, bottom, strokePaint)
                                     }
                                 }
-                                EfFunctionDataStyle.ROUND -> {
+                                VeilFunctionDataStyle.ROUND -> {
                                     val cx = ox + (x + 0.5f) * cs
                                     val cy = oy + (y + 0.5f) * cs
                                     if (isDark) {

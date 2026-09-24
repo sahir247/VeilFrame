@@ -53,7 +53,7 @@ class ResampleImage3x3Test {
         val n = matrix.size
         for (c in 0 until n) {
             for (r in 0 until n) {
-                if (matrix.isDark(c, r) && matrix.roleAt(c, r) == QrModuleRole.DATA && !matrix.isProtected(c, r)) {
+                if (matrix.isDark(c, r) && !ArtisticResampleFunctionalMask.isExcluded(c, r, n, matrix.version)) {
                     darkDataModules.add(Pair(c, r))
                 }
             }
@@ -64,10 +64,10 @@ class ResampleImage3x3Test {
         ResampleSubpixelEngine.traverseSubpixels(matrix, testPixels, style, seed = 42L) { col, row, subX, subY, isCenterAnchor ->
             emittedSubpixels.add("$col,$row,$subX,$subY")
 
-            // Verify no protected modules ever emit subpixels
+            // Verify no excluded functional modules ever emit subpixels
             assertFalse(
-                "Protected module at ($col, $row) must not emit subpixels",
-                matrix.isProtected(col, row)
+                "Excluded functional module at ($col, $row) must not emit subpixels",
+                ArtisticResampleFunctionalMask.isExcluded(col, row, n, matrix.version)
             )
 
             if (isCenterAnchor) {
@@ -195,14 +195,15 @@ class ResampleImage3x3Test {
         val design = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             imageSource = style,
-            quietZoneModules = 4
+            quietZoneModules = 1,
+            explicitQuietZone = 1
         )
 
         val geometry = QrGeometry(
             matrixSize = matrix.size,
             outputWidth = 512,
             outputHeight = 512,
-            quietZoneModules = 4
+            quietZoneModules = 1
         )
 
         val gradientPixels = createGradientPixelSource(100, 100)
@@ -262,8 +263,8 @@ class ResampleImage3x3Test {
 
             val canvasNormX = (cRect.left - geometry.offsetX) / geometry.moduleSize
             val canvasNormY = (cRect.top - geometry.offsetY) / geometry.moduleSize
-            val svgNormX = sRect.left - design.quietZoneModules
-            val svgNormY = sRect.top - design.quietZoneModules
+            val svgNormX = sRect.left - 1
+            val svgNormY = sRect.top - 1
 
             assertEquals("X normalized coordinate must match exactly between Canvas and SVG", canvasNormX, svgNormX, 0.001f)
             assertEquals("Y normalized coordinate must match exactly between Canvas and SVG", canvasNormY, svgNormY, 0.001f)
@@ -459,5 +460,63 @@ class ResampleImage3x3Test {
         val decoded = reader.decode(binaryBitmap)
         assertNotNull("ZXing must successfully decode 3x3 resampled QR code", decoded)
         assertEquals("Decoded content must match original payload", payload, decoded.text)
+    }
+
+    @Test
+    fun testArtisticResampleFunctionalMaskParity() {
+        val size = 45
+        val version = 7
+
+        // 1. Finders: 8x8 corner areas must be excluded
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(0, 0, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(7, 7, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(size - 8, 0, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(size - 1, 7, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(0, size - 8, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(7, size - 1, size, version))
+
+        // 2. Timing tracks: row 6 and col 6 between finders (8 until size-8) must be excluded
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(8, 6, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(20, 6, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(6, 8, size, version))
+        assertTrue(ArtisticResampleFunctionalMask.isExcluded(6, 20, size, version))
+
+        // 3. Format modules: outside finders (e.g. col 8, row 8) must NOT be excluded in resample
+        assertFalse(
+            "Format module at (8, 8) must participate in resample stochastic traversal",
+            ArtisticResampleFunctionalMask.isExcluded(8, 8, size, version)
+        )
+        assertFalse(
+            "Format module at (8, 0) must participate in resample",
+            ArtisticResampleFunctionalMask.isExcluded(8, 0, size, version)
+        )
+        assertFalse(
+            "Format module at (0, 8) must participate in resample",
+            ArtisticResampleFunctionalMask.isExcluded(0, 8, size, version)
+        )
+
+        // 4. Version modules: 3x6 block at cols size-11..size-9, rows 0..5 must NOT be excluded in resample
+        assertFalse(
+            "Version module at (size-10, 2) must participate in resample",
+            ArtisticResampleFunctionalMask.isExcluded(size - 10, 2, size, version)
+        )
+    }
+
+    @Test
+    fun testDefaultQuietZoneOneModuleForImageResample() {
+        val design = QrDesign(style = QrStyle.IMAGE_RESAMPLE)
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE-QZ", ErrorCorrectionLevel.M)
+
+        val result = QrGenerator.generateWithResult("HTTPS://VEILFRAME.APP/RESAMPLE-QZ", design)
+        assertTrue(result is QrRenderResult.Success)
+        val report = (result as QrRenderResult.Success).report
+        assertEquals("IMAGE_RESAMPLE default quiet zone must be 1 module", 1, report.quietZone.quietZoneModules)
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+        val expectedTotalSize = matrix.size + 2
+        assertTrue(
+            "SVG viewBox must have 1 module quiet zone (size $expectedTotalSize)",
+            svg.contains("""viewBox="0 0 $expectedTotalSize $expectedTotalSize"""")
+        )
     }
 }
