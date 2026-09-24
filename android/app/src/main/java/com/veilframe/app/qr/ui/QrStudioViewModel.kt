@@ -40,7 +40,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageOpacity: Float = 1.0f,
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
-        val resampleUseSourceAsBackdrop: Boolean = false,
+        val resampleUseSourceAsBackdrop: Boolean = true,
         val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
         val bitmap: Bitmap? = null,
@@ -69,7 +69,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateStyle(style: QrStyle) {
-        _state.value = _state.value.copy(style = style, repairNotice = null)
+        val useBackdrop = if (style == QrStyle.IMAGE_RESAMPLE) true else _state.value.resampleUseSourceAsBackdrop
+        _state.value = _state.value.copy(
+            style = style,
+            resampleUseSourceAsBackdrop = useBackdrop,
+            repairNotice = null
+        )
         regenerate(debounceMs = 0)
     }
 
@@ -239,8 +244,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
-            val mode = if (design.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
-            val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
+            val renderResult = QrGenerator.generateWithResult(effectiveContent, design)
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
@@ -356,9 +360,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val mode = if (exportDesign.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateWithResult(content, exportDesign)
             }
             if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
                 val (uri, report) = QrExporter.saveToGalleryValidated(
@@ -386,8 +389,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val content = _state.value.content.ifBlank { "https://example.com" }
         viewModelScope.launch {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val mode = if (exportDesign.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
-            val matrix = _state.value.matrix ?: QrGenerator.generateMatrix(content, exportDesign, mode = mode)
+            val matrix = QrGenerator.generateMatrix(content, exportDesign)
             val bmp = _state.value.bitmap
             if (bmp != null) {
                 val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bmp, exportDesign, matrix, content)
@@ -411,9 +413,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val mode = if (exportDesign.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateWithResult(content, exportDesign)
             }
             val bmp = if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
                 renderResult.bitmap

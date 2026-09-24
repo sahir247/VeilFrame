@@ -3,6 +3,7 @@ package com.veilframe.app.qr.model
 import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.GenerationMode
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.QrStyleParams
 import com.veilframe.app.qr.registry.QrStyleRegistry
@@ -138,7 +139,7 @@ enum class BackdropBlendMode {
 
 data class ResampleStyle(
     val seed: Long = 42L,
-    val useSourceAsBackdrop: Boolean = false,
+    val useSourceAsBackdrop: Boolean = true,
     val backdropOpacity: Float = 1.0f,
     val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
@@ -377,6 +378,7 @@ data class QrDesign(
     val resampleStyle: ResampleStyle = ResampleStyle()
 ) {
     val effectiveQuietZone: Int get() = explicitQuietZone ?: quietZoneModules
+    val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
 
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {

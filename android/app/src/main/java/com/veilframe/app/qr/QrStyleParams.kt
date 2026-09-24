@@ -122,7 +122,7 @@ data class QrStyleParams(
     val gradientStart: Int? = null,
     val gradientEnd: Int? = null,
     // --- Resample specific (VeilFrameStyleResampleImage) ---
-    val resampleUseSourceAsBackdrop: Boolean = false,
+    val resampleUseSourceAsBackdrop: Boolean = true,
     val resampleBackdropOpacity: Float = 1.0f,
     val resampleBackdropScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
     val resampleSeed: Long = 42L,

@@ -79,6 +79,7 @@ object ResampleSubpixelEngine {
         sink: SubpixelSink
     ) {
         val n = matrix.size
+        val isPreScaled = pixelSource is PreScaledPixelSource || (pixelSource != null && pixelSource.width == 3 * n && pixelSource.height == 3 * n)
 
         for (col in 0 until n) {
             for (row in 0 until n) {
@@ -100,16 +101,23 @@ object ResampleSubpixelEngine {
 
                             if (!policy.shouldSample(matrix, sx, sy)) continue
 
-                            val u = (sx + 0.5f) / (3 * n).toFloat()
-                            val v = (sy + 0.5f) / (3 * n).toFloat()
+                            val pixel: Int
+                            if (pixelSource is PreScaledPixelSource) {
+                                if (pixelSource.isPadding(sx, sy)) continue
+                                pixel = pixelSource.getPixel(sx, sy)
+                            } else if (isPreScaled) {
+                                pixel = pixelSource.getPixel(sx, sy)
+                            } else {
+                                val u = (sx + 0.5f) / (3 * n).toFloat()
+                                val v = (sy + 0.5f) / (3 * n).toFloat()
+                                val sample = ImageScaleResolver.sample(pixelSource, u, v, style.scaleMode)
+                                // Explicit padding suppression invariant:
+                                // Non-covered margin regions in ASPECT_FIT never emit stochastic photo dots,
+                                // regardless of extreme exposure or contrast adjustments.
+                                if (sample.isPadding) continue
+                                pixel = sample.color
+                            }
 
-                            val sample = ImageScaleResolver.sample(pixelSource, u, v, style.scaleMode)
-                            // Explicit padding suppression invariant:
-                            // Non-covered margin regions in ASPECT_FIT never emit stochastic photo dots,
-                            // regardless of extreme exposure or contrast adjustments.
-                            if (sample.isPadding) continue
-
-                            val pixel = sample.color
                             val a = (pixel ushr 24 and 0xFF) / 255.0f
                             val r = (pixel ushr 16 and 0xFF)
                             val g = (pixel ushr 8 and 0xFF)
@@ -135,6 +143,8 @@ object ResampleSubpixelEngine {
 
     /**
      * Traverses the QR matrix and emits all active subpixels into [sink] from a [Bitmap].
+     * Pre-scales [source] to (3 * matrix.size) x (3 * matrix.size) with Skia bilinear filtering
+     * matching pre-rendered 3N x 3N raster context sampling.
      */
     fun traverseSubpixels(
         matrix: QrMatrix,
@@ -144,9 +154,24 @@ object ResampleSubpixelEngine {
         policy: ResamplePolicy = ArtisticResamplePolicy,
         sink: SubpixelSink
     ) {
-        val pixelSource = if (source != null && !source.isRecycled) {
-            BitmapPixelSource(source)
+        val n = matrix.size
+        val targetDim = 3 * n
+        var preScaledSource: PreScaledPixelSource? = null
+
+        val pixelSource: PixelSource? = if (source != null && !source.isRecycled) {
+            try {
+                preScaledSource = ImageScaleResolver.createPreScaledSource(source, targetDim, targetDim, style.scaleMode)
+                preScaledSource
+            } catch (_: Throwable) {
+                // Fallback for headless environments without Android Bitmap graphics pipeline
+                BitmapPixelSource(source)
+            }
         } else null
-        traverseSubpixels(matrix, pixelSource, style, seed, policy, sink)
+
+        try {
+            traverseSubpixels(matrix, pixelSource, style, seed, policy, sink)
+        } finally {
+            preScaledSource?.bitmap?.recycle()
+        }
     }
 }

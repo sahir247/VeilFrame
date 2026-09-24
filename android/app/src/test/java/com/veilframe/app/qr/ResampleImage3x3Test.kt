@@ -567,4 +567,77 @@ class ResampleImage3x3Test {
         }
         assertTrue("Custom policy should emit anchors for all dark modules", anchorCount > 0)
     }
+
+    @Test
+    fun testStudioExportPipelineModeConsistency() {
+        val resampleDesign = QrDesign(style = QrStyle.IMAGE_RESAMPLE)
+        val basicDesign = QrDesign(style = QrStyle.BASIC)
+
+        // 1. Centralized defaultModeFor mapping
+        assertEquals(
+            "IMAGE_RESAMPLE must default to ARTISTIC_ENGINE",
+            GenerationMode.ARTISTIC_ENGINE,
+            QrGenerator.defaultModeFor(resampleDesign)
+        )
+        assertEquals(
+            "BASIC must default to SAFE",
+            GenerationMode.SAFE,
+            QrGenerator.defaultModeFor(basicDesign)
+        )
+
+        // 2. QrDesign property parity
+        assertEquals(
+            GenerationMode.ARTISTIC_ENGINE,
+            resampleDesign.recommendedGenerationMode
+        )
+        assertEquals(
+            GenerationMode.SAFE,
+            basicDesign.recommendedGenerationMode
+        )
+
+        // 3. QrGenerator matrix generation contract parity
+        val content = "HTTPS://VEILFRAME.APP/PIPELINE-CONSISTENCY"
+        val autoMatrix = QrGenerator.generateMatrix(content, resampleDesign)
+        val explicitArtisticMatrix = QrGenerator.generateMatrix(content, resampleDesign, mode = GenerationMode.ARTISTIC_ENGINE)
+        assertEquals("generateMatrix default mode must match explicit ARTISTIC_ENGINE matrix", explicitArtisticMatrix.size, autoMatrix.size)
+
+        // 4. Default backdrop flag for resample style
+        assertTrue("resampleStyle.useSourceAsBackdrop must default to true", resampleDesign.resampleStyle.useSourceAsBackdrop)
+    }
+
+    @Test
+    fun testSubpixelCoordinateSpaceParityWithCanonicalViewBox() {
+        // Mathematical proof of 1:1 isometric mapping between VeilFrame module coordinates and canonical 3x subpixel coordinates
+        val n = 25 // 25x25 QR matrix
+        val qz = 1 // 1 module quiet zone (canonical default: 1 module margin = 3 subpixel units)
+
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                for (dx in 0..2) {
+                    for (dy in 0..2) {
+                        val subX = 3 * col + dx
+                        val subY = 3 * row + dy
+
+                        val vfRect = SubpixelGeometry.computeSvgRect(col, row, qz, subX, subY, antiGapScale = 1.0f)
+
+                        // In 3x subpixel space (where 1 module = 3.0 units, quiet zone = 3 units):
+                        // Canonical position in its (0, 0, 3N, 3N) QR area is exactly (subX, subY)
+                        val expectedX = subX.toDouble()
+                        val expectedY = subY.toDouble()
+
+                        // Scale VeilFrame coordinate by 3.0 to map to subpixel units, minus quiet zone offset:
+                        val mappedVfX = (vfRect.left.toDouble() - qz.toDouble()) * 3.0
+                        val mappedVfY = (vfRect.top.toDouble() - qz.toDouble()) * 3.0
+
+                        assertEquals("X coordinate must match canonical subpixel position", expectedX, mappedVfX, 1e-4)
+                        assertEquals("Y coordinate must match canonical subpixel position", expectedY, mappedVfY, 1e-4)
+
+                        // Subpixel width canonically is 1.0; in VeilFrame (with antiGapScale=1.0) it is (1.0 / 3.0) * 3.0 = 1.0
+                        val mappedVfW = vfRect.width.toDouble() * 3.0
+                        assertEquals("Subpixel width must match canonical unit width of 1.0", 1.0, mappedVfW, 1e-4)
+                    }
+                }
+            }
+        }
+    }
 }

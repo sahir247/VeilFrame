@@ -68,13 +68,23 @@ enum class GenerationMode {
 object QrGenerator {
 
     /**
+     * Authoritative generation mode resolver for a given [QrDesign].
+     *
+     * Ensures all pipelines (preview, gallery PNG, share, SVG export, auto-repair)
+     * strictly use [GenerationMode.ARTISTIC_ENGINE] for artistic styles (such as
+     * [QrStyle.IMAGE_RESAMPLE]), and [GenerationMode.SAFE] for basic/safe styles.
+     */
+    fun defaultModeFor(design: QrDesign): GenerationMode =
+        if (design.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
+
+    /**
      * Directly generates the [QrMatrix] adhering to the specified [GenerationMode] and [design],
      * without requiring an Android [Bitmap] or [Canvas] context.
      */
     fun generateMatrix(
         content: String,
         design: QrDesign = QrDesign(),
-        mode: GenerationMode = GenerationMode.SAFE
+        mode: GenerationMode = defaultModeFor(design)
     ): QrMatrix {
         require(content.isNotBlank()) { "QR content must not be blank" }
         val ecLevel = when (mode) {
@@ -118,7 +128,7 @@ object QrGenerator {
     fun generateWithResult(
         content: String,
         design: QrDesign = QrDesign(),
-        mode: GenerationMode = GenerationMode.SAFE
+        mode: GenerationMode = defaultModeFor(design)
     ): QrRenderResult {
         if (content.isBlank()) {
             return QrRenderResult.Failure("QR content must not be blank")

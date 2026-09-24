@@ -23,6 +23,25 @@ class BitmapPixelSource(val bitmap: Bitmap) : PixelSource {
     override fun getPixel(x: Int, y: Int): Int = bitmap.getPixel(x, y)
 }
 
+/**
+ * Pre-scaled pixel data source with Skia bilinear filtering and explicit padding bounds.
+ * Matches canonical pre-rendered 3N x 3N raster context sampling.
+ */
+class PreScaledPixelSource(
+    val bitmap: Bitmap,
+    val contentBounds: RectF? = null
+) : PixelSource {
+    override val width: Int get() = bitmap.width
+    override val height: Int get() = bitmap.height
+    override fun getPixel(x: Int, y: Int): Int = bitmap.getPixel(x, y)
+
+    fun isPadding(x: Int, y: Int): Boolean {
+        if (contentBounds == null) return false
+        return x < contentBounds.left || x >= contentBounds.right ||
+               y < contentBounds.top || y >= contentBounds.bottom
+    }
+}
+
 class ArrayPixelSource(
     override val width: Int,
     override val height: Int,
@@ -238,6 +257,42 @@ object ImageScaleResolver {
         canvas.drawBitmap(source, srcRect, dstIntRect, paint)
 
         return output
+    }
+
+    /**
+     * Pre-scales [source] into a [PreScaledPixelSource] of dimensions [targetWidth] x [targetHeight]
+     * matching canonical 3N x 3N pre-scaled raster sampling.
+     */
+    fun createPreScaledSource(
+        source: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        mode: ImageScaleMode
+    ): PreScaledPixelSource {
+        val tw = targetWidth.coerceAtLeast(1)
+        val th = targetHeight.coerceAtLeast(1)
+
+        val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+
+        val dstBounds = RectF(0f, 0f, tw.toFloat(), th.toFloat())
+        val (srcRect, dstRect) = resolveSrcDst(source.width, source.height, dstBounds, mode)
+
+        if (mode == ImageScaleMode.ASPECT_FIT) {
+            canvas.drawColor(Color.WHITE)
+        }
+
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        val dstIntRect = Rect(
+            dstRect.left.toInt(),
+            dstRect.top.toInt(),
+            dstRect.right.toInt().coerceAtMost(tw),
+            dstRect.bottom.toInt().coerceAtMost(th)
+        )
+        canvas.drawBitmap(source, srcRect, dstIntRect, paint)
+
+        val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) dstRect else null
+        return PreScaledPixelSource(output, contentBounds)
     }
 
     /**

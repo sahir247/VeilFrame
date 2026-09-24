@@ -4,7 +4,7 @@ import com.veilframe.app.qr.encoder.engine.QRPatternLocator
 
 /**
  * Functional exclusion mask specifically engineered for 3x3 Stochastic Subpixel Resampling
- * with visual parity to EFQRCode's getGrayPointList().
+ * with visual parity to canonical artistic subpixel gray point sampling.
  *
  * Architectural Invariants:
  * 1. Finders: Excludes exactly an 8x8 module area (24x24 subpixels in 3x coordinate space)
