@@ -22,9 +22,6 @@ data class VeilEncodedQr(
     }
 }
 
-@Deprecated("Renamed to VeilEncodedQr", ReplaceWith("VeilEncodedQr"))
-typealias EfEncodedQr = VeilEncodedQr
-
 /**
  * High-fidelity QR Code Encoder for VeilFrame Art Engine.
  *
@@ -75,9 +72,6 @@ object VeilQrEncoder {
         return encode(content, level)
     }
 }
-
-@Deprecated("Renamed to VeilQrEncoder", ReplaceWith("VeilQrEncoder"))
-typealias EfQrEncoder = VeilQrEncoder
 
 fun VeilCorrectionLevel.toZxingEcLevel(): ErrorCorrectionLevel = when (this) {
     VeilCorrectionLevel.L -> ErrorCorrectionLevel.L

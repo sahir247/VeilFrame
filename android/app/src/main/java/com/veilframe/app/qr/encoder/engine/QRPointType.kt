@@ -29,9 +29,6 @@ enum class VeilCorrectionLevel(val pattern: Int, val offset: Int) {
     H(pattern = 2, offset = 3);
 }
 
-@Deprecated("Renamed to VeilCorrectionLevel", ReplaceWith("VeilCorrectionLevel"))
-typealias EfCorrectionLevel = VeilCorrectionLevel
-
 /**
  * QR mask patterns for the VeilFrame Art Engine.
  */
@@ -52,5 +49,3 @@ enum class VeilMaskPattern(val rawValue: Int) {
     }
 }
 
-@Deprecated("Renamed to VeilMaskPattern", ReplaceWith("VeilMaskPattern"))
-typealias EfMaskPattern = VeilMaskPattern

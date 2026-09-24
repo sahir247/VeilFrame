@@ -181,9 +181,6 @@ class QrMatrix(
         }
     }
 
-    @Deprecated("Renamed to pointTypeAt", ReplaceWith("pointTypeAt(col, row)"))
-    fun efPointTypeAt(col: Int, row: Int): com.veilframe.app.qr.encoder.engine.QRPointType = pointTypeAt(col, row)
-
     /** Classification query (backward compatible). */
     fun typeAt(col: Int, row: Int): ModuleType {
         return when (pointTypeAt(col, row)) {

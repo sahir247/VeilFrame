@@ -95,7 +95,7 @@ object ThemeSettingsManager {
 
         if (dynamicEnabled && DynamicColors.isDynamicColorAvailable()) {
             // Apply Material You dynamic colors per-Activity
-            DynamicColors.applyIfAvailable(activity)
+            DynamicColors.applyToActivityIfAvailable(activity)
         } else {
             // Apply the selected palette overlay
             val palette = getAccentPalette(activity)

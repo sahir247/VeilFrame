@@ -264,6 +264,3 @@ object VeilPositionPatternGeometry {
         return Pair(sb.toString(), id)
     }
 }
-
-@Deprecated("Renamed to VeilPositionPatternGeometry", ReplaceWith("VeilPositionPatternGeometry"))
-typealias EfPositionPatternGeometry = VeilPositionPatternGeometry

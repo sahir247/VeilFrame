@@ -19,7 +19,7 @@ import kotlin.random.Random
  *
  * Implements VeilFrameStyleBubble with dual mode behavior:
  * - SAFE mode: protects timing, alignment, and finders separately.
- * - EF_COMPATIBLE mode (when matrix.typeTable != null): only reserves finders,
+ * - ARTISTIC_ENGINE mode (when matrix.typeTable != null): only reserves finders,
  *   allowing timing/alignment to cluster into macro bubbles matching VeilFrameStyleBubble.swift.
  *
  * Clustering grammar:

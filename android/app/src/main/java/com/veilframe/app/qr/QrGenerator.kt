@@ -53,9 +53,6 @@ enum class GenerationMode {
      */
     ARTISTIC_ENGINE,
 
-    @Deprecated("Renamed to ARTISTIC_ENGINE", ReplaceWith("ARTISTIC_ENGINE"))
-    EF_COMPATIBLE,
-
     /**
      * Production safety generation mode:
      * - Encodes with standard ISO/ZXing encoder.
@@ -81,7 +78,7 @@ object QrGenerator {
     ): QrMatrix {
         require(content.isNotBlank()) { "QR content must not be blank" }
         val ecLevel = when (mode) {
-            GenerationMode.ARTISTIC_ENGINE, GenerationMode.EF_COMPATIBLE -> {
+            GenerationMode.ARTISTIC_ENGINE -> {
                 when (design.correction) {
                     ErrorCorrectionChoice.L -> ErrorCorrectionLevel.L
                     ErrorCorrectionChoice.M -> ErrorCorrectionLevel.M
@@ -99,7 +96,7 @@ object QrGenerator {
             }
         }
 
-        return if (mode == GenerationMode.ARTISTIC_ENGINE || mode == GenerationMode.EF_COMPATIBLE) {
+        return if (mode == GenerationMode.ARTISTIC_ENGINE) {
             com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel).matrix
         } else {
             QrEncoder.encode(content, ecLevel).matrix
@@ -113,12 +110,6 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
-
-    @Deprecated("Renamed to generateArtisticMatrix", ReplaceWith("generateArtisticMatrix(content, design)"))
-    fun generateEfCompatibleMatrix(
-        content: String,
-        design: QrDesign = QrDesign()
-    ): QrMatrix = generateArtisticMatrix(content, design)
 
     /**
      * Modern domain generation entry point returning typed [QrRenderResult]
@@ -137,7 +128,7 @@ object QrGenerator {
             val matrix = generateMatrix(content, design, mode)
 
             val size = design.outputSize.coerceIn(256, 4096)
-            val quietZone = if (mode == GenerationMode.EF_COMPATIBLE) {
+            val quietZone = if (mode == GenerationMode.ARTISTIC_ENGINE) {
                 design.explicitQuietZone ?: 1
             } else {
                 design.effectiveQuietZone
@@ -212,12 +203,6 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
-
-    @Deprecated("Renamed to generateArtistic", ReplaceWith("generateArtistic(content, design)"))
-    fun generateEfCompatible(
-        content: String,
-        design: QrDesign = QrDesign()
-    ): QrRenderResult = generateArtistic(content, design)
 
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.
