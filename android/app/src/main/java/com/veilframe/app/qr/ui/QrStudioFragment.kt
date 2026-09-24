@@ -722,6 +722,7 @@ class QrScanTabFragment : Fragment() {
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
+    private var activeCamera: androidx.camera.core.Camera? = null
     private var activeQrScanner: QrScanner? = null
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -826,7 +827,22 @@ class QrScanTabFragment : Fragment() {
         val preview = Preview.Builder().build()
         preview.setSurfaceProvider(previewView?.surfaceProvider)
 
-        val scanner = QrScanner { raw ->
+        val scanner = QrScanner(
+            onZoomSuggestion = { zoomMultiplier ->
+                activity?.runOnUiThread {
+                    if (!isAdded) return@runOnUiThread
+                    val cam = activeCamera ?: return@runOnUiThread
+                    val zoomState = cam.cameraInfo.zoomState.value ?: return@runOnUiThread
+                    val currentZoom = zoomState.zoomRatio
+                    val maxZoom = zoomState.maxZoomRatio.coerceAtMost(5.0f)
+                    val minZoom = zoomState.minZoomRatio
+                    val targetZoom = (currentZoom * zoomMultiplier).coerceIn(minZoom, maxZoom)
+                    if (targetZoom > currentZoom * 1.05f) {
+                        cam.cameraControl.setZoomRatio(targetZoom)
+                    }
+                }
+            }
+        ) { raw ->
             activity?.runOnUiThread {
                 if (isAdded) handleScanResult(raw)
             }
@@ -840,7 +856,7 @@ class QrScanTabFragment : Fragment() {
 
         try {
             provider.unbindAll()
-            provider.bindToLifecycle(
+            activeCamera = provider.bindToLifecycle(
                 viewLifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
@@ -885,6 +901,7 @@ class QrScanTabFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         cameraProvider?.unbindAll()
+        activeCamera = null
         activeQrScanner?.close()
         activeQrScanner = null
     }
