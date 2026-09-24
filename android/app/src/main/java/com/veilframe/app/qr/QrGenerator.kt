@@ -79,7 +79,7 @@ object QrGenerator {
             val context = RenderContext()
 
             // 1. Draw Canvas Background (including Quiet Zone margins)
-            drawBackground(canvas, design.background, size, context)
+            drawBackground(canvas, design, size, context)
 
             // 2. Obtain renderer
             val renderer: QrRenderer = getRendererForDesign(design)
@@ -199,11 +199,11 @@ object QrGenerator {
 
     private fun drawBackground(
         canvas: Canvas,
-        background: BackgroundStyle,
+        design: QrDesign,
         size: Int,
         context: RenderContext
     ) {
-        when (background) {
+        when (val background = design.background) {
             is BackgroundStyle.Solid -> {
                 canvas.drawColor(background.color)
             }
@@ -230,8 +230,8 @@ object QrGenerator {
                 canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
             }
             is BackgroundStyle.Image -> {
-                // Clear with white first, then draw background image with specified alpha
-                canvas.drawColor(Color.WHITE)
+                // Clear with configured backdrop background color first, then draw background image with specified alpha
+                canvas.drawColor(design.palette.background)
                 val paint = context.tempPaint
                 paint.reset()
                 paint.alpha = (background.alpha.coerceIn(0f, 1f) * 255).toInt()

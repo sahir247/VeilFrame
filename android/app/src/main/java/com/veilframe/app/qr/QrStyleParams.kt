@@ -113,8 +113,11 @@ data class QrStyleParams(
     val lineColor: Int? = null,
     val lineVerticalColor: Int? = null,   // legacy null → use foreground
     val lineHorizontalColor: Int? = null,
-    // --- Random Rectangle specific ---
+    // --- Random Rectangle specific (EFQRCodeStyleRandomRectangle) ---
+    val randomRectColor: Int? = null,
     val randomRectSeed: Long = 42L,
+    // --- Quiet Zone (null defaults to 4 for SAFE mode, 1 for EF compatibility) ---
+    val quietZone: Int? = null,
     // --- Gradient (optional, applied over rendered bitmap) ---
     val gradientStart: Int? = null,
     val gradientEnd: Int? = null,

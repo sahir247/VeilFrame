@@ -16,6 +16,8 @@ import com.veilframe.app.qr.model.QrModuleRole
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.random.Random
 
 /**
  * Resolution-independent Vector SVG Exporter.
@@ -73,6 +75,9 @@ object SvgExporter {
         }
         if (design.style == com.veilframe.app.qr.QrStyle.LINE) {
             return generateLineSvg(matrix, design, qz, totalSize)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.RANDOM_RECTANGLE) {
+            return generateRandomRectangleSvg(matrix, design, qz, totalSize)
         }
 
         val sb = StringBuilder()
@@ -427,7 +432,7 @@ object SvgExporter {
         qz: Int,
         totalSize: Int
     ): String {
-        val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
+        val sourceBmp = design.imageSource.bitmap
         val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
         val bgHex = hexColor(design.imageFillBackgroundColor)
         val bgAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillBackgroundColor))
@@ -471,7 +476,7 @@ object SvgExporter {
         qz: Int,
         totalSize: Int
     ): String {
-        val sourceBmp = design.imageSource.bitmap ?: design.backgroundImage
+        val sourceBmp = design.imageSource.bitmap
         val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
         val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
         val n = matrix.size
@@ -1355,6 +1360,72 @@ object SvgExporter {
                     }
                     else -> {}
                 }
+            }
+        }
+
+        appendLogo(sb, design, totalSize, bgHex)
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun generateRandomRectangleSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qz: Int,
+        totalSize: Int
+    ): String {
+        val nCount = matrix.size
+        val bgHex = hexColor(design.palette.background)
+        val color = design.randomRectColor
+        val redValue = ((color ushr 16) and 0xFF).toDouble()
+        val greenValue = ((color ushr 8) and 0xFF).toDouble()
+        val blueValue = (color and 0xFF).toDouble()
+        val alphaValue = ((color ushr 24) and 0xFF) / 255.0
+
+        val randArr = ArrayList<Pair<Int, Int>>(nCount * nCount)
+        for (row in 0 until nCount) {
+            for (col in 0 until nCount) {
+                randArr.add(Pair(row, col))
+            }
+        }
+        val rng = Random(design.effects.seed)
+        randArr.shuffle(rng)
+
+        val sb = StringBuilder()
+        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
+        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex" />""").append("\n")
+
+        var id = 0
+        for (item in randArr) {
+            val row = item.first
+            val col = item.second
+
+            if (matrix.isDark(col, row)) {
+                val tempRand = rng.nextDouble(0.8, 1.3)
+                val randNum = rng.nextDouble(50.0, 230.0)
+
+                val rValue = max(0, min(255, (redValue + randNum).toInt()))
+                val gValue = max(0, min(255, (greenValue - randNum / 2.0).toInt()))
+                val bValue = max(0, min(255, (blueValue + randNum * 2.0).toInt()))
+
+                val r2Value = max(0, min(255, rValue - 40))
+                val g2Value = max(0, min(255, gValue - 40))
+                val b2Value = max(0, min(255, bValue - 40))
+
+                val offset = (tempRand - 1.0) / 2.0
+                val rx = String.format(Locale.US, "%.3f", col + qz - offset)
+                val ry = String.format(Locale.US, "%.3f", row + qz - offset)
+
+                val w1 = String.format(Locale.US, "%.3f", tempRand + 0.15)
+                val op1 = String.format(Locale.US, "%.2f", 0.9 * alphaValue)
+                sb.append("""  <rect key="$id" opacity="$op1" fill="rgb($r2Value,$g2Value,$b2Value)" width="$w1" height="$w1" x="$rx" y="$ry"/>""").append("\n")
+                id++
+
+                val w2 = String.format(Locale.US, "%.3f", tempRand)
+                val op2 = String.format(Locale.US, "%.2f", alphaValue)
+                sb.append("""  <rect key="$id" opacity="$op2" fill="rgb($rValue,$gValue,$bValue)" width="$w2" height="$w2" x="$rx" y="$ry"/>""").append("\n")
+                id++
             }
         }
 

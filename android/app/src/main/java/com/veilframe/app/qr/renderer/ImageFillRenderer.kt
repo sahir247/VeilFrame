@@ -34,8 +34,6 @@ class ImageFillRenderer : QrRenderer {
         context: RenderContext
     ) {
         val sourceImage = design.imageSource.bitmap
-            ?: design.backgroundImage
-            ?: (design.background as? BackgroundStyle.Image)?.bitmap
 
         if (sourceImage == null) {
             BasicRenderer().render(matrix, design, canvas, geometry, context)

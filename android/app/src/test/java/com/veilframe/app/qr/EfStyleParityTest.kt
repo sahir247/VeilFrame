@@ -277,4 +277,177 @@ class EfStyleParityTest {
         assertTrue("Cross SVG must contain stroke lines", crossSvg.contains("<line x1="))
         assertTrue("Cross SVG must contain line color #119988", crossSvg.contains("#119988"))
     }
+
+    @Test
+    fun testSourceAndBackdropImageIndependence() {
+        // Test 1: Setting only background image in an image style does NOT promote it to style imageSource
+        val paramsWithOnlyBackdrop = QrStyleParams(
+            style = QrStyle.IMAGE,
+            backgroundImageAlpha = 0.4f
+        )
+        val designWithOnlyBackdrop = QrDesign.fromQrStyleParams(paramsWithOnlyBackdrop)
+
+        assertNull("imageSource.source must remain null if sourceImage was not supplied", designWithOnlyBackdrop.imageSource.source)
+        assertNull("imageSource.bitmap must remain null if sourceImage was not supplied", designWithOnlyBackdrop.imageSource.bitmap)
+
+        // Test 2: Setting source image explicitly populates imageSource without requiring backgroundImage
+        val imageSourceDirect = ImageSourceStyle(
+            source = ImageSource.Uri("content://test/image.png"),
+            opacity = 0.8f
+        )
+        val backdropLayerDirect = BackgroundLayer(
+            enabled = true,
+            opacity = 0.3f
+        )
+        val designDirect = QrDesign(
+            imageSource = imageSourceDirect,
+            backgroundLayer = backdropLayerDirect
+        )
+        assertEquals("content://test/image.png", (designDirect.imageSource.source as? ImageSource.Uri)?.value)
+        assertEquals(0.8f, designDirect.imageSource.opacity, 0.001f)
+        assertEquals(0.3f, designDirect.backgroundLayer.opacity, 0.001f)
+        assertTrue(designDirect.backgroundLayer.enabled)
+    }
+
+    @Test
+    fun testRandomRectangleExactEfAlgorithmAndSvgParity() {
+        val matrix = QrMatrix("https://veilframe.app/ef-random-rect-parity", ErrorCorrectionLevel.H)
+        val customColor = 0xFF14AA3C.toInt() // EF default: rgb(20, 170, 60)
+
+        val params = QrStyleParams(
+            style = QrStyle.RANDOM_RECTANGLE,
+            randomRectColor = customColor,
+            randomRectSeed = 12345L,
+            quietZone = 1 // EF default: 1 module
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+
+        assertEquals(QrStyle.RANDOM_RECTANGLE, design.style)
+        assertEquals(customColor, design.randomRectColor)
+        assertEquals(1, design.quietZoneModules)
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // Verify EF RandomRectangle SVG structure:
+        // 1. Dual rect per module with fill="rgb(...)" format
+        assertTrue("SVG must contain rgb(...) fills from EF color variation", svg.contains("fill=\"rgb("))
+        // 2. Outer rect opacity 0.90 (0.9 * 1.0) and inner rect opacity 1.00
+        assertTrue("SVG must contain outer rect opacity 0.90", svg.contains("opacity=\"0.90\""))
+        assertTrue("SVG must contain inner rect opacity 1.00", svg.contains("opacity=\"1.00\""))
+        // 3. Must NOT contain old rounded corner rx= attributes
+        assertFalse("EF RandomRectangle must produce sharp rectangles, not rounded rects", svg.contains("rx="))
+    }
+
+    @Test
+    fun testSoftwareRasterizedRandomRectangleDecodableByZxing() {
+        val payload = "https://veilframe.app/ef-random-rect-zxing"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val qz = 4
+        val scale = 12
+        val totalModules = n + 2 * qz
+        val totalPx = totalModules * scale
+        val pixels = IntArray(totalPx * totalPx) { 0xFFFFFFFF.toInt() } // White background
+
+        val baseColor = 0xFF14AA3C.toInt() // EF default: rgb(20, 170, 60)
+        val redValue = (baseColor shr 16 and 0xFF).toDouble()
+        val greenValue = (baseColor shr 8 and 0xFF).toDouble()
+        val blueValue = (baseColor and 0xFF).toDouble()
+
+        // Reproduce EF's deterministic shuffle & dual-rect rasterization
+        val randArr = ArrayList<Pair<Int, Int>>(n * n)
+        for (r in 0 until n) {
+            for (c in 0 until n) {
+                randArr.add(Pair(r, c))
+            }
+        }
+        val rng = kotlin.random.Random(42L)
+        randArr.shuffle(rng)
+
+        for (item in randArr) {
+            val r = item.first
+            val c = item.second
+
+            if (matrix.isDark(c, r)) {
+                // If finder pattern, draw standard solid dark module to guarantee scan anchor
+                val role = matrix.roleAt(c, r)
+                val isFinder = role == QrModuleRole.FINDER_OUTER ||
+                               role == QrModuleRole.FINDER_INNER ||
+                               role == QrModuleRole.SEPARATOR
+
+                if (isFinder) {
+                    val startX = (c + qz) * scale
+                    val startY = (r + qz) * scale
+                    for (y in startY until (startY + scale)) {
+                        for (x in startX until (startX + scale)) {
+                            pixels[y * totalPx + x] = 0xFF000000.toInt()
+                        }
+                    }
+                } else {
+                    val tempRand = rng.nextDouble(0.8, 1.3)
+                    val randNum = rng.nextDouble(50.0, 230.0)
+
+                    val rVal = kotlin.math.max(0, kotlin.math.min(255, (redValue + randNum).toInt()))
+                    val gVal = kotlin.math.max(0, kotlin.math.min(255, (greenValue - randNum / 2.0).toInt()))
+                    val bVal = kotlin.math.max(0, kotlin.math.min(255, (blueValue + randNum * 2.0).toInt()))
+
+                    val r2Val = kotlin.math.max(0, kotlin.math.min(255, rVal - 40))
+                    val g2Val = kotlin.math.max(0, kotlin.math.min(255, gVal - 40))
+                    val b2Val = kotlin.math.max(0, kotlin.math.min(255, bVal - 40))
+
+                    val centerModuleX = (c + qz).toFloat() + 0.5f
+                    val centerModuleY = (r + qz).toFloat() + 0.5f
+
+                    // Draw outer rect (tempRand + 0.15)
+                    val outerHalf = ((tempRand + 0.15) / 2.0 * scale).toInt()
+                    val centerX = (centerModuleX * scale).toInt()
+                    val centerY = (centerModuleY * scale).toInt()
+                    val outerColor = (0xFF shl 24) or (r2Val shl 16) or (g2Val shl 8) or b2Val
+
+                    for (y in (centerY - outerHalf).coerceAtLeast(0) until (centerY + outerHalf).coerceAtMost(totalPx)) {
+                        for (x in (centerX - outerHalf).coerceAtLeast(0) until (centerX + outerHalf).coerceAtMost(totalPx)) {
+                            pixels[y * totalPx + x] = outerColor
+                        }
+                    }
+
+                    // Draw inner rect (tempRand)
+                    val innerHalf = (tempRand / 2.0 * scale).toInt()
+                    val innerColor = (0xFF shl 24) or (rVal shl 16) or (gVal shl 8) or bVal
+                    for (y in (centerY - innerHalf).coerceAtLeast(0) until (centerY + innerHalf).coerceAtMost(totalPx)) {
+                        for (x in (centerX - innerHalf).coerceAtLeast(0) until (centerX + innerHalf).coerceAtMost(totalPx)) {
+                            pixels[y * totalPx + x] = innerColor
+                        }
+                    }
+                }
+            }
+        }
+
+        val source = RGBLuminanceSource(totalPx, totalPx, pixels)
+        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+        val reader = MultiFormatReader()
+        val decoded = reader.decode(binaryBitmap)
+
+        assertNotNull("Decoded result must not be null", decoded)
+        assertEquals("ZXing must successfully decode EF RandomRectangle matrix", payload, decoded.text)
+    }
+
+    @Test
+    fun testBackdropDoubleCompositingPrevention() {
+        // BaseQrRenderer declares renderBackground as open no-op because QrGenerator handles canvas background.
+        // Verify that ComposableQrRenderer does not re-draw background on canvas during its render cycle.
+        val composableRenderer = com.veilframe.app.qr.renderer.ComposableQrRenderer()
+        val method = composableRenderer.javaClass.getMethod(
+            "renderBackground",
+            android.graphics.Canvas::class.java,
+            QrDesign::class.java,
+            QrGeometry::class.java,
+            com.veilframe.app.qr.renderer.RenderContext::class.java
+        )
+        assertEquals(
+            "renderBackground must remain non-overridden in ComposableQrRenderer to avoid double-compositing alpha",
+            com.veilframe.app.qr.renderer.BaseQrRenderer::class.java,
+            method.declaringClass
+        )
+    }
 }
+

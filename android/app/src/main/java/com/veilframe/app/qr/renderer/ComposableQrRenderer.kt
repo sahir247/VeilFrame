@@ -20,31 +20,6 @@ import com.veilframe.app.qr.model.*
  */
 open class ComposableQrRenderer : BaseQrRenderer() {
 
-    override fun renderBackground(
-        canvas: Canvas,
-        design: QrDesign,
-        geometry: QrGeometry,
-        context: RenderContext
-    ) {
-        val bg = design.backgroundLayer
-        if (!bg.enabled) return
-
-        // 1. Draw base color if specified
-        val bgPaint = context.obtainFill(bg.color)
-        canvas.drawRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), bgPaint)
-
-        // 2. Draw background image if provided
-        val bmp = bg.bitmap ?: design.backgroundImage
-        if (bmp != null && !bmp.isRecycled) {
-            val alphaPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-                alpha = ((bg.opacity.coerceIn(0f, 1f)) * 255).toInt()
-            }
-            val src = Rect(0, 0, bmp.width, bmp.height)
-            val dst = Rect(0, 0, geometry.outputWidth, geometry.outputHeight)
-            canvas.drawBitmap(bmp, src, dst, alphaPaint)
-        }
-    }
-
     override fun renderDataModules(
         canvas: Canvas,
         matrix: QrMatrix,

@@ -351,6 +351,7 @@ data class QrDesign(
     val imageFillMaskColor: Int = 0x1A000000,
     val efDsjStyle: EfDsjStyle = EfDsjStyle(),
     val efFunctionStyle: EfFunctionStyle = EfFunctionStyle(),
+    val randomRectColor: Int = 0xFF14AA3C.toInt(),
     val backgroundLayer: BackgroundLayer = BackgroundLayer(
         color = palette.background,
         bitmap = backgroundImage,
@@ -398,8 +399,7 @@ data class QrDesign(
                 else -> ModuleShape.ROUNDED
             }
 
-            val isImageStyle = params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_FILL || params.style == QrStyle.IMAGE_RESAMPLE
-            val resolvedSourceImage = params.sourceImage ?: if (isImageStyle) params.backgroundImage else null
+            val resolvedSourceImage = params.sourceImage
 
             return QrDesign(
                 correction = if (params.logo != null) ErrorCorrectionChoice.H else ErrorCorrectionChoice.AUTO,
@@ -422,7 +422,7 @@ data class QrDesign(
                     gradientEnd = params.gradientEnd,
                     gradientType = if (hasGradient) GradientType.LINEAR else GradientType.NONE
                 ),
-                background = if (params.backgroundImage != null && !isImageStyle) {
+                background = if (params.backgroundImage != null) {
                     BackgroundStyle.Image(params.backgroundImage, params.backgroundImageAlpha)
                 } else {
                     BackgroundStyle.Solid(params.background)
@@ -441,10 +441,11 @@ data class QrDesign(
                     dataHeightRatio = params.d25DataHeight,
                     positionHeightRatio = params.d25PositionHeight
                 ),
-                quietZoneModules = 4,
+                quietZoneModules = params.quietZone ?: 4,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,
                 backgroundImageAlpha = params.backgroundImageAlpha,
+                randomRectColor = params.randomRectColor ?: if (params.style == QrStyle.RANDOM_RECTANGLE && params.foreground == Color.BLACK) 0xFF14AA3C.toInt() else params.foreground,
                 imageFillMode = imageFillMode,
                 style = params.style,
                 timingColor = params.timingColor,

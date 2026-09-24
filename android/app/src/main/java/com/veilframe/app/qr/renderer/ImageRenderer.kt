@@ -46,8 +46,6 @@ class ImageRenderer : QrRenderer {
         val dataBounds = geometry.dataRegionBounds()
 
         val sourceImage = design.imageSource.bitmap
-            ?: design.backgroundImage
-            ?: (design.background as? BackgroundStyle.Image)?.bitmap
 
         if (sourceImage == null) {
             BasicRenderer().render(matrix, design, canvas, geometry, context)
