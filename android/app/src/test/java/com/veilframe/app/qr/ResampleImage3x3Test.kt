@@ -15,7 +15,7 @@ import org.junit.Test
 /**
  * Verification test suite for:
  * 1. [ResampleSubpixelEngine] 3x3 stochastic subpixel traversal, center anchor preservation, and zero-allocation sink.
- * 2. EFQRCode contrast/exposure threshold mathematics parity.
+ * 2. VeilFrame Art Engine contrast/exposure threshold mathematics parity.
  * 3. [ImageScaleResolver] ASPECT_FIT white margin padding semantics.
  * 4. Canvas vs SVG exact subpixel coordinate equivalence.
  * 5. Strict zero-fallback isolation between [ImageSourceStyle] and [BackgroundLayer].
@@ -88,8 +88,8 @@ class ResampleImage3x3Test {
     }
 
     @Test
-    fun testEFQRCodeContrastExposureThresholdMath() {
-        // EFQRCode formula: ((grayNorm + exposure - 0.5f) * (contrast + 1.0f) + 0.5f).coerceIn(0f, 1f)
+    fun testArtisticContrastExposureThresholdMath() {
+        // VeilFrame Art Engine formula: ((grayNorm + exposure - 0.5f) * (contrast + 1.0f) + 0.5f).coerceIn(0f, 1f)
 
         // Baseline: contrast = 0.0, exposure = 0.0 -> threshold equals grayNorm
         val base0 = ((0.2f + 0f - 0.5f) * (0f + 1.0f) + 0.5f).coerceIn(0f, 1f)

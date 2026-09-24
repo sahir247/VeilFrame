@@ -14,9 +14,9 @@ import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 5 — IMAGE_FILL (EFQRCodeStyleImageFill Parity)
+ * Style 5 — IMAGE_FILL (VeilFrameStyleImageFill Parity)
  *
- * Implements EFQRCode continuous image masking:
+ * Implements VeilFrame Art Engine continuous image masking:
  * `<mask id="hole">...<rect width="1.02" height="1.02" fill="white"/>...</mask>`
  * `<g mask="url(#hole)"><rect fill="backgroundColor"/><image .../><rect fill="maskColor"/></g>`
  *
@@ -24,6 +24,10 @@ import com.veilframe.app.qr.QrStyleParams
  * stencil mask, combined with a base [backgroundColor] and an overlay [maskColor] tint.
  * Modules are NOT individually sampled; the full visual gradient of the continuous image shines through.
  */
+@Deprecated(
+    message = "Use ComposableQrRenderer for unified 11-layer architecture, 3x3 stochastic subpixel engine, and geometry IR parity.",
+    replaceWith = ReplaceWith("ComposableQrRenderer()", "com.veilframe.app.qr.renderer.ComposableQrRenderer")
+)
 class ImageFillRenderer : QrRenderer {
 
     override fun render(
@@ -54,7 +58,7 @@ class ImageFillRenderer : QrRenderer {
         // 1. Offscreen layer for masked QR stencil
         val layerId = canvas.saveLayer(dataBounds, null)
 
-        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion (matching EF's 1.02 size)
+        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion (matching VeilFrame's 1.02 size)
         val maskPaint = context.obtainFill(Color.WHITE)
         val antiGap = 0.01f * mSize
 

@@ -205,7 +205,7 @@ object ImageScaleResolver {
      * Creates a scaled bitmap of target dimensions [targetWidth] x [targetHeight] adhering to [mode].
      *
      * For [ImageScaleMode.ASPECT_FIT], non-covered regions are guaranteed to be solid white
-     * (RGBA = 255, 255, 255, 255), ensuring EFQRCode luminance math produces zero photo dither dots
+     * (RGBA = 255, 255, 255, 255), ensuring VeilFrame Art Engine luminance math produces zero photo dither dots
      * in letterboxed/pillarboxed margins.
      */
     fun createScaledBitmap(

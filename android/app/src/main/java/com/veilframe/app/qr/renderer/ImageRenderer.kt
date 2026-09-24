@@ -16,9 +16,9 @@ import com.veilframe.app.qr.model.QrModuleRole
 import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 6 — IMAGE (EFQRCodeStyleImage Parity)
+ * Style 6 — IMAGE (VeilFrameStyleImage Parity)
  *
- * Full multi-layer EFQRCode architecture:
+ * Full multi-layer VeilFrame Art Engine architecture:
  * 1. Optional pre-pass: When [allowTransparent] is true, renders underlying data modules
  *    (dark with [dataColorDark], light with [dataColorLight]) before the image.
  * 2. Image layer with finder cutout: Continuous image scaled over the QR matrix, with

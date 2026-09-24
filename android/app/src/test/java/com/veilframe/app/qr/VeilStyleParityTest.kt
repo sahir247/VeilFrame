@@ -11,24 +11,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Verification test suite for EFQRCode parity fixes:
- * 1. Default contrast in [ImageSourceStyle] must be 0.0f for EF threshold math parity.
+ * Verification test suite for VeilFrame Art Engine parity fixes:
+ * 1. Default contrast in [ImageSourceStyle] must be 0.0f for VeilFrame threshold math parity.
  * 2. IMAGE style: #hole mask with 8x8 finder cutouts, 8x8 backing rects, dual dark/light modules.
  * 3. IMAGE_FILL style: continuous image fill through 1.02 anti-gap stencil mask with background and tint.
  * 4. 2.5D style: axonometric isometric projection viewBox and matrix, skewY/skewX extrusions.
  * 5. Parameter mapping fidelity from [QrStyleParams] to [QrDesign].
  * 6. ZXing decode verification on pure software rasterized output.
  */
-class EfStyleParityTest {
+class VeilStyleParityTest {
 
     @Test
     fun testResampleDefaultContrastParity() {
-        // EFQRCode default: contrast: CGFloat = 0
-        // Formula in EF: (grayNorm + exposure - 0.5) * (contrast + 1) + 0.5
+        // VeilFrame Art Engine default: contrast: CGFloat = 0
+        // Formula in VeilFrame: (grayNorm + exposure - 0.5) * (contrast + 1) + 0.5
         // When contrast = 0.0f, (contrast + 1.0f) evaluates to 1.0f (no artificial 2x contrast boost)
         val defaultStyle = ImageSourceStyle()
         assertEquals(
-            "Default contrast in ImageSourceStyle must be 0.0f for EFQRCode parity",
+            "Default contrast in ImageSourceStyle must be 0.0f for VeilFrame Art Engine parity",
             0.0f,
             defaultStyle.contrast,
             0.0001f
@@ -39,7 +39,7 @@ class EfStyleParityTest {
 
     @Test
     fun testImageStyleParameterMappingAndSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-image-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-image-parity", ErrorCorrectionLevel.H)
         val n = matrix.size
 
         val params = QrStyleParams(
@@ -59,7 +59,7 @@ class EfStyleParityTest {
         assertEquals(0xFF000000.toInt(), design.positionDarkColor)
         assertEquals(0xFFFFFFFF.toInt(), design.positionLightColor)
 
-        // Verify SVG Export EFQRCode Parity
+        // Verify SVG Export VeilFrame Art Engine Parity
         val svg = SvgExporter.generateSvg(matrix, design)
         assertTrue("SVG must start with XML declaration", svg.startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
 
@@ -76,7 +76,7 @@ class EfStyleParityTest {
 
     @Test
     fun testImageFillStyleParameterMappingAndSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-image-fill-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-image-fill-parity", ErrorCorrectionLevel.H)
 
         val params = QrStyleParams(
             style = QrStyle.IMAGE_FILL,
@@ -89,7 +89,7 @@ class EfStyleParityTest {
         assertEquals(0xFFFAFAFA.toInt(), design.imageFillBackgroundColor)
         assertEquals(0x1A000000, design.imageFillMaskColor)
 
-        // Verify SVG Export EFQRCode Parity
+        // Verify SVG Export VeilFrame Art Engine Parity
         val svg = SvgExporter.generateSvg(matrix, design)
 
         // Verify #hole stencil mask with 1.02 size anti-gap expansion
@@ -104,7 +104,7 @@ class EfStyleParityTest {
 
     @Test
     fun test25DIsometricTransformAndFaceGeometry() {
-        val matrix = QrMatrix("https://veilframe.app/ef-25d-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-25d-parity", ErrorCorrectionLevel.H)
         val n = matrix.size
 
         val params = QrStyleParams(
@@ -123,15 +123,15 @@ class EfStyleParityTest {
         assertEquals(0x33112233, design.depthStyle.leftColor)
         assertEquals(0x99112233.toInt(), design.depthStyle.rightColor)
 
-        // Verify SVG Export EFQRCode Parity
+        // Verify SVG Export VeilFrame Art Engine Parity
         val svg = SvgExporter.generateSvg(matrix, design)
 
-        // Verify EF viewBox: [-n, -n/2, 2*n, 2*n]
+        // Verify VeilFrame viewBox: [-n, -n/2, 2*n, 2*n]
         val expectedViewBox = "viewBox=\"-$n -${n / 2.0} ${n * 2.0} ${n * 2.0}\""
-        assertTrue("SVG must have EFQRCode axonometric viewBox: $expectedViewBox", svg.contains(expectedViewBox))
+        assertTrue("SVG must have VeilFrame Art Engine axonometric viewBox: $expectedViewBox", svg.contains(expectedViewBox))
 
-        // Verify EF axonometric transform matrix: matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)
-        assertTrue("SVG must contain EF axonometric matrix", svg.contains("matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"))
+        // Verify VeilFrame axonometric transform matrix: matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)
+        assertTrue("SVG must contain VeilFrame axonometric matrix", svg.contains("matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"))
 
         // Verify Left face skewY(45) and Right face skewX(45)
         assertTrue("SVG must contain Left face skewY(45)", svg.contains("skewY(45)"))
@@ -140,7 +140,7 @@ class EfStyleParityTest {
 
     @Test
     fun testSoftwareRasterizedImageFillDecodableByZxing() {
-        val payload = "https://veilframe.app/ef-image-fill-zxing"
+        val payload = "https://veilframe.app/veil-art-image-fill-zxing"
         val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
         val n = matrix.size
         val qz = 4
@@ -176,7 +176,7 @@ class EfStyleParityTest {
 
     @Test
     fun testDsjStyleParameterMappingAndSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-dsj-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-dsj-parity", ErrorCorrectionLevel.H)
 
         val params = QrStyleParams(
             style = QrStyle.DSJ,
@@ -196,7 +196,7 @@ class EfStyleParityTest {
         assertEquals(0xFFE02020.toInt(), design.efDsjStyle!!.verticalLineColor)
         assertEquals(0xFF0B2D97.toInt(), design.efDsjStyle!!.xColor)
 
-        // Verify SVG Export EFQRCode Parity
+        // Verify SVG Export VeilFrame Art Engine Parity
         val svg = SvgExporter.generateSvg(matrix, design)
 
         // Verify colors are present in SVG output
@@ -208,7 +208,7 @@ class EfStyleParityTest {
 
     @Test
     fun testFunctionStyleFadeAndCircleSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-function-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-function-parity", ErrorCorrectionLevel.H)
 
         // Test FADE function
         val fadeParams = QrStyleParams(
@@ -245,7 +245,7 @@ class EfStyleParityTest {
 
     @Test
     fun testLineStyleGrammarAndSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-line-parity", ErrorCorrectionLevel.H)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-line-parity", ErrorCorrectionLevel.H)
 
         // Test Horizontal line
         val horizParams = QrStyleParams(
@@ -311,14 +311,14 @@ class EfStyleParityTest {
 
     @Test
     fun testRandomRectangleExactEfAlgorithmAndSvgParity() {
-        val matrix = QrMatrix("https://veilframe.app/ef-random-rect-parity", ErrorCorrectionLevel.H)
-        val customColor = 0xFF14AA3C.toInt() // EF default: rgb(20, 170, 60)
+        val matrix = QrMatrix("https://veilframe.app/veil-art-random-rect-parity", ErrorCorrectionLevel.H)
+        val customColor = 0xFF14AA3C.toInt() // VeilFrame Art default: rgb(20, 170, 60)
 
         val params = QrStyleParams(
             style = QrStyle.RANDOM_RECTANGLE,
             randomRectColor = customColor,
             randomRectSeed = 12345L,
-            quietZone = 1 // EF default: 1 module
+            quietZone = 1 // VeilFrame Art default: 1 module
         )
         val design = QrDesign.fromQrStyleParams(params)
 
@@ -328,19 +328,19 @@ class EfStyleParityTest {
 
         val svg = SvgExporter.generateSvg(matrix, design)
 
-        // Verify EF RandomRectangle SVG structure:
+        // Verify VeilFrame RandomRectangle SVG structure:
         // 1. Dual rect per module with fill="rgb(...)" format
-        assertTrue("SVG must contain rgb(...) fills from EF color variation", svg.contains("fill=\"rgb("))
+        assertTrue("SVG must contain rgb(...) fills from VeilFrame color variation", svg.contains("fill=\"rgb("))
         // 2. Outer rect opacity 0.90 (0.9 * 1.0) and inner rect opacity 1.00
         assertTrue("SVG must contain outer rect opacity 0.90", svg.contains("opacity=\"0.90\""))
         assertTrue("SVG must contain inner rect opacity 1.00", svg.contains("opacity=\"1.00\""))
         // 3. Must NOT contain old rounded corner rx= attributes
-        assertFalse("EF RandomRectangle must produce sharp rectangles, not rounded rects", svg.contains("rx="))
+        assertFalse("VeilFrame RandomRectangle must produce sharp rectangles, not rounded rects", svg.contains("rx="))
     }
 
     @Test
     fun testSoftwareRasterizedRandomRectangleDecodableByZxing() {
-        val payload = "https://veilframe.app/ef-random-rect-zxing"
+        val payload = "https://veilframe.app/veil-art-random-rect-zxing"
         val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
         val n = matrix.size
         val qz = 4
@@ -349,12 +349,12 @@ class EfStyleParityTest {
         val totalPx = totalModules * scale
         val pixels = IntArray(totalPx * totalPx) { 0xFFFFFFFF.toInt() } // White background
 
-        val baseColor = 0xFF14AA3C.toInt() // EF default: rgb(20, 170, 60)
+        val baseColor = 0xFF14AA3C.toInt() // VeilFrame Art default: rgb(20, 170, 60)
         val redValue = (baseColor shr 16 and 0xFF).toDouble()
         val greenValue = (baseColor shr 8 and 0xFF).toDouble()
         val blueValue = (baseColor and 0xFF).toDouble()
 
-        // Reproduce EF's deterministic shuffle & dual-rect rasterization
+        // Reproduce VeilFrame's deterministic shuffle & dual-rect rasterization
         val randArr = ArrayList<Pair<Int, Int>>(n * n)
         for (r in 0 until n) {
             for (c in 0 until n) {
@@ -428,7 +428,7 @@ class EfStyleParityTest {
         val decoded = reader.decode(binaryBitmap)
 
         assertNotNull("Decoded result must not be null", decoded)
-        assertEquals("ZXing must successfully decode EF RandomRectangle matrix", payload, decoded.text)
+        assertEquals("ZXing must successfully decode VeilFrame RandomRectangle matrix", payload, decoded.text)
     }
 
     @Test

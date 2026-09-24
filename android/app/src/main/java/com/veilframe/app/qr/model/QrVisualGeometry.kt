@@ -10,7 +10,7 @@ import android.graphics.RectF
 object QrVisualGeometry {
 
     /**
-     * Constructs a squircle (smooth rounded rectangle using EFQRCode's normalized sq25 bezier curve).
+     * Constructs a squircle (smooth rounded rectangle using VeilFrame Art Engine's normalized sq25 bezier curve).
      */
     fun createSquirclePath(rect: RectF, path: Path = Path()): Path {
         path.reset()

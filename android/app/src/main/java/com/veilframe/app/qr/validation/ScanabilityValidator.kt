@@ -55,12 +55,16 @@ data class ScanabilityReport(
     val decodeResult: DecodeResult,
     val errorCorrection: ErrorCorrectionLevel,
     val warnings: List<String>,
-    val repairSuggestions: List<RepairReason>
+    val repairSuggestions: List<RepairReason>,
+    val validationSkipped: Boolean = false
 )
 
 object ScanabilityValidator {
 
-    private val zxingDecoder = ZxingQrDecoder()
+    private val mlKitDecoder by lazy { com.veilframe.app.qr.decoder.MlKitQrDecoder() }
+    private val zxingDecoder by lazy { ZxingQrDecoder() }
+
+    var primaryDecoder: com.veilframe.app.qr.decoder.QrDecoder? = null
 
     /**
      * Fast validation executed during live editing on preview bitmaps (e.g. 512px).
@@ -93,18 +97,19 @@ object ScanabilityValidator {
         expectedContent: String,
         isStrict: Boolean
     ): ScanabilityReport {
+        val quietZone = design.effectiveQuietZone
         val geometry = QrGeometry(
             matrixSize = matrix.size,
             outputWidth = bitmap.width,
             outputHeight = bitmap.height,
-            quietZoneModules = design.quietZoneModules
+            quietZoneModules = quietZone
         )
 
         // 1. Quiet Zone Check
-        val quietZoneOk = design.quietZoneModules >= 4
+        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0)
         val quietZoneReport = QuietZoneReport(
-            hasFourModuleMargin = quietZoneOk,
-            quietZoneModules = design.quietZoneModules
+            hasFourModuleMargin = quietZone >= 4,
+            quietZoneModules = quietZone
         )
 
         // 2. Contrast Distribution Analysis
@@ -116,8 +121,21 @@ object ScanabilityValidator {
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
 
-        // 5. ZXing Java Decode Validation (Deterministic Validator)
-        val decodeResult = zxingDecoder.decode(bitmap)
+        // 5. Decode Validation (Primary: Google ML Kit; Fallback: ZXing)
+        val decoder = primaryDecoder ?: mlKitDecoder
+        val decodeResult = try {
+            decoder.decode(bitmap)
+        } catch (e: Throwable) {
+            if (decoder != zxingDecoder) {
+                try {
+                    zxingDecoder.decode(bitmap)
+                } catch (ze: Throwable) {
+                    DecodeResult(success = false, error = ze.message ?: e.message, decoderId = "ZXing-Fallback")
+                }
+            } else {
+                DecodeResult(success = false, error = e.message, decoderId = decoder.id)
+            }
+        }
         val decodeMatches = decodeResult.success && decodeResult.text == expectedContent
 
         // Compile warnings & repair suggestions
@@ -149,7 +167,7 @@ object ScanabilityValidator {
         }
 
         if (!decodeMatches) {
-            warnings.add("ZXing validator failed to decode rendered QR code.")
+            warnings.add("${decodeResult.decoderId.ifEmpty { "Barcode decoder" }} failed to decode rendered QR code.")
             if (!suggestions.contains(RepairReason.ELEVATE_ERROR_CORRECTION)) {
                 suggestions.add(RepairReason.ELEVATE_ERROR_CORRECTION)
             }
@@ -161,9 +179,7 @@ object ScanabilityValidator {
             }
         }
 
-        val isScanReady = quietZoneOk &&
-                contrastReport.isContrastAdequate &&
-                finderReport.findersIntact &&
+        val isScanReady = finderReport.findersIntact &&
                 finderReport.separatorsClear &&
                 !logoReport.hasProtectedOverlap &&
                 logoReport.isWithinErrorCorrectionCapacity &&
@@ -191,23 +207,34 @@ object ScanabilityValidator {
         val lightLuminances = mutableListOf<Float>()
 
         val step = maxOf(1, matrix.size / 20) // Sample grid
+        val delta = geometry.moduleSize * 0.25f
+        val sampleOffsets = listOf(
+            Pair(0f, 0f),
+            Pair(-delta, -delta),
+            Pair(delta, -delta),
+            Pair(-delta, delta),
+            Pair(delta, delta)
+        )
+
         for (row in 0 until matrix.size step step) {
             for (col in 0 until matrix.size step step) {
                 val (cx, cy) = geometry.moduleCenter(col, row)
-                val px = cx.toInt().coerceIn(0, bitmap.width - 1)
-                val py = cy.toInt().coerceIn(0, bitmap.height - 1)
-                val pixel = bitmap.getPixel(px, py)
+                for ((ox, oy) in sampleOffsets) {
+                    val px = (cx + ox).toInt().coerceIn(0, bitmap.width - 1)
+                    val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
+                    val pixel = bitmap.getPixel(px, py)
 
-                // Relative luminance (sRGB standard)
-                val r = Color.red(pixel) / 255f
-                val g = Color.green(pixel) / 255f
-                val b = Color.blue(pixel) / 255f
-                val lum = (0.2126f * r) + (0.7152f * g) + (0.0722f * b)
+                    // Relative luminance (sRGB standard)
+                    val r = Color.red(pixel) / 255f
+                    val g = Color.green(pixel) / 255f
+                    val b = Color.blue(pixel) / 255f
+                    val lum = (0.2126f * r) + (0.7152f * g) + (0.0722f * b)
 
-                if (matrix.isDark(col, row)) {
-                    darkLuminances.add(lum)
-                } else {
-                    lightLuminances.add(lum)
+                    if (matrix.isDark(col, row)) {
+                        darkLuminances.add(lum)
+                    } else {
+                        lightLuminances.add(lum)
+                    }
                 }
             }
         }

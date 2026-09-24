@@ -16,8 +16,8 @@ import kotlin.math.max
 /**
  * Style 4 — DSJ (DJ-cross)
  *
- * Implements EFQRCodeStyleDSJ with exact parity:
- * - 5 position finder styles (.dsj, .rectangle, .round, .roundedRectangle, .planets) via [EfPositionPatternGeometry].
+ * Implements VeilFrameStyleDSJ with exact parity:
+ * - 5 position finder styles (.dsj, .rectangle, .round, .roundedRectangle, .planets) via [VeilPositionPatternGeometry].
  * - 5-stage data grouping algorithm:
  *   1. 3x3 X-pattern diagonal line crosses (xColor)
  *   2. 2x2 X-pattern diagonal line crosses (xColor)
@@ -57,7 +57,7 @@ class DsjRenderer : QrRenderer {
             )
         }
 
-        // 1. Draw finders via canonical EF position geometry
+        // 1. Draw finders via canonical VeilFrame position geometry
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(nCount - 4, 3),
@@ -65,7 +65,7 @@ class DsjRenderer : QrRenderer {
         )
         for ((fx, fy) in finderCenters) {
             nodes.addAll(
-                EfPositionPatternGeometry.toIrNodes(
+                VeilPositionPatternGeometry.toIrNodes(
                     x = fx,
                     y = fy,
                     moduleSize = cs,
@@ -96,7 +96,7 @@ class DsjRenderer : QrRenderer {
         for (y in 0 until nCount) {
             for (x in 0 until nCount) {
                 if (!matrix.isDark(x, y)) continue
-                if (EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
+                if (VeilPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
 
                 // Stage 1: 3x3 X
                 if (available[x][y] && ava2[x][y] && x < nCount - 2 && y < nCount - 2) {
@@ -216,7 +216,7 @@ class DsjRenderer : QrRenderer {
             }
         }
 
-        // Emit in EF order: residual singles, then g1 (X lines), then g2 (runs)
+        // Emit in VeilFrame order: residual singles, then g1 (X lines), then g2 (runs)
         for (cmd in residualRects) {
             val left = ox + cmd.x * cs
             val top = oy + cmd.y * cs

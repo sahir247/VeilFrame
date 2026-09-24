@@ -20,6 +20,35 @@ import com.veilframe.app.qr.model.*
  */
 open class ComposableQrRenderer : BaseQrRenderer() {
 
+    override fun renderSourceBackdrop(
+        canvas: Canvas,
+        design: QrDesign,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        if (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) {
+            val sourceBitmap = design.imageSource.bitmap
+            if (sourceBitmap != null && !sourceBitmap.isRecycled) {
+                val fullBounds = RectF(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat())
+                val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
+                    sourceBitmap.width,
+                    sourceBitmap.height,
+                    fullBounds,
+                    design.resampleStyle.backdropScaleMode
+                )
+                val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+                    alpha = (design.resampleStyle.backdropOpacity.coerceIn(0f, 1f) * 255).toInt()
+                }
+                canvas.drawBitmap(sourceBitmap, srcRect, dstRect, paint)
+                val tint = design.resampleStyle.backdropTint
+                if (tint != null) {
+                    val tintPaint = context.obtainFill(tint)
+                    canvas.drawRect(dstRect, tintPaint)
+                }
+            }
+        }
+    }
+
     override fun renderDataModules(
         canvas: Canvas,
         matrix: QrMatrix,
@@ -29,7 +58,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
     ) {
         val n = matrix.size
 
-        // 1. IMAGE_RESAMPLE: 3x3 Stochastic subpixel sampling (EFQRCode parity)
+        // 1. IMAGE_RESAMPLE: 3x3 Stochastic subpixel sampling (VeilFrame Art Engine parity)
         if (design.style == QrStyle.IMAGE_RESAMPLE) {
             val sourceBitmap = design.imageSource.bitmap
             if (sourceBitmap != null && !sourceBitmap.isRecycled) {
@@ -39,7 +68,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                     matrix = matrix,
                     source = sourceBitmap,
                     style = design.imageSource,
-                    seed = 42L
+                    seed = design.resampleStyle.seed
                 ) { col, row, subX, subY, _ ->
                     val rect = SubpixelGeometry.computeCanvasRect(
                         col = col,

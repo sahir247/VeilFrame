@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 
 /**
- * Visual style enum corresponding to the 11 EFQRCode rendering modes.
+ * Visual style enum corresponding to the 11 VeilFrame Art Engine rendering modes.
  */
 enum class QrStyle {
     BASIC,              // Classic square modules with per-zone shape overrides
@@ -33,7 +33,7 @@ enum class ModuleShape {
 /**
  * Unified parameter bundle for QR code generation.
  *
- * Designed to mirror EFQRCode's EFStyleParams hierarchy while being
+ * Designed to mirror VeilFrame Art Engine's EFStyleParams hierarchy while being
  * idiomatic Kotlin/Android. Renderers read only the fields relevant to
  * their style; unused fields are safely ignored.
  */
@@ -71,13 +71,13 @@ data class QrStyleParams(
     val sourceImage: Bitmap? = null,
     /** Alpha for the style source image (0.0–1.0). */
     val sourceImageAlpha: Float = 1.0f,
-    // --- 2.5D specific (EFQRCodeStyle25D) ---
+    // --- 2.5D specific (VeilFrameStyle25D) ---
     val d25TopColor: Int = Color.BLACK,
     val d25LeftColor: Int = 0x33000000,
     val d25RightColor: Int = 0x99000000.toInt(),
     val d25DataHeight: Float = 1.0f,
     val d25PositionHeight: Float = 1.0f,
-    // --- IMAGE style specific (EFQRCodeStyleImage) ---
+    // --- IMAGE style specific (VeilFrameStyleImage) ---
     val imageAllowTransparent: Boolean = true,
     val imageDataDarkColor: Int = Color.BLACK,
     val imageDataLightColor: Int = Color.WHITE,
@@ -90,37 +90,43 @@ data class QrStyleParams(
     val imageAlignDarkColor: Int = Color.BLACK,
     val imageAlignLightColor: Int = Color.WHITE,
     val imageAlignSize: Float = 1.0f,
-    // --- IMAGE_FILL style specific (EFQRCodeStyleImageFill) ---
+    // --- IMAGE_FILL style specific (VeilFrameStyleImageFill) ---
     val imageFillBackgroundColor: Int = Color.WHITE,
     val imageFillMaskColor: Int = 0x1A000000, // 10% black
     // --- Bubble specific ---
     val bubbleOutlineColor: Int = 0xFF8ED1FC.toInt(),
     val bubbleCenterColor: Int = Color.WHITE,
-    // --- DSJ specific (EFQRCodeStyleDSJ) ---
+    // --- DSJ specific (VeilFrameStyleDSJ) ---
     val dsjLineSize: Float = 0.7f,
     val dsjXSize: Float = 0.7f,
     val dsjHorizontalLineColor: Int = 0xFFF6B506.toInt(),
     val dsjVerticalLineColor: Int = 0xFFE02020.toInt(),
     val dsjXColor: Int = 0xFF0B2D97.toInt(),
-    // --- Function specific (EFQRCodeStyleFunction) ---
+    // --- Function specific (VeilFrameStyleFunction) ---
     val functionType: com.veilframe.app.qr.model.EfFunctionType = com.veilframe.app.qr.model.EfFunctionType.FADE,
     val functionDataStyle: com.veilframe.app.qr.model.EfFunctionDataStyle = com.veilframe.app.qr.model.EfFunctionDataStyle.ROUND,
     val functionDataColor: Int = Color.BLACK,
     val functionCircleColor: Int = Color.BLACK,
-    // --- Line specific (EFQRCodeStyleLine) ---
+    // --- Line specific (VeilFrameStyleLine) ---
     val lineDirection: com.veilframe.app.qr.model.LineDirection = com.veilframe.app.qr.model.LineDirection.X,
     val lineThickness: Float = 0.5f,
     val lineColor: Int? = null,
     val lineVerticalColor: Int? = null,   // legacy null → use foreground
     val lineHorizontalColor: Int? = null,
-    // --- Random Rectangle specific (EFQRCodeStyleRandomRectangle) ---
+    // --- Random Rectangle specific (VeilFrameStyleRandomRectangle) ---
     val randomRectColor: Int? = null,
     val randomRectSeed: Long = 42L,
-    // --- Quiet Zone (null defaults to 4 for SAFE mode, 1 for EF compatibility) ---
+    // --- Quiet Zone (null defaults to 4 for SAFE mode, 1 for artistic mode) ---
     val quietZone: Int? = null,
     // --- Gradient (optional, applied over rendered bitmap) ---
     val gradientStart: Int? = null,
     val gradientEnd: Int? = null,
+    // --- Resample specific (VeilFrameStyleResampleImage) ---
+    val resampleUseSourceAsBackdrop: Boolean = false,
+    val resampleBackdropOpacity: Float = 1.0f,
+    val resampleBackdropScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
+    val resampleSeed: Long = 42L,
+    val resampleBackdropTint: Int? = null,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
     val alignmentColor: Int? = null

@@ -30,7 +30,7 @@ fun interface SubpixelSink {
 }
 
 /**
- * Authoritative implementation of EFQRCode-inspired 3x3 Stochastic Subpixel Resampling.
+ * Authoritative implementation of VeilFrame Art Engine-inspired 3x3 Stochastic Subpixel Resampling.
  *
  * Architecture & Design Contract:
  * 1. Source image is scaled to (3N) x (3N) subpixels via [ImageScaleResolver].
@@ -43,7 +43,7 @@ fun interface SubpixelSink {
  * 3. For every dark DATA module, the center subpixel (dx=1, dy=1) is strictly reserved as the QR anchor bit.
  * 4. The surrounding 8 subpixels carry stochastic halftone dithering:
  *    - Gamma luminance: Y = 0.2126*R + 0.7152*G + 0.0722*B
- *    - EFQRCode threshold: ((grayNorm + exposure - 0.5) * (contrast + 1.0) + 0.5).coerceIn(0, 1)
+ *    - VeilFrame Art Engine threshold: ((grayNorm + exposure - 0.5) * (contrast + 1.0) + 0.5).coerceIn(0, 1)
  *    - Deterministic 64-bit splitmix hash PRNG: subpixelRandom(seed, subX, subY) > threshold
  *    - Explicit [ImageScaleMode.ASPECT_FIT] padding suppression: coordinates in letterbox/pillarbox
  *      margins are unconditionally suppressed, guaranteeing zero photo dither dots in margins
@@ -121,7 +121,7 @@ object ResampleSubpixelEngine {
                             val weightedGray = gray * a + (1.0f - a) * 255.0f
                             val grayNorm = weightedGray / 255.0f
 
-                            // Exact EFQRCode threshold formula with +1.0 contrast multiplier
+                            // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
                             val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
 
                             val rnd = subpixelRandom(seed, sx, sy)

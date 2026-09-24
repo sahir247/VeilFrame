@@ -13,7 +13,7 @@ import kotlin.math.max
 /**
  * Style 8 — LINE (Visual Grammar: Geometric Lines)
  *
- * Implements EFQRCodeStyleLine with full directional grammar parity:
+ * Implements VeilFrameStyleLine with full directional grammar parity:
  * - 7 line directions:
  *   1. HORIZONTAL
  *   2. VERTICAL
@@ -24,7 +24,7 @@ import kotlin.math.max
  *   7. X (both diagonals with varied stroke widths + center circles)
  * - Round-capped continuous stroke lines.
  * - Single isolated data modules rendered as smooth circles of radius `thickness / 2`.
- * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [EfPositionPatternGeometry].
+ * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [VeilPositionPatternGeometry].
  */
 class LineRenderer : QrRenderer {
 
@@ -61,7 +61,7 @@ class LineRenderer : QrRenderer {
             )
         )
 
-        // 1. Draw finders via canonical EF position geometry
+        // 1. Draw finders via canonical VeilFrame position geometry
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(nCount - 4, 3),
@@ -69,7 +69,7 @@ class LineRenderer : QrRenderer {
         )
         for ((fx, fy) in finderCenters) {
             nodes.addAll(
-                EfPositionPatternGeometry.toIrNodes(
+                VeilPositionPatternGeometry.toIrNodes(
                     x = fx,
                     y = fy,
                     moduleSize = cs,
@@ -98,7 +98,7 @@ class LineRenderer : QrRenderer {
         for (x in 0 until nCount) {
             for (y in 0 until nCount) {
                 if (!matrix.isDark(x, y)) continue
-                if (EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
+                if (VeilPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
 
                 when (direction) {
                     LineDirection.HORIZONTAL -> {

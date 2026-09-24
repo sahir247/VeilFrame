@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * BCH error-correcting code calculator matching QRCodeSwift's `BCH`.

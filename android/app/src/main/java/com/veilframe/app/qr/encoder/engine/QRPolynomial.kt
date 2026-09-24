@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * GF(2^8) polynomial operations matching QRCodeSwift's `QRPolynomial`.

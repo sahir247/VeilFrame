@@ -124,9 +124,37 @@ object QrPresetFormatter {
     }
 
     /**
+     * Parses a raw UPI payment URI (e.g., upi://pay?pa=user@upi&pn=Name&am=100) into key-value pairs.
+     */
+    fun parseUpiUri(rawUri: String): Map<String, String> {
+        val trimmed = rawUri.trim()
+        val queryPart = when {
+            trimmed.startsWith("upi://pay?", ignoreCase = true) -> trimmed.substring("upi://pay?".length)
+            trimmed.contains("?") -> trimmed.substringAfter("?")
+            else -> return emptyMap()
+        }
+        val result = mutableMapOf<String, String>()
+        for (param in queryPart.split("&")) {
+            val idx = param.indexOf('=')
+            if (idx != -1) {
+                val key = param.substring(0, idx).trim().lowercase()
+                val rawVal = param.substring(idx + 1).trim()
+                val decoded = try {
+                    java.net.URLDecoder.decode(rawVal, "UTF-8")
+                } catch (_: Exception) {
+                    rawVal
+                }
+                result[key] = decoded
+            }
+        }
+        return result
+    }
+
+    /**
      * Formats a standard NPCI UPI payment URI.
-     * When only VPA is supplied: upi://pay?pa=sampleuser@fam
-     * When amount is supplied: upi://pay?pa=merchant@okhdfcbank&am=100.00&cu=INR
+     * When only VPA is supplied: upi://pay?pa=name@upi
+     * When amount is supplied: upi://pay?pa=name@upi&am=100.00&cu=INR
+     * Accepts either clean UPI ID (e.g., name@upi) or a pasted full URI (upi://pay?pa=name@upi...).
      */
     fun formatUpi(
         vpa: String,
@@ -134,34 +162,60 @@ object QrPresetFormatter {
         payeeName: String = "",
         note: String = ""
     ): String {
-        var cleanVpa = vpa.trim()
-        if (cleanVpa.startsWith("upi://pay?pa=", ignoreCase = true)) {
-            cleanVpa = cleanVpa.substring("upi://pay?pa=".length).trim()
-        } else if (cleanVpa.startsWith("pa=", ignoreCase = true)) {
-            cleanVpa = cleanVpa.substring("pa=".length).trim()
+        val trimmed = vpa.trim()
+        if (trimmed.isBlank()) return ""
+
+        var effectivePa = trimmed
+        var effectiveAm = amount.trim()
+        var effectivePn = payeeName.trim()
+        var effectiveTn = note.trim()
+
+        // If user pasted a full upi:// URI, extract its components intelligently
+        if (trimmed.startsWith("upi://pay?", ignoreCase = true)) {
+            val parsed = parseUpiUri(trimmed)
+            if (parsed.containsKey("pa")) {
+                effectivePa = parsed["pa"].orEmpty()
+            }
+            if (effectiveAm.isBlank() && parsed.containsKey("am")) {
+                effectiveAm = parsed["am"].orEmpty()
+            }
+            if (effectivePn.isBlank() && parsed.containsKey("pn")) {
+                effectivePn = parsed["pn"].orEmpty()
+            }
+            if (effectiveTn.isBlank() && parsed.containsKey("tn")) {
+                effectiveTn = parsed["tn"].orEmpty()
+            }
+        } else {
+            if (effectivePa.startsWith("upi://pay?pa=", ignoreCase = true)) {
+                effectivePa = effectivePa.substring("upi://pay?pa=".length).trim()
+            } else if (effectivePa.startsWith("pa=", ignoreCase = true)) {
+                effectivePa = effectivePa.substring("pa=".length).trim()
+            }
         }
+
+        if (effectivePa.isBlank()) return ""
+
         // Preserve literal @ in UPI ID for standard UPI app compliance
-        val encodedVpa = urlEncode(cleanVpa).replace("%40", "@")
+        val encodedVpa = urlEncode(effectivePa).replace("%40", "@")
         val params = mutableListOf("pa=$encodedVpa")
 
-        val cleanAmount = amount.trim()
-        if (cleanAmount.isNotBlank() && cleanAmount != "0" && cleanAmount != "0.0" && cleanAmount != "0.00") {
+        if (effectiveAm.isNotBlank() && effectiveAm != "0" && effectiveAm != "0.0" && effectiveAm != "0.00") {
             val formattedAmount = try {
-                val bd = java.math.BigDecimal(cleanAmount)
+                val bd = java.math.BigDecimal(effectiveAm)
                 val maxLimit = java.math.BigDecimal("100000.00")
                 val cappedBd = if (bd > maxLimit) maxLimit else bd
                 if (cappedBd.scale() < 2) cappedBd.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() else cappedBd.toPlainString()
             } catch (_: Exception) {
-                cleanAmount
+                effectiveAm
             }
             params.add("am=$formattedAmount")
             params.add("cu=INR")
         }
-        if (payeeName.isNotBlank()) {
-            params.add("pn=" + urlEncode(payeeName.trim()))
+        if (effectivePn.isNotBlank()) {
+            params.add("pn=" + urlEncode(effectivePn))
         }
-        if (note.isNotBlank()) {
-            params.add("tn=" + urlEncode(note.trim()))
+        if (effectiveTn.isNotBlank()) {
+            params.add("tn=" + urlEncode(effectiveTn))
         }
         return "upi://pay?" + params.joinToString("&")
     }

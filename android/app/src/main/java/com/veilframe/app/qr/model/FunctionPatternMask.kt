@@ -191,6 +191,6 @@ class FunctionPatternMask(val size: Int, val version: Int) {
 
     private fun getAlignmentPatternCenters(version: Int): List<Int> {
         if (version <= 1 || version > 40) return emptyList()
-        return com.veilframe.app.qr.encoder.ef.QRPatternLocator[version].toList()
+        return com.veilframe.app.qr.encoder.engine.QRPatternLocator[version].toList()
     }
 }

@@ -1,7 +1,7 @@
 package com.veilframe.app.qr
 
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
-import com.veilframe.app.qr.encoder.ef.*
+import com.veilframe.app.qr.encoder.engine.*
 import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrMatrix
@@ -10,9 +10,9 @@ import org.junit.Test
 
 /**
  * Empirical unit tests verifying mathematical, architectural, and semantic parity
- * between VeilFrame's [EfQrEncoder] and EFQRCode's `QRCodeSwift` reference implementation.
+ * between VeilFrame's [VeilQrEncoder] and VeilFrame Art Engine's `QRCodeSwift` reference implementation.
  */
-class EfQrEncoderParityTest {
+class VeilQrEncoderParityTest {
 
     @Test
     fun testGaloisFieldMathTables() {
@@ -71,11 +71,11 @@ class EfQrEncoderParityTest {
     }
 
     @Test
-    fun testEfQrEncoderShortPayloadsAllEcLevels() {
+    fun testVeilQrEncoderShortPayloadsAllEcLevels() {
         val payload = "HELLO"
 
-        for (ec in listOf(EfCorrectionLevel.L, EfCorrectionLevel.M, EfCorrectionLevel.Q, EfCorrectionLevel.H)) {
-            val encoded = EfQrEncoder.encode(payload, ec)
+        for (ec in listOf(VeilCorrectionLevel.L, VeilCorrectionLevel.M, VeilCorrectionLevel.Q, VeilCorrectionLevel.H)) {
+            val encoded = VeilQrEncoder.encode(payload, ec)
             assertEquals(1, encoded.version) // Fits in version 1 (21x21)
             assertEquals(21, encoded.matrix.size)
             assertEquals(21, encoded.model.moduleCount)
@@ -100,27 +100,27 @@ class EfQrEncoderParityTest {
     }
 
     @Test
-    fun testEfQrEncoderVersionScaling() {
+    fun testVeilQrEncoderVersionScaling() {
         // Version 1: up to 14 bytes in EC M
-        val v1 = EfQrEncoder.encode("12345678901234", EfCorrectionLevel.M)
+        val v1 = VeilQrEncoder.encode("12345678901234", VeilCorrectionLevel.M)
         assertEquals(1, v1.version)
         assertEquals(21, v1.matrix.size)
 
         // Version 2: 15..26 bytes in EC M -> 25x25
-        val v2 = EfQrEncoder.encode("12345678901234567890", EfCorrectionLevel.M)
+        val v2 = VeilQrEncoder.encode("12345678901234567890", VeilCorrectionLevel.M)
         assertEquals(2, v2.version)
         assertEquals(25, v2.matrix.size)
 
         // Version 7: 45x45 has version information blocks
         val longPayload = "A".repeat(120)
-        val v7 = EfQrEncoder.encode(longPayload, EfCorrectionLevel.H)
+        val v7 = VeilQrEncoder.encode(longPayload, VeilCorrectionLevel.H)
         assertTrue(v7.version >= 7)
         assertEquals(v7.version * 4 + 17, v7.matrix.size)
     }
 
     @Test
-    fun testTypeTableExactParityWithEfQrCode() {
-        val encoded = EfQrEncoder.encode("https://veilframe.app", EfCorrectionLevel.M)
+    fun testTypeTableExactParityWithArtEngine() {
+        val encoded = VeilQrEncoder.encode("https://veilframe.app", VeilCorrectionLevel.M)
         val matrix = encoded.matrix
         val size = matrix.size
 
@@ -160,7 +160,7 @@ class EfQrEncoderParityTest {
     @Test
     fun testLostPointPenaltyCalculation() {
         val data = "Test penalty".toByteArray(Charsets.UTF_8)
-        val model = QRCodeModel(data, EfCorrectionLevel.M)
+        val model = QRCodeModel(data, VeilCorrectionLevel.M)
         val score = model.lostPoint
         assertTrue("Penalty score must be positive", score >= 0)
         assertNotNull(model.bestMaskPattern)
@@ -188,15 +188,15 @@ class EfQrEncoderParityTest {
     }
 
     @Test
-    fun testEfCompatibilityModeInQrGenerator() {
-        // 1. Content validation check in EF_COMPATIBLE mode
-        val blankResult = QrGenerator.generateEfCompatible("   ")
+    fun testArtisticModeInQrGenerator() {
+        // 1. Content validation check in ARTISTIC_ENGINE mode
+        val blankResult = QrGenerator.generateArtistic("   ")
         assertTrue(blankResult is QrRenderResult.Failure)
         assertEquals("QR content must not be blank", (blankResult as QrRenderResult.Failure).error)
 
-        // 2. Direct EF encoder integration test
-        val content = "https://github.com/EFPrefix/EFQRCode"
-        val encoded = EfQrEncoder.encode(content, EfCorrectionLevel.H)
+        // 2. Direct VeilQrEncoder integration test
+        val content = "https://github.com/sahir247/VeilFrame"
+        val encoded = VeilQrEncoder.encode(content, VeilCorrectionLevel.H)
         assertNotNull(encoded.matrix)
         assertTrue(encoded.matrix.size > 21)
         assertEquals(encoded.version, encoded.matrix.version)
@@ -240,26 +240,26 @@ class EfQrEncoderParityTest {
     }
 
     @Test
-    fun testEfCompatibleDefaultErrorCorrectionIsStrictlyH() {
+    fun testArtisticDefaultErrorCorrectionIsStrictlyH() {
         val content = "HELLO"
         val design = QrDesign() // defaults to ErrorCorrectionChoice.AUTO
         assertEquals(com.veilframe.app.qr.model.ErrorCorrectionChoice.AUTO, design.correction)
 
-        // In EF_COMPATIBLE mode, AUTO must resolve strictly to H error correction
-        val efResult = EfQrEncoder.encode(content, EfCorrectionLevel.H)
-        val defaultResult = EfQrEncoder.encode(content) // default is H
-        assertEquals(efResult.version, defaultResult.version)
-        assertEquals(efResult.errorCorrection, defaultResult.errorCorrection)
-        assertEquals(EfCorrectionLevel.H, defaultResult.errorCorrection)
+        // In ARTISTIC_ENGINE mode, AUTO must resolve strictly to H error correction
+        val artResult = VeilQrEncoder.encode(content, VeilCorrectionLevel.H)
+        val defaultResult = VeilQrEncoder.encode(content) // default is H
+        assertEquals(artResult.version, defaultResult.version)
+        assertEquals(artResult.errorCorrection, defaultResult.errorCorrection)
+        assertEquals(VeilCorrectionLevel.H, defaultResult.errorCorrection)
 
-        // QrMatrix generated in EF_COMPATIBLE mode must have H error correction
-        val matrix = EfQrEncoder.encode(content, EfCorrectionLevel.H).matrix
+        // QrMatrix generated in ARTISTIC_ENGINE mode must have H error correction
+        val matrix = VeilQrEncoder.encode(content, VeilCorrectionLevel.H).matrix
         assertEquals(ErrorCorrectionLevel.H, matrix.errorCorrection)
         assertNotNull(matrix.typeTable)
     }
 
     @Test
-    fun testEfCompatibleDefaultQuietZoneSemantics() {
+    fun testArtisticDefaultQuietZoneSemantics() {
         val defaultDesign = QrDesign()
         assertNull(defaultDesign.explicitQuietZone)
         assertEquals(4, defaultDesign.quietZoneModules) // SAFE default

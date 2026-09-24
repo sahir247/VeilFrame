@@ -12,7 +12,7 @@ import com.veilframe.app.qr.model.QrVisualGeometry
  *
  * Implements canonical 7x7 outer frame, 5x5 light ring, and 3x3 central core geometry
  * while supporting visual variants (Classic, Rounded, Circle, Soft, Frame, Planets, DSJ)
- * inspired by EFQRCode specifications.
+ * powered by VeilFrame Art Engine specifications.
  */
 object FinderRenderer {
 

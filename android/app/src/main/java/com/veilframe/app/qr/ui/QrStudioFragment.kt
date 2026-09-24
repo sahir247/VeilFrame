@@ -106,7 +106,9 @@ class QrStudioFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        vm.terminateSession()
+        // Do not call vm.terminateSession() here: an Activity-scoped ViewModel is designed
+        // to survive Fragment configuration changes (like rotation) and view recreation.
+        // Clean session termination happens via back navigation and ViewModel.onCleared().
     }
 }
 
@@ -223,9 +225,21 @@ class QrGenerateTabFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val previewImage       = view.findViewById<ImageView>(R.id.qr_preview_image)
+        val scanabilityCard    = view.findViewById<MaterialCardView>(R.id.qr_scanability_card)
+        val scanabilityIcon    = view.findViewById<ImageView>(R.id.qr_scanability_icon)
         val scanabilityStatus  = view.findViewById<TextView>(R.id.qr_scanability_status)
         val scanabilityDetails = view.findViewById<TextView>(R.id.qr_scanability_details)
+        val scanabilityDetailsToggle = view.findViewById<MaterialButton>(R.id.qr_scanability_details_toggle)
+        val scanabilityTechContainer = view.findViewById<LinearLayout>(R.id.container_scanability_tech_details)
+        val scanabilityTechText = view.findViewById<TextView>(R.id.qr_scanability_tech_text)
         val autoRepairBtn      = view.findViewById<MaterialButton>(R.id.qr_auto_repair_btn)
+
+        var isTechDetailsExpanded = false
+        scanabilityDetailsToggle?.setOnClickListener {
+            isTechDetailsExpanded = !isTechDetailsExpanded
+            scanabilityTechContainer?.visibility = if (isTechDetailsExpanded) View.VISIBLE else View.GONE
+            scanabilityDetailsToggle.text = if (isTechDetailsExpanded) "Hide" else "Details"
+        }
 
         // Presets Chips & Containers
         val presetChipGroup    = view.findViewById<ChipGroup>(R.id.qr_preset_chip_group)
@@ -305,6 +319,11 @@ class QrGenerateTabFragment : Fragment() {
         val sourceExposureLabel = view.findViewById<TextView>(R.id.qr_source_exposure_label)
         val sourceOpacitySlider = view.findViewById<Slider>(R.id.qr_source_opacity_slider)
         val sourceOpacityLabel = view.findViewById<TextView>(R.id.qr_source_opacity_label)
+        val resampleBackdropSwitch = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.qr_resample_backdrop_switch)
+        val containerBackdropOpacity = view.findViewById<LinearLayout>(R.id.container_resample_backdrop_opacity)
+        val resampleBackdropOpacitySlider = view.findViewById<Slider>(R.id.qr_resample_backdrop_opacity_slider)
+        val resampleBackdropOpacityLabel = view.findViewById<TextView>(R.id.qr_resample_backdrop_opacity_label)
+        val resampleSeedBtn = view.findViewById<MaterialButton>(R.id.qr_resample_seed_btn)
 
         val cardBgControls     = view.findViewById<MaterialCardView>(R.id.card_bg_image_controls)
         val removeBgBtn        = view.findViewById<MaterialButton>(R.id.qr_remove_bg_btn)
@@ -424,8 +443,6 @@ class QrGenerateTabFragment : Fragment() {
         smsPhone.addTextChangedListener(liveWatcher)
         smsBody.addTextChangedListener(liveWatcher)
 
-        upiVpa.addTextChangedListener(liveWatcher)
-
         // UPI Amount Slider & Text synchronization (Up to 1 Lakh INR)
         var isUpdatingUpiAmount = false
         val MAX_UPI_AMOUNT = 100000f
@@ -434,17 +451,34 @@ class QrGenerateTabFragment : Fragment() {
             isUpdatingUpiAmount = true
             if (value <= 0f) {
                 if (updateText) upiAmount.setText("")
-                if (updateSlider) upiAmountSlider.value = 0f
-                upiAmountStatus.text = "Optional (No Amount)"
+                if (updateSlider) {
+                    try {
+                        upiAmountSlider.value = upiAmountSlider.valueFrom
+                    } catch (e: Exception) {
+                        android.util.Log.w("QrStudio", "Slider reset error", e)
+                    }
+                }
+                upiAmountStatus.text = "Optional"
                 layoutUpiAmount?.error = null
             } else {
                 val clamped = value.coerceAtMost(MAX_UPI_AMOUNT)
-                val formatted = String.format(java.util.Locale.US, "%.2f", clamped)
+                val formatted = if (clamped % 1f == 0f) {
+                    clamped.toInt().toString()
+                } else {
+                    String.format(java.util.Locale.US, "%.2f", clamped)
+                }
                 if (updateText) upiAmount.setText(formatted)
-                if (updateSlider) upiAmountSlider.value = clamped.coerceIn(upiAmountSlider.valueFrom, upiAmountSlider.valueTo)
+                if (updateSlider) {
+                    try {
+                        val safeVal = clamped.coerceIn(upiAmountSlider.valueFrom, upiAmountSlider.valueTo)
+                        upiAmountSlider.value = safeVal
+                    } catch (e: Exception) {
+                        android.util.Log.w("QrStudio", "Slider set value error: $clamped", e)
+                    }
+                }
                 upiAmountStatus.text = "Amount: ₹$formatted"
                 if (value > MAX_UPI_AMOUNT) {
-                    layoutUpiAmount?.error = "Max allowed amount is ₹1,00,000 (1 Lakh)"
+                    layoutUpiAmount?.error = "Maximum ₹1,00,000"
                 } else {
                     layoutUpiAmount?.error = null
                 }
@@ -452,6 +486,34 @@ class QrGenerateTabFragment : Fragment() {
             isUpdatingUpiAmount = false
             compileActivePreset()
         }
+
+        upiVpa.addTextChangedListener(object : TextWatcher {
+            private var isSelfEditing = false
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isSelfEditing) return
+                val raw = s?.toString()?.trim().orEmpty()
+                if (raw.startsWith("upi://pay?", ignoreCase = true)) {
+                    val parsed = QrPresetFormatter.parseUpiUri(raw)
+                    val extractedPa = parsed["pa"].orEmpty()
+                    val extractedAm = parsed["am"].orEmpty()
+                    if (extractedPa.isNotBlank()) {
+                        isSelfEditing = true
+                        upiVpa.setText(extractedPa)
+                        upiVpa.setSelection(extractedPa.length)
+                        isSelfEditing = false
+                    }
+                    if (extractedAm.isNotBlank()) {
+                        val num = extractedAm.toFloatOrNull()
+                        if (num != null) {
+                            syncUpiAmount(num, updateText = true, updateSlider = true)
+                        }
+                    }
+                }
+                compileActivePreset()
+            }
+        })
 
         upiAmountSlider.addOnChangeListener { _, value, fromUser ->
             if (fromUser && !isUpdatingUpiAmount) {
@@ -468,7 +530,7 @@ class QrGenerateTabFragment : Fragment() {
                     val num = text.toFloatOrNull()
                     if (num != null && num > 0f) {
                         if (num > MAX_UPI_AMOUNT) {
-                            layoutUpiAmount?.error = "Max allowed amount is ₹1,00,000 (1 Lakh)"
+                            layoutUpiAmount?.error = "Maximum ₹1,00,000"
                         } else {
                             layoutUpiAmount?.error = null
                         }
@@ -592,6 +654,22 @@ class QrGenerateTabFragment : Fragment() {
                 sourceOpacityLabel.text = "Opacity: ${value.toInt()}%"
             }
         }
+        resampleBackdropSwitch.setOnCheckedChangeListener { _, isChecked ->
+            containerBackdropOpacity.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (vm.state.value.resampleUseSourceAsBackdrop != isChecked) {
+                vm.updateResampleUseSourceAsBackdrop(isChecked)
+            }
+        }
+        resampleBackdropOpacitySlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateResampleBackdropOpacity(value / 100f)
+                resampleBackdropOpacityLabel.text = "Backdrop Opacity: ${value.toInt()}%"
+            }
+        }
+        resampleSeedBtn.setOnClickListener {
+            vm.randomizeResampleSeed()
+            Toast.makeText(requireContext(), "Resample pattern randomized", Toast.LENGTH_SHORT).show()
+        }
 
         // 5. Actions & Buttons
         autoRepairBtn.setOnClickListener { vm.autoRepair() }
@@ -631,6 +709,14 @@ class QrGenerateTabFragment : Fragment() {
                         val opacityPct = (state.sourceImageOpacity * 100f).toInt().coerceIn(5, 100)
                         sourceOpacitySlider.value = opacityPct.toFloat()
                         sourceOpacityLabel.text = "Opacity: $opacityPct%"
+
+                        if (resampleBackdropSwitch.isChecked != state.resampleUseSourceAsBackdrop) {
+                            resampleBackdropSwitch.isChecked = state.resampleUseSourceAsBackdrop
+                        }
+                        containerBackdropOpacity.visibility = if (state.resampleUseSourceAsBackdrop) View.VISIBLE else View.GONE
+                        val backdropPct = (state.resampleBackdropOpacity * 100f).toInt().coerceIn(0, 100)
+                        resampleBackdropOpacitySlider.value = backdropPct.toFloat()
+                        resampleBackdropOpacityLabel.text = "Backdrop Opacity: $backdropPct%"
                     } else {
                         cardSourceControls.visibility = View.GONE
                     }
@@ -645,26 +731,41 @@ class QrGenerateTabFragment : Fragment() {
                         cardLogoControls.visibility = View.GONE
                     }
 
-                    // Update Live Scanability Card
+                    // Update Live Verification Card
                     state.scanabilityReport?.let { report ->
                         if (report.isScanReady) {
-                            scanabilityStatus.text = "[PASS] Scan-ready"
-                            scanabilityStatus.setTextColor(0xFF16A34A.toInt()) // Green
-                            scanabilityDetails.text = "ZXing verified in ${report.decodeResult.latencyMs}ms"
+                            scanabilityCard?.setCardBackgroundColor(0x1816A34A)
+                            scanabilityCard?.strokeColor = 0x4016A34A
+                            scanabilityIcon?.setImageResource(R.drawable.ic_check_circle)
+                            scanabilityIcon?.setColorFilter(0xFF16A34A.toInt())
+                            scanabilityStatus.text = "QR Verified"
+                            scanabilityStatus.setTextColor(0xFF16A34A.toInt())
+                            scanabilityDetails.text = "Ready to scan with standard camera and payment apps"
+                            val engine = if (report.decodeResult.decoderId.contains("ML Kit", ignoreCase = true) || report.decodeResult.decoderId.contains("mlkit", ignoreCase = true)) "Google ML Kit" else "ZXing"
+                            scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: 4 modules"
                             autoRepairBtn.visibility = View.GONE
                         } else {
-                            scanabilityStatus.text = "[FAIL] Scan risk detected"
-                            scanabilityStatus.setTextColor(0xFFDC2626.toInt()) // Red
-                            val reason = report.decodeResult.error
-                                ?: report.warnings.firstOrNull()
-                                ?: "Decoder could not read image"
-                            scanabilityDetails.text = reason
+                            scanabilityCard?.setCardBackgroundColor(0x18D97706)
+                            scanabilityCard?.strokeColor = 0x50D97706
+                            scanabilityIcon?.setImageResource(R.drawable.ic_info_outline)
+                            scanabilityIcon?.setColorFilter(0xFFD97706.toInt())
+                            scanabilityStatus.text = "QR Verification Notice"
+                            scanabilityStatus.setTextColor(0xFFD97706.toInt())
+                            scanabilityDetails.text = "We couldn't verify this QR code automatically. Try Auto-Repair or adjust contrast."
+                            val errorMsg = report.decodeResult.error ?: "Decoder could not resolve patterns"
+                            val warningText = if (report.warnings.isNotEmpty()) " | Warnings: " + report.warnings.joinToString("; ") else ""
+                            scanabilityTechText?.text = "Diagnostic: $errorMsg$warningText"
                             autoRepairBtn.visibility = if (report.repairSuggestions.isNotEmpty()) View.VISIBLE else View.GONE
                         }
                     } ?: run {
-                        scanabilityStatus.text = "[INFO] Validating..."
+                        scanabilityCard?.setCardBackgroundColor(0x00000000)
+                        scanabilityCard?.strokeColor = 0x20888888
+                        scanabilityIcon?.setImageResource(R.drawable.ic_info_outline)
+                        scanabilityIcon?.setColorFilter(0xFF6B7280.toInt())
+                        scanabilityStatus.text = "Validating..."
                         scanabilityStatus.setTextColor(0xFF6B7280.toInt())
-                        scanabilityDetails.text = "Running ZXing deterministic decoder"
+                        scanabilityDetails.text = "Running on-device barcode validator..."
+                        scanabilityTechText?.text = "Validating barcode scanability on device..."
                         autoRepairBtn.visibility = View.GONE
                     }
 
@@ -685,27 +786,20 @@ class QrGenerateTabFragment : Fragment() {
     }
 
     private fun showColorPaletteDialog(isForeground: Boolean) {
-        val colorNames = arrayOf(
-            "Black", "White", "Dark Slate", "Navy Blue", "Emerald Green", "Crimson Red", "Amber", "Purple"
-        )
-        val colorValues = intArrayOf(
-            Color.BLACK,
-            Color.WHITE,
-            0xFF18181B.toInt(),
-            0xFF1E3A8A.toInt(),
-            0xFF065F46.toInt(),
-            0xFF991B1B.toInt(),
-            0xFFB45309.toInt(),
-            0xFF581C87.toInt()
-        )
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (isForeground) "Select Foreground Color" else "Select Background Color")
-            .setItems(colorNames) { _, which ->
-                val chosen = colorValues[which]
-                if (isForeground) vm.updateForeground(chosen) else vm.updateBackground(chosen)
+        val currentColor = if (isForeground) vm.state.value.foreground else vm.state.value.background
+        val oppositeColor = if (isForeground) vm.state.value.background else vm.state.value.foreground
+        QrColorPickerDialog(
+            context = requireContext(),
+            initialColor = currentColor,
+            contrastAgainstColor = oppositeColor,
+            isForeground = isForeground
+        ) { selectedColor ->
+            if (isForeground) {
+                vm.updateForeground(selectedColor)
+            } else {
+                vm.updateBackground(selectedColor)
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }.show()
     }
 }
 

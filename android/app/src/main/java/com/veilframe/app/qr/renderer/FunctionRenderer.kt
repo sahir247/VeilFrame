@@ -18,8 +18,8 @@ import kotlin.math.sqrt
 /**
  * Style 10 — FUNCTION (Mathematical Function Custom Module Shapes)
  *
- * Implements EFQRCodeStyleFunction with exact mathematical parity:
- * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [EfPositionPatternGeometry].
+ * Implements VeilFrameStyleFunction with exact mathematical parity:
+ * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [VeilPositionPatternGeometry].
  * - Two canonical mathematical functions:
  *   1. FADE: Cosine radial gradient function `(1 - cos(PI * dist)) / 6 + 1/5`.
  *   2. CIRCLE: Concentric circular band ($5/20 < \text{dist} < 8/20$) with dual-colored
@@ -62,14 +62,14 @@ class FunctionRenderer : QrRenderer {
             canvas.drawCircle(ringCx, ringCy, ringR, ringPaint)
         }
 
-        // 2. Draw finders via canonical EF position geometry
+        // 2. Draw finders via canonical VeilFrame position geometry
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(nCount - 4, 3),
             Pair(3, nCount - 4)
         )
         for ((fx, fy) in finderCenters) {
-            EfPositionPatternGeometry.drawCanvas(
+            VeilPositionPatternGeometry.drawCanvas(
                 canvas = canvas,
                 x = fx,
                 y = fy,
@@ -105,7 +105,7 @@ class FunctionRenderer : QrRenderer {
         // 3. Draw function modules
         for (x in 0 until nCount) {
             for (y in 0 until nCount) {
-                if (EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
+                if (VeilPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
 
                 val isDark = matrix.isDark(x, y)
                 val dist = sqrt((centerCoord - x).pow(2) + (centerCoord - y).pow(2)) / maxDist

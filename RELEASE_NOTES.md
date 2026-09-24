@@ -5,7 +5,7 @@
 VeilFrame v2.2.8 delivers an authoritative architectural update across the application stack. Highlights include the launch of the **QR Code Studio (8th Native Mobile Tool)** with 11 artistic visual rendering modes, live CameraX viewfinder scanning, and safe 11-format payload parsing; dynamic theming with per-Activity lifecycle management and pure AMOLED black (`#000000`) surfaces; an iterative rate-controlled WhatsApp video pipeline with a non-negotiable 16 MiB ceiling; floating dock scroll-to-bottom hide behavior; folder-picker binding for Folder Analyzer and AI Bundle; authoritative `ImageTransformPlan` with Passport 600x600 px preset enforcement; dual publisher certificate verification; and complete zero-emoji compliance with a pure SVG vector iconography system.
 
 - **QR Code Studio (8th Tool) & 11 Artistic Visual Renderers:**
-  - **11 Visual Rendering Modes:** Complete implementation of artistic rendering styles inspired by EFQRCode:
+  - **11 Visual Rendering Modes:** Complete implementation of artistic rendering styles powered by VeilFrame Art Engine:
     1. `Basic`: Standard rectangular and rounded modules with configurable corner shapes.
     2. `Bubble`: Organic clustered circles with separate outline and core coloration.
     3. `2.5D`: Isometric 3D projection rendering top, left, and right illuminated cube faces.

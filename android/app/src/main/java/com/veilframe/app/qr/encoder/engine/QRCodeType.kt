@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * QR Code capacity limits lookup table matching QRCodeSwift's `QRCodeType`.
@@ -47,7 +47,7 @@ object QRCodeType {
         intArrayOf(2953, 2331, 1663, 1273)
     )
 
-    fun typeNumber(forLength: Int, errorCorrectLevel: EfCorrectionLevel): Int {
+    fun typeNumber(forLength: Int, errorCorrectLevel: VeilCorrectionLevel): Int {
         for (i in QRCodeLimitLength.indices) {
             if (forLength <= QRCodeLimitLength[i][errorCorrectLevel.offset]) {
                 return i + 1

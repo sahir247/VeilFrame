@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 import kotlin.math.abs
 
@@ -11,7 +11,7 @@ import kotlin.math.abs
  */
 class QRCodeModel(
     val data: ByteArray,
-    val errorCorrectLevel: EfCorrectionLevel,
+    val errorCorrectLevel: VeilCorrectionLevel,
     val needTypeTable: Boolean = true
 ) {
     val typeNumber: Int = QRCodeType.typeNumber(data.size, errorCorrectLevel)
@@ -20,7 +20,7 @@ class QRCodeModel(
     private var modules: Array<Array<Boolean?>> = Array(moduleCount) { arrayOfNulls(moduleCount) }
     private val dataCache: IntArray
     private val position: MutableList<IntArray> = mutableListOf()
-    val bestMaskPattern: EfMaskPattern
+    val bestMaskPattern: VeilMaskPattern
 
     init {
         dataCache = createData(typeNumber, errorCorrectLevel, data)
@@ -35,7 +35,7 @@ class QRCodeModel(
 
     fun isLight(row: Int, col: Int): Boolean = !isDark(row, col)
 
-    private fun makeImpl(isTest: Boolean, maskPattern: EfMaskPattern) {
+    private fun makeImpl(isTest: Boolean, maskPattern: VeilMaskPattern) {
         modules = Array(moduleCount) { arrayOfNulls(moduleCount) }
         setupPositionProbePattern(0, 0)
         setupPositionProbePattern(moduleCount - 7, 0)
@@ -140,7 +140,7 @@ class QRCodeModel(
         modules[moduleCount - 8][8] = !isTest
     }
 
-    private fun mapData(data: IntArray, maskPattern: EfMaskPattern) {
+    private fun mapData(data: IntArray, maskPattern: VeilMaskPattern) {
         var inc = -1
         var row = moduleCount - 1
         var bitIndex = 7
@@ -181,18 +181,18 @@ class QRCodeModel(
         }
     }
 
-    private fun findBestMaskPattern(): EfMaskPattern {
+    private fun findBestMaskPattern(): VeilMaskPattern {
         var minLostPoint = 0
         var pattern = 0
         for (i in 0 until 8) {
-            makeImpl(isTest = true, maskPattern = EfMaskPattern.entries[i])
+            makeImpl(isTest = true, maskPattern = VeilMaskPattern.entries[i])
             val lost = calculateLostPoint()
             if (i == 0 || minLostPoint > lost) {
                 minLostPoint = lost
                 pattern = i
             }
         }
-        return EfMaskPattern.entries[pattern]
+        return VeilMaskPattern.entries[pattern]
     }
 
     val lostPoint: Int get() = calculateLostPoint()
@@ -350,7 +350,7 @@ class QRCodeModel(
 
         private fun createData(
             typeNumber: Int,
-            errorCorrectLevel: EfCorrectionLevel,
+            errorCorrectLevel: VeilCorrectionLevel,
             data: ByteArray
         ): IntArray {
             val rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectLevel)

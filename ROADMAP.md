@@ -12,7 +12,7 @@
 
 ### v2.2.8 CURRENT (Production Release)
 - **QR Code Studio (8th Native Mobile Tool) & 11 Artistic Renderers**:
-  - Full suite of 11 artistic visual rendering styles inspired by EFQRCode (Basic, Bubble, 2.5D Isometric, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function).
+  - Full suite of 11 artistic visual rendering styles powered by VeilFrame Art Engine (Basic, Bubble, 2.5D Isometric, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function).
   - Live CameraX Viewfinder scanner with `QrScanOverlayView` reticle tracking and gallery photo static image decoding.
   - Comprehensive Safe Payload Parser supporting 11 schema formats (Wi-Fi, UPI payments, URLs with IDN homograph phishing defense, Phone, SMS, Email, Geo, vCard, MeCard, Event, OtpAuth).
   - Export engine supporting high-resolution PNG, JPEG, SVG path data, and PDF documents.

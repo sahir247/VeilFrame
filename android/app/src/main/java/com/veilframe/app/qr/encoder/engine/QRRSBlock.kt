@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * QR Reed-Solomon block descriptor and block table for versions 1..40.
@@ -169,7 +169,7 @@ data class QRRSBlock(val totalCount: Int, val dataCount: Int) {
             intArrayOf(20, 45, 15, 61, 46, 16),
         )
 
-        fun getRSBlocks(typeNumber: Int, errorCorrectLevel: EfCorrectionLevel): List<QRRSBlock> {
+        fun getRSBlocks(typeNumber: Int, errorCorrectLevel: VeilCorrectionLevel): List<QRRSBlock> {
             val rsBlock = RS_BLOCK_TABLE[(typeNumber - 1) * 4 + errorCorrectLevel.offset]
             val length = rsBlock.size / 3
             val result = mutableListOf<QRRSBlock>()

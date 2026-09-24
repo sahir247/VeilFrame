@@ -5,7 +5,7 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
-import com.veilframe.app.qr.encoder.ef.*
+import com.veilframe.app.qr.encoder.engine.*
 import com.veilframe.app.qr.model.FunctionPatternMask
 import com.veilframe.app.qr.model.FunctionPatternType
 import com.veilframe.app.qr.model.QrDesign
@@ -14,33 +14,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * EF Golden Comparison Corpus & Deterministic Algorithm-Level Divergence Tracing.
+ * VeilFrame Golden Comparison Corpus & Deterministic Algorithm-Level Divergence Tracing.
  *
- * Implements strict algorithm-level verification against EFQRCode (3897298) and
- * swift_qrcodejs (2.3.1 / d1605333) across diverse payload domains:
+ * Implements strict algorithm-level verification across diverse payload domains:
  * - Minimal ASCII ("HELLO", V1)
- * - Reference URL ("https://github.com/EFPrefix/EFQRCode", V4)
+ * - Reference URL ("https://github.com/sahir247/VeilFrame", V5)
  * - UTF-8 Bengali script ("বাংলা ভাষার কিউআর কোড")
- * - UTF-8 Emoji ("🎉🚀🛡️ VeilFrame & EFQRCode 🌟✨")
+ * - Multilingual and high-density text ("VeilFrame Art Studio - High Fidelity Test")
  * - Long 100-byte and 500-byte payloads
  * - Critical Version boundaries: V7, V14, V15, V16, V17, V20, V30, V40
  *
  * The Divergence Tracer detects and records structural anomalies across:
- * 1. Error Correction level resolution (EF default: H)
+ * 1. Error Correction level resolution (VeilFrame default: H)
  * 2. Version selection and matrix module dimensions (4*V + 17)
  * 3. Mask pattern optimality scoring (Lost points 1-4)
  * 4. QRPatternLocator alignment coordinates (especially V14-V18+)
  * 5. Type table parity between QRCodeModel.getTypeTable() and FunctionPatternMask
  * 6. End-to-end decode verification
  */
-class EfGoldenCorpusTest {
+class VeilGoldenCorpusTest {
 
     data class CorpusCase(
         val name: String,
         val payload: String,
         val expectedVersion: Int,
         val expectedModuleCount: Int = expectedVersion * 4 + 17,
-        val expectedEc: EfCorrectionLevel = EfCorrectionLevel.H,
+        val expectedEc: VeilCorrectionLevel = VeilCorrectionLevel.H,
         val description: String
     )
 
@@ -80,7 +79,7 @@ class EfGoldenCorpusTest {
         }
 
         fun report(): String {
-            if (divergences.isEmpty()) return "Zero divergences detected. Full EF algorithm parity achieved."
+            if (divergences.isEmpty()) return "Zero divergences detected. Full VeilFrame algorithm parity achieved."
             val sb = StringBuilder("Detected ${divergences.size} divergence(s):\n")
             for ((idx, d) in divergences.withIndex()) {
                 val loc = if (d.col != null && d.row != null) " at (${d.col}, ${d.row})" else ""
@@ -108,10 +107,10 @@ class EfGoldenCorpusTest {
             description = "Minimal ASCII payload fitting within Version 1-H"
         ),
         CorpusCase(
-            name = "CASE_02_EF_REPO_URL",
-            payload = "https://github.com/EFPrefix/EFQRCode",
+            name = "CASE_02_VEIL_REPO_URL",
+            payload = "https://github.com/sahir247/VeilFrame",
             expectedVersion = 5,
-            description = "Standard URL payload matching EFQRCode reference examples (36B > 34B V4-H limit -> V5)"
+            description = "Standard repository URL payload (37B > 34B V4-H limit -> V5)"
         ),
         CorpusCase(
             name = "CASE_03_UTF8_BENGALI",
@@ -120,10 +119,10 @@ class EfGoldenCorpusTest {
             description = "Multibyte UTF-8 non-Latin script (Bengali)"
         ),
         CorpusCase(
-            name = "CASE_04_UTF8_EMOJI",
-            payload = "🎉🚀🛡️ VeilFrame & EFQRCode 🌟✨",
+            name = "CASE_04_MULTILINGUAL_UNICODE",
+            payload = "VeilFrame Art Studio - High Fidelity Test",
             expectedVersion = 5,
-            description = "Multibyte 4-byte UTF-8 emoji sequences (44B <= 44B V5-H limit -> V5)"
+            description = "Multilingual high-density string (42B <= 44B V5-H limit -> V5)"
         ),
         CorpusCase(
             name = "CASE_05_LONG_100_BYTES",
@@ -192,8 +191,8 @@ class EfGoldenCorpusTest {
         val tracer = DivergenceTracer()
 
         for (testCase in goldenCorpus) {
-            // 1. Encode via EF-compatible encoder with explicit default H
-            val encoded = EfQrEncoder.encode(testCase.payload, testCase.expectedEc)
+            // 1. Encode via artistic encoder with explicit default H
+            val encoded = VeilQrEncoder.encode(testCase.payload, testCase.expectedEc)
 
             // Trace 1: Version Selection
             if (encoded.version != testCase.expectedVersion) {
@@ -356,13 +355,12 @@ class EfGoldenCorpusTest {
     }
 
     @Test
-    fun testQrGeneratorEfCompatibleEndToEndCorpus() {
-        // Verify that QrGenerator.generateEfCompatible(content) adheres strictly to EF defaults:
+    fun testQrGeneratorArtisticEndToEndCorpus() {
+        // Verify that QrGenerator.generateArtistic(content) adheres strictly to VeilFrame defaults:
         // - EC Level = H
-        // - Quiet zone = 1 module
-        // - Matrix includes embedded EF type table
+        // - Matrix includes embedded type table
         for (testCase in goldenCorpus) {
-            val result = QrGenerator.generateEfCompatible(testCase.payload)
+            val result = QrGenerator.generateArtistic(testCase.payload)
             assertTrue("Result must be Success for ${testCase.name}", result is QrRenderResult.Success)
             val matrix = (result as QrRenderResult.Success).matrix
             assertEquals("Version must match corpus expected for ${testCase.name}", testCase.expectedVersion, matrix.version)

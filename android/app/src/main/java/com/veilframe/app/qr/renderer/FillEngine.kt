@@ -10,7 +10,7 @@ import com.veilframe.app.qr.model.*
  * Decouples geometric module representation from optical appearance, supporting:
  * - Solid fills
  * - Linear, Radial, and Sweep gradients
- * - Normalized image RGB pixel sampling (EFQRCode parity)
+ * - Normalized image RGB pixel sampling (VeilFrame Art Engine parity)
  * - Gamma-corrected luminance compression (Y = 0.2126R + 0.7152G + 0.0722B)
  */
 object FillEngine {

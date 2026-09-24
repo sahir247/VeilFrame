@@ -3,7 +3,7 @@ package com.veilframe.app.qr.renderer
 /**
  * Style 7 — IMAGE_RESAMPLE (Pixelated image resample into QR matrix)
  *
- * Implements authentic EFQRCode-inspired 3x3 stochastic subpixel resampling architecture:
+ * Implements authentic VeilFrame Art Engine-inspired 3x3 stochastic subpixel resampling architecture:
  * - Structural patterns (finders, timing tracks, alignment patterns) maintain crisp solid contrast per ISO/IEC 18004.
  * - Center subpixel (1, 1) of every dark data module is strictly reserved as the QR bit anchor.
  * - Surrounding 8 subpixels carry stochastic halftone photo dithering.

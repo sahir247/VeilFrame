@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * Alignment pattern locator positions for QR Code versions 1 through 40.

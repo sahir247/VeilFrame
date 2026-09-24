@@ -15,6 +15,7 @@ import com.veilframe.app.qr.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -38,6 +39,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageOpacity: Float = 1.0f,
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
+        val resampleUseSourceAsBackdrop: Boolean = false,
+        val resampleBackdropOpacity: Float = 0.85f,
+        val resampleSeed: Long = 42L,
         val bitmap: Bitmap? = null,
         val matrix: QrMatrix? = null,
         val design: QrDesign? = null,
@@ -52,6 +56,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
 
     private var generateJob: Job? = null
+    private val renderGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     init {
         regenerate(debounceMs = 0)
@@ -147,7 +152,24 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
+    fun updateResampleUseSourceAsBackdrop(use: Boolean) {
+        _state.value = _state.value.copy(resampleUseSourceAsBackdrop = use, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateResampleBackdropOpacity(opacity: Float) {
+        _state.value = _state.value.copy(resampleBackdropOpacity = opacity.coerceIn(0.0f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun randomizeResampleSeed() {
+        val newSeed = kotlin.random.Random.nextLong()
+        _state.value = _state.value.copy(resampleSeed = newSeed, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
     fun terminateSession() {
+        renderGeneration.incrementAndGet()
         generateJob?.cancel()
         generateJob = null
         val s = _state.value
@@ -200,21 +222,30 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     fun regenerate(customDesign: QrDesign? = null, debounceMs: Long = 0) {
         val s = _state.value
         val effectiveContent = s.content.ifBlank { "https://example.com" }
+        val generation = renderGeneration.incrementAndGet()
 
         generateJob?.cancel()
         generateJob = viewModelScope.launch(Dispatchers.Default) {
             if (debounceMs > 0) {
                 delay(debounceMs)
             }
+            ensureActive()
+            if (generation != renderGeneration.get()) return@launch
+
             _state.value = _state.value.copy(isLoading = true, errorMessage = null)
 
             val design = customDesign ?: buildDesignFromState(_state.value)
+            ensureActive()
+            if (generation != renderGeneration.get()) return@launch
+
             val renderResult = QrGenerator.generateWithResult(effectiveContent, design)
+            ensureActive()
+            if (generation != renderGeneration.get()) return@launch
 
             withContext(Dispatchers.Main) {
+                if (generation != renderGeneration.get()) return@withContext
                 when (renderResult) {
                     is QrRenderResult.Success -> {
-                        val oldBitmap = _state.value.bitmap
                         _state.value = _state.value.copy(
                             bitmap = renderResult.bitmap,
                             matrix = renderResult.matrix,
@@ -223,9 +254,6 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                             isLoading = false,
                             errorMessage = null
                         )
-                        if (oldBitmap != null && oldBitmap != renderResult.bitmap && !oldBitmap.isRecycled) {
-                            oldBitmap.recycle()
-                        }
                     }
                     is QrRenderResult.Failure -> {
                         _state.value = _state.value.copy(
@@ -243,7 +271,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         terminateSession()
     }
 
-    private fun buildDesignFromState(s: UiState): QrDesign {
+    private fun buildDesignFromState(s: UiState, isPreview: Boolean = true): QrDesign {
         val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
 
         val moduleFill = when {
@@ -255,6 +283,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             s.style == QrStyle.BUBBLE -> ModuleShape.BUBBLE_CLUSTER
             else -> def.defaultModuleShape
         }
+
+        // Staged preview pipeline: 512px during interactive editor preview, full s.outputSize for export
+        val effectiveSize = if (isPreview) minOf(s.outputSize, 512) else s.outputSize
 
         return QrDesign(
             correction = s.ecChoice,
@@ -289,7 +320,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 rightColor = 0x99000000.toInt()
             ),
             quietZoneModules = 4,
-            outputSize = s.outputSize,
+            outputSize = effectiveSize,
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,
             imageFillMode = def.imageFillMode,
@@ -306,40 +337,56 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 color = s.background,
                 bitmap = s.backgroundImage,
                 opacity = s.backgroundImageAlpha
+            ),
+            resampleStyle = ResampleStyle(
+                seed = s.resampleSeed,
+                useSourceAsBackdrop = s.resampleUseSourceAsBackdrop,
+                backdropOpacity = s.resampleBackdropOpacity,
+                backdropScaleMode = s.sourceImageScaleMode,
+                backdropBlendMode = BackdropBlendMode.NORMAL
             )
         )
     }
 
     fun saveToGallery() {
-        val bmp = _state.value.bitmap ?: return
         val content = _state.value.content.ifBlank { "https://example.com" }
-        val design = _state.value.design
-        val matrix = _state.value.matrix
         viewModelScope.launch {
-            if (design != null && matrix != null) {
-                val (uri, report) = QrExporter.saveToGalleryValidated(getApplication(), bmp, content, design, matrix)
+            _state.value = _state.value.copy(isLoading = true)
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign)
+            }
+            if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
+                val (uri, report) = QrExporter.saveToGalleryValidated(
+                    getApplication(),
+                    renderResult.bitmap,
+                    content,
+                    exportDesign,
+                    renderResult.matrix
+                )
                 _state.value = _state.value.copy(
-                    saveResult = if (uri != null) "PNG saved to Gallery" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                    scanabilityReport = report
+                    saveResult = if (uri != null) "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                    scanabilityReport = report,
+                    isLoading = false
                 )
             } else {
-                val uri = QrExporter.saveToGallery(getApplication(), bmp)
                 _state.value = _state.value.copy(
-                    saveResult = if (uri != null) "PNG saved to Gallery" else "Save failed"
+                    saveResult = "Save failed: bitmap generation unsuccessful",
+                    isLoading = false
                 )
             }
         }
     }
 
     fun saveSvg() {
-        val matrix = _state.value.matrix ?: return
-        val design = _state.value.design ?: return
-        val bmp = _state.value.bitmap
         val content = _state.value.content.ifBlank { "https://example.com" }
         viewModelScope.launch {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val matrix = _state.value.matrix ?: QrMatrix(content, exportDesign.correction.toZxingLevel(exportDesign.logo != null))
+            val bmp = _state.value.bitmap
             if (bmp != null) {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bmp, design, matrix, content)
-                if (!report.isScanReady) {
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bmp, exportDesign, matrix, content)
+                if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                         scanabilityReport = report
@@ -347,7 +394,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
             }
-            val uri = QrExporter.saveSvg(getApplication(), matrix, design)
+            val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
             _state.value = _state.value.copy(
                 saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed"
             )
@@ -355,9 +402,22 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun share() {
-        val bmp = _state.value.bitmap ?: return
+        val content = _state.value.content.ifBlank { "https://example.com" }
         viewModelScope.launch {
-            QrExporter.share(getApplication(), bmp)
+            _state.value = _state.value.copy(isLoading = true)
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign)
+            }
+            val bmp = if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
+                renderResult.bitmap
+            } else {
+                _state.value.bitmap
+            }
+            _state.value = _state.value.copy(isLoading = false)
+            if (bmp != null) {
+                QrExporter.share(getApplication(), bmp)
+            }
         }
     }
 

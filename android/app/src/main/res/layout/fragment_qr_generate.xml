@@ -32,14 +32,14 @@
                 android:contentDescription="QR Code Preview" />
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Live Scanability Card (Material 3 Expressive) -->
+        <!-- Live Verification Status Card (Material 3 Expressive) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/qr_scanability_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="1dp"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorSurfaceVariant">
 
@@ -49,12 +49,37 @@
                 android:orientation="vertical"
                 android:padding="14dp">
 
-                <TextView
-                    android:id="@+id/qr_scanability_status"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceTitleSmall"
-                    android:text="[PASS] Scan-ready" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/qr_scanability_icon"
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_marginEnd="10dp"
+                        android:src="@drawable/ic_check_circle"
+                        android:contentDescription="Verification Status" />
+
+                    <TextView
+                        android:id="@+id/qr_scanability_status"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:text="QR Verified" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_scanability_details_toggle"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="6dp"
+                        android:textSize="12sp"
+                        android:text="Details" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/qr_scanability_details"
@@ -62,15 +87,41 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="Validated with ZXing Java engine (4-module quiet zone)" />
+                    android:text="Ready to scan with standard camera and payment apps" />
+
+                <!-- Collapsible Technical Diagnostic Section -->
+                <LinearLayout
+                    android:id="@+id/container_scanability_tech_details"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?attr/colorSurfaceVariant"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:id="@+id/qr_scanability_tech_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOutline"
+                        android:text="On-device barcode validator ready" />
+                </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/qr_auto_repair_btn"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="8dp"
                     android:visibility="gone"
+                    app:icon="@drawable/ic_reset"
                     android:text="Auto-Repair Design" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -472,28 +523,27 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- UPI ID Field with automatic upi://pay?pa= prefix visual -->
+            <!-- UPI ID Field (Clean, non-confusing user input) -->
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layout_upi_vpa"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:hint="Enter UPI ID"
-                app:prefixText="upi://pay?pa="
-                app:prefixTextAppearance="?attr/textAppearanceBodyMedium"
-                app:helperText="Prefix 'upi://pay?pa=' is added automatically (e.g. sampleuser@fam)"
+                android:hint="UPI ID"
+                app:placeholderText="name@upi"
+                app:helperText="Enter your UPI ID, e.g. name@upi"
                 app:helperTextEnabled="true"
                 app:endIconMode="clear_text"
-                app:boxCornerRadiusTopStart="14dp"
-                app:boxCornerRadiusTopEnd="14dp"
-                app:boxCornerRadiusBottomStart="14dp"
-                app:boxCornerRadiusBottomEnd="14dp">
+                app:boxCornerRadiusTopStart="16dp"
+                app:boxCornerRadiusTopEnd="16dp"
+                app:boxCornerRadiusBottomStart="16dp"
+                app:boxCornerRadiusBottomEnd="16dp">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/qr_upi_vpa"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="sampleuser@fam"
                     android:imeOptions="actionNext"
                     android:inputType="textEmailAddress" />
             </com.google.android.material.textfield.TextInputLayout>
@@ -502,17 +552,17 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
                 app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeColor="?attr/colorSurfaceVariant"
                 android:layout_marginBottom="8dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="12dp">
+                    android:padding="14dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -525,41 +575,41 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Payment Amount"
+                            android:text="Amount"
                             android:textAppearance="?attr/textAppearanceTitleSmall" />
 
                         <TextView
                             android:id="@+id/qr_upi_amount_status"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Optional (No Amount)"
+                            android:text="Optional"
                             android:textAppearance="?attr/textAppearanceLabelSmall"
                             android:textColor="?attr/colorOutline" />
                     </LinearLayout>
 
-                    <!-- Open text field for amount (Up to 1 Lakh INR) -->
+                    <!-- Open text field for amount (Clean, no text overlap) -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/layout_upi_amount"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="10dp"
-                        android:hint="Amount in ₹ (Optional, Up to ₹1,00,000)"
+                        android:layout_marginBottom="12dp"
+                        android:hint="Amount in ₹ (Optional)"
                         app:prefixText="₹ "
-                        app:helperText="Enter amount up to ₹1,00,000 (1 Lakh INR)"
+                        app:placeholderText="500"
+                        app:helperText="Maximum ₹1,00,000"
                         app:helperTextEnabled="true"
                         app:errorEnabled="true"
                         app:endIconMode="clear_text"
-                        app:boxCornerRadiusTopStart="12dp"
-                        app:boxCornerRadiusTopEnd="12dp"
-                        app:boxCornerRadiusBottomStart="12dp"
-                        app:boxCornerRadiusBottomEnd="12dp">
+                        app:boxCornerRadiusTopStart="14dp"
+                        app:boxCornerRadiusTopEnd="14dp"
+                        app:boxCornerRadiusBottomStart="14dp"
+                        app:boxCornerRadiusBottomEnd="14dp">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/qr_upi_amount"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="e.g. 500.00"
                             android:imeOptions="actionDone"
                             android:inputType="numberDecimal" />
                     </com.google.android.material.textfield.TextInputLayout>
@@ -595,10 +645,18 @@
                         android:layout_height="wrap_content"
                         android:valueFrom="0.0"
                         android:valueTo="100000.0"
-                        android:stepSize="500.0"
+                        android:stepSize="1.0"
                         android:value="0.0" />
 
                     <!-- Quick amount selection chips -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Choose an amount"
+                        android:textAppearance="?attr/textAppearanceLabelMedium"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="6dp" />
+
                     <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -615,7 +673,7 @@
                                 style="@style/Widget.Material3.Chip.Suggestion"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="No Amount" />
+                                android:text="No amount" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_upi_50"
@@ -776,6 +834,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
+                app:icon="@drawable/ic_color_filter"
                 android:text="Foreground" />
 
             <com.google.android.material.button.MaterialButton
@@ -784,6 +843,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                app:icon="@drawable/ic_color_filter"
                 android:text="Background" />
         </LinearLayout>
 
@@ -930,6 +990,79 @@
                     android:valueTo="100"
                     android:stepSize="5"
                     android:value="100" />
+
+                <!-- Continuous Photo Backdrop (Artwork QR / VeilFrame Art style) -->
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Use Photo as Backdrop"
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Draw continuous image behind resample dots"
+                            android:textAppearance="?attr/textAppearanceLabelSmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/qr_resample_backdrop_switch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/container_resample_backdrop_opacity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/qr_resample_backdrop_opacity_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Backdrop Opacity: 85%"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_resample_backdrop_opacity_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0"
+                        android:valueTo="100"
+                        android:stepSize="5"
+                        android:value="85" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_resample_seed_btn"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Randomize Resample Seed"
+                    app:icon="@drawable/ic_reset" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

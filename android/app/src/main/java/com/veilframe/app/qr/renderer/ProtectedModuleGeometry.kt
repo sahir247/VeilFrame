@@ -23,11 +23,30 @@ object ProtectedModuleGeometry {
         paint: Paint
     ) {
         when (shape) {
-            ModuleShape.CIRCLE -> {
-                canvas.drawCircle(rect.centerX(), rect.centerY(), rect.width() / 2f, paint)
+            ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE -> {
+                val r = (minOf(rect.width(), rect.height()) / 2f) * (if (shape == ModuleShape.DOT) 0.75f else 1.0f)
+                canvas.drawCircle(rect.centerX(), rect.centerY(), r, paint)
             }
-            ModuleShape.SQUARE -> {
+            ModuleShape.SQUARE, ModuleShape.CONNECTED -> {
                 canvas.drawRect(rect, paint)
+            }
+            ModuleShape.PILL -> {
+                val rx = rect.width() / 2f
+                val ry = rect.height() * 0.25f
+                canvas.drawRoundRect(rect, rx, ry, paint)
+            }
+            ModuleShape.SQUIRCLE -> {
+                val rx = rect.width() * 0.35f
+                canvas.drawRoundRect(rect, rx, rx, paint)
+            }
+            ModuleShape.DIAMOND -> {
+                val path = android.graphics.Path()
+                path.moveTo(rect.centerX(), rect.top)
+                path.lineTo(rect.right, rect.centerY())
+                path.lineTo(rect.centerX(), rect.bottom)
+                path.lineTo(rect.left, rect.centerY())
+                path.close()
+                canvas.drawPath(path, paint)
             }
             else -> {
                 val rx = rect.width() * 0.25f
@@ -53,14 +72,32 @@ object ProtectedModuleGeometry {
         fill: String
     ): String {
         return when (shape) {
-            ModuleShape.CIRCLE -> {
+            ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE -> {
                 val cx = x + size / 2.0
                 val cy = y + size / 2.0
-                val r = size / 2.0
+                val r = (size / 2.0) * (if (shape == ModuleShape.DOT) 0.75 else 1.0)
                 """<circle cx="$cx" cy="$cy" r="$r" fill="$fill" />"""
             }
-            ModuleShape.SQUARE -> {
+            ModuleShape.SQUARE, ModuleShape.CONNECTED -> {
                 """<rect x="$x" y="$y" width="$size" height="$size" fill="$fill" />"""
+            }
+            ModuleShape.PILL -> {
+                val rx = size * 0.5
+                val ry = size * 0.25
+                """<rect x="$x" y="$y" width="$size" height="$size" rx="$rx" ry="$ry" fill="$fill" />"""
+            }
+            ModuleShape.SQUIRCLE -> {
+                val rx = size * 0.35
+                """<rect x="$x" y="$y" width="$size" height="$size" rx="$rx" fill="$fill" />"""
+            }
+            ModuleShape.DIAMOND -> {
+                val cx = x + size / 2.0
+                val cy = y + size / 2.0
+                val topY = y
+                val rightX = x + size
+                val bottomY = y + size
+                val leftX = x
+                """<polygon points="$cx,$topY $rightX,$cy $cx,$bottomY $leftX,$cy" fill="$fill" />"""
             }
             else -> {
                 val rx = size * 0.25

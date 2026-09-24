@@ -86,7 +86,7 @@ VeilFrame provides 100% offline, on-device neural super-resolution and image res
 
 ### 2. <img src="docs/images/icons/qr.svg" width="20" height="20" alt="" /> QR Code Studio (11 Artistic Modes & Scanner)
 
-VeilFrame includes a comprehensive QR Code Studio supporting 11 artistic visual rendering modes inspired by the EFQRCode specification, accompanied by a live CameraX scanner:
+VeilFrame includes a comprehensive QR Code Studio supporting 11 artistic visual rendering modes powered by the VeilFrame Art Engine, accompanied by a live CameraX scanner:
 
 - **11 Visual Rendering Modes:**
   1. `Basic`: Square modules with customizable corner shapes (rectangles, rounded, planets).

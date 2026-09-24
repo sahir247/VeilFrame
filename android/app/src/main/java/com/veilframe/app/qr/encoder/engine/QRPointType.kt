@@ -1,7 +1,7 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
- * EFQRCode point classification type matching QRCodeSwift's `QRPointType`.
+ * VeilFrame Art Engine point classification type matching QRCodeSwift's `QRPointType`.
  */
 enum class QRPointType(val rawValue: Int) {
     DATA(0),
@@ -20,19 +20,22 @@ enum class QRPointType(val rawValue: Int) {
 }
 
 /**
- * QR error correction levels matching QRCodeSwift's `QRErrorCorrectLevel`.
+ * QR error correction levels for the VeilFrame Art Engine.
  */
-enum class EfCorrectionLevel(val pattern: Int, val offset: Int) {
+enum class VeilCorrectionLevel(val pattern: Int, val offset: Int) {
     L(pattern = 1, offset = 0),
     M(pattern = 0, offset = 1),
     Q(pattern = 3, offset = 2),
     H(pattern = 2, offset = 3);
 }
 
+@Deprecated("Renamed to VeilCorrectionLevel", ReplaceWith("VeilCorrectionLevel"))
+typealias EfCorrectionLevel = VeilCorrectionLevel
+
 /**
- * QR mask patterns matching QRCodeSwift's `QRMaskPattern`.
+ * QR mask patterns for the VeilFrame Art Engine.
  */
-enum class EfMaskPattern(val rawValue: Int) {
+enum class VeilMaskPattern(val rawValue: Int) {
     _000(0), _001(1), _010(2), _011(3), _100(4), _101(5), _110(6), _111(7);
 
     fun getMask(i: Int, j: Int): Boolean {
@@ -48,3 +51,6 @@ enum class EfMaskPattern(val rawValue: Int) {
         }
     }
 }
+
+@Deprecated("Renamed to VeilMaskPattern", ReplaceWith("VeilMaskPattern"))
+typealias EfMaskPattern = VeilMaskPattern

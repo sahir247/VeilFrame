@@ -471,7 +471,7 @@
         containers.forEach(function(el) {
           const source = el.getAttribute('data-source') ? decodeURIComponent(el.getAttribute('data-source')) : el.textContent;
           el.innerHTML = '<div class="mermaid-error">' +
-                           '<div class="mermaid-error-title">⚠️ Mermaid library could not be loaded offline</div>' +
+                           '<div class="mermaid-error-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:text-bottom;margin-right:6px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>Mermaid library could not be loaded offline</div>' +
                            '<details class="mermaid-source-details"><summary>Show source</summary><pre>' + escapeHtml(source) + '</pre></details>' +
                          '</div>';
         });
@@ -493,7 +493,7 @@
           el.innerHTML = '<div class="mermaid-diagram-box">' + res.svg + '</div>';
         }).catch(function(err) {
           el.innerHTML = '<div class="mermaid-error">' +
-                           '<div class="mermaid-error-title">⚠️ Mermaid rendering error</div>' +
+                           '<div class="mermaid-error-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:text-bottom;margin-right:6px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>Mermaid rendering error</div>' +
                            '<details class="mermaid-source-details"><summary>Show source</summary><pre>' + escapeHtml(source) + '</pre></details>' +
                          '</div>';
         });

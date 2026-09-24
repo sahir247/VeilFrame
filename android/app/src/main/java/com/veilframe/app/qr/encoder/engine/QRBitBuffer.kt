@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * Bit buffer accumulator matching QRCodeSwift's `QRBitBuffer`.

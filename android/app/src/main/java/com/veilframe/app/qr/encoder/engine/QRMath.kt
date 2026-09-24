@@ -1,4 +1,4 @@
-package com.veilframe.app.qr.encoder.ef
+package com.veilframe.app.qr.encoder.engine
 
 /**
  * Pure Galois Field GF(2^8) math matching QRCodeSwift's `QRMath`.

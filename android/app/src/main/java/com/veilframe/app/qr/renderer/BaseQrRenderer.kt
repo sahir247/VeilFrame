@@ -32,20 +32,49 @@ abstract class BaseQrRenderer : QrRenderer {
         // 1. Background & Quiet Zone
         renderBackground(canvas, design, geometry, context)
 
-        // 2. Protected Finders
+        // 2. Source Image as Continuous Backdrop (e.g. for IMAGE_RESAMPLE screenshot parity)
+        renderSourceBackdrop(canvas, design, geometry, context)
+
+        // 3. Protected Finders
         renderFinders(canvas, matrix, design, geometry, context)
 
-        // 3. Timing Tracks
+        // 4. Timing Tracks
         renderTiming(canvas, matrix, design, geometry, context)
 
-        // 4. Alignment Patterns
+        // 5. Alignment Patterns
         renderAlignment(canvas, matrix, design, geometry, context)
 
-        // 5. Data Modules (Artistic / creative area)
+        // 6. Explicit Format and Version Information (Protected functional modules)
+        renderFormatAndVersion(canvas, matrix, design, geometry, context)
+
+        // 7. Data Modules (Artistic / creative area)
         renderDataModules(canvas, matrix, design, geometry, context)
 
-        // 6. Center Logo
+        // 8. Center Logo
         renderLogo(canvas, design, geometry, context)
+    }
+
+    open fun renderFormatAndVersion(
+        canvas: Canvas,
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        val formatColor = design.palette.foreground
+        val paint = context.obtainFill(formatColor)
+        val n = matrix.size
+
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (!matrix.isDark(col, row)) continue
+                val role = matrix.roleAt(col, row)
+                if (role == QrModuleRole.FORMAT || role == QrModuleRole.VERSION) {
+                    val rect = geometry.moduleRect(col, row, 1.0f)
+                    ProtectedModuleGeometry.drawCanvas(canvas, rect, ModuleShape.SQUARE, paint)
+                }
+            }
+        }
     }
 
     open fun renderBackground(
@@ -56,6 +85,15 @@ abstract class BaseQrRenderer : QrRenderer {
     ) {
         // Default does nothing because QrGenerator draws canvas background;
         // renderers with custom backdrops can override.
+    }
+
+    open fun renderSourceBackdrop(
+        canvas: Canvas,
+        design: QrDesign,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        // Default does nothing; overridden by renderers supporting continuous source backdrops.
     }
 
     open fun renderFinders(

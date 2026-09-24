@@ -24,7 +24,7 @@ import com.veilframe.app.qr.QrStyleParams
  * Uses design-level gradient configuration. If no gradient is configured,
  * falls back to a diagonal gradient from foreground to its complementary hue.
  *
- * Mirrors EFQRCodeStyle.swift's style-level function concept where the
+ * Mirrors VeilFrame Style Engine's style-level function concept where the
  * module color is defined by a function of (x, y) rather than a flat color.
  */
 class StyleFunctionRenderer : QrRenderer {

@@ -14,8 +14,8 @@ import kotlin.random.Random
 /**
  * Style 9 — RANDOM_RECTANGLE
  *
- * Implements EFQRCode's exact EFQRCodeStyleRandomRectangle algorithm:
- * - Color parameter: [design.randomRectColor] (default EF green 0x14AA3C / RGB 20, 170, 60)
+ * Implements VeilFrame Art Engine's exact VeilFrameStyleRandomRectangle algorithm:
+ * - Color parameter: [design.randomRectColor] (default VeilFrame art green 0x14AA3C / RGB 20, 170, 60)
  * - Shuffles all matrix coordinates (row, col)
  * - For each dark cell:
  *   tempRand in 0.8..1.3

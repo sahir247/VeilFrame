@@ -17,17 +17,17 @@ import kotlin.random.Random
 /**
  * Style 2 — BUBBLE (Visual Grammar: Organic / Bubble Cluster)
  *
- * Implements EFQRCodeStyleBubble with dual mode behavior:
+ * Implements VeilFrameStyleBubble with dual mode behavior:
  * - SAFE mode: protects timing, alignment, and finders separately.
  * - EF_COMPATIBLE mode (when matrix.typeTable != null): only reserves finders,
- *   allowing timing/alignment to cluster into macro bubbles matching EFQRCodeStyleBubble.swift.
+ *   allowing timing/alignment to cluster into macro bubbles matching VeilFrameStyleBubble.swift.
  *
  * Clustering grammar:
  * 1. 3x3 cross clusters -> large central bubble with stroke and core dot.
  * 2. 2x2 all-dark corners -> radius sqrt(1/2) circle inscribed at intersection.
  * 3. 1x2 vertical / 2x1 horizontal pairs -> rounded capsule bubbles.
  * 4. Remaining isolated dark cells -> single circles.
- * 5. Position finders via canonical EF position geometry [EfPositionPatternGeometry].
+ * 5. Position finders via canonical VeilFrame position geometry [VeilPositionPatternGeometry].
  */
 class BubbleRenderer : QrRenderer {
 
@@ -57,7 +57,7 @@ class BubbleRenderer : QrRenderer {
             )
         }
 
-        // 1. Position finders via canonical EF position geometry
+        // 1. Position finders via canonical VeilFrame position geometry
         val finderCenters = listOf(
             Pair(3, 3),
             Pair(n - 4, 3),
@@ -65,7 +65,7 @@ class BubbleRenderer : QrRenderer {
         )
         for ((fx, fy) in finderCenters) {
             nodes.addAll(
-                EfPositionPatternGeometry.toIrNodes(
+                VeilPositionPatternGeometry.toIrNodes(
                     x = fx,
                     y = fy,
                     moduleSize = cs,
@@ -85,10 +85,10 @@ class BubbleRenderer : QrRenderer {
         val isEfMode = matrix.typeTable != null
 
         if (isEfMode) {
-            // EF mode: Only finders are excluded from clustering
+            // Artistic mode: Only finders are excluded from clustering
             for (col in 0 until n) {
                 for (row in 0 until n) {
-                    if (EfPositionPatternGeometry.isFinderArea(col, row, n)) {
+                    if (VeilPositionPatternGeometry.isFinderArea(col, row, n)) {
                         avail[col][row] = false
                         avail2[col][row] = false
                     }

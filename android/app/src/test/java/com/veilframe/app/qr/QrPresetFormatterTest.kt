@@ -163,4 +163,22 @@ class QrPresetFormatterTest {
         val zeroAmountUpi = QrPresetFormatter.formatUpi("sampleuser@fam", amount = "0")
         assertEquals("upi://pay?pa=sampleuser@fam", zeroAmountUpi)
     }
+
+    @Test
+    fun testUpiPastedFullUriParsingAndFormatting() {
+        val pastedUri = "upi://pay?pa=sampleuser@fam&pn=John%20Doe&am=150.50&tn=Dinner"
+        val parsed = QrPresetFormatter.parseUpiUri(pastedUri)
+        assertEquals("sampleuser@fam", parsed["pa"])
+        assertEquals("John Doe", parsed["pn"])
+        assertEquals("150.50", parsed["am"])
+        assertEquals("Dinner", parsed["tn"])
+
+        // Formatting directly from pasted full URI without parameters
+        val formatted = QrPresetFormatter.formatUpi(pastedUri)
+        assertEquals("upi://pay?pa=sampleuser@fam&am=150.50&cu=INR&pn=John%20Doe&tn=Dinner", formatted)
+
+        // Formatting with overridden amount
+        val overridden = QrPresetFormatter.formatUpi(pastedUri, amount = "500")
+        assertEquals("upi://pay?pa=sampleuser@fam&am=500.00&cu=INR&pn=John%20Doe&tn=Dinner", overridden)
+    }
 }

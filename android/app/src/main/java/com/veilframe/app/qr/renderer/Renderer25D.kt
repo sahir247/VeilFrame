@@ -12,9 +12,9 @@ import com.veilframe.app.qr.QrStyleParams
 import kotlin.math.sqrt
 
 /**
- * Style 3 — 2.5D ISOMETRIC (EFQRCodeStyle25D Parity)
+ * Style 3 — 2.5D ISOMETRIC (VeilFrameStyle25D Parity)
  *
- * Implements EFQRCode axonometric isometric projection:
+ * Implements VeilFrame Art Engine axonometric isometric projection:
  * Matrix: `matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)`
  * ViewBox: `x = -nCount, y = -nCount/2, width = nCount*2, height = nCount*2`
  *
@@ -43,7 +43,7 @@ class Renderer25D : QrRenderer {
         val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
 
-        // Isometric constants matching EFQRCode:
+        // Isometric constants matching VeilFrame Art Engine:
         // matrix(sqrt(3)/2, 0.5, -sqrt(3)/2, 0.5, 0, 0)
         // viewBox: [-n, -n/2, 2*n, 2*n]
         val sq3h = (sqrt(3.0) / 2.0).toFloat()

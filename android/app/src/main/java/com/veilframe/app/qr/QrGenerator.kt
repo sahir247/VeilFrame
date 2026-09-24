@@ -46,11 +46,14 @@ sealed interface QrRenderResult {
  */
 enum class GenerationMode {
     /**
-     * Exact EFQRCode compatibility mode:
-     * - Encodes with [com.veilframe.app.qr.encoder.ef.EfQrEncoder] (100% matrix identity with QRCodeSwift).
-     * - Bypasses parameter mutation or visual auto-repair.
-     * - Defaults to 0 quiet-zone modules per EF backdrop specifications.
+     * VeilFrame Art Engine generation mode:
+     * - Encodes with [com.veilframe.app.qr.encoder.engine.VeilQrEncoder] (100% matrix identity with art specification).
+     * - Bypasses parameter mutation or visual auto-repair for deterministic artistic reproduction.
+     * - Defaults to 0 quiet-zone modules per art backdrop specifications.
      */
+    ARTISTIC_ENGINE,
+
+    @Deprecated("Renamed to ARTISTIC_ENGINE", ReplaceWith("ARTISTIC_ENGINE"))
     EF_COMPATIBLE,
 
     /**
@@ -78,13 +81,13 @@ object QrGenerator {
     ): QrMatrix {
         require(content.isNotBlank()) { "QR content must not be blank" }
         val ecLevel = when (mode) {
-            GenerationMode.EF_COMPATIBLE -> {
+            GenerationMode.ARTISTIC_ENGINE, GenerationMode.EF_COMPATIBLE -> {
                 when (design.correction) {
                     ErrorCorrectionChoice.L -> ErrorCorrectionLevel.L
                     ErrorCorrectionChoice.M -> ErrorCorrectionLevel.M
                     ErrorCorrectionChoice.Q -> ErrorCorrectionLevel.Q
                     ErrorCorrectionChoice.H -> ErrorCorrectionLevel.H
-                    ErrorCorrectionChoice.AUTO -> ErrorCorrectionLevel.H // EFQRCode default is strictly H
+                    ErrorCorrectionChoice.AUTO -> ErrorCorrectionLevel.H // VeilFrame Art default is strictly H
                 }
             }
             GenerationMode.SAFE -> {
@@ -96,20 +99,26 @@ object QrGenerator {
             }
         }
 
-        return if (mode == GenerationMode.EF_COMPATIBLE) {
-            com.veilframe.app.qr.encoder.ef.EfQrEncoder.encode(content, ecLevel).matrix
+        return if (mode == GenerationMode.ARTISTIC_ENGINE || mode == GenerationMode.EF_COMPATIBLE) {
+            com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel).matrix
         } else {
             QrEncoder.encode(content, ecLevel).matrix
         }
     }
 
     /**
-     * Directly generates the EF-compatible [QrMatrix] with default EC level H.
+     * Directly generates the VeilFrame artistic [QrMatrix] with default EC level H.
      */
+    fun generateArtisticMatrix(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
+
+    @Deprecated("Renamed to generateArtisticMatrix", ReplaceWith("generateArtisticMatrix(content, design)"))
     fun generateEfCompatibleMatrix(
         content: String,
         design: QrDesign = QrDesign()
-    ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.EF_COMPATIBLE)
+    ): QrMatrix = generateArtisticMatrix(content, design)
 
     /**
      * Modern domain generation entry point returning typed [QrRenderResult]
@@ -131,7 +140,7 @@ object QrGenerator {
             val quietZone = if (mode == GenerationMode.EF_COMPATIBLE) {
                 design.explicitQuietZone ?: 1
             } else {
-                design.quietZoneModules
+                design.effectiveQuietZone
             }
 
             val geometry = QrGeometry(
@@ -167,17 +176,18 @@ object QrGenerator {
             } else {
                 // Headless unit testing fallback where android.graphics.Bitmap is not available on JVM
                 com.veilframe.app.qr.validation.ScanabilityReport(
-                    isScanReady = true,
+                    isScanReady = false,
+                    validationSkipped = true,
                     quietZone = com.veilframe.app.qr.validation.QuietZoneReport(
                         hasFourModuleMargin = quietZone >= 4,
                         quietZoneModules = quietZone
                     ),
-                    contrast = com.veilframe.app.qr.validation.ContrastReport(0f, 0f, 1f, 1f, 1f, true),
+                    contrast = com.veilframe.app.qr.validation.ContrastReport(0f, 0f, 1f, 1f, 1f, isContrastAdequate = false),
                     finders = com.veilframe.app.qr.validation.FinderIntegrityReport(findersIntact = true, separatorsClear = true),
                     logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
-                    decodeResult = com.veilframe.app.qr.decoder.DecodeResult(success = true, text = content),
+                    decodeResult = com.veilframe.app.qr.decoder.DecodeResult(success = false, text = null, error = "Bitmap allocation unavailable"),
                     errorCorrection = matrix.errorCorrection,
-                    warnings = emptyList(),
+                    warnings = listOf("Bitmap allocation unavailable; visual and decode validation skipped."),
                     repairSuggestions = emptyList()
                 )
             }
@@ -188,18 +198,26 @@ object QrGenerator {
                 matrix = matrix,
                 design = design
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (t: Throwable) {
             return QrRenderResult.Failure(t.message ?: "Failed to generate QR code", t)
         }
     }
 
     /**
-     * Convenience entry point for generating deterministic, exact EFQRCode-compatible QR codes.
+     * Convenience entry point for generating deterministic, exact VeilFrame artistic QR codes.
      */
+    fun generateArtistic(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
+
+    @Deprecated("Renamed to generateArtistic", ReplaceWith("generateArtistic(content, design)"))
     fun generateEfCompatible(
         content: String,
         design: QrDesign = QrDesign()
-    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.EF_COMPATIBLE)
+    ): QrRenderResult = generateArtistic(content, design)
 
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.
@@ -332,8 +350,18 @@ object QrGenerator {
                 canvas.drawColor(design.palette.background)
                 val paint = context.tempPaint
                 paint.reset()
+                paint.isAntiAlias = true
+                paint.isFilterBitmap = true
                 paint.alpha = (background.alpha.coerceIn(0f, 1f) * 255).toInt()
-                canvas.drawBitmap(background.bitmap, null, android.graphics.Rect(0, 0, size, size), paint)
+                val targetBounds = android.graphics.RectF(0f, 0f, size.toFloat(), size.toFloat())
+                val scaleMode = if (background.fitCenter) com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT else com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
+                    background.bitmap.width,
+                    background.bitmap.height,
+                    targetBounds,
+                    scaleMode
+                )
+                canvas.drawBitmap(background.bitmap, srcRect, dstRect, paint)
             }
             BackgroundStyle.Transparent -> {
                 // Keep transparent ARGB_8888
@@ -343,8 +371,7 @@ object QrGenerator {
 
     private fun getRendererForDesign(design: QrDesign): QrRenderer {
         return if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED ||
-            design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER ||
-            design.style == QrStyle.IMAGE_RESAMPLE
+            design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER
         ) {
             ComposableQrRenderer()
         } else {

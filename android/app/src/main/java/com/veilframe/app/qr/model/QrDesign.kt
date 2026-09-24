@@ -111,7 +111,7 @@ data class ImageSourceStyle(
     val scaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val scope: ImageMaskScope = ImageMaskScope.DATA_ONLY,
     val opacity: Float = 1.0f,
-    val contrast: Float = 0.0f, // EFQRCode default: 0.0f ((contrast + 1) = 1.0 multiplier)
+    val contrast: Float = 0.0f, // VeilFrame Art Engine default: 0.0f ((contrast + 1) = 1.0 multiplier)
     val exposure: Float = 0.0f,
     val maskColor: Int = 0x1A000000,
     val maskAlpha: Float = 0.1f,
@@ -127,6 +127,22 @@ data class BubbleClusterStyle(
     val ambientMaxRadius: Float = 0.22f,
     val crossOuterStrokeRatio: Float = 0.45f,
     val pairStrokeRatio: Float = 0.38f
+)
+
+enum class BackdropBlendMode {
+    NORMAL,
+    MULTIPLY,
+    SCREEN,
+    OVERLAY
+}
+
+data class ResampleStyle(
+    val seed: Long = 42L,
+    val useSourceAsBackdrop: Boolean = false,
+    val backdropOpacity: Float = 1.0f,
+    val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+    val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
+    val backdropTint: Int? = null
 )
 
 sealed interface BackgroundStyle {
@@ -357,8 +373,11 @@ data class QrDesign(
         color = palette.background,
         bitmap = backgroundImage,
         opacity = backgroundImageAlpha
-    )
+    ),
+    val resampleStyle: ResampleStyle = ResampleStyle()
 ) {
+    val effectiveQuietZone: Int get() = explicitQuietZone ?: quietZoneModules
+
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {
             val def = QrStyleRegistry.get(params.style)
@@ -533,6 +552,12 @@ data class QrDesign(
                     color = params.background,
                     bitmap = params.backgroundImage,
                     opacity = params.backgroundImageAlpha
+                ),
+                resampleStyle = ResampleStyle(
+                    seed = params.resampleSeed,
+                    useSourceAsBackdrop = params.resampleUseSourceAsBackdrop,
+                    backdropOpacity = params.resampleBackdropOpacity,
+                    backdropScaleMode = params.resampleBackdropScaleMode
                 )
             )
         }

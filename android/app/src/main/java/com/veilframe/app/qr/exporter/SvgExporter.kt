@@ -39,7 +39,7 @@ object SvgExporter {
         design: QrDesign,
         pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
     ): String {
-        val qz = design.quietZoneModules
+        val qz = design.effectiveQuietZone
         val totalSize = matrix.size + (2 * qz)
         val fgHex = hexColor(design.palette.foreground)
         val bgHex = hexColor(design.palette.background)
@@ -163,6 +163,30 @@ object SvgExporter {
             }
         }
 
+        // 2b. Source Image as Continuous Backdrop (for IMAGE_RESAMPLE screenshot parity)
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) {
+            val srcBmp = design.imageSource.bitmap
+            val opacity = String.format(Locale.US, "%.2f", design.resampleStyle.backdropOpacity.coerceIn(0f, 1f))
+            val aspect = when (design.resampleStyle.backdropScaleMode) {
+                com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+                com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
+                else -> "xMidYMid slice"
+            }
+            if (srcBmp != null && !srcBmp.isRecycled) {
+                val srcBase64 = bitmapToBase64(srcBmp)
+                if (srcBase64.isNotEmpty()) {
+                    sb.append("""  <image href="data:image/png;base64,$srcBase64" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity" />""").append("\n")
+                }
+            } else if (pixelSource != null || design.imageSource.source != null) {
+                sb.append("""  <image href="#sourceBackdrop" width="$totalSize" height="$totalSize" preserveAspectRatio="$aspect" opacity="$opacity" />""").append("\n")
+            }
+            val tint = design.resampleStyle.backdropTint
+            if (tint != null) {
+                val tintHex = hexColor(tint)
+                sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$tintHex" />""").append("\n")
+            }
+        }
+
         // 3. Finders (TL: 0,0; BL: 0, n-7; TR: n-7, 0) offset by qz
         appendFinders(sb, design, qz, matrix.size, fgHex, bgHex, eyeOuterHex, eyeInnerHex)
 
@@ -186,7 +210,7 @@ object SvgExporter {
                 matrix = matrix,
                 pixelSource = resolvedResampleSource,
                 style = design.imageSource,
-                seed = 42L
+                seed = design.resampleStyle.seed
             ) { col, row, subX, subY, _ ->
                 val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
                     col = col,
@@ -234,6 +258,15 @@ object SvgExporter {
                             y = my,
                             size = alignScale,
                             fill = alignFill
+                        )
+                        sb.append("""  $elem""").append("\n")
+                    } else if (role == QrModuleRole.FORMAT || role == QrModuleRole.VERSION) {
+                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                            shape = com.veilframe.app.qr.model.ModuleShape.SQUARE,
+                            x = x.toDouble(),
+                            y = y.toDouble(),
+                            size = 1.0,
+                            fill = dataFill
                         )
                         sb.append("""  $elem""").append("\n")
                     }
@@ -721,7 +754,7 @@ object SvgExporter {
         // Finders
         val finderCenters = listOf(Pair(3, 3), Pair(nCount - 4, 3), Pair(3, nCount - 4))
         for ((fx, fy) in finderCenters) {
-            val (svgChunk, nextId) = com.veilframe.app.qr.renderer.EfPositionPatternGeometry.buildSvgElements(
+            val (svgChunk, nextId) = com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.buildSvgElements(
                 x = fx,
                 y = fy,
                 qz = qz,
@@ -740,7 +773,7 @@ object SvgExporter {
 
         for (x in 0 until nCount) {
             for (y in 0 until nCount) {
-                if (com.veilframe.app.qr.renderer.EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
+                if (com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
 
                 val isDark = matrix.isDark(x, y)
                 val dist = kotlin.math.sqrt(Math.pow(centerCoord - x, 2.0) + Math.pow(centerCoord - y, 2.0)) / maxDist

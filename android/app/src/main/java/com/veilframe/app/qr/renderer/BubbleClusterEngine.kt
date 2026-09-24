@@ -25,7 +25,7 @@ data class ClusterPrimitive(
 )
 
 /**
- * Pure topological clustering algorithm based on EFQRCode's multi-module grouping.
+ * Pure topological clustering algorithm based on VeilFrame Art Engine's multi-module grouping.
  *
  * Transforms the discrete binary QR grid into a hierarchical set of circular cluster primitives:
  * 1. 3x3 Crosses: 5 dark data modules -> R = 1.0f macro-bubble with outer ring and inner core
