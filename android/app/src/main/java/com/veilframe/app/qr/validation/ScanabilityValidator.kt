@@ -121,45 +121,90 @@ object ScanabilityValidator {
         val contrastReport = analyzeContrast(bitmap, geometry, matrix)
 
         // 3. Finder & Separator Integrity Check
-        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix)
+        val isResample = design.style == QrStyle.IMAGE_RESAMPLE
+        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix, isResample = isResample)
 
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
 
-        // 5. Decode Validation (Primary: Google ML Kit; Fallback: ZXing)
+        // 5. Decode Validation (Primary: Google ML Kit / configured decoder; Fallback: Multi-pass ZXing & Multi-resolution)
         val decoder = primaryDecoder ?: mlKitDecoder
-        val decodeResult = try {
+        var decodeResult = try {
             decoder.decode(bitmap)
         } catch (e: Throwable) {
-            if (decoder != zxingDecoder) {
-                try {
-                    zxingDecoder.decode(bitmap)
-                } catch (ze: Throwable) {
-                    DecodeResult(success = false, error = ze.message ?: e.message, decoderId = "ZXing-Fallback")
-                }
-            } else {
-                DecodeResult(success = false, error = e.message, decoderId = decoder.id)
+            DecodeResult(success = false, error = e.message, decoderId = decoder.id)
+        }
+
+        // If primary decoder didn't match expected content, fall back to ZXing directly
+        if ((!decodeResult.success || decodeResult.text != expectedContent) && decoder != zxingDecoder) {
+            val zxResult = try {
+                zxingDecoder.decode(bitmap)
+            } catch (ze: Throwable) {
+                DecodeResult(success = false, error = ze.message, decoderId = "ZXing-Fallback")
+            }
+            if (zxResult.success && zxResult.text == expectedContent) {
+                decodeResult = zxResult
             }
         }
+
+        // Multi-resolution pass: High-frequency subpixel noise (e.g. 3x3 resample dots at 1024-2048px)
+        // can distract edge detectors. Downscaling to 512px box-filters subpixels into smooth module densities,
+        // mirroring real phone cameras held at reading distance.
+        if ((!decodeResult.success || decodeResult.text != expectedContent) && (bitmap.width > 512 || bitmap.height > 512)) {
+            val downscaled = try {
+                Bitmap.createScaledBitmap(bitmap, 512, 512, true)
+            } catch (_: Throwable) { null }
+            if (downscaled != null) {
+                try {
+                    val zxScaled = zxingDecoder.decode(downscaled)
+                    if (zxScaled.success && zxScaled.text == expectedContent) {
+                        decodeResult = zxScaled
+                    } else {
+                        val mlScaled = (primaryDecoder ?: mlKitDecoder).decode(downscaled)
+                        if (mlScaled.success && mlScaled.text == expectedContent) {
+                            decodeResult = mlScaled
+                        }
+                    }
+                } catch (_: Throwable) {
+                    // Ignore scaling decode errors
+                } finally {
+                    if (downscaled != bitmap) {
+                        downscaled.recycle()
+                    }
+                }
+            }
+        }
+
         val decodeMatches = decodeResult.success && decodeResult.text == expectedContent
 
         // Compile warnings & repair suggestions
         val warnings = mutableListOf<String>()
         val suggestions = mutableListOf<RepairReason>()
 
-        if (!quietZoneReport.hasFourModuleMargin) {
-            warnings.add("Quiet zone is less than the standard 4 modules margin.")
-            suggestions.add(RepairReason.RESTORE_QUIET_ZONE)
+        if (design.style == QrStyle.IMAGE_RESAMPLE) {
+            if (quietZone < 1) {
+                warnings.add("Quiet zone is less than the required 1 module margin for artistic QR.")
+                suggestions.add(RepairReason.RESTORE_QUIET_ZONE)
+            }
+        } else {
+            if (!quietZoneReport.hasFourModuleMargin) {
+                warnings.add("Quiet zone is less than the standard 4 modules margin.")
+                suggestions.add(RepairReason.RESTORE_QUIET_ZONE)
+            }
         }
 
         if (!contrastReport.isContrastAdequate) {
             warnings.add("Low luminance separation (${String.format("%.2f", contrastReport.separation)}); modules may blend into background.")
-            suggestions.add(RepairReason.INCREASE_CONTRAST)
+            if (!decodeMatches) {
+                suggestions.add(RepairReason.INCREASE_CONTRAST)
+            }
         }
 
         if (!finderReport.findersIntact || !finderReport.separatorsClear) {
             warnings.add("Finder patterns or separators may be distorted by artistic styling.")
-            suggestions.add(RepairReason.RESTORE_FINDER_GEOMETRY)
+            if (!decodeMatches) {
+                suggestions.add(RepairReason.RESTORE_FINDER_GEOMETRY)
+            }
         }
 
         if (logoReport.hasProtectedOverlap) {
@@ -184,11 +229,12 @@ object ScanabilityValidator {
             }
         }
 
-        val isScanReady = finderReport.findersIntact &&
-                finderReport.separatorsClear &&
-                !logoReport.hasProtectedOverlap &&
-                logoReport.isWithinErrorCorrectionCapacity &&
-                decodeMatches
+        val isScanReady = if (decodeMatches) {
+            // Decoded and verified by scanner engine! Only block if physical logo completely exceeds ECC recovery
+            !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
+        } else {
+            false
+        }
 
         return ScanabilityReport(
             isScanReady = isScanReady,
@@ -285,7 +331,8 @@ object ScanabilityValidator {
     private fun verifyFinderIntegrity(
         bitmap: Bitmap,
         geometry: QrGeometry,
-        matrix: QrMatrix
+        matrix: QrMatrix,
+        isResample: Boolean = false
     ): FinderIntegrityReport {
         val n = matrix.size
         val finderCenters = listOf(
@@ -300,55 +347,63 @@ object ScanabilityValidator {
         for ((fcCol, fcRow) in finderCenters) {
             val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow)
             // Center core MUST be dark
-            if (coreLum > 0.60f) {
+            if (coreLum > 0.65f) {
                 allIntact = false
                 break
             }
 
-            // Light ring (radius 2) should be lighter than core
-            val lightRingLums = listOf(
-                getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow),
-                getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow),
-                getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1)),
-                getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1))
-            )
-            val avgLightRing = lightRingLums.average().toFloat()
-            if (avgLightRing < coreLum || avgLightRing < 0.35f) {
-                allIntact = false
-                break
-            }
+            // In artistic resample QR, finders have a hollow transparent inner ring
+            // and continuous background behind separators. If isResample is true,
+            // we verify the core is dark without failing simply because a photo
+            // backdrop has non-white pixels in the transparent inner ring.
+            if (!isResample) {
+                // Light ring (radius 2) should be lighter than core
+                val lightRingLums = listOf(
+                    getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1)),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1))
+                )
+                val avgLightRing = lightRingLums.average().toFloat()
+                if (avgLightRing < coreLum || avgLightRing < 0.35f) {
+                    allIntact = false
+                    break
+                }
 
-            // Outer ring (radius 3) should be darker than light ring
-            val outerRingLums = listOf(
-                getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow),
-                getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow),
-                getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1)),
-                getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1))
-            )
-            val avgOuterRing = outerRingLums.average().toFloat()
-            if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
-                allIntact = false
-                break
+                // Outer ring (radius 3) should be darker than light ring
+                val outerRingLums = listOf(
+                    getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1)),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1))
+                )
+                val avgOuterRing = outerRingLums.average().toFloat()
+                if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
+                    allIntact = false
+                    break
+                }
             }
         }
 
-        // Check top-left separator modules
-        var separatorDarkCount = 0
-        var totalSeparatorSamples = 0
-        for (r in 0..7) {
-            if (7 < n && r < n) {
-                totalSeparatorSamples++
-                if (getModuleLuminance(bitmap, geometry, 7, r) < 0.40f) separatorDarkCount++
+        // Check top-left separator modules (for non-resample styles)
+        if (!isResample) {
+            var separatorDarkCount = 0
+            var totalSeparatorSamples = 0
+            for (r in 0..7) {
+                if (7 < n && r < n) {
+                    totalSeparatorSamples++
+                    if (getModuleLuminance(bitmap, geometry, 7, r) < 0.40f) separatorDarkCount++
+                }
             }
-        }
-        for (c in 0..7) {
-            if (c < n && 7 < n) {
-                totalSeparatorSamples++
-                if (getModuleLuminance(bitmap, geometry, c, 7) < 0.40f) separatorDarkCount++
+            for (c in 0..7) {
+                if (c < n && 7 < n) {
+                    totalSeparatorSamples++
+                    if (getModuleLuminance(bitmap, geometry, c, 7) < 0.40f) separatorDarkCount++
+                }
             }
-        }
-        if (totalSeparatorSamples > 0 && separatorDarkCount.toFloat() / totalSeparatorSamples > 0.35f) {
-            separatorsClear = false
+            if (totalSeparatorSamples > 0 && separatorDarkCount.toFloat() / totalSeparatorSamples > 0.35f) {
+                separatorsClear = false
+            }
         }
 
         return FinderIntegrityReport(

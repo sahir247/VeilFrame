@@ -29,6 +29,7 @@ enum class ErrorCorrectionChoice {
 }
 
 enum class ModuleShape {
+    NONE,
     SQUARE,
     ROUNDED,
     CIRCLE,
@@ -165,13 +166,15 @@ data class ModuleStyle(
 data class TimingStyle(
     val shape: ModuleShape = ModuleShape.ROUNDED,
     val color: Int? = null,
-    val scale: Float = 1.0f
+    val scale: Float = 1.0f,
+    val onlyWhite: Boolean = false
 )
 
 data class AlignmentStyle(
     val shape: ModuleShape = ModuleShape.ROUNDED,
     val color: Int? = null,
-    val scale: Float = 1.0f
+    val scale: Float = 1.0f,
+    val onlyWhite: Boolean = false
 )
 
 data class EyeStyle(

@@ -34,12 +34,16 @@ object ArtisticResampleProfile {
      * full behavioral and visual alignment across Canvas, SVG, and export pipelines.
      */
     fun applyProfile(design: QrDesign): QrDesign {
+        val timingShape = if (design.timingStyle.shape == ModuleShape.NONE) ModuleShape.NONE else DEFAULT_TIMING_SHAPE
+        val alignShape = if (design.alignmentStyle.shape == ModuleShape.NONE) ModuleShape.NONE else DEFAULT_ALIGNMENT_SHAPE
         return design.copy(
             quietZoneModules = DEFAULT_QUIET_ZONE_MODULES,
             explicitQuietZone = design.explicitQuietZone ?: DEFAULT_QUIET_ZONE_MODULES,
-            timingStyle = design.timingStyle.copy(shape = DEFAULT_TIMING_SHAPE),
-            alignmentStyle = design.alignmentStyle.copy(shape = DEFAULT_ALIGNMENT_SHAPE),
-            resampleStyle = design.resampleStyle.copy(useSourceAsBackdrop = true)
+            timingStyle = design.timingStyle.copy(shape = timingShape),
+            alignmentStyle = design.alignmentStyle.copy(shape = alignShape),
+            resampleStyle = design.resampleStyle.copy(
+                useSourceAsBackdrop = design.resampleStyle.useSourceAsBackdrop
+            )
         )
     }
 }

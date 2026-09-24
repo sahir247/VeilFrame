@@ -76,7 +76,8 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                     matrix = matrix,
                     source = sourceBitmap,
                     style = design.imageSource,
-                    seed = design.resampleStyle.seed
+                    seed = design.resampleStyle.seed,
+                    policy = ArtisticResamplePolicy.from(design)
                 ) { col, row, subX, subY, _ ->
                     val rect = SubpixelGeometry.computeCanvasRect(
                         col = col,

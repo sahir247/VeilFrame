@@ -1,6 +1,10 @@
 package com.veilframe.app.qr.renderer
 
+import com.veilframe.app.qr.model.AlignmentStyle
+import com.veilframe.app.qr.model.ModuleShape
+import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.TimingStyle
 
 /**
  * Defines the functional suppression and center-anchor emission policies for subpixel-based
@@ -28,20 +32,74 @@ interface ResamplePolicy {
  * Suppression rules:
  * - Finder areas: 8x8 module area (24x24 subpixel units) at each position corner.
  * - Timing patterns: Row 6 and Column 6 between finders (modules 8 until size - 8).
+ *   When [timingStyle.shape] is [ModuleShape.NONE], light timing modules are sampled.
  * - Alignment patterns: 5x5 module area around alignment centers (Version >= 2).
+ *   When [alignmentStyle.shape] is [ModuleShape.NONE], light alignment modules are sampled.
  * - Format & Version information: Explicitly NOT suppressed. Traversed just like data modules,
  *   emitting center subpixel anchors for dark bits while allowing stochastic photo dithering around them.
  */
-object ArtisticResamplePolicy : ResamplePolicy {
+open class ArtisticResamplePolicy(
+    val timingStyle: TimingStyle = TimingStyle(shape = ModuleShape.SQUARE),
+    val alignmentStyle: AlignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE)
+) : ResamplePolicy {
 
     override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean {
         val col = subX / 3
         val row = subY / 3
-        return !ArtisticResampleFunctionalMask.isExcluded(col, row, matrix.size, matrix.version)
+        val isDark = matrix.isDark(col, row)
+        return !ArtisticResampleFunctionalMask.isExcluded(
+            col = col,
+            row = row,
+            size = matrix.size,
+            version = matrix.version,
+            timingShape = timingStyle.shape,
+            alignmentShape = alignmentStyle.shape,
+            isDark = isDark
+        )
     }
 
     override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean {
         if (!matrix.isDark(col, row)) return false
-        return !ArtisticResampleFunctionalMask.isExcluded(col, row, matrix.size, matrix.version)
+        // Finders never emit data center anchors (they are drawn as full finder eyes)
+        if (ArtisticResampleFunctionalMask.isFinderArea(col, row, matrix.size)) return false
+
+        // Timing modules: when timing style is NONE or onlyWhite, dedicated timing rendering is skipped,
+        // so dark timing modules emit center anchors through the subpixel engine.
+        // Otherwise (default), dedicated timing renderer draws them, so anchor emission is suppressed.
+        if (ArtisticResampleFunctionalMask.isTimingArea(col, row, matrix.size)) {
+            return timingStyle.shape == ModuleShape.NONE || timingStyle.onlyWhite
+        }
+
+        // Alignment modules: emit center anchors only when dedicated alignment renderer is skipped.
+        if (matrix.version >= 2 && ArtisticResampleFunctionalMask.isAlignmentArea(col, row, matrix.version)) {
+            return alignmentStyle.shape == ModuleShape.NONE || alignmentStyle.onlyWhite
+        }
+
+        return !ArtisticResampleFunctionalMask.isExcluded(
+            col = col,
+            row = row,
+            size = matrix.size,
+            version = matrix.version,
+            timingShape = timingStyle.shape,
+            alignmentShape = alignmentStyle.shape,
+            isDark = true
+        )
+    }
+
+    companion object : ResamplePolicy {
+        private val DEFAULT = ArtisticResamplePolicy()
+
+        override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean =
+            DEFAULT.shouldSample(matrix, subX, subY)
+
+        override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean =
+            DEFAULT.shouldDrawAnchor(matrix, col, row)
+
+        fun from(design: QrDesign): ArtisticResamplePolicy {
+            return ArtisticResamplePolicy(
+                timingStyle = design.timingStyle,
+                alignmentStyle = design.alignmentStyle
+            )
+        }
     }
 }

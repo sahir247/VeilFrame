@@ -252,7 +252,8 @@ object SvgExporter {
                     matrix = matrix,
                     pixelSource = resolvedResampleSource,
                     style = design.imageSource,
-                    seed = design.resampleStyle.seed
+                    seed = design.resampleStyle.seed,
+                    policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy.from(design)
                 ) { col, row, subX, subY, _ ->
                     val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
                         col = col,
@@ -279,6 +280,7 @@ object SvgExporter {
                     val x = col + qz
                     val y = row + qz
                     if (role == QrModuleRole.TIMING) {
+                        if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) continue
                         val offset = (1.0 - timingScale) / 2.0
                         val mx = x + offset
                         val my = y + offset
@@ -291,6 +293,7 @@ object SvgExporter {
                         )
                         sb.append("""  $elem""").append("\n")
                     } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                        if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) continue
                         val offset = (1.0 - alignScale) / 2.0
                         val mx = x + offset
                         val my = y + offset
@@ -334,6 +337,7 @@ object SvgExporter {
                         val x = col + qz
                         val y = row + qz
                         if (role == QrModuleRole.TIMING) {
+                            if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) continue
                             val offset = (1.0 - timingScale) / 2.0
                             val mx = x + offset
                             val my = y + offset
@@ -346,6 +350,7 @@ object SvgExporter {
                             )
                             sb.append("""  $elem""").append("\n")
                         } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                            if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) continue
                             val offset = (1.0 - alignScale) / 2.0
                             val mx = x + offset
                             val my = y + offset
@@ -429,6 +434,13 @@ object SvgExporter {
 
                     // Per-zone color override: Timing, Alignment, or Sampled Image
                     val role = matrix.roleAt(col, row)
+                    if (role == QrModuleRole.TIMING && (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite)) {
+                        continue
+                    }
+                    if ((role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) &&
+                        (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite)) {
+                        continue
+                    }
                     val isSampled = design.moduleStyle.fill == ModuleFill.IMAGE_SAMPLED || design.imageFillMode || design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
                     val fill = when {
                         role == QrModuleRole.TIMING && timingHex != null -> timingHex

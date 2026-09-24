@@ -93,6 +93,7 @@ class BasicRenderer : BaseQrRenderer() {
         val w = rect.width()
 
         when (shape) {
+            ModuleShape.NONE -> return
             ModuleShape.SQUARE -> {
                 canvas.drawRect(rect, paint)
             }

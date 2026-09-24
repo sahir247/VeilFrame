@@ -97,6 +97,40 @@ class ZxingQrDecoder : QrDecoder {
                 latencyMs = latency,
                 decoderId = id
             )
+        } catch (_: Exception) {
+            reader.reset()
+        }
+
+        // Pass 3: Inverted HybridBinarizer (dark backdrop or inverted luminance)
+        try {
+            val invertedSource = source.invert()
+            val binaryBitmap = BinaryBitmap(HybridBinarizer(invertedSource))
+            val result = reader.decodeWithState(binaryBitmap)
+            reader.reset()
+            val latency = System.currentTimeMillis() - startTime
+            return DecodeResult(
+                success = true,
+                text = result.text,
+                latencyMs = latency,
+                decoderId = id
+            )
+        } catch (_: Exception) {
+            reader.reset()
+        }
+
+        // Pass 4: Inverted GlobalHistogramBinarizer
+        try {
+            val invertedSource = source.invert()
+            val binaryBitmap = BinaryBitmap(GlobalHistogramBinarizer(invertedSource))
+            val result = reader.decodeWithState(binaryBitmap)
+            reader.reset()
+            val latency = System.currentTimeMillis() - startTime
+            return DecodeResult(
+                success = true,
+                text = result.text,
+                latencyMs = latency,
+                decoderId = id
+            )
         } catch (e: Exception) {
             reader.reset()
             val latency = System.currentTimeMillis() - startTime

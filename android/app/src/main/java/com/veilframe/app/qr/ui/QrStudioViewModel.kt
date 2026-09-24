@@ -293,7 +293,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         // Staged preview pipeline: 512px during interactive editor preview, full s.outputSize for export
         val effectiveSize = if (isPreview) minOf(s.outputSize, 512) else s.outputSize
 
-        return QrDesign(
+        val baseDesign = QrDesign(
             correction = s.ecChoice,
             moduleStyle = ModuleStyle(
                 shape = moduleShape,
@@ -359,6 +359,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 backdropBlendMode = BackdropBlendMode.NORMAL
             )
         )
+        return if (s.style == QrStyle.IMAGE_RESAMPLE) {
+            com.veilframe.app.qr.renderer.ArtisticResampleProfile.applyProfile(baseDesign)
+        } else {
+            baseDesign
+        }
     }
 
     fun saveToGallery() {

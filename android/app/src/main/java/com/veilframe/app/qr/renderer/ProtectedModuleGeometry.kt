@@ -23,6 +23,7 @@ object ProtectedModuleGeometry {
         paint: Paint
     ) {
         when (shape) {
+            ModuleShape.NONE -> return
             ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE -> {
                 val r = (minOf(rect.width(), rect.height()) / 2f) * (if (shape == ModuleShape.DOT) 0.75f else 1.0f)
                 canvas.drawCircle(rect.centerX(), rect.centerY(), r, paint)
@@ -72,6 +73,7 @@ object ProtectedModuleGeometry {
         fill: String
     ): String {
         return when (shape) {
+            ModuleShape.NONE -> ""
             ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE -> {
                 val cx = x + size / 2.0
                 val cy = y + size / 2.0

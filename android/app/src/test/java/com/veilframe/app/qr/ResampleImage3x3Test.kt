@@ -9,6 +9,7 @@ import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.renderer.*
+import com.veilframe.app.qr.validation.*
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -724,6 +725,187 @@ class ResampleImage3x3Test {
             "SVG must render backdrop tint with matching alpha opacity",
             svg.contains("""fill="#FF0000" opacity="0.50"""")
         )
+    }
+
+    @Test
+    fun testAutoRepairQuietZoneAndErrorCorrectionParity() {
+        val initialDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            quietZoneModules = 1,
+            explicitQuietZone = 1,
+            correction = ErrorCorrectionChoice.L
+        )
+
+        val reportWithQuietZone = ScanabilityReport(
+            isScanReady = false,
+            quietZone = QuietZoneReport(hasFourModuleMargin = false, quietZoneModules = 1),
+            contrast = ContrastReport(0f, 0f, 1f, 1f, 1f, true),
+            finders = FinderIntegrityReport(true, true),
+            logo = LogoOcclusionReport(false, 0, 0f, true),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(false),
+            errorCorrection = ErrorCorrectionLevel.L,
+            warnings = listOf("Quiet zone is less than 4 modules"),
+            repairSuggestions = listOf(RepairReason.RESTORE_QUIET_ZONE)
+        )
+
+        val repairQuietZoneResult = AutoRepairEngine.repair(
+            currentDesign = initialDesign,
+            report = reportWithQuietZone,
+            content = "https://veilframe.app/repair_test"
+        )
+
+        // Invariant: Both quietZoneModules and explicitQuietZone must be restored to 4
+        assertEquals(4, repairQuietZoneResult.repairedDesign.quietZoneModules)
+        assertEquals(4, repairQuietZoneResult.repairedDesign.explicitQuietZone)
+        assertTrue(repairQuietZoneResult.changesApplied.contains("Restored 4-module quiet zone"))
+
+        // Test error correction elevation through unified generation mode
+        val reportWithEc = ScanabilityReport(
+            isScanReady = false,
+            quietZone = QuietZoneReport(true, 4),
+            contrast = ContrastReport(0f, 0f, 1f, 1f, 1f, true),
+            finders = FinderIntegrityReport(true, true),
+            logo = LogoOcclusionReport(false, 0, 0f, false),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(false),
+            errorCorrection = ErrorCorrectionLevel.L,
+            warnings = listOf("Elevate ECC"),
+            repairSuggestions = listOf(RepairReason.ELEVATE_ERROR_CORRECTION)
+        )
+
+        val repairEcResult = AutoRepairEngine.repair(
+            currentDesign = initialDesign,
+            report = reportWithEc,
+            content = "https://veilframe.app/repair_test"
+        )
+
+        assertEquals(ErrorCorrectionChoice.M, repairEcResult.repairedDesign.correction)
+        assertTrue(repairEcResult.changesApplied.any { it.contains("Elevated error correction level") })
+    }
+
+    @Test
+    fun testTimingAndAlignmentNoneAndOnlyWhiteSemantics() {
+        val matrix = QrMatrix("https://veilframe.app/timing_test", ErrorCorrectionLevel.M)
+        val n = matrix.size
+
+        // 1. When timing shape is NONE:
+        val noneTimingPolicy = ArtisticResamplePolicy(
+            timingStyle = TimingStyle(shape = ModuleShape.NONE),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.NONE)
+        )
+
+        // Find a light timing module on row 6
+        var foundLightTimingCol = -1
+        var foundDarkTimingCol = -1
+        for (col in 8 until (n - 8)) {
+            if (!matrix.isDark(col, 6) && foundLightTimingCol == -1) {
+                foundLightTimingCol = col
+            }
+            if (matrix.isDark(col, 6) && foundDarkTimingCol == -1) {
+                foundDarkTimingCol = col
+            }
+        }
+        assertTrue("Must find a light timing module", foundLightTimingCol != -1)
+        assertTrue("Must find a dark timing module", foundDarkTimingCol != -1)
+
+        // In NONE mode: light timing cells are NOT excluded from stochastic sampling!
+        val lightTimingSx = 3 * foundLightTimingCol + 0
+        val lightTimingSy = 3 * 6 + 0
+        assertTrue(
+            "Light timing module subpixel must be sampled when timing style is NONE",
+            noneTimingPolicy.shouldSample(matrix, lightTimingSx, lightTimingSy)
+        )
+
+        // In NONE mode: dark timing modules still emit center anchor
+        assertTrue(
+            "Dark timing module must emit center anchor when timing style is NONE",
+            noneTimingPolicy.shouldDrawAnchor(matrix, foundDarkTimingCol, 6)
+        )
+
+        // 2. When timing style is default SQUARE:
+        val defaultPolicy = ArtisticResamplePolicy(
+            timingStyle = TimingStyle(shape = ModuleShape.SQUARE),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE)
+        )
+
+        // Light timing cells are excluded in default policy (timing renderer owns the entire cell)
+        assertFalse(
+            "Timing module subpixel must NOT be sampled in default SQUARE timing mode",
+            defaultPolicy.shouldSample(matrix, lightTimingSx, lightTimingSy)
+        )
+        assertFalse(
+            "Timing module must NOT emit resample anchor in default SQUARE timing mode (renderer handles it)",
+            defaultPolicy.shouldDrawAnchor(matrix, foundDarkTimingCol, 6)
+        )
+
+        // 3. When timing is onlyWhite:
+        val onlyWhitePolicy = ArtisticResamplePolicy(
+            timingStyle = TimingStyle(shape = ModuleShape.SQUARE, onlyWhite = true)
+        )
+        assertTrue(
+            "Dark timing module must emit center anchor when onlyWhite is true",
+            onlyWhitePolicy.shouldDrawAnchor(matrix, foundDarkTimingCol, 6)
+        )
+    }
+
+    @Test
+    fun testArtisticProfileCentralizationInProduction() {
+        // When applying profile, quiet zone is set to 1 and explicitQuietZone is set to 1
+        val rawDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            quietZoneModules = 4,
+            explicitQuietZone = null,
+            timingStyle = TimingStyle(shape = ModuleShape.ROUNDED),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.ROUNDED)
+        )
+
+        val profiled = ArtisticResampleProfile.applyProfile(rawDesign)
+        assertEquals(1, profiled.quietZoneModules)
+        assertEquals(1, profiled.explicitQuietZone)
+        assertEquals(ModuleShape.SQUARE, profiled.timingStyle.shape)
+        assertEquals(ModuleShape.SQUARE, profiled.alignmentStyle.shape)
+
+        // If user explicitly configured NONE, NONE is preserved
+        val noneDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingStyle = TimingStyle(shape = ModuleShape.NONE),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.NONE)
+        )
+        val profiledNone = ArtisticResampleProfile.applyProfile(noneDesign)
+        assertEquals(ModuleShape.NONE, profiledNone.timingStyle.shape)
+        assertEquals(ModuleShape.NONE, profiledNone.alignmentStyle.shape)
+    }
+
+    @Test
+    fun testSvgTimingAndAlignmentSuppressionOnNoneOrOnlyWhite() {
+        val matrix = QrMatrix("https://veilframe.app/svg_timing_test", ErrorCorrectionLevel.H)
+        val pixelSource = ArrayPixelSource(64, 64, IntArray(64 * 64) { 0xFF808080.toInt() })
+
+        // Default: SvgExporter emits dedicated timing and alignment rects
+        val defaultDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingStyle = TimingStyle(shape = ModuleShape.SQUARE),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE)
+        )
+        val defaultSvg = SvgExporter.generateSvg(matrix, defaultDesign, pixelSource)
+
+        // NONE mode: SvgExporter skips custom timing/alignment shapes, allowing stochastic dots in light cells
+        val noneDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingStyle = TimingStyle(shape = ModuleShape.NONE),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.NONE)
+        )
+        val noneSvg = SvgExporter.generateSvg(matrix, noneDesign, pixelSource)
+        assertNotEquals(defaultSvg, noneSvg)
+
+        // onlyWhite mode: SvgExporter skips custom colored timing/alignment shapes, without dithering light cells
+        val onlyWhiteDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingStyle = TimingStyle(shape = ModuleShape.SQUARE, onlyWhite = true),
+            alignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE, onlyWhite = true)
+        )
+        val onlyWhiteSvg = SvgExporter.generateSvg(matrix, onlyWhiteDesign, pixelSource)
+        assertNotEquals(defaultSvg, onlyWhiteSvg)
+        assertNotEquals(noneSvg, onlyWhiteSvg)
     }
 }
 

@@ -32,8 +32,8 @@ object AutoRepairEngine {
         for (reason in report.repairSuggestions) {
             when (reason) {
                 RepairReason.RESTORE_QUIET_ZONE -> {
-                    if (design.quietZoneModules < 4) {
-                        design = design.copy(quietZoneModules = 4)
+                    if (design.quietZoneModules < 4 || (design.explicitQuietZone != null && design.explicitQuietZone < 4)) {
+                        design = design.copy(quietZoneModules = 4, explicitQuietZone = 4)
                         changes.add("Restored 4-module quiet zone")
                     }
                 }
@@ -102,16 +102,12 @@ object AutoRepairEngine {
                         design = design.copy(correction = nextLevel)
                         changes.add("Elevated error correction level to $nextLevel")
 
-                        // Verify re-encoding with new error correction level
-                        val zxingLevel = when (nextLevel) {
-                            ErrorCorrectionChoice.L -> ErrorCorrectionLevel.L
-                            ErrorCorrectionChoice.M -> ErrorCorrectionLevel.M
-                            ErrorCorrectionChoice.Q -> ErrorCorrectionLevel.Q
-                            ErrorCorrectionChoice.H -> ErrorCorrectionLevel.H
-                            ErrorCorrectionChoice.AUTO -> ErrorCorrectionLevel.H
-                        }
-                        // Re-encode to validate new matrix sizing
-                        QrEncoder.encode(content, zxingLevel)
+                        // Re-encode through the unified generator abstraction to validate new matrix sizing
+                        com.veilframe.app.qr.QrGenerator.generateMatrix(
+                            content = content,
+                            design = design,
+                            mode = design.recommendedGenerationMode
+                        )
                     }
                 }
             }

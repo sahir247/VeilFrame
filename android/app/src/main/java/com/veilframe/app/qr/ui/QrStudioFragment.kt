@@ -706,9 +706,17 @@ class QrGenerateTabFragment : Fragment() {
                         sourceContrastLabel.text = String.format(java.util.Locale.US, "Contrast: %.2f", state.sourceImageContrast)
                         sourceExposureSlider.value = state.sourceImageExposure
                         sourceExposureLabel.text = String.format(java.util.Locale.US, "Exposure: %.2f", state.sourceImageExposure)
-                        val opacityPct = (state.sourceImageOpacity * 100f).toInt().coerceIn(5, 100)
-                        sourceOpacitySlider.value = opacityPct.toFloat()
-                        sourceOpacityLabel.text = "Opacity: $opacityPct%"
+                        val isResample = state.style == QrStyle.IMAGE_RESAMPLE
+                        if (isResample) {
+                            sourceOpacitySlider.visibility = View.GONE
+                            sourceOpacityLabel.visibility = View.GONE
+                        } else {
+                            sourceOpacitySlider.visibility = View.VISIBLE
+                            sourceOpacityLabel.visibility = View.VISIBLE
+                            val opacityPct = (state.sourceImageOpacity * 100f).toInt().coerceIn(5, 100)
+                            sourceOpacitySlider.value = opacityPct.toFloat()
+                            sourceOpacityLabel.text = "Opacity: $opacityPct%"
+                        }
 
                         if (resampleBackdropSwitch.isChecked != state.resampleUseSourceAsBackdrop) {
                             resampleBackdropSwitch.isChecked = state.resampleUseSourceAsBackdrop

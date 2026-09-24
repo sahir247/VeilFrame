@@ -133,6 +133,9 @@ abstract class BaseQrRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
+        if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) {
+            return
+        }
         val timingColor = design.timingStyle.color ?: design.timingColor ?: design.palette.foreground
         val paint = context.obtainFill(timingColor)
         val n = matrix.size
@@ -168,6 +171,9 @@ abstract class BaseQrRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
+        if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) {
+            return
+        }
         val alignColor = design.alignmentStyle.color ?: design.alignmentColor ?: design.palette.foreground
         val paint = context.obtainFill(alignColor)
         val n = matrix.size

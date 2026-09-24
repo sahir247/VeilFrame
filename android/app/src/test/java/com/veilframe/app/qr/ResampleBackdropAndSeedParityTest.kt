@@ -40,17 +40,17 @@ class ResampleBackdropAndSeedParityTest {
         assertEquals(4, designDefault.effectiveQuietZone)
 
         // When explicitQuietZone is explicitly provided (e.g. 0 or 1), it takes precedence
-        val designEfZero = QrDesign(
+        val designExplicitZero = QrDesign(
             quietZoneModules = 4,
             explicitQuietZone = 0
         )
-        assertEquals(0, designEfZero.effectiveQuietZone)
+        assertEquals(0, designExplicitZero.effectiveQuietZone)
 
-        val designEfOne = QrDesign(
+        val designExplicitOne = QrDesign(
             quietZoneModules = 4,
             explicitQuietZone = 1
         )
-        assertEquals(1, designEfOne.effectiveQuietZone)
+        assertEquals(1, designExplicitOne.effectiveQuietZone)
     }
 
     @Test
@@ -157,4 +157,24 @@ class ResampleBackdropAndSeedParityTest {
             }
         }
     }
+
+    @Test
+    fun testScanabilityResampleQuietZoneRules() {
+        val resampleDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            quietZoneModules = 1,
+            explicitQuietZone = 1
+        )
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/QZ_RULES", ErrorCorrectionLevel.H)
+        val result = QrGenerator.generateWithResult("HTTPS://VEILFRAME.APP/QZ_RULES", resampleDesign)
+        assertTrue(result is QrRenderResult.Success)
+        val report = (result as QrRenderResult.Success).report
+
+        // In IMAGE_RESAMPLE, quiet zone of 1 module must NOT trigger RESTORE_QUIET_ZONE repair reason
+        assertFalse(
+            "IMAGE_RESAMPLE with 1-module quiet zone must not suggest RESTORE_QUIET_ZONE",
+            report.repairSuggestions.contains(com.veilframe.app.qr.validation.RepairReason.RESTORE_QUIET_ZONE)
+        )
+    }
 }
+
