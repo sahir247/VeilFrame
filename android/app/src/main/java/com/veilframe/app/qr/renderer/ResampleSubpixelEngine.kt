@@ -67,30 +67,25 @@ object ResampleSubpixelEngine {
     /**
      * Traverses the QR matrix and emits all active subpixels into [sink] using an abstract [PixelSource].
      *
-     * Protected modules (where [QrMatrix.isProtected] returns true) are skipped to guarantee
-     * structural integrity. For dark data modules, the center anchor is always emitted.
+     * Protected modules and functional regions are governed by [policy].
+     * For dark data modules, the center anchor is emitted if permitted by [policy.shouldDrawAnchor].
      */
     fun traverseSubpixels(
         matrix: QrMatrix,
         pixelSource: PixelSource?,
         style: ImageSourceStyle,
         seed: Long = 42L,
+        policy: ResamplePolicy = ArtisticResamplePolicy,
         sink: SubpixelSink
     ) {
         val n = matrix.size
 
         for (col in 0 until n) {
             for (row in 0 until n) {
-                // Functional suppression: 8x8 finders, timing, alignment are excluded from stochastic dithering;
-                // Format and version information participate in stochastic subpixel traversal.
-                if (ArtisticResampleFunctionalMask.isExcluded(col, row, n, matrix.version)) continue
-
-                val isDark = matrix.isDark(col, row)
-
                 // 1. Center subpixel (dx=1, dy=1): Reserved for actual QR data bit
                 val centerSubX = 3 * col + 1
                 val centerSubY = 3 * row + 1
-                if (isDark) {
+                if (policy.shouldDrawAnchor(matrix, col, row)) {
                     sink.emit(col, row, centerSubX, centerSubY, isCenterAnchor = true)
                 }
 
@@ -102,6 +97,8 @@ object ResampleSubpixelEngine {
 
                             val sx = 3 * col + dx
                             val sy = 3 * row + dy
+
+                            if (!policy.shouldSample(matrix, sx, sy)) continue
 
                             val u = (sx + 0.5f) / (3 * n).toFloat()
                             val v = (sy + 0.5f) / (3 * n).toFloat()
@@ -144,11 +141,12 @@ object ResampleSubpixelEngine {
         source: Bitmap?,
         style: ImageSourceStyle,
         seed: Long = 42L,
+        policy: ResamplePolicy = ArtisticResamplePolicy,
         sink: SubpixelSink
     ) {
         val pixelSource = if (source != null && !source.isRecycled) {
             BitmapPixelSource(source)
         } else null
-        traverseSubpixels(matrix, pixelSource, style, seed, sink)
+        traverseSubpixels(matrix, pixelSource, style, seed, policy, sink)
     }
 }

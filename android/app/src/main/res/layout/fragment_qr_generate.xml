@@ -1042,7 +1042,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Backdrop Opacity: 85%"
+                        android:text="Backdrop Opacity: 100%"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.slider.Slider
@@ -1052,7 +1052,7 @@
                         android:valueFrom="0"
                         android:valueTo="100"
                         android:stepSize="5"
-                        android:value="85" />
+                        android:value="100" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton

@@ -41,7 +41,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
         val resampleUseSourceAsBackdrop: Boolean = false,
-        val resampleBackdropOpacity: Float = 0.85f,
+        val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
         val bitmap: Bitmap? = null,
         val matrix: QrMatrix? = null,
@@ -321,7 +321,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 leftColor = 0x33000000,
                 rightColor = 0x99000000.toInt()
             ),
-            quietZoneModules = 4,
+            quietZoneModules = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else 4,
+            explicitQuietZone = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else null,
             outputSize = effectiveSize,
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,

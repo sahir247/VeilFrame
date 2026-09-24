@@ -519,4 +519,52 @@ class ResampleImage3x3Test {
             svg.contains("""viewBox="0 0 $expectedTotalSize $expectedTotalSize"""")
         )
     }
+
+    @Test
+    fun testArtisticResamplePolicyDecoupling() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/POLICY", ErrorCorrectionLevel.M)
+        val policy: ResamplePolicy = ArtisticResamplePolicy
+
+        // Finder area: (0, 0)
+        assertFalse("Finder subpixel must not be sampled", policy.shouldSample(matrix, 0, 0))
+        assertFalse("Finder module must not emit resample center anchor", policy.shouldDrawAnchor(matrix, 0, 0))
+
+        // Timing track: col 10, row 6
+        assertFalse("Timing track subpixel must not be sampled", policy.shouldSample(matrix, 30, 18))
+        assertFalse("Timing module must not emit resample center anchor", policy.shouldDrawAnchor(matrix, 10, 6))
+
+        // Data module: find a dark data module
+        var foundDarkDataCol = -1
+        var foundDarkDataRow = -1
+        for (col in 10 until matrix.size - 10) {
+            for (row in 10 until matrix.size - 10) {
+                if (matrix.isDark(col, row) && !ArtisticResampleFunctionalMask.isExcluded(col, row, matrix.size, matrix.version)) {
+                    foundDarkDataCol = col
+                    foundDarkDataRow = row
+                    break
+                }
+            }
+            if (foundDarkDataCol != -1) break
+        }
+
+        assertTrue("Must find at least one dark data module", foundDarkDataCol != -1)
+        assertTrue("Dark data module must draw center anchor", policy.shouldDrawAnchor(matrix, foundDarkDataCol, foundDarkDataRow))
+        assertTrue("Data subpixel must be eligible for sampling", policy.shouldSample(matrix, 3 * foundDarkDataCol, 3 * foundDarkDataRow))
+
+        // Test custom policy implementation to verify decoupling
+        val allowAllPolicy = object : ResamplePolicy {
+            override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int) = true
+            override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int) = matrix.isDark(col, row)
+        }
+        var anchorCount = 0
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = null,
+            style = ImageSourceStyle(),
+            policy = allowAllPolicy
+        ) { _, _, _, _, isCenterAnchor ->
+            if (isCenterAnchor) anchorCount++
+        }
+        assertTrue("Custom policy should emit anchors for all dark modules", anchorCount > 0)
+    }
 }
