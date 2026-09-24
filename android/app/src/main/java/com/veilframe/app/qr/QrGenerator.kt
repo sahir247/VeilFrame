@@ -40,6 +40,28 @@ sealed interface QrRenderResult {
 }
 
 /**
+ * Generation execution mode separating exact deterministic reference compatibility
+ * from production safe generation.
+ */
+enum class GenerationMode {
+    /**
+     * Exact EFQRCode compatibility mode:
+     * - Encodes with [com.veilframe.app.qr.encoder.ef.EfQrEncoder] (100% matrix identity with QRCodeSwift).
+     * - Bypasses parameter mutation or visual auto-repair.
+     * - Defaults to 0 quiet-zone modules per EF backdrop specifications.
+     */
+    EF_COMPATIBLE,
+
+    /**
+     * Production safety generation mode:
+     * - Encodes with standard ISO/ZXing encoder.
+     * - Enforces quiet zones and scanability validation.
+     * - Allows closed-loop auto-repair feedback.
+     */
+    SAFE
+}
+
+/**
  * Public entry point for QR code generation in VeilFrame.
  */
 object QrGenerator {
@@ -50,7 +72,8 @@ object QrGenerator {
      */
     fun generateWithResult(
         content: String,
-        design: QrDesign = QrDesign()
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = GenerationMode.SAFE
     ): QrRenderResult {
         if (content.isBlank()) {
             return QrRenderResult.Failure("QR content must not be blank")
@@ -63,15 +86,24 @@ object QrGenerator {
                 isAggressiveStyle = isAggressive
             )
 
-            val encoded = QrEncoder.encode(content, ecLevel)
-            val matrix = encoded.matrix
+            val matrix = if (mode == GenerationMode.EF_COMPATIBLE) {
+                com.veilframe.app.qr.encoder.ef.EfQrEncoder.encode(content, ecLevel).matrix
+            } else {
+                QrEncoder.encode(content, ecLevel).matrix
+            }
+
             val size = design.outputSize.coerceIn(256, 4096)
+            val quietZone = if (mode == GenerationMode.EF_COMPATIBLE) {
+                design.quietZoneModules ?: 0
+            } else {
+                design.quietZoneModules
+            }
 
             val geometry = QrGeometry(
                 matrixSize = matrix.size,
                 outputWidth = size,
                 outputHeight = size,
-                quietZoneModules = design.quietZoneModules
+                quietZoneModules = quietZone
             )
 
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -102,6 +134,14 @@ object QrGenerator {
             return QrRenderResult.Failure(t.message ?: "Failed to generate QR code", t)
         }
     }
+
+    /**
+     * Convenience entry point for generating deterministic, exact EFQRCode-compatible QR codes.
+     */
+    fun generateEfCompatible(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.EF_COMPATIBLE)
 
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.

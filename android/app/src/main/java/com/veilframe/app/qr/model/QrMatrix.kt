@@ -104,7 +104,7 @@ class QrMatrix(
      * Backward-compatible taxonomy mirroring EFQRCode's QRPointType.
      */
     enum class ModuleType {
-        DATA, POS_CENTER, POS_OTHER, ALIGN_CENTER, ALIGN_OTHER, TIMING
+        DATA, POS_CENTER, POS_OTHER, ALIGN_CENTER, ALIGN_OTHER, TIMING, FORMAT, VERSION
     }
 
     val ecLevel: ErrorCorrectionLevel get() = errorCorrection
@@ -150,17 +150,43 @@ class QrMatrix(
     /** True if the module is part of a protected functional pattern. */
     fun isProtected(col: Int, row: Int): Boolean = roleAt(col, row).isProtected
 
-    /** Classification query (backward compatible). */
-    fun typeAt(col: Int, row: Int): ModuleType {
+    /**
+     * Exact 1:1 classification matching QRCodeSwift's [com.veilframe.app.qr.encoder.ef.QRPointType].
+     * Specifically, [com.veilframe.app.qr.encoder.ef.QRPointType.POS_CENTER] is strictly the 1-module center of each finder.
+     */
+    fun efPointTypeAt(col: Int, row: Int): com.veilframe.app.qr.encoder.ef.QRPointType {
+        if (col !in 0 until size || row !in 0 until size) return com.veilframe.app.qr.encoder.ef.QRPointType.DATA
+
+        val isFinderCenter = (col == 3 && row == 3) ||
+                (col == 3 && row == size - 4) ||
+                (col == size - 4 && row == 3)
+        if (isFinderCenter) return com.veilframe.app.qr.encoder.ef.QRPointType.POS_CENTER
+
         return when (functionMask[col, row]) {
-            FunctionPatternType.FINDER_CORE -> ModuleType.POS_CENTER
+            FunctionPatternType.FINDER_CORE,
             FunctionPatternType.FINDER_LIGHT,
             FunctionPatternType.FINDER_OUTER,
-            FunctionPatternType.SEPARATOR -> ModuleType.POS_OTHER
-            FunctionPatternType.ALIGNMENT_CENTER -> ModuleType.ALIGN_CENTER
-            FunctionPatternType.ALIGNMENT_OTHER -> ModuleType.ALIGN_OTHER
-            FunctionPatternType.TIMING -> ModuleType.TIMING
-            else -> ModuleType.DATA
+            FunctionPatternType.SEPARATOR -> com.veilframe.app.qr.encoder.ef.QRPointType.POS_OTHER
+            FunctionPatternType.ALIGNMENT_CENTER -> com.veilframe.app.qr.encoder.ef.QRPointType.ALIGN_CENTER
+            FunctionPatternType.ALIGNMENT_OTHER -> com.veilframe.app.qr.encoder.ef.QRPointType.ALIGN_OTHER
+            FunctionPatternType.TIMING -> com.veilframe.app.qr.encoder.ef.QRPointType.TIMING
+            FunctionPatternType.FORMAT -> com.veilframe.app.qr.encoder.ef.QRPointType.FORMAT
+            FunctionPatternType.VERSION -> com.veilframe.app.qr.encoder.ef.QRPointType.VERSION
+            FunctionPatternType.DATA -> com.veilframe.app.qr.encoder.ef.QRPointType.DATA
+        }
+    }
+
+    /** Classification query (backward compatible). */
+    fun typeAt(col: Int, row: Int): ModuleType {
+        return when (efPointTypeAt(col, row)) {
+            com.veilframe.app.qr.encoder.ef.QRPointType.POS_CENTER -> ModuleType.POS_CENTER
+            com.veilframe.app.qr.encoder.ef.QRPointType.POS_OTHER -> ModuleType.POS_OTHER
+            com.veilframe.app.qr.encoder.ef.QRPointType.ALIGN_CENTER -> ModuleType.ALIGN_CENTER
+            com.veilframe.app.qr.encoder.ef.QRPointType.ALIGN_OTHER -> ModuleType.ALIGN_OTHER
+            com.veilframe.app.qr.encoder.ef.QRPointType.TIMING -> ModuleType.TIMING
+            com.veilframe.app.qr.encoder.ef.QRPointType.FORMAT -> ModuleType.FORMAT
+            com.veilframe.app.qr.encoder.ef.QRPointType.VERSION -> ModuleType.VERSION
+            com.veilframe.app.qr.encoder.ef.QRPointType.DATA -> ModuleType.DATA
         }
     }
 
