@@ -36,13 +36,11 @@ class LineRenderer : QrRenderer {
         }
     }
 
-    override fun render(
+    fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
-        canvas: Canvas,
-        geometry: QrGeometry,
-        context: RenderContext
-    ) {
+        geometry: QrGeometry
+    ): com.veilframe.app.qr.geometry.QrGeometryIr {
         val nCount = matrix.size
         val cs = geometry.moduleSize
         val ox = geometry.offsetX
@@ -52,6 +50,17 @@ class LineRenderer : QrRenderer {
         val posStyle = design.lineStyle.positionStyle
         val posSize = design.lineStyle.positionSize
 
+        val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
+        nodes.add(
+            com.veilframe.app.qr.geometry.RectNode(
+                x = 0f,
+                y = 0f,
+                width = geometry.outputWidth.toFloat(),
+                height = geometry.outputHeight.toFloat(),
+                fill = design.palette.background
+            )
+        )
+
         // 1. Draw finders via canonical EF position geometry
         val finderCenters = listOf(
             Pair(3, 3),
@@ -59,32 +68,22 @@ class LineRenderer : QrRenderer {
             Pair(3, nCount - 4)
         )
         for ((fx, fy) in finderCenters) {
-            EfPositionPatternGeometry.drawCanvas(
-                canvas = canvas,
-                x = fx,
-                y = fy,
-                moduleSize = cs,
-                offsetX = ox,
-                offsetY = oy,
-                style = posStyle,
-                size = posSize,
-                color = posColor
+            nodes.addAll(
+                EfPositionPatternGeometry.toIrNodes(
+                    x = fx,
+                    y = fy,
+                    moduleSize = cs,
+                    offsetX = ox,
+                    offsetY = oy,
+                    style = posStyle,
+                    size = posSize,
+                    color = posColor
+                )
             )
         }
 
         val thickness = max(0.05f, design.lineStyle.thicknessFraction)
         val lineColor = design.lineStyle.color ?: design.palette.foreground
-
-        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = lineColor
-            style = Paint.Style.STROKE
-            strokeWidth = thickness * cs
-            strokeCap = Paint.Cap.ROUND
-        }
-        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = lineColor
-            style = Paint.Style.FILL
-        }
 
         val available = Array(nCount) { BooleanArray(nCount) { true } }
         val ava2 = Array(nCount) { BooleanArray(nCount) { true } }
@@ -122,13 +121,22 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y + 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -152,13 +160,22 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + 0.5f) * cs
                                 val ly2 = oy + (y + end - 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -182,7 +199,12 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + 0.5f) * cs
                                 val ly2 = oy + (y + end - 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (x == 0 || (x > 0 && (!matrix.isDark(x - 1, y) || !ava2[x - 1][y]))) {
@@ -204,13 +226,22 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y + 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -235,7 +266,12 @@ class LineRenderer : QrRenderer {
                                     val ly1 = oy + (y + 0.5f) * cs
                                     val lx2 = ox + (x + 0.5f) * cs
                                     val ly2 = oy + (y + end - 0.5f) * cs
-                                    canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                    nodes.add(
+                                        com.veilframe.app.qr.geometry.LineNode(
+                                            x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                            strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                        )
+                                    )
                                 }
                             }
                         } else {
@@ -258,14 +294,23 @@ class LineRenderer : QrRenderer {
                                     val ly1 = oy + (y + 0.5f) * cs
                                     val lx2 = ox + (x + end - 0.5f) * cs
                                     val ly2 = oy + (y + 0.5f) * cs
-                                    canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                    nodes.add(
+                                        com.veilframe.app.qr.geometry.LineNode(
+                                            x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                            strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                        )
+                                    )
                                 }
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -289,13 +334,22 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y + end - 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -319,13 +373,22 @@ class LineRenderer : QrRenderer {
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y - end + 1.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, strokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         if (available[x][y]) {
                             val cx = ox + (x + 0.5f) * cs
                             val cy = oy + (y + 0.5f) * cs
-                            canvas.drawCircle(cx, cy, (thickness / 2f) * cs, fillPaint)
+                            nodes.add(
+                                com.veilframe.app.qr.geometry.CircleNode(
+                                    cx = cx, cy = cy, radius = (thickness / 2f) * cs, fill = lineColor
+                                )
+                            )
                         }
                     }
 
@@ -346,12 +409,16 @@ class LineRenderer : QrRenderer {
                                     ava2[x + i][y - i] = false
                                 }
                                 val sw = thickness / 2f * pseudoRandom(x, y, 1, 0.3f, 1.0f) * cs
-                                val xStrokePaint = Paint(strokePaint).apply { strokeWidth = sw }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y - end + 1.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, xStrokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = sw, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         // Diagonal 2: (x+i, y+i)
@@ -370,25 +437,49 @@ class LineRenderer : QrRenderer {
                                     available[x + i][y + i] = false
                                 }
                                 val sw = thickness / 2f * pseudoRandom(x, y, 2, 0.3f, 1.0f) * cs
-                                val xStrokePaint = Paint(strokePaint).apply { strokeWidth = sw }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
                                 val ly2 = oy + (y + end - 0.5f) * cs
-                                canvas.drawLine(lx1, ly1, lx2, ly2, xStrokePaint)
+                                nodes.add(
+                                    com.veilframe.app.qr.geometry.LineNode(
+                                        x1 = lx1, y1 = ly1, x2 = lx2, y2 = ly2,
+                                        strokeColor = lineColor, strokeWidth = sw, isRoundCap = true
+                                    )
+                                )
                             }
                         }
                         // Center dot
                         val r = 0.5f * pseudoRandom(x, y, 3, 0.33f, 0.9f) * cs
                         val cx = ox + (x + 0.5f) * cs
                         val cy = oy + (y + 0.5f) * cs
-                        canvas.drawCircle(cx, cy, r, fillPaint)
+                        nodes.add(
+                            com.veilframe.app.qr.geometry.CircleNode(
+                                cx = cx, cy = cy, radius = r, fill = lineColor
+                            )
+                        )
                     }
                     else -> {}
                 }
             }
         }
 
+        return com.veilframe.app.qr.geometry.QrGeometryIr(
+            width = geometry.outputWidth.toFloat(),
+            height = geometry.outputHeight.toFloat(),
+            rootNodes = nodes
+        )
+    }
+
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        val ir = generateGeometry(matrix, design, geometry)
+        com.veilframe.app.qr.geometry.IrCanvasRenderer.render(ir, canvas)
         drawLogo(canvas, design, geometry, context)
     }
 

@@ -36,13 +36,16 @@ object IrSvgRenderer {
                 sb.append(pad).append(String.format(Locale.US, "<rect x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"", node.x, node.y, node.width, node.height))
                 if (node.rx > 0f) sb.append(String.format(Locale.US, " rx=\"%.4f\"", node.rx))
                 if (node.ry > 0f) sb.append(String.format(Locale.US, " ry=\"%.4f\"", node.ry))
-                if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
+                if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
+                else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
                 else sb.append(" fill=\"none\"")
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
                     sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
                 }
-                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
+                if (node.alwaysEmitOpacity || node.opacity < 1f) {
+                    sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                }
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append("/>\n")
             }

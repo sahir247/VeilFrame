@@ -108,7 +108,9 @@ class FunctionPatternMask(val size: Int, val version: Int) {
                         for (dx in -2..2) {
                             val x = cx + dx
                             val y = cy + dy
-                            if (x in 0 until size && y in 0 until size && mask[x][y] == FunctionPatternType.DATA) {
+                            if (x in 0 until size && y in 0 until size &&
+                                (mask[x][y] == FunctionPatternType.DATA || mask[x][y] == FunctionPatternType.TIMING)
+                            ) {
                                 mask[x][y] = if (dx == 0 && dy == 0) {
                                     FunctionPatternType.ALIGNMENT_CENTER
                                 } else {
@@ -188,18 +190,7 @@ class FunctionPatternMask(val size: Int, val version: Int) {
     }
 
     private fun getAlignmentPatternCenters(version: Int): List<Int> {
-        if (version <= 1) return emptyList()
-        val first = 6
-        val last = 4 * version + 10
-        if (version == 2) return listOf(first, last)
-        val numSteps = version / 7 + 1
-        val step = ((last - first) + numSteps - 1) / numSteps
-        val positions = mutableListOf(first)
-        var cur = last
-        while (cur > first) {
-            positions.add(1, cur)
-            cur -= step
-        }
-        return positions.distinct().sorted()
+        if (version <= 1 || version > 40) return emptyList()
+        return com.veilframe.app.qr.encoder.ef.QRPatternLocator[version].toList()
     }
 }

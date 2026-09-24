@@ -32,6 +32,69 @@ object EfPositionPatternGeometry {
         return (x == 3 && y == 3) || (x == nCount - 4 && y == 3) || (x == 3 && y == nCount - 4)
     }
 
+    fun toIrNodes(
+        x: Int,
+        y: Int,
+        moduleSize: Float,
+        offsetX: Float,
+        offsetY: Float,
+        style: FinderStyle,
+        size: Float,
+        color: Int
+    ): List<com.veilframe.app.qr.geometry.QrGeometryNode> {
+        val cs = moduleSize
+        val ox = offsetX + x * cs
+        val oy = offsetY + y * cs
+        val cx = ox + cs * 0.5f
+        val cy = oy + cs * 0.5f
+
+        val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
+        when (style) {
+            FinderStyle.CLASSIC -> {
+                val left = ox - cs
+                val top = oy - cs
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(left, top, 3 * cs, 3 * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, stroke = color, strokeWidth = 1f * size * cs))
+            }
+            FinderStyle.CIRCLE -> {
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, stroke = color, strokeWidth = 1f * size * cs))
+            }
+            FinderStyle.ROUNDED -> {
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                val rx = 6f * cs * 0.25f
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, rx = rx, ry = rx, stroke = color, strokeWidth = 1f * size * cs))
+            }
+            FinderStyle.PLANETS -> {
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, stroke = color, strokeWidth = 0.15f * cs))
+                val satR = 0.5f * size * cs
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx + 3f * cs, cy, satR, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx - 3f * cs, cy, satR, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy + 3f * cs, satR, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy - 3f * cs, satR, fill = color))
+            }
+            FinderStyle.DSJ -> {
+                val widthValue = (3.0f - (1.0f - size)) * cs
+                val xTempValue = ox + (1.0f - size) / 2.0f * cs
+                val yTempValue = oy + (1.0f - size) / 2.0f * cs
+
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue - cs, widthValue, widthValue, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - 3f * cs, yTempValue - cs, size * cs, widthValue, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue + 3f * cs, yTempValue - cs, size * cs, widthValue, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue - 3f * cs, widthValue, size * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue + 3f * cs, widthValue, size * cs, fill = color))
+            }
+            else -> {
+                val left = ox - cs
+                val top = oy - cs
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(left, top, 3 * cs, 3 * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, stroke = color, strokeWidth = 1f * size * cs))
+            }
+        }
+        return nodes
+    }
+
     fun drawCanvas(
         canvas: Canvas,
         x: Int,

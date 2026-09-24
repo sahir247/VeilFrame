@@ -1,8 +1,12 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
-import android.graphics.Paint
 import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.geometry.IrCanvasRenderer
+import com.veilframe.app.qr.geometry.LineNode
+import com.veilframe.app.qr.geometry.QrGeometryIr
+import com.veilframe.app.qr.geometry.QrGeometryNode
+import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.FinderStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
@@ -26,13 +30,11 @@ class DsjRenderer : QrRenderer {
     private data class LineCmd(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
     private data class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val isVertical: Boolean)
 
-    override fun render(
+    fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
-        canvas: Canvas,
-        geometry: QrGeometry,
-        context: RenderContext
-    ) {
+        geometry: QrGeometry
+    ): QrGeometryIr {
         val nCount = matrix.size
         val cs = geometry.moduleSize
         val ox = geometry.offsetX
@@ -42,6 +44,19 @@ class DsjRenderer : QrRenderer {
         val posStyle = design.eyeStyle.style
         val posSize = design.positionSize
 
+        val nodes = mutableListOf<QrGeometryNode>()
+        if (geometry.outputWidth > 0 && geometry.outputHeight > 0) {
+            nodes.add(
+                RectNode(
+                    x = 0f,
+                    y = 0f,
+                    width = geometry.outputWidth.toFloat(),
+                    height = geometry.outputHeight.toFloat(),
+                    fill = design.palette.background
+                )
+            )
+        }
+
         // 1. Draw finders via canonical EF position geometry
         val finderCenters = listOf(
             Pair(3, 3),
@@ -49,16 +64,17 @@ class DsjRenderer : QrRenderer {
             Pair(3, nCount - 4)
         )
         for ((fx, fy) in finderCenters) {
-            EfPositionPatternGeometry.drawCanvas(
-                canvas = canvas,
-                x = fx,
-                y = fy,
-                moduleSize = cs,
-                offsetX = ox,
-                offsetY = oy,
-                style = posStyle,
-                size = posSize,
-                color = posColor
+            nodes.addAll(
+                EfPositionPatternGeometry.toIrNodes(
+                    x = fx,
+                    y = fy,
+                    moduleSize = cs,
+                    offsetX = ox,
+                    offsetY = oy,
+                    style = posStyle,
+                    size = posSize,
+                    color = posColor
+                )
             )
         }
 
@@ -69,14 +85,6 @@ class DsjRenderer : QrRenderer {
         val hColor = design.efDsjStyle.horizontalLineColor
         val vColor = design.efDsjStyle.verticalLineColor
         val xColor = design.efDsjStyle.xColor
-
-        val hPaint = context.obtainFill(hColor)
-        val vPaint = context.obtainFill(vColor)
-        val xPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = xColor
-            style = Paint.Style.STROKE
-            strokeWidth = width1 * cs
-        }
 
         val available = Array(nCount) { BooleanArray(nCount) { true } }
         val ava2 = Array(nCount) { BooleanArray(nCount) { true } }
@@ -208,30 +216,66 @@ class DsjRenderer : QrRenderer {
             }
         }
 
-        // Draw in EF order: residual singles, then g1 (X lines), then g2 (runs)
+        // Emit in EF order: residual singles, then g1 (X lines), then g2 (runs)
         for (cmd in residualRects) {
             val left = ox + cmd.x * cs
             val top = oy + cmd.y * cs
-            canvas.drawRect(left, top, left + cmd.w * cs, top + cmd.h * cs, hPaint)
+            nodes.add(
+                RectNode(
+                    x = left,
+                    y = top,
+                    width = cmd.w * cs,
+                    height = cmd.h * cs,
+                    fill = hColor
+                )
+            )
         }
 
         for (cmd in g1Lines) {
-            canvas.drawLine(
-                ox + cmd.x1 * cs,
-                oy + cmd.y1 * cs,
-                ox + cmd.x2 * cs,
-                oy + cmd.y2 * cs,
-                xPaint
+            nodes.add(
+                LineNode(
+                    x1 = ox + cmd.x1 * cs,
+                    y1 = oy + cmd.y1 * cs,
+                    x2 = ox + cmd.x2 * cs,
+                    y2 = oy + cmd.y2 * cs,
+                    strokeColor = xColor,
+                    strokeWidth = width1 * cs,
+                    isRoundCap = false
+                )
             )
         }
 
         for (cmd in g2Rects) {
-            val paint = if (cmd.isVertical) vPaint else hPaint
+            val color = if (cmd.isVertical) vColor else hColor
             val left = ox + cmd.x * cs
             val top = oy + cmd.y * cs
-            canvas.drawRect(left, top, left + cmd.w * cs, top + cmd.h * cs, paint)
+            nodes.add(
+                RectNode(
+                    x = left,
+                    y = top,
+                    width = cmd.w * cs,
+                    height = cmd.h * cs,
+                    fill = color
+                )
+            )
         }
 
+        return QrGeometryIr(
+            width = geometry.outputWidth.toFloat(),
+            height = geometry.outputHeight.toFloat(),
+            rootNodes = nodes
+        )
+    }
+
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        val ir = generateGeometry(matrix, design, geometry)
+        IrCanvasRenderer.render(ir, canvas)
         drawLogo(canvas, design, geometry, context)
     }
 

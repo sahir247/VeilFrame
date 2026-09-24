@@ -205,4 +205,66 @@ class EfQrEncoderParityTest {
         assertTrue(encoded.matrix.isDark(3, 3))
         assertEquals(QRPointType.POS_CENTER, encoded.pointTypeAt(3, 3))
     }
+
+    @Test
+    fun testFunctionPatternMaskAlignmentCentersExactMatchWithQRPatternLocator() {
+        // Specifically verify V14, V15, V16, V17, V18 as highlighted in the audit
+        val v14Centers = QRPatternLocator[14].toList()
+        assertEquals(listOf(6, 26, 46, 66), v14Centers)
+
+        val v15Centers = QRPatternLocator[15].toList()
+        assertEquals(listOf(6, 26, 48, 70), v15Centers)
+
+        val v16Centers = QRPatternLocator[16].toList()
+        assertEquals(listOf(6, 26, 50, 74), v16Centers)
+
+        val v17Centers = QRPatternLocator[17].toList()
+        assertEquals(listOf(6, 30, 54, 78), v17Centers)
+
+        val v18Centers = QRPatternLocator[18].toList()
+        assertEquals(listOf(6, 30, 56, 82), v18Centers)
+
+        // Verify FunctionPatternMask for V15 places ALIGNMENT_CENTER at all (cx, cy) from QRPatternLocator
+        val v15Size = 15 * 4 + 17 // 77x77
+        val maskV15 = com.veilframe.app.qr.model.FunctionPatternMask(v15Size, 15)
+        for (cy in v15Centers) {
+            for (cx in v15Centers) {
+                if ((cx == 6 && cy == 6) || (cx == 6 && cy == 70) || (cx == 70 && cy == 6)) continue
+                assertEquals(
+                    "Center ($cx, $cy) must be ALIGNMENT_CENTER",
+                    com.veilframe.app.qr.model.FunctionPatternType.ALIGNMENT_CENTER,
+                    maskV15[cx, cy]
+                )
+            }
+        }
+    }
+
+    @Test
+    fun testEfCompatibleDefaultErrorCorrectionIsStrictlyH() {
+        val content = "HELLO"
+        val design = QrDesign() // defaults to ErrorCorrectionChoice.AUTO
+        assertEquals(com.veilframe.app.qr.model.ErrorCorrectionChoice.AUTO, design.correction)
+
+        // In EF_COMPATIBLE mode, AUTO must resolve strictly to H error correction
+        val efResult = EfQrEncoder.encode(content, EfCorrectionLevel.H)
+        val defaultResult = EfQrEncoder.encode(content) // default is H
+        assertEquals(efResult.version, defaultResult.version)
+        assertEquals(efResult.errorCorrection, defaultResult.errorCorrection)
+        assertEquals(EfCorrectionLevel.H, defaultResult.errorCorrection)
+
+        // QrMatrix generated in EF_COMPATIBLE mode must have H error correction
+        val matrix = EfQrEncoder.encode(content, EfCorrectionLevel.H).matrix
+        assertEquals(ErrorCorrectionLevel.H, matrix.errorCorrection)
+        assertNotNull(matrix.typeTable)
+    }
+
+    @Test
+    fun testEfCompatibleDefaultQuietZoneSemantics() {
+        val defaultDesign = QrDesign()
+        assertNull(defaultDesign.explicitQuietZone)
+        assertEquals(4, defaultDesign.quietZoneModules) // SAFE default
+
+        val explicitDesign = QrDesign(explicitQuietZone = 2)
+        assertEquals(2, explicitDesign.explicitQuietZone)
+    }
 }

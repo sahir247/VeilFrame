@@ -11,6 +11,7 @@ import com.veilframe.app.qr.model.LineDirection
 import com.veilframe.app.qr.model.ModuleFill
 import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.model.QrDesign
+import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrModuleRole
 import java.io.ByteArrayOutputStream
@@ -66,6 +67,9 @@ object SvgExporter {
         }
         if (design.style == com.veilframe.app.qr.QrStyle.D25) {
             return generate25DSvg(matrix, design)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.BUBBLE) {
+            return generateBubbleSvg(matrix, design, qz, totalSize)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.DSJ) {
             return generateDsjSvg(matrix, design, qz, totalSize)
@@ -656,200 +660,22 @@ object SvgExporter {
         qz: Int,
         totalSize: Int
     ): String {
-        val nCount = matrix.size
-        val bgHex = hexColor(design.palette.background)
-        val posColorHex = hexColor(design.eyeStyle.outerColor ?: design.palette.foreground)
-        val posAlpha = colorAlpha(design.eyeStyle.outerColor ?: design.palette.foreground)
-        val posStyle = design.eyeStyle.style
-        val posSize = design.positionSize
-
-        val width2 = max(0f, design.efDsjStyle.lineSize)
-        val width1 = max(0f, design.efDsjStyle.xSize)
-        val sqrt8 = 2.82842712474619f
-
-        val hHex = hexColor(design.efDsjStyle.horizontalLineColor)
-        val hAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.efDsjStyle.horizontalLineColor))
-        val vHex = hexColor(design.efDsjStyle.verticalLineColor)
-        val vAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.efDsjStyle.verticalLineColor))
-        val xHex = hexColor(design.efDsjStyle.xColor)
-        val xAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.efDsjStyle.xColor))
-        val w1Str = String.format(Locale.US, "%.3f", width1)
-        val w2Str = String.format(Locale.US, "%.3f", width2)
-
-        val sb = StringBuilder()
-        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex" />""").append("\n")
-
-        var id = 0
-        val pointList = StringBuilder()
-        val g1 = StringBuilder()
-        val g2 = StringBuilder()
-
-        val finderCenters = listOf(Pair(3, 3), Pair(nCount - 4, 3), Pair(3, nCount - 4))
-        for ((fx, fy) in finderCenters) {
-            val (svgChunk, nextId) = com.veilframe.app.qr.renderer.EfPositionPatternGeometry.buildSvgElements(
-                x = fx,
-                y = fy,
-                qz = qz,
-                style = posStyle,
-                size = posSize,
-                colorHex = posColorHex,
-                alpha = posAlpha,
-                idStart = id
-            )
-            id = nextId
-            pointList.append(svgChunk)
+        val normGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = totalSize,
+            outputHeight = totalSize,
+            quietZoneModules = qz
+        )
+        val ir = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val sb = StringBuilder(svg.removeSuffix("</svg>"))
+            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            sb.append("</svg>")
+            sb.toString()
+        } else {
+            svg
         }
-
-        val available = Array(nCount) { BooleanArray(nCount) { true } }
-        val ava2 = Array(nCount) { BooleanArray(nCount) { true } }
-
-        for (y in 0 until nCount) {
-            for (x in 0 until nCount) {
-                if (!matrix.isDark(x, y)) continue
-                if (com.veilframe.app.qr.renderer.EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
-
-                val ax = x + qz
-                val ay = y + qz
-
-                // Stage 1: 3x3 X
-                if (available[x][y] && ava2[x][y] && x < nCount - 2 && y < nCount - 2) {
-                    var ctn = true
-                    for (i in 0 until 3) {
-                        for (j in 0 until 3) {
-                            if (!ava2[x + i][y + j]) ctn = false
-                        }
-                    }
-                    if (ctn && matrix.isDark(x + 2, y) && matrix.isDark(x + 1, y + 1) &&
-                        matrix.isDark(x, y + 2) && matrix.isDark(x + 2, y + 2)
-                    ) {
-                        val d = width1 / sqrt8
-                        val x1 = String.format(Locale.US, "%.3f", ax + d)
-                        val y1 = String.format(Locale.US, "%.3f", ay + d)
-                        val x2 = String.format(Locale.US, "%.3f", ax + 3f - d)
-                        val y2 = String.format(Locale.US, "%.3f", ay + 3f - d)
-                        g1.append("""  <line key="$id" opacity="$xAlpha" x1="$x1" y1="$y1" x2="$x2" y2="$y2" fill="none" stroke="$xHex" stroke-width="$w1Str"/>""").append("\n")
-                        id++
-                        g1.append("""  <line key="$id" opacity="$xAlpha" x1="$x2" y1="$y1" x2="$x1" y2="$y2" fill="none" stroke="$xHex" stroke-width="$w1Str"/>""").append("\n")
-                        id++
-
-                        available[x][y] = false
-                        available[x + 2][y] = false
-                        available[x][y + 2] = false
-                        available[x + 2][y + 2] = false
-                        available[x + 1][y + 1] = false
-
-                        for (i in 0 until 3) {
-                            for (j in 0 until 3) {
-                                ava2[x + i][y + j] = false
-                            }
-                        }
-                    }
-                }
-
-                // Stage 2: 2x2 X
-                if (available[x][y] && ava2[x][y] && x < nCount - 1 && y < nCount - 1) {
-                    var ctn = true
-                    for (i in 0 until 2) {
-                        for (j in 0 until 2) {
-                            if (!ava2[x + i][y + j]) ctn = false
-                        }
-                    }
-                    if (ctn && matrix.isDark(x + 1, y) && matrix.isDark(x, y + 1) && matrix.isDark(x + 1, y + 1)) {
-                        val d = width1 / sqrt8
-                        val x1 = String.format(Locale.US, "%.3f", ax + d)
-                        val y1 = String.format(Locale.US, "%.3f", ay + d)
-                        val x2 = String.format(Locale.US, "%.3f", ax + 2f - d)
-                        val y2 = String.format(Locale.US, "%.3f", ay + 2f - d)
-                        g1.append("""  <line key="$id" opacity="$xAlpha" x1="$x1" y1="$y1" x2="$x2" y2="$y2" fill="none" stroke="$xHex" stroke-width="$w1Str"/>""").append("\n")
-                        id++
-                        g1.append("""  <line key="$id" opacity="$xAlpha" x1="$x2" y1="$y1" x2="$x1" y2="$y2" fill="none" stroke="$xHex" stroke-width="$w1Str"/>""").append("\n")
-                        id++
-
-                        for (i in 0 until 2) {
-                            for (j in 0 until 2) {
-                                available[x + i][y + j] = false
-                                ava2[x + i][y + j] = false
-                            }
-                        }
-                    }
-                }
-
-                // Stage 3: Vertical runs
-                if (available[x][y] && ava2[x][y]) {
-                    if (y == 0 || !matrix.isDark(x, y - 1) || !ava2[x][y - 1]) {
-                        val start = y
-                        var end = y
-                        var ctn = true
-                        while (ctn && end < nCount) {
-                            if (matrix.isDark(x, end) && ava2[x][end]) {
-                                end++
-                            } else {
-                                ctn = false
-                            }
-                        }
-                        if (end - start > 2) {
-                            for (i in start until end) {
-                                ava2[x][i] = false
-                                available[x][i] = false
-                            }
-                            val rx = String.format(Locale.US, "%.3f", ax + (1f - width2) / 2f)
-                            val ry = String.format(Locale.US, "%.3f", ay + (1f - width2) / 2f)
-                            val rh = String.format(Locale.US, "%.3f", (end - start - 1).toFloat() - (1f - width2))
-                            g2.append("""  <rect key="$id" opacity="$vAlpha" width="$w2Str" height="$rh" fill="$vHex" x="$rx" y="$ry"/>""").append("\n")
-                            id++
-                            val endY = String.format(Locale.US, "%.3f", (end - 1 + qz).toFloat() + (1f - width2) / 2f)
-                            g2.append("""  <rect key="$id" opacity="$vAlpha" width="$w2Str" height="$w2Str" fill="$vHex" x="$rx" y="$endY"/>""").append("\n")
-                            id++
-                        }
-                    }
-                }
-
-                // Stage 4: Horizontal runs
-                if (available[x][y] && ava2[x][y]) {
-                    if (x == 0 || !matrix.isDark(x - 1, y) || !ava2[x - 1][y]) {
-                        val start = x
-                        var end = x
-                        var ctn = true
-                        while (ctn && end < nCount) {
-                            if (matrix.isDark(end, y) && ava2[end][y]) {
-                                end++
-                            } else {
-                                ctn = false
-                            }
-                        }
-                        if (end - start > 1) {
-                            for (i in start until end) {
-                                ava2[i][y] = false
-                                available[i][y] = false
-                            }
-                            val rx = String.format(Locale.US, "%.3f", ax + (1f - width2) / 2f)
-                            val ry = String.format(Locale.US, "%.3f", ay + (1f - width2) / 2f)
-                            val rw = String.format(Locale.US, "%.3f", (end - start).toFloat() - (1f - width2))
-                            g2.append("""  <rect key="$id" opacity="$hAlpha" width="$rw" height="$w2Str" fill="$hHex" x="$rx" y="$ry"/>""").append("\n")
-                            id++
-                        }
-                    }
-                }
-
-                // Stage 5: Residual single cell
-                if (available[x][y]) {
-                    val rx = String.format(Locale.US, "%.3f", ax + (1f - width2) / 2f)
-                    val ry = String.format(Locale.US, "%.3f", ay + (1f - width2) / 2f)
-                    pointList.append("""  <rect key="$id" opacity="$hAlpha" width="$w2Str" height="$w2Str" fill="$hHex" x="$rx" y="$ry"/>""").append("\n")
-                    id++
-                }
-            }
-        }
-
-        sb.append(pointList)
-        sb.append(g1)
-        sb.append(g2)
-
-        appendLogo(sb, design, totalSize, bgHex)
-        sb.append("</svg>")
-        return sb.toString()
     }
 
     private fun generateFunctionSvg(
@@ -1008,364 +834,46 @@ object SvgExporter {
         qz: Int,
         totalSize: Int
     ): String {
-        val nCount = matrix.size
-        val bgHex = hexColor(design.palette.background)
-        val posColorHex = hexColor(design.lineStyle.positionColor ?: design.palette.foreground)
-        val posAlpha = colorAlpha(design.lineStyle.positionColor ?: design.palette.foreground)
-        val posStyle = design.lineStyle.positionStyle
-        val posSize = design.lineStyle.positionSize
-
-        val thickness = max(0.05f, design.lineStyle.thicknessFraction)
-        val sizeStr = String.format(Locale.US, "%.3f", thickness)
-        val halfSizeStr = String.format(Locale.US, "%.3f", thickness / 2f)
-        val lineHex = hexColor(design.lineStyle.color ?: design.palette.foreground)
-        val lineAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.lineStyle.color ?: design.palette.foreground))
-
-        val sb = StringBuilder()
-        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex" />""").append("\n")
-
-        var id = 0
-
-        // Finders
-        val finderCenters = listOf(Pair(3, 3), Pair(nCount - 4, 3), Pair(3, nCount - 4))
-        for ((fx, fy) in finderCenters) {
-            val (svgChunk, nextId) = com.veilframe.app.qr.renderer.EfPositionPatternGeometry.buildSvgElements(
-                x = fx,
-                y = fy,
-                qz = qz,
-                style = posStyle,
-                size = posSize,
-                colorHex = posColorHex,
-                alpha = posAlpha,
-                idStart = id
-            )
-            id = nextId
-            sb.append(svgChunk)
+        val normGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = totalSize,
+            outputHeight = totalSize,
+            quietZoneModules = qz
+        )
+        val ir = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val sb = StringBuilder(svg.removeSuffix("</svg>"))
+            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            sb.append("</svg>")
+            sb.toString()
+        } else {
+            svg
         }
+    }
 
-        val available = Array(nCount) { BooleanArray(nCount) { true } }
-        val ava2 = Array(nCount) { BooleanArray(nCount) { true } }
-
-        val direction = when (design.lineStyle.direction) {
-            LineDirection.DIAGONAL_FORWARD -> LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT
-            LineDirection.DIAGONAL_BACKWARD -> LineDirection.TOP_RIGHT_TO_BOTTOM_LEFT
-            LineDirection.LOOP -> LineDirection.LOOPBACK
-            else -> design.lineStyle.direction
+    private fun generateBubbleSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qz: Int,
+        totalSize: Int
+    ): String {
+        val normGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = totalSize,
+            outputHeight = totalSize,
+            quietZoneModules = qz
+        )
+        val ir = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val sb = StringBuilder(svg.removeSuffix("</svg>"))
+            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            sb.append("</svg>")
+            sb.toString()
+        } else {
+            svg
         }
-
-        for (x in 0 until nCount) {
-            for (y in 0 until nCount) {
-                if (!matrix.isDark(x, y)) continue
-                if (com.veilframe.app.qr.renderer.EfPositionPatternGeometry.isFinderArea(x, y, nCount)) continue
-
-                val ax = x + qz
-                val ay = y + qz
-
-                when (direction) {
-                    LineDirection.HORIZONTAL -> {
-                        if (x == 0 || (x > 0 && (!matrix.isDark(x - 1, y) || !ava2[x - 1][y]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && x + end < nCount) {
-                                if (matrix.isDark(x + end, y) && ava2[x + end][y]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x + i][y] = false
-                                    available[x + i][y] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y1" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.VERTICAL -> {
-                        if (y == 0 || (y > 0 && (!matrix.isDark(x, y - 1) || !ava2[x][y - 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && y + end < nCount) {
-                                if (matrix.isDark(x, y + end) && ava2[x][y + end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x][y + i] = false
-                                    available[x][y + i] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x1" y2="$y2" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.CROSS -> {
-                        if (y == 0 || (y > 0 && (!matrix.isDark(x, y - 1) || !ava2[x][y - 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && y + end < nCount && end <= 3) {
-                                if (matrix.isDark(x, y + end) && ava2[x][y + end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x][y + i] = false
-                                    available[x][y + i] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x1" y2="$y2" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (x == 0 || (x > 0 && (!matrix.isDark(x - 1, y) || !ava2[x - 1][y]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && x + end < nCount && end <= 3) {
-                                if (matrix.isDark(x + end, y) && ava2[x + end][y]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x + i][y] = false
-                                    available[x + i][y] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y1" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.LOOPBACK -> {
-                        if ((x > y) != (x + y < nCount)) {
-                            if (y == 0 || (y > 0 && (!matrix.isDark(x, y - 1) || !ava2[x][y - 1]))) {
-                                var end = 0
-                                var ctn = true
-                                while (ctn && y + end < nCount && end <= 3) {
-                                    if (matrix.isDark(x, y + end) && ava2[x][y + end]) {
-                                        end++
-                                    } else {
-                                        ctn = false
-                                    }
-                                }
-                                if (end > 1) {
-                                    for (i in 0 until end) {
-                                        ava2[x][y + i] = false
-                                        available[x][y + i] = false
-                                    }
-                                    val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                    val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                    val y2 = String.format(Locale.US, "%.3f", ay + end - 0.5)
-                                    sb.append("""  <line x1="$x1" y1="$y1" x2="$x1" y2="$y2" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                    id++
-                                }
-                            }
-                        } else {
-                            if (x == 0 || (x > 0 && (!matrix.isDark(x - 1, y) || !ava2[x - 1][y]))) {
-                                var end = 0
-                                var ctn = true
-                                while (ctn && x + end < nCount && end <= 3) {
-                                    if (matrix.isDark(x + end, y) && ava2[x + end][y]) {
-                                        end++
-                                    } else {
-                                        ctn = false
-                                    }
-                                }
-                                if (end > 1) {
-                                    for (i in 0 until end) {
-                                        ava2[x + i][y] = false
-                                        available[x + i][y] = false
-                                    }
-                                    val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                    val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                    val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                    sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y1" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                    id++
-                                }
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT -> {
-                        if (y == 0 || x == 0 || ((y > 0 && x > 0) && (!matrix.isDark(x - 1, y - 1) || !ava2[x - 1][y - 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && y + end < nCount && x + end < nCount) {
-                                if (matrix.isDark(x + end, y + end) && ava2[x + end][y + end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x + i][y + i] = false
-                                    available[x + i][y + i] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y2" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.TOP_RIGHT_TO_BOTTOM_LEFT -> {
-                        if (x == 0 || y == nCount - 1 || ((x > 0 && y < nCount - 1) && (!matrix.isDark(x - 1, y + 1) || !ava2[x - 1][y + 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && x + end < nCount && y - end >= 0) {
-                                if (matrix.isDark(x + end, y - end) && available[x + end][y - end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x + i][y - i] = false
-                                    available[x + i][y - i] = false
-                                }
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay - end + 1.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y2" stroke-width="$sizeStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        if (available[x][y]) {
-                            val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                            val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                            sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$halfSizeStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                            id++
-                        }
-                    }
-
-                    LineDirection.X -> {
-                        // Diagonal 1: (x+i, y-i)
-                        if (x == 0 || y == nCount - 1 || ((x > 0 && y < nCount - 1) && (!matrix.isDark(x - 1, y + 1) || !ava2[x - 1][y + 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && x + end < nCount && y - end >= 0) {
-                                if (matrix.isDark(x + end, y - end) && ava2[x + end][y - end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    ava2[x + i][y - i] = false
-                                }
-                                val sw = thickness / 2f * com.veilframe.app.qr.renderer.LineRenderer.pseudoRandom(x, y, 1, 0.3f, 1.0f)
-                                val swStr = String.format(Locale.US, "%.3f", sw)
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay - end + 1.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y2" stroke-width="$swStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        // Diagonal 2: (x+i, y+i)
-                        if (y == 0 || x == 0 || ((y > 0 && x > 0) && (!matrix.isDark(x - 1, y - 1) || !available[x - 1][y - 1]))) {
-                            var end = 0
-                            var ctn = true
-                            while (ctn && y + end < nCount && x + end < nCount) {
-                                if (matrix.isDark(x + end, y + end) && available[x + end][y + end]) {
-                                    end++
-                                } else {
-                                    ctn = false
-                                }
-                            }
-                            if (end > 1) {
-                                for (i in 0 until end) {
-                                    available[x + i][y + i] = false
-                                }
-                                val sw = thickness / 2f * com.veilframe.app.qr.renderer.LineRenderer.pseudoRandom(x, y, 2, 0.3f, 1.0f)
-                                val swStr = String.format(Locale.US, "%.3f", sw)
-                                val x1 = String.format(Locale.US, "%.3f", ax + 0.5)
-                                val y1 = String.format(Locale.US, "%.3f", ay + 0.5)
-                                val x2 = String.format(Locale.US, "%.3f", ax + end - 0.5)
-                                val y2 = String.format(Locale.US, "%.3f", ay + end - 0.5)
-                                sb.append("""  <line x1="$x1" y1="$y1" x2="$x2" y2="$y2" stroke-width="$swStr" stroke="$lineHex" stroke-linecap="round" opacity="$lineAlpha" key="$id"/>""").append("\n")
-                                id++
-                            }
-                        }
-                        // Center dot
-                        val r = 0.5f * com.veilframe.app.qr.renderer.LineRenderer.pseudoRandom(x, y, 3, 0.33f, 0.9f)
-                        val rStr = String.format(Locale.US, "%.3f", r)
-                        val cx = String.format(Locale.US, "%.3f", ax + 0.5)
-                        val cy = String.format(Locale.US, "%.3f", ay + 0.5)
-                        sb.append("""  <circle key="$id" opacity="$lineAlpha" r="$rStr" fill="$lineHex" cx="$cx" cy="$cy"/>""").append("\n")
-                        id++
-                    }
-                    else -> {}
-                }
-            }
-        }
-
-        appendLogo(sb, design, totalSize, bgHex)
-        sb.append("</svg>")
-        return sb.toString()
     }
 
     private fun generateRandomRectangleSvg(
@@ -1374,64 +882,14 @@ object SvgExporter {
         qz: Int,
         totalSize: Int
     ): String {
-        val nCount = matrix.size
-        val bgHex = hexColor(design.palette.background)
-        val color = design.randomRectColor
-        val redValue = ((color ushr 16) and 0xFF).toDouble()
-        val greenValue = ((color ushr 8) and 0xFF).toDouble()
-        val blueValue = (color and 0xFF).toDouble()
-        val alphaValue = ((color ushr 24) and 0xFF) / 255.0
-
-        val randArr = ArrayList<Pair<Int, Int>>(nCount * nCount)
-        for (row in 0 until nCount) {
-            for (col in 0 until nCount) {
-                randArr.add(Pair(row, col))
-            }
-        }
-        val rng = Random(design.effects.seed)
-        randArr.shuffle(rng)
-
-        val sb = StringBuilder()
-        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex" />""").append("\n")
-
-        var id = 0
-        for (item in randArr) {
-            val row = item.first
-            val col = item.second
-
-            if (matrix.isDark(col, row)) {
-                val tempRand = rng.nextDouble(0.8, 1.3)
-                val randNum = rng.nextDouble(50.0, 230.0)
-
-                val rValue = max(0, min(255, (redValue + randNum).toInt()))
-                val gValue = max(0, min(255, (greenValue - randNum / 2.0).toInt()))
-                val bValue = max(0, min(255, (blueValue + randNum * 2.0).toInt()))
-
-                val r2Value = max(0, min(255, rValue - 40))
-                val g2Value = max(0, min(255, gValue - 40))
-                val b2Value = max(0, min(255, bValue - 40))
-
-                val offset = (tempRand - 1.0) / 2.0
-                val rx = String.format(Locale.US, "%.3f", col + qz - offset)
-                val ry = String.format(Locale.US, "%.3f", row + qz - offset)
-
-                val w1 = String.format(Locale.US, "%.3f", tempRand + 0.15)
-                val op1 = String.format(Locale.US, "%.2f", 0.9 * alphaValue)
-                sb.append("""  <rect key="$id" opacity="$op1" fill="rgb($r2Value,$g2Value,$b2Value)" width="$w1" height="$w1" x="$rx" y="$ry"/>""").append("\n")
-                id++
-
-                val w2 = String.format(Locale.US, "%.3f", tempRand)
-                val op2 = String.format(Locale.US, "%.2f", alphaValue)
-                sb.append("""  <rect key="$id" opacity="$op2" fill="rgb($rValue,$gValue,$bValue)" width="$w2" height="$w2" x="$rx" y="$ry"/>""").append("\n")
-                id++
-            }
-        }
-
-        appendLogo(sb, design, totalSize, bgHex)
-        sb.append("</svg>")
-        return sb.toString()
+        val normGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = totalSize,
+            outputHeight = totalSize,
+            quietZoneModules = qz
+        )
+        val ir = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
+        return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
     }
 
     private fun appendFinders(

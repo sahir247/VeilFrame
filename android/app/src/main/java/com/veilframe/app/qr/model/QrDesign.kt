@@ -314,6 +314,7 @@ data class QrDesign(
     val logo: LogoStyle? = null,
     val effects: EffectStyle = EffectStyle(),
     val quietZoneModules: Int = 4,
+    val explicitQuietZone: Int? = null,
     val outputSize: Int = 512,
     val backgroundImage: Bitmap? = null,
     val backgroundImageAlpha: Float = 0.25f,
@@ -442,6 +443,7 @@ data class QrDesign(
                     positionHeightRatio = params.d25PositionHeight
                 ),
                 quietZoneModules = params.quietZone ?: 4,
+                explicitQuietZone = params.quietZone,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,
                 backgroundImageAlpha = params.backgroundImageAlpha,

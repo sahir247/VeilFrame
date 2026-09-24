@@ -33,13 +33,11 @@ import kotlin.random.Random
  */
 class RandomRectangleRenderer : QrRenderer {
 
-    override fun render(
+    fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
-        canvas: Canvas,
-        geometry: QrGeometry,
-        context: RenderContext
-    ) {
+        geometry: QrGeometry
+    ): com.veilframe.app.qr.geometry.QrGeometryIr {
         val nCount = matrix.size
         val cs = geometry.moduleSize
         val ox = geometry.offsetX
@@ -60,9 +58,16 @@ class RandomRectangleRenderer : QrRenderer {
         val rng = Random(design.effects.seed)
         randArr.shuffle(rng)
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
+        val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
+        nodes.add(
+            com.veilframe.app.qr.geometry.RectNode(
+                x = 0f,
+                y = 0f,
+                width = geometry.outputWidth.toFloat(),
+                height = geometry.outputHeight.toFloat(),
+                fill = design.palette.background
+            )
+        )
 
         for (item in randArr) {
             val row = item.first
@@ -89,16 +94,54 @@ class RandomRectangleRenderer : QrRenderer {
 
                 // Layer 1: Outer shadow rect (width = tempRand + 0.15)
                 val w1 = ((tempRand + 0.15) * cs).toFloat()
-                paint.color = Color.argb(((0.9 * alphaValue) * 255).toInt(), r2Value, g2Value, b2Value)
-                canvas.drawRect(x, y, x + w1, y + w1, paint)
+                val c1 = Color.rgb(r2Value, g2Value, b2Value)
+                nodes.add(
+                    com.veilframe.app.qr.geometry.RectNode(
+                        x = x,
+                        y = y,
+                        width = w1,
+                        height = w1,
+                        fill = c1,
+                        fillString = "rgb($r2Value, $g2Value, $b2Value)",
+                        opacity = (0.9 * alphaValue).toFloat(),
+                        alwaysEmitOpacity = true
+                    )
+                )
 
                 // Layer 2: Inner main rect (width = tempRand)
                 val w2 = (tempRand * cs).toFloat()
-                paint.color = Color.argb((alphaValue * 255).toInt(), rValue, gValue, bValue)
-                canvas.drawRect(x, y, x + w2, y + w2, paint)
+                val c2 = Color.rgb(rValue, gValue, bValue)
+                nodes.add(
+                    com.veilframe.app.qr.geometry.RectNode(
+                        x = x,
+                        y = y,
+                        width = w2,
+                        height = w2,
+                        fill = c2,
+                        fillString = "rgb($rValue, $gValue, $bValue)",
+                        opacity = alphaValue.toFloat(),
+                        alwaysEmitOpacity = true
+                    )
+                )
             }
         }
 
+        return com.veilframe.app.qr.geometry.QrGeometryIr(
+            width = geometry.outputWidth.toFloat(),
+            height = geometry.outputHeight.toFloat(),
+            rootNodes = nodes
+        )
+    }
+
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        val ir = generateGeometry(matrix, design, geometry)
+        com.veilframe.app.qr.geometry.IrCanvasRenderer.render(ir, canvas)
         drawLogo(canvas, design, geometry, context)
     }
 

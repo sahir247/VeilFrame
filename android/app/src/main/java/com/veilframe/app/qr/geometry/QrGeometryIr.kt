@@ -14,9 +14,11 @@ data class RectNode(
     val rx: Float = 0f,
     val ry: Float = 0f,
     val fill: Int? = null,
+    val fillString: String? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val opacity: Float = 1f,
+    val alwaysEmitOpacity: Boolean = false,
     val transform: String? = null
 ) : QrGeometryNode
 

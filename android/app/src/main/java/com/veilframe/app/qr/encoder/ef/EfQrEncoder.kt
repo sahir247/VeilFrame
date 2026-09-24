@@ -45,6 +45,7 @@ object EfQrEncoder {
             size = model.moduleCount,
             version = model.typeNumber,
             errorCorrection = errorCorrection.toZxingEcLevel(),
+            typeTable = typeTable,
             isDarkPredicate = { col, row -> model.isDark(row, col) }
         )
 

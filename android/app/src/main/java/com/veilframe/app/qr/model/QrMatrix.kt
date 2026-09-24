@@ -98,6 +98,7 @@ class QrMatrix(
     val size: Int,
     val version: Int,
     val errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M,
+    val typeTable: Array<Array<com.veilframe.app.qr.encoder.ef.QRPointType>>? = null,
     private val isDarkPredicate: (col: Int, row: Int) -> Boolean
 ) {
     /**
@@ -156,6 +157,10 @@ class QrMatrix(
      */
     fun efPointTypeAt(col: Int, row: Int): com.veilframe.app.qr.encoder.ef.QRPointType {
         if (col !in 0 until size || row !in 0 until size) return com.veilframe.app.qr.encoder.ef.QRPointType.DATA
+
+        if (typeTable != null) {
+            return typeTable[row][col]
+        }
 
         val isFinderCenter = (col == 3 && row == 3) ||
                 (col == 3 && row == size - 4) ||
