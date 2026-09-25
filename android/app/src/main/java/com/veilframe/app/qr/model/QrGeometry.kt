@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.model
 
 import android.graphics.RectF
+import com.veilframe.app.qr.QrStyle
 
 /**
  * Maps logical QR matrix coordinates into output canvas pixel coordinates,
@@ -36,9 +37,10 @@ class QrGeometry(
             outputWidth: Int,
             outputHeight: Int,
             design: QrDesign,
-            defaultQuietZone: Int = 4
+            defaultQuietZone: Int = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else 4
         ): QrGeometry {
-            val qz = design.explicitQuietZone ?: defaultQuietZone
+            val fallbackQz = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else defaultQuietZone
+            val qz = design.explicitQuietZone ?: fallbackQz
             val qzLeft = design.directionalQuietZone?.left ?: qz
             val qzTop = design.directionalQuietZone?.top ?: qz
             val qzRight = design.directionalQuietZone?.right ?: qz

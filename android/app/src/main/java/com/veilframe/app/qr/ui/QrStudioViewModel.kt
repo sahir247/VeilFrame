@@ -307,7 +307,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             moduleStyle = ModuleStyle(
                 shape = moduleShape,
                 fill = moduleFill,
-                scale = 0.85f,
+                scale = if (s.style == QrStyle.IMAGE) 0.33f else 0.85f,
                 cornerRadiusFraction = 0.0f,
                 connected = s.style == QrStyle.DSJ
             ),
@@ -335,18 +335,19 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 rightColor = 0x99000000.toInt()
             ),
             timingStyle = TimingStyle(
-                shape = if (s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             ),
             alignmentStyle = AlignmentStyle(
-                shape = if (s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             ),
-            quietZoneModules = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else 4,
-            explicitQuietZone = if (s.style == QrStyle.IMAGE_RESAMPLE) 1 else null,
+            quietZoneModules = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else 4,
+            explicitQuietZone = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else null,
             outputSize = effectiveSize,
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,
             imageFillMode = def.imageFillMode,
             style = s.style,
+            imageDataScale = if (s.style == QrStyle.IMAGE) 0.33f else 0.85f,
             imageSource = ImageSourceStyle(
                 source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
                 scaleMode = s.sourceImageScaleMode,

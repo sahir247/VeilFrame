@@ -111,7 +111,7 @@ object ScanabilityValidator {
         )
 
         // 1. Quiet Zone Check
-        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0) || design.style == QrStyle.IMAGE_RESAMPLE
+        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0) || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL
         val quietZoneReport = QuietZoneReport(
             hasFourModuleMargin = quietZone >= 4,
             quietZoneModules = quietZone

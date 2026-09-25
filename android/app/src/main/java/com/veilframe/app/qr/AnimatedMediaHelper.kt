@@ -48,11 +48,12 @@ object AnimatedMediaHelper {
             val framesDir = File(tempDir, "frames").apply { mkdirs() }
             val framePattern = File(framesDir, "frame_%04d.png").absolutePath
 
-            // 2. Extract frames via FFmpegKit
+            val videoFps = 15
+            val videoDelayMs = (1000.0 / videoFps).toInt() // ~67ms per frame at 15 fps
             val ffmpegCmd = if (isGif) {
                 "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0\" -vframes $maxFrames \"$framePattern\""
             } else {
-                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r 15 -vframes $maxFrames \"$framePattern\""
+                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r $videoFps -vframes $maxFrames \"$framePattern\""
             }
 
             var extractedViaFFmpeg = false
@@ -75,6 +76,8 @@ object AnimatedMediaHelper {
                     if (bmp != null) {
                         val frameDelay = if (isGif && gifDelays.isNotEmpty()) {
                             gifDelays.getOrElse(idx) { gifDelays.lastOrNull() ?: 100 }
+                        } else if (isVideo) {
+                            videoDelayMs
                         } else {
                             100
                         }

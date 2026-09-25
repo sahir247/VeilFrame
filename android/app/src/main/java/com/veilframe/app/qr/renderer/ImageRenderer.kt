@@ -49,7 +49,7 @@ class ImageRenderer : QrRenderer {
 
 
         val dataShape = design.moduleStyle.shape
-        val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
+        val dataScale = (design.imageDataScale ?: design.moduleStyle.scale).coerceIn(0.05f, 1.0f)
         val dataDarkColor = design.dataColorDark
         val dataLightColor = design.dataColorLight
         val allowTransparent = design.allowTransparent

@@ -352,8 +352,8 @@ data class QrDesign(
     val style: QrStyle = QrStyle.BASIC,
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
-    val timingStyle: TimingStyle = if (style == QrStyle.IMAGE_RESAMPLE) TimingStyle(shape = ModuleShape.SQUARE, color = timingColor) else TimingStyle(color = timingColor),
-    val alignmentStyle: AlignmentStyle = if (style == QrStyle.IMAGE_RESAMPLE) AlignmentStyle(shape = ModuleShape.SQUARE, color = alignmentColor) else AlignmentStyle(color = alignmentColor),
+    val timingStyle: TimingStyle = if (style == QrStyle.IMAGE_RESAMPLE || style == QrStyle.IMAGE) TimingStyle(shape = ModuleShape.SQUARE, color = timingColor) else TimingStyle(color = timingColor),
+    val alignmentStyle: AlignmentStyle = if (style == QrStyle.IMAGE_RESAMPLE || style == QrStyle.IMAGE) AlignmentStyle(shape = ModuleShape.SQUARE, color = alignmentColor) else AlignmentStyle(color = alignmentColor),
     val lineStyle: LineStyle = LineStyle(),
     val depthStyle: DepthStyle = DepthStyle(
         depth = effects.dataHeightRatio,
@@ -367,6 +367,7 @@ data class QrDesign(
     val imageSource: ImageSourceStyle = ImageSourceStyle(),
     val clusterStyle: BubbleClusterStyle = BubbleClusterStyle(),
     val allowTransparent: Boolean = true,
+    val imageDataScale: Float? = null,
     val dataColorDark: Int = Color.BLACK,
     val dataColorLight: Int = Color.WHITE,
     val positionDarkColor: Int = Color.BLACK,
@@ -430,13 +431,13 @@ data class QrDesign(
             val timingShape = when (params.timingShape) {
                 com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
                 com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> if (params.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                else -> if (params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             }
 
             val alignShape = when (params.alignShape) {
                 com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
                 com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> if (params.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                else -> if (params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             }
 
             val resolvedSourceImage = params.sourceImage
@@ -451,12 +452,18 @@ data class QrDesign(
                 )
             } else null
 
+            val moduleScale = if (params.style == QrStyle.IMAGE) {
+                params.imageDataScale.coerceIn(0.05f, 1.0f)
+            } else {
+                params.dataScale.coerceIn(0.1f, 1.0f)
+            }
+
             return QrDesign(
                 correction = if (params.logo != null) ErrorCorrectionChoice.H else ErrorCorrectionChoice.AUTO,
                 moduleStyle = ModuleStyle(
                     shape = moduleShape,
                     fill = moduleFill,
-                    scale = params.dataScale.coerceIn(0.5f, 1.0f),
+                    scale = moduleScale,
                     cornerRadiusFraction = if (isRound) 0.35f else 0.0f,
                     connected = params.style == QrStyle.DSJ
                 ),
@@ -494,8 +501,8 @@ data class QrDesign(
                     dataHeightRatio = params.d25DataHeight,
                     positionHeightRatio = params.d25PositionHeight
                 ),
-                quietZoneModules = params.quietZone ?: 4,
-                explicitQuietZone = params.quietZone,
+                quietZoneModules = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE_FILL) (params.quietZone ?: 1) else (params.quietZone ?: 4),
+                explicitQuietZone = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE_FILL) (params.quietZone ?: 1) else params.quietZone,
                 directionalQuietZone = directionalQuietZone,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,
@@ -568,6 +575,7 @@ data class QrDesign(
                 },
                 clusterStyle = BubbleClusterStyle(seed = params.randomRectSeed),
                 allowTransparent = params.imageAllowTransparent,
+                imageDataScale = if (params.style == QrStyle.IMAGE) params.imageDataScale.coerceIn(0.05f, 1.0f) else null,
                 dataColorDark = params.imageDataDarkColor,
                 dataColorLight = params.imageDataLightColor,
                 positionDarkColor = params.imagePositionDarkColor,

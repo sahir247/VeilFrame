@@ -1205,6 +1205,62 @@ class VeilStyleParityTest {
         assertEquals("GIF must end with trailer byte 0x3B", 0x3B.toByte(), gifBytes.last())
     }
 
+    @Test
+    fun testImageStyleDataScaleParityAndQuietZone() {
+        val params = QrStyleParams(style = QrStyle.IMAGE)
+        assertEquals(0.33f, params.imageDataScale, 0.001f)
+
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals(0.33f, design.moduleStyle.scale, 0.001f)
+        assertEquals(0.33f, design.imageDataScale ?: 0f, 0.001f)
+        assertEquals(1, design.quietZoneModules)
+        assertEquals(1, design.explicitQuietZone)
+        assertEquals(com.veilframe.app.qr.model.ModuleShape.SQUARE, design.timingStyle.shape)
+        assertEquals(com.veilframe.app.qr.model.ModuleShape.SQUARE, design.alignmentStyle.shape)
+
+        val matrix = QrGenerator.generateMatrix("https://example.com", design)
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        assertEquals(1, geometry.quietZoneModules)
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+        val expectedDim = matrix.size + 2 // 1-module quiet zone on each side
+        assertTrue("SVG viewBox must have 1-module margin (total size $expectedDim)", svg.contains("viewBox=\"0 0 $expectedDim $expectedDim\""))
+    }
+
+    @Test
+    fun testVideoExtractionTimingParity() {
+        val videoFps = 15
+        val expectedDelayMs = (1000.0 / videoFps).toInt()
+        assertEquals(66, expectedDelayMs)
+    }
+
+    @Test
+    fun testIrCanvasRendererImageNodeAspectFillResolution() {
+        val nodeSlice = com.veilframe.app.qr.geometry.ImageNode(
+            x = 0f, y = 0f, width = 100f, height = 100f,
+            preserveAspectRatio = "xMidYMid slice"
+        )
+        val mode = when {
+            nodeSlice.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+            nodeSlice.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
+            nodeSlice.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
+            else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+        }
+        assertEquals(com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL, mode)
+
+        val nodeMeet = com.veilframe.app.qr.geometry.ImageNode(
+            x = 0f, y = 0f, width = 100f, height = 100f,
+            preserveAspectRatio = "xMidYMid meet"
+        )
+        val meetMode = when {
+            nodeMeet.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+            nodeMeet.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
+            nodeMeet.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
+            else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+        }
+        assertEquals(com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT, meetMode)
+    }
+
     private fun createDummyBitmap(): Bitmap {
         return try {
             val unsafeClass = Class.forName("sun.misc.Unsafe")

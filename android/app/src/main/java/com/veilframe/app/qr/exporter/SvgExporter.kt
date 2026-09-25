@@ -706,7 +706,7 @@ object SvgExporter {
         // 7. Data modules on top of image
         val dataDarkHex = hexColor(design.dataColorDark)
         val dataLightHex = hexColor(design.dataColorLight)
-        val dScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
+        val dScale = (design.imageDataScale ?: design.moduleStyle.scale).coerceIn(0.05f, 1.0f).toDouble()
         val dShape = design.moduleStyle.shape
         for (col in 0 until n) {
             for (row in 0 until n) {

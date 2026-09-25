@@ -85,6 +85,7 @@ data class QrStyleParams(
     val d25PositionHeight: Float = 1.0f,
     // --- IMAGE style specific (VeilFrameStyleImage) ---
     val imageAllowTransparent: Boolean = true,
+    val imageDataScale: Float = 0.33f,
     val imageDataDarkColor: Int = Color.BLACK,
     val imageDataLightColor: Int = Color.WHITE,
     val imagePositionDarkColor: Int = Color.BLACK,
