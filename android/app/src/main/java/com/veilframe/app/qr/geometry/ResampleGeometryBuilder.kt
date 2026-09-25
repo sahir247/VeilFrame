@@ -112,7 +112,17 @@ object ResampleGeometryBuilder {
                     if (!matrix.isDark(col, row)) continue
                     val tx = ox + col * mSize
                     val ty = oy + row * mSize
-                    nodes.add(RectNode(tx, ty, mSize, mSize, fill = timingColor))
+                    when (design.timingStyle.shape) {
+                        ModuleShape.CIRCLE -> {
+                            nodes.add(CircleNode(tx + mSize / 2f, ty + mSize / 2f, mSize / 2f, fill = timingColor))
+                        }
+                        ModuleShape.ROUNDED -> {
+                            nodes.add(RectNode(tx, ty, mSize, mSize, rx = mSize / 4f, ry = mSize / 4f, fill = timingColor))
+                        }
+                        else -> {
+                            nodes.add(RectNode(tx, ty, mSize, mSize, fill = timingColor))
+                        }
+                    }
                 }
             }
         }
@@ -127,7 +137,17 @@ object ResampleGeometryBuilder {
                     if (!matrix.isDark(col, row)) continue
                     val ax = ox + col * mSize
                     val ay = oy + row * mSize
-                    nodes.add(RectNode(ax, ay, mSize, mSize, fill = alignColor))
+                    when (design.alignmentStyle.shape) {
+                        ModuleShape.CIRCLE -> {
+                            nodes.add(CircleNode(ax + mSize / 2f, ay + mSize / 2f, mSize / 2f, fill = alignColor))
+                        }
+                        ModuleShape.ROUNDED -> {
+                            nodes.add(RectNode(ax, ay, mSize, mSize, rx = mSize / 4f, ry = mSize / 4f, fill = alignColor))
+                        }
+                        else -> {
+                            nodes.add(RectNode(ax, ay, mSize, mSize, fill = alignColor))
+                        }
+                    }
                 }
             }
         }

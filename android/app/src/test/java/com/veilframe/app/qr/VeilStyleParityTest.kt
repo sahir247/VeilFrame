@@ -943,6 +943,87 @@ class VeilStyleParityTest {
         assertTrue("Animated SVG must have total duration 1.000s", animSvg.contains("dur=\"1.000s\""))
     }
 
+    @Test
+    fun testImageResampleBackdropDefaultsToFalseForParity() {
+        val design = QrDesign(style = QrStyle.IMAGE_RESAMPLE)
+        assertFalse(
+            "IMAGE_RESAMPLE useSourceAsBackdrop must be false by default for reference parity",
+            design.resampleStyle.useSourceAsBackdrop
+        )
+        val params = QrStyleParams(style = QrStyle.IMAGE_RESAMPLE)
+        val fromParams = QrDesign.fromQrStyleParams(params)
+        assertFalse(
+            "QrDesign.fromQrStyleParams for IMAGE_RESAMPLE must default useSourceAsBackdrop to false",
+            fromParams.resampleStyle.useSourceAsBackdrop
+        )
+    }
+
+    @Test
+    fun testImageFillRegistryUsesAuthoritativeImageFillRenderer() {
+        val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(QrStyle.IMAGE_FILL)
+        val renderer = def.rendererFactory()
+        assertTrue(
+            "IMAGE_FILL in registry must instantiate ImageFillRenderer",
+            renderer is com.veilframe.app.qr.renderer.ImageFillRenderer
+        )
+    }
+
+    @Test
+    fun testD25GeometryFaceComputationAndPainterOrder() {
+        val matrix = QrMatrix("https://veilframe.app/d25-faces-test", ErrorCorrectionLevel.H)
+        val design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = 1.0f,
+                positionDepth = 1.0f,
+                topColor = 0xFF000000.toInt(),
+                leftColor = 0x33000000,
+                rightColor = 0x99000000.toInt()
+            )
+        )
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 0
+        )
+        val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, design, geometry)
+        assertNotNull(ir)
+        assertTrue("D25 IR must contain polygon nodes for top, left, right faces", ir.rootNodes.size > matrix.size)
+
+        val polygons = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>()
+        assertTrue("D25 must emit polygon nodes for the extruded isometric faces", polygons.isNotEmpty())
+    }
+
+    @Test
+    fun testLineTopologyBuilderRunDetectionAndTargetPads() {
+        val matrix = QrMatrix("https://veilframe.app/line-topology-test", ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val cs = 10f
+        val ox = 0f
+        val oy = 0f
+        val nodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF123456.toInt(),
+            addAccentRings = true
+        )
+
+        assertNotNull(nodes)
+        val lines = nodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val circles = nodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+
+        assertTrue("LineTopologyBuilder must detect contiguous runs and emit LineNodes", lines.isNotEmpty())
+        assertTrue("LineTopologyBuilder lines must have round end caps", lines.all { it.isRoundCap })
+        assertTrue("LineTopologyBuilder must emit circular node pads at endpoints and junctions", circles.isNotEmpty())
+
+        val accentRings = circles.filter { it.stroke != null && it.fill == null }
+        assertTrue("LineTopologyBuilder must emit target accent rings for target appearance", accentRings.isNotEmpty())
+    }
+
     private fun createDummyBitmap(): Bitmap {
         return try {
             val unsafeClass = Class.forName("sun.misc.Unsafe")

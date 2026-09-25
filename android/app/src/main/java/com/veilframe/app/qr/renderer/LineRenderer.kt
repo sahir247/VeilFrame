@@ -95,6 +95,25 @@ class LineRenderer : QrRenderer {
             else -> design.lineStyle.direction
         }
 
+        if (direction == LineDirection.X) {
+            nodes.addAll(
+                LineTopologyBuilder.buildTopology(
+                    matrix = matrix,
+                    ox = ox,
+                    oy = oy,
+                    cs = cs,
+                    thicknessFraction = thickness,
+                    lineColor = lineColor,
+                    addAccentRings = true
+                )
+            )
+            return com.veilframe.app.qr.geometry.QrGeometryIr(
+                width = geometry.outputWidth.toFloat(),
+                height = geometry.outputHeight.toFloat(),
+                rootNodes = nodes
+            )
+        }
+
         for (x in 0 until nCount) {
             for (y in 0 until nCount) {
                 if (!matrix.isDark(x, y)) continue
@@ -127,6 +146,9 @@ class LineRenderer : QrRenderer {
                                         strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
                                     )
                                 )
+                                val nodeRadius = (thickness / 2f) * cs * 1.25f
+                                nodes.add(com.veilframe.app.qr.geometry.CircleNode(lx1, ly1, nodeRadius, fill = lineColor))
+                                nodes.add(com.veilframe.app.qr.geometry.CircleNode(lx2, ly2, nodeRadius, fill = lineColor))
                             }
                         }
                         if (available[x][y]) {
@@ -166,6 +188,9 @@ class LineRenderer : QrRenderer {
                                         strokeColor = lineColor, strokeWidth = thickness * cs, isRoundCap = true
                                     )
                                 )
+                                val nodeRadius = (thickness / 2f) * cs * 1.25f
+                                nodes.add(com.veilframe.app.qr.geometry.CircleNode(lx1, ly1, nodeRadius, fill = lineColor))
+                                nodes.add(com.veilframe.app.qr.geometry.CircleNode(lx2, ly2, nodeRadius, fill = lineColor))
                             }
                         }
                         if (available[x][y]) {

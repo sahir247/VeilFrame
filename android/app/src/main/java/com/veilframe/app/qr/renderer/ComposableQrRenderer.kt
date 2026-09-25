@@ -66,36 +66,28 @@ open class ComposableQrRenderer : BaseQrRenderer() {
     ) {
         val n = matrix.size
 
-        // 1. IMAGE_RESAMPLE: 3x3 Stochastic subpixel sampling (VeilFrame Art Engine parity)
+        // Style specific authoritative dispatch
         if (design.style == QrStyle.IMAGE_RESAMPLE) {
-            val sourceBitmap = design.imageSource.bitmap
-            if (sourceBitmap != null && !sourceBitmap.isRecycled) {
-                val fgPaint = context.obtainFill(design.palette.foreground)
-
-                ResampleSubpixelEngine.traverseSubpixels(
-                    matrix = matrix,
-                    source = sourceBitmap,
-                    style = design.imageSource,
-                    seed = design.resampleStyle.seed,
-                    policy = ArtisticResamplePolicy.from(design)
-                ) { col, row, subX, subY, _ ->
-                    val rect = SubpixelGeometry.computeCanvasRect(
-                        col = col,
-                        row = row,
-                        offsetX = geometry.offsetX,
-                        offsetY = geometry.offsetY,
-                        moduleSize = geometry.moduleSize,
-                        subX = subX,
-                        subY = subY
-                    )
-                    canvas.drawRect(rect.left, rect.top, rect.left + rect.width, rect.top + rect.height, fgPaint)
-                }
-                return
-            }
-            // If no source image provided: falls through to normal foreground data fill
+            ResampleImageRenderer().render(matrix, design, canvas, geometry, context)
+            return
         }
 
-        // 2. IMAGE_MASKED: Stenciled photo fill through dark module paths (Strictly imageSource.bitmap)
+        if (design.style == QrStyle.IMAGE_FILL) {
+            ImageFillRenderer().render(matrix, design, canvas, geometry, context)
+            return
+        }
+
+        if (design.style == QrStyle.D25) {
+            Renderer25D().render(matrix, design, canvas, geometry, context)
+            return
+        }
+
+        if (design.style == QrStyle.LINE) {
+            LineRenderer().render(matrix, design, canvas, geometry, context)
+            return
+        }
+
+        // IMAGE_MASKED: Stenciled photo fill through dark module paths (Strictly imageSource.bitmap)
         if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED) {
             val sourceBitmap = design.imageSource.bitmap
             if (sourceBitmap != null && !sourceBitmap.isRecycled) {
@@ -163,7 +155,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
         }
 
         val path = context.tempPath4
-        val is25D = design.effects.is25D || design.style == QrStyle.D25
+        val is25D = design.effects.is25D
 
         for (col in 0 until n) {
             for (row in 0 until n) {

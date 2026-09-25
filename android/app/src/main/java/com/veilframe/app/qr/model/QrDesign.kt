@@ -140,7 +140,7 @@ enum class BackdropBlendMode {
 
 data class ResampleStyle(
     val seed: Long = 42L,
-    val useSourceAsBackdrop: Boolean = true,
+    val useSourceAsBackdrop: Boolean = false,
     val backdropOpacity: Float = 1.0f,
     val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,

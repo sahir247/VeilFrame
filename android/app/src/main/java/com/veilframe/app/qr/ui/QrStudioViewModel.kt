@@ -40,7 +40,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageOpacity: Float = 1.0f,
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
-        val resampleUseSourceAsBackdrop: Boolean = true,
+        val resampleUseSourceAsBackdrop: Boolean = false,
         val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
         val animatedFrames: List<QrFrame> = emptyList(),
@@ -70,10 +70,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateStyle(style: QrStyle) {
-        val useBackdrop = if (style == QrStyle.IMAGE_RESAMPLE) true else _state.value.resampleUseSourceAsBackdrop
         _state.value = _state.value.copy(
             style = style,
-            resampleUseSourceAsBackdrop = useBackdrop,
             repairNotice = null
         )
         regenerate(debounceMs = 0)

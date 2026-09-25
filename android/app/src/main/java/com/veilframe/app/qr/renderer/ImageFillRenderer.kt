@@ -7,28 +7,106 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
+import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.geometry.GroupNode
+import com.veilframe.app.qr.geometry.ImageNode
+import com.veilframe.app.qr.geometry.IrSvgRenderer
+import com.veilframe.app.qr.geometry.QrGeometryIr
+import com.veilframe.app.qr.geometry.QrGeometryNode
+import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.BackgroundStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
-import com.veilframe.app.qr.QrStyleParams
 
 /**
- * Style 5 — IMAGE_FILL (VeilFrameStyleImageFill Parity)
+ * Style 5 — IMAGE_FILL
  *
- * Implements VeilFrame Art Engine continuous image masking:
+ * Implements continuous image masking:
  * `<mask id="hole">...<rect width="1.02" height="1.02" fill="white"/>...</mask>`
  * `<g mask="url(#hole)"><rect fill="backgroundColor"/><image .../><rect fill="maskColor"/></g>`
  *
- * The source image is continuous across the QR code area and revealed through the dark-module
- * stencil mask, combined with a base [backgroundColor] and an overlay [maskColor] tint.
- * Modules are NOT individually sampled; the full visual gradient of the continuous image shines through.
+ * The source image is continuous across the QR code area and revealed strictly through
+ * the dark-module stencil mask, combined with a base [backgroundColor] and an overlay [maskColor] tint.
  */
-@Deprecated(
-    message = "Use ComposableQrRenderer for unified 11-layer architecture, 3x3 stochastic subpixel engine, and geometry IR parity.",
-    replaceWith = ReplaceWith("ComposableQrRenderer()", "com.veilframe.app.qr.renderer.ComposableQrRenderer")
-)
 class ImageFillRenderer : QrRenderer {
+
+    fun generateGeometry(
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry
+    ): QrGeometryIr {
+        val n = matrix.size
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+        val width = geometry.outputWidth.toFloat()
+        val height = geometry.outputHeight.toFloat()
+        val nodes = mutableListOf<QrGeometryNode>()
+
+        val sourceBmp = design.imageSource.bitmap
+        val bgColor = design.imageFillBackgroundColor
+        val maskColor = design.imageFillMaskColor
+        val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
+
+        // 1. Base canvas background
+        val bgAlpha = (design.palette.background ushr 24) and 0xFF
+        if (bgAlpha > 0) {
+            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, fill = design.palette.background))
+        }
+
+        // 2. Continuous masked group with hole mask
+        val maskDef = buildString {
+            append("""<mask id="hole">""")
+            append("""<rect x="0" y="0" width="$width" height="$height" fill="black"/>""")
+            val antiGap = 0.01f * mSize
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.isDark(col, row)) {
+                        val left = ox + col * mSize - antiGap
+                        val top = oy + row * mSize - antiGap
+                        val w = mSize + 2 * antiGap
+                        val h = mSize + 2 * antiGap
+                        append("""<rect x="$left" y="$top" width="$w" height="$h" fill="white"/>""")
+                    }
+                }
+            }
+            append("""</mask>""")
+        }
+
+        val groupChildren = mutableListOf<QrGeometryNode>()
+        // 2a. Background inside dark modules
+        groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = bgColor))
+
+        // 2b. Scaled source image
+        if (sourceBmp != null && !sourceBmp.isRecycled) {
+            val base64 = IrSvgRenderer.bitmapToBase64(sourceBmp)
+            groupChildren.add(
+                ImageNode(
+                    x = ox,
+                    y = oy,
+                    width = n * mSize,
+                    height = n * mSize,
+                    bitmap = sourceBmp,
+                    base64Data = base64,
+                    opacity = imageAlpha,
+                    preserveAspectRatio = "xMidYMid slice"
+                )
+            )
+        }
+
+        // 2c. Overlay mask tint
+        groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = maskColor))
+
+        nodes.add(GroupNode(children = groupChildren, maskId = "hole"))
+
+        return QrGeometryIr(
+            width = width,
+            height = height,
+            defs = listOf(maskDef),
+            rootNodes = nodes
+        )
+    }
 
     override fun render(
         matrix: QrMatrix,
@@ -39,7 +117,7 @@ class ImageFillRenderer : QrRenderer {
     ) {
         val sourceImage = design.imageSource.bitmap
 
-        if (sourceImage == null) {
+        if (sourceImage == null || sourceImage.isRecycled) {
             BasicRenderer().render(matrix, design, canvas, geometry, context)
             return
         }
@@ -58,7 +136,7 @@ class ImageFillRenderer : QrRenderer {
         // 1. Offscreen layer for masked QR stencil
         val layerId = canvas.saveLayer(dataBounds, null)
 
-        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion (matching VeilFrame's 1.02 size)
+        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion
         val maskPaint = context.obtainFill(Color.WHITE)
         val antiGap = 0.01f * mSize
 
@@ -75,7 +153,7 @@ class ImageFillRenderer : QrRenderer {
         }
 
         // 3. Composite continuous fill content using SRC_IN
-        val contentPaint = Paint().apply {
+        val contentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
         }
         val contentLayer = canvas.saveLayer(dataBounds, contentPaint)

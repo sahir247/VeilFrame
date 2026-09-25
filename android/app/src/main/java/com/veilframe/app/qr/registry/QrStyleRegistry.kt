@@ -63,7 +63,7 @@ object QrStyleRegistry {
             defaultModuleShape = ModuleShape.SQUARE,
             defaultFinderStyle = FinderStyle.CLASSIC,
             imageFillMode = true,
-            rendererFactory = { ComposableQrRenderer() }
+            rendererFactory = { ImageFillRenderer() }
         ),
         QrStyle.IMAGE to QrStyleDefinition(
             style = QrStyle.IMAGE,

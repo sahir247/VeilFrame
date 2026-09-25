@@ -602,8 +602,8 @@ class ResampleImage3x3Test {
         val explicitArtisticMatrix = QrGenerator.generateMatrix(content, resampleDesign, mode = GenerationMode.ARTISTIC_ENGINE)
         assertEquals("generateMatrix default mode must match explicit ARTISTIC_ENGINE matrix", explicitArtisticMatrix.size, autoMatrix.size)
 
-        // 4. Default backdrop flag for resample style
-        assertTrue("resampleStyle.useSourceAsBackdrop must default to true", resampleDesign.resampleStyle.useSourceAsBackdrop)
+        // 4. Default backdrop flag for resample style (parity default is false)
+        assertFalse("resampleStyle.useSourceAsBackdrop must default to false for parity", resampleDesign.resampleStyle.useSourceAsBackdrop)
     }
 
     @Test
@@ -661,7 +661,7 @@ class ResampleImage3x3Test {
         assertEquals(1, profiled.explicitQuietZone)
         assertEquals(ModuleShape.SQUARE, profiled.timingStyle.shape)
         assertEquals(ModuleShape.SQUARE, profiled.alignmentStyle.shape)
-        assertTrue(profiled.resampleStyle.useSourceAsBackdrop)
+        assertFalse(profiled.resampleStyle.useSourceAsBackdrop)
     }
 
     @Test

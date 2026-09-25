@@ -6,6 +6,7 @@ import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.renderer.ArrayPixelSource
 import com.veilframe.app.qr.renderer.ComposableQrRenderer
+import com.veilframe.app.qr.renderer.ImageFillRenderer
 import com.veilframe.app.qr.renderer.ResampleSubpixelEngine
 import com.veilframe.app.qr.validation.ScanabilityValidator
 import org.junit.Assert.*
@@ -130,8 +131,8 @@ class ResampleBackdropAndSeedParityTest {
             resampleDef.rendererFactory() is ComposableQrRenderer
         )
         assertTrue(
-            "IMAGE_FILL in registry must instantiate ComposableQrRenderer",
-            fillDef.rendererFactory() is ComposableQrRenderer
+            "IMAGE_FILL in registry must instantiate ImageFillRenderer",
+            fillDef.rendererFactory() is ImageFillRenderer
         )
     }
 
