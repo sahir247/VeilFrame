@@ -116,7 +116,7 @@ class GifEncoder {
         os.write(0x21) // Extension Introducer
         os.write(0xF9) // Graphic Control Label
         os.write(0x04) // Block size
-        os.write(0x04) // Packed: Disposal method 1 (Do not dispose), no transparent color
+        os.write(0x08) // Packed: Disposal method 2 (Restore to background color), no transparent color
         writeShortLE(os, delayCs)
         os.write(0x00) // Transparent color index
         os.write(0x00) // Block Terminator
@@ -254,20 +254,19 @@ class GifEncoder {
         }
 
         // LZW String Table using Trie (prefix -> code)
-        val prefixTable = IntArray(5003) { -1 }
-        val suffixTable = IntArray(5003) { -1 }
-        val codeTable = IntArray(5003) { -1 }
+        val tableSize = 8191
+        val prefixTable = IntArray(tableSize) { -1 }
+        val suffixTable = IntArray(tableSize) { -1 }
+        val codeTable = IntArray(tableSize) { -1 }
 
         fun findHash(prefix: Int, suffix: Int): Int {
-            var h = ((prefix shl 8) xor suffix) % 5003
-            if (h < 0) h += 5003
-            var d = 1
+            var h = ((prefix shl 8) xor suffix) % tableSize
+            if (h < 0) h += tableSize
             while (prefixTable[h] != -1) {
                 if (prefixTable[h] == prefix && suffixTable[h] == suffix) {
                     return h
                 }
-                h = (h + d) % 5003
-                d += 2
+                h = (h + 1) % tableSize
             }
             return h
         }

@@ -12,7 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true"
-        android:background="@color/vf_bg_dark"
+        android:background="?android:attr/colorBackground"
         android:clipToPadding="false"
         android:paddingBottom="48dp">
 

@@ -998,7 +998,6 @@ class VeilStyleParityTest {
     @Test
     fun testLineTopologyBuilderRunDetectionAndTargetPads() {
         val matrix = QrMatrix("https://veilframe.app/line-topology-test", ErrorCorrectionLevel.H)
-        val n = matrix.size
         val cs = 10f
         val ox = 0f
         val oy = 0f
@@ -1009,6 +1008,7 @@ class VeilStyleParityTest {
             cs = cs,
             thicknessFraction = 0.5f,
             lineColor = 0xFF123456.toInt(),
+            direction = LineDirection.X,
             addAccentRings = true
         )
 
@@ -1018,10 +1018,31 @@ class VeilStyleParityTest {
 
         assertTrue("LineTopologyBuilder must detect contiguous runs and emit LineNodes", lines.isNotEmpty())
         assertTrue("LineTopologyBuilder lines must have round end caps", lines.all { it.isRoundCap })
-        assertTrue("LineTopologyBuilder must emit circular node pads at endpoints and junctions", circles.isNotEmpty())
+        
+        // Assert true diagonal lines exist for LineDirection.X (x1 != x2 and y1 != y2)
+        val diagonalLines = lines.filter { it.x1 != it.x2 && it.y1 != it.y2 }
+        assertTrue("LineDirection.X must construct diagonal runs (slope != 0 and slope != Inf)", diagonalLines.isNotEmpty())
+
+        assertTrue("LineTopologyBuilder must emit circular node pads at data module positions", circles.isNotEmpty())
 
         val accentRings = circles.filter { it.stroke != null && it.fill == null }
         assertTrue("LineTopologyBuilder must emit target accent rings for target appearance", accentRings.isNotEmpty())
+    }
+
+    @Test
+    fun testMultiFrameGifEncodingHeaderAndIntegrity() {
+        val dummyBmp = createDummyBitmap()
+        val frames = listOf(
+            com.veilframe.app.qr.model.QrFrame(dummyBmp, 100),
+            com.veilframe.app.qr.model.QrFrame(dummyBmp, 100),
+            com.veilframe.app.qr.model.QrFrame(dummyBmp, 100)
+        )
+        val gifBytes = com.veilframe.app.qr.exporter.GifEncoder.encode(frames, 32, 32, 0)
+        assertTrue("GIF byte output cannot be empty", gifBytes.isNotEmpty())
+        val header = String(gifBytes.copyOfRange(0, 6), Charsets.US_ASCII)
+        assertEquals("GIF header must be GIF89a", "GIF89a", header)
+        // Trailer byte 0x3B must be at the end
+        assertEquals("GIF must end with trailer byte 0x3B", 0x3B.toByte(), gifBytes.last())
     }
 
     private fun createDummyBitmap(): Bitmap {

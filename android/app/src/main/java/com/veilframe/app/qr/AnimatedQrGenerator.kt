@@ -164,6 +164,32 @@ object AnimatedQrGenerator {
         loops: Int = 0
     ): ByteArray {
         require(renderedFrames.isNotEmpty()) { "renderedFrames cannot be empty" }
+        // Try FFmpegKit first for industry-standard animated GIF encoding
+        try {
+            val tempDir = File.createTempFile("qr_gif_", "_dir")
+            tempDir.delete()
+            tempDir.mkdirs()
+            val outFile = File(tempDir, "output.gif")
+            val avgDurationMs = renderedFrames.map { it.durationMs.coerceAtLeast(20) }.average().toInt().coerceIn(20, 1000)
+            val fps = (1000 / avgDurationMs).coerceIn(1, 50)
+
+            for ((idx, frame) in renderedFrames.withIndex()) {
+                val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
+                FileOutputStream(frameFile).use { out ->
+                    frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+            }
+            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+            val cmd = "-y -framerate $fps -i \"$inputPattern\" -vf \"split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3\" -loop $loops \"${outFile.absolutePath}\""
+            val session = FFmpegKit.execute(cmd)
+            if (ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0) {
+                val bytes = outFile.readBytes()
+                tempDir.deleteRecursively()
+                return bytes
+            }
+            tempDir.deleteRecursively()
+        } catch (_: Throwable) {
+        }
         return GifEncoder.encode(renderedFrames, width, height, loops)
     }
 
@@ -177,12 +203,8 @@ object AnimatedQrGenerator {
         height: Int = renderedFrames.firstOrNull()?.bitmap?.height ?: 512,
         loops: Int = 0
     ) {
-        val encoder = GifEncoder()
-        encoder.start(outputStream, width, height, loops)
-        for (frame in renderedFrames) {
-            encoder.addFrame(frame.bitmap, frame.durationMs)
-        }
-        encoder.finish()
+        val bytes = encodeToGif(renderedFrames, width, height, loops)
+        outputStream.write(bytes)
     }
 
     /**

@@ -180,60 +180,23 @@ class QrGenerateTabFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val ctx = context ?: return@launch
             val mimeType = ctx.contentResolver.getType(uri) ?: ""
-            val isGif = mimeType.equals("image/gif", ignoreCase = true) || uri.toString().endsWith(".gif", ignoreCase = true)
-            val isVideo = mimeType.startsWith("video/", ignoreCase = true)
+            val uriStr = uri.toString().lowercase(java.util.Locale.ROOT)
+            val isGif = mimeType.equals("image/gif", ignoreCase = true) || uriStr.endsWith(".gif")
+            val isVideo = mimeType.startsWith("video/", ignoreCase = true) ||
+                uriStr.endsWith(".mp4") || uriStr.endsWith(".mov") || uriStr.endsWith(".webm")
 
-            if (isGif && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                // Decode animated GIF frames using ImageDecoder
-                try {
-                    val frames = mutableListOf<com.veilframe.app.qr.model.QrFrame>()
-                    val source = android.graphics.ImageDecoder.createSource(ctx.contentResolver, uri)
-                    val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
-                    if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
-                        // Extract sample frames
-                        val bmp = android.graphics.Bitmap.createBitmap(512, 512, android.graphics.Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(bmp)
-                        drawable.setBounds(0, 0, 512, 512)
-                        drawable.draw(canvas)
-                        frames.add(com.veilframe.app.qr.model.QrFrame(bmp, 100))
-                    }
-                    if (frames.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            if (isAdded) vm.updateAnimatedFrames(frames)
-                        }
-                        return@launch
-                    }
-                } catch (_: Exception) {}
-            } else if (isVideo) {
-                // Extract video keyframes using MediaMetadataRetriever
-                try {
-                    val retriever = android.media.MediaMetadataRetriever()
-                    retriever.setDataSource(ctx, uri)
-                    val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-                    val frameCount = 12
-                    val stepMs = (durationMs / frameCount).coerceAtLeast(50L)
-                    val frames = mutableListOf<com.veilframe.app.qr.model.QrFrame>()
-
-                    for (i in 0 until frameCount) {
-                        val timeUs = (i * stepMs * 1000L)
-                        val frameBmp = retriever.getFrameAtTime(timeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                        if (frameBmp != null) {
-                            val scaled = android.graphics.Bitmap.createScaledBitmap(frameBmp, 512, 512, true)
-                            frames.add(com.veilframe.app.qr.model.QrFrame(scaled, stepMs.toInt()))
+            if (isGif || isVideo) {
+                val frames = com.veilframe.app.qr.AnimatedMediaHelper.extractFrames(ctx, uri)
+                if (frames.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        if (isAdded) {
+                            vm.updateAnimatedFrames(frames)
+                            val label = if (isGif) "GIF" else "video"
+                            android.widget.Toast.makeText(requireContext(), "Imported $label (${frames.size} frames)", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
-                    retriever.release()
-
-                    if (frames.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            if (isAdded) {
-                                vm.updateAnimatedFrames(frames)
-                                Toast.makeText(requireContext(), "Imported video (${frames.size} frames)", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        return@launch
-                    }
-                } catch (_: Exception) {}
+                    return@launch
+                }
             }
 
             // Standard static bitmap fallback

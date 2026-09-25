@@ -5,14 +5,14 @@
     android:id="@+id/rootCoordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/vf_bg_dark">
+    android:background="?android:attr/colorBackground">
 
     <!-- Top App Bar with System Insets & Dual Mode (Home Brand vs Tool Back Bar) -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/vf_surface"
+        android:background="?attr/colorSurface"
         app:elevation="2dp">
 
         <!-- Home Screen Header Bar -->

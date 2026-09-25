@@ -862,15 +862,15 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:paddingStart="4dp"
-                android:paddingEnd="4dp"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:minWidth="0dp"
                 android:textSize="12sp"
-                app:iconPadding="4dp"
-                android:text="Logo"
-                app:icon="@drawable/ic_tab_image" />
+                android:maxLines="1"
+                android:ellipsize="none"
+                android:text="Logo" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_source_image_btn"
@@ -879,15 +879,15 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:paddingStart="4dp"
-                android:paddingEnd="4dp"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:minWidth="0dp"
                 android:textSize="12sp"
-                app:iconPadding="4dp"
-                android:text="QR Photo"
-                app:icon="@drawable/ic_tab_image" />
+                android:maxLines="1"
+                android:ellipsize="none"
+                android:text="QR Photo" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_bg_image_btn"
@@ -895,15 +895,15 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:paddingStart="4dp"
-                android:paddingEnd="4dp"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:minWidth="0dp"
                 android:textSize="12sp"
-                app:iconPadding="4dp"
-                android:text="Backdrop"
-                app:icon="@drawable/ic_tab_image" />
+                android:maxLines="1"
+                android:ellipsize="none"
+                android:text="Backdrop" />
         </LinearLayout>
 
         <!-- Dynamic Source Image / QR Photo Controls Card -->
