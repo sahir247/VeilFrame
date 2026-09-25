@@ -69,9 +69,18 @@ class Renderer25D : QrRenderer {
             return (isoY - vbY) * scale + transY
         }
 
-        val topPaint = context.obtainFill(topColor)
-        val leftPaint = context.obtainFill(leftColor)
-        val rightPaint = context.obtainFill(rightColor)
+        val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = topColor
+        }
+        val leftPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = leftColor
+        }
+        val rightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = rightColor
+        }
 
         val polyPath = Path()
 

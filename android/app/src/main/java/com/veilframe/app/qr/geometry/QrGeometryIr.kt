@@ -1,5 +1,9 @@
 package com.veilframe.app.qr.geometry
 
+import android.graphics.Bitmap
+import android.graphics.Path
+import android.graphics.RectF
+
 /**
  * Unified Geometry Intermediate Representation (IR) node.
  * Single source of truth for both Canvas rasterization and SVG vector emission.
@@ -29,7 +33,8 @@ data class CircleNode(
     val fill: Int? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
-    val opacity: Float = 1f
+    val opacity: Float = 1f,
+    val strokeDashArray: String? = null
 ) : QrGeometryNode
 
 data class LineNode(
@@ -39,15 +44,41 @@ data class LineNode(
     val y2: Float,
     val strokeColor: Int,
     val strokeWidth: Float,
-    val isRoundCap: Boolean = true
+    val isRoundCap: Boolean = true,
+    val strokeDashArray: String? = null
 ) : QrGeometryNode
 
-data class PathNode(
-    val svgPathData: String,
+data class PolygonNode(
+    val points: String,
+    val pointsList: List<Pair<Float, Float>> = emptyList(),
     val fill: Int? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val opacity: Float = 1f,
+    val transform: String? = null
+) : QrGeometryNode
+
+data class PathNode(
+    val svgPathData: String,
+    val androidPath: Path? = null,
+    val fill: Int? = null,
+    val stroke: Int? = null,
+    val strokeWidth: Float = 0f,
+    val opacity: Float = 1f,
+    val transform: String? = null
+) : QrGeometryNode
+
+data class ImageNode(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val bitmap: Bitmap? = null,
+    val base64Data: String? = null,
+    val opacity: Float = 1f,
+    val preserveAspectRatio: String = "xMidYMid slice",
+    val maskId: String? = null,
+    val clipOutRects: List<RectF> = emptyList(),
     val transform: String? = null
 ) : QrGeometryNode
 

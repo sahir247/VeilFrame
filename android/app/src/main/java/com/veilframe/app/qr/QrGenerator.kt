@@ -144,33 +144,26 @@ object QrGenerator {
                 design.effectiveQuietZone
             }
 
+            val qzLeft = design.directionalQuietZone?.left ?: quietZone
+            val qzTop = design.directionalQuietZone?.top ?: quietZone
+            val qzRight = design.directionalQuietZone?.right ?: quietZone
+            val qzBottom = design.directionalQuietZone?.bottom ?: quietZone
+
             val geometry = QrGeometry(
                 matrixSize = matrix.size,
                 outputWidth = size,
                 outputHeight = size,
-                quietZoneModules = quietZone
+                quietZoneModules = quietZone,
+                quietZoneLeft = qzLeft,
+                quietZoneTop = qzTop,
+                quietZoneRight = qzRight,
+                quietZoneBottom = qzBottom
             )
 
-            val bitmap = try {
-                Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            } catch (t: Throwable) {
-                null
-            }
+            val bitmap = generateBitmap(matrix, design, geometry)
 
             val report = if (bitmap != null) {
-                val canvas = Canvas(bitmap)
-                val context = RenderContext()
-
-                // 1. Draw Canvas Background (including Quiet Zone margins)
-                drawBackground(canvas, design, size, context)
-
-                // 2. Obtain renderer
-                val renderer: QrRenderer = getRendererForDesign(design)
-
-                // 3. Render QR Code
-                renderer.render(matrix, design, canvas, geometry, context)
-
-                // 4. Validate scanability (Fast validator)
+                // Validate scanability (Fast validator)
                 runBlocking {
                     ScanabilityValidator.validateFast(bitmap, design, matrix, content)
                 }
@@ -258,6 +251,36 @@ object QrGenerator {
         }
 
         return lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
+    }
+
+    /**
+     * Directly renders a [QrMatrix] into a styled [Bitmap] according to [design] and [geometry].
+     * Returns null in headless JVM unit testing environments if native Bitmap allocation fails.
+     */
+    fun generateBitmap(
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
+    ): Bitmap? {
+        val size = geometry.outputWidth
+        val bitmap = try {
+            Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        } catch (_: Throwable) {
+            null
+        } ?: return null
+
+        val canvas = Canvas(bitmap)
+        val context = RenderContext()
+
+        // 1. Draw Canvas Background (including Quiet Zone margins)
+        drawBackground(canvas, design, size, context)
+
+        // 2. Obtain renderer
+        val renderer: QrRenderer = getRendererForDesign(design)
+
+        // 3. Render QR Code
+        renderer.render(matrix, design, canvas, geometry, context)
+        return bitmap
     }
 
     /**

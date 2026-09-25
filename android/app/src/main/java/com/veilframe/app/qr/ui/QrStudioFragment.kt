@@ -179,6 +179,64 @@ class QrGenerateTabFragment : Fragment() {
         if (uri == null) return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val ctx = context ?: return@launch
+            val mimeType = ctx.contentResolver.getType(uri) ?: ""
+            val isGif = mimeType.equals("image/gif", ignoreCase = true) || uri.toString().endsWith(".gif", ignoreCase = true)
+            val isVideo = mimeType.startsWith("video/", ignoreCase = true)
+
+            if (isGif && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                // Decode animated GIF frames using ImageDecoder
+                try {
+                    val frames = mutableListOf<com.veilframe.app.qr.model.QrFrame>()
+                    val source = android.graphics.ImageDecoder.createSource(ctx.contentResolver, uri)
+                    val drawable = android.graphics.ImageDecoder.decodeDrawable(source)
+                    if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
+                        // Extract sample frames
+                        val bmp = android.graphics.Bitmap.createBitmap(512, 512, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bmp)
+                        drawable.setBounds(0, 0, 512, 512)
+                        drawable.draw(canvas)
+                        frames.add(com.veilframe.app.qr.model.QrFrame(bmp, 100))
+                    }
+                    if (frames.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            if (isAdded) vm.updateAnimatedFrames(frames)
+                        }
+                        return@launch
+                    }
+                } catch (_: Exception) {}
+            } else if (isVideo) {
+                // Extract video keyframes using MediaMetadataRetriever
+                try {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(ctx, uri)
+                    val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
+                    val frameCount = 12
+                    val stepMs = (durationMs / frameCount).coerceAtLeast(50L)
+                    val frames = mutableListOf<com.veilframe.app.qr.model.QrFrame>()
+
+                    for (i in 0 until frameCount) {
+                        val timeUs = (i * stepMs * 1000L)
+                        val frameBmp = retriever.getFrameAtTime(timeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        if (frameBmp != null) {
+                            val scaled = android.graphics.Bitmap.createScaledBitmap(frameBmp, 512, 512, true)
+                            frames.add(com.veilframe.app.qr.model.QrFrame(scaled, stepMs.toInt()))
+                        }
+                    }
+                    retriever.release()
+
+                    if (frames.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            if (isAdded) {
+                                vm.updateAnimatedFrames(frames)
+                                Toast.makeText(requireContext(), "Imported video (${frames.size} frames)", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        return@launch
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // Standard static bitmap fallback
             val bmp = try {
                 ctx.contentResolver.openInputStream(uri)?.use { stream ->
                     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -337,6 +395,8 @@ class QrGenerateTabFragment : Fragment() {
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
         val saveSvgBtn         = view.findViewById<MaterialButton>(R.id.qr_save_svg_btn)
+        val saveGifBtn         = view.findViewById<MaterialButton>(R.id.qr_save_gif_btn)
+        val saveVideoBtn       = view.findViewById<MaterialButton>(R.id.qr_save_video_btn)
         val shareBtn           = view.findViewById<MaterialButton>(R.id.qr_share_btn)
 
         // Setup Source Scale Spinner
@@ -675,9 +735,11 @@ class QrGenerateTabFragment : Fragment() {
         autoRepairBtn.setOnClickListener { vm.autoRepair() }
         saveBtn.setOnClickListener      { vm.saveToGallery() }
         saveSvgBtn.setOnClickListener   { vm.saveSvg() }
+        saveGifBtn?.setOnClickListener   { vm.saveGif() }
+        saveVideoBtn?.setOnClickListener { vm.saveVideo() }
         shareBtn.setOnClickListener     { vm.share() }
         logoBtn.setOnClickListener      { logoPickerLauncher.launch("image/*") }
-        sourceImgBtn.setOnClickListener { sourceImagePickerLauncher.launch("image/*") }
+        sourceImgBtn.setOnClickListener { sourceImagePickerLauncher.launch("*/*") }
         bgImageBtn.setOnClickListener   { bgImagePickerLauncher.launch("image/*") }
 
         fgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = true) }

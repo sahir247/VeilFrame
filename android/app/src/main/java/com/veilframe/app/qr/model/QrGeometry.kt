@@ -10,19 +10,51 @@ class QrGeometry(
     val matrixSize: Int,
     val outputWidth: Int,
     val outputHeight: Int,
-    val quietZoneModules: Int = 4
+    val quietZoneModules: Int = 4,
+    val quietZoneLeft: Int = quietZoneModules,
+    val quietZoneTop: Int = quietZoneModules,
+    val quietZoneRight: Int = quietZoneModules,
+    val quietZoneBottom: Int = quietZoneModules
 ) {
-    val totalModules: Int = matrixSize + (2 * quietZoneModules)
-    val moduleWidth: Float = outputWidth.toFloat() / totalModules
-    val moduleHeight: Float = outputHeight.toFloat() / totalModules
+    val totalModulesX: Int = matrixSize + quietZoneLeft + quietZoneRight
+    val totalModulesY: Int = matrixSize + quietZoneTop + quietZoneBottom
+    val totalModules: Int = maxOf(totalModulesX, totalModulesY)
+    val moduleWidth: Float = outputWidth.toFloat() / totalModulesX
+    val moduleHeight: Float = outputHeight.toFloat() / totalModulesY
     val moduleSize: Float = minOf(moduleWidth, moduleHeight)
 
-    // Offsets to center the QR matrix inside the canvas if non-square
-    val offsetX: Float = (outputWidth - (totalModules * moduleSize)) / 2f + (quietZoneModules * moduleSize)
-    val offsetY: Float = (outputHeight - (totalModules * moduleSize)) / 2f + (quietZoneModules * moduleSize)
+    // Offsets to center the QR matrix inside the canvas if non-square or if quiet zones differ
+    val offsetX: Float = (outputWidth - (totalModulesX * moduleSize)) / 2f + (quietZoneLeft * moduleSize)
+    val offsetY: Float = (outputHeight - (totalModulesY * moduleSize)) / 2f + (quietZoneTop * moduleSize)
 
     val contentWidth: Float get() = matrixSize * moduleSize
     val contentHeight: Float get() = matrixSize * moduleSize
+
+    companion object {
+        fun fromDesign(
+            matrixSize: Int,
+            outputWidth: Int,
+            outputHeight: Int,
+            design: QrDesign,
+            defaultQuietZone: Int = 4
+        ): QrGeometry {
+            val qz = design.explicitQuietZone ?: defaultQuietZone
+            val qzLeft = design.directionalQuietZone?.left ?: qz
+            val qzTop = design.directionalQuietZone?.top ?: qz
+            val qzRight = design.directionalQuietZone?.right ?: qz
+            val qzBottom = design.directionalQuietZone?.bottom ?: qz
+            return QrGeometry(
+                matrixSize = matrixSize,
+                outputWidth = outputWidth,
+                outputHeight = outputHeight,
+                quietZoneModules = qz,
+                quietZoneLeft = qzLeft,
+                quietZoneTop = qzTop,
+                quietZoneRight = qzRight,
+                quietZoneBottom = qzBottom
+            )
+        }
+    }
 
     /**
      * Returns the bounding rectangle in output pixels for the module at (col, row).

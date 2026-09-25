@@ -33,7 +33,7 @@ enum class ModuleShape {
 /**
  * Unified parameter bundle for QR code generation.
  *
- * Designed to mirror VeilFrame Art Engine's EFStyleParams hierarchy while being
+ * Designed to mirror VeilFrame Art Engine's style parameter hierarchy while being
  * idiomatic Kotlin/Android. Renderers read only the fields relevant to
  * their style; unused fields are safely ignored.
  */
@@ -62,6 +62,12 @@ data class QrStyleParams(
     val logo: Bitmap? = null,
     /** Logo size as fraction of output size (0.0–0.33). */
     val logoFraction: Float = 0.22f,
+    /** Optional logo border color. */
+    val logoBorderColor: Int? = null,
+    /** Optional logo border width in pixels. */
+    val logoBorderWidth: Float = 0f,
+    /** Optional logo shape (SQUIRCLE, CIRCLE, SQUARE). */
+    val logoShape: com.veilframe.app.qr.model.LogoShape = com.veilframe.app.qr.model.LogoShape.SQUIRCLE,
     /** Optional background image (used by IMAGE* and IMAGE_FILL styles). */
     /** Optional background image (used by backdrop and legacy styles). */
     val backgroundImage: Bitmap? = null,
@@ -118,6 +124,10 @@ data class QrStyleParams(
     val randomRectSeed: Long = 42L,
     // --- Quiet Zone (null defaults to 4 for SAFE mode, 1 for artistic mode) ---
     val quietZone: Int? = null,
+    val quietZoneLeft: Int? = null,
+    val quietZoneTop: Int? = null,
+    val quietZoneRight: Int? = null,
+    val quietZoneBottom: Int? = null,
     // --- Gradient (optional, applied over rendered bitmap) ---
     val gradientStart: Int? = null,
     val gradientEnd: Int? = null,

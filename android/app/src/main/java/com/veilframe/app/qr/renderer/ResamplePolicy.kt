@@ -13,6 +13,29 @@ import com.veilframe.app.qr.model.TimingStyle
  * This decouples the low-level 3x3 stochastic subpixel sampling engine from specific style rules,
  * keeping generic QR structural safety completely separate from artistic visual parity policies.
  */
+/**
+ * Random number generator modes for stochastic subpixel resampling.
+ */
+enum class RngMode {
+    /**
+     * Deterministic 64-bit SplitMix hash based on module coordinates and seed.
+     * Guarantees frame stability for videos/GIFs and identical reproducible exports.
+     */
+    DETERMINISTIC,
+
+    /**
+     * Dynamic unseeded PRNG matching dynamic unseeded runtime behavior.
+     */
+    SYSTEM_UNSEEDED;
+
+    companion object {
+        @JvmField
+        val UNSEEDED_STOCHASTIC = SYSTEM_UNSEEDED
+    }
+}
+
+typealias ResampleRngMode = RngMode
+
 interface ResamplePolicy {
     /**
      * Determines whether the subpixel at coordinate ([subX], [subY]) in 3N x 3N coordinate space
@@ -24,6 +47,11 @@ interface ResamplePolicy {
      * Determines whether a dark module at ([col], [row]) should emit a solid center subpixel anchor.
      */
     fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean
+
+    /**
+     * The random number generator strategy to use for stochastic dot emission.
+     */
+    val rngMode: RngMode get() = RngMode.DETERMINISTIC
 }
 
 /**
@@ -40,7 +68,8 @@ interface ResamplePolicy {
  */
 open class ArtisticResamplePolicy(
     val timingStyle: TimingStyle = TimingStyle(shape = ModuleShape.SQUARE),
-    val alignmentStyle: AlignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE)
+    val alignmentStyle: AlignmentStyle = AlignmentStyle(shape = ModuleShape.SQUARE),
+    override val rngMode: ResampleRngMode = ResampleRngMode.DETERMINISTIC
 ) : ResamplePolicy {
 
     override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean {
@@ -98,7 +127,8 @@ open class ArtisticResamplePolicy(
         fun from(design: QrDesign): ArtisticResamplePolicy {
             return ArtisticResamplePolicy(
                 timingStyle = design.timingStyle,
-                alignmentStyle = design.alignmentStyle
+                alignmentStyle = design.alignmentStyle,
+                rngMode = design.resampleStyle.rngMode
             )
         }
     }

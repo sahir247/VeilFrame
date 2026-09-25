@@ -102,8 +102,51 @@ internal fun drawLogo(
         }
     }
 
-    // Draw logo bitmap centered inside dst
+    // Draw logo bitmap centered inside dst with shape clipping
+    canvas.save()
+    when (logo.shape) {
+        LogoShape.SQUIRCLE -> {
+            val clipPath = QrVisualGeometry.createSquirclePath(dst, context.tempPath1)
+            canvas.clipPath(clipPath)
+        }
+        LogoShape.CIRCLE -> {
+            val clipPath = context.tempPath1.apply {
+                reset()
+                addCircle(dst.centerX(), dst.centerY(), dst.width() / 2f, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+        }
+        LogoShape.SQUARE -> {
+            if (pad > 0f) {
+                val clipPath = context.tempPath1.apply {
+                    reset()
+                    addRoundRect(dst, pad * 0.5f, pad * 0.5f, android.graphics.Path.Direction.CW)
+                }
+                canvas.clipPath(clipPath)
+            }
+        }
+    }
     canvas.drawBitmap(bitmap, null, dst, null)
+    canvas.restore()
+
+    // Draw border stroke if configured
+    if (logo.borderColor != null && logo.borderWidth > 0f) {
+        val borderPaint = context.obtainStroke(logo.borderColor, logo.borderWidth)
+        val targetRect = if (logo.paddingModules > 0f && logo.backgroundMode != LogoBackgroundMode.NONE) paddedRect else dst
+        when (logo.shape) {
+            LogoShape.SQUIRCLE -> {
+                val strokePath = QrVisualGeometry.createSquirclePath(targetRect, context.tempPath1)
+                canvas.drawPath(strokePath, borderPaint)
+            }
+            LogoShape.CIRCLE -> {
+                canvas.drawCircle(targetRect.centerX(), targetRect.centerY(), targetRect.width() / 2f, borderPaint)
+            }
+            LogoShape.SQUARE -> {
+                val rx = if (pad > 0f) pad else 1.5f
+                canvas.drawRoundRect(targetRect, rx, rx, borderPaint)
+            }
+        }
+    }
 }
 
 /**

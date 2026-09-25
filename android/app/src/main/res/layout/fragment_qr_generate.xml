@@ -861,7 +861,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="4dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:textSize="12sp"
+                app:iconPadding="4dp"
                 android:text="Logo"
                 app:icon="@drawable/ic_tab_image" />
 
@@ -871,7 +878,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="4dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:textSize="12sp"
+                app:iconPadding="4dp"
                 android:text="QR Photo"
                 app:icon="@drawable/ic_tab_image" />
 
@@ -881,6 +895,13 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:textSize="12sp"
+                app:iconPadding="4dp"
                 android:text="Backdrop"
                 app:icon="@drawable/ic_tab_image" />
         </LinearLayout>
@@ -1220,6 +1241,37 @@
                 android:layout_weight="1"
                 android:text="Share"
                 app:icon="@drawable/ic_action_share" />
+        </LinearLayout>
+
+        <View android:layout_height="8dp" android:layout_width="match_parent" />
+
+        <!-- Animated Media Export Row (GIF / Video MP4) -->
+        <LinearLayout
+            android:id="@+id/container_animated_export"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_save_gif_btn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:textSize="12sp"
+                android:text="Save GIF"
+                app:icon="@drawable/ic_action_save" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_save_video_btn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:text="Save MP4 Video"
+                app:icon="@drawable/ic_tab_video" />
         </LinearLayout>
 
     </LinearLayout>

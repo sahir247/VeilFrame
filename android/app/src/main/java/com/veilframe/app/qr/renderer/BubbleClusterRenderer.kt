@@ -37,7 +37,11 @@ object BubbleClusterRenderer {
                 val fillPaint = context.obtainFill(bgColor)
                 canvas.drawCircle(cx, cy, r, fillPaint)
 
-                val strokeW = (cluster.strokeWidthRatio * modulePx).coerceAtLeast(1.0f)
+                val strokeW = if (cluster.isAmbient) {
+                    cluster.strokeWidthRatio * modulePx
+                } else {
+                    (cluster.strokeWidthRatio * modulePx).coerceAtLeast(1.0f)
+                }
                 val strokePaint = context.obtainStroke(fgColor, strokeW)
                 canvas.drawCircle(cx, cy, r, strokePaint)
 

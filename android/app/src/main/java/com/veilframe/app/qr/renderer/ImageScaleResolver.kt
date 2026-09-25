@@ -314,16 +314,36 @@ object ImageScaleResolver {
             canvas.drawColor(Color.WHITE)
         }
 
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        val dstIntRect = Rect(
-            dstRect.left.toInt(),
-            dstRect.top.toInt(),
-            dstRect.right.toInt().coerceAtMost(tw),
-            dstRect.bottom.toInt().coerceAtMost(th)
-        )
-        canvas.drawBitmap(source, srcRect, dstIntRect, paint)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            isFilterBitmap = true
+            isDither = true
+        }
+        canvas.drawBitmap(source, srcRect, dstRect, paint)
 
         return output
+    }
+
+    /**
+     * Standard sRGB / Rec. 709 luminance weights matching CoreGraphics grayscale conversion:
+     * gray = 0.2126 * R + 0.7152 * G + 0.0722 * B
+     * weightedGray = gray * alpha + (1.0 - alpha) * 255.0
+     */
+    fun calculateLuminance(r: Int, g: Int, b: Int, a: Float = 1.0f): Float {
+        val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
+        val weightedGray = gray * a + (1.0f - a) * 255.0f
+        return (weightedGray / 255.0f).coerceIn(0.0f, 1.0f)
+    }
+
+    /**
+     * Extracts ARGB channels from a 32-bit packed color integer and computes
+     * the standardized alpha-weighted sRGB grayscale luminance in [0.0f, 1.0f].
+     */
+    fun calculatePixelLuminance(pixel: Int): Float {
+        val a = ((pixel ushr 24) and 0xFF) / 255.0f
+        val r = (pixel ushr 16) and 0xFF
+        val g = (pixel ushr 8) and 0xFF
+        val b = pixel and 0xFF
+        return calculateLuminance(r, g, b, a)
     }
 
     /**

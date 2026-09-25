@@ -11,6 +11,7 @@ import com.veilframe.app.qr.model.FinderStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.QrModuleRole
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -215,12 +216,22 @@ class BubbleRenderer : QrRenderer {
                     avail[col + 1][row] = false
                 }
 
-                // 6. Remaining Single Isolated Dark Modules
-                if (avail[col][row] && matrix.isDark(col, row)) {
-                    val (cx, cy) = geometry.moduleCenter(col, row)
-                    val r = (0.30f + rng.nextFloat() * 0.15f) * cs
-                    nodes.add(CircleNode(cx = cx, cy = cy, radius = r, fill = outlineColor))
-                    avail[col][row] = false
+                // 6. Remaining Single Isolated Dark Modules & Ambient Light Modules
+                if (avail[col][row]) {
+                    if (matrix.isDark(col, row)) {
+                        val (cx, cy) = geometry.moduleCenter(col, row)
+                        val r = (0.30f + rng.nextFloat() * 0.15f) * cs
+                        nodes.add(CircleNode(cx = cx, cy = cy, radius = r, fill = outlineColor))
+                        avail[col][row] = false
+                    } else if (matrix.roleAt(col, row) == QrModuleRole.DATA && design.clusterStyle.ambientBubbles) {
+                        if (rng.nextFloat() < design.clusterStyle.ambientDensity) {
+                            val (cx, cy) = geometry.moduleCenter(col, row)
+                            val r = 0.5f * (0.85f + rng.nextFloat() * 0.45f) * cs
+                            val sw = (0.15f + rng.nextFloat() * 0.18f) * cs
+                            nodes.add(CircleNode(cx = cx, cy = cy, radius = r, fill = centerColor, stroke = outlineColor, strokeWidth = sw))
+                            avail[col][row] = false
+                        }
+                    }
                 }
             }
         }

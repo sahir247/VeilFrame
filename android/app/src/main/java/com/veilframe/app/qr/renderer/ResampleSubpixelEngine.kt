@@ -127,20 +127,15 @@ object ResampleSubpixelEngine {
                                 }
 
                                 val pixel = effectiveSource.getPixel(sx, sy)
-
-                                val a = (pixel ushr 24 and 0xFF) / 255.0f
-                                val r = (pixel ushr 16 and 0xFF)
-                                val g = (pixel ushr 8 and 0xFF)
-                                val b = (pixel and 0xFF)
-
-                                val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
-                                val weightedGray = gray * a + (1.0f - a) * 255.0f
-                                val grayNorm = weightedGray / 255.0f
+                                val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixel)
 
                                 // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
                                 val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
 
-                                val rnd = subpixelRandom(seed, sx, sy)
+                                val rnd = when (policy.rngMode) {
+                                    RngMode.DETERMINISTIC -> subpixelRandom(seed, sx, sy)
+                                    RngMode.SYSTEM_UNSEEDED -> kotlin.random.Random.nextFloat()
+                                }
                                 if (rnd > threshold) {
                                     sink.emit(col, row, sx, sy, isCenterAnchor = false)
                                 }

@@ -107,9 +107,8 @@ object EffectEngine {
         )
 
         val leftPaint = context.obtainFill(design.depthStyle.leftColor)
-        val rightPaint = context.obtainFill(design.depthStyle.rightColor)
-
         canvas.drawPath(faces.left, leftPaint)
+        val rightPaint = context.obtainFill(design.depthStyle.rightColor)
         canvas.drawPath(faces.right, rightPaint)
     }
 }

@@ -56,6 +56,9 @@ object IrSvgRenderer {
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
                     sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
+                    if (node.strokeDashArray != null) {
+                        sb.append(" stroke-dasharray=\"").append(node.strokeDashArray).append("\"")
+                    }
                 }
                 if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
                 sb.append("/>\n")
@@ -64,6 +67,19 @@ object IrSvgRenderer {
                 sb.append(pad).append(String.format(Locale.US, "<line x1=\"%.4f\" y1=\"%.4f\" x2=\"%.4f\" y2=\"%.4f\" stroke=\"%s\" stroke-width=\"%.4f\"",
                     node.x1, node.y1, node.x2, node.y2, colorToHex(node.strokeColor), node.strokeWidth))
                 if (node.isRoundCap) sb.append(" stroke-linecap=\"round\"")
+                if (node.strokeDashArray != null) sb.append(" stroke-dasharray=\"").append(node.strokeDashArray).append("\"")
+                sb.append("/>\n")
+            }
+            is PolygonNode -> {
+                sb.append(pad).append("<polygon points=\"").append(node.points).append("\"")
+                if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
+                else sb.append(" fill=\"none\"")
+                if (node.stroke != null && node.strokeWidth > 0f) {
+                    sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
+                    sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
+                }
+                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append("/>\n")
             }
             is PathNode -> {
@@ -78,6 +94,27 @@ object IrSvgRenderer {
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append("/>\n")
             }
+            is ImageNode -> {
+                val base64 = node.base64Data ?: node.bitmap?.let { bitmapToBase64(it) } ?: ""
+                sb.append(pad).append(String.format(
+                    Locale.US,
+                    "<image href=\"data:image/png;base64,%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
+                    base64, node.x, node.y, node.width, node.height
+                ))
+                if (node.opacity < 1f) {
+                    sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                }
+                if (node.preserveAspectRatio.isNotEmpty()) {
+                    sb.append(" preserveAspectRatio=\"").append(node.preserveAspectRatio).append("\"")
+                }
+                if (node.maskId != null) {
+                    sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
+                }
+                if (node.transform != null) {
+                    sb.append(" transform=\"").append(node.transform).append("\"")
+                }
+                sb.append("/>\n")
+            }
             is GroupNode -> {
                 sb.append(pad).append("<g")
                 if (node.maskId != null) sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
@@ -90,6 +127,14 @@ object IrSvgRenderer {
                 sb.append(pad).append("</g>\n")
             }
         }
+    }
+
+    fun bitmapToBase64(bitmap: android.graphics.Bitmap?): String {
+        if (bitmap == null || bitmap.isRecycled) return ""
+        val stream = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+        val byteArray = stream.toByteArray()
+        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
     }
 
     fun colorToHex(color: Int): String {

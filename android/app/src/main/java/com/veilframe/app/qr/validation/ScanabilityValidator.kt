@@ -118,11 +118,12 @@ object ScanabilityValidator {
         )
 
         // 2. Contrast Distribution Analysis
-        val contrastReport = analyzeContrast(bitmap, geometry, matrix)
+        val is25D = design.style == QrStyle.D25
+        val contrastReport = analyzeContrast(bitmap, geometry, matrix, is25D = is25D)
 
         // 3. Finder & Separator Integrity Check
         val isResample = design.style == QrStyle.IMAGE_RESAMPLE
-        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix, isResample = isResample)
+        val finderReport = verifyFinderIntegrity(bitmap, geometry, matrix, isResample = isResample, is25D = is25D)
 
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
@@ -252,7 +253,8 @@ object ScanabilityValidator {
     private fun analyzeContrast(
         bitmap: Bitmap,
         geometry: QrGeometry,
-        matrix: QrMatrix
+        matrix: QrMatrix,
+        is25D: Boolean = false
     ): ContrastReport {
         val darkLuminances = mutableListOf<Float>()
         val lightLuminances = mutableListOf<Float>()
@@ -267,9 +269,25 @@ object ScanabilityValidator {
             Pair(delta, delta)
         )
 
+        val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
+        val n = matrix.size
+        val vbX = -n.toFloat()
+        val vbY = -n.toFloat() / 2.0f
+        val vbW = n.toFloat() * 2.0f
+        val vbH = n.toFloat() * 2.0f
+        val scale = minOf(geometry.outputWidth.toFloat() / vbW, geometry.outputHeight.toFloat() / vbH)
+        val transX = (geometry.outputWidth.toFloat() - vbW * scale) / 2f
+        val transY = (geometry.outputHeight.toFloat() - vbH * scale) / 2f
+
         for (row in 0 until matrix.size step step) {
             for (col in 0 until matrix.size step step) {
-                val (cx, cy) = geometry.moduleCenter(col, row)
+                val (cx, cy) = if (is25D) {
+                    val u = col + 0.5f
+                    val v = row + 0.5f
+                    Pair(((sq3h * (u - v)) - vbX) * scale + transX, (0.5f * (u + v) - vbY) * scale + transY)
+                } else {
+                    geometry.moduleCenter(col, row)
+                }
                 for ((ox, oy) in sampleOffsets) {
                     val px = (cx + ox).toInt().coerceIn(0, bitmap.width - 1)
                     val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
@@ -317,8 +335,29 @@ object ScanabilityValidator {
         )
     }
 
-    private fun getModuleLuminance(bitmap: Bitmap, geometry: QrGeometry, col: Int, row: Int): Float {
-        val (cx, cy) = geometry.moduleCenter(col, row)
+    private fun getModuleLuminance(
+        bitmap: Bitmap,
+        geometry: QrGeometry,
+        col: Int,
+        row: Int,
+        is25D: Boolean = false,
+        n: Int = geometry.matrixSize
+    ): Float {
+        val (cx, cy) = if (is25D) {
+            val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
+            val vbX = -n.toFloat()
+            val vbY = -n.toFloat() / 2.0f
+            val vbW = n.toFloat() * 2.0f
+            val vbH = n.toFloat() * 2.0f
+            val scale = minOf(geometry.outputWidth.toFloat() / vbW, geometry.outputHeight.toFloat() / vbH)
+            val transX = (geometry.outputWidth.toFloat() - vbW * scale) / 2f
+            val transY = (geometry.outputHeight.toFloat() - vbH * scale) / 2f
+            val u = col + 0.5f
+            val v = row + 0.5f
+            Pair(((sq3h * (u - v)) - vbX) * scale + transX, (0.5f * (u + v) - vbY) * scale + transY)
+        } else {
+            geometry.moduleCenter(col, row)
+        }
         val px = cx.toInt().coerceIn(0, bitmap.width - 1)
         val py = cy.toInt().coerceIn(0, bitmap.height - 1)
         val pixel = bitmap.getPixel(px, py)
@@ -332,7 +371,8 @@ object ScanabilityValidator {
         bitmap: Bitmap,
         geometry: QrGeometry,
         matrix: QrMatrix,
-        isResample: Boolean = false
+        isResample: Boolean = false,
+        is25D: Boolean = false
     ): FinderIntegrityReport {
         val n = matrix.size
         val finderCenters = listOf(
@@ -345,7 +385,7 @@ object ScanabilityValidator {
         var separatorsClear = true
 
         for ((fcCol, fcRow) in finderCenters) {
-            val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow)
+            val coreLum = getModuleLuminance(bitmap, geometry, fcCol, fcRow, is25D = is25D, n = n)
             // Center core MUST be dark
             if (coreLum > 0.65f) {
                 allIntact = false
@@ -356,13 +396,13 @@ object ScanabilityValidator {
             // and continuous background behind separators. If isResample is true,
             // we verify the core is dark without failing simply because a photo
             // backdrop has non-white pixels in the transparent inner ring.
-            if (!isResample) {
+            if (!isResample && !is25D) {
                 // Light ring (radius 2) should be lighter than core
                 val lightRingLums = listOf(
-                    getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow),
-                    getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1)),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1))
+                    getModuleLuminance(bitmap, geometry, (fcCol + 2).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 2).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 2).coerceIn(0, n - 1), is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 2).coerceIn(0, n - 1), is25D = is25D, n = n)
                 )
                 val avgLightRing = lightRingLums.average().toFloat()
                 if (avgLightRing < coreLum || avgLightRing < 0.35f) {
@@ -372,10 +412,10 @@ object ScanabilityValidator {
 
                 // Outer ring (radius 3) should be darker than light ring
                 val outerRingLums = listOf(
-                    getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow),
-                    getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1)),
-                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1))
+                    getModuleLuminance(bitmap, geometry, (fcCol + 3).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, (fcCol - 3).coerceIn(0, n - 1), fcRow, is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow + 3).coerceIn(0, n - 1), is25D = is25D, n = n),
+                    getModuleLuminance(bitmap, geometry, fcCol, (fcRow - 3).coerceIn(0, n - 1), is25D = is25D, n = n)
                 )
                 val avgOuterRing = outerRingLums.average().toFloat()
                 if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
@@ -385,8 +425,8 @@ object ScanabilityValidator {
             }
         }
 
-        // Check top-left separator modules (for non-resample styles)
-        if (!isResample) {
+        // Check top-left separator modules (for non-resample and non-2.5D styles)
+        if (!isResample && !is25D) {
             var separatorDarkCount = 0
             var totalSeparatorSamples = 0
             for (r in 0..7) {

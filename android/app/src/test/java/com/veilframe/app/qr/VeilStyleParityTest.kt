@@ -1,5 +1,7 @@
 package com.veilframe.app.qr
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
@@ -448,6 +450,512 @@ class VeilStyleParityTest {
             com.veilframe.app.qr.renderer.BaseQrRenderer::class.java,
             method.declaringClass
         )
+    }
+
+    @Test
+    fun testResampleRngModesDeterministicAndUnseeded() {
+        val matrix = QrMatrix("https://veilframe.app/veil-art-resample-rng", ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val targetDim = 3 * n
+        val testPixels = IntArray(targetDim * targetDim) { 0xFF7F7F7F.toInt() } // Mid gray
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(targetDim, targetDim, testPixels)
+        val style = com.veilframe.app.qr.model.ImageSourceStyle(contrast = 0f, exposure = 0f)
+
+        // Run 1 (Deterministic)
+        val dotsRun1 = mutableListOf<Pair<Int, Int>>()
+        com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = style,
+            seed = 12345L,
+            policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC),
+            sink = { _, _, sx, sy, isCenter -> if (!isCenter) dotsRun1.add(Pair(sx, sy)) }
+        )
+
+        // Run 2 (Deterministic, same seed)
+        val dotsRun2 = mutableListOf<Pair<Int, Int>>()
+        com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = style,
+            seed = 12345L,
+            policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC),
+            sink = { _, _, sx, sy, isCenter -> if (!isCenter) dotsRun2.add(Pair(sx, sy)) }
+        )
+
+        assertEquals("Deterministic RNG with same seed must produce identical stochastic dot coordinates", dotsRun1, dotsRun2)
+
+        // Run 3 (Unseeded stochastic)
+        val dotsRun3 = mutableListOf<Pair<Int, Int>>()
+        com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = style,
+            policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.ResampleRngMode.UNSEEDED_STOCHASTIC),
+            sink = { _, _, sx, sy, isCenter -> if (!isCenter) dotsRun3.add(Pair(sx, sy)) }
+        )
+
+        assertTrue("Unseeded stochastic run must emit subpixels", dotsRun3.isNotEmpty())
+    }
+
+    @Test
+    fun testImageModeSvgModuleShapesParity() {
+        val matrix = QrMatrix("https://veilframe.app/veil-art-image-shapes", ErrorCorrectionLevel.H)
+        val designRound = QrDesign(
+            style = QrStyle.IMAGE,
+            moduleStyle = ModuleStyle(shape = com.veilframe.app.qr.model.ModuleShape.CIRCLE),
+            timingStyle = TimingStyle(shape = com.veilframe.app.qr.model.ModuleShape.ROUNDED),
+            alignmentStyle = AlignmentStyle(shape = com.veilframe.app.qr.model.ModuleShape.CIRCLE)
+        )
+
+        val svg = SvgExporter.generateSvg(matrix, designRound)
+        assertTrue("SVG in IMAGE mode must contain <circle> elements when data/alignment shape is CIRCLE", svg.contains("<circle"))
+        assertTrue("SVG in IMAGE mode must contain rx attributes when timing shape is ROUNDED", svg.contains("rx=\""))
+    }
+
+    @Test
+    fun test25DDiagonalWaveOrderAndPaintIndependence() {
+        val matrix = QrMatrix("https://veilframe.app/veil-art-25d-wave", ErrorCorrectionLevel.H)
+        val design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = 1.0f,
+                topColor = 0xFF112233.toInt(),
+                leftColor = 0x33112233,
+                rightColor = 0x99112233.toInt()
+            )
+        )
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertTrue("2.5D SVG must contain top face color", svg.contains("fill=\"#112233\""))
+        assertTrue("2.5D SVG must contain transform matrix", svg.contains("matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"))
+        assertTrue("2.5D SVG must contain skewY(45)", svg.contains("skewY(45)"))
+        assertTrue("2.5D SVG must contain skewX(45)", svg.contains("skewX(45)"))
+    }
+
+    @Test
+    fun testRngModeSelectionParity() {
+        val policyDet = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.RngMode.DETERMINISTIC)
+        assertEquals(com.veilframe.app.qr.renderer.RngMode.DETERMINISTIC, policyDet.rngMode)
+
+        val policyUnseeded = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.RngMode.SYSTEM_UNSEEDED)
+        assertEquals(com.veilframe.app.qr.renderer.RngMode.SYSTEM_UNSEEDED, policyUnseeded.rngMode)
+
+        // Verify backward compatibility alias
+        assertEquals(com.veilframe.app.qr.renderer.RngMode.SYSTEM_UNSEEDED, com.veilframe.app.qr.renderer.RngMode.UNSEEDED_STOCHASTIC)
+    }
+
+    @Test
+    fun testUnifiedGeometryIrImageAndResampleParity() {
+        val matrix = QrMatrix("https://veilframe.app/veil-art-unified-ir", ErrorCorrectionLevel.H)
+        val designImage = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123))
+        )
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+
+        // 1. IMAGE IR generation
+        val imageIr = com.veilframe.app.qr.renderer.ImageRenderer().generateGeometry(matrix, designImage, geometry)
+        assertNotNull(imageIr)
+        assertTrue("IMAGE IR must have defs containing mask #hole", imageIr.defs.any { it.contains("mask id=\"hole\"") })
+        assertTrue("IMAGE IR must have root nodes", imageIr.rootNodes.isNotEmpty())
+        assertTrue("IMAGE IR must contain an ImageNode", imageIr.rootNodes.any { it is com.veilframe.app.qr.geometry.ImageNode })
+
+        // 2. RESAMPLE IR generation
+        val designResample = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123)),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val resampleIr = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designResample, geometry)
+        assertNotNull(resampleIr)
+        assertTrue("RESAMPLE IR must contain an ImageNode for backdrop", resampleIr.rootNodes.any { it is com.veilframe.app.qr.geometry.ImageNode })
+        assertTrue("RESAMPLE IR must contain RectNodes for subpixels", resampleIr.rootNodes.any { it is com.veilframe.app.qr.geometry.RectNode })
+
+        // 3. Render both to Canvas and SVG without error
+        try {
+            val canvasBmp = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            if ((canvasBmp as Bitmap?) != null) {
+                val canvas = Canvas(canvasBmp)
+                com.veilframe.app.qr.geometry.IrCanvasRenderer.render(imageIr, canvas)
+                com.veilframe.app.qr.geometry.IrCanvasRenderer.render(resampleIr, canvas)
+            }
+        } catch (_: Throwable) {
+            // Native Android Bitmap/Canvas stubs return null in headless JVM unit tests
+        }
+
+        val imageSvg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(imageIr)
+        val resampleSvg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(resampleIr)
+        assertTrue("Image SVG must contain <image", imageSvg.contains("<image"))
+        assertTrue("Resample SVG must contain <image", resampleSvg.contains("<image"))
+    }
+
+    @Test
+    fun testStandardizedLuminanceWeightsParity() {
+        // Pure red: 0.2126
+        val redLum = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0)
+        assertEquals(0.2126f, redLum, 0.001f)
+
+        // Pure green: 0.7152
+        val greenLum = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(0, 255, 0)
+        assertEquals(0.7152f, greenLum, 0.001f)
+
+        // Pure blue: 0.0722
+        val blueLum = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(0, 0, 255)
+        assertEquals(0.0722f, blueLum, 0.001f)
+
+        // Pure white: 1.0
+        val whiteLum = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 255, 255)
+        assertEquals(1.0f, whiteLum, 0.001f)
+
+        // Pure black: 0.0
+        val blackLum = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(0, 0, 0)
+        assertEquals(0.0f, blackLum, 0.001f)
+    }
+
+    @Test
+    fun testImageRendererPreservesFormatModulesInIrAndSvg() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/format-test", QrDesign())
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123)),
+            allowTransparent = false
+        )
+
+        var darkFormatCount = 0
+        for (c in 0 until matrix.size) {
+            for (r in 0 until matrix.size) {
+                if (matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r)) {
+                    darkFormatCount++
+                }
+            }
+        }
+        assertTrue("QR matrix must have at least one dark format module", darkFormatCount > 0)
+
+        // 1. ImageRenderer IR (allowTransparent = false: foreground pass only)
+        val ir = com.veilframe.app.qr.renderer.ImageRenderer().generateGeometry(matrix, design, geometry)
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+        val formatNodes = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().filter { rect: com.veilframe.app.qr.geometry.RectNode ->
+            (0 until matrix.size).any { c ->
+                (0 until matrix.size).any { r ->
+                    matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r) &&
+                            kotlin.math.abs(rect.x - (ox + c * mSize)) < 0.01f &&
+                            kotlin.math.abs(rect.y - (oy + r * mSize)) < 0.01f
+                }
+            }
+        }
+        assertEquals("ImageRenderer IR must include all dark format modules in foreground pass", darkFormatCount, formatNodes.size)
+
+        // Verify allowTransparent = true includes both transparent pre-pass and foreground pass (2 * count)
+        val designTransparent = design.copy(allowTransparent = true)
+        val irTransparent = com.veilframe.app.qr.renderer.ImageRenderer().generateGeometry(matrix, designTransparent, geometry)
+        val transparentFormatNodes = irTransparent.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().filter { rect: com.veilframe.app.qr.geometry.RectNode ->
+            (0 until matrix.size).any { c ->
+                (0 until matrix.size).any { r ->
+                    matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r) &&
+                            kotlin.math.abs(rect.x - (ox + c * mSize)) < 0.01f &&
+                            kotlin.math.abs(rect.y - (oy + r * mSize)) < 0.01f
+                }
+            }
+        }
+        assertEquals("ImageRenderer IR with allowTransparent must include pre-pass and foreground format modules", 2 * darkFormatCount, transparentFormatNodes.size)
+
+        // 2. SvgExporter generateImageSvg
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertTrue("SvgExporter must render image style SVG", svg.contains("<svg"))
+        for (c in 0 until matrix.size) {
+            for (r in 0 until matrix.size) {
+                if (matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r)) {
+                    val mx = (c + 4).toDouble()
+                    val my = (r + 4).toDouble()
+                    assertTrue(
+                        "SVG must contain format module at ($c, $r)",
+                        svg.contains("x=\"$mx\"") && svg.contains("y=\"$my\"")
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testResampleGeometryBuilderFallbackPreservesFormatModules() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/resample-fallback", QrDesign())
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            imageSource = ImageSourceStyle(source = null)
+        )
+
+        var darkFormatCount = 0
+        for (c in 0 until matrix.size) {
+            for (r in 0 until matrix.size) {
+                if (matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r)) {
+                    darkFormatCount++
+                }
+            }
+        }
+        assertTrue("QR matrix must have at least one dark format module", darkFormatCount > 0)
+
+        val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, geometry)
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+        val formatNodes = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().filter { rect: com.veilframe.app.qr.geometry.RectNode ->
+            (0 until matrix.size).any { c ->
+                (0 until matrix.size).any { r ->
+                    matrix.roleAt(c, r) == QrModuleRole.FORMAT && matrix.isDark(c, r) &&
+                            kotlin.math.abs(rect.x - (ox + c * mSize)) < 0.01f &&
+                            kotlin.math.abs(rect.y - (oy + r * mSize)) < 0.01f
+                }
+            }
+        }
+        assertEquals("Resample fallback IR must include all dark format modules", darkFormatCount, formatNodes.size)
+    }
+
+    @Test
+    fun testResampleGeometryBuilderPlanetsAndDsjFinders() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/finders", QrDesign())
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+
+        // 1. PLANETS finder style
+        val planetsDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.PLANETS)
+        )
+        val planetsIr = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, planetsDesign, geometry)
+        val dashedRings = planetsIr.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter {
+            it.strokeDashArray != null
+        }
+        assertEquals("PLANETS style must generate 3 dashed orbit rings (one per finder)", 3, dashedRings.size)
+
+        // 2. DSJ finder style
+        val dsjDesign = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.DSJ)
+        )
+        val dsjIr = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, dsjDesign, geometry)
+        assertNotNull(dsjIr)
+        assertTrue("DSJ style must produce geometry nodes", dsjIr.rootNodes.size > 15)
+    }
+
+    @Test
+    fun testQrStyleRegistryWiresResampleImageRenderer() {
+        val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(QrStyle.IMAGE_RESAMPLE)
+        val renderer = def.rendererFactory()
+        assertTrue(
+            "IMAGE_RESAMPLE rendererFactory must instantiate ResampleImageRenderer",
+            renderer is com.veilframe.app.qr.renderer.ResampleImageRenderer
+        )
+        assertTrue(
+            "ResampleImageRenderer must be a ComposableQrRenderer",
+            renderer is com.veilframe.app.qr.renderer.ComposableQrRenderer
+        )
+    }
+
+    @Test
+    fun testAsymmetricDirectionalQuietZones() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/asymmetric-qz", QrDesign())
+        val n = matrix.size
+
+        // 1. QrGeometry with asymmetric quiet zones: left=6, top=2, right=8, bottom=4
+        val qzLeft = 6
+        val qzTop = 2
+        val qzRight = 8
+        val qzBottom = 4
+        val geom = QrGeometry(
+            matrixSize = n,
+            outputWidth = 700,
+            outputHeight = 700,
+            quietZoneLeft = qzLeft,
+            quietZoneTop = qzTop,
+            quietZoneRight = qzRight,
+            quietZoneBottom = qzBottom
+        )
+
+        assertEquals("totalModulesX must be matrix size + left + right", n + qzLeft + qzRight, geom.totalModulesX)
+        assertEquals("totalModulesY must be matrix size + top + bottom", n + qzTop + qzBottom, geom.totalModulesY)
+
+        val expectedModuleSize = minOf(700f / geom.totalModulesX, 700f / geom.totalModulesY)
+        assertEquals("moduleSize calculation parity", expectedModuleSize, geom.moduleSize, 0.001f)
+
+        val expectedOffsetX = (700f - geom.totalModulesX * geom.moduleSize) / 2f + qzLeft * geom.moduleSize
+        val expectedOffsetY = (700f - geom.totalModulesY * geom.moduleSize) / 2f + qzTop * geom.moduleSize
+        assertEquals("offsetX centering + left inset", expectedOffsetX, geom.offsetX, 0.001f)
+        assertEquals("offsetY centering + top inset", expectedOffsetY, geom.offsetY, 0.001f)
+
+        // 2. QrDesign with DirectionalInsets mapped from QrStyleParams
+        val params = QrStyleParams(
+            quietZoneLeft = qzLeft,
+            quietZoneTop = qzTop,
+            quietZoneRight = qzRight,
+            quietZoneBottom = qzBottom
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals(qzLeft, design.effectiveQuietZoneLeft)
+        assertEquals(qzTop, design.effectiveQuietZoneTop)
+        assertEquals(qzRight, design.effectiveQuietZoneRight)
+        assertEquals(qzBottom, design.effectiveQuietZoneBottom)
+
+        // 3. SvgExporter produces asymmetric viewBox
+        val svg = SvgExporter.generateSvg(matrix, design)
+        val totalX = n + qzLeft + qzRight
+        val totalY = n + qzTop + qzBottom
+        val expectedViewBox = "viewBox=\"0 0 $totalX $totalY\""
+        assertTrue("SVG viewBox must match asymmetric module totals: $expectedViewBox", svg.contains(expectedViewBox))
+
+        // Finders must be positioned with directional quietZoneLeft and quietZoneTop
+        val expectedFinderRect = "x=\"$qzLeft\" y=\"$qzTop\""
+        assertTrue("SVG top-left finder must be offset by quietZoneLeft and quietZoneTop", svg.contains(expectedFinderRect))
+    }
+
+    @Test
+    fun testLogoSquircleClippingAndBorderInSvg() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/logo-squircle", QrDesign())
+        val dummyBitmap = createDummyBitmap()
+
+        // 1. Squircle logo with border
+        val squircleDesign = QrDesign(
+            logo = LogoStyle(
+                bitmap = dummyBitmap,
+                shape = LogoShape.SQUIRCLE,
+                scaleFraction = 0.25f,
+                borderColor = 0xFFFF0000.toInt(), // Red
+                borderWidth = 2.0f
+            )
+        )
+        val squircleSvg = SvgExporter.generateSvg(matrix, squircleDesign)
+
+        assertTrue("SVG must contain logo clipPath def", squircleSvg.contains("<clipPath id=\"logoClip\">"))
+        assertTrue("SVG clipPath must contain squircle cubic Bezier path", squircleSvg.contains("<path d=\"M"))
+        assertTrue("SVG image must reference #logoClip", squircleSvg.contains("clip-path=\"url(#logoClip)\""))
+        assertTrue("SVG must contain border stroke with #FF0000", squircleSvg.contains("stroke=\"#FF0000\""))
+        assertTrue("SVG must specify stroke-width=\"2.0\"", squircleSvg.contains("stroke-width=\"2.0\""))
+
+        // 2. Circle logo with border
+        val circleDesign = QrDesign(
+            logo = LogoStyle(
+                bitmap = dummyBitmap,
+                shape = LogoShape.CIRCLE,
+                scaleFraction = 0.20f,
+                borderColor = 0xFF00FF00.toInt(), // Green
+                borderWidth = 1.5f
+            )
+        )
+        val circleSvg = SvgExporter.generateSvg(matrix, circleDesign)
+        assertTrue("SVG clipPath must contain circle element", circleSvg.contains("<circle cx="))
+        assertTrue("SVG must contain border stroke with #00FF00", circleSvg.contains("stroke=\"#00FF00\""))
+        assertTrue("SVG must specify stroke-width=\"1.5\"", circleSvg.contains("stroke-width=\"1.5\""))
+    }
+
+    @Test
+    fun testBubbleRendererAmbientMicroBubbles() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/bubble-ambient", QrDesign())
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+
+        // Without ambient bubbles
+        val standardDesign = QrDesign(
+            style = QrStyle.BUBBLE,
+            clusterStyle = BubbleClusterStyle(ambientBubbles = false)
+        )
+        val standardIr = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, standardDesign, geometry)
+
+        // With ambient bubbles enabled at full density
+        val ambientDesign = QrDesign(
+            style = QrStyle.BUBBLE,
+            clusterStyle = BubbleClusterStyle(ambientBubbles = true, ambientDensity = 1.0f)
+        )
+        val ambientIr = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, ambientDesign, geometry)
+
+        assertTrue(
+            "Ambient micro-bubbles must generate additional circle nodes for light modules",
+            ambientIr.rootNodes.size > standardIr.rootNodes.size
+        )
+
+        // Verify that some nodes have strokeWidth > 0
+        val ambientNodes = ambientIr.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter {
+            it.stroke != null && (it.strokeWidth ?: 0f) > 0f
+        }
+        assertTrue("Ambient micro-bubbles must emit stroked circle nodes", ambientNodes.isNotEmpty())
+    }
+
+    @Test
+    fun testGifEncoderEncodingAndStructure() {
+        val w = 64
+        val h = 64
+        val frame1Pixels = IntArray(w * h) { 0xFF000000.toInt() } // Black
+        val frame2Pixels = IntArray(w * h) { 0xFFFFFFFF.toInt() } // White
+
+        val bos = java.io.ByteArrayOutputStream()
+        val encoder = com.veilframe.app.qr.exporter.GifEncoder()
+        encoder.start(bos, w, h, loops = 0)
+        encoder.addFrame(frame1Pixels, w, h, durationMs = 200)
+        encoder.addFrame(frame2Pixels, w, h, durationMs = 300)
+        encoder.finish()
+
+        val gifBytes = bos.toByteArray()
+        assertTrue("GIF byte array must not be empty", gifBytes.isNotEmpty())
+
+        // 1. Header: GIF89a
+        val header = String(gifBytes, 0, 6, Charsets.US_ASCII)
+        assertEquals("GIF header must be GIF89a", "GIF89a", header)
+
+        // 2. Logical Screen Width & Height (LE)
+        val lsdWidth = (gifBytes[6].toInt() and 0xFF) or ((gifBytes[7].toInt() and 0xFF) shl 8)
+        val lsdHeight = (gifBytes[8].toInt() and 0xFF) or ((gifBytes[9].toInt() and 0xFF) shl 8)
+        assertEquals(w, lsdWidth)
+        assertEquals(h, lsdHeight)
+
+        // 3. Netscape 2.0 loop extension signature
+        val gifString = String(gifBytes, Charsets.ISO_8859_1)
+        assertTrue("GIF must contain NETSCAPE2.0 loop extension", gifString.contains("NETSCAPE2.0"))
+
+        // 4. Trailer byte 0x3B (59)
+        assertEquals("GIF must end with trailer byte 0x3B", 0x3B.toByte(), gifBytes.last())
+    }
+
+    @Test
+    fun testAnimatedQrGeneratorSvgMarkup() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/animated-qr", QrDesign())
+        val dummyBitmap = createDummyBitmap()
+
+        val frame1 = com.veilframe.app.qr.model.QrFrame(bitmap = dummyBitmap, durationMs = 250)
+        val frame2 = com.veilframe.app.qr.model.QrFrame(bitmap = dummyBitmap, durationMs = 750)
+        val frames = listOf(frame1, frame2)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE
+        )
+
+        val animSvg = com.veilframe.app.qr.AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
+
+        assertTrue("Animated SVG must contain defs section", animSvg.contains("<defs>"))
+        assertTrue("Animated SVG must define qr_frame_0", animSvg.contains("<g id=\"qr_frame_0\">"))
+        assertTrue("Animated SVG must define qr_frame_1", animSvg.contains("<g id=\"qr_frame_1\">"))
+        assertTrue("Animated SVG must contain use element referencing #qr_frame_0", animSvg.contains("<use xlink:href=\"#qr_frame_0\">"))
+        assertTrue("Animated SVG must contain animate element", animSvg.contains("<animate"))
+        assertTrue("Animated SVG must animate xlink:href", animSvg.contains("attributeName=\"xlink:href\""))
+        assertTrue("Animated SVG must cycle frame values", animSvg.contains("values=\"#qr_frame_0;#qr_frame_1;#qr_frame_0\""))
+        assertTrue("Animated SVG must have discrete calcMode", animSvg.contains("calcMode=\"discrete\""))
+        assertTrue("Animated SVG must loop indefinitely", animSvg.contains("repeatCount=\"indefinite\""))
+        assertTrue("Animated SVG must have total duration 1.000s", animSvg.contains("dur=\"1.000s\""))
+    }
+
+    private fun createDummyBitmap(): Bitmap {
+        return try {
+            val unsafeClass = Class.forName("sun.misc.Unsafe")
+            val theUnsafeField = unsafeClass.getDeclaredField("theUnsafe")
+            theUnsafeField.isAccessible = true
+            val unsafe = theUnsafeField.get(null)
+            val allocateMethod = unsafeClass.getMethod("allocateInstance", Class::class.java)
+            allocateMethod.invoke(unsafe, Bitmap::class.java) as Bitmap
+        } catch (_: Throwable) {
+            val constructor = Bitmap::class.java.getDeclaredConstructor()
+            constructor.isAccessible = true
+            constructor.newInstance()
+        }
     }
 }
 

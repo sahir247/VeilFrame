@@ -78,9 +78,22 @@ object SubpixelGeometry {
         subX: Int,
         subY: Int,
         antiGapScale: Float = ANTI_GAP_SCALE
+    ): SubpixelRect = computeSvgRect(col, row, quietZone, quietZone, subX, subY, antiGapScale)
+
+    /**
+     * Normalized coordinate helper for SVG vector export supporting asymmetric quiet zones.
+     */
+    fun computeSvgRect(
+        col: Int,
+        row: Int,
+        quietZoneLeft: Int,
+        quietZoneTop: Int,
+        subX: Int,
+        subY: Int,
+        antiGapScale: Float = ANTI_GAP_SCALE
     ): SubpixelRect {
-        val moduleLeft = (col + quietZone).toFloat()
-        val moduleTop = (row + quietZone).toFloat()
+        val moduleLeft = (col + quietZoneLeft).toFloat()
+        val moduleTop = (row + quietZoneTop).toFloat()
         return computeRect(subX, subY, moduleLeft, moduleTop, 1.0f, antiGapScale)
     }
 }

@@ -43,6 +43,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val resampleUseSourceAsBackdrop: Boolean = true,
         val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
+        val animatedFrames: List<QrFrame> = emptyList(),
         val bitmap: Bitmap? = null,
         val matrix: QrMatrix? = null,
         val design: QrDesign? = null,
@@ -129,12 +130,22 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateSourceImage(bmp: Bitmap?) {
-        _state.value = _state.value.copy(sourceImage = bmp, repairNotice = null)
+        _state.value = _state.value.copy(sourceImage = bmp, animatedFrames = emptyList(), repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateAnimatedFrames(frames: List<QrFrame>) {
+        val firstBmp = frames.firstOrNull()?.bitmap
+        _state.value = _state.value.copy(
+            sourceImage = firstBmp ?: _state.value.sourceImage,
+            animatedFrames = frames,
+            repairNotice = null
+        )
         regenerate(debounceMs = 0)
     }
 
     fun removeSourceImage() {
-        _state.value = _state.value.copy(sourceImage = null, repairNotice = null)
+        _state.value = _state.value.copy(sourceImage = null, animatedFrames = emptyList(), repairNotice = null)
         regenerate(debounceMs = 0)
     }
 
@@ -420,6 +431,149 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
             _state.value = _state.value.copy(
                 saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed",
+                isLoading = false
+            )
+        }
+    }
+
+    fun saveGif() {
+        val content = _state.value.content.ifBlank { "https://example.com" }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true)
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val matrix = QrGenerator.generateMatrix(content, exportDesign)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+            }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "GIF export requires a photo, background image, or animated frames",
+                    isLoading = false
+                )
+                return@launch
+            }
+
+            val rendered = withContext(Dispatchers.Default) {
+                com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
+                    matrix = matrix,
+                    baseDesign = exportDesign,
+                    sourceFrames = frames,
+                    outputSize = exportDesign.outputSize
+                )
+            }
+
+            if (rendered.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "GIF rendering produced no frames",
+                    isLoading = false
+                )
+                return@launch
+            }
+
+            val gifBytes = withContext(Dispatchers.Default) {
+                com.veilframe.app.qr.AnimatedQrGenerator.encodeToGif(rendered)
+            }
+
+            val uri = QrExporter.saveGif(getApplication(), gifBytes)
+            _state.value = _state.value.copy(
+                saveResult = if (uri != null) "Animated GIF saved to Gallery (${rendered.size} frames)" else "GIF export failed",
+                isLoading = false
+            )
+        }
+    }
+
+    fun saveVideo() {
+        val content = _state.value.content.ifBlank { "https://example.com" }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true)
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val matrix = QrGenerator.generateMatrix(content, exportDesign)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                if (baseBmp != null) {
+                    // Create loop sequence of 15 frames for single image
+                    (0 until 15).map { QrFrame(baseBmp, 66) }
+                } else emptyList()
+            }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "Video export requires a photo, background image, or video frames",
+                    isLoading = false
+                )
+                return@launch
+            }
+
+            val rendered = withContext(Dispatchers.Default) {
+                com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
+                    matrix = matrix,
+                    baseDesign = exportDesign,
+                    sourceFrames = frames,
+                    outputSize = exportDesign.outputSize
+                )
+            }
+
+            if (rendered.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "Video rendering produced no frames",
+                    isLoading = false
+                )
+                return@launch
+            }
+
+            val context = getApplication<Application>()
+            val tempFile = java.io.File(context.cacheDir, "temp_qr_export_${System.currentTimeMillis()}.mp4")
+            val success = withContext(Dispatchers.IO) {
+                com.veilframe.app.qr.AnimatedQrGenerator.encodeToVideo(rendered, tempFile, fps = 15)
+            }
+
+            if (success && tempFile.exists()) {
+                val uri = QrExporter.saveVideo(context, tempFile)
+                tempFile.delete()
+                _state.value = _state.value.copy(
+                    saveResult = if (uri != null) "MP4 Video saved to Movies" else "Video export write failed",
+                    isLoading = false
+                )
+            } else {
+                tempFile.delete()
+                _state.value = _state.value.copy(
+                    saveResult = "Video encoding failed",
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    fun saveAnimatedSvg() {
+        val content = _state.value.content.ifBlank { "https://example.com" }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true)
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val matrix = QrGenerator.generateMatrix(content, exportDesign)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+            }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "Animated SVG requires frames",
+                    isLoading = false
+                )
+                return@launch
+            }
+
+            val uri = QrExporter.saveAnimatedSvg(getApplication(), matrix, exportDesign, frames)
+            _state.value = _state.value.copy(
+                saveResult = if (uri != null) "Animated SVG saved to Downloads" else "Animated SVG export failed",
                 isLoading = false
             )
         }

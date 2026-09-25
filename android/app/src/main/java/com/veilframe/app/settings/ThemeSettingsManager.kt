@@ -105,9 +105,13 @@ object ThemeSettingsManager {
             }
         }
 
-        // Layer AMOLED overlay on top if active
-        if (mode == ThemeMode.AMOLED && isNightModeActive(activity)) {
-            activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
+        // Layer Dark mode or AMOLED overlay on top if active to enforce clean separation
+        if (isNightModeActive(activity)) {
+            if (mode == ThemeMode.AMOLED) {
+                activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
+            } else if (mode == ThemeMode.DARK || mode == ThemeMode.SYSTEM) {
+                activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Dark, true)
+            }
         }
 
         // Apply typography

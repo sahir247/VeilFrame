@@ -55,6 +55,23 @@
         <item name="cornerSize">50%</item>
     </style>
 
+    <!-- Dark Mode Charcoal Overlay (Ensures clean contrast against AMOLED #000000) -->
+    <style name="ThemeOverlay.VeilFrame.Dark" parent="">
+        <item name="android:windowBackground">@color/vf_bg_dark</item>
+        <item name="android:colorBackground">@color/vf_bg_dark</item>
+        <item name="colorSurface">@color/vf_surface</item>
+        <item name="colorSurfaceVariant">@color/vf_surface_variant</item>
+        <item name="colorSurfaceContainer">#1C1C20</item>
+        <item name="colorSurfaceContainerLow">#16161A</item>
+        <item name="colorSurfaceContainerLowest">#0E0E10</item>
+        <item name="colorSurfaceContainerHigh">#242428</item>
+        <item name="colorSurfaceContainerHighest">#2C2C32</item>
+        <item name="colorOnSurface">@color/vf_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
+        <item name="android:statusBarColor">@color/vf_bg_dark</item>
+        <item name="android:navigationBarColor">@color/vf_bg_dark</item>
+    </style>
+
     <!-- AMOLED True Black Overlay (meaningful only in night mode, but defined for consistency) -->
     <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
         <item name="android:windowBackground">@android:color/black</item>

@@ -144,7 +144,8 @@ data class ResampleStyle(
     val backdropOpacity: Float = 1.0f,
     val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
-    val backdropTint: Int? = null
+    val backdropTint: Int? = null,
+    val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC
 )
 
 sealed interface BackgroundStyle {
@@ -191,13 +192,22 @@ data class PaletteStyle(
     val gradientType: GradientType = GradientType.NONE
 )
 
+data class DirectionalInsets(
+    val left: Int = 4,
+    val top: Int = 4,
+    val right: Int = 4,
+    val bottom: Int = 4
+)
+
 data class LogoStyle(
     val bitmap: Bitmap? = null,
     val scaleFraction: Float = 0.20f,
     val paddingModules: Float = 0.5f,
     val backgroundMode: LogoBackgroundMode = LogoBackgroundMode.AUTO_CONTRAST,
     val customBackgroundColor: Int = Color.WHITE,
-    val shape: LogoShape = LogoShape.SQUIRCLE
+    val shape: LogoShape = LogoShape.SQUIRCLE,
+    val borderColor: Int? = null,
+    val borderWidth: Float = 0f
 )
 
 data class EffectStyle(
@@ -378,9 +388,14 @@ data class QrDesign(
         bitmap = backgroundImage,
         opacity = backgroundImageAlpha
     ),
-    val resampleStyle: ResampleStyle = ResampleStyle()
+    val resampleStyle: ResampleStyle = ResampleStyle(),
+    val directionalQuietZone: DirectionalInsets? = null
 ) {
     val effectiveQuietZone: Int get() = explicitQuietZone ?: quietZoneModules
+    val effectiveQuietZoneLeft: Int get() = directionalQuietZone?.left ?: explicitQuietZone ?: quietZoneModules
+    val effectiveQuietZoneTop: Int get() = directionalQuietZone?.top ?: explicitQuietZone ?: quietZoneModules
+    val effectiveQuietZoneRight: Int get() = directionalQuietZone?.right ?: explicitQuietZone ?: quietZoneModules
+    val effectiveQuietZoneBottom: Int get() = directionalQuietZone?.bottom ?: explicitQuietZone ?: quietZoneModules
     val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
 
     companion object {
@@ -426,6 +441,16 @@ data class QrDesign(
 
             val resolvedSourceImage = params.sourceImage
 
+            val directionalQuietZone = if (params.quietZoneLeft != null || params.quietZoneTop != null ||
+                params.quietZoneRight != null || params.quietZoneBottom != null) {
+                DirectionalInsets(
+                    left = params.quietZoneLeft ?: params.quietZone ?: 4,
+                    top = params.quietZoneTop ?: params.quietZone ?: 4,
+                    right = params.quietZoneRight ?: params.quietZone ?: 4,
+                    bottom = params.quietZoneBottom ?: params.quietZone ?: 4
+                )
+            } else null
+
             return QrDesign(
                 correction = if (params.logo != null) ErrorCorrectionChoice.H else ErrorCorrectionChoice.AUTO,
                 moduleStyle = ModuleStyle(
@@ -455,7 +480,10 @@ data class QrDesign(
                 logo = if (params.logo != null) {
                     LogoStyle(
                         bitmap = params.logo,
-                        scaleFraction = params.logoFraction
+                        scaleFraction = params.logoFraction,
+                        shape = params.logoShape,
+                        borderColor = params.logoBorderColor,
+                        borderWidth = params.logoBorderWidth
                     )
                 } else null,
                 effects = EffectStyle(
@@ -468,6 +496,7 @@ data class QrDesign(
                 ),
                 quietZoneModules = params.quietZone ?: 4,
                 explicitQuietZone = params.quietZone,
+                directionalQuietZone = directionalQuietZone,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,
                 backgroundImageAlpha = params.backgroundImageAlpha,

@@ -135,6 +135,126 @@ object QrExporter {
     }
 
     /**
+     * Saves animated GIF bytes to the device Pictures/VeilFrame gallery.
+     */
+    suspend fun saveGif(
+        context: Context,
+        gifBytes: ByteArray
+    ): Uri? = withContext(Dispatchers.IO) {
+        val name = timestampName("gif")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cv = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/gif")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
+                ?: return@withContext null
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(gifBytes)
+            }
+            cv.clear()
+            cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+            context.contentResolver.update(uri, cv, null, null)
+            uri
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VeilFrame")
+            dir.mkdirs()
+            val file = File(dir, name)
+            FileOutputStream(file).use { out -> out.write(gifBytes) }
+            try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
+        }
+    }
+
+    /**
+     * Saves animated SVG markup to the Downloads or Documents directory.
+     */
+    suspend fun saveAnimatedSvg(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign,
+        frames: List<com.veilframe.app.qr.model.QrFrame>
+    ): Uri? = withContext(Dispatchers.IO) {
+        val svgData = com.veilframe.app.qr.AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
+        val name = timestampName("svg")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cv = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
+                put(MediaStore.Downloads.MIME_TYPE, "image/svg+xml")
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                ?: return@withContext null
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(svgData.toByteArray(Charsets.UTF_8))
+            }
+            cv.clear()
+            cv.put(MediaStore.Downloads.IS_PENDING, 0)
+            context.contentResolver.update(uri, cv, null, null)
+            uri
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
+            dir.mkdirs()
+            val file = File(dir, name)
+            FileOutputStream(file).use { out -> out.write(svgData.toByteArray(Charsets.UTF_8)) }
+            try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
+        }
+    }
+
+    /**
+     * Saves an MP4 video file to the device Movies/VeilFrame directory.
+     */
+    suspend fun saveVideo(
+        context: Context,
+        videoFile: File
+    ): Uri? = withContext(Dispatchers.IO) {
+        if (!videoFile.exists() || videoFile.length() == 0L) return@withContext null
+        val name = timestampName("mp4")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val cv = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, name)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/VeilFrame")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cv)
+                ?: return@withContext null
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                videoFile.inputStream().use { input -> input.copyTo(out) }
+            }
+            cv.clear()
+            cv.put(MediaStore.Video.Media.IS_PENDING, 0)
+            context.contentResolver.update(uri, cv, null, null)
+            uri
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "VeilFrame")
+            dir.mkdirs()
+            val file = File(dir, name)
+            videoFile.copyTo(file, overwrite = true)
+            try {
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            } catch (_: Exception) {
+                Uri.fromFile(file)
+            }
+        }
+    }
+
+    /**
      * Opens system share sheet for [bitmap].
      */
     suspend fun share(context: Context, bitmap: Bitmap) {
