@@ -56,11 +56,13 @@ object LineTopologyBuilder {
         thicknessFraction: Float,
         lineColor: Int,
         direction: LineDirection = LineDirection.X,
-        addAccentRings: Boolean = true
+        addAccentRings: Boolean = true,
+        roundCaps: Boolean = true,
+        lengthFraction: Float = 1.0f
     ): List<QrGeometryNode> {
         val n = matrix.size
         val nodes = mutableListOf<QrGeometryNode>()
-        val baseStrokeWidth = cs * thicknessFraction.coerceIn(0.15f, 0.85f)
+        val baseStrokeWidth = cs * thicknessFraction.coerceIn(0.05f, 0.85f)
         val nodeRadius = (baseStrokeWidth * 0.55f).coerceAtLeast(cs * 0.18f)
 
         // Mask of dark data modules (excluding finders)
@@ -176,6 +178,52 @@ object LineTopologyBuilder {
                 }
             }
 
+            LineDirection.LOOPBACK, LineDirection.LOOP -> {
+                // Quadrant partitioning: (x > y) != (x + y < n) selects vertical vs horizontal runs up to length 4
+                val ava = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
+                for (x in 0 until n) {
+                    for (y in 0 until n) {
+                        if ((x > y) != (x + y < n)) {
+                            // Vertical runs up to length 4
+                            if (y == 0 || (y > 0 && (!isDataDark[x][y - 1] || !ava[x][y - 1]))) {
+                                var end = 0
+                                while (y + end < n && isDataDark[x][y + end] && ava[x][y + end] && end <= 3) {
+                                    end++
+                                }
+                                if (end > 1) {
+                                    for (i in 0 until end) {
+                                        ava[x][y + i] = false
+                                    }
+                                    val lx1 = ox + (x + 0.5f) * cs
+                                    val ly1 = oy + (y + 0.5f) * cs
+                                    val lx2 = ox + (x + 0.5f) * cs
+                                    val ly2 = oy + (y + end - 0.5f) * cs
+                                    segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.VERTICAL, baseStrokeWidth))
+                                }
+                            }
+                        } else {
+                            // Horizontal runs up to length 4
+                            if (x == 0 || (x > 0 && (!isDataDark[x - 1][y] || !ava[x - 1][y]))) {
+                                var end = 0
+                                while (x + end < n && isDataDark[x + end][y] && ava[x + end][y] && end <= 3) {
+                                    end++
+                                }
+                                if (end > 1) {
+                                    for (i in 0 until end) {
+                                        ava[x + i][y] = false
+                                    }
+                                    val lx1 = ox + (x + 0.5f) * cs
+                                    val ly1 = oy + (y + 0.5f) * cs
+                                    val lx2 = ox + (x + end - 0.5f) * cs
+                                    val ly2 = oy + (y + 0.5f) * cs
+                                    segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.HORIZONTAL, baseStrokeWidth))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT, LineDirection.DIAGONAL_FORWARD -> {
                 val ava = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
                 for (x in 0 until n) {
@@ -268,26 +316,28 @@ object LineTopologyBuilder {
                 }
 
                 // In Target #6 circuit mode, also connect short orthogonal spine bridges between isolated clusters
-                val avaH = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
-                for (y in 0 until n) {
-                    var x = 0
-                    while (x < n) {
-                        if (avaH[x][y]) {
-                            var end = x
-                            while (end + 1 < n && avaH[end + 1][y] && (end - x) < 3) {
-                                end++
+                if (addAccentRings) {
+                    val avaH = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
+                    for (y in 0 until n) {
+                        var x = 0
+                        while (x < n) {
+                            if (avaH[x][y]) {
+                                var end = x
+                                while (end + 1 < n && avaH[end + 1][y] && (end - x) < 3) {
+                                    end++
+                                }
+                                if (end > x && (x + y) % 3 == 0) {
+                                    for (i in x..end) avaH[i][y] = false
+                                    val lx1 = ox + (x + 0.5f) * cs
+                                    val ly1 = oy + (y + 0.5f) * cs
+                                    val lx2 = ox + (end + 0.5f) * cs
+                                    val ly2 = oy + (y + 0.5f) * cs
+                                    segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.HORIZONTAL, baseStrokeWidth * 0.75f))
+                                }
+                                x = end + 1
+                            } else {
+                                x++
                             }
-                            if (end > x && (x + y) % 3 == 0) {
-                                for (i in x..end) avaH[i][y] = false
-                                val lx1 = ox + (x + 0.5f) * cs
-                                val ly1 = oy + (y + 0.5f) * cs
-                                val lx2 = ox + (end + 0.5f) * cs
-                                val ly2 = oy + (y + 0.5f) * cs
-                                segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.HORIZONTAL, baseStrokeWidth * 0.75f))
-                            }
-                            x = end + 1
-                        } else {
-                            x++
                         }
                     }
                 }
@@ -296,17 +346,28 @@ object LineTopologyBuilder {
             else -> {}
         }
 
-        // 1. Emit all line spine segments with round caps
+        // 1. Emit all line spine segments with applied lengthFraction and roundCaps
+        val clampedLength = lengthFraction.coerceIn(0.05f, 1.0f)
         for (seg in segments) {
+            val (sx, sy, ex, ey) = if (clampedLength < 0.999f) {
+                val midX = (seg.x1 + seg.x2) * 0.5f
+                val midY = (seg.y1 + seg.y2) * 0.5f
+                val halfDx = (seg.x2 - seg.x1) * 0.5f * clampedLength
+                val halfDy = (seg.y2 - seg.y1) * 0.5f * clampedLength
+                floatArrayOf(midX - halfDx, midY - halfDy, midX + halfDx, midY + halfDy)
+            } else {
+                floatArrayOf(seg.x1, seg.y1, seg.x2, seg.y2)
+            }
+
             nodes.add(
                 LineNode(
-                    x1 = seg.x1,
-                    y1 = seg.y1,
-                    x2 = seg.x2,
-                    y2 = seg.y2,
+                    x1 = sx,
+                    y1 = sy,
+                    x2 = ex,
+                    y2 = ey,
                     strokeColor = lineColor,
                     strokeWidth = seg.strokeWidth,
-                    isRoundCap = true
+                    isRoundCap = roundCaps
                 )
             )
         }
@@ -321,12 +382,12 @@ object LineTopologyBuilder {
 
                 if (direction == LineDirection.X) {
                     // Variable radius node circle matching reference & Target #6 circuit pads
-                    val r = cs * 0.5f * pseudoRandom(x, y, 3, 0.40f, 0.88f)
+                    val r = cs * 0.5f * pseudoRandom(x, y, 3, 0.40f, 0.88f) * clampedLength.coerceIn(0.5f, 1.0f)
                     nodes.add(CircleNode(cx, cy, r, fill = lineColor))
 
                     // Accent target rings on selected circuit nodes (Target #6)
                     if (addAccentRings && (x * 17 + y * 23) % 7 == 0) {
-                        val ringR = cs * 0.46f
+                        val ringR = cs * 0.46f * clampedLength.coerceIn(0.5f, 1.0f)
                         val ringSw = (cs * 0.08f).coerceAtLeast(1.5f)
                         nodes.add(
                             CircleNode(
@@ -348,9 +409,9 @@ object LineTopologyBuilder {
                         (if (hasUp) 1 else 0) + (if (hasDown) 1 else 0)
 
                     if (degree <= 1) {
-                        nodes.add(CircleNode(cx, cy, nodeRadius, fill = lineColor))
+                        nodes.add(CircleNode(cx, cy, nodeRadius * clampedLength.coerceIn(0.5f, 1.0f), fill = lineColor))
                         if (addAccentRings && (x * 19 + y * 23) % 5 == 0) {
-                            val ringR = cs * 0.44f
+                            val ringR = cs * 0.44f * clampedLength.coerceIn(0.5f, 1.0f)
                             val ringSw = cs * 0.08f
                             nodes.add(
                                 CircleNode(

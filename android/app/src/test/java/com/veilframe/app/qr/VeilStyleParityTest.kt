@@ -1030,6 +1030,166 @@ class VeilStyleParityTest {
     }
 
     @Test
+    fun testLineTopologyBuilderLoopbackQuadrantRunGeneration() {
+        val matrix = QrMatrix("https://veilframe.app/loopback-test", ErrorCorrectionLevel.H)
+        val cs = 10f
+
+        // 1. Verify LineDirection.LOOPBACK in LineTopologyBuilder
+        val loopbackNodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.LOOPBACK
+        )
+        val loopbackLines = loopbackNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertTrue("LineDirection.LOOPBACK must emit LineNodes", loopbackLines.isNotEmpty())
+
+        val horizontalLines = loopbackLines.filter { it.y1 == it.y2 && it.x1 != it.x2 }
+        val verticalLines = loopbackLines.filter { it.x1 == it.x2 && it.y1 != it.y2 }
+        assertTrue("LOOPBACK must emit horizontal quadrant segments", horizontalLines.isNotEmpty())
+        assertTrue("LOOPBACK must emit vertical quadrant segments", verticalLines.isNotEmpty())
+
+        // 2. Verify LineRenderer routing for LineDirection.LOOP and LineDirection.LOOPBACK
+        val designLoop = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.LOOP)
+        )
+        val designLoopback = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.LOOPBACK)
+        )
+        val geom = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 0)
+        val irLoop = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designLoop, geom)
+        val irLoopback = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designLoopback, geom)
+
+        assertTrue("LineRenderer with LineDirection.LOOP must produce LineNodes",
+            irLoop.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().isNotEmpty())
+        assertTrue("LineRenderer with LineDirection.LOOPBACK must produce LineNodes",
+            irLoopback.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().isNotEmpty())
+    }
+
+    @Test
+    fun testLineTopologyBuilderRoundCapsAndLengthFractionControls() {
+        val matrix = QrMatrix("https://veilframe.app/line-controls-test", ErrorCorrectionLevel.H)
+        val cs = 10f
+
+        // 1. Verify roundCaps = false produces isRoundCap = false
+        val squareCapNodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL,
+            roundCaps = false,
+            lengthFraction = 1.0f
+        )
+        val squareLines = squareCapNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertTrue("Must emit lines for HORIZONTAL direction", squareLines.isNotEmpty())
+        assertTrue("All LineNodes must have isRoundCap = false when roundCaps = false",
+            squareLines.all { !it.isRoundCap })
+
+        // 2. Verify roundCaps = true produces isRoundCap = true
+        val roundCapNodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL,
+            roundCaps = true,
+            lengthFraction = 1.0f
+        )
+        val roundLines = roundCapNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertTrue("All LineNodes must have isRoundCap = true when roundCaps = true",
+            roundLines.all { it.isRoundCap })
+
+        // 3. Verify lengthFraction scaling (0.5f scales line length to 50%)
+        val halfLengthNodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL,
+            roundCaps = true,
+            lengthFraction = 0.5f
+        )
+        val halfLines = halfLengthNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertEquals("Line counts should match between full and scaled lengths", roundLines.size, halfLines.size)
+
+        for (i in roundLines.indices) {
+            val fullLen = kotlin.math.abs(roundLines[i].x2 - roundLines[i].x1)
+            val halfLen = kotlin.math.abs(halfLines[i].x2 - halfLines[i].x1)
+            assertEquals("Length with lengthFraction=0.5 must be exactly 50% of full length",
+                fullLen * 0.5f, halfLen, 0.001f)
+        }
+    }
+
+    @Test
+    fun testGifFrameDelayParsingFromStream() {
+        val tempFile = java.io.File.createTempFile("test_anim_", ".gif")
+        try {
+            // Build a minimal GIF stream with two Graphic Control Extensions:
+            // Frame 1: delay 15 (150ms) -> low=15, high=0
+            // Frame 2: delay 25 (250ms) -> low=25, high=0
+            val gce1 = byteArrayOf(0x21.toByte(), 0xF9.toByte(), 0x04.toByte(), 0x00.toByte(), 15.toByte(), 0.toByte(), 0.toByte(), 0.toByte())
+            val dummyImg = byteArrayOf(0x2C.toByte(), 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00)
+            val gce2 = byteArrayOf(0x21.toByte(), 0xF9.toByte(), 0x04.toByte(), 0x00.toByte(), 25.toByte(), 0.toByte(), 0.toByte(), 0.toByte())
+            val trailer = byteArrayOf(0x3B.toByte())
+
+            val stream = java.io.ByteArrayOutputStream()
+            stream.write("GIF89a".toByteArray(Charsets.US_ASCII))
+            stream.write(gce1)
+            stream.write(dummyImg)
+            stream.write(gce2)
+            stream.write(dummyImg)
+            stream.write(trailer)
+
+            tempFile.writeBytes(stream.toByteArray())
+
+            val delays = com.veilframe.app.qr.AnimatedMediaHelper.parseGifDelays(tempFile)
+            assertEquals("Should parse exactly 2 delay values", 2, delays.size)
+            assertEquals(150, delays[0])
+            assertEquals(250, delays[1])
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    @Test
+    fun testResampleSubpixelLuminanceGammaMathematicalParity() {
+        // Reference EFQRCode gamma formula:
+        // gray = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        // weightedGray = gray * alpha + (1 - alpha) * 255.0
+        // normalized = weightedGray / 255.0
+        val testCases = listOf(
+            Triple(255, 255, 255) to 1.0f,
+            Triple(0, 0, 0) to 1.0f,
+            Triple(128, 128, 128) to 1.0f,
+            Triple(255, 0, 0) to 0.5f,
+            Triple(0, 255, 0) to 0.8f
+        )
+
+        for ((rgb, alpha) in testCases) {
+            val (r, g, b) = rgb
+            val refGray = 0.2126f * r + 0.7152f * g + 0.0722f * b
+            val refWeighted = refGray * alpha + (1.0f - alpha) * 255.0f
+            val expectedNorm = refWeighted / 255.0f
+
+            val actualNorm = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(r, g, b, alpha)
+            assertEquals("calculateLuminance must be mathematically identical to reference gamma formula",
+                expectedNorm, actualNorm, 0.0001f)
+        }
+    }
+
+    @Test
     fun testMultiFrameGifEncodingHeaderAndIntegrity() {
         val dummyBmp = createDummyBitmap()
         val frames = listOf(

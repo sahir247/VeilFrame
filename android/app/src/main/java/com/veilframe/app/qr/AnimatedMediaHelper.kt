@@ -23,7 +23,7 @@ object AnimatedMediaHelper {
     suspend fun extractFrames(
         context: Context,
         uri: Uri,
-        maxFrames: Int = 36
+        maxFrames: Int = 120
     ): List<QrFrame> = withContext(Dispatchers.IO) {
         val cr = context.contentResolver
         val mimeType = cr.getType(uri) ?: ""
@@ -52,7 +52,7 @@ object AnimatedMediaHelper {
             val ffmpegCmd = if (isGif) {
                 "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0\" -vframes $maxFrames \"$framePattern\""
             } else {
-                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r 10 -vframes $maxFrames \"$framePattern\""
+                "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r 15 -vframes $maxFrames \"$framePattern\""
             }
 
             var extractedViaFFmpeg = false
@@ -69,11 +69,16 @@ object AnimatedMediaHelper {
 
             if (extractedViaFFmpeg) {
                 val frameFiles = framesDir.listFiles()?.filter { it.extension.equals("png", ignoreCase = true) }?.sortedBy { it.name } ?: emptyList()
-                val delayMs = if (isGif) 100 else 100 // 10 fps default
-                for (file in frameFiles) {
+                val gifDelays = if (isGif) parseGifDelays(inputFile) else emptyList()
+                for ((idx, file) in frameFiles.withIndex()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        resultFrames.add(QrFrame(bmp, delayMs))
+                        val frameDelay = if (isGif && gifDelays.isNotEmpty()) {
+                            gifDelays.getOrElse(idx) { gifDelays.lastOrNull() ?: 100 }
+                        } else {
+                            100
+                        }
+                        resultFrames.add(QrFrame(bmp, frameDelay))
                     }
                 }
             }
@@ -84,8 +89,8 @@ object AnimatedMediaHelper {
                 try {
                     retriever.setDataSource(inputFile.absolutePath)
                     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 1000L
-                    val count = 16.coerceAtMost(maxFrames)
-                    val stepMs = (durationMs / count).coerceAtLeast(40L)
+                    val count = 24.coerceAtMost(maxFrames)
+                    val stepMs = (durationMs / count).coerceIn(40L, 500L)
                     for (i in 0 until count) {
                         val timeUs = i * stepMs * 1000L
                         val frameBmp = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
@@ -106,5 +111,31 @@ object AnimatedMediaHelper {
         } finally {
             tempDir.deleteRecursively()
         }
+    }
+
+    /**
+     * Parses per-frame delay timings from GIF Graphic Control Extension blocks (0x21 0xF9 0x04).
+     * Format: Byte 4 (delay low), Byte 5 (delay high) in hundredths of a second (10ms units).
+     */
+    fun parseGifDelays(file: File): List<Int> {
+        val delays = mutableListOf<Int>()
+        try {
+            val bytes = file.readBytes()
+            var i = 0
+            while (i < bytes.size - 7) {
+                if (bytes[i] == 0x21.toByte() && bytes[i + 1] == 0xF9.toByte() && bytes[i + 2] == 0x04.toByte()) {
+                    val delayLow = bytes[i + 4].toInt() and 0xFF
+                    val delayHigh = bytes[i + 5].toInt() and 0xFF
+                    val delayHundredths = delayLow or (delayHigh shl 8)
+                    val delayMs = if (delayHundredths > 0) delayHundredths * 10 else 100
+                    delays.add(delayMs.coerceIn(20, 10000))
+                    i += 7
+                } else {
+                    i++
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        return delays
     }
 }

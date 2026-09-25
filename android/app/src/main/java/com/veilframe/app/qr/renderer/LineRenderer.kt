@@ -104,7 +104,9 @@ class LineRenderer : QrRenderer {
                 thicknessFraction = thickness,
                 lineColor = lineColor,
                 direction = direction,
-                addAccentRings = true
+                addAccentRings = true,
+                roundCaps = design.lineStyle.roundCaps,
+                lengthFraction = design.lineStyle.lengthFraction
             )
         )
 
