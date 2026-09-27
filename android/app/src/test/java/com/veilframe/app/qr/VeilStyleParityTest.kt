@@ -2,7 +2,9 @@ package com.veilframe.app.qr
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
@@ -432,6 +434,139 @@ class VeilStyleParityTest {
 
         assertNotNull("Decoded result must not be null", decoded)
         assertEquals("ZXing must successfully decode VeilFrame RandomRectangle matrix", payload, decoded.text)
+    }
+
+    @Test
+    fun testSoftwareRasterizedLineDecodableByZxing() {
+        val payload = "HTTPS://VEILFRAME.APP/LINE-ZXING-DECODE"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val qz = 4
+        val scale = 12
+        val totalModules = n + 2 * qz
+        val totalPx = totalModules * scale
+        val pixels = IntArray(totalPx * totalPx) { 0xFFFFFFFF.toInt() }
+        val black = 0xFF000000.toInt()
+
+        // 1. Draw finders as solid blocks
+        for (c in 0 until n) {
+            for (r in 0 until n) {
+                if (VeilPositionPatternGeometry.isFinderArea(c, r, n)) {
+                    if (matrix.isDark(c, r)) {
+                        val startX = (c + qz) * scale
+                        val startY = (r + qz) * scale
+                        for (y in startY until (startY + scale)) {
+                            for (x in startX until (startX + scale)) {
+                                pixels[y * totalPx + x] = black
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Build and rasterize Line topology for data modules
+        val ox = qz * scale.toFloat()
+        val oy = qz * scale.toFloat()
+        val cs = scale.toFloat()
+        val nodes = LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = 0.70f,
+            lineColor = black,
+            direction = LineDirection.CROSS,
+            addAccentRings = false
+        )
+
+        for (node in nodes) {
+            when (node) {
+                is com.veilframe.app.qr.geometry.LineNode -> {
+                    val halfStroke = (node.strokeWidth / 2f).toInt().coerceAtLeast(1)
+                    val xMin = minOf(node.x1, node.x2).toInt() - halfStroke
+                    val xMax = maxOf(node.x1, node.x2).toInt() + halfStroke
+                    val yMin = minOf(node.y1, node.y2).toInt() - halfStroke
+                    val yMax = maxOf(node.y1, node.y2).toInt() + halfStroke
+                    for (y in yMin.coerceAtLeast(0)..yMax.coerceAtMost(totalPx - 1)) {
+                        for (x in xMin.coerceAtLeast(0)..xMax.coerceAtMost(totalPx - 1)) {
+                            pixels[y * totalPx + x] = black
+                        }
+                    }
+                }
+                is com.veilframe.app.qr.geometry.CircleNode -> {
+                    val r = node.radius.toInt()
+                    val cx = node.cx.toInt()
+                    val cy = node.cy.toInt()
+                    for (y in (cy - r).coerceAtLeast(0)..(cy + r).coerceAtMost(totalPx - 1)) {
+                        for (x in (cx - r).coerceAtLeast(0)..(cx + r).coerceAtMost(totalPx - 1)) {
+                            if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) {
+                                pixels[y * totalPx + x] = black
+                            }
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        val source = RGBLuminanceSource(totalPx, totalPx, pixels)
+        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+        val reader = MultiFormatReader()
+        val decoded = reader.decode(binaryBitmap)
+
+        assertNotNull("Decoded result must not be null", decoded)
+        assertEquals("ZXing must successfully decode rasterized Line style QR", payload, decoded.text)
+    }
+
+    @Test
+    fun testSoftwareRasterizedDotDecodableByZxing() {
+        val payload = "HTTPS://VEILFRAME.APP/DOT-ZXING-DECODE"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val qz = 4
+        val scale = 10
+        val totalModules = n + 2 * qz
+        val totalPx = totalModules * scale
+        val pixels = IntArray(totalPx * totalPx) { 0xFFFFFFFF.toInt() }
+        val black = 0xFF000000.toInt()
+
+        for (c in 0 until n) {
+            for (r in 0 until n) {
+                if (matrix.isDark(c, r)) {
+                    val isFinder = VeilPositionPatternGeometry.isFinderArea(c, r, n)
+                    val startX = (c + qz) * scale
+                    val startY = (r + qz) * scale
+                    if (isFinder) {
+                        for (y in startY until (startY + scale)) {
+                            for (x in startX until (startX + scale)) {
+                                pixels[y * totalPx + x] = black
+                            }
+                        }
+                    } else {
+                        // Circle module dot with radius = 0.42 * scale
+                        val cx = startX + scale / 2
+                        val cy = startY + scale / 2
+                        val radius = (scale * 0.42f).toInt()
+                        for (y in (cy - radius).coerceAtLeast(0)..(cy + radius).coerceAtMost(totalPx - 1)) {
+                            for (x in (cx - radius).coerceAtLeast(0)..(cx + radius).coerceAtMost(totalPx - 1)) {
+                                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= radius * radius) {
+                                    pixels[y * totalPx + x] = black
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val source = RGBLuminanceSource(totalPx, totalPx, pixels)
+        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+        val reader = MultiFormatReader()
+        val decoded = reader.decode(binaryBitmap)
+
+        assertNotNull("Decoded result must not be null", decoded)
+        assertEquals("ZXing must successfully decode rasterized Dot style QR", payload, decoded.text)
     }
 
     @Test
@@ -2475,30 +2610,7 @@ class VeilStyleParityTest {
 
         val animatedSvg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
 
-        // 1. Collect all defined IDs
-        val idDefRegex = Regex("""\bid=["']([^"']+)["']""")
-        val definedIds = idDefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
-        assertTrue("Animated SVG must define frame IDs and scoped resource IDs", definedIds.isNotEmpty())
-
-        // 2. Assert all defined IDs are unique (zero duplicates across entire SVG document)
-        val duplicates = definedIds.groupBy { it }.filter { it.value.size > 1 }.keys
-        assertTrue("All IDs must be unique across animated SVG frames, found duplicates: $duplicates", duplicates.isEmpty())
-
-        // 3. Collect all referenced IDs via url(#id) and (xlink:href|href)="#id"
-        val urlRefRegex = Regex("""url\(\s*#([^)]+)\s*\)""")
-        val hrefRefRegex = Regex("""\b(?:xlink:href|href)=["']#([^"']+)["']""")
-
-        val urlRefs = urlRefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
-        val hrefRefs = hrefRefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
-        val allRefs = urlRefs + hrefRefs
-
-        // 4. Assert that EVERY reference resolves to a defined ID (zero dangling references)
-        val definedIdSet = definedIds.toSet()
-        for (ref in allRefs) {
-            assertTrue("Referenced ID '#$ref' must exist in SVG definitions", definedIdSet.contains(ref))
-        }
-
-        // 5. Assert frame isolation via standard XML DOM parser (DocumentBuilderFactory)
+        // 1. Parse full animated SVG into a strict XML DOM document
         val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
             setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
@@ -2508,21 +2620,59 @@ class VeilStyleParityTest {
         val builder = factory.newDocumentBuilder()
         val doc = builder.parse(java.io.ByteArrayInputStream(animatedSvg.toByteArray(Charsets.UTF_8)))
 
+        // 2. DOM-wide traversal to collect defined IDs, references, and frame elements
+        val definedIds = mutableListOf<String>()
+        val allRefs = mutableListOf<String>()
         val frameElements = mutableListOf<Pair<Int, org.w3c.dom.Element>>()
-        fun collectFrames(node: org.w3c.dom.Node) {
+
+        val urlRefRegex = Regex("""url\(\s*#([^)]+)\s*\)""")
+
+        fun scanGlobal(node: org.w3c.dom.Node) {
             if (node is org.w3c.dom.Element) {
-                val id = node.getAttribute("id")
-                val frameMatch = Regex("""^qr_frame_(\d+)$""").matchEntire(id)
-                if (frameMatch != null) {
-                    frameElements.add(Pair(frameMatch.groupValues[1].toInt(), node))
+                if (node.hasAttribute("id")) {
+                    val idVal = node.getAttribute("id")
+                    if (idVal.isNotEmpty()) {
+                        definedIds.add(idVal)
+                        val frameMatch = Regex("""^qr_frame_(\d+)$""").matchEntire(idVal)
+                        if (frameMatch != null) {
+                            frameElements.add(Pair(frameMatch.groupValues[1].toInt(), node))
+                        }
+                    }
+                }
+                val attrs = node.attributes
+                for (a in 0 until attrs.length) {
+                    val attr = attrs.item(a)
+                    val attrVal = attr.nodeValue
+                    for (match in urlRefRegex.findAll(attrVal)) {
+                        allRefs.add(match.groupValues[1])
+                    }
+                    if (attr.nodeName == "href" || attr.nodeName == "xlink:href") {
+                        if (attrVal.startsWith("#")) {
+                            allRefs.add(attrVal.substring(1))
+                        }
+                    }
                 }
             }
             val children = node.childNodes
             for (i in 0 until children.length) {
-                collectFrames(children.item(i))
+                scanGlobal(children.item(i))
             }
         }
-        collectFrames(doc.documentElement)
+        scanGlobal(doc.documentElement)
+
+        assertTrue("DOM must define resource and frame IDs", definedIds.isNotEmpty())
+
+        // 3. Assert all defined IDs are unique across the entire DOM tree
+        val duplicates = definedIds.groupBy { it }.filter { it.value.size > 1 }.keys
+        assertTrue("All IDs must be unique across animated SVG frames, found duplicates: $duplicates", duplicates.isEmpty())
+
+        // 4. Assert that EVERY reference resolves to a defined ID (zero dangling references)
+        val definedIdSet = definedIds.toSet()
+        for (ref in allRefs) {
+            assertTrue("Referenced ID '#$ref' must exist in SVG DOM definitions", definedIdSet.contains(ref))
+        }
+
+        // 5. Assert frame isolation across each frame subtree in the DOM
         assertEquals("DOM tree must contain exactly 3 frame root elements", 3, frameElements.size)
 
         for ((frameIdx, frameElem) in frameElements) {
@@ -2531,12 +2681,15 @@ class VeilStyleParityTest {
                 if (node is org.w3c.dom.Element) {
                     val attrs = node.attributes
                     for (a in 0 until attrs.length) {
-                        val attrVal = attrs.item(a).nodeValue
+                        val attr = attrs.item(a)
+                        val attrVal = attr.nodeValue
                         for (match in urlRefRegex.findAll(attrVal)) {
                             subtreeRefs.add(match.groupValues[1])
                         }
-                        for (match in hrefRefRegex.findAll(attrVal)) {
-                            subtreeRefs.add(match.groupValues[1])
+                        if (attr.nodeName == "href" || attr.nodeName == "xlink:href") {
+                            if (attrVal.startsWith("#")) {
+                                subtreeRefs.add(attrVal.substring(1))
+                            }
                         }
                     }
                 }
@@ -2621,38 +2774,67 @@ class VeilStyleParityTest {
         assertTrue("Odd dimensions must resolve positive crop width", oddFill.srcWidth in 190..210)
         assertEquals(199, oddFill.srcHeight)
 
-        // 6. Distinct-color Pixel Survival Parity (4x2 source into 1:1 destination)
-        // Pixels:
-        // Col 0: 0xFF110000 (red-ish)     Col 1: 0xFF220000     Col 2: 0xFF330000     Col 3: 0xFF440000
-        // Col 0: 0xFF001100 (green-ish)   Col 1: 0xFF002200     Col 2: 0xFF003300     Col 3: 0xFF004400
-        val colors4x2 = intArrayOf(
-            0xFF110000.toInt(), 0xFF220000.toInt(), 0xFF330000.toInt(), 0xFF440000.toInt(),
-            0xFF001100.toInt(), 0xFF002200.toInt(), 0xFF003300.toInt(), 0xFF004400.toInt()
+        // 6. Distinct-color 4x3 Pixel Survival Parity (4x3 into 1:1 destination)
+        // 12 unique colors across a 4-column x 3-row source grid:
+        // Row 0: P(0,0)=0xFF111111, P(1,0)=0xFF222222, P(2,0)=0xFF333333, P(3,0)=0xFF444444
+        // Row 1: P(0,1)=0xFF555555, P(1,1)=0xFF666666, P(2,1)=0xFF777777, P(3,1)=0xFF888888
+        // Row 2: P(0,2)=0xFF999999, P(1,2)=0xFFAAAAAA, P(2,2)=0xFFBBBBBB, P(3,2)=0xFFCCCCCC
+        val colors4x3 = intArrayOf(
+            0xFF111111.toInt(), 0xFF222222.toInt(), 0xFF333333.toInt(), 0xFF444444.toInt(),
+            0xFF555555.toInt(), 0xFF666666.toInt(), 0xFF777777.toInt(), 0xFF888888.toInt(),
+            0xFF999999.toInt(), 0xFFAAAAAA.toInt(), 0xFFBBBBBB.toInt(), 0xFFCCCCCC.toInt()
         )
-        val pixelSource = ArrayPixelSource(width = 4, height = 2, pixels = colors4x2)
+        val pixelSource4x3 = ArrayPixelSource(width = 4, height = 3, pixels = colors4x3)
 
         // 6a. ASPECT_FILL into 1:1 destination:
-        // Aspect ratio is 4/2 = 2.0. In ASPECT_FILL, visible horizontal slice spans [0.25, 0.75].
-        val centerSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.0f, ImageScaleMode.ASPECT_FILL)
-        assertFalse("ASPECT_FILL center sample must not be padding", centerSample.isPadding)
-        val leftFill = ImageScaleResolver.sample(pixelSource, 0.0f, 0.0f, ImageScaleMode.ASPECT_FILL)
-        val rightFill = ImageScaleResolver.sample(pixelSource, 1.0f, 0.0f, ImageScaleMode.ASPECT_FILL)
-        assertNotEquals(leftFill.color, rightFill.color)
+        // Height is preserved (all rows 0, 1, 2 survive). Width is center-cropped to 3/4 = 0.75.
+        // Exact integer grid centers:
+        // fx = (0.125 + u * 0.75) * 3, fy = v * 2.
+        // For Col 1, Row 1 (fx=1.0, fy=1.0): u = 5/18f, v = 0.5f -> P(1, 1) = 0xFF666666
+        val col1Fill = ImageScaleResolver.sample(pixelSource4x3, 5f / 18f, 0.5f, ImageScaleMode.ASPECT_FILL)
+        assertFalse("ASPECT_FILL sample must not be padding", col1Fill.isPadding)
+        assertEquals("Col 1 Row 1 under ASPECT_FILL must survive as 0xFF666666", 0xFF666666.toInt(), col1Fill.color)
+
+        // For Col 2, Row 1 (fx=2.0, fy=1.0): u = 13/18f, v = 0.5f -> P(2, 1) = 0xFF777777
+        val col2Fill = ImageScaleResolver.sample(pixelSource4x3, 13f / 18f, 0.5f, ImageScaleMode.ASPECT_FILL)
+        assertFalse(col2Fill.isPadding)
+        assertEquals("Col 2 Row 1 under ASPECT_FILL must survive as 0xFF777777", 0xFF777777.toInt(), col2Fill.color)
+
+        // Midpoint u=0.5, v=0.5 evaluates fx=1.5, fy=1.0, which bilinearly blends Col 1 (0x66=102) and Col 2 (0x77=119) to 110.5 -> 111 (0x6F)
+        val centerFill = ImageScaleResolver.sample(pixelSource4x3, 0.5f, 0.5f, ImageScaleMode.ASPECT_FILL)
+        assertEquals("Center sample bilinearly interpolates adjacent columns", 0xFF6F6F6F.toInt(), centerFill.color)
+
+        val topFill = ImageScaleResolver.sample(pixelSource4x3, 13f / 18f, 0.0f, ImageScaleMode.ASPECT_FILL)
+        assertEquals("Top pixel under ASPECT_FILL must survive from Row 0, Col 2", 0xFF333333.toInt(), topFill.color)
+
+        val bottomFill = ImageScaleResolver.sample(pixelSource4x3, 13f / 18f, 1.0f, ImageScaleMode.ASPECT_FILL)
+        assertEquals("Bottom pixel under ASPECT_FILL must survive from Row 2, Col 2", 0xFFBBBBBB.toInt(), bottomFill.color)
 
         // 6b. ASPECT_FIT into 1:1 destination:
-        // Height is fitted to fitH = 1 / 2.0 = 0.5, letterboxed with offsetY = 0.25.
-        // For v < 0.25 or v >= 0.75, sample MUST be flagged as padding (isPadding = true) and return solid white!
-        val topPaddingSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.10f, ImageScaleMode.ASPECT_FIT)
-        assertTrue("Sample in top margin must be padding", topPaddingSample.isPadding)
-        assertEquals("Top margin padding must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), topPaddingSample.color)
+        // Width is fitted (all 4 columns survive horizontally).
+        // Height is letterboxed with top and bottom margins (v < 0.125 and v >= 0.875).
+        val topPadding = ImageScaleResolver.sample(pixelSource4x3, 0.5f, 0.05f, ImageScaleMode.ASPECT_FIT)
+        assertTrue("Top margin under ASPECT_FIT must be padding", topPadding.isPadding)
+        assertEquals("Top margin must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), topPadding.color)
 
-        val bottomPaddingSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.90f, ImageScaleMode.ASPECT_FIT)
-        assertTrue("Sample in bottom margin must be padding", bottomPaddingSample.isPadding)
-        assertEquals("Bottom margin padding must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), bottomPaddingSample.color)
+        val bottomPadding = ImageScaleResolver.sample(pixelSource4x3, 0.5f, 0.95f, ImageScaleMode.ASPECT_FIT)
+        assertTrue("Bottom margin under ASPECT_FIT must be padding", bottomPadding.isPadding)
+        assertEquals("Bottom margin must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), bottomPadding.color)
 
-        val contentSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.50f, ImageScaleMode.ASPECT_FIT)
-        assertFalse("Sample inside fitted content area must NOT be padding", contentSample.isPadding)
-        assertNotEquals("Content area sample must NOT be default white padding", 0xFFFFFFFF.toInt(), contentSample.color)
+        // Horizontal span across active area verifies all 4 columns survive at v = 0.5f (Row 1):
+        // fx = u * 3: u=0.0 -> Col 0, u=1/3 -> Col 1, u=2/3 -> Col 2, u=1.0 -> Col 3
+        val col0 = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val col1 = ImageScaleResolver.sample(pixelSource4x3, 1f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val col2 = ImageScaleResolver.sample(pixelSource4x3, 2f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val col3 = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertFalse(col0.isPadding)
+        assertFalse(col1.isPadding)
+        assertFalse(col2.isPadding)
+        assertFalse(col3.isPadding)
+        assertEquals("Col 0 must survive", 0xFF555555.toInt(), col0.color)
+        assertEquals("Col 1 must survive", 0xFF666666.toInt(), col1.color)
+        assertEquals("Col 2 must survive", 0xFF777777.toInt(), col2.color)
+        assertEquals("Col 3 must survive", 0xFF888888.toInt(), col3.color)
     }
 
     @Test
@@ -2661,18 +2843,12 @@ class VeilStyleParityTest {
         val n = matrix.size
         val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(n, 512f, 512f, 1)
 
-        // In column-major painter order:
-        // Col c, Row r module is rendered before Col c, Row r+1 module.
-        // Therefore, for positive projection height, Row r+1's top face draws OVER Row r's back face.
         val top00 = proj.screenY(0f, 0f, 0f)
         val top01 = proj.screenY(0f, 1f, 0f)
         assertTrue("Screen Y increases down the column for isometric projection", top01 > top00)
 
         // Discrete Raster Overlap Occlusion Verification:
-        // We set up a 2-module test where Module (10, 10) and Module (10, 11) in data space both have depth h = 1.0f.
-        // In axonometric isometric projection, the right face of (10, 10) extends down across screen Y.
-        // The top face of Module (10, 11) is drawn in screen space where (10, 10)'s right extrusion lands.
-        // We paint the polygons in diagonal wave painter's order into a discrete software raster buffer.
+        // Module (10, 10) and Module (11, 11) both have depth h = 1.0f.
         val testMatrix = QrMatrix(size = 21, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
             (col == 10 && row == 10) || (col == 11 && row == 11)
         }
@@ -2693,7 +2869,6 @@ class VeilStyleParityTest {
         val geom = QrGeometry(matrixSize = 21, outputWidth = 400, outputHeight = 400, quietZoneModules = 0)
         val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(testMatrix, design, geom)
 
-        // Rasterize PolygonNodes into a 400x400 software pixel buffer
         val width = 400
         val height = 400
         val raster = IntArray(width * height)
@@ -2733,36 +2908,36 @@ class VeilStyleParityTest {
             }
         }
 
+        // Paint in forward painter order
         rasterizeNodes(ir.rootNodes, raster)
 
-        // Sample pixel at the overlap region where Module (11, 11)'s top face and Module (10, 10)'s right extrusion overlap
-        val p25 = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(21, 400f, 400f, 0)
-        val overlapX = p25.screenX(11.25f, 11.5f).toInt().coerceIn(0, width - 1)
-        val overlapY = p25.screenY(11.25f, 11.5f, 0f).toInt().coerceIn(0, height - 1)
-        val sampledColor = raster[overlapY * width + overlapX]
-
-        assertEquals(
-            "Overlap region between (10, 10) right face and (11, 11) top face must be Green (topColor) under forward painter order",
-            topColor,
-            sampledColor
-        )
-
-        // Negative test / Counterfactual verification:
-        // In reverse painter order (foreground rendered before background), the extruded right face of (10, 10) overwrites (11, 11)'s top face!
+        // Paint in reverse painter order
         val reverseRaster = IntArray(width * height)
         val reversedPolys = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>().reversed()
         rasterizeNodes(reversedPolys, reverseRaster)
-        val reversedColor = reverseRaster[overlapY * width + overlapX]
-        assertEquals(
-            "Reversed painter order must produce incorrect occlusion (overwritten by Blue right face)",
-            rightColor,
-            reversedColor
-        )
-        assertNotEquals(
-            "Forward and reverse painter orders must produce different pixel results on overlapping faces",
-            sampledColor,
-            reversedColor
-        )
+
+        // Find ALL pixels in the 2D overlap footprint where the forward and reverse rasters differ
+        val overlapFootprint = mutableListOf<Pair<Int, Int>>()
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (raster[y * width + x] != 0 && reverseRaster[y * width + x] != 0 && raster[y * width + x] != reverseRaster[y * width + x]) {
+                    overlapFootprint.add(Pair(x, y))
+                }
+            }
+        }
+
+        assertTrue("There must be a non-empty 2D overlap footprint between the two blocks", overlapFootprint.size >= 10)
+
+        // Prove 100% of the overlap footprint is Green (top face visible) under forward order,
+        // and under reverse order the extrusion faces (Left=Red / Right=Blue) incorrectly occlude the Top face!
+        for ((px, py) in overlapFootprint) {
+            assertEquals("Forward order must render Top face (Green) over overlapping pixel at ($px, $py)", topColor, raster[py * width + px])
+            val revColor = reverseRaster[py * width + px]
+            assertTrue(
+                "Reverse order must incorrectly render an extrusion face (Left=Red or Right=Blue) at ($px, $py), got: ${Integer.toHexString(revColor)}",
+                revColor == leftColor || revColor == rightColor
+            )
+        }
     }
 
     @Test
@@ -2778,16 +2953,13 @@ class VeilStyleParityTest {
         )
 
         val svg = SvgExporter.generateSvg(matrix, design)
-        // Tint rect must NOT have both fill="rgba(0,255,0,0.500)" AND opacity="0.50"
         assertFalse(
             "Backdrop tint rect must NOT duplicate opacity inside rgba and opacity attribute",
             svg.contains("""fill="rgba(0,255,0,""") && svg.contains("""opacity="0.50"""")
         )
-        // It must emit solid hex fill with opacity attribute per EF
         assertTrue("Backdrop tint rect must emit solid hex fill", svg.contains("""fill="#00FF00""""))
         assertTrue("Backdrop tint rect must emit opacity attribute", svg.contains("""opacity="0.50""""))
 
-        // Mathematical Compositing Proof:
         // Extract opacity attribute and fill color from the tint element in the generated SVG
         val tintRectRegex = Regex("""<rect[^>]*fill="(#[0-9A-Fa-f]{6})"[^>]*opacity="([0-9.]+)"[^>]*>""")
         val tintMatch = tintRectRegex.find(svg)
@@ -2798,18 +2970,33 @@ class VeilStyleParityTest {
         assertEquals("#00FF00", extractedHex)
         assertEquals(0.50f, extractedOpacity, 0.01f)
 
-        // Simulate Porter-Duff Source-Over compositing over black backdrop (0, 0, 0):
-        // Single attenuation: G_out = round(255 * alpha) = round(255 * 0.5) = 128
-        // Double attenuation: G_out = round(255 * alpha * alpha) = round(255 * 0.25) = 64
-        val singleAttenuatedG = kotlin.math.round(255f * extractedOpacity).toInt()
-        val doubleAttenuatedG = kotlin.math.round(255f * extractedOpacity * extractedOpacity).toInt()
-        assertEquals(128, singleAttenuatedG)
-        assertEquals(64, doubleAttenuatedG)
+        // End-to-End Rendered Software Pixel Buffer Compositing Proof:
+        // Render tint rect over a 50x50 white pixel buffer (0xFFFFFFFF)
+        val renderBuffer = IntArray(50 * 50) { 0xFFFFFFFF.toInt() }
+        val alphaFloat = extractedOpacity
+        val tintR = extractedHex.substring(1, 3).toInt(16)
+        val tintG = extractedHex.substring(3, 5).toInt(16)
+        val tintB = extractedHex.substring(5, 7).toInt(16)
 
-        // Prove that the effective rendered alpha strictly produces the single-attenuated channel (128)
-        val effectiveG = kotlin.math.round(255f * extractedOpacity).toInt()
-        assertEquals("Effective green channel must match single attenuation (128)", 128, effectiveG)
-        assertNotEquals("Effective green channel must NOT suffer double attenuation (64)", 64, effectiveG)
+        for (i in renderBuffer.indices) {
+            val bgR = 255
+            val bgG = 255
+            val bgB = 255
+            val compR = kotlin.math.round(tintR * alphaFloat + bgR * (1f - alphaFloat)).toInt()
+            val compG = kotlin.math.round(tintG * alphaFloat + bgG * (1f - alphaFloat)).toInt()
+            val compB = kotlin.math.round(tintB * alphaFloat + bgB * (1f - alphaFloat)).toInt()
+            renderBuffer[i] = (0xFF shl 24) or (compR shl 16) or (compG shl 8) or compB
+        }
+
+        // Single attenuation produces 0xFF80FF80: R=128, G=255, B=128
+        val expectedPixel = (0xFF shl 24) or (128 shl 16) or (255 shl 8) or 128
+        // Double attenuation would produce 0xFFBFFFB7 (alpha = 0.25): R=191, G=255, B=191
+        val doubleAttenuatedPixel = (0xFF shl 24) or (191 shl 16) or (255 shl 8) or 191
+
+        for (px in renderBuffer) {
+            assertEquals("Rendered pixel must match single attenuation (0xFF80FF80)", expectedPixel, px)
+            assertNotEquals("Rendered pixel must NOT match double attenuation (0xFFBFFFB7)", doubleAttenuatedPixel, px)
+        }
     }
 
     @Test
@@ -2836,6 +3023,52 @@ class VeilStyleParityTest {
 
         val excessiveIconPct = 0.85f
         assertEquals("Excessive icon percentage must be clamped to max 0.33 to preserve QR readability", 0.33f, minOf(excessiveIconPct, 0.33f), 0.001f)
+    }
+
+    // =========================================================================
+    // LEVEL 6: COMPREHENSIVE ZXING DECODE PARITY - RESAMPLE EXTENSION
+    // =========================================================================
+
+    @Test
+    fun testSoftwareRasterizedResampleDecodableByZxing() {
+        val payload = "HTTPS://VEILFRAME.APP/RESAMPLE-ZXING-DECODE"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val qz = 4
+        val scale = 10
+        val totalModules = n + 2 * qz
+        val totalPx = totalModules * scale
+        val pixels = IntArray(totalPx * totalPx) { 0xFFFFFFFF.toInt() }
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE
+        )
+        val geom = QrGeometry(matrix.size, totalPx, totalPx, qz)
+        val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, geom)
+
+        for (node in ir.rootNodes) {
+            if (node is com.veilframe.app.qr.geometry.RectNode) {
+                val fill = node.fill ?: continue
+                val minX = node.x.toInt().coerceIn(0, totalPx - 1)
+                val minY = node.y.toInt().coerceIn(0, totalPx - 1)
+                val maxX = (node.x + node.width).toInt().coerceIn(0, totalPx)
+                val maxY = (node.y + node.height).toInt().coerceIn(0, totalPx)
+                for (py in minY until maxY) {
+                    val rowOffset = py * totalPx
+                    for (px in minX until maxX) {
+                        pixels[rowOffset + px] = fill
+                    }
+                }
+            }
+        }
+
+        val source = RGBLuminanceSource(totalPx, totalPx, pixels)
+        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+        val reader = MultiFormatReader()
+        val decoded = reader.decode(binaryBitmap)
+
+        assertNotNull("Decoded result must not be null", decoded)
+        assertEquals("ZXing must successfully decode rasterized Resample style QR", payload, decoded.text)
     }
 
     private fun createDummyBitmap(): Bitmap {

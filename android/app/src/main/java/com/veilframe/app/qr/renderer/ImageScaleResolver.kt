@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import com.veilframe.app.qr.model.ImageScaleMode
+import kotlin.math.roundToInt
 
 /**
  * Abstract pixel data provider decoupling sampling logic from Android Bitmap framework.
@@ -203,10 +204,10 @@ object ImageScaleResolver {
         val botG = g2 * (1f - wx) + g3 * wx
         val botB = b2 * (1f - wx) + b3 * wx
 
-        val a = (topA * (1f - wy) + botA * wy).toInt().coerceIn(0, 255)
-        val r = (topR * (1f - wy) + botR * wy).toInt().coerceIn(0, 255)
-        val g = (topG * (1f - wy) + botG * wy).toInt().coerceIn(0, 255)
-        val b = (topB * (1f - wy) + botB * wy).toInt().coerceIn(0, 255)
+        val a = (topA * (1f - wy) + botA * wy).roundToInt().coerceIn(0, 255)
+        val r = (topR * (1f - wy) + botR * wy).roundToInt().coerceIn(0, 255)
+        val g = (topG * (1f - wy) + botG * wy).roundToInt().coerceIn(0, 255)
+        val b = (topB * (1f - wy) + botB * wy).roundToInt().coerceIn(0, 255)
 
         return (a shl 24) or (r shl 16) or (g shl 8) or b
     }
