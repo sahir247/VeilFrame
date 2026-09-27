@@ -108,8 +108,10 @@ object AnimatedQrGenerator {
                 fullSvg
             }
 
+            val scopedContent = scopeSvgIds(innerContent, "f$idx")
+
             frameDefs.append("    <g id=\"$frameId\">\n")
-            frameDefs.append(innerContent).append("\n")
+            frameDefs.append(scopedContent).append("\n")
             frameDefs.append("    </g>\n")
 
             accumulatedMs += frame.durationMs
@@ -152,6 +154,30 @@ object AnimatedQrGenerator {
         sb.append(baseSvgFooter)
 
         return sb.toString()
+    }
+
+    /**
+     * Frame-scopes SVG element IDs and their references (url(#id), href="#id", xlink:href="#id")
+     * with [prefix] (e.g. "f0", "f1") to prevent document-global ID collisions in animated SVGs.
+     */
+    fun scopeSvgIds(svgContent: String, prefix: String): String {
+        val idRegex = Regex("""\bid=["']([^"']+)["']""")
+        val ids = idRegex.findAll(svgContent).map { it.groupValues[1] }.toSet()
+        if (ids.isEmpty()) return svgContent
+
+        var result = svgContent
+        for (id in ids) {
+            val scopedId = "${prefix}_$id"
+            // Replace definition: id="id" or id='id'
+            result = result.replace(Regex("""\bid=(["'])${Regex.escape(id)}\1"""), "id=$1$scopedId$1")
+            // Replace url(#id)
+            result = result.replace(Regex("""url\(\s*#${Regex.escape(id)}\s*\)"""), "url(#$scopedId)")
+            // Replace href="#id" and xlink:href="#id"
+            result = result.replace(Regex("""\b(xlink:href|href)=(["'])#${Regex.escape(id)}\2"""), "$1=$2#$scopedId$2")
+            // Replace clip-path, mask, fill, filter direct references if any format uses #id
+            result = result.replace(Regex("""(["'])#${Regex.escape(id)}\1"""), "$1#$scopedId$1")
+        }
+        return result
     }
 
     /**
@@ -217,7 +243,7 @@ object AnimatedQrGenerator {
                 val sb = StringBuilder()
                 sb.append("ffconcat version 1.0\n")
                 for ((idx, frame) in renderedFrames.withIndex()) {
-                    val durSec = String.format(Locale.US, "%.3f", frame.durationMs.coerceAtLeast(20) / 1000.0)
+                    val durSec = String.format(Locale.US, "%.4f", frame.durationMs.coerceAtLeast(1) / 1000.0)
                     sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", idx)).append("'\n")
                     sb.append("duration ").append(durSec).append("\n")
                 }
@@ -225,8 +251,8 @@ object AnimatedQrGenerator {
                 concatFile.writeText(sb.toString())
                 "-y -f concat -safe 0 -i \"${concatFile.absolutePath}\" -vsync vfr -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
             } else {
-                val avgDurationMs = durations.average().toInt().coerceIn(20, 1000)
-                val effectiveFps = if (fps > 0) fps else (1000 / avgDurationMs).coerceIn(1, 60)
+                val frameDurMs = durations.firstOrNull() ?: 66
+                val effectiveFps = if (fps > 0) fps else kotlin.math.round(1000.0 / frameDurMs).toInt().coerceIn(1, 120)
                 val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
                 "-y -framerate $effectiveFps -i \"$inputPattern\" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
             }

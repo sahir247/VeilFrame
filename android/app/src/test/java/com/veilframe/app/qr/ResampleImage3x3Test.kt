@@ -530,9 +530,13 @@ class ResampleImage3x3Test {
         assertFalse("Finder subpixel must not be sampled", policy.shouldSample(matrix, 0, 0))
         assertFalse("Finder module must not emit resample center anchor", policy.shouldDrawAnchor(matrix, 0, 0))
 
-        // Timing track: col 10, row 6
-        assertFalse("Timing track subpixel must not be sampled", policy.shouldSample(matrix, 30, 18))
-        assertFalse("Timing module must not emit resample center anchor", policy.shouldDrawAnchor(matrix, 10, 6))
+        // Timing track:
+        // Col 10, Row 6 is dark: upstream EF allows stochastic sampling, but suppresses center anchor (drawn by dedicated timing)
+        assertTrue("Dark timing track subpixel is available for stochastic sampling (EF parity)", policy.shouldSample(matrix, 30, 18))
+        assertFalse("Dark timing module must not emit resample center anchor", policy.shouldDrawAnchor(matrix, 10, 6))
+
+        // Col 9, Row 6 is light: upstream EF suppresses light timing subpixels from sampling
+        assertFalse("Light timing track subpixel must not be sampled", policy.shouldSample(matrix, 27, 18))
 
         // Data module: find a dark data module
         var foundDarkDataCol = -1

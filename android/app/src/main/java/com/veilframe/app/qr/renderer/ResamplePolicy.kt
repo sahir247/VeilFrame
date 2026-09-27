@@ -73,17 +73,12 @@ open class ArtisticResamplePolicy(
 ) : ResamplePolicy {
 
     override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean {
-        val col = subX / 3
-        val row = subY / 3
-        val isDark = matrix.isDark(col, row)
-        return !ArtisticResampleFunctionalMask.isExcluded(
-            col = col,
-            row = row,
-            size = matrix.size,
-            version = matrix.version,
+        return !ArtisticResampleFunctionalMask.isSubpixelExcluded(
+            matrix = matrix,
+            subX = subX,
+            subY = subY,
             timingShape = timingStyle.shape,
-            alignmentShape = alignmentStyle.shape,
-            isDark = isDark
+            alignmentShape = alignmentStyle.shape
         )
     }
 
@@ -104,15 +99,8 @@ open class ArtisticResamplePolicy(
             return alignmentStyle.shape == ModuleShape.NONE || alignmentStyle.onlyWhite
         }
 
-        return !ArtisticResampleFunctionalMask.isExcluded(
-            col = col,
-            row = row,
-            size = matrix.size,
-            version = matrix.version,
-            timingShape = timingStyle.shape,
-            alignmentShape = alignmentStyle.shape,
-            isDark = true
-        )
+        // Data, Format, Version all emit center anchors!
+        return true
     }
 
     companion object : ResamplePolicy {

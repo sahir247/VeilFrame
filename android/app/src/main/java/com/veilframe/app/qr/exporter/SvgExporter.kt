@@ -505,8 +505,23 @@ object SvgExporter {
         return sb.toString()
     }
 
+    data class SvgColor(val hex: String, val opacity: Float, val css: String) {
+        override fun toString(): String = css
+    }
+
+    fun toSvgColor(color: Int): SvgColor {
+        val a = (color ushr 24) and 0xFF
+        val r = (color ushr 16) and 0xFF
+        val g = (color ushr 8) and 0xFF
+        val b = color and 0xFF
+        val opacity = a / 255f
+        val hex = String.format(Locale.US, "#%02X%02X%02X", r, g, b)
+        val css = if (a == 255) hex else String.format(Locale.US, "rgba(%d,%d,%d,%.3f)", r, g, b, opacity)
+        return SvgColor(hex, opacity, css)
+    }
+
     private fun hexColor(color: Int): String {
-        return String.format(Locale.US, "#%06X", 0xFFFFFF and color)
+        return toSvgColor(color).css
     }
 
     private fun colorAlpha(color: Int): Float = ((color ushr 24) and 0xFF) / 255f
@@ -539,9 +554,9 @@ object SvgExporter {
         val totalHeight = matrix.size + qzTop + qzBottom
         val sourceBmp = design.imageSource.bitmap
         val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
-        val bgHex = hexColor(design.imageFillBackgroundColor)
+        val bgHex = toSvgColor(design.imageFillBackgroundColor).hex
         val bgAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillBackgroundColor))
-        val maskHex = hexColor(design.imageFillMaskColor)
+        val maskHex = toSvgColor(design.imageFillMaskColor).hex
         val maskAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillMaskColor))
         val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
 
@@ -564,8 +579,13 @@ object SvgExporter {
         sb.append("  </defs>\n")
         sb.append("""  <g x="0" y="0" width="$totalWidth" height="$totalHeight" mask="url(#hole)">""").append("\n")
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
+        val fillAspect = when (design.imageSource.scaleMode) {
+            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
+            else -> "xMidYMid slice"
+        }
         if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="$fillAspect"/>""").append("\n")
         }
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
         sb.append("  </g>\n")
@@ -636,8 +656,13 @@ object SvgExporter {
 
         // 3. Image layer with #hole mask
         sb.append("""  <g x="$qzLeft" y="$qzTop" width="$n" height="$n" mask="url(#hole)">""").append("\n")
+        val imgAspect = when (design.imageSource.scaleMode) {
+            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
+            else -> "xMidYMid slice"
+        }
         if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="$imgAspect"/>""").append("\n")
         }
         sb.append("  </g>\n")
 
@@ -1147,18 +1172,24 @@ object SvgExporter {
                 }
                 FinderStyle.PLANETS -> {
                     sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.35" stroke-dasharray="0.5,0.5" />""").append("\n")
-                    sb.append("""  <circle cx="${cx - 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="${cx + 3}" cy="$cy" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy - 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy + 3}" r="0.6" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.15" stroke-dasharray="0.5,0.5" />""").append("\n")
+                    val planetRadius = 0.5 * design.positionSize
+                    sb.append("""  <circle cx="${cx - 3}" cy="$cy" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="${cx + 3}" cy="$cy" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="${cy - 3}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cx" cy="${cy + 3}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
                 }
                 FinderStyle.DSJ -> {
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 1.5}" width="3" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 3.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx + 2.5}" y="${cy - 1.5}" width="1" height="3" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy - 3.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 1.5}" y="${cy + 2.5}" width="3" height="1" fill="$eyeOuterHex" />""").append("\n")
+                    val posSize = design.positionSize.toDouble()
+                    val widthVal = 2.0 + posSize
+                    val armDim = posSize
+                    val halfW = widthVal / 2.0
+                    val halfArm = armDim / 2.0
+                    sb.append("""  <rect x="${cx - halfW}" y="${cy - halfW}" width="$widthVal" height="$widthVal" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - 3.0 - halfArm}" y="${cy - halfW}" width="$armDim" height="$widthVal" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx + 3.0 - halfArm}" y="${cy - halfW}" width="$armDim" height="$widthVal" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - halfW}" y="${cy - 3.0 - halfArm}" width="$widthVal" height="$armDim" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${cx - halfW}" y="${cy + 3.0 - halfArm}" width="$widthVal" height="$armDim" fill="$eyeOuterHex" />""").append("\n")
                 }
                 else -> {
                     if (isHollowFinder) {

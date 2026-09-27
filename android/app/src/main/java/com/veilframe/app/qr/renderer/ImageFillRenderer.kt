@@ -78,6 +78,12 @@ class ImageFillRenderer : QrRenderer {
         // 2a. Background inside dark modules
         groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = bgColor))
 
+        val aspect = when (design.imageSource.scaleMode) {
+            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
+            else -> "xMidYMid slice"
+        }
+
         // 2b. Scaled source image
         if (sourceBmp != null && !sourceBmp.isRecycled) {
             val base64 = IrSvgRenderer.bitmapToBase64(sourceBmp)
@@ -90,7 +96,7 @@ class ImageFillRenderer : QrRenderer {
                     bitmap = sourceBmp,
                     base64Data = base64,
                     opacity = imageAlpha,
-                    preserveAspectRatio = "xMidYMid slice"
+                    preserveAspectRatio = aspect
                 )
             )
         }
@@ -117,9 +123,10 @@ class ImageFillRenderer : QrRenderer {
     ) {
         val sourceImage = design.imageSource.bitmap
 
-        if (sourceImage == null || sourceImage.isRecycled) {
-            BasicRenderer().render(matrix, design, canvas, geometry, context)
-            return
+        val bgCanvasAlpha = (design.palette.background ushr 24) and 0xFF
+        if (bgCanvasAlpha > 0) {
+            val canvasBgPaint = context.obtainFill(design.palette.background)
+            canvas.drawRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), canvasBgPaint)
         }
 
         val n = matrix.size
@@ -162,8 +169,10 @@ class ImageFillRenderer : QrRenderer {
         val bgPaint = context.obtainFill(bgColor)
         canvas.drawRect(dataBounds, bgPaint)
 
-        // 3b. Continuous scaled image across QR area
-        ImageScaleResolver.drawScaledBitmap(canvas, sourceImage, dataBounds, imageMode, imageAlpha)
+        // 3b. Continuous scaled image across QR area (if provided)
+        if (sourceImage != null && !sourceImage.isRecycled) {
+            ImageScaleResolver.drawScaledBitmap(canvas, sourceImage, dataBounds, imageMode, imageAlpha)
+        }
 
         // 3c. Solid maskColor tint overlay across QR area
         val tintPaint = context.obtainFill(maskColor)

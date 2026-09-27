@@ -445,11 +445,13 @@ data class QrDesign(
 
             val directionalQuietZone = if (params.quietZoneLeft != null || params.quietZoneTop != null ||
                 params.quietZoneRight != null || params.quietZoneBottom != null) {
+                val defaultQz = QrGeometry.resolveDefaultQuietZone(params.style)
+                val base = params.quietZone ?: defaultQz
                 DirectionalInsets(
-                    left = params.quietZoneLeft ?: params.quietZone ?: 4,
-                    top = params.quietZoneTop ?: params.quietZone ?: 4,
-                    right = params.quietZoneRight ?: params.quietZone ?: 4,
-                    bottom = params.quietZoneBottom ?: params.quietZone ?: 4
+                    left = params.quietZoneLeft ?: base,
+                    top = params.quietZoneTop ?: base,
+                    right = params.quietZoneRight ?: base,
+                    bottom = params.quietZoneBottom ?: base
                 )
             } else null
 
@@ -561,6 +563,7 @@ data class QrDesign(
                     ImageSourceStyle(
                         source = ImageSource.Memory(resolvedSourceImage),
                         opacity = params.sourceImageAlpha,
+                        scaleMode = params.imageScaleMode,
                         contrast = 0.0f,
                         exposure = 0.0f,
                         maskColor = params.imageFillMaskColor,
@@ -568,6 +571,7 @@ data class QrDesign(
                     )
                 } else {
                     ImageSourceStyle(
+                        scaleMode = params.imageScaleMode,
                         contrast = 0.0f,
                         exposure = 0.0f,
                         maskColor = params.imageFillMaskColor,

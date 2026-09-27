@@ -27,8 +27,68 @@ import com.veilframe.app.qr.model.ModuleShape
 object ArtisticResampleFunctionalMask {
 
     /**
-     * Returns true if (col, row) is part of a functional area that must be suppressed
-     * from stochastic photo dithering in the image resample engine.
+     * Checks if subpixel ([subX], [subY]) in [0, 3N) x [0, 3N) is filtered out from stochastic sampling.
+     */
+    fun isSubpixelExcluded(
+        matrix: com.veilframe.app.qr.model.QrMatrix,
+        subX: Int,
+        subY: Int,
+        timingShape: ModuleShape = ModuleShape.SQUARE,
+        alignmentShape: ModuleShape = ModuleShape.SQUARE
+    ): Boolean {
+        val nCount = matrix.size
+        val maxCoord = 3 * nCount
+        if (subX !in 0 until maxCoord || subY !in 0 until maxCoord) return true
+
+        // 1. posOrigins (24x24 subpixels around each of the 3 finders)
+        // Top-Left (0, 0)
+        if (subX in 0 until 24 && subY in 0 until 24) return true
+        // Top-Right (3 * nCount - 24, 0)
+        val trX = 3 * nCount - 24
+        if (subX in trX until 3 * nCount && subY in 0 until 24) return true
+        // Bottom-Left (0, 3 * nCount - 24)
+        val blY = 3 * nCount - 24
+        if (subX in 0 until 24 && subY in blY until 3 * nCount) return true
+
+        val col = subX / 3
+        val row = subY / 3
+        val isDark = matrix.isDark(col, row)
+
+        // 2. Timing tracks
+        if (isTimingArea(col, row, nCount)) {
+            if (isDark) {
+                // Upstream EF getGrayPointList never suppresses dark timing pixels.
+                // Non-center subpixels are sampled stochastically, then dedicated geometry is drawn on top.
+                return false
+            } else {
+                return if (timingShape == ModuleShape.NONE) {
+                    subX % 3 == 1 && subY % 3 == 1
+                } else {
+                    true
+                }
+            }
+        }
+
+        // 3. Alignment patterns
+        if (matrix.version >= 2 && isAlignmentArea(col, row, matrix.version)) {
+            if (isDark) {
+                // Upstream EF getGrayPointList never suppresses dark alignment pixels.
+                // Non-center subpixels are sampled stochastically, then dedicated geometry is drawn on top.
+                return false
+            } else {
+                return if (alignmentShape == ModuleShape.NONE) {
+                    subX % 3 == 1 && subY % 3 == 1
+                } else {
+                    true
+                }
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Module-level check for functional area exclusion (e.g. for dedicated geometry suppression).
      */
     fun isExcluded(
         col: Int,
@@ -36,31 +96,23 @@ object ArtisticResampleFunctionalMask {
         size: Int,
         version: Int,
         timingShape: ModuleShape = ModuleShape.SQUARE,
-        alignmentShape: ModuleShape = ModuleShape.SQUARE,
-        isDark: Boolean = true
+        alignmentShape: ModuleShape = ModuleShape.SQUARE
     ): Boolean {
         if (col !in 0 until size || row !in 0 until size) return true
 
         // 1. Finder areas: 8x8 modules (24x24 subpixel units) at each corner
         if (isFinderArea(col, row, size)) return true
 
-        // 2. Timing tracks: row 6 and col 6 between finders (modules 8 until size - 8)
+        // 2. Timing tracks: row 6 and col 6 between finders
         if (isTimingArea(col, row, size)) {
-            if (timingShape == ModuleShape.NONE && !isDark) {
-                return false
-            }
-            return true
+            return timingShape != ModuleShape.NONE
         }
 
-        // 3. Alignment patterns: 5x5 area around alignment centers (Version >= 2)
+        // 3. Alignment patterns: 5x5 area around alignment centers
         if (version >= 2 && isAlignmentArea(col, row, version)) {
-            if (alignmentShape == ModuleShape.NONE && !isDark) {
-                return false
-            }
-            return true
+            return alignmentShape != ModuleShape.NONE
         }
 
-        // Format and Version modules are NOT suppressed in the resample stochastic pass!
         return false
     }
 

@@ -9,6 +9,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
+import com.veilframe.app.qr.renderer.*
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -1419,7 +1420,7 @@ class VeilStyleParityTest {
             .filter { it.stroke != null && it.fill == null }
         assertTrue("HORIZONTAL line direction must have clean line topology without accent rings", accentRingsH.isEmpty())
 
-        // 2. LineDirection.X must emit accent rings by default (Target #6 circuit mode)
+        // 2. LineDirection.X by default matches EF clean diagonal + dot topology (no extra accent rings)
         val designX = QrDesign(
             style = QrStyle.LINE,
             lineStyle = LineStyle(direction = LineDirection.X)
@@ -1427,17 +1428,17 @@ class VeilStyleParityTest {
         val irX = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designX, geometry)
         val accentRingsX = irX.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
             .filter { it.stroke != null && it.fill == null }
-        assertTrue("LineDirection.X must emit accent rings for circuit styling", accentRingsX.isNotEmpty())
+        assertTrue("LineDirection.X by default must have clean EF topology without accent rings", accentRingsX.isEmpty())
 
-        // 3. Explicit accentRingsEnabled = true on HORIZONTAL enables accent rings
-        val designHWithRings = QrDesign(
+        // 3. Explicit accentRingsEnabled = true on X enables accent rings (opt-in circuit mode)
+        val designXWithRings = QrDesign(
             style = QrStyle.LINE,
-            lineStyle = LineStyle(direction = LineDirection.HORIZONTAL, accentRingsEnabled = true)
+            lineStyle = LineStyle(direction = LineDirection.X, accentRingsEnabled = true)
         )
-        val irHWithRings = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designHWithRings, geometry)
-        val accentRingsExplicit = irHWithRings.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        val irXWithRings = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designXWithRings, geometry)
+        val accentRingsExplicitX = irXWithRings.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
             .filter { it.stroke != null && it.fill == null }
-        assertTrue("Explicit accentRingsEnabled = true must enable accent rings", accentRingsExplicit.isNotEmpty())
+        assertTrue("Explicit accentRingsEnabled = true must enable accent rings", accentRingsExplicitX.isNotEmpty())
     }
 
     @Test
@@ -1886,6 +1887,449 @@ class VeilStyleParityTest {
         for (i in linesX.indices) {
             assertEquals("Line segment stroke width must match reproducibly", linesX[i].strokeWidth, linesX2[i].strokeWidth, 0.001f)
         }
+    }
+
+    @Test
+    fun testResampleCrossImplementationDifferentialParityProof() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/resample-differential-parity", QrDesign())
+        val n = matrix.size // 21 for Version 1
+        val targetDim = 3 * n // 63 subpixels
+
+        // 1. Create an asymmetric test image (60 wide x 30 high, aspect 2:1)
+        // Top half dark (RGB=20, luminance low), bottom half light (RGB=240, luminance high)
+        val imgW = 60
+        val imgH = 30
+        val imgPixels = IntArray(imgW * imgH)
+        for (y in 0 until imgH) {
+            for (x in 0 until imgW) {
+                val rgb = if (y < imgH / 2) 20 else 240
+                imgPixels[y * imgW + x] = (0xFF shl 24) or (rgb shl 16) or (rgb shl 8) or rgb
+            }
+        }
+        val pixelSource = ArrayPixelSource(imgW, imgH, imgPixels)
+
+        // 2. Reference EFQRCode simulation of getGrayPointList + writeQRCode
+        fun simulateEfPoints(
+            scaleMode: ImageScaleMode,
+            timingShape: com.veilframe.app.qr.model.ModuleShape = com.veilframe.app.qr.model.ModuleShape.SQUARE,
+            alignmentShape: com.veilframe.app.qr.model.ModuleShape = com.veilframe.app.qr.model.ModuleShape.SQUARE
+        ): Set<Pair<Int, Int>> {
+            val preScaled = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, scaleMode)
+            val points = mutableSetOf<Pair<Int, Int>>()
+
+            // posOrigins from posCenter modules using markArr
+            val posOrigins = listOf(
+                intArrayOf(0, 0),                       // Top-Left (3, 3) -> 9 - 12 - (-3) = 0
+                intArrayOf(3 * n - 24, 0),              // Top-Right (n - 4, 3) -> 3*n - 12 - 12 = 3*n - 24
+                intArrayOf(0, 3 * n - 24)               // Bottom-Left (3, n - 4) -> 3*n - 24
+            )
+
+            // bwOrigins and swOrigins for timing and alignment
+            val bwOrigins = mutableListOf<IntArray>()
+            val swOrigins = mutableListOf<IntArray>()
+            for (x in 0 until n) {
+                for (y in 0 until n) {
+                    val role = matrix.roleAt(x, y)
+                    val isDark = matrix.isDark(x, y)
+                    if (!isDark) {
+                        if (role == QrModuleRole.TIMING) {
+                            if (timingShape != com.veilframe.app.qr.model.ModuleShape.NONE) bwOrigins.add(intArrayOf(3 * x, 3 * y))
+                            else swOrigins.add(intArrayOf(3 * x + 1, 3 * y + 1))
+                        }
+                        if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                            if (alignmentShape != com.veilframe.app.qr.model.ModuleShape.NONE) bwOrigins.add(intArrayOf(3 * x, 3 * y))
+                            else swOrigins.add(intArrayOf(3 * x + 1, 3 * y + 1))
+                        }
+                    }
+                }
+            }
+
+            // Subpixel sampling loop (getGrayPointList)
+            for (sy in 0 until targetDim) {
+                for (sx in 0 until targetDim) {
+                    // Check trans area
+                    var isTrans = false
+                    for (pos in posOrigins) {
+                        if (sx in pos[0] until (pos[0] + 24) && sy in pos[1] until (pos[1] + 24)) {
+                            isTrans = true; break
+                        }
+                    }
+                    if (isTrans) continue
+
+                    val col = sx / 3
+                    val row = sy / 3
+
+                    for (bw in bwOrigins) {
+                        if (sx in bw[0] until (bw[0] + 3) && sy in bw[1] until (bw[1] + 3)) {
+                            isTrans = true; break
+                        }
+                    }
+                    if (isTrans) continue
+                    for (sw in swOrigins) {
+                        if (sx == sw[0] && sy == sw[1]) {
+                            isTrans = true; break
+                        }
+                    }
+                    if (isTrans) continue
+
+                    // Padding check for ASPECT_FIT
+                    if (preScaled.isPadding(sx, sy)) continue
+
+                    // Skip center subpixel
+                    if (sx % 3 == 1 && sy % 3 == 1) continue
+
+                    val px = preScaled.getPixel(sx, sy)
+                    val gray = ImageScaleResolver.calculatePixelLuminance(px)
+                    val threshold = (gray - 0.5f) * 1.0f + 0.5f // contrast=0, exposure=0 -> threshold = gray
+                    val rnd = ResampleSubpixelEngine.subpixelRandom(42L, sx, sy)
+                    if (rnd > threshold) {
+                        points.add(Pair(sx, sy))
+                    }
+                }
+            }
+
+            // Solid center anchors (writeQRCode)
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val isDark = matrix.isDark(col, row)
+                    if (!isDark) continue
+                    val role = matrix.roleAt(col, row)
+                    val isFinder = (col < 8 && row < 8) || (col >= n - 8 && row < 8) || (col < 8 && row >= n - 8)
+                    if (isFinder) continue
+
+                    // Timing & Alignment: emit center anchor if shape == NONE
+                    if (role == QrModuleRole.TIMING && timingShape != com.veilframe.app.qr.model.ModuleShape.NONE) continue
+                    if ((role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignmentShape != com.veilframe.app.qr.model.ModuleShape.NONE) continue
+
+                    // Center anchor
+                    points.add(Pair(3 * col + 1, 3 * row + 1))
+                }
+            }
+
+            return points
+        }
+
+        // 3. Compare against VeilFrame ResampleSubpixelEngine output for ASPECT_FILL
+        val veilFramePointsFill = mutableSetOf<Pair<Int, Int>>()
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = ImageSourceStyle(scaleMode = ImageScaleMode.ASPECT_FILL, contrast = 0.0f, exposure = 0.0f),
+            seed = 42L,
+            policy = ArtisticResamplePolicy()
+        ) { _, _, sx, sy, _ ->
+            veilFramePointsFill.add(Pair(sx, sy))
+        }
+        val efPointsFill = simulateEfPoints(ImageScaleMode.ASPECT_FILL)
+        val diffEfOnly = efPointsFill - veilFramePointsFill
+        val diffVeilOnly = veilFramePointsFill - efPointsFill
+        assertEquals("Diff EF-only: ${diffEfOnly.take(15)}, Diff Veil-only: ${diffVeilOnly.take(15)}", efPointsFill.size, veilFramePointsFill.size)
+        assertEquals("Emitted subpixel coordinates must match reference EFQRCode 100% for ASPECT_FILL", efPointsFill, veilFramePointsFill)
+
+        // 4. Compare against VeilFrame ResampleSubpixelEngine output for ASPECT_FIT (with letterbox padding)
+        val veilFramePointsFit = mutableSetOf<Pair<Int, Int>>()
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = ImageSourceStyle(scaleMode = ImageScaleMode.ASPECT_FIT, contrast = 0.0f, exposure = 0.0f),
+            seed = 42L,
+            policy = ArtisticResamplePolicy()
+        ) { _, _, sx, sy, _ ->
+            veilFramePointsFit.add(Pair(sx, sy))
+        }
+        val efPointsFit = simulateEfPoints(ImageScaleMode.ASPECT_FIT)
+        assertEquals("Emitted subpixel coordinate count must match reference EFQRCode exactly for ASPECT_FIT", efPointsFit.size, veilFramePointsFit.size)
+        assertEquals("Emitted subpixel coordinates must match reference EFQRCode 100% for ASPECT_FIT", efPointsFit, veilFramePointsFit)
+
+        // 5. Explicit invariant verifications on the emitted sets
+        // A. Finder exclusion: all 3 finders have ZERO emitted points inside their 24x24 box
+        for (pt in veilFramePointsFit) {
+            val inTl = pt.first in 0 until 24 && pt.second in 0 until 24
+            val inTr = pt.first in (targetDim - 24) until targetDim && pt.second in 0 until 24
+            val inBl = pt.first in 0 until 24 && pt.second in (targetDim - 24) until targetDim
+            assertFalse("No subpixels may be emitted in Top-Left finder transArea", inTl)
+            assertFalse("No subpixels may be emitted in Top-Right finder transArea", inTr)
+            assertFalse("No subpixels may be emitted in Bottom-Left finder transArea", inBl)
+        }
+
+        // B. Format bits (Row 8): dark format bits MUST have center anchor emitted
+        for (col in 0..8) {
+            if (col == 6) continue // timing intersection
+            if (matrix.isDark(col, 8)) {
+                val anchor = Pair(3 * col + 1, 3 * 8 + 1)
+                assertTrue("Dark format bit at col=$col, row=8 must emit center anchor", veilFramePointsFit.contains(anchor))
+            }
+        }
+
+        // C. ASPECT_FIT letterbox padding: top and bottom padding zones have ZERO photo dither points
+        val preScaledFit = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, ImageScaleMode.ASPECT_FIT)
+        for (pt in veilFramePointsFit) {
+            if (pt.first % 3 != 1 || pt.second % 3 != 1) {
+                assertFalse("Stochastic dither dot cannot be emitted inside ASPECT_FIT letterbox padding", preScaledFit.isPadding(pt.first, pt.second))
+            }
+        }
+    }
+
+    @Test
+    fun testAnimatedSvgScopedIdsAcrossFrames() {
+        val sampleSvgFrame0 = """
+            <defs>
+              <mask id="hole">
+                <rect fill="white"/>
+              </mask>
+              <linearGradient id="qrGrad">
+                <stop offset="0%"/>
+              </linearGradient>
+              <clipPath id="logoClip">
+                <path d="M0,0"/>
+              </clipPath>
+            </defs>
+            <g mask="url(#hole)" fill="url(#qrGrad)" clip-path="url(#logoClip)">
+              <rect x="0" y="0"/>
+            </g>
+        """.trimIndent()
+
+        val sampleSvgFrame1 = """
+            <defs>
+              <mask id="hole">
+                <circle fill="white"/>
+              </mask>
+              <linearGradient id="qrGrad">
+                <stop offset="50%"/>
+              </linearGradient>
+              <clipPath id="logoClip">
+                <circle cx="5" cy="5" r="5"/>
+              </clipPath>
+            </defs>
+            <g mask="url(#hole)" fill="url(#qrGrad)" clip-path="url(#logoClip)">
+              <circle cx="10" cy="10" r="5"/>
+            </g>
+        """.trimIndent()
+
+        val scoped0 = AnimatedQrGenerator.scopeSvgIds(sampleSvgFrame0, "f0")
+        val scoped1 = AnimatedQrGenerator.scopeSvgIds(sampleSvgFrame1, "f1")
+
+        // Frame 0 must be scoped with f0_
+        assertTrue(scoped0.contains("""id="f0_hole""""))
+        assertTrue(scoped0.contains("""id="f0_qrGrad""""))
+        assertTrue(scoped0.contains("""id="f0_logoClip""""))
+        assertTrue(scoped0.contains("""mask="url(#f0_hole)""""))
+        assertTrue(scoped0.contains("""fill="url(#f0_qrGrad)""""))
+        assertTrue(scoped0.contains("""clip-path="url(#f0_logoClip)""""))
+        assertFalse("Unscoped id=hole must not exist in frame 0", scoped0.contains("""id="hole""""))
+
+        // Frame 1 must be scoped with f1_
+        assertTrue(scoped1.contains("""id="f1_hole""""))
+        assertTrue(scoped1.contains("""id="f1_qrGrad""""))
+        assertTrue(scoped1.contains("""id="f1_logoClip""""))
+        assertTrue(scoped1.contains("""mask="url(#f1_hole)""""))
+        assertTrue(scoped1.contains("""fill="url(#f1_qrGrad)""""))
+        assertTrue(scoped1.contains("""clip-path="url(#f1_logoClip)""""))
+        assertFalse("Unscoped id=hole must not exist in frame 1", scoped1.contains("""id="hole""""))
+    }
+
+    @Test
+    fun testPartialDirectionalQuietZoneFallback() {
+        // Overriding only quietZoneLeft on IMAGE style (which defaults to quiet zone = 1)
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE,
+            quietZoneLeft = 2
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        val insets = checkNotNull(design.directionalQuietZone)
+        assertEquals("Specified left side must be preserved", 2, insets.left)
+        assertEquals("Unspecified top side must fall back to style default (1)", 1, insets.top)
+        assertEquals("Unspecified right side must fall back to style default (1)", 1, insets.right)
+        assertEquals("Unspecified bottom side must fall back to style default (1)", 1, insets.bottom)
+
+        // Overriding quietZone base + one directional side
+        val paramsBase = QrStyleParams(
+            style = QrStyle.IMAGE,
+            quietZone = 3,
+            quietZoneTop = 6
+        )
+        val designBase = QrDesign.fromQrStyleParams(paramsBase)
+        val insetsBase = checkNotNull(designBase.directionalQuietZone)
+        assertEquals("Unspecified left side must use base quietZone (3)", 3, insetsBase.left)
+        assertEquals("Specified top side must be 6", 6, insetsBase.top)
+        assertEquals("Unspecified right side must use base quietZone (3)", 3, insetsBase.right)
+        assertEquals("Unspecified bottom side must use base quietZone (3)", 3, insetsBase.bottom)
+    }
+
+    @Test
+    fun testImageAndImageFillScaleModePropagation() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/SCALE-MODE", ErrorCorrectionLevel.M)
+
+        for (mode in listOf(ImageScaleMode.ASPECT_FIT, ImageScaleMode.ASPECT_FILL, ImageScaleMode.STRETCH)) {
+            val paramsImage = QrStyleParams(
+                style = QrStyle.IMAGE,
+                imageScaleMode = mode
+            )
+            val designImage = QrDesign.fromQrStyleParams(paramsImage)
+            assertEquals("scaleMode must propagate to ImageSourceStyle", mode, designImage.imageSource.scaleMode)
+
+            val paramsFill = QrStyleParams(
+                style = QrStyle.IMAGE_FILL,
+                imageScaleMode = mode
+            )
+            val designFill = QrDesign.fromQrStyleParams(paramsFill)
+            assertEquals("scaleMode must propagate to ImageSourceStyle for IMAGE_FILL", mode, designFill.imageSource.scaleMode)
+        }
+
+        // SVG preserveAspectRatio tests
+        val expectedPreserveAspect = mapOf(
+            ImageScaleMode.ASPECT_FIT to "xMidYMid meet",
+            ImageScaleMode.ASPECT_FILL to "xMidYMid slice",
+            ImageScaleMode.STRETCH to "none"
+        )
+        for ((mode, expected) in expectedPreserveAspect) {
+            val designImage = QrDesign(
+                style = QrStyle.IMAGE,
+                imageSource = ImageSourceStyle(source = com.veilframe.app.qr.model.ImageSource.Memory(createDummyBitmap()), scaleMode = mode)
+            )
+            val svgImage = SvgExporter.generateSvg(matrix, designImage)
+            assertTrue("IMAGE SVG must contain preserveAspectRatio=\"$expected\"", svgImage.contains("""preserveAspectRatio="$expected""""))
+
+            val designFill = QrDesign(
+                style = QrStyle.IMAGE_FILL,
+                imageSource = ImageSourceStyle(source = com.veilframe.app.qr.model.ImageSource.Memory(createDummyBitmap()), scaleMode = mode)
+            )
+            val svgFill = SvgExporter.generateSvg(matrix, designFill)
+            assertTrue("IMAGE_FILL SVG must contain preserveAspectRatio=\"$expected\"", svgFill.contains("""preserveAspectRatio="$expected""""))
+        }
+    }
+
+    @Test
+    fun testImageRendererPlanetsAndDsjFinderParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/FINDER-PARITY", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val mSize = geometry.moduleSize
+
+        // 1. PLANETS finder parity: orbit stroke must be 0.15 * module (not 0.35)
+        val designPlanets = QrDesign(
+            style = QrStyle.IMAGE,
+            eyeStyle = EyeStyle(style = FinderStyle.PLANETS),
+            positionSize = 0.8f
+        )
+        val irPlanets = com.veilframe.app.qr.renderer.ImageRenderer().generateGeometry(matrix, designPlanets, geometry)
+        val orbitCircles = irPlanets.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("PLANETS must emit orbit stroke circles", orbitCircles.isNotEmpty())
+        for (orbit in orbitCircles) {
+            val expectedStroke = 0.15f * mSize
+            assertEquals("PLANETS orbit stroke must be 0.15 * module size", expectedStroke, orbit.strokeWidth ?: 0f, 0.01f)
+        }
+
+        // 2. DSJ finder parity: center rect width = (2.0 + posSize) * module, arm width = posSize * module
+        val posSize = 0.75f
+        val designDsj = QrDesign(
+            style = QrStyle.IMAGE,
+            eyeStyle = EyeStyle(style = FinderStyle.DSJ),
+            positionSize = posSize
+        )
+        val irDsj = com.veilframe.app.qr.renderer.ImageRenderer().generateGeometry(matrix, designDsj, geometry)
+        val dsjRects = irDsj.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+        val expectedCenterW = (2.0f + posSize) * mSize
+        val expectedArmW = posSize * mSize
+        val centerMatches = dsjRects.filter { kotlin.math.abs(it.width - expectedCenterW) < 0.01f && kotlin.math.abs(it.height - expectedCenterW) < 0.01f }
+        assertTrue("DSJ must emit center rect matching (2 + posSize) * module", centerMatches.isNotEmpty())
+        val armMatches = dsjRects.filter {
+            (kotlin.math.abs(it.width - expectedArmW) < 0.01f && kotlin.math.abs(it.height - expectedCenterW) < 0.01f) ||
+            (kotlin.math.abs(it.width - expectedCenterW) < 0.01f && kotlin.math.abs(it.height - expectedArmW) < 0.01f)
+        }
+        assertTrue("DSJ must emit arms matching arm thickness = posSize * module", armMatches.isNotEmpty())
+    }
+
+    @Test
+    fun testD25PainterOrderColumnMajor() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/D25-ORDER", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 0)
+        val design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(depth = 0.5f, positionDepth = 0.5f)
+        )
+        val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, design, geometry)
+        val polygonNodes = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>()
+        assertTrue("D25 must emit polygon nodes for isometric 3D faces", polygonNodes.isNotEmpty())
+
+        val topFaces = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+        if (topFaces.size >= 2) {
+            val firstX = topFaces[0].x
+            val secondX = topFaces[1].x
+            assertEquals("Second element in col-major order must be in the same column (col 0)", firstX, secondX, 0.01f)
+        }
+    }
+
+    @Test
+    fun testSvgAlphaFidelityTranslucentColors() {
+        val semiRed = 0x80FF0000.toInt()
+        val svgColor = SvgExporter.toSvgColor(semiRed)
+        assertEquals("#FF0000", svgColor.hex)
+        assertEquals(128f / 255f, svgColor.opacity, 0.005f)
+        assertTrue("CSS representation must contain rgba", svgColor.css.startsWith("rgba(255,0,0,"))
+
+        val opaqueBlue = 0xFF0000FF.toInt()
+        val blueSvg = SvgExporter.toSvgColor(opaqueBlue)
+        assertEquals("#0000FF", blueSvg.hex)
+        assertEquals(1.0f, blueSvg.opacity, 0.001f)
+        assertEquals("#0000FF", blueSvg.css)
+
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ALPHA", ErrorCorrectionLevel.M)
+        val design = QrDesign(palette = PaletteStyle(foreground = semiRed))
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertTrue("SVG must preserve alpha channel in fill attributes", svg.contains("rgba(255,0,0,"))
+    }
+
+    @Test
+    fun testImageFillNoImageFallback() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/IMAGE-FILL-NO-IMG", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageFillBackgroundColor = 0xFF00FF00.toInt(),
+            imageFillMaskColor = 0x33000000.toInt(),
+            imageSource = ImageSourceStyle(source = null)
+        )
+
+        val ir = com.veilframe.app.qr.renderer.ImageFillRenderer().generateGeometry(matrix, design, geometry)
+        assertFalse("IMAGE_FILL without image must NOT fall back to empty geometry", ir.rootNodes.isEmpty())
+        val groupNodes = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.GroupNode>()
+        assertTrue("IMAGE_FILL without image must generate stencil group node", groupNodes.isNotEmpty())
+        val stencilGroup = groupNodes.first()
+        assertEquals("Hole mask must be attached to stencil group", "hole", stencilGroup.maskId)
+        assertTrue("Stencil group must contain background and tint rect nodes", stencilGroup.children.isNotEmpty())
+    }
+
+    @Test
+    fun testResampleDarkTimingAndAlignmentStochasticSampling() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE-DARK-TIMING", ErrorCorrectionLevel.M)
+        val n = matrix.size
+
+        // Col 10, Row 6 is a dark timing module
+        assertTrue("Module at (10, 6) must be timing module", ArtisticResampleFunctionalMask.isTimingArea(10, 6, n))
+        assertTrue("Module at (10, 6) must be dark", matrix.isDark(10, 6))
+
+        // Upstream EF parity: dark timing subpixels ARE available to stochastic sampling
+        for (dx in 0..2) {
+            for (dy in 0..2) {
+                val subX = 10 * 3 + dx
+                val subY = 6 * 3 + dy
+                assertFalse(
+                    "Dark timing subpixel at ($subX, $subY) must NOT be excluded from stochastic sampling",
+                    ArtisticResampleFunctionalMask.isSubpixelExcluded(matrix, subX, subY)
+                )
+            }
+        }
+
+        // Light timing module at (9, 6)
+        assertTrue("Module at (9, 6) must be timing module", ArtisticResampleFunctionalMask.isTimingArea(9, 6, n))
+        assertFalse("Module at (9, 6) must be light", matrix.isDark(9, 6))
+
+        // Light timing subpixels ARE excluded from stochastic sampling when timingShape != NONE
+        assertTrue(
+            "Light timing subpixel must be excluded from stochastic sampling",
+            ArtisticResampleFunctionalMask.isSubpixelExcluded(matrix, 9 * 3 + 1, 6 * 3 + 1)
+        )
     }
 
     private fun createDummyBitmap(): Bitmap {

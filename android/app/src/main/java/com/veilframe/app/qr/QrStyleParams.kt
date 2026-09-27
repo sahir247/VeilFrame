@@ -77,6 +77,8 @@ data class QrStyleParams(
     val sourceImage: Bitmap? = null,
     /** Alpha for the style source image (0.0–1.0). */
     val sourceImageAlpha: Float = 1.0f,
+    /** Scaling mode for source image in IMAGE and IMAGE_FILL styles (scaleAspectFill, scaleAspectFit, scaleToFill/STRETCH). */
+    val imageScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
     // --- 2.5D specific (VeilFrameStyle25D) ---
     val d25TopColor: Int = Color.BLACK,
     val d25LeftColor: Int = 0x33000000,

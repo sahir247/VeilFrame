@@ -100,6 +100,12 @@ class ImageRenderer : QrRenderer {
   </mask>"""
         )
 
+        val aspect = when (design.imageSource.scaleMode) {
+            ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+            ImageScaleMode.STRETCH -> "none"
+            else -> "xMidYMid slice"
+        }
+
         nodes.add(
             ImageNode(
                 x = x0,
@@ -109,7 +115,7 @@ class ImageRenderer : QrRenderer {
                 bitmap = sourceImage,
                 base64Data = base64,
                 opacity = imageAlpha,
-                preserveAspectRatio = "xMidYMid slice",
+                preserveAspectRatio = aspect,
                 maskId = "hole",
                 clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
             )
@@ -243,7 +249,7 @@ class ImageRenderer : QrRenderer {
             }
             FinderStyle.PLANETS -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))
-                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkColor, strokeWidth = 0.35f * mSize, strokeDashArray = "${0.5f * mSize},${0.5f * mSize}"))
+                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkColor, strokeWidth = 0.15f * mSize, strokeDashArray = "${0.5f * mSize},${0.5f * mSize}"))
                 val planetRadius = 0.5f * sizeFactor * mSize
                 val offsets = floatArrayOf(-3f, 3f)
                 for (dx in offsets) {
@@ -254,11 +260,13 @@ class ImageRenderer : QrRenderer {
                 }
             }
             FinderStyle.DSJ -> {
-                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx - 3.5f * mSize, centerPy - 1.5f * mSize, 1f * mSize, 3f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx + 2.5f * mSize, centerPy - 1.5f * mSize, 1f * mSize, 3f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 3.5f * mSize, 3f * mSize, 1f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy + 2.5f * mSize, 3f * mSize, 1f * mSize, fill = darkColor))
+                val widthVal = (2.0f + sizeFactor) * mSize
+                val armDim = sizeFactor * mSize
+                nodes.add(RectNode(centerPx - widthVal / 2f, centerPy - widthVal / 2f, widthVal, widthVal, fill = darkColor))
+                nodes.add(RectNode((centerPx - 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkColor))
+                nodes.add(RectNode((centerPx + 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkColor))
+                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy - 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkColor))
+                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy + 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkColor))
             }
             else -> {
                 nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkColor))
