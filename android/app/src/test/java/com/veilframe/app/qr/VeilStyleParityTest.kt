@@ -3567,6 +3567,238 @@ class VeilStyleParityTest {
         assertTrue("Animated SVG duration must equal total frame duration (0.250s)", animatedSvg.contains("dur=\"0.250s\"") || animatedSvg.contains("dur=\"0.25s\""))
     }
 
+    @Test
+    fun testResampleDifferentialParityWithEFQRCodeAnalyticalModel() {
+        // Differential verification of ResampleSubpixelEngine against EFQRCode's getGrayPointList() analytical model
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE-PARITY", ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val targetDim = 3 * n
+        val seed = 12345L
+
+        // Test 1: Solid White Image
+        // In EF: white pixels have Y = 255 -> grayNorm = 1.0 -> threshold = 1.0
+        // Because RND in [0, 1) is never > 1.0, ZERO stochastic subpixels emit.
+        // ONLY the solid center anchors for dark modules must be emitted.
+        val whitePixels = IntArray(targetDim * targetDim) { 0xFFFFFFFF.toInt() }
+        val whiteSource = ArrayPixelSource(targetDim, targetDim, whitePixels)
+        val style = ImageSourceStyle(contrast = 0.0f, exposure = 0.0f)
+        val emittedWhite = mutableListOf<Pair<Int, Int>>()
+        val anchorsWhite = mutableListOf<Pair<Int, Int>>()
+
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = whiteSource,
+            style = style,
+            seed = seed,
+            policy = ArtisticResamplePolicy(rngMode = ResampleRngMode.DETERMINISTIC)
+        ) { _, _, sx, sy, isCenterAnchor ->
+            if (isCenterAnchor) {
+                anchorsWhite.add(Pair(sx, sy))
+            } else {
+                emittedWhite.add(Pair(sx, sy))
+            }
+        }
+
+        assertTrue("Solid white image must emit zero stochastic photo dots", emittedWhite.isEmpty())
+        assertTrue("Solid white image must emit center anchors for dark modules", anchorsWhite.isNotEmpty())
+        for (anchor in anchorsWhite) {
+            val col = anchor.first / 3
+            val row = anchor.second / 3
+            assertTrue("Anchor must only be at dark modules", matrix.isDark(col, row))
+            assertEquals("Anchor x must be center subpixel (3*col + 1)", 3 * col + 1, anchor.first)
+            assertEquals("Anchor y must be center subpixel (3*row + 1)", 3 * row + 1, anchor.second)
+        }
+
+        // Test 2: Solid Black Image
+        // In EF: black pixels have Y = 0 -> grayNorm = 0.0 -> threshold = 0.0
+        // Every non-center, non-excluded subpixel with RND > 0 emits!
+        val blackPixels = IntArray(targetDim * targetDim) { 0xFF000000.toInt() }
+        val blackSource = ArrayPixelSource(targetDim, targetDim, blackPixels)
+        val emittedBlack = mutableSetOf<Pair<Int, Int>>()
+        val anchorsBlack = mutableSetOf<Pair<Int, Int>>()
+
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = blackSource,
+            style = style,
+            seed = seed,
+            policy = ArtisticResamplePolicy(rngMode = ResampleRngMode.DETERMINISTIC)
+        ) { _, _, sx, sy, isCenterAnchor ->
+            if (isCenterAnchor) {
+                anchorsBlack.add(Pair(sx, sy))
+            } else {
+                emittedBlack.add(Pair(sx, sy))
+            }
+        }
+
+        // Verify with analytical EF model:
+        // EF posOrigins: 24x24 finder boxes
+        val efPosBoxes = listOf(
+            Pair(0 until 24, 0 until 24),
+            Pair((3 * n - 24) until (3 * n), 0 until 24),
+            Pair(0 until 24, (3 * n - 24) until (3 * n))
+        )
+
+        for (dot in emittedBlack) {
+            val sx = dot.first
+            val sy = dot.second
+            // 1. Must NOT be in any 24x24 finder box
+            for (box in efPosBoxes) {
+                val inBox = sx in box.first && sy in box.second
+                assertFalse("Resampled subpixel ($sx, $sy) must NEVER be inside finder box $box", inBox)
+            }
+            // 2. Must NOT be center subpixel
+            assertFalse("Resampled subpixel ($sx, $sy) must not be a center anchor", sx % 3 == 1 && sy % 3 == 1)
+        }
+
+        // Test 3: High-contrast Gradient Image (Left half black, Right half white)
+        val gradientPixels = IntArray(targetDim * targetDim) { idx ->
+            val x = idx % targetDim
+            if (x < targetDim / 2) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        }
+        val gradientSource = ArrayPixelSource(targetDim, targetDim, gradientPixels)
+        val emittedGradient = mutableSetOf<Pair<Int, Int>>()
+
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = gradientSource,
+            style = style,
+            seed = seed,
+            policy = ArtisticResamplePolicy(rngMode = ResampleRngMode.DETERMINISTIC)
+        ) { _, _, sx, sy, isCenterAnchor ->
+            if (!isCenterAnchor) {
+                emittedGradient.add(Pair(sx, sy))
+            }
+        }
+
+        val leftDots = emittedGradient.count { it.first < targetDim / 2 }
+        val rightDots = emittedGradient.count { it.first >= targetDim / 2 }
+        assertTrue("Left dark half must have many emitted dots ($leftDots)", leftDots > 100)
+        assertEquals("Right pure-white half must have exactly 0 emitted dots", 0, rightDots)
+    }
+
+    @Test
+    fun testImageStyleDifferentialParityWithEFQRCode() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/IMAGE-PARITY", ErrorCorrectionLevel.M)
+        val n = matrix.size
+        val geom = QrGeometry(n, 420, 420, 0)
+        val mSize = geom.moduleSize
+        val renderer = ImageRenderer()
+
+        // 1. allowTransparent = false (EF default)
+        val paramsEf = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageDataScale = 1.0f,
+            imageAllowTransparent = false,
+            imagePositionDarkColor = 0xFF000000.toInt(),
+            imagePositionLightColor = 0xFFFFFFFF.toInt()
+        )
+        val designEf = QrDesign.fromQrStyleParams(paramsEf)
+        val irEf = renderer.generateGeometry(matrix, designEf, geom)
+
+        // Verify Defs contain #hole mask with 3 finder cutouts of 8x8 modules
+        val defsStr = irEf.defs.joinToString("\n")
+        assertTrue("Defs must define #hole mask", defsStr.contains("<mask id=\"hole\">"))
+        val expectedFinderW = 8 * mSize
+        assertTrue("Cutout must have width $expectedFinderW", defsStr.contains("width=\"$expectedFinderW\""))
+        assertTrue("Cutout must have height $expectedFinderW", defsStr.contains("height=\"$expectedFinderW\""))
+
+        // Verify ImageNode has maskId = "hole"
+        val imageNode = irEf.rootNodes.filterIsInstance<ImageNode>().firstOrNull()
+        assertNotNull("Must contain continuous ImageNode", imageNode)
+        assertEquals("ImageNode maskId must be 'hole'", "hole", imageNode!!.maskId)
+        assertEquals(0f, imageNode.x, 0.001f)
+        assertEquals(0f, imageNode.y, 0.001f)
+        assertEquals(n * mSize, imageNode.width, 0.001f)
+        assertEquals(n * mSize, imageNode.height, 0.001f)
+
+        // Verify 3 finder backing rects of 8x8 modules
+        val rects = irEf.rootNodes.filterIsInstance<RectNode>()
+        val finderBackings = rects.filter { it.width == 8 * mSize && it.height == 8 * mSize && it.fill == 0xFFFFFFFF.toInt() }
+        assertEquals("Must contain exactly 3 finder backing rects of size 8x8", 3, finderBackings.size)
+
+        // Verify data modules with scale = 1.0f (no offset)
+        val dataModules = rects.filter { it.width == mSize && it.height == mSize }
+        assertTrue("Must contain data module rects", dataModules.isNotEmpty())
+        for (dm in dataModules) {
+            val col = (dm.x / mSize).toInt()
+            val row = (dm.y / mSize).toInt()
+            assertEquals("Module X must align with grid col", col * mSize, dm.x, 0.001f)
+            assertEquals("Module Y must align with grid row", row * mSize, dm.y, 0.001f)
+        }
+
+        // 2. Scaled data modules with scale = 0.8f: offset must be (1.0 - scale)/2 * mSize = 0.1 * mSize
+        val paramsScaled = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageDataScale = 0.8f,
+            imageAllowTransparent = false
+        )
+        val designScaled = QrDesign.fromQrStyleParams(paramsScaled)
+        val irScaled = renderer.generateGeometry(matrix, designScaled, geom)
+        val expectedScaledW = 0.8f * mSize
+        val scaledRects = irScaled.rootNodes.filterIsInstance<RectNode>().filter {
+            kotlin.math.abs(it.width - expectedScaledW) < 0.01f && kotlin.math.abs(it.height - expectedScaledW) < 0.01f
+        }
+        assertTrue("Must contain 0.8x scaled data modules", scaledRects.isNotEmpty())
+        for (sm in scaledRects) {
+            val col = (sm.x / mSize).toInt()
+            val row = (sm.y / mSize).toInt()
+            val expectedX = (col + 0.1f) * mSize
+            val expectedY = (row + 0.1f) * mSize
+            assertEquals("Scaled module X must have centering offset", expectedX, sm.x, 0.01f)
+            assertEquals("Scaled module Y must have centering offset", expectedY, sm.y, 0.01f)
+        }
+    }
+
+    @Test
+    fun testImageFillDifferentialParityWithEFQRCode() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/IMAGE-FILL-PARITY", ErrorCorrectionLevel.M)
+        val n = matrix.size
+        val geom = QrGeometry(n, 420, 420, 0)
+        val mSize = geom.moduleSize
+        val renderer = ImageFillRenderer()
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageFillBackgroundColor = 0xFFFFFFFF.toInt(),
+            imageFillMaskColor = 0x1A000000.toInt()
+        )
+        val ir = renderer.generateGeometry(matrix, design, geom)
+
+        // 1. Verify Defs contain #hole mask
+        val defsStr = ir.defs.joinToString("\n")
+        assertTrue("Defs must define #hole mask", defsStr.contains("<mask id=\"hole\">"))
+        // Base black rect covering entire canvas
+        assertTrue("Mask must start with black base rect", defsStr.contains("<rect x=\"0\" y=\"0\" width=\"420.0\" height=\"420.0\" fill=\"black\"/>"))
+
+        // Anti-gap 1.02 expansion for dark modules: width = mSize + 2*0.01*mSize = 1.02 * mSize
+        val expectedStencilW = 1.02f * mSize
+        assertTrue("Mask must expand dark modules by 1.02x ($expectedStencilW)", defsStr.contains("width=\"$expectedStencilW\""))
+        assertTrue("Mask must expand dark modules by 1.02x ($expectedStencilW)", defsStr.contains("height=\"$expectedStencilW\""))
+
+        // 2. Verify GroupNode uses maskId = "hole"
+        val group = ir.rootNodes.filterIsInstance<GroupNode>().firstOrNull()
+        assertNotNull("Root nodes must contain GroupNode with hole mask", group)
+        assertEquals("GroupNode maskId must be 'hole'", "hole", group!!.maskId)
+
+        // 3. Verify Children of GroupNode:
+        // [0] Base background rect
+        val bgRect = group.children[0] as RectNode
+        assertEquals("Background rect fill must match imageFillBackgroundColor", 0xFFFFFFFF.toInt(), bgRect.fill)
+        assertEquals(0f, bgRect.x, 0.001f)
+        assertEquals(0f, bgRect.y, 0.001f)
+        assertEquals(n * mSize, bgRect.width, 0.001f)
+        assertEquals(n * mSize, bgRect.height, 0.001f)
+
+        // [1] Tint overlay rect
+        val tintRect = group.children.last() as RectNode
+        assertEquals("Tint overlay fill must match imageFillMaskColor", 0x1A000000.toInt(), tintRect.fill)
+        assertEquals(0f, tintRect.x, 0.001f)
+        assertEquals(0f, tintRect.y, 0.001f)
+        assertEquals(n * mSize, tintRect.width, 0.001f)
+        assertEquals(n * mSize, tintRect.height, 0.001f)
+    }
+
     private fun createDummyBitmap(): Bitmap {
         return try {
             val unsafeClass = Class.forName("sun.misc.Unsafe")
