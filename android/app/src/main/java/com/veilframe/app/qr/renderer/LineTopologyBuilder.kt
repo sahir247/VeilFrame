@@ -135,19 +135,19 @@ object LineTopologyBuilder {
             }
 
             LineDirection.CROSS -> {
-                // Vertical runs up to length 4
-                val avaV = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
+                val ava = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
+                // 1. Vertical runs up to length 4 (runs first, consuming cells per EF)
                 for (x in 0 until n) {
                     var y = 0
                     while (y < n) {
-                        if (avaV[x][y]) {
+                        if (ava[x][y]) {
                             var end = y
-                            while (end + 1 < n && avaV[x][end + 1] && (end - y) < 3) {
+                            while (end + 1 < n && ava[x][end + 1] && (end - y) < 3) {
                                 end++
                             }
                             if (end > y) {
                                 for (i in y..end) {
-                                    avaV[x][i] = false
+                                    ava[x][i] = false
                                     unconsumed[x][i] = false
                                 }
                                 val lx1 = ox + (x + 0.5f) * cs
@@ -162,19 +162,18 @@ object LineTopologyBuilder {
                         }
                     }
                 }
-                // Horizontal runs up to length 4
-                val avaH = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
+                // 2. Horizontal runs up to length 4 (runs second on remaining cells per EF)
                 for (y in 0 until n) {
                     var x = 0
                     while (x < n) {
-                        if (avaH[x][y]) {
+                        if (ava[x][y]) {
                             var end = x
-                            while (end + 1 < n && avaH[end + 1][y] && (end - x) < 3) {
+                            while (end + 1 < n && ava[end + 1][y] && (end - x) < 3) {
                                 end++
                             }
                             if (end > x) {
                                 for (i in x..end) {
-                                    avaH[i][y] = false
+                                    ava[i][y] = false
                                     unconsumed[i][y] = false
                                 }
                                 val lx1 = ox + (x + 0.5f) * cs
@@ -281,7 +280,7 @@ object LineTopologyBuilder {
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
-                                val ly2 = oy + (y - end + 0.5f) * cs
+                                val ly2 = oy + (y - (end - 1) + 0.5f) * cs
                                 segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.DIAGONAL_UP, baseStrokeWidth))
                             }
                         }
@@ -308,7 +307,7 @@ object LineTopologyBuilder {
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
-                                val ly2 = oy + (y - end + 0.5f) * cs
+                                val ly2 = oy + (y - (end - 1) + 0.5f) * cs
                                 segments.add(LineSegment(lx1, ly1, lx2, ly2, LineOrientation.DIAGONAL_UP, sw))
                             }
                         }

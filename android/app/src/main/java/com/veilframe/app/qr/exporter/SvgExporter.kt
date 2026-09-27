@@ -199,8 +199,9 @@ object SvgExporter {
             }
             val tint = design.resampleStyle.backdropTint
             if (tint != null) {
-                val tintHex = hexColor(tint)
-                val tintAlpha = String.format(Locale.US, "%.2f", colorAlpha(tint))
+                val tintColor = toSvgColor(tint)
+                val tintHex = tintColor.hex
+                val tintAlpha = String.format(Locale.US, "%.2f", tintColor.opacity)
                 if (srcBmp != null && !srcBmp.isRecycled) {
                     val (_, dstRect) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(
                         srcBmp.width,
@@ -210,8 +211,8 @@ object SvgExporter {
                     )
                     val tx = String.format(Locale.US, "%.3f", dstRect.left)
                     val ty = String.format(Locale.US, "%.3f", dstRect.top)
-                    val tw = String.format(Locale.US, "%.3f", dstRect.width())
-                    val th = String.format(Locale.US, "%.3f", dstRect.height())
+                    val tw = String.format(Locale.US, "%.3f", dstRect.right - dstRect.left)
+                    val th = String.format(Locale.US, "%.3f", dstRect.bottom - dstRect.top)
                     sb.append("""  <rect x="$tx" y="$ty" width="$tw" height="$th" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
                 } else {
                     sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")

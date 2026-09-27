@@ -35,9 +35,14 @@ object VeilQrEncoder {
         content: String,
         errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H
     ): VeilEncodedQr {
-        require(content.isNotBlank()) { "QR content must not be blank" }
-
         val data = content.toByteArray(Charsets.UTF_8)
+        return encode(data, errorCorrection)
+    }
+
+    fun encode(
+        data: ByteArray,
+        errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H
+    ): VeilEncodedQr {
         val model = QRCodeModel(data, errorCorrection, needTypeTable = true)
         val typeTable = model.getTypeTable()
 

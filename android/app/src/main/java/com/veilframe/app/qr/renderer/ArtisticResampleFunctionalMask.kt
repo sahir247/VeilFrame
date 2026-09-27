@@ -28,6 +28,7 @@ object ArtisticResampleFunctionalMask {
 
     /**
      * Checks if subpixel ([subX], [subY]) in [0, 3N) x [0, 3N) is filtered out from stochastic sampling.
+     * Strictly driven by the canonical [com.veilframe.app.qr.model.QrMatrix.roleAt] single source of truth.
      */
     fun isSubpixelExcluded(
         matrix: com.veilframe.app.qr.model.QrMatrix,
@@ -40,22 +41,22 @@ object ArtisticResampleFunctionalMask {
         val maxCoord = 3 * nCount
         if (subX !in 0 until maxCoord || subY !in 0 until maxCoord) return true
 
-        // 1. posOrigins (24x24 subpixels around each of the 3 finders)
-        // Top-Left (0, 0)
-        if (subX in 0 until 24 && subY in 0 until 24) return true
-        // Top-Right (3 * nCount - 24, 0)
-        val trX = 3 * nCount - 24
-        if (subX in trX until 3 * nCount && subY in 0 until 24) return true
-        // Bottom-Left (0, 3 * nCount - 24)
-        val blY = 3 * nCount - 24
-        if (subX in 0 until 24 && subY in blY until 3 * nCount) return true
-
         val col = subX / 3
         val row = subY / 3
+        val role = matrix.roleAt(col, row)
+
+        // 1. posOrigins (24x24 subpixels / 8x8 modules around each of the 3 finders)
+        if (role == com.veilframe.app.qr.model.QrModuleRole.FINDER_INNER ||
+            role == com.veilframe.app.qr.model.QrModuleRole.FINDER_OUTER ||
+            role == com.veilframe.app.qr.model.QrModuleRole.SEPARATOR
+        ) {
+            return true
+        }
+
         val isDark = matrix.isDark(col, row)
 
         // 2. Timing tracks
-        if (isTimingArea(col, row, nCount)) {
+        if (role == com.veilframe.app.qr.model.QrModuleRole.TIMING) {
             if (isDark) {
                 // Upstream EF getGrayPointList never suppresses dark timing pixels.
                 // Non-center subpixels are sampled stochastically, then dedicated geometry is drawn on top.
@@ -70,7 +71,9 @@ object ArtisticResampleFunctionalMask {
         }
 
         // 3. Alignment patterns
-        if (matrix.version >= 2 && isAlignmentArea(col, row, matrix.version)) {
+        if (role == com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_CENTER ||
+            role == com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_BORDER
+        ) {
             if (isDark) {
                 // Upstream EF getGrayPointList never suppresses dark alignment pixels.
                 // Non-center subpixels are sampled stochastically, then dedicated geometry is drawn on top.
@@ -88,6 +91,28 @@ object ArtisticResampleFunctionalMask {
     }
 
     /**
+     * Module-level check for functional area exclusion using matrix role classification.
+     */
+    fun isExcluded(
+        matrix: com.veilframe.app.qr.model.QrMatrix,
+        col: Int,
+        row: Int,
+        timingShape: ModuleShape = ModuleShape.SQUARE,
+        alignmentShape: ModuleShape = ModuleShape.SQUARE
+    ): Boolean {
+        if (col !in 0 until matrix.size || row !in 0 until matrix.size) return true
+        return when (matrix.roleAt(col, row)) {
+            com.veilframe.app.qr.model.QrModuleRole.FINDER_INNER,
+            com.veilframe.app.qr.model.QrModuleRole.FINDER_OUTER,
+            com.veilframe.app.qr.model.QrModuleRole.SEPARATOR -> true
+            com.veilframe.app.qr.model.QrModuleRole.TIMING -> timingShape != ModuleShape.NONE
+            com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_CENTER,
+            com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_BORDER -> alignmentShape != ModuleShape.NONE
+            else -> false
+        }
+    }
+
+    /**
      * Module-level check for functional area exclusion (e.g. for dedicated geometry suppression).
      */
     fun isExcluded(
@@ -99,57 +124,36 @@ object ArtisticResampleFunctionalMask {
         alignmentShape: ModuleShape = ModuleShape.SQUARE
     ): Boolean {
         if (col !in 0 until size || row !in 0 until size) return true
-
-        // 1. Finder areas: 8x8 modules (24x24 subpixel units) at each corner
-        if (isFinderArea(col, row, size)) return true
-
-        // 2. Timing tracks: row 6 and col 6 between finders
-        if (isTimingArea(col, row, size)) {
-            return timingShape != ModuleShape.NONE
+        val mask = com.veilframe.app.qr.model.FunctionPatternMask(size, version)
+        return when (mask.roleAt(col, row)) {
+            com.veilframe.app.qr.model.QrModuleRole.FINDER_INNER,
+            com.veilframe.app.qr.model.QrModuleRole.FINDER_OUTER,
+            com.veilframe.app.qr.model.QrModuleRole.SEPARATOR -> true
+            com.veilframe.app.qr.model.QrModuleRole.TIMING -> timingShape != ModuleShape.NONE
+            com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_CENTER,
+            com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_BORDER -> alignmentShape != ModuleShape.NONE
+            else -> false
         }
-
-        // 3. Alignment patterns: 5x5 area around alignment centers
-        if (version >= 2 && isAlignmentArea(col, row, version)) {
-            return alignmentShape != ModuleShape.NONE
-        }
-
-        return false
     }
 
     fun isFinderArea(col: Int, row: Int, size: Int): Boolean {
-        // Top-Left 8x8
-        if (col < 8 && row < 8) return true
-        // Top-Right 8x8
-        if (col >= size - 8 && row < 8) return true
-        // Bottom-Left 8x8
-        if (col < 8 && row >= size - 8) return true
-        return false
+        if (col !in 0 until size || row !in 0 until size) return false
+        val role = com.veilframe.app.qr.model.FunctionPatternMask(size, 1).roleAt(col, row)
+        return role == com.veilframe.app.qr.model.QrModuleRole.FINDER_INNER ||
+                role == com.veilframe.app.qr.model.QrModuleRole.FINDER_OUTER ||
+                role == com.veilframe.app.qr.model.QrModuleRole.SEPARATOR
     }
 
     fun isTimingArea(col: Int, row: Int, size: Int): Boolean {
-        if (row == 6 && col in 8 until (size - 8)) return true
-        if (col == 6 && row in 8 until (size - 8)) return true
-        return false
+        if (col !in 0 until size || row !in 0 until size) return false
+        return com.veilframe.app.qr.model.FunctionPatternMask(size, 1).roleAt(col, row) == com.veilframe.app.qr.model.QrModuleRole.TIMING
     }
 
     fun isAlignmentArea(col: Int, row: Int, version: Int): Boolean {
-        val centers = QRPatternLocator[version]
-        val lastCenter = centers.lastOrNull() ?: return false
-
-        for (cy in centers) {
-            for (cx in centers) {
-                // Skip positions that collide with finders (corners)
-                if ((cx == 6 && cy == 6) ||
-                    (cx == 6 && cy == lastCenter) ||
-                    (cx == lastCenter && cy == 6)
-                ) continue
-
-                // 5x5 module area centered at (cx, cy)
-                if (col in (cx - 2)..(cx + 2) && row in (cy - 2)..(cy + 2)) {
-                    return true
-                }
-            }
-        }
-        return false
+        val size = version * 4 + 17
+        if (col !in 0 until size || row !in 0 until size || version < 2) return false
+        val role = com.veilframe.app.qr.model.FunctionPatternMask(size, version).roleAt(col, row)
+        return role == com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_CENTER ||
+                role == com.veilframe.app.qr.model.QrModuleRole.ALIGNMENT_BORDER
     }
 }

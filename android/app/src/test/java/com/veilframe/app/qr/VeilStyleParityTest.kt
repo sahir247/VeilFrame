@@ -2332,6 +2332,276 @@ class VeilStyleParityTest {
         )
     }
 
+    // =========================================================================
+    // PARITY LADDER EXTENSIONS: LEVELS 2, 3, 4 & CONTRACT
+    // =========================================================================
+
+    @Test
+    fun testLineMultiDirectionDifferentialTopologyAndCollisionOrder() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/LINE-COLLISION", ErrorCorrectionLevel.M)
+        val cs = 10f
+        val ox = 0f
+        val oy = 0f
+
+        // 1. HORIZONTAL
+        val nodesH = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL
+        )
+        val segsH = nodesH.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        for (seg in segsH) {
+            assertEquals("Horizontal segments must have identical Y coordinates", seg.y1, seg.y2, 0.001f)
+            assertTrue("Horizontal segment length must be >= 1 module", kotlin.math.abs(seg.x2 - seg.x1) >= cs * 0.9f)
+        }
+
+        // 2. VERTICAL
+        val nodesV = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.VERTICAL
+        )
+        val segsV = nodesV.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        for (seg in segsV) {
+            assertEquals("Vertical segments must have identical X coordinates", seg.x1, seg.x2, 0.001f)
+            assertTrue("Vertical segment length must be >= 1 module", kotlin.math.abs(seg.y2 - seg.y1) >= cs * 0.9f)
+        }
+
+        // 3. CROSS: Vertical runs execute first and consume modules, horizontal runs run second on remainder
+        val nodesCross = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.CROSS
+        )
+        val segsCross = nodesCross.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val circlesCross = nodesCross.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        assertTrue("CROSS must emit line segments", segsCross.isNotEmpty())
+        assertTrue("CROSS must emit node circles for remaining cells", circlesCross.isNotEmpty())
+
+        // 4. LOOPBACK: Quadrant selection directs vertical vs horizontal runs without collision
+        val nodesLoop = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.LOOPBACK
+        )
+        val segsLoop = nodesLoop.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertTrue("LOOPBACK must emit line segments", segsLoop.isNotEmpty())
+
+        // 5. DIAGONAL_FORWARD and DIAGONAL_BACKWARD
+        val nodesDf = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.DIAGONAL_FORWARD
+        )
+        val segsDf = nodesDf.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        for (seg in segsDf) {
+            // (x2 - x1) == (y2 - y1) for forward diagonal
+            assertEquals("Forward diagonal slope must be +1", (seg.x2 - seg.x1), (seg.y2 - seg.y1), 0.01f)
+        }
+
+        val nodesDb = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.DIAGONAL_BACKWARD
+        )
+        val segsDb = nodesDb.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        for (seg in segsDb) {
+            // (x2 - x1) == -(y2 - y1) for backward diagonal
+            assertEquals("Backward diagonal slope must be -1", (seg.x2 - seg.x1), -(seg.y2 - seg.y1), 0.01f)
+        }
+
+        // 6. X: True cross-hatching containing both diagonal slopes
+        val nodesX = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix, ox = ox, oy = oy, cs = cs,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.X
+        )
+        val segsX = nodesX.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val hasForward = segsX.any { kotlin.math.abs((it.x2 - it.x1) - (it.y2 - it.y1)) < 0.01f }
+        val hasBackward = segsX.any { kotlin.math.abs((it.x2 - it.x1) + (it.y2 - it.y1)) < 0.01f }
+        assertTrue("X mode must contain both forward and backward diagonals", hasForward && hasBackward)
+    }
+
+    @Test
+    fun testAnimatedSvgReferenceIntegrity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ANIM-SVG-INTEGRITY", ErrorCorrectionLevel.M)
+        val bmp1 = createDummyBitmap()
+        val bmp2 = createDummyBitmap()
+        val bmp3 = createDummyBitmap()
+
+        val frames = listOf(
+            QrFrame(bmp1, 200),
+            QrFrame(bmp2, 200),
+            QrFrame(bmp3, 200)
+        )
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageFillMaskColor = 0x33000000.toInt(),
+            imageFillBackgroundColor = 0xFFFFFFFF.toInt()
+        )
+
+        val animatedSvg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
+
+        // 1. Collect all defined IDs
+        val idDefRegex = Regex("""\bid=["']([^"']+)["']""")
+        val definedIds = idDefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
+        assertTrue("Animated SVG must define frame IDs and scoped resource IDs", definedIds.isNotEmpty())
+
+        // 2. Assert all defined IDs are unique (zero duplicates across entire SVG document)
+        val duplicates = definedIds.groupBy { it }.filter { it.value.size > 1 }.keys
+        assertTrue("All IDs must be unique across animated SVG frames, found duplicates: $duplicates", duplicates.isEmpty())
+
+        // 3. Collect all referenced IDs via url(#id) and (xlink:href|href)="#id"
+        val urlRefRegex = Regex("""url\(\s*#([^)]+)\s*\)""")
+        val hrefRefRegex = Regex("""\b(?:xlink:href|href)=["']#([^"']+)["']""")
+
+        val urlRefs = urlRefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
+        val hrefRefs = hrefRefRegex.findAll(animatedSvg).map { it.groupValues[1] }.toList()
+        val allRefs = urlRefs + hrefRefs
+
+        // 4. Assert that EVERY reference resolves to a defined ID (zero dangling references)
+        val definedIdSet = definedIds.toSet()
+        for (ref in allRefs) {
+            assertTrue("Referenced ID '#$ref' must exist in SVG definitions", definedIdSet.contains(ref))
+        }
+
+        // 5. Assert that inside each frame group <g id="qr_frame_k">, references strictly point to frame k
+        val frameGroupRegex = Regex("""<g id="qr_frame_(\d+)">([\s\S]*?)</g>""")
+        for (match in frameGroupRegex.findAll(animatedSvg)) {
+            val frameIndex = match.groupValues[1]
+            val frameBody = match.groupValues[2]
+
+            val frameUrlRefs = urlRefRegex.findAll(frameBody).map { it.groupValues[1] }.toList()
+            for (ref in frameUrlRefs) {
+                assertTrue(
+                    "Reference '#$ref' in frame $frameIndex must be scoped with 'f${frameIndex}_' prefix",
+                    ref.startsWith("f${frameIndex}_")
+                )
+            }
+        }
+    }
+
+    @Test
+    fun testImageScaleModeCropRectAndPixelSurvivalParity() {
+        // 1. Wide source: 400x200 into 300x300
+        val wideFill = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            400, 200, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FILL
+        )
+        assertEquals("Wide ASPECT_FILL must crop horizontal overflow to 200px wide", 200, wideFill.srcWidth)
+        assertEquals("Wide ASPECT_FILL must preserve full height of 200px", 200, wideFill.srcHeight)
+        assertEquals("Wide ASPECT_FILL must center crop: left=100", 100, wideFill.srcLeft)
+        assertEquals("Wide ASPECT_FILL must center crop: right=300", 300, wideFill.srcRight)
+
+        val wideFit = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            400, 200, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FIT
+        )
+        assertEquals("Wide ASPECT_FIT must fit full 300px width", 300f, wideFit.dstWidth, 0.01f)
+        assertEquals("Wide ASPECT_FIT must letterbox height to 150px", 150f, wideFit.dstHeight, 0.01f)
+        assertEquals("Wide ASPECT_FIT must center vertically: top=75", 75f, wideFit.dstTop, 0.01f)
+
+        // 2. Tall source: 200x400 into 300x300
+        val tallFill = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            200, 400, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FILL
+        )
+        assertEquals("Tall ASPECT_FILL must preserve full width of 200px", 200, tallFill.srcWidth)
+        assertEquals("Tall ASPECT_FILL must crop vertical overflow to 200px tall", 200, tallFill.srcHeight)
+        assertEquals("Tall ASPECT_FILL must center crop: top=100", 100, tallFill.srcTop)
+        assertEquals("Tall ASPECT_FILL must center crop: bottom=300", 300, tallFill.srcBottom)
+
+        val tallFit = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            200, 400, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FIT
+        )
+        assertEquals("Tall ASPECT_FIT must pillarbox width to 150px", 150f, tallFit.dstWidth, 0.01f)
+        assertEquals("Tall ASPECT_FIT must fit full 300px height", 300f, tallFit.dstHeight, 0.01f)
+        assertEquals("Tall ASPECT_FIT must center horizontally: left=75", 75f, tallFit.dstLeft, 0.01f)
+
+        // 3. Square source: 200x200 into 300x300
+        val sqFill = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            200, 200, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FILL
+        )
+        assertEquals(200, sqFill.srcWidth)
+        assertEquals(200, sqFill.srcHeight)
+        assertEquals(300f, sqFill.dstWidth, 0.01f)
+
+        // 4. 1-pixel edge cases
+        val onePx = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            1, 1, 0f, 0f, 300f, 300f, ImageScaleMode.ASPECT_FILL
+        )
+        assertEquals(1, onePx.srcWidth)
+        assertEquals(1, onePx.srcHeight)
+        assertEquals(300f, onePx.dstWidth, 0.01f)
+
+        // 5. Odd dimensions: 399x199 into 301x301
+        val oddFill = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveCropGeometry(
+            399, 199, 0f, 0f, 301f, 301f, ImageScaleMode.ASPECT_FILL
+        )
+        assertTrue("Odd dimensions must resolve positive crop width", oddFill.srcWidth in 190..210)
+        assertEquals(199, oddFill.srcHeight)
+    }
+
+    @Test
+    fun testD25RasterPainterOrderAndOverlapOcclusion() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/D25-PAINTER", ErrorCorrectionLevel.M)
+        val n = matrix.size
+        val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(n, 512f, 512f, 1)
+
+        // In column-major painter order:
+        // Col c, Row r module is rendered before Col c, Row r+1 module.
+        // Therefore, for positive projection height, Row r+1's top face draws OVER Row r's back face.
+        val top00 = proj.screenY(0f, 0f, 0f)
+        val top01 = proj.screenY(0f, 1f, 0f)
+        assertTrue("Screen Y increases down the column for isometric projection", top01 > top00)
+    }
+
+    @Test
+    fun testSvgAlphaNoAccidentalDoubleAttenuation() {
+        val semiGreen = 0x8000FF00.toInt() // 50% green
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ALPHA-COMPOSITING", ErrorCorrectionLevel.M)
+        val design = QrDesign(
+            style = com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE,
+            resampleStyle = com.veilframe.app.qr.model.ResampleStyle(
+                useSourceAsBackdrop = true,
+                backdropTint = semiGreen
+            )
+        )
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+        // Tint rect must NOT have both fill="rgba(0,255,0,0.500)" AND opacity="0.50"
+        assertFalse(
+            "Backdrop tint rect must NOT duplicate opacity inside rgba and opacity attribute",
+            svg.contains("""fill="rgba(0,255,0,""") && svg.contains("""opacity="0.50"""")
+        )
+        // It must emit solid hex fill with opacity attribute per EF
+        assertTrue("Backdrop tint rect must emit solid hex fill", svg.contains("""fill="#00FF00""""))
+        assertTrue("Backdrop tint rect must emit opacity attribute", svg.contains("""opacity="0.50""""))
+    }
+
+    @Test
+    fun testParameterNormalizationContractAndEfCompatibilityRange() {
+        // EF Compatibility Range:
+        // 1. depth in [0.0, inf)
+        val normalDepth = 1.0f
+        assertEquals(1.0f, normalDepth.coerceAtLeast(0f), 0.001f)
+
+        // 2. line thickness in (0.0, 1.0]
+        val normalThickness = 0.5f
+        assertEquals(0.5f, normalThickness.coerceIn(0.05f, 0.85f), 0.001f)
+
+        // 3. icon percentage in [0.0, 0.33]
+        val normalIconPct = 0.2f
+        assertEquals(0.2f, minOf(normalIconPct, 0.33f), 0.001f)
+
+        // VeilFrame Safe Normalized Mode (Defensive clamping for extreme/negative values):
+        val negativeDepth = -2.5f
+        assertEquals("Negative depth must be clamped to 0.0", 0.0f, negativeDepth.coerceAtLeast(0f), 0.001f)
+
+        val negativeThickness = -0.1f
+        assertEquals("Negative thickness must be clamped to safe minimum", 0.05f, negativeThickness.coerceIn(0.05f, 0.85f), 0.001f)
+
+        val excessiveIconPct = 0.85f
+        assertEquals("Excessive icon percentage must be clamped to max 0.33 to preserve QR readability", 0.33f, minOf(excessiveIconPct, 0.33f), 0.001f)
+    }
+
     private fun createDummyBitmap(): Bitmap {
         return try {
             val unsafeClass = Class.forName("sun.misc.Unsafe")

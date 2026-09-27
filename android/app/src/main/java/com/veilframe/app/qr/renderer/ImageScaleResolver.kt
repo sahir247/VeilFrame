@@ -220,6 +220,87 @@ object ImageScaleResolver {
         v: Float,
         mode: ImageScaleMode
     ): Int = sample(source, u, v, mode).color
+    /**
+     * Platform-independent crop and scale geometry description.
+     */
+    data class ScaleCropResult(
+        val srcLeft: Int,
+        val srcTop: Int,
+        val srcRight: Int,
+        val srcBottom: Int,
+        val dstLeft: Float,
+        val dstTop: Float,
+        val dstRight: Float,
+        val dstBottom: Float
+    ) {
+        val srcWidth: Int get() = srcRight - srcLeft
+        val srcHeight: Int get() = srcBottom - srcTop
+        val dstWidth: Float get() = dstRight - dstLeft
+        val dstHeight: Float get() = dstBottom - dstTop
+    }
+
+    /**
+     * Pure geometric computation of source crop and destination fit rectangles.
+     */
+    fun resolveCropGeometry(
+        srcWidth: Int,
+        srcHeight: Int,
+        dstLeft: Float,
+        dstTop: Float,
+        dstRight: Float,
+        dstBottom: Float,
+        mode: ImageScaleMode
+    ): ScaleCropResult {
+        val bw = srcWidth.coerceAtLeast(1)
+        val bh = srcHeight.coerceAtLeast(1)
+        val dw = (dstRight - dstLeft).coerceAtLeast(1f)
+        val dh = (dstBottom - dstTop).coerceAtLeast(1f)
+
+        val srcRatio = bw.toFloat() / bh.toFloat()
+        val dstRatio = dw / dh
+
+        return when (mode) {
+            ImageScaleMode.STRETCH -> {
+                ScaleCropResult(0, 0, bw, bh, dstLeft, dstTop, dstRight, dstBottom)
+            }
+
+            ImageScaleMode.CENTER_CROP -> {
+                if (srcRatio > dstRatio) {
+                    val cropW = (bh * dstRatio).toInt().coerceIn(1, bw)
+                    val sx = (bw - cropW) / 2
+                    ScaleCropResult(sx, 0, sx + cropW, bh, dstLeft, dstTop, dstRight, dstBottom)
+                } else {
+                    val cropH = (bw / dstRatio).toInt().coerceIn(1, bh)
+                    val sy = (bh - cropH) / 2
+                    ScaleCropResult(0, sy, bw, sy + cropH, dstLeft, dstTop, dstRight, dstBottom)
+                }
+            }
+
+            ImageScaleMode.ASPECT_FILL -> {
+                if (srcRatio > dstRatio) {
+                    val visibleW = (bh * dstRatio).toInt().coerceIn(1, bw)
+                    val sx = (bw - visibleW) / 2
+                    ScaleCropResult(sx, 0, sx + visibleW, bh, dstLeft, dstTop, dstRight, dstBottom)
+                } else {
+                    val visibleH = (bw / dstRatio).toInt().coerceIn(1, bh)
+                    val sy = (bh - visibleH) / 2
+                    ScaleCropResult(0, sy, bw, sy + visibleH, dstLeft, dstTop, dstRight, dstBottom)
+                }
+            }
+
+            ImageScaleMode.ASPECT_FIT -> {
+                if (srcRatio > dstRatio) {
+                    val fitH = dw / srcRatio
+                    val offsetY = (dh - fitH) / 2f
+                    ScaleCropResult(0, 0, bw, bh, dstLeft, dstTop + offsetY, dstRight, dstTop + offsetY + fitH)
+                } else {
+                    val fitW = dh * srcRatio
+                    val offsetX = (dw - fitW) / 2f
+                    ScaleCropResult(0, 0, bw, bh, dstLeft + offsetX, dstTop, dstLeft + offsetX + fitW, dstBottom)
+                }
+            }
+        }
+    }
 
     /**
      * Resolves source crop rect and destination drawing rect.
@@ -230,61 +311,28 @@ object ImageScaleResolver {
         dstBounds: RectF,
         mode: ImageScaleMode
     ): Pair<Rect, RectF> {
-        val bw = srcWidth.coerceAtLeast(1)
-        val bh = srcHeight.coerceAtLeast(1)
-        val dw = (dstBounds.right - dstBounds.left).coerceAtLeast(1f)
-        val dh = (dstBounds.bottom - dstBounds.top).coerceAtLeast(1f)
-
-        val srcRatio = bw.toFloat() / bh.toFloat()
-        val dstRatio = dw / dh
-
-        return when (mode) {
-            ImageScaleMode.STRETCH -> {
-                Pair(Rect(0, 0, bw, bh), RectF(dstBounds))
-            }
-
-            ImageScaleMode.CENTER_CROP -> {
-                // Crop max rectangle from center of source having dstRatio
-                val srcRect = if (srcRatio > dstRatio) {
-                    val cropW = (bh * dstRatio).toInt().coerceIn(1, bw)
-                    val sx = (bw - cropW) / 2
-                    Rect(sx, 0, sx + cropW, bh)
-                } else {
-                    val cropH = (bw / dstRatio).toInt().coerceIn(1, bh)
-                    val sy = (bh - cropH) / 2
-                    Rect(0, sy, bw, sy + cropH)
-                }
-                Pair(srcRect, RectF(dstBounds))
-            }
-
-            ImageScaleMode.ASPECT_FILL -> {
-                // Scale until destination is completely covered, crop overflow
-                val srcRect = if (srcRatio > dstRatio) {
-                    val visibleW = (bh * dstRatio).toInt().coerceIn(1, bw)
-                    val sx = (bw - visibleW) / 2
-                    Rect(sx, 0, sx + visibleW, bh)
-                } else {
-                    val visibleH = (bw / dstRatio).toInt().coerceIn(1, bh)
-                    val sy = (bh - visibleH) / 2
-                    Rect(0, sy, bw, sy + visibleH)
-                }
-                Pair(srcRect, RectF(dstBounds))
-            }
-
-            ImageScaleMode.ASPECT_FIT -> {
-                // Fit entire source inside destination bounds, letterbox/pillarbox
-                val finalDst = if (srcRatio > dstRatio) {
-                    val fitH = dw / srcRatio
-                    val offsetY = (dh - fitH) / 2f
-                    RectF(dstBounds.left, dstBounds.top + offsetY, dstBounds.right, dstBounds.top + offsetY + fitH)
-                } else {
-                    val fitW = dh * srcRatio
-                    val offsetX = (dw - fitW) / 2f
-                    RectF(dstBounds.left + offsetX, dstBounds.top, dstBounds.left + offsetX + fitW, dstBounds.bottom)
-                }
-                Pair(Rect(0, 0, bw, bh), finalDst)
-            }
+        val geo = resolveCropGeometry(
+            srcWidth,
+            srcHeight,
+            dstBounds.left,
+            dstBounds.top,
+            dstBounds.right,
+            dstBounds.bottom,
+            mode
+        )
+        val src = Rect(geo.srcLeft, geo.srcTop, geo.srcRight, geo.srcBottom).apply {
+            left = geo.srcLeft
+            top = geo.srcTop
+            right = geo.srcRight
+            bottom = geo.srcBottom
         }
+        val dst = RectF(geo.dstLeft, geo.dstTop, geo.dstRight, geo.dstBottom).apply {
+            left = geo.dstLeft
+            top = geo.dstTop
+            right = geo.dstRight
+            bottom = geo.dstBottom
+        }
+        return Pair(src, dst)
     }
 
     /**
