@@ -164,13 +164,24 @@ object AnimatedQrGenerator {
         loops: Int = 0
     ): ByteArray {
         require(renderedFrames.isNotEmpty()) { "renderedFrames cannot be empty" }
-        // Try FFmpegKit first for industry-standard animated GIF encoding
+
+        val durations = renderedFrames.map { it.durationMs.coerceAtLeast(20) }
+        val minDur = durations.minOrNull() ?: 100
+        val maxDur = durations.maxOrNull() ?: 100
+        val isVariableTiming = (maxDur - minDur) > 5
+
+        // For variable timing, GifEncoder natively encodes exact centisecond per-frame delay bytes.
+        if (isVariableTiming) {
+            return GifEncoder.encode(renderedFrames, width, height, loops)
+        }
+
+        // For constant timing, try FFmpegKit first for optimized palette dithering
         try {
             val tempDir = File.createTempFile("qr_gif_", "_dir")
             tempDir.delete()
             tempDir.mkdirs()
             val outFile = File(tempDir, "output.gif")
-            val avgDurationMs = renderedFrames.map { it.durationMs.coerceAtLeast(20) }.average().toInt().coerceIn(20, 1000)
+            val avgDurationMs = durations.average().toInt().coerceIn(20, 1000)
             val fps = (1000 / avgDurationMs).coerceIn(1, 50)
 
             for ((idx, frame) in renderedFrames.withIndex()) {
@@ -212,7 +223,7 @@ object AnimatedQrGenerator {
      *
      * @param renderedFrames The sequence of rendered QR frames.
      * @param outputFile Target video file (.mp4 or .mov).
-     * @param fps Frame rate in frames per second (defaults to 15).
+     * @param fps Frame rate in frames per second (defaults to 15, overridden if variable timing).
      * @return true if video encoding succeeded.
      */
     fun encodeToVideo(
@@ -233,8 +244,29 @@ object AnimatedQrGenerator {
                 }
             }
 
-            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
-            val cmd = "-y -framerate $fps -i \"$inputPattern\" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
+            val durations = renderedFrames.map { it.durationMs.coerceAtLeast(20) }
+            val minDur = durations.minOrNull() ?: 100
+            val maxDur = durations.maxOrNull() ?: 100
+            val isVariableTiming = (maxDur - minDur) > 5
+
+            val cmd = if (isVariableTiming) {
+                val concatFile = File(tempDir, "input.txt")
+                val sb = StringBuilder()
+                sb.append("ffconcat version 1.0\n")
+                for ((idx, frame) in renderedFrames.withIndex()) {
+                    val durSec = String.format(Locale.US, "%.3f", frame.durationMs.coerceAtLeast(20) / 1000.0)
+                    sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", idx)).append("'\n")
+                    sb.append("duration ").append(durSec).append("\n")
+                }
+                sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", renderedFrames.size - 1)).append("'\n")
+                concatFile.writeText(sb.toString())
+                "-y -f concat -safe 0 -i \"${concatFile.absolutePath}\" -vsync vfr -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
+            } else {
+                val avgDurationMs = durations.average().toInt().coerceIn(20, 1000)
+                val effectiveFps = if (fps > 0) fps else (1000 / avgDurationMs).coerceIn(1, 60)
+                val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+                "-y -framerate $effectiveFps -i \"$inputPattern\" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
+            }
 
             val session = FFmpegKit.execute(cmd)
             return ReturnCode.isSuccess(session.returnCode)

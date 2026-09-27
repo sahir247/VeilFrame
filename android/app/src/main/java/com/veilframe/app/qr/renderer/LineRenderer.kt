@@ -95,6 +95,8 @@ class LineRenderer : QrRenderer {
             else -> design.lineStyle.direction
         }
 
+        val addAccentRings = design.lineStyle.accentRingsEnabled ?: (direction == LineDirection.X)
+
         nodes.addAll(
             LineTopologyBuilder.buildTopology(
                 matrix = matrix,
@@ -104,7 +106,7 @@ class LineRenderer : QrRenderer {
                 thicknessFraction = thickness,
                 lineColor = lineColor,
                 direction = direction,
-                addAccentRings = true,
+                addAccentRings = addAccentRings,
                 roundCaps = design.lineStyle.roundCaps,
                 lengthFraction = design.lineStyle.lengthFraction
             )

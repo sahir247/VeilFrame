@@ -1,6 +1,7 @@
 package com.veilframe.app.qr.geometry
 
 import android.graphics.Color
+import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.*
 
@@ -55,6 +56,9 @@ object ResampleGeometryBuilder {
         val fgColor = design.palette.foreground
         val eyeOuter = design.eyeStyle.outerColor ?: fgColor
         val eyeInner = design.eyeStyle.innerColor ?: fgColor
+        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) ||
+            ((design.palette.background ushr 24) and 0xFF) == 0
+
         val finders = listOf(
             Pair(0, 0),
             Pair(n - 7, 0),
@@ -67,14 +71,44 @@ object ResampleGeometryBuilder {
             val cy = fy + 3.5f * mSize
             when (design.eyeStyle.style) {
                 FinderStyle.CIRCLE -> {
-                    nodes.add(CircleNode(cx, cy, 3.5f * mSize, fill = eyeOuter))
-                    nodes.add(CircleNode(cx, cy, 2.5f * mSize, fill = design.palette.background))
-                    nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
+                    if (isHollowFinder) {
+                        nodes.add(CircleNode(cx, cy, 3.0f * mSize, stroke = eyeOuter, strokeWidth = 1.0f * mSize, fill = null))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
+                    } else {
+                        nodes.add(CircleNode(cx, cy, 3.5f * mSize, fill = eyeOuter))
+                        nodes.add(CircleNode(cx, cy, 2.5f * mSize, fill = design.palette.background))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
+                    }
                 }
                 FinderStyle.ROUNDED -> {
-                    nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 2f * mSize, ry = 2f * mSize, fill = eyeOuter))
-                    nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, fill = design.palette.background))
-                    nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 1f * mSize, ry = 1f * mSize, fill = eyeInner))
+                    if (isHollowFinder) {
+                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 2f * mSize, ry = 2f * mSize, stroke = eyeOuter, strokeWidth = 1f * mSize, fill = null))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 1f * mSize, ry = 1f * mSize, fill = eyeInner))
+                    } else {
+                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 2f * mSize, ry = 2f * mSize, fill = eyeOuter))
+                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, fill = design.palette.background))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 1f * mSize, ry = 1f * mSize, fill = eyeInner))
+                    }
+                }
+                FinderStyle.SOFT -> {
+                    if (isHollowFinder) {
+                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, stroke = eyeOuter, strokeWidth = 1f * mSize, fill = null))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
+                    } else {
+                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, fill = eyeOuter))
+                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 0.8f * mSize, ry = 0.8f * mSize, fill = design.palette.background))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
+                    }
+                }
+                FinderStyle.FRAME -> {
+                    nodes.add(RectNode(fx + 0.4f * mSize, fy + 0.4f * mSize, 6.2f * mSize, 6.2f * mSize, rx = 1f * mSize, ry = 1f * mSize, stroke = eyeOuter, strokeWidth = 0.8f * mSize, fill = null))
+                    val pts = listOf(
+                        Pair(cx, cy - 1.5f * mSize),
+                        Pair(cx + 1.5f * mSize, cy),
+                        Pair(cx, cy + 1.5f * mSize),
+                        Pair(cx - 1.5f * mSize, cy)
+                    )
+                    nodes.add(PolygonNode(points = "", pointsList = pts, fill = eyeInner))
                 }
                 FinderStyle.PLANETS -> {
                     nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
@@ -96,9 +130,14 @@ object ResampleGeometryBuilder {
                     nodes.add(RectNode(cx - 1.5f * mSize, cy + 2.5f * mSize, 3f * mSize, 1f * mSize, fill = eyeOuter))
                 }
                 else -> {
-                    nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 0.5f * mSize, ry = 0.5f * mSize, fill = eyeOuter))
-                    nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 0.3f * mSize, ry = 0.3f * mSize, fill = design.palette.background))
-                    nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0.2f * mSize, ry = 0.2f * mSize, fill = eyeInner))
+                    if (isHollowFinder) {
+                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 0.5f * mSize, ry = 0.5f * mSize, stroke = eyeOuter, strokeWidth = 1f * mSize, fill = null))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0.2f * mSize, ry = 0.2f * mSize, fill = eyeInner))
+                    } else {
+                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 0.5f * mSize, ry = 0.5f * mSize, fill = eyeOuter))
+                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 0.3f * mSize, ry = 0.3f * mSize, fill = design.palette.background))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0.2f * mSize, ry = 0.2f * mSize, fill = eyeInner))
+                    }
                 }
             }
         }

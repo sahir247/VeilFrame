@@ -241,7 +241,8 @@ data class LineStyle(
     val color: Int? = null,
     val positionStyle: FinderStyle = FinderStyle.CLASSIC,
     val positionSize: Float = 1.0f,
-    val positionColor: Int? = null
+    val positionColor: Int? = null,
+    val accentRingsEnabled: Boolean? = null
 )
 
 enum class VeilFunctionType {

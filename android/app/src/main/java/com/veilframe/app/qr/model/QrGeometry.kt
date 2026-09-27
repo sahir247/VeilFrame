@@ -37,9 +37,9 @@ class QrGeometry(
             outputWidth: Int,
             outputHeight: Int,
             design: QrDesign,
-            defaultQuietZone: Int = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else 4
+            defaultQuietZone: Int = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else if (design.style == QrStyle.D25) 0 else 4
         ): QrGeometry {
-            val fallbackQz = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else defaultQuietZone
+            val fallbackQz = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else if (design.style == QrStyle.D25) 0 else defaultQuietZone
             val qz = design.explicitQuietZone ?: fallbackQz
             val qzLeft = design.directionalQuietZone?.left ?: qz
             val qzTop = design.directionalQuietZone?.top ?: qz

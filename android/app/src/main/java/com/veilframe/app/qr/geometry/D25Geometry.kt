@@ -47,11 +47,30 @@ object D25Geometry {
         }
     }
 
-    fun computeProjection(n: Int, outputWidth: Float, outputHeight: Float): Projection {
-        val vbX = -n.toFloat()
-        val vbY = -n.toFloat() / 2.0f
-        val vbW = n.toFloat() * 2.0f
-        val vbH = n.toFloat() * 2.0f
+    fun computeProjection(
+        n: Int,
+        outputWidth: Float,
+        outputHeight: Float,
+        quietZoneLeft: Float = 0f,
+        quietZoneTop: Float = 0f,
+        quietZoneRight: Float = 0f,
+        quietZoneBottom: Float = 0f
+    ): Projection {
+        // EFQRCode canonical formula (EFQRCodeStyle25D.swift):
+        //   normLeft = quietzone.left (= quietZoneLeft / n)
+        //   vbX = -n * (normLeft + 1)
+        //   vbY = -n * (normTop + 0.5)
+        //   vbW = n * (normLeft + 2 + normRight)
+        //   vbH = n * (normTop + 2 + normBottom)
+        val normLeft = quietZoneLeft / n.toFloat()
+        val normTop = quietZoneTop / n.toFloat()
+        val normRight = quietZoneRight / n.toFloat()
+        val normBottom = quietZoneBottom / n.toFloat()
+
+        val vbX = -n.toFloat() * (normLeft + 1f)
+        val vbY = -n.toFloat() * (normTop + 0.5f)
+        val vbW = n.toFloat() * (normLeft + 2f + normRight)
+        val vbH = n.toFloat() * (normTop + 2f + normBottom)
 
         val scaleX = outputWidth / vbW
         val scaleY = outputHeight / vbH
@@ -60,6 +79,16 @@ object D25Geometry {
         val transY = (outputHeight - vbH * scale) / 2f
 
         return Projection(scale, transX, transY, vbX, vbY)
+    }
+
+    fun computeProjection(
+        n: Int,
+        outputWidth: Float,
+        outputHeight: Float,
+        quietZoneModules: Int = 0
+    ): Projection {
+        val qz = quietZoneModules.toFloat()
+        return computeProjection(n, outputWidth, outputHeight, qz, qz, qz, qz)
     }
 
     /**
@@ -79,7 +108,15 @@ object D25Geometry {
         val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
 
-        val proj = computeProjection(n, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat())
+        val proj = computeProjection(
+            n = n,
+            outputWidth = geometry.outputWidth.toFloat(),
+            outputHeight = geometry.outputHeight.toFloat(),
+            quietZoneLeft = geometry.quietZoneLeft.toFloat(),
+            quietZoneTop = geometry.quietZoneTop.toFloat(),
+            quietZoneRight = geometry.quietZoneRight.toFloat(),
+            quietZoneBottom = geometry.quietZoneBottom.toFloat()
+        )
 
         val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
@@ -175,7 +212,15 @@ object D25Geometry {
         val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
 
-        val proj = computeProjection(n, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat())
+        val proj = computeProjection(
+            n = n,
+            outputWidth = geometry.outputWidth.toFloat(),
+            outputHeight = geometry.outputHeight.toFloat(),
+            quietZoneLeft = geometry.quietZoneLeft.toFloat(),
+            quietZoneTop = geometry.quietZoneTop.toFloat(),
+            quietZoneRight = geometry.quietZoneRight.toFloat(),
+            quietZoneBottom = geometry.quietZoneBottom.toFloat()
+        )
         val nodes = mutableListOf<QrGeometryNode>()
 
         nodes.add(

@@ -1261,6 +1261,97 @@ class VeilStyleParityTest {
         assertEquals(com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT, meetMode)
     }
 
+    @Test
+    fun testD25QuietZoneProjectionDerivation() {
+        val projDefault = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(25, 500f, 500f, quietZoneModules = 0)
+        assertEquals(-25f, projDefault.vbX, 0.001f)
+        assertEquals(-12.5f, projDefault.vbY, 0.001f)
+        assertEquals(50f, projDefault.scale * 50f / projDefault.scale, 0.001f)
+
+        val projWithQz = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(25, 500f, 500f, quietZoneModules = 4)
+        assertEquals(-29f, projWithQz.vbX, 0.001f)
+        assertEquals(-16.5f, projWithQz.vbY, 0.001f)
+
+        val projDirectional = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(
+            n = 25,
+            outputWidth = 500f,
+            outputHeight = 500f,
+            quietZoneLeft = 4f,
+            quietZoneTop = 2f,
+            quietZoneRight = 3f,
+            quietZoneBottom = 1f
+        )
+        assertEquals(-29f, projDirectional.vbX, 0.001f)
+        assertEquals(-14.5f, projDirectional.vbY, 0.001f)
+    }
+
+    @Test
+    fun testResampleFinderTransparencyWhenBackdropActive() {
+        val matrix = QrMatrix("https://veilframe.app/resample-hollow-test", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512)
+
+        // 1. With useSourceAsBackdrop = true, outer finder ring must be hollow (stroke != null, fill == null)
+        val designHollow = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            palette = PaletteStyle(background = 0xFFFFFFFF.toInt(), foreground = 0xFF000000.toInt()),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val irHollow = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designHollow, geometry)
+        val hollowFinderRects = irHollow.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("Hollow finder mode must emit stroked hollow rects for the outer frame", hollowFinderRects.isNotEmpty())
+        val bgFillFinderRects = irHollow.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+            .filter { it.fill == designHollow.palette.background && it.width < 512f }
+        assertTrue("Hollow finder mode must NOT paint solid 5x5 background rects over finders", bgFillFinderRects.isEmpty())
+
+        // 2. With useSourceAsBackdrop = false, normal background rects are present
+        val designNormal = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            palette = PaletteStyle(background = 0xFFFFFFFF.toInt(), foreground = 0xFF000000.toInt()),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = false)
+        )
+        val irNormal = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designNormal, geometry)
+        val normalBgFinderRects = irNormal.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+            .filter { it.fill == designNormal.palette.background && it.width < 512f }
+        assertTrue("Normal finder mode must emit background middle rects when backdrop is false", normalBgFinderRects.isNotEmpty())
+    }
+
+    @Test
+    fun testLineRendererAccentRingGating() {
+        val matrix = QrMatrix("https://veilframe.app/line-gating-test", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512)
+
+        // 1. HORIZONTAL direction must NOT emit accent rings by default
+        val designH = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.HORIZONTAL)
+        )
+        val irH = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designH, geometry)
+        val accentRingsH = irH.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("HORIZONTAL line direction must have clean line topology without accent rings", accentRingsH.isEmpty())
+
+        // 2. LineDirection.X must emit accent rings by default (Target #6 circuit mode)
+        val designX = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.X)
+        )
+        val irX = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designX, geometry)
+        val accentRingsX = irX.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("LineDirection.X must emit accent rings for circuit styling", accentRingsX.isNotEmpty())
+
+        // 3. Explicit accentRingsEnabled = true on HORIZONTAL enables accent rings
+        val designHWithRings = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.HORIZONTAL, accentRingsEnabled = true)
+        )
+        val irHWithRings = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designHWithRings, geometry)
+        val accentRingsExplicit = irHWithRings.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("Explicit accentRingsEnabled = true must enable accent rings", accentRingsExplicit.isNotEmpty())
+    }
+
     private fun createDummyBitmap(): Bitmap {
         return try {
             val unsafeClass = Class.forName("sun.misc.Unsafe")

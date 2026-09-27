@@ -38,10 +38,10 @@ object SvgExporter {
         design: QrDesign,
         pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
     ): String {
-        val qz = if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
-            design.explicitQuietZone ?: 1
-        } else {
-            design.effectiveQuietZone
+        val qz = when (design.style) {
+            com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE -> design.explicitQuietZone ?: 1
+            com.veilframe.app.qr.QrStyle.D25 -> design.explicitQuietZone ?: 0
+            else -> design.effectiveQuietZone
         }
         val qzLeft = design.directionalQuietZone?.left ?: qz
         val qzTop = design.directionalQuietZone?.top ?: qz
@@ -76,7 +76,7 @@ object SvgExporter {
             return generateImageSvg(matrix, design, qz, totalSize)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.D25) {
-            return generate25DSvg(matrix, design)
+            return generate25DSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.BUBBLE) {
             return generateBubbleSvg(matrix, design, qz, totalSize)
@@ -736,7 +736,14 @@ object SvgExporter {
         return sb.toString()
     }
 
-    private fun generate25DSvg(matrix: QrMatrix, design: QrDesign): String {
+    private fun generate25DSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qzLeft: Int = 0,
+        qzTop: Int = 0,
+        qzRight: Int = 0,
+        qzBottom: Int = 0
+    ): String {
         val n = matrix.size
         val matrixString = "matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"
         val topHex = hexColor(design.depthStyle.topColor)
@@ -749,10 +756,21 @@ object SvgExporter {
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
         val bgHex = hexColor(design.palette.background)
 
-        val vbX = -n
-        val vbY = -n / 2.0
-        val vbW = n * 2.0
-        val vbH = n * 2.0
+        // EFQRCode canonical formula (EFQRCodeStyle25D.swift):
+        //   normLeft = quietzone.left (= qzLeft / n)
+        //   vbX = -n * (normLeft + 1)
+        //   vbY = -n * (normTop + 0.5)
+        //   vbW = n * (normLeft + 2 + normRight)
+        //   vbH = n * (normTop + 2 + normBottom)
+        val normLeft = qzLeft.toDouble() / n.toDouble()
+        val normTop = qzTop.toDouble() / n.toDouble()
+        val normRight = qzRight.toDouble() / n.toDouble()
+        val normBottom = qzBottom.toDouble() / n.toDouble()
+
+        val vbX = if (qzLeft == 0) "-$n" else "${-n.toDouble() * (normLeft + 1.0)}"
+        val vbY = if (qzTop == 0) -n / 2.0 else -n.toDouble() * (normTop + 0.5)
+        val vbW = n.toDouble() * (normLeft + 2.0 + normRight)
+        val vbH = n.toDouble() * (normTop + 2.0 + normBottom)
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
