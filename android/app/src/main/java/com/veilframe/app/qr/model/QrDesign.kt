@@ -249,7 +249,8 @@ data class LineStyle(
     val positionColor: Int? = null,
     val accentRingsEnabled: Boolean = false,
     val circuitBridgesEnabled: Boolean = false,
-    val variant: LineVariant = LineVariant.EF
+    val variant: LineVariant = LineVariant.EF,
+    val randomSource: (() -> Float)? = null
 )
 
 enum class VeilFunctionType {

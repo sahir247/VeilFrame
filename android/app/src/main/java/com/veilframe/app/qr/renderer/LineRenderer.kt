@@ -112,7 +112,8 @@ class LineRenderer : QrRenderer {
                 roundCaps = design.lineStyle.roundCaps,
                 lengthFraction = design.lineStyle.lengthFraction,
                 variant = design.lineStyle.variant,
-                rngMode = design.resampleStyle.rngMode
+                rngMode = design.resampleStyle.rngMode,
+                randomSource = design.lineStyle.randomSource
             )
         )
 

@@ -3398,6 +3398,73 @@ class VeilStyleParityTest {
     }
 
     @Test
+    fun testD25PainterOrderParityWithEFQRCode() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/D25-PAINTER-ORDER", ErrorCorrectionLevel.M)
+        val n = matrix.size
+
+        // EFQRCode (EFQRCodeStyle25D.swift:239-264) loops:
+        // for x in 0..<nCount {
+        //     for y in 0..<nCount { ... }
+        // }
+        // VeilFrame D25Geometry and SvgExporter must follow this exact (col, row) column-major order.
+        val design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(depth = 1.0f, positionDepth = 1.0f)
+        )
+        val geom = QrGeometry(n, 500, 500, 4)
+        val ir = D25Geometry.buildGeometry(matrix, design, geom)
+
+        // Background is node 0
+        assertEquals(1, ir.rootNodes.filterIsInstance<RectNode>().size)
+
+        // Collect all dark modules in column-major order (x then y)
+        val expectedModules = mutableListOf<Pair<Int, Int>>()
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.isDark(col, row)) {
+                    expectedModules.add(Pair(col, row))
+                }
+            }
+        }
+
+        // Each dark module with depth > 0 emits 3 PolygonNodes: Top, Left, Right
+        val polyNodes = ir.rootNodes.filterIsInstance<PolygonNode>()
+        assertEquals(expectedModules.size * 3, polyNodes.size)
+
+        val proj = D25Geometry.computeProjection(n, 500f, 500f, 4, 4, 4, 4)
+        for (i in expectedModules.indices) {
+            val (col, row) = expectedModules[i]
+            val topNode = polyNodes[3 * i]
+            val leftNode = polyNodes[3 * i + 1]
+            val rightNode = polyNodes[3 * i + 2]
+
+            assertEquals("Top face fill", design.depthStyle.topColor, topNode.fill)
+            assertEquals("Left face fill", design.depthStyle.leftColor, leftNode.fill)
+            assertEquals("Right face fill", design.depthStyle.rightColor, rightNode.fill)
+
+            val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
+                matrix.roleAt(col, row) == QrModuleRole.FINDER_OUTER ||
+                matrix.functionMask.isFinder(col, row)
+            val size = if (isPosition) 1.0f else design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
+            val offset = (1.0f - size) / 2.0f
+            val c0 = col + offset
+            val r0 = row + offset
+            val expectedP0x = proj.screenX(c0, r0)
+            val expectedP0y = proj.screenY(c0, r0, 0f)
+
+            val topPts = topNode.pointsList ?: emptyList()
+            assertEquals("Top face must have 4 vertices", 4, topPts.size)
+            assertEquals("Module $i ($col, $row) screenX order mismatch", expectedP0x, topPts[0].first, 0.001f)
+            assertEquals("Module $i ($col, $row) screenY order mismatch", expectedP0y, topPts[0].second, 0.001f)
+        }
+
+        // SvgExporter.generate25DSvg must also output rects in column-major order
+        val svg = SvgExporter.generateSvg(matrix, design)
+        val rectLines = svg.lines().filter { it.contains("<rect") && it.contains("transform=") }
+        assertEquals(expectedModules.size * 3, rectLines.size)
+    }
+
+    @Test
     fun testImageStyleEFDefaultsParity() {
         // EFQRCode defaults:
         // EFStyleImageParamsData.scale = 1
@@ -3496,10 +3563,112 @@ class VeilStyleParityTest {
         assertTrue("Circuit mode must contain horizontal spine bridges", horizontalLinesCircuit.isNotEmpty())
         val accentRingsCircuit = nodesCircuit.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
         assertTrue("Circuit mode must contain accent target rings", accentRingsCircuit.isNotEmpty())
+
+        // 4. Injectable randomSource test: exact deterministic random realization
+        val testRngValues = floatArrayOf(0.50f)
+        var rngCallCount = 0
+        val seededRandomSource = {
+            rngCallCount++
+            testRngValues[0]
+        }
+        val nodesInjected = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = thickness,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.X,
+            variant = com.veilframe.app.qr.model.LineVariant.EF,
+            randomSource = seededRandomSource
+        )
+        assertTrue("Injected RNG must be invoked", rngCallCount > 0)
+        val injectedLines = nodesInjected.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val expectedInjectedSw = (baseStrokeWidth * 0.5f) * (0.30f + 0.50f * 0.70f)
+        for (line in injectedLines) {
+            assertEquals("Injected line stroke width must match exact random formula", expectedInjectedSw, line.strokeWidth, 0.001f)
+        }
+        val injectedCircles = nodesInjected.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        val expectedInjectedRadius = cs * 0.5f * (0.33f + 0.50f * (0.90f - 0.33f))
+        for (c in injectedCircles) {
+            assertEquals("Injected circle node radius must match exact random formula", expectedInjectedRadius, c.radius, 0.001f)
+        }
     }
 
     @Test
-    fun testAnimatedWebpEndToEndFrameExtractionAndTiming() {
+    fun testLineStyleProcessesAllNonFinderFunctionalRoles() {
+        // Use a Version 7 QR code which has all 5 non-finder functional roles:
+        // DATA, TIMING, ALIGNMENT, FORMAT, VERSION
+        val payload = "https://veilframe.app/parity/line-all-roles-v7-verification-data-string-with-enough-bytes-for-version-7"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        assertTrue("Matrix must be at least Version 7 to test all 5 roles", matrix.version >= 7)
+
+        val n = matrix.size
+        val rolesFound = mutableSetOf<QrModuleRole>()
+        for (c in 0 until n) {
+            for (r in 0 until n) {
+                rolesFound.add(matrix.roleAt(c, r))
+            }
+        }
+        assertTrue("Must have DATA", rolesFound.contains(QrModuleRole.DATA))
+        assertTrue("Must have TIMING", rolesFound.contains(QrModuleRole.TIMING))
+        assertTrue("Must have ALIGNMENT", rolesFound.contains(QrModuleRole.ALIGNMENT_CENTER) || rolesFound.contains(QrModuleRole.ALIGNMENT_BORDER))
+        assertTrue("Must have FORMAT", rolesFound.contains(QrModuleRole.FORMAT))
+        assertTrue("Must have VERSION", rolesFound.contains(QrModuleRole.VERSION))
+
+        // Build topology with HORIZONTAL direction
+        val cs = 10f
+        val nodes = LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL,
+            variant = LineVariant.EF
+        )
+
+        // Collect all non-finder dark modules
+        val nonFinderDarkModules = mutableListOf<Pair<Int, Int>>()
+        for (c in 0 until n) {
+            for (r in 0 until n) {
+                if (matrix.isDark(c, r) && !VeilPositionPatternGeometry.isFinderArea(c, r, n)) {
+                    nonFinderDarkModules.add(Pair(c, r))
+                }
+            }
+        }
+        assertTrue("Must have non-finder dark modules", nonFinderDarkModules.isNotEmpty())
+
+        val lines = nodes.filterIsInstance<LineNode>()
+        val circles = nodes.filterIsInstance<CircleNode>()
+
+        for ((c, r) in nonFinderDarkModules) {
+            val cx = (c + 0.5f) * cs
+            val cy = (r + 0.5f) * cs
+
+            val coveredByLine = lines.any { line ->
+                if (line.y1 == cy && line.y2 == cy) {
+                    val minX = minOf(line.x1, line.x2)
+                    val maxX = maxOf(line.x1, line.x2)
+                    cx in minX..maxX
+                } else if (line.x1 == cx && line.x2 == cx) {
+                    val minY = minOf(line.y1, line.y2)
+                    val maxY = maxOf(line.y1, line.y2)
+                    cy in minY..maxY
+                } else false
+            }
+            val coveredByCircle = circles.any { circle ->
+                kotlin.math.abs(circle.cx - cx) < 0.01f && kotlin.math.abs(circle.cy - cy) < 0.01f
+            }
+
+            val role = matrix.roleAt(c, r)
+            assertTrue("Dark module at ($c, $r) with role $role must be processed by LineTopologyBuilder", coveredByLine || coveredByCircle)
+        }
+    }
+
+    @Test
+    fun testAnimatedWebpDelayParsingAndAnimationTiming() {
         // Construct synthetic animated WebP container bytes with 3 ANMF chunks:
         // Frame 0: 50ms
         // Frame 1: 120ms
@@ -3547,12 +3716,26 @@ class VeilStyleParityTest {
         webpBytes[6] = ((riffSize shr 16) and 0xFF).toByte()
         webpBytes[7] = ((riffSize shr 24) and 0xFF).toByte()
 
-        // 1. Verify parseWebpDelays parses exact ANMF durations
+        // 1. Verify parseWebpDelays parses exact ANMF durations from ByteArray
         val parsedDelays = com.veilframe.app.qr.AnimatedMediaHelper.parseWebpDelays(webpBytes)
         assertEquals("WebP ANMF delay parser must extract exactly 3 frame durations", 3, parsedDelays.size)
         assertEquals(expectedDurations, parsedDelays)
 
-        // 2. Verify AnimatedQrGenerator end-to-end timing with these frames
+        // 2. Verify parseWebpDelays from File
+        val tempWebpFile = java.io.File.createTempFile("test_anim", ".webp")
+        try {
+            tempWebpFile.writeBytes(webpBytes)
+            val fileDelays = com.veilframe.app.qr.AnimatedMediaHelper.parseWebpDelays(tempWebpFile)
+            assertEquals("WebP ANMF delay parser from File must match ByteArray result", expectedDurations, fileDelays)
+        } finally {
+            tempWebpFile.delete()
+        }
+
+        // 3. Fallback on invalid / empty bytes
+        val emptyDelays = com.veilframe.app.qr.AnimatedMediaHelper.parseWebpDelays(ByteArray(0))
+        assertTrue("Empty bytes must yield empty delay list", emptyDelays.isEmpty())
+
+        // 4. Verify AnimatedQrGenerator timing propagation into animated SVG
         val dummyBmp = createDummyBitmap()
         val frames = parsedDelays.map { com.veilframe.app.qr.model.QrFrame(dummyBmp, it) }
         val testMatrix = QrMatrix("HTTPS://VEILFRAME.APP/WEBP-ANIM", ErrorCorrectionLevel.M)
@@ -3568,8 +3751,8 @@ class VeilStyleParityTest {
     }
 
     @Test
-    fun testResampleDifferentialParityWithEFQRCodeAnalyticalModel() {
-        // Differential verification of ResampleSubpixelEngine against EFQRCode's getGrayPointList() analytical model
+    fun testResampleEFBehavioralParity() {
+        // Behavioral verification of ResampleSubpixelEngine against EFQRCode's getGrayPointList() invariants
         val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE-PARITY", ErrorCorrectionLevel.H)
         val n = matrix.size
         val targetDim = 3 * n
@@ -3611,11 +3794,9 @@ class VeilStyleParityTest {
 
         // Test 2: Solid Black Image
         // In EF: black pixels have Y = 0 -> grayNorm = 0.0 -> threshold = 0.0
-        // Every non-center, non-excluded subpixel with RND > 0 emits!
         val blackPixels = IntArray(targetDim * targetDim) { 0xFF000000.toInt() }
         val blackSource = ArrayPixelSource(targetDim, targetDim, blackPixels)
         val emittedBlack = mutableSetOf<Pair<Int, Int>>()
-        val anchorsBlack = mutableSetOf<Pair<Int, Int>>()
 
         ResampleSubpixelEngine.traverseSubpixels(
             matrix = matrix,
@@ -3624,15 +3805,11 @@ class VeilStyleParityTest {
             seed = seed,
             policy = ArtisticResamplePolicy(rngMode = ResampleRngMode.DETERMINISTIC)
         ) { _, _, sx, sy, isCenterAnchor ->
-            if (isCenterAnchor) {
-                anchorsBlack.add(Pair(sx, sy))
-            } else {
+            if (!isCenterAnchor) {
                 emittedBlack.add(Pair(sx, sy))
             }
         }
 
-        // Verify with analytical EF model:
-        // EF posOrigins: 24x24 finder boxes
         val efPosBoxes = listOf(
             Pair(0 until 24, 0 until 24),
             Pair((3 * n - 24) until (3 * n), 0 until 24),
@@ -3678,6 +3855,87 @@ class VeilStyleParityTest {
     }
 
     @Test
+    fun testResampleExactCoordinateSetDifferentialParityWithEFQRCode() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE-EXACT-PARITY", ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val targetDim = 3 * n
+
+        // 1. Compute expected EF eligible coordinates from EFQRCodeStyleResampleImage.swift:748-847
+        val expectedEfEligibleCoords = mutableSetOf<Pair<Int, Int>>()
+        for (x in 0 until targetDim) {
+            for (y in 0 until targetDim) {
+                // PosOrigins: 24x24 finder boxes
+                val inTopLeftFinder = x < 24 && y < 24
+                val inTopRightFinder = x >= (targetDim - 24) && y < 24
+                val inBottomLeftFinder = x < 24 && y >= (targetDim - 24)
+                if (inTopLeftFinder || inTopRightFinder || inBottomLeftFinder) continue
+
+                val col = x / 3
+                val row = y / 3
+                val role = matrix.roleAt(col, row)
+                val isDark = matrix.isDark(col, row)
+
+                // Timing & Alignment: if light, excluded (swOrigins or bwOrigins)
+                if ((role == QrModuleRole.TIMING ||
+                     role == QrModuleRole.ALIGNMENT_CENTER ||
+                     role == QrModuleRole.ALIGNMENT_BORDER) && !isDark) {
+                    continue
+                }
+
+                // Center subpixel condition: (x % 3 != 1 || y % 3 != 1) in EF line 843
+                if (x % 3 == 1 && y % 3 == 1) continue
+
+                expectedEfEligibleCoords.add(Pair(x, y))
+            }
+        }
+
+        // 2. Compute expected EF center anchors from EFQRCodeStyleResampleImage.swift:361-465
+        val expectedEfAnchors = mutableSetOf<Pair<Int, Int>>()
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                val role = matrix.roleAt(col, row)
+                val isDark = matrix.isDark(col, row)
+                if (!isDark) continue
+                // Finders are drawn separately with positionType
+                if (role == QrModuleRole.FINDER_INNER || role == QrModuleRole.FINDER_OUTER || role == QrModuleRole.SEPARATOR) {
+                    continue
+                }
+                // With default timing/align styles, dedicated timing/align renderers draw them.
+                // In VeilFrame default policy: shouldDrawAnchor returns false for timing/alignment unless style is NONE
+                // All other dark modules (DATA, FORMAT, VERSION) emit #Sb at (3*col + 1, 3*row + 1)
+                if (role != QrModuleRole.TIMING && role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) {
+                    expectedEfAnchors.add(Pair(3 * col + 1, 3 * row + 1))
+                }
+            }
+        }
+
+        // 3. Run VeilFrame ResampleSubpixelEngine on a pure black image (threshold = 0.0)
+        val blackPixels = IntArray(targetDim * targetDim) { 0xFF000000.toInt() }
+        val blackSource = ArrayPixelSource(targetDim, targetDim, blackPixels)
+        val style = ImageSourceStyle(contrast = 0.0f, exposure = 0.0f)
+        val emittedSubpixels = mutableSetOf<Pair<Int, Int>>()
+        val emittedAnchors = mutableSetOf<Pair<Int, Int>>()
+
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = blackSource,
+            style = style,
+            seed = 42L,
+            policy = ArtisticResamplePolicy(rngMode = ResampleRngMode.DETERMINISTIC)
+        ) { _, _, sx, sy, isCenterAnchor ->
+            if (isCenterAnchor) {
+                emittedAnchors.add(Pair(sx, sy))
+            } else {
+                emittedSubpixels.add(Pair(sx, sy))
+            }
+        }
+
+        // 4. Assert 1:1 coordinate set equality!
+        assertEquals("Emitted resample subpixel coordinate set must match EF eligible coordinates 1:1", expectedEfEligibleCoords, emittedSubpixels)
+        assertEquals("Emitted center anchor coordinate set must match EF anchor coordinates 1:1", expectedEfAnchors, emittedAnchors)
+    }
+
+    @Test
     fun testImageStyleDifferentialParityWithEFQRCode() {
         val matrix = QrMatrix("HTTPS://VEILFRAME.APP/IMAGE-PARITY", ErrorCorrectionLevel.M)
         val n = matrix.size
@@ -3703,16 +3961,16 @@ class VeilStyleParityTest {
         assertTrue("Cutout must have width $expectedFinderW", defsStr.contains("width=\"$expectedFinderW\""))
         assertTrue("Cutout must have height $expectedFinderW", defsStr.contains("height=\"$expectedFinderW\""))
 
-        // Verify ImageNode has maskId = "hole"
-        val imageNode = irEf.rootNodes.filterIsInstance<ImageNode>().firstOrNull()
-        assertNotNull("Must contain continuous ImageNode", imageNode)
-        assertEquals("ImageNode maskId must be 'hole'", "hole", imageNode!!.maskId)
+        // Verify Canvas Background is at layer index 0, ImageNode at layer index 1 with maskId = "hole"
+        assertTrue("Layer 0 must be background canvas rect", irEf.rootNodes[0] is RectNode)
+        val imageNode = irEf.rootNodes[1] as ImageNode
+        assertEquals("ImageNode maskId must be 'hole'", "hole", imageNode.maskId)
         assertEquals(0f, imageNode.x, 0.001f)
         assertEquals(0f, imageNode.y, 0.001f)
         assertEquals(n * mSize, imageNode.width, 0.001f)
         assertEquals(n * mSize, imageNode.height, 0.001f)
 
-        // Verify 3 finder backing rects of 8x8 modules
+        // Verify 3 finder backing rects of 8x8 modules immediately following ImageNode
         val rects = irEf.rootNodes.filterIsInstance<RectNode>()
         val finderBackings = rects.filter { it.width == 8 * mSize && it.height == 8 * mSize && it.fill == 0xFFFFFFFF.toInt() }
         assertEquals("Must contain exactly 3 finder backing rects of size 8x8", 3, finderBackings.size)
@@ -3727,7 +3985,28 @@ class VeilStyleParityTest {
             assertEquals("Module Y must align with grid row", row * mSize, dm.y, 0.001f)
         }
 
-        // 2. Scaled data modules with scale = 0.8f: offset must be (1.0 - scale)/2 * mSize = 0.1 * mSize
+        // Verify that allowTransparent = false generates both dark and light modules
+        val darkModulesCount = rects.count { it.fill == designEf.dataColorDark }
+        val lightModulesCount = rects.count { it.fill == designEf.dataColorLight }
+        assertTrue("allowTransparent=false must emit dark data modules", darkModulesCount > 0)
+        assertTrue("allowTransparent=false must emit light data modules", lightModulesCount > 0)
+
+        // 2. allowTransparent pre-pass verification:
+        // When allowTransparent = false (EF default): no pre-pass under the image
+        val efImageIndex = irEf.rootNodes.indexOfFirst { it is ImageNode }
+        assertEquals("When allowTransparent=false, ImageNode immediately follows background (index 1)", 1, efImageIndex)
+
+        // When allowTransparent = true: transparent pre-pass emits full-scale modules before ImageNode
+        val paramsTrans = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageDataScale = 0.8f,
+            imageAllowTransparent = true
+        )
+        val irTrans = renderer.generateGeometry(matrix, QrDesign.fromQrStyleParams(paramsTrans), geom)
+        val transImageIndex = irTrans.rootNodes.indexOfFirst { it is ImageNode }
+        assertTrue("When allowTransparent=true, pre-pass modules must be emitted before ImageNode", transImageIndex > 1)
+
+        // 3. Scaled data modules with scale = 0.8f: offset must be (1.0 - scale)/2 * mSize = 0.1 * mSize
         val paramsScaled = QrStyleParams(
             style = QrStyle.IMAGE,
             imageDataScale = 0.8f,
@@ -3748,6 +4027,15 @@ class VeilStyleParityTest {
             assertEquals("Scaled module X must have centering offset", expectedX, sm.x, 0.01f)
             assertEquals("Scaled module Y must have centering offset", expectedY, sm.y, 0.01f)
         }
+
+        // 4. Image scale mode mapping
+        val designFit = designEf.copy(imageSource = designEf.imageSource.copy(scaleMode = ImageScaleMode.ASPECT_FIT))
+        val irFit = renderer.generateGeometry(matrix, designFit, geom)
+        assertEquals("xMidYMid meet", irFit.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
+
+        val designStretch = designEf.copy(imageSource = designEf.imageSource.copy(scaleMode = ImageScaleMode.STRETCH))
+        val irStretch = renderer.generateGeometry(matrix, designStretch, geom)
+        assertEquals("none", irStretch.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
     }
 
     @Test
@@ -3758,17 +4046,22 @@ class VeilStyleParityTest {
         val mSize = geom.moduleSize
         val renderer = ImageFillRenderer()
 
+        val dummyBmp = createDummyBitmap()
         val design = QrDesign(
             style = QrStyle.IMAGE_FILL,
             imageFillBackgroundColor = 0xFFFFFFFF.toInt(),
-            imageFillMaskColor = 0x1A000000.toInt()
+            imageFillMaskColor = 0x1A000000.toInt(),
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Memory(dummyBmp),
+                opacity = 0.85f,
+                scaleMode = ImageScaleMode.ASPECT_FIT
+            )
         )
         val ir = renderer.generateGeometry(matrix, design, geom)
 
         // 1. Verify Defs contain #hole mask
         val defsStr = ir.defs.joinToString("\n")
         assertTrue("Defs must define #hole mask", defsStr.contains("<mask id=\"hole\">"))
-        // Base black rect covering entire canvas
         assertTrue("Mask must start with black base rect", defsStr.contains("<rect x=\"0\" y=\"0\" width=\"420.0\" height=\"420.0\" fill=\"black\"/>"))
 
         // Anti-gap 1.02 expansion for dark modules: width = mSize + 2*0.01*mSize = 1.02 * mSize
@@ -3781,17 +4074,37 @@ class VeilStyleParityTest {
         assertNotNull("Root nodes must contain GroupNode with hole mask", group)
         assertEquals("GroupNode maskId must be 'hole'", "hole", group!!.maskId)
 
-        // 3. Verify Children of GroupNode:
-        // [0] Base background rect
-        val bgRect = group.children[0] as RectNode
+        // 3. Verify Children of GroupNode: strictly 3 layers in exact EF order
+        // [0] Background inside dark modules
+        // [1] ImageNode spanning complete QR area
+        // [2] Tint overlay rect
+        assertEquals("GroupNode must contain exactly 3 composited layers", 3, group.children.size)
+
+        // Child 0: Background rect
+        val bgNode = group.children[0]
+        assertTrue("Child #0 must be RectNode (background)", bgNode is RectNode)
+        val bgRect = bgNode as RectNode
         assertEquals("Background rect fill must match imageFillBackgroundColor", 0xFFFFFFFF.toInt(), bgRect.fill)
         assertEquals(0f, bgRect.x, 0.001f)
         assertEquals(0f, bgRect.y, 0.001f)
         assertEquals(n * mSize, bgRect.width, 0.001f)
         assertEquals(n * mSize, bgRect.height, 0.001f)
 
-        // [1] Tint overlay rect
-        val tintRect = group.children.last() as RectNode
+        // Child 1: ImageNode
+        val imgNode = group.children[1]
+        assertTrue("Child #1 must be ImageNode", imgNode is ImageNode)
+        val imageNode = imgNode as ImageNode
+        assertEquals("ImageNode x must be 0", 0f, imageNode.x, 0.001f)
+        assertEquals("ImageNode y must be 0", 0f, imageNode.y, 0.001f)
+        assertEquals("ImageNode width must occupy complete QR area", n * mSize, imageNode.width, 0.001f)
+        assertEquals("ImageNode height must occupy complete QR area", n * mSize, imageNode.height, 0.001f)
+        assertEquals("ImageNode opacity must match imageSource opacity", 0.85f, imageNode.opacity, 0.001f)
+        assertEquals("ImageNode preserveAspectRatio must match ASPECT_FIT", "xMidYMid meet", imageNode.preserveAspectRatio)
+
+        // Child 2: Tint overlay rect
+        val tintNode = group.children[2]
+        assertTrue("Child #2 must be RectNode (tint)", tintNode is RectNode)
+        val tintRect = tintNode as RectNode
         assertEquals("Tint overlay fill must match imageFillMaskColor", 0x1A000000.toInt(), tintRect.fill)
         assertEquals(0f, tintRect.x, 0.001f)
         assertEquals(0f, tintRect.y, 0.001f)

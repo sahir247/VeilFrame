@@ -812,14 +812,9 @@ object SvgExporter {
         val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
         val posScale = 1.0f
 
-        // Iterate in diagonal wave order (col + row from 0 to 2*(n-1))
-        // Back-to-front painter's order ensures foreground blocks properly occlude background blocks
-        for (diagonal in 0 until (2 * n - 1)) {
-            val minCol = maxOf(0, diagonal - (n - 1))
-            val maxCol = minOf(n - 1, diagonal)
-
-            for (col in minCol..maxCol) {
-                val row = diagonal - col
+        // Iterate in EFQRCode order (x in 0..<n, y in 0..<n)
+        for (col in 0 until n) {
+            for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
                 val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
                     matrix.roleAt(col, row) == QrModuleRole.FINDER_OUTER ||

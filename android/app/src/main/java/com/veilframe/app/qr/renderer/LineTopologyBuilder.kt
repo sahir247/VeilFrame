@@ -61,7 +61,8 @@ object LineTopologyBuilder {
         roundCaps: Boolean = true,
         lengthFraction: Float = 1.0f,
         variant: com.veilframe.app.qr.model.LineVariant = com.veilframe.app.qr.model.LineVariant.EF,
-        rngMode: ResampleRngMode = ResampleRngMode.DETERMINISTIC
+        rngMode: ResampleRngMode = ResampleRngMode.DETERMINISTIC,
+        randomSource: (() -> Float)? = null
     ): List<QrGeometryNode> {
         val n = matrix.size
         val nodes = mutableListOf<QrGeometryNode>()
@@ -312,7 +313,9 @@ object LineTopologyBuilder {
                             if (end > 1) {
                                 for (i in 0 until end) avaUp[x + i][y - i] = false
                                 val sw = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
-                                    val factor = if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                                    val factor = if (randomSource != null) {
+                                        0.30f + randomSource() * 0.70f
+                                    } else if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
                                         0.30f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * 0.70f
                                     } else {
                                         pseudoRandom(x, y, 1, 0.30f, 1.0f)
@@ -342,7 +345,9 @@ object LineTopologyBuilder {
                             if (end > 1) {
                                 for (i in 0 until end) avaDown[x + i][y + i] = false
                                 val sw = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
-                                    val factor = if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                                    val factor = if (randomSource != null) {
+                                        0.30f + randomSource() * 0.70f
+                                    } else if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
                                         0.30f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * 0.70f
                                     } else {
                                         pseudoRandom(x, y, 2, 0.30f, 1.0f)
@@ -429,7 +434,9 @@ object LineTopologyBuilder {
                 if (direction == LineDirection.X) {
                     // Variable radius node circle: EFQRCode canonical formula is 0.5 * random(0.33...0.9)
                     val rFactor = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
-                        if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                        if (randomSource != null) {
+                            0.33f + randomSource() * (0.90f - 0.33f)
+                        } else if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
                             0.33f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * (0.90f - 0.33f)
                         } else {
                             pseudoRandom(x, y, 3, 0.33f, 0.90f)
