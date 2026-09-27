@@ -10,6 +10,7 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.exporter.SvgExporter
+import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.*
 import org.junit.Assert.*
@@ -2810,6 +2811,24 @@ class VeilStyleParityTest {
         val bottomFill = ImageScaleResolver.sample(pixelSource4x3, 13f / 18f, 1.0f, ImageScaleMode.ASPECT_FILL)
         assertEquals("Bottom pixel under ASPECT_FILL must survive from Row 2, Col 2", 0xFFBBBBBB.toInt(), bottomFill.color)
 
+        // Verify Col 1 across Row 0 and Row 2 under ASPECT_FILL:
+        val col1Row0Fill = ImageScaleResolver.sample(pixelSource4x3, 5f / 18f, 0.0f, ImageScaleMode.ASPECT_FILL)
+        assertEquals("Col 1 Row 0 under ASPECT_FILL must survive as 0xFF222222", 0xFF222222.toInt(), col1Row0Fill.color)
+        val col1Row2Fill = ImageScaleResolver.sample(pixelSource4x3, 5f / 18f, 1.0f, ImageScaleMode.ASPECT_FILL)
+        assertEquals("Col 1 Row 2 under ASPECT_FILL must survive as 0xFFAAAAAA", 0xFFAAAAAA.toInt(), col1Row2Fill.color)
+
+        // Mathematical proof that Col 0 and Col 3 are cropped out in ASPECT_FILL:
+        // Crop window horizontally is [0.125, 0.875], so x=0.0 and x=1.0 never map to integer index 0 or 3.
+        // Leftmost sample u=0.0 blends Col 0 (0x55) and Col 1 (0x66) with weights 0.625 / 0.375 -> 0xFF5B5B5B != 0xFF555555
+        val leftEdgeFill = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.5f, ImageScaleMode.ASPECT_FILL)
+        assertNotEquals("Col 0 pure center is cropped out under ASPECT_FILL", 0xFF555555.toInt(), leftEdgeFill.color)
+        assertEquals("Left edge under ASPECT_FILL samples interpolated inner edge", 0xFF5B5B5B.toInt(), leftEdgeFill.color)
+
+        // Rightmost sample u=1.0 blends Col 2 (0x77) and Col 3 (0x88) with weights 0.375 / 0.625 -> 0xFF828282 != 0xFF888888
+        val rightEdgeFill = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.5f, ImageScaleMode.ASPECT_FILL)
+        assertNotEquals("Col 3 pure center is cropped out under ASPECT_FILL", 0xFF888888.toInt(), rightEdgeFill.color)
+        assertEquals("Right edge under ASPECT_FILL samples interpolated inner edge", 0xFF828282.toInt(), rightEdgeFill.color)
+
         // 6b. ASPECT_FIT into 1:1 destination:
         // Width is fitted (all 4 columns survive horizontally).
         // Height is letterboxed with top and bottom margins (v < 0.125 and v >= 0.875).
@@ -2821,20 +2840,36 @@ class VeilStyleParityTest {
         assertTrue("Bottom margin under ASPECT_FIT must be padding", bottomPadding.isPadding)
         assertEquals("Bottom margin must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), bottomPadding.color)
 
-        // Horizontal span across active area verifies all 4 columns survive at v = 0.5f (Row 1):
-        // fx = u * 3: u=0.0 -> Col 0, u=1/3 -> Col 1, u=2/3 -> Col 2, u=1.0 -> Col 3
-        val col0 = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        val col1 = ImageScaleResolver.sample(pixelSource4x3, 1f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        val col2 = ImageScaleResolver.sample(pixelSource4x3, 2f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        val col3 = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
-        assertFalse(col0.isPadding)
-        assertFalse(col1.isPadding)
-        assertFalse(col2.isPadding)
-        assertFalse(col3.isPadding)
-        assertEquals("Col 0 must survive", 0xFF555555.toInt(), col0.color)
-        assertEquals("Col 1 must survive", 0xFF666666.toInt(), col1.color)
-        assertEquals("Col 2 must survive", 0xFF777777.toInt(), col2.color)
-        assertEquals("Col 3 must survive", 0xFF888888.toInt(), col3.color)
+        // All 12 pixels across the 4x3 source grid survive horizontally across all 3 rows under ASPECT_FIT:
+        // Row 0 at v = 0.125f:
+        val r0c0 = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.125f, ImageScaleMode.ASPECT_FIT)
+        val r0c1 = ImageScaleResolver.sample(pixelSource4x3, 1f / 3f, 0.125f, ImageScaleMode.ASPECT_FIT)
+        val r0c2 = ImageScaleResolver.sample(pixelSource4x3, 2f / 3f, 0.125f, ImageScaleMode.ASPECT_FIT)
+        val r0c3 = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.125f, ImageScaleMode.ASPECT_FIT)
+        assertFalse(r0c0.isPadding); assertEquals("P(0,0) must survive", 0xFF111111.toInt(), r0c0.color)
+        assertFalse(r0c1.isPadding); assertEquals("P(1,0) must survive", 0xFF222222.toInt(), r0c1.color)
+        assertFalse(r0c2.isPadding); assertEquals("P(2,0) must survive", 0xFF333333.toInt(), r0c2.color)
+        assertFalse(r0c3.isPadding); assertEquals("P(3,0) must survive", 0xFF444444.toInt(), r0c3.color)
+
+        // Row 1 at v = 0.500f:
+        val r1c0 = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val r1c1 = ImageScaleResolver.sample(pixelSource4x3, 1f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val r1c2 = ImageScaleResolver.sample(pixelSource4x3, 2f / 3f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        val r1c3 = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.5f, ImageScaleMode.ASPECT_FIT)
+        assertFalse(r1c0.isPadding); assertEquals("P(0,1) must survive", 0xFF555555.toInt(), r1c0.color)
+        assertFalse(r1c1.isPadding); assertEquals("P(1,1) must survive", 0xFF666666.toInt(), r1c1.color)
+        assertFalse(r1c2.isPadding); assertEquals("P(2,1) must survive", 0xFF777777.toInt(), r1c2.color)
+        assertFalse(r1c3.isPadding); assertEquals("P(3,1) must survive", 0xFF888888.toInt(), r1c3.color)
+
+        // Row 2 at v = 0.8749f (just inside active area before v >= 0.875 padding boundary):
+        val r2c0 = ImageScaleResolver.sample(pixelSource4x3, 0.0f, 0.8749f, ImageScaleMode.ASPECT_FIT)
+        val r2c1 = ImageScaleResolver.sample(pixelSource4x3, 1f / 3f, 0.8749f, ImageScaleMode.ASPECT_FIT)
+        val r2c2 = ImageScaleResolver.sample(pixelSource4x3, 2f / 3f, 0.8749f, ImageScaleMode.ASPECT_FIT)
+        val r2c3 = ImageScaleResolver.sample(pixelSource4x3, 1.0f, 0.8749f, ImageScaleMode.ASPECT_FIT)
+        assertFalse(r2c0.isPadding); assertEquals("P(0,2) must survive", 0xFF999999.toInt(), r2c0.color)
+        assertFalse(r2c1.isPadding); assertEquals("P(1,2) must survive", 0xFFAAAAAA.toInt(), r2c1.color)
+        assertFalse(r2c2.isPadding); assertEquals("P(2,2) must survive", 0xFFBBBBBB.toInt(), r2c2.color)
+        assertFalse(r2c3.isPadding); assertEquals("P(3,2) must survive", 0xFFCCCCCC.toInt(), r2c3.color)
     }
 
     @Test
@@ -3001,28 +3036,136 @@ class VeilStyleParityTest {
 
     @Test
     fun testParameterNormalizationContractAndEfCompatibilityRange() {
-        // EF Compatibility Range:
-        // 1. depth in [0.0, inf)
-        val normalDepth = 1.0f
-        assertEquals(1.0f, normalDepth.coerceAtLeast(0f), 0.001f)
+        val testMatrix = QrMatrix(size = 21, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
+            col == 10 && row == 10
+        }
+        val geom = QrGeometry(matrixSize = 21, outputWidth = 400, outputHeight = 400, quietZoneModules = 0)
 
-        // 2. line thickness in (0.0, 1.0]
-        val normalThickness = 0.5f
-        assertEquals(0.5f, normalThickness.coerceIn(0.05f, 0.85f), 0.001f)
+        // =====================================================================
+        // 1. Depth Normalization: Normal [0.0, 5.0] vs Negative Clamping [0.0, inf)
+        // =====================================================================
+        // Normal Depth (1.0f in EF range): Generates 3 faces (1 Top + 2 Extrusions)
+        val normalD25Design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = 1.0f,
+                positionDepth = 1.0f,
+                topColor = 0xFF00FF00.toInt(),
+                leftColor = 0xFFFF0000.toInt(),
+                rightColor = 0xFF0000FF.toInt()
+            )
+        )
+        val normalD25Ir = D25Geometry.buildGeometry(testMatrix, normalD25Design, geom)
+        val normalPolys = normalD25Ir.rootNodes.filterIsInstance<PolygonNode>()
+        assertEquals("Normal depth (1.0f) generates exactly 3 faces (Top, Left, Right)", 3, normalPolys.size)
 
-        // 3. icon percentage in [0.0, 0.33]
-        val normalIconPct = 0.2f
-        assertEquals(0.2f, minOf(normalIconPct, 0.33f), 0.001f)
+        // Defensive Negative Depth (-2.5f clamped to 0.0f): Generates ONLY 1 Top Face (0 inverted extrusion faces)
+        val negativeD25Design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = -2.5f,
+                positionDepth = -2.5f,
+                topColor = 0xFF00FF00.toInt(),
+                leftColor = 0xFFFF0000.toInt(),
+                rightColor = 0xFF0000FF.toInt()
+            )
+        )
+        val negD25Ir = D25Geometry.buildGeometry(testMatrix, negativeD25Design, geom)
+        val negPolys = negD25Ir.rootNodes.filterIsInstance<PolygonNode>()
+        assertEquals("Negative depth (-2.5f -> 0.0f) must defensively clamp and emit ONLY Top face", 1, negPolys.size)
+        assertEquals("Sole emitted face must be Top face (Green)", 0xFF00FF00.toInt(), negPolys[0].fill)
 
-        // VeilFrame Safe Normalized Mode (Defensive clamping for extreme/negative values):
-        val negativeDepth = -2.5f
-        assertEquals("Negative depth must be clamped to 0.0", 0.0f, negativeDepth.coerceAtLeast(0f), 0.001f)
+        // =====================================================================
+        // 2. Line Thickness: Normal (0.5f) vs Negative (-0.1f) vs Excessive (2.0f)
+        // =====================================================================
+        val lineMatrix = QrMatrix(size = 21, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
+            (col == 10 || col == 11) && row == 10
+        }
+        val cellSize = 10f
+        // Normal Thickness (0.5f): stroke width = 0.5 * 10f = 5.0f
+        val normalLineNodes = LineTopologyBuilder.buildTopology(
+            matrix = lineMatrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cellSize,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL
+        )
+        val normalLine = normalLineNodes.filterIsInstance<LineNode>().firstOrNull()
+        assertNotNull("Normal line node must be emitted", normalLine)
+        assertEquals("Normal line thickness (0.5f) evaluates to 5.0f stroke width", 5.0f, normalLine!!.strokeWidth, 0.001f)
 
-        val negativeThickness = -0.1f
-        assertEquals("Negative thickness must be clamped to safe minimum", 0.05f, negativeThickness.coerceIn(0.05f, 0.85f), 0.001f)
+        // Defensive Negative Thickness (-0.1f clamped to 0.05f): stroke width = 0.05 * 10f = 0.5f
+        val negLineNodes = LineTopologyBuilder.buildTopology(
+            matrix = lineMatrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cellSize,
+            thicknessFraction = -0.1f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL
+        )
+        val negLine = negLineNodes.filterIsInstance<LineNode>().firstOrNull()
+        assertNotNull(negLine)
+        assertEquals("Negative line thickness (-0.1f -> 0.05f) clamped to safe minimum 0.5f", 0.5f, negLine!!.strokeWidth, 0.001f)
 
-        val excessiveIconPct = 0.85f
-        assertEquals("Excessive icon percentage must be clamped to max 0.33 to preserve QR readability", 0.33f, minOf(excessiveIconPct, 0.33f), 0.001f)
+        // Excessive Thickness (2.0f clamped to 0.85f): stroke width = 0.85 * 10f = 8.5f
+        val excessiveLineNodes = LineTopologyBuilder.buildTopology(
+            matrix = lineMatrix,
+            ox = 0f,
+            oy = 0f,
+            cs = cellSize,
+            thicknessFraction = 2.0f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL
+        )
+        val excessiveLine = excessiveLineNodes.filterIsInstance<LineNode>().firstOrNull()
+        assertNotNull(excessiveLine)
+        assertEquals("Excessive line thickness (2.0f -> 0.85f) clamped to safe maximum 8.5f", 8.5f, excessiveLine!!.strokeWidth, 0.001f)
+
+        // =====================================================================
+        // 3. Data Scale Normalization: Normal (0.85f) vs Excessive (3.5f) vs Negative (-0.5f)
+        // =====================================================================
+        // Normal dataScale (0.85f): preserved
+        val paramsNormalScale = QrStyleParams(style = QrStyle.IMAGE, imageDataScale = 0.85f)
+        val designNormalScale = QrDesign.fromQrStyleParams(paramsNormalScale)
+        assertEquals("Normal imageDataScale (0.85f) preserved", 0.85f, designNormalScale.imageDataScale!!, 0.001f)
+
+        // Excessive dataScale (3.5f clamped to 1.0f):
+        val paramsExcessiveScale = QrStyleParams(style = QrStyle.IMAGE, imageDataScale = 3.5f)
+        val designExcessiveScale = QrDesign.fromQrStyleParams(paramsExcessiveScale)
+        assertEquals("Excessive imageDataScale (3.5f -> 1.0f) clamped to max 1.0f", 1.0f, designExcessiveScale.imageDataScale!!, 0.001f)
+
+        // Negative dataScale (-0.5f clamped to 0.05f):
+        val paramsNegativeScale = QrStyleParams(style = QrStyle.IMAGE, imageDataScale = -0.5f)
+        val designNegativeScale = QrDesign.fromQrStyleParams(paramsNegativeScale)
+        assertEquals("Negative imageDataScale (-0.5f -> 0.05f) clamped to min 0.05f", 0.05f, designNegativeScale.imageDataScale!!, 0.001f)
+
+        // =====================================================================
+        // 4. Position Size, Timing Size, Align Size Normalization
+        // =====================================================================
+        val paramsSizes = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imagePositionSize = 0.8f,
+            imageTimingSize = 0.6f,
+            imageAlignSize = 0.7f
+        )
+        val designSizes = QrDesign.fromQrStyleParams(paramsSizes)
+        assertEquals("imagePositionSize preserved", 0.8f, designSizes.positionSize, 0.001f)
+        assertEquals("imageTimingSize preserved", 0.6f, designSizes.timingSize, 0.001f)
+        assertEquals("imageAlignSize preserved", 0.7f, designSizes.alignSize, 0.001f)
+
+        // =====================================================================
+        // 5. Logo Fraction / Icon Percentage Safety Guard
+        // =====================================================================
+        val normalLogo = LogoStyle(scaleFraction = 0.20f)
+        assertEquals(0.20f, normalLogo.scaleFraction, 0.001f)
+
+        // Defensive guard ensures logo does not obscure QR modules beyond recovery:
+        val excessiveLogoFraction = 0.85f
+        val clampedLogoFraction = excessiveLogoFraction.coerceIn(0.10f, 0.35f)
+        assertEquals("Excessive logo fraction (0.85f -> 0.35f) clamped to safe maximum", 0.35f, clampedLogoFraction, 0.001f)
     }
 
     // =========================================================================
