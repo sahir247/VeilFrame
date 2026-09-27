@@ -182,16 +182,17 @@ class QrGenerateTabFragment : Fragment() {
             val mimeType = ctx.contentResolver.getType(uri) ?: ""
             val uriStr = uri.toString().lowercase(java.util.Locale.ROOT)
             val isGif = mimeType.equals("image/gif", ignoreCase = true) || uriStr.endsWith(".gif")
+            val isWebp = mimeType.equals("image/webp", ignoreCase = true) || uriStr.endsWith(".webp")
             val isVideo = mimeType.startsWith("video/", ignoreCase = true) ||
                 uriStr.endsWith(".mp4") || uriStr.endsWith(".mov") || uriStr.endsWith(".webm")
 
-            if (isGif || isVideo) {
+            if (isGif || isWebp || isVideo) {
                 val frames = com.veilframe.app.qr.AnimatedMediaHelper.extractFrames(ctx, uri)
                 if (frames.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         if (isAdded) {
                             vm.updateAnimatedFrames(frames)
-                            val label = if (isGif) "GIF" else "video"
+                            val label = if (isGif) "GIF" else if (isWebp) "WebP" else "video"
                             android.widget.Toast.makeText(requireContext(), "Imported $label (${frames.size} frames)", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }

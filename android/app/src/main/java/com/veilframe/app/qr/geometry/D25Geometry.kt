@@ -34,7 +34,9 @@ object D25Geometry {
         val transX: Float,
         val transY: Float,
         val vbX: Float,
-        val vbY: Float
+        val vbY: Float,
+        val vbW: Float = 0f,
+        val vbH: Float = 0f
     ) {
         fun screenX(u: Float, v: Float): Float {
             val isoX = SQ3H * (u - v)
@@ -74,7 +76,7 @@ object D25Geometry {
         val transX = (outputWidth - vbW * scale) / 2f
         val transY = (outputHeight - vbH * scale) / 2f
 
-        return Projection(scale, transX, transY, vbX, vbY)
+        return Projection(scale, transX, transY, vbX, vbY, vbW, vbH)
     }
 
     /**
@@ -104,7 +106,7 @@ object D25Geometry {
         val transX = (outputWidth - vbW * scale) / 2f
         val transY = (outputHeight - vbH * scale) / 2f
 
-        return Projection(scale, transX, transY, vbX, vbY)
+        return Projection(scale, transX, transY, vbX, vbY, vbW, vbH)
     }
 
     fun computeProjection(

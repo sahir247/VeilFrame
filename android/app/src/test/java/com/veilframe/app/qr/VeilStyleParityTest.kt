@@ -3220,84 +3220,128 @@ class VeilStyleParityTest {
 
     @Test
     fun testD25AffineTransformVertexParityWithEFQRCode() {
-        // Analytical proof that D25Geometry 3-face polygons mathematically match
-        // EFQRCode's SVG affine transforms:
+        // Multi-configuration differential proof that D25Geometry 3-face polygons mathematically match
+        // EFQRCode's SVG affine transforms across multiple module positions, heights, and scales:
         // Top:   matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)
-        // Left:  matrix(...) translate(c + 1, r) skewY(45) applied to [0..h] x [0..1]
-        // Right: matrix(...) translate(c, r + 1) skewX(45) applied to [0..1] x [0..h]
+        // Left:  matrix(...) translate(xValue + size, yValue) skewY(45) applied to [0..h] x [0..size]
+        // Right: matrix(...) translate(xValue, yValue + size) skewX(45) applied to [0..size] x [0..h]
         val n = 21
-        val c = 5
-        val r = 7
-        val h = 1.0f
+        val testMatrix = QrMatrix(size = n, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
+            (col == 5 && row == 7) || (col == 12 && row == 14) || (col == 18 && row == 3)
+        }
         val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
 
-        // 1. Evaluate EF Left face transform at the 4 rectangle corners [0, 0], [h, 0], [h, 1], [0, 1]:
-        // Corner (0, 0): translate(c + 1, r) -> (c + 1, r)
-        //   M(c+1, r) = (sq3h * (c + 1 - r), 0.5 * (c + 1 + r))
-        val expectedL1x = sq3h * (c + 1 - r)
-        val expectedL1y = 0.5f * (c + 1 + r)
+        val heights = listOf(0.5f, 1.0f, 2.0f)
+        val scales = listOf(0.8f, 1.0f)
+        val geom = QrGeometry(matrixSize = n, outputWidth = 1000, outputHeight = 1000, quietZoneModules = 0)
 
-        // Corner (0, 1): skewY(45) -> (0, 1) -> translate -> (c + 1, r + 1)
-        //   M(c+1, r+1) = (sq3h * (c - r), 0.5 * (c + r) + 1)
-        val expectedL2x = sq3h * (c - r)
-        val expectedL2y = 0.5f * (c + r) + 1f
+        for (h in heights) {
+            for (scale in scales) {
+                val design = QrDesign(
+                    style = QrStyle.D25,
+                    moduleStyle = ModuleStyle(scale = scale),
+                    depthStyle = DepthStyle(
+                        depth = h,
+                        positionDepth = h,
+                        topColor = 0xFF00FF00.toInt(),
+                        leftColor = 0xFFFF0000.toInt(),
+                        rightColor = 0xFF0000FF.toInt()
+                    )
+                )
 
-        // Corner (h, 1): skewY(45) -> (h, 1 + h) -> translate -> (c + 1 + h, r + 1 + h)
-        //   M(c+1+h, r+1+h): X = sq3h * (c - r) [h cancels out!], Y = 0.5 * (c + r) + 1 + h
-        val expectedL2bottomX = expectedL2x
-        val expectedL2bottomY = expectedL2y + h
+                val ir = D25Geometry.buildGeometry(testMatrix, design, geom)
+                val polys = ir.rootNodes.filterIsInstance<PolygonNode>()
+                val proj = D25Geometry.computeProjection(n, 1000f, 1000f, 0)
 
-        // Corner (h, 0): skewY(45) -> (h, h) -> translate -> (c + 1 + h, r + h)
-        //   M(c+1+h, r+h): X = sq3h * (c + 1 - r) [h cancels out!], Y = 0.5 * (c + 1 + r) + h
-        val expectedL1bottomX = expectedL1x
-        val expectedL1bottomY = expectedL1y + h
+                // For every dark module, verify generated polygon vertices against EF equations
+                for (col in 0 until n) {
+                    for (row in 0 until n) {
+                        if (!testMatrix.isDark(col, row)) continue
 
-        // 2. Evaluate EF Right face transform at the 4 rectangle corners [0, 0], [1, 0], [1, h], [0, h]:
-        // Corner (0, 0): translate(c, r + 1) -> (c, r + 1)
-        //   M(c, r + 1) = (sq3h * (c - r - 1), 0.5 * (c + r + 1))
-        val expectedR1x = sq3h * (c - r - 1)
-        val expectedR1y = 0.5f * (c + r + 1)
+                        val isPos = testMatrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
+                            testMatrix.roleAt(col, row) == QrModuleRole.FINDER_OUTER ||
+                            testMatrix.functionMask.isFinder(col, row)
+                        val effScale = if (isPos) 1.0f else scale
+                        val offset = (1.0f - effScale) / 2.0f
+                        val xVal = col + offset
+                        val yVal = row + offset
 
-        // Corner (1, 0): translate(c, r + 1) -> (c + 1, r + 1)
-        //   M(c + 1, r + 1) = (sq3h * (c - r), 0.5 * (c + r) + 1) = expectedL2
-        val expectedR2x = expectedL2x
-        val expectedR2y = expectedL2y
+                        // Analytical EF coordinates:
+                        // Top face: [xVal, yVal] to [xVal + effScale, yVal + effScale]
+                        val expectedP0x = sq3h * (xVal - yVal)
+                        val expectedP0y = 0.5f * (xVal + yVal)
+                        val expectedP1x = sq3h * (xVal + effScale - yVal)
+                        val expectedP1y = 0.5f * (xVal + effScale + yVal)
+                        val expectedP2x = sq3h * (xVal + effScale - (yVal + effScale)) // = sq3h * (xVal - yVal) = expectedP0x
+                        val expectedP2y = 0.5f * (xVal + effScale + yVal + effScale) // = 0.5 * (xVal + yVal) + effScale
+                        val expectedP3x = sq3h * (xVal - (yVal + effScale))
+                        val expectedP3y = 0.5f * (xVal + yVal + effScale)
 
-        // Corner (1, h): skewX(45) -> (1 + h, h) -> translate -> (c + 1 + h, r + 1 + h)
-        //   M(c+1+h, r+1+h): X = sq3h * (c - r), Y = 0.5 * (c + r) + 1 + h = expectedL2bottom
-        val expectedR2bottomX = expectedL2bottomX
-        val expectedR2bottomY = expectedL2bottomY
+                        val screenP0x = (expectedP0x - proj.vbX) * proj.scale + proj.transX
+                        val screenP0y = (expectedP0y - proj.vbY) * proj.scale + proj.transY
+                        val screenP1x = (expectedP1x - proj.vbX) * proj.scale + proj.transX
+                        val screenP1y = (expectedP1y - proj.vbY) * proj.scale + proj.transY
+                        val screenP2x = (expectedP2x - proj.vbX) * proj.scale + proj.transX
+                        val screenP2y = (expectedP2y - proj.vbY) * proj.scale + proj.transY
+                        val screenP3x = (expectedP3x - proj.vbX) * proj.scale + proj.transX
+                        val screenP3y = (expectedP3y - proj.vbY) * proj.scale + proj.transY
 
-        // Corner (0, h): skewX(45) -> (h, h) -> translate -> (c + h, r + 1 + h)
-        //   M(c+h, r+1+h): X = sq3h * (c - r - 1) [h cancels out!], Y = 0.5 * (c + r + 1) + h
-        val expectedR1bottomX = expectedR1x
-        val expectedR1bottomY = expectedR1y + h
+                        // Find matching Top polygon
+                        val topPoly = polys.firstOrNull { p ->
+                            p.fill == 0xFF00FF00.toInt() &&
+                                kotlin.math.abs(p.pointsList[0].first - screenP0x) < 0.01f &&
+                                kotlin.math.abs(p.pointsList[0].second - screenP0y) < 0.01f
+                        }
+                        assertNotNull("Generated Top polygon must exist at ($col, $row) for h=$h, s=$scale", topPoly)
+                        assertEquals(screenP1x, topPoly!!.pointsList[1].first, 0.01f)
+                        assertEquals(screenP1y, topPoly.pointsList[1].second, 0.01f)
+                        assertEquals(screenP2x, topPoly.pointsList[2].first, 0.01f)
+                        assertEquals(screenP2y, topPoly.pointsList[2].second, 0.01f)
+                        assertEquals(screenP3x, topPoly.pointsList[3].first, 0.01f)
+                        assertEquals(screenP3y, topPoly.pointsList[3].second, 0.01f)
 
-        // Now verify D25Geometry projection matches these analytical coordinates
-        val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(n, 1000f, 1000f, 0)
-        // Screen coords: (iso - vb) * scale + trans
-        val actualL1x = (expectedL1x - proj.vbX) * proj.scale + proj.transX
-        val actualL1y = (expectedL1y - proj.vbY) * proj.scale + proj.transY
-        val actualL2x = (expectedL2x - proj.vbX) * proj.scale + proj.transX
-        val actualL2y = (expectedL2y - proj.vbY) * proj.scale + proj.transY
+                        // Left Face corners:
+                        // Corner (h, 1) after skewY(45) and translate(xVal + scale, yVal):
+                        //   x = xVal + scale + h, y = yVal + scale + h
+                        //   M: X = sq3h * (xVal - yVal) [h cancels out!], Y = 0.5 * (xVal + yVal) + scale + h
+                        val screenL2x = screenP2x
+                        val screenL2y = screenP2y + h * proj.scale
+                        val screenL3x = screenP1x
+                        val screenL3y = screenP1y + h * proj.scale
 
-        assertEquals(actualL1x, proj.screenX(c + 1f, r.toFloat()), 0.001f)
-        assertEquals(actualL1y, proj.screenY(c + 1f, r.toFloat(), 0f), 0.001f)
-        assertEquals(actualL2x, proj.screenX(c + 1f, r + 1f), 0.001f)
-        assertEquals(actualL2y, proj.screenY(c + 1f, r + 1f, 0f), 0.001f)
+                        val leftPoly = polys.firstOrNull { p ->
+                            p.fill == 0xFFFF0000.toInt() &&
+                                kotlin.math.abs(p.pointsList[0].first - screenP1x) < 0.01f &&
+                                kotlin.math.abs(p.pointsList[0].second - screenP1y) < 0.01f
+                        }
+                        assertNotNull("Generated Left polygon must exist at ($col, $row) for h=$h, s=$scale", leftPoly)
+                        assertEquals(screenP2x, leftPoly!!.pointsList[1].first, 0.01f)
+                        assertEquals(screenP2y, leftPoly.pointsList[1].second, 0.01f)
+                        assertEquals(screenL2x, leftPoly.pointsList[2].first, 0.01f)
+                        assertEquals(screenL2y, leftPoly.pointsList[2].second, 0.01f)
+                        assertEquals(screenL3x, leftPoly.pointsList[3].first, 0.01f)
+                        assertEquals(screenL3y, leftPoly.pointsList[3].second, 0.01f)
 
-        // Bottom vertices extrusion by depth h:
-        val actualL2bottomY = (expectedL2bottomY - proj.vbY) * proj.scale + proj.transY
-        val actualL1bottomY = (expectedL1bottomY - proj.vbY) * proj.scale + proj.transY
-        assertEquals(actualL2bottomY, proj.screenY(c + 1f, r + 1f, h), 0.001f)
-        assertEquals(actualL1bottomY, proj.screenY(c + 1f, r.toFloat(), h), 0.001f)
+                        // Right Face corners:
+                        val screenR3x = screenP3x
+                        val screenR3y = screenP3y + h * proj.scale
 
-        val actualR1x = (expectedR1x - proj.vbX) * proj.scale + proj.transX
-        val actualR1y = (expectedR1y - proj.vbY) * proj.scale + proj.transY
-        val actualR1bottomY = (expectedR1bottomY - proj.vbY) * proj.scale + proj.transY
-        assertEquals(actualR1x, proj.screenX(c.toFloat(), r + 1f), 0.001f)
-        assertEquals(actualR1y, proj.screenY(c.toFloat(), r + 1f, 0f), 0.001f)
-        assertEquals(actualR1bottomY, proj.screenY(c.toFloat(), r + 1f, h), 0.001f)
+                        val rightPoly = polys.firstOrNull { p ->
+                            p.fill == 0xFF0000FF.toInt() &&
+                                kotlin.math.abs(p.pointsList[0].first - screenP3x) < 0.01f &&
+                                kotlin.math.abs(p.pointsList[0].second - screenP3y) < 0.01f
+                        }
+                        assertNotNull("Generated Right polygon must exist at ($col, $row) for h=$h, s=$scale", rightPoly)
+                        assertEquals(screenP2x, rightPoly!!.pointsList[1].first, 0.01f)
+                        assertEquals(screenP2y, rightPoly.pointsList[1].second, 0.01f)
+                        assertEquals(screenL2x, rightPoly.pointsList[2].first, 0.01f)
+                        assertEquals(screenL2y, rightPoly.pointsList[2].second, 0.01f)
+                        assertEquals(screenR3x, rightPoly.pointsList[3].first, 0.01f)
+                        assertEquals(screenR3y, rightPoly.pointsList[3].second, 0.01f)
+                    }
+                }
+            }
+        }
     }
 
     @Test
@@ -3326,9 +3370,31 @@ class VeilStyleParityTest {
             val expectedVbW = n * (q + 2f + q)
             val expectedVbH = n * (q + 2f + q)
 
-            assertEquals(expectedVbX, proj.vbX, 0.001f)
-            assertEquals(expectedVbY, proj.vbY, 0.001f)
+            assertEquals("vbX parity for inset $q", expectedVbX, proj.vbX, 0.001f)
+            assertEquals("vbY parity for inset $q", expectedVbY, proj.vbY, 0.001f)
+            assertEquals("vbW parity for inset $q", expectedVbW, proj.vbW, 0.001f)
+            assertEquals("vbH parity for inset $q", expectedVbH, proj.vbH, 0.001f)
         }
+
+        // Verify integer module quiet zones: substituting q = Q / n gives identical viewBox
+        for (qz in listOf(0, 2, 4, 8)) {
+            val intProj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(n, 500f, 500f, qz, qz, qz, qz)
+            val fracProj = com.veilframe.app.qr.geometry.D25Geometry.computeProjectionWithInsets(n, 500f, 500f, qz.toFloat() / n, qz.toFloat() / n, qz.toFloat() / n, qz.toFloat() / n)
+            assertEquals(fracProj.vbX, intProj.vbX, 0.001f)
+            assertEquals(fracProj.vbY, intProj.vbY, 0.001f)
+            assertEquals(fracProj.vbW, intProj.vbW, 0.001f)
+            assertEquals(fracProj.vbH, intProj.vbH, 0.001f)
+        }
+
+        // Also verify SvgExporter generate25DSvg produces exact viewBox string
+        val dummyMatrix = QrMatrix("HTTPS://VEILFRAME.APP/D25", ErrorCorrectionLevel.M)
+        val dummyDesign = QrDesign(
+            style = QrStyle.D25,
+            directionalQuietZone = com.veilframe.app.qr.model.DirectionalInsets(4, 4, 4, 4)
+        )
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(dummyMatrix, dummyDesign)
+        val expectedVbStr = "viewBox=\"-${dummyMatrix.size + 4} -${dummyMatrix.size / 2.0 + 4} ${(2 * dummyMatrix.size + 8).toDouble()} ${(2 * dummyMatrix.size + 8).toDouble()}\""
+        assertTrue("D25 SVG export must contain canonical EF viewBox", svg.contains(expectedVbStr))
     }
 
     @Test
@@ -3353,54 +3419,152 @@ class VeilStyleParityTest {
         val cs = 16f
         val ox = 0f
         val oy = 0f
+        val thickness = 0.5f
+        val baseStrokeWidth = cs * thickness // 8.0f
 
-        // 1. EF Mode: Pure diagonal line runs and node circles, zero accent rings, zero circuit bridges
-        val nodesEf = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+        // 1. EF Mode: HORIZONTAL direction
+        // In EF: strokeWidth == size, node circle radius == size / 2
+        val nodesH = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
             matrix = matrix,
             ox = ox,
             oy = oy,
             cs = cs,
-            thicknessFraction = 0.5f,
+            thicknessFraction = thickness,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.HORIZONTAL,
+            variant = com.veilframe.app.qr.model.LineVariant.EF
+        )
+        val linesH = nodesH.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        for (line in linesH) {
+            assertEquals("EF mode HORIZONTAL line stroke-width must equal cs * thickness", baseStrokeWidth, line.strokeWidth, 0.001f)
+        }
+        val circlesH = nodesH.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        for (c in circlesH) {
+            assertEquals("EF mode HORIZONTAL isolated node circle radius must strictly equal size / 2", baseStrokeWidth * 0.5f, c.radius, 0.001f)
+        }
+
+        // 2. EF Mode: X direction
+        // In EF lines 547 & 566: stroke-width = (size / 2) * random(0.3...1.0) -> [0.15, 0.5] * size
+        // In EF line 570: circle radius = 0.5 * random(0.33...0.90) in module units -> [0.165, 0.45] * cs
+        val nodesX = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = thickness,
             lineColor = 0xFF000000.toInt(),
             direction = LineDirection.X,
+            variant = com.veilframe.app.qr.model.LineVariant.EF,
             addAccentRings = false,
             circuitBridgesEnabled = false
         )
+        val linesX = nodesX.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertTrue("X direction must contain diagonal line runs", linesX.isNotEmpty())
+        for (line in linesX) {
+            val minSw = (baseStrokeWidth * 0.5f) * 0.30f - 0.001f
+            val maxSw = (baseStrokeWidth * 0.5f) * 1.0f + 0.001f
+            assertTrue("Line stroke width ${line.strokeWidth} must be in EF range [$minSw, $maxSw]", line.strokeWidth in minSw..maxSw)
+        }
 
-        val horizontalLinesEf = nodesEf.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().filter { it.y1 == it.y2 }
+        val circlesX = nodesX.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        assertTrue("X direction must contain node circles at dark modules", circlesX.isNotEmpty())
+        for (c in circlesX) {
+            val minR = cs * 0.5f * 0.33f - 0.001f
+            val maxR = cs * 0.5f * 0.90f + 0.001f
+            assertTrue("Node circle radius ${c.radius} must be in EF range [$minR, $maxR]", c.radius in minR..maxR)
+        }
+
+        val horizontalLinesEf = nodesX.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().filter { it.y1 == it.y2 }
         assertEquals("Pure EF mode must have zero horizontal circuit bridges in X direction", 0, horizontalLinesEf.size)
-
-        val accentRingsEf = nodesEf.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
+        val accentRingsEf = nodesX.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
         assertEquals("Pure EF mode must have zero target accent rings", 0, accentRingsEf.size)
 
-        // 2. Circuit Mode: Contains accent rings and circuit bridges
+        // 3. Circuit Mode: Contains accent rings and circuit bridges
         val nodesCircuit = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
             matrix = matrix,
             ox = ox,
             oy = oy,
             cs = cs,
-            thicknessFraction = 0.5f,
+            thicknessFraction = thickness,
             lineColor = 0xFF000000.toInt(),
             direction = LineDirection.X,
+            variant = com.veilframe.app.qr.model.LineVariant.CIRCUIT,
             addAccentRings = true,
             circuitBridgesEnabled = true
         )
-
         val horizontalLinesCircuit = nodesCircuit.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().filter { it.y1 == it.y2 }
         assertTrue("Circuit mode must contain horizontal spine bridges", horizontalLinesCircuit.isNotEmpty())
-
         val accentRingsCircuit = nodesCircuit.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
         assertTrue("Circuit mode must contain accent target rings", accentRingsCircuit.isNotEmpty())
     }
 
     @Test
-    fun testAnimatedWebpMediaRecognition() {
-        val mimeType = "image/webp"
-        val isWebpMime = mimeType.equals("image/webp", ignoreCase = true)
-        val uriStr = "content://media/external/images/media/42.webp"
-        val isWebpUri = uriStr.endsWith(".webp")
-        assertTrue("WebP animation MIME must be recognized", isWebpMime)
-        assertTrue("WebP animation URI suffix must be recognized", isWebpUri)
+    fun testAnimatedWebpEndToEndFrameExtractionAndTiming() {
+        // Construct synthetic animated WebP container bytes with 3 ANMF chunks:
+        // Frame 0: 50ms
+        // Frame 1: 120ms
+        // Frame 2: 80ms
+        val expectedDurations = listOf(50, 120, 80)
+        val baos = java.io.ByteArrayOutputStream()
+        baos.write("RIFF".toByteArray(Charsets.US_ASCII))
+        baos.write(ByteArray(4)) // Size placeholder
+        baos.write("WEBP".toByteArray(Charsets.US_ASCII))
+
+        // VP8X Chunk (10 bytes payload)
+        baos.write("VP8X".toByteArray(Charsets.US_ASCII))
+        baos.write(byteArrayOf(10, 0, 0, 0))
+        baos.write(byteArrayOf(0x02, 0, 0, 0)) // Animation flag (bit 1)
+        baos.write(byteArrayOf(63, 0, 0)) // Canvas width 64
+        baos.write(byteArrayOf(63, 0, 0)) // Canvas height 64
+
+        // ANIM Chunk (6 bytes payload)
+        baos.write("ANIM".toByteArray(Charsets.US_ASCII))
+        baos.write(byteArrayOf(6, 0, 0, 0))
+        baos.write(byteArrayOf(0, 0, 0, 0)) // Background color
+        baos.write(byteArrayOf(0, 0)) // Loop count (0 = infinite)
+
+        // ANMF Chunks (16 bytes payload each)
+        for (dur in expectedDurations) {
+            baos.write("ANMF".toByteArray(Charsets.US_ASCII))
+            baos.write(byteArrayOf(16, 0, 0, 0))
+            baos.write(byteArrayOf(0, 0, 0)) // frame X
+            baos.write(byteArrayOf(0, 0, 0)) // frame Y
+            baos.write(byteArrayOf(63, 0, 0)) // frame W
+            baos.write(byteArrayOf(63, 0, 0)) // frame H
+            // Duration uint24 little-endian in ms:
+            baos.write(byteArrayOf(
+                (dur and 0xFF).toByte(),
+                ((dur shr 8) and 0xFF).toByte(),
+                ((dur shr 16) and 0xFF).toByte()
+            ))
+            baos.write(byteArrayOf(0)) // flags
+        }
+
+        val webpBytes = baos.toByteArray()
+        val riffSize = webpBytes.size - 8
+        webpBytes[4] = (riffSize and 0xFF).toByte()
+        webpBytes[5] = ((riffSize shr 8) and 0xFF).toByte()
+        webpBytes[6] = ((riffSize shr 16) and 0xFF).toByte()
+        webpBytes[7] = ((riffSize shr 24) and 0xFF).toByte()
+
+        // 1. Verify parseWebpDelays parses exact ANMF durations
+        val parsedDelays = com.veilframe.app.qr.AnimatedMediaHelper.parseWebpDelays(webpBytes)
+        assertEquals("WebP ANMF delay parser must extract exactly 3 frame durations", 3, parsedDelays.size)
+        assertEquals(expectedDurations, parsedDelays)
+
+        // 2. Verify AnimatedQrGenerator end-to-end timing with these frames
+        val dummyBmp = createDummyBitmap()
+        val frames = parsedDelays.map { com.veilframe.app.qr.model.QrFrame(dummyBmp, it) }
+        val testMatrix = QrMatrix("HTTPS://VEILFRAME.APP/WEBP-ANIM", ErrorCorrectionLevel.M)
+        val baseDesign = QrDesign(style = QrStyle.IMAGE)
+
+        val animatedSvg = com.veilframe.app.qr.AnimatedQrGenerator.generateAnimatedSvg(testMatrix, baseDesign, frames)
+        assertTrue("Generated animated SVG must define qr_frame_0", animatedSvg.contains("id=\"qr_frame_0\""))
+        assertTrue("Generated animated SVG must define qr_frame_1", animatedSvg.contains("id=\"qr_frame_1\""))
+        assertTrue("Generated animated SVG must define qr_frame_2", animatedSvg.contains("id=\"qr_frame_2\""))
+
+        // Total duration: 50 + 120 + 80 = 250ms -> 0.250s
+        assertTrue("Animated SVG duration must equal total frame duration (0.250s)", animatedSvg.contains("dur=\"0.250s\"") || animatedSvg.contains("dur=\"0.25s\""))
     }
 
     private fun createDummyBitmap(): Bitmap {

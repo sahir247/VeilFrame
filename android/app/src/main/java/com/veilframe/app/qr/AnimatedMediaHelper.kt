@@ -76,12 +76,16 @@ object AnimatedMediaHelper {
 
             if (extractedViaFFmpeg) {
                 val frameFiles = framesDir.listFiles()?.filter { it.extension.equals("png", ignoreCase = true) }?.sortedBy { it.name } ?: emptyList()
-                val gifDelays = if (isGif) parseGifDelays(inputFile) else emptyList()
+                val delays = when {
+                    isGif -> parseGifDelays(inputFile)
+                    isWebp -> parseWebpDelays(inputFile)
+                    else -> emptyList()
+                }
                 for ((idx, file) in frameFiles.withIndex()) {
                     val bmp = BitmapFactory.decodeFile(file.absolutePath)
                     if (bmp != null) {
-                        val frameDelay = if (isGif && gifDelays.isNotEmpty()) {
-                            gifDelays.getOrElse(idx) { gifDelays.lastOrNull() ?: 100 }
+                        val frameDelay = if ((isGif || isWebp) && delays.isNotEmpty()) {
+                            delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
                         } else if (isVideo) {
                             videoDelayMs
                         } else {
@@ -144,6 +148,54 @@ object AnimatedMediaHelper {
                 }
             }
         } catch (_: Throwable) {
+        }
+        return delays
+    }
+
+    /**
+     * Parses per-frame delay timings from WebP ANMF (Animation Frame) chunks.
+     * WebP container format: RIFF....WEBP chunks.
+     * ANMF chunk payload offset 12..14 is uint24 frame duration in milliseconds.
+     */
+    fun parseWebpDelays(file: File): List<Int> {
+        return try {
+            parseWebpDelays(file.readBytes())
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    fun parseWebpDelays(bytes: ByteArray): List<Int> {
+        val delays = mutableListOf<Int>()
+        if (bytes.size < 12) return delays
+        // Validate RIFF and WEBP signatures
+        if (bytes[0] != 'R'.code.toByte() || bytes[1] != 'I'.code.toByte() ||
+            bytes[2] != 'F'.code.toByte() || bytes[3] != 'F'.code.toByte() ||
+            bytes[8] != 'W'.code.toByte() || bytes[9] != 'E'.code.toByte() ||
+            bytes[10] != 'B'.code.toByte() || bytes[11] != 'P'.code.toByte()
+        ) {
+            return delays
+        }
+        var offset = 12
+        while (offset + 8 <= bytes.size) {
+            val chunkFourCC = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = (bytes[offset + 4].toInt() and 0xFF) or
+                    ((bytes[offset + 5].toInt() and 0xFF) shl 8) or
+                    ((bytes[offset + 6].toInt() and 0xFF) shl 16) or
+                    ((bytes[offset + 7].toInt() and 0xFF) shl 24)
+            val payloadOffset = offset + 8
+            if (chunkFourCC == "ANMF" && chunkSize >= 16 && payloadOffset + 16 <= bytes.size) {
+                // ANMF Chunk duration is at offset 12..14 of payload (uint24 little-endian in ms)
+                val durLow = bytes[payloadOffset + 12].toInt() and 0xFF
+                val durMid = bytes[payloadOffset + 13].toInt() and 0xFF
+                val durHigh = bytes[payloadOffset + 14].toInt() and 0xFF
+                val durationMs = durLow or (durMid shl 8) or (durHigh shl 16)
+                delays.add(if (durationMs > 0) durationMs.coerceIn(10, 10000) else 100)
+            }
+            // Chunks in RIFF are padded to 2-byte boundary if size is odd
+            val paddedChunkSize = chunkSize + (chunkSize and 1)
+            if (paddedChunkSize <= 0) break
+            offset = payloadOffset + paddedChunkSize
         }
         return delays
     }

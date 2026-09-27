@@ -59,12 +59,19 @@ object LineTopologyBuilder {
         addAccentRings: Boolean = false,
         circuitBridgesEnabled: Boolean = false,
         roundCaps: Boolean = true,
-        lengthFraction: Float = 1.0f
+        lengthFraction: Float = 1.0f,
+        variant: com.veilframe.app.qr.model.LineVariant = com.veilframe.app.qr.model.LineVariant.EF,
+        rngMode: ResampleRngMode = ResampleRngMode.DETERMINISTIC
     ): List<QrGeometryNode> {
         val n = matrix.size
         val nodes = mutableListOf<QrGeometryNode>()
         val baseStrokeWidth = cs * thicknessFraction.coerceIn(0.05f, 0.85f)
-        val nodeRadius = (baseStrokeWidth * 0.55f).coerceAtLeast(cs * 0.18f)
+        // EFQRCode canonical node radius is strictly size / 2. Circuit mode applies stylistic padding.
+        val nodeRadius = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
+            baseStrokeWidth * 0.5f
+        } else {
+            (baseStrokeWidth * 0.55f).coerceAtLeast(cs * 0.18f)
+        }
 
         // Mask of dark data modules (excluding finders)
         val isDataDark = Array(n) { col ->
@@ -304,7 +311,16 @@ object LineTopologyBuilder {
                             }
                             if (end > 1) {
                                 for (i in 0 until end) avaUp[x + i][y - i] = false
-                                val sw = baseStrokeWidth * pseudoRandom(x, y, 1, 0.45f, 1.0f)
+                                val sw = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
+                                    val factor = if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                                        0.30f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * 0.70f
+                                    } else {
+                                        pseudoRandom(x, y, 1, 0.30f, 1.0f)
+                                    }
+                                    (baseStrokeWidth * 0.5f) * factor
+                                } else {
+                                    baseStrokeWidth * pseudoRandom(x, y, 1, 0.45f, 1.0f)
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
@@ -325,7 +341,16 @@ object LineTopologyBuilder {
                             }
                             if (end > 1) {
                                 for (i in 0 until end) avaDown[x + i][y + i] = false
-                                val sw = baseStrokeWidth * pseudoRandom(x, y, 2, 0.45f, 1.0f)
+                                val sw = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
+                                    val factor = if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                                        0.30f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * 0.70f
+                                    } else {
+                                        pseudoRandom(x, y, 2, 0.30f, 1.0f)
+                                    }
+                                    (baseStrokeWidth * 0.5f) * factor
+                                } else {
+                                    baseStrokeWidth * pseudoRandom(x, y, 2, 0.45f, 1.0f)
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
@@ -402,8 +427,17 @@ object LineTopologyBuilder {
                 val cy = oy + (y + 0.5f) * cs
 
                 if (direction == LineDirection.X) {
-                    // Variable radius node circle matching reference & Target #6 circuit pads
-                    val r = cs * 0.5f * pseudoRandom(x, y, 3, 0.40f, 0.88f) * clampedLength.coerceIn(0.5f, 1.0f)
+                    // Variable radius node circle: EFQRCode canonical formula is 0.5 * random(0.33...0.9)
+                    val rFactor = if (variant == com.veilframe.app.qr.model.LineVariant.EF) {
+                        if (rngMode == ResampleRngMode.SYSTEM_UNSEEDED) {
+                            0.33f + java.util.concurrent.ThreadLocalRandom.current().nextFloat() * (0.90f - 0.33f)
+                        } else {
+                            pseudoRandom(x, y, 3, 0.33f, 0.90f)
+                        }
+                    } else {
+                        pseudoRandom(x, y, 3, 0.40f, 0.88f)
+                    }
+                    val r = cs * 0.5f * rFactor * clampedLength.coerceIn(0.5f, 1.0f)
                     nodes.add(CircleNode(cx, cy, r, fill = lineColor))
 
                     // Accent target rings on selected circuit nodes (Target #6)

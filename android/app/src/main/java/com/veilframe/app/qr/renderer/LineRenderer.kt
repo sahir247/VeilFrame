@@ -110,7 +110,9 @@ class LineRenderer : QrRenderer {
                 addAccentRings = addAccentRings,
                 circuitBridgesEnabled = circuitBridges,
                 roundCaps = design.lineStyle.roundCaps,
-                lengthFraction = design.lineStyle.lengthFraction
+                lengthFraction = design.lineStyle.lengthFraction,
+                variant = design.lineStyle.variant,
+                rngMode = design.resampleStyle.rngMode
             )
         )
 
