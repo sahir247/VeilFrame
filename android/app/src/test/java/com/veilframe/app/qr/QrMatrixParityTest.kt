@@ -345,9 +345,11 @@ MMMMMMMMMMMMMM    MM  MMMM  MMMMMM  MMMM      MMMM      MM  MM
     @Test
     fun testExternalOracleGoldenCorpusAcrossVersionsAndEcLevels() {
         val vectors = loadGoldenVectors()
-        assertTrue("Golden vectors corpus must load all 12 vectors", vectors.size >= 12)
+        assertTrue("Golden vectors corpus must load all 116 vectors", vectors.size >= 116)
 
+        val covered = mutableSetOf<Pair<Int, VeilCorrectionLevel>>()
         for (vector in vectors) {
+            covered.add(Pair(vector.version, vector.level))
             val encoded = VeilQrEncoder.encode(vector.text, vector.level)
             val matrix = encoded.matrix
             val size = matrix.size
@@ -362,6 +364,13 @@ MMMMMMMMMMMMMM    MM  MMMM  MMMMMM  MMMM      MMMM      MM  MM
                     val actualDark = matrix.isDark(col, row)
                     assertEquals("${vector.name}: bit at (col=$col, row=$row) mismatch against oracle", expectedDark, actualDark)
                 }
+            }
+        }
+
+        // Mathematically prove full coverage for all Versions 1..26 x L/M/Q/H
+        for (v in 1..26) {
+            for (lvl in VeilCorrectionLevel.values()) {
+                assertTrue("Exhaustive golden corpus must cover Version $v at level $lvl", covered.contains(Pair(v, lvl)))
             }
         }
     }
