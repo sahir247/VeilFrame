@@ -56,7 +56,8 @@ object LineTopologyBuilder {
         thicknessFraction: Float,
         lineColor: Int,
         direction: LineDirection = LineDirection.X,
-        addAccentRings: Boolean = true,
+        addAccentRings: Boolean = false,
+        circuitBridgesEnabled: Boolean = false,
         roundCaps: Boolean = true,
         lengthFraction: Float = 1.0f
     ): List<QrGeometryNode> {
@@ -336,7 +337,7 @@ object LineTopologyBuilder {
                 }
 
                 // In Target #6 circuit mode, also connect short orthogonal spine bridges between isolated clusters
-                if (addAccentRings) {
+                if (circuitBridgesEnabled) {
                     val avaH = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
                     for (y in 0 until n) {
                         var x = 0

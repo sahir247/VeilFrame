@@ -86,8 +86,8 @@ data class QrStyleParams(
     val d25DataHeight: Float = 1.0f,
     val d25PositionHeight: Float = 1.0f,
     // --- IMAGE style specific (VeilFrameStyleImage) ---
-    val imageAllowTransparent: Boolean = true,
-    val imageDataScale: Float = 0.33f,
+    val imageAllowTransparent: Boolean = false,
+    val imageDataScale: Float = 1.0f,
     val imageDataDarkColor: Int = Color.BLACK,
     val imageDataLightColor: Int = Color.WHITE,
     val imagePositionDarkColor: Int = Color.BLACK,
@@ -122,6 +122,9 @@ data class QrStyleParams(
     val lineColor: Int? = null,
     val lineVerticalColor: Int? = null,   // legacy null → use foreground
     val lineHorizontalColor: Int? = null,
+    val lineAccentRingsEnabled: Boolean = false,
+    val lineCircuitBridgesEnabled: Boolean = false,
+    val lineVariant: com.veilframe.app.qr.model.LineVariant = com.veilframe.app.qr.model.LineVariant.EF,
     // --- Random Rectangle specific (VeilFrameStyleRandomRectangle) ---
     val randomRectColor: Int? = null,
     val randomRectSeed: Long = 42L,
@@ -140,6 +143,7 @@ data class QrStyleParams(
     val resampleBackdropScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
     val resampleSeed: Long = 42L,
     val resampleBackdropTint: Int? = null,
+    val resampleRngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
     val alignmentColor: Int? = null

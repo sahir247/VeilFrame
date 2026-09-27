@@ -809,6 +809,9 @@ object SvgExporter {
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbXStr $vbYStr $vbW $vbH" width="100%" height="100%">""").append("\n")
         sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" fill="$bgHex" />""").append("\n")
 
+        val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
+        val posScale = 1.0f
+
         // Iterate in diagonal wave order (col + row from 0 to 2*(n-1))
         // Back-to-front painter's order ensures foreground blocks properly occlude background blocks
         for (diagonal in 0 until (2 * n - 1)) {
@@ -823,14 +826,22 @@ object SvgExporter {
                     matrix.functionMask.isFinder(col, row)
                 val h = if (isPosition) posH else dataH
                 val hStr = String.format(Locale.US, "%.2f", h)
+                val size = if (isPosition) posScale else dataScale
+                val xVal = col + (1.0f - size) / 2.0f
+                val yVal = row + (1.0f - size) / 2.0f
+                val sizeStr = if (size == 1.0f) "1" else String.format(Locale.US, "%.3f", size)
+                val xStr = if (size == 1.0f) "$col" else String.format(Locale.US, "%.3f", xVal)
+                val yStr = if (size == 1.0f) "$row" else String.format(Locale.US, "%.3f", yVal)
+                val txLeft = if (size == 1.0f) "${col + 1}" else String.format(Locale.US, "%.3f", xVal + size)
+                val tyRight = if (size == 1.0f) "${row + 1}" else String.format(Locale.US, "%.3f", yVal + size)
 
                 // Top face
-                sb.append("""  <rect opacity="$topAlpha" width="1" height="1" fill="$topHex" x="$col" y="$row" transform="$matrixString"/>""").append("\n")
+                sb.append("""  <rect opacity="$topAlpha" width="$sizeStr" height="$sizeStr" fill="$topHex" x="$xStr" y="$yStr" transform="$matrixString"/>""").append("\n")
                 if (h > 0.0001f) {
                     // Left face
-                    sb.append("""  <rect opacity="$leftAlpha" width="$hStr" height="1" fill="$leftHex" x="0" y="0" transform="${matrixString}translate(${col + 1},$row) skewY(45)"/>""").append("\n")
+                    sb.append("""  <rect opacity="$leftAlpha" width="$hStr" height="$sizeStr" fill="$leftHex" x="0" y="0" transform="${matrixString}translate($txLeft,$yStr) skewY(45)"/>""").append("\n")
                     // Right face
-                    sb.append("""  <rect opacity="$rightAlpha" width="1" height="$hStr" fill="$rightHex" x="0" y="0" transform="${matrixString}translate($col,${row + 1}) skewX(45)"/>""").append("\n")
+                    sb.append("""  <rect opacity="$rightAlpha" width="$sizeStr" height="$hStr" fill="$rightHex" x="0" y="0" transform="${matrixString}translate($xStr,$tyRight) skewX(45)"/>""").append("\n")
                 }
             }
         }

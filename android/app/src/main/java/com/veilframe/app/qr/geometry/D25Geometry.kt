@@ -56,15 +56,47 @@ object D25Geometry {
         quietZoneRight: Int = 0,
         quietZoneBottom: Int = 0
     ): Projection {
-        // EFQRCode canonical formula (EFQRCodeStyle25D.swift) evaluated for integer module counts:
-        //   vbX = -(n + quietZoneLeft)
-        //   vbY = -(n/2 + quietZoneTop)
-        //   vbW = 2n + quietZoneLeft + quietZoneRight
-        //   vbH = 2n + quietZoneTop + quietZoneBottom
+        // Canonical EFQRCode formula (EFQRCodeStyle25D.swift):
+        // When quiet zone is expressed as integer module counts, the fractional insets are (qz / n).
+        // Substituting left = qzLeft / n into:
+        //   vbX = -n * (left + 1) = -(n + qzLeft)
+        //   vbY = -n * (top + 0.5) = -(n/2 + qzTop)
+        //   vbW = n * (left + 2 + right) = 2n + qzLeft + qzRight
+        //   vbH = n * (top + 2 + bottom) = 2n + qzTop + qzBottom
         val vbX = -(n + quietZoneLeft).toFloat()
         val vbY = -(n / 2f + quietZoneTop)
         val vbW = (2 * n + quietZoneLeft + quietZoneRight).toFloat()
         val vbH = (2 * n + quietZoneTop + quietZoneBottom).toFloat()
+
+        val scaleX = outputWidth / vbW
+        val scaleY = outputHeight / vbH
+        val scale = minOf(scaleX, scaleY)
+        val transX = (outputWidth - vbW * scale) / 2f
+        val transY = (outputHeight - vbH * scale) / 2f
+
+        return Projection(scale, transX, transY, vbX, vbY)
+    }
+
+    /**
+     * Computes isometric projection using EFQRCode's canonical fractional quiet zone insets:
+     *   vbX = -n * (left + 1)
+     *   vbY = -n * (top + 0.5)
+     *   vbW = n * (left + 2 + right)
+     *   vbH = n * (top + 2 + bottom)
+     */
+    fun computeProjectionWithInsets(
+        n: Int,
+        outputWidth: Float,
+        outputHeight: Float,
+        left: Float = 0f,
+        top: Float = 0f,
+        right: Float = 0f,
+        bottom: Float = 0f
+    ): Projection {
+        val vbX = -n.toFloat() * (left + 1f)
+        val vbY = -n.toFloat() * (top + 0.5f)
+        val vbW = n.toFloat() * (left + 2f + right)
+        val vbH = n.toFloat() * (top + 2f + bottom)
 
         val scaleX = outputWidth / vbW
         val scaleY = outputHeight / vbH
@@ -100,6 +132,7 @@ object D25Geometry {
 
         val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
+        val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
 
         val proj = computeProjection(
             n = n,
@@ -138,17 +171,21 @@ object D25Geometry {
                     matrix.functionMask.isFinder(col, row)
 
                 val h = if (isPosition) posH else dataH
-                val c = col.toFloat()
-                val r = row.toFloat()
+                val size = if (isPosition) 1.0f else dataScale
+                val offset = (1.0f - size) / 2.0f
+                val c0 = col + offset
+                val r0 = row + offset
+                val c1 = c0 + size
+                val r1 = r0 + size
 
-                val p0x = proj.screenX(c, r)
-                val p0y = proj.screenY(c, r, 0f)
-                val p1x = proj.screenX(c + 1f, r)
-                val p1y = proj.screenY(c + 1f, r, 0f)
-                val p2x = proj.screenX(c + 1f, r + 1f)
-                val p2y = proj.screenY(c + 1f, r + 1f, 0f)
-                val p3x = proj.screenX(c, r + 1f)
-                val p3y = proj.screenY(c, r + 1f, 0f)
+                val p0x = proj.screenX(c0, r0)
+                val p0y = proj.screenY(c0, r0, 0f)
+                val p1x = proj.screenX(c1, r0)
+                val p1y = proj.screenY(c1, r0, 0f)
+                val p2x = proj.screenX(c1, r1)
+                val p2y = proj.screenY(c1, r1, 0f)
+                val p3x = proj.screenX(c0, r1)
+                val p3y = proj.screenY(c0, r1, 0f)
 
                 // 1. Top Face
                 polyPath.reset()
@@ -160,11 +197,11 @@ object D25Geometry {
                 canvas.drawPath(polyPath, topPaint)
 
                 if (h > 0.0001f) {
-                    // 2. Left Face
-                    val l2x = proj.screenX(c + 1f, r + 1f)
-                    val l2y = proj.screenY(c + 1f, r + 1f, h)
-                    val l3x = proj.screenX(c + 1f, r)
-                    val l3y = proj.screenY(c + 1f, r, h)
+                    // 2. Left Face (analytical equivalent of matrix * translate(c0 + size, r0) * skewY(45))
+                    val l2x = proj.screenX(c1, r1)
+                    val l2y = proj.screenY(c1, r1, h)
+                    val l3x = proj.screenX(c1, r0)
+                    val l3y = proj.screenY(c1, r0, h)
 
                     polyPath.reset()
                     polyPath.moveTo(p1x, p1y)
@@ -174,9 +211,9 @@ object D25Geometry {
                     polyPath.close()
                     canvas.drawPath(polyPath, leftPaint)
 
-                    // 3. Right Face
-                    val r3x = proj.screenX(c, r + 1f)
-                    val r3y = proj.screenY(c, r + 1f, h)
+                    // 3. Right Face (analytical equivalent of matrix * translate(c0, r0 + size) * skewX(45))
+                    val r3x = proj.screenX(c0, r1)
+                    val r3y = proj.screenY(c0, r1, h)
 
                     polyPath.reset()
                     polyPath.moveTo(p3x, p3y)
@@ -205,6 +242,7 @@ object D25Geometry {
 
         val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
+        val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
 
         val proj = computeProjection(
             n = n,
@@ -239,17 +277,21 @@ object D25Geometry {
                     matrix.functionMask.isFinder(col, row)
 
                 val h = if (isPosition) posH else dataH
-                val c = col.toFloat()
-                val r = row.toFloat()
+                val size = if (isPosition) 1.0f else dataScale
+                val offset = (1.0f - size) / 2.0f
+                val c0 = col + offset
+                val r0 = row + offset
+                val c1 = c0 + size
+                val r1 = r0 + size
 
-                val p0x = proj.screenX(c, r)
-                val p0y = proj.screenY(c, r, 0f)
-                val p1x = proj.screenX(c + 1f, r)
-                val p1y = proj.screenY(c + 1f, r, 0f)
-                val p2x = proj.screenX(c + 1f, r + 1f)
-                val p2y = proj.screenY(c + 1f, r + 1f, 0f)
-                val p3x = proj.screenX(c, r + 1f)
-                val p3y = proj.screenY(c, r + 1f, 0f)
+                val p0x = proj.screenX(c0, r0)
+                val p0y = proj.screenY(c0, r0, 0f)
+                val p1x = proj.screenX(c1, r0)
+                val p1y = proj.screenY(c1, r0, 0f)
+                val p2x = proj.screenX(c1, r1)
+                val p2y = proj.screenY(c1, r1, 0f)
+                val p3x = proj.screenX(c0, r1)
+                val p3y = proj.screenY(c0, r1, 0f)
 
                 val topPts = listOf(Pair(p0x, p0y), Pair(p1x, p1y), Pair(p2x, p2y), Pair(p3x, p3y))
                 nodes.add(
@@ -261,10 +303,10 @@ object D25Geometry {
                 )
 
                 if (h > 0.0001f) {
-                    val l2x = proj.screenX(c + 1f, r + 1f)
-                    val l2y = proj.screenY(c + 1f, r + 1f, h)
-                    val l3x = proj.screenX(c + 1f, r)
-                    val l3y = proj.screenY(c + 1f, r, h)
+                    val l2x = proj.screenX(c1, r1)
+                    val l2y = proj.screenY(c1, r1, h)
+                    val l3x = proj.screenX(c1, r0)
+                    val l3y = proj.screenY(c1, r0, h)
                     val leftPts = listOf(Pair(p1x, p1y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(l3x, l3y))
                     nodes.add(
                         PolygonNode(
@@ -274,8 +316,8 @@ object D25Geometry {
                         )
                     )
 
-                    val r3x = proj.screenX(c, r + 1f)
-                    val r3y = proj.screenY(c, r + 1f, h)
+                    val r3x = proj.screenX(c0, r1)
+                    val r3y = proj.screenY(c0, r1, h)
                     val rightPts = listOf(Pair(p3x, p3y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(r3x, r3y))
                     nodes.add(
                         PolygonNode(

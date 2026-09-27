@@ -117,7 +117,7 @@ data class ImageSourceStyle(
     val exposure: Float = 0.0f,
     val maskColor: Int = 0x1A000000,
     val maskAlpha: Float = 0.1f,
-    val allowTransparent: Boolean = true
+    val allowTransparent: Boolean = false
 ) {
     val bitmap: Bitmap? get() = (source as? ImageSource.Memory)?.bitmap
 }
@@ -233,6 +233,11 @@ enum class LineDirection {
     LOOP // Alias for LOOPBACK
 }
 
+enum class LineVariant {
+    EF,
+    CIRCUIT
+}
+
 data class LineStyle(
     val direction: LineDirection = LineDirection.X,
     val thicknessFraction: Float = 0.5f,
@@ -242,7 +247,9 @@ data class LineStyle(
     val positionStyle: FinderStyle = FinderStyle.CLASSIC,
     val positionSize: Float = 1.0f,
     val positionColor: Int? = null,
-    val accentRingsEnabled: Boolean? = null
+    val accentRingsEnabled: Boolean = false,
+    val circuitBridgesEnabled: Boolean = false,
+    val variant: LineVariant = LineVariant.EF
 )
 
 enum class VeilFunctionType {
@@ -367,7 +374,7 @@ data class QrDesign(
     val compositeStyle: CompositePrimitiveStyle = CompositePrimitiveStyle(),
     val imageSource: ImageSourceStyle = ImageSourceStyle(),
     val clusterStyle: BubbleClusterStyle = BubbleClusterStyle(),
-    val allowTransparent: Boolean = true,
+    val allowTransparent: Boolean = false,
     val imageDataScale: Float? = null,
     val dataColorDark: Int = Color.BLACK,
     val dataColorLight: Int = Color.WHITE,
@@ -525,7 +532,10 @@ data class QrDesign(
                     color = params.lineColor ?: params.foreground,
                     positionStyle = finderStyle,
                     positionSize = params.imagePositionSize,
-                    positionColor = params.positionColor ?: params.foreground
+                    positionColor = params.positionColor ?: params.foreground,
+                    accentRingsEnabled = params.lineAccentRingsEnabled,
+                    circuitBridgesEnabled = params.lineCircuitBridgesEnabled,
+                    variant = params.lineVariant
                 ),
                 veilDsjStyle = VeilDsjStyle(
                     lineSize = params.dsjLineSize,
@@ -604,7 +614,9 @@ data class QrDesign(
                     seed = params.resampleSeed,
                     useSourceAsBackdrop = params.resampleUseSourceAsBackdrop,
                     backdropOpacity = params.resampleBackdropOpacity,
-                    backdropScaleMode = params.resampleBackdropScaleMode
+                    backdropScaleMode = params.resampleBackdropScaleMode,
+                    backdropTint = params.resampleBackdropTint,
+                    rngMode = params.resampleRngMode
                 )
             )
         }

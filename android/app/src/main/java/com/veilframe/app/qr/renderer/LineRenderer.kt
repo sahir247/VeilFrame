@@ -95,7 +95,8 @@ class LineRenderer : QrRenderer {
             else -> design.lineStyle.direction
         }
 
-        val addAccentRings = design.lineStyle.accentRingsEnabled ?: false
+        val addAccentRings = design.lineStyle.accentRingsEnabled || design.lineStyle.variant == com.veilframe.app.qr.model.LineVariant.CIRCUIT
+        val circuitBridges = design.lineStyle.circuitBridgesEnabled || design.lineStyle.variant == com.veilframe.app.qr.model.LineVariant.CIRCUIT
 
         nodes.addAll(
             LineTopologyBuilder.buildTopology(
@@ -107,6 +108,7 @@ class LineRenderer : QrRenderer {
                 lineColor = lineColor,
                 direction = direction,
                 addAccentRings = addAccentRings,
+                circuitBridgesEnabled = circuitBridges,
                 roundCaps = design.lineStyle.roundCaps,
                 lengthFraction = design.lineStyle.lengthFraction
             )

@@ -29,13 +29,19 @@ object AnimatedMediaHelper {
         val mimeType = cr.getType(uri) ?: ""
         val uriStr = uri.toString().lowercase(Locale.ROOT)
         val isGif = mimeType.equals("image/gif", ignoreCase = true) || uriStr.endsWith(".gif")
+        val isWebp = mimeType.equals("image/webp", ignoreCase = true) || uriStr.endsWith(".webp")
         val isVideo = mimeType.startsWith("video/", ignoreCase = true) ||
             uriStr.endsWith(".mp4") || uriStr.endsWith(".mov") || uriStr.endsWith(".webm") || uriStr.endsWith(".mkv")
 
-        if (!isGif && !isVideo) return@withContext emptyList()
+        if (!isGif && !isWebp && !isVideo) return@withContext emptyList()
 
         val tempDir = File(context.cacheDir, "anim_extract_${System.currentTimeMillis()}").apply { mkdirs() }
-        val inputFile = File(tempDir, if (isGif) "input.gif" else "input.mp4")
+        val ext = when {
+            isGif -> "gif"
+            isWebp -> "webp"
+            else -> "mp4"
+        }
+        val inputFile = File(tempDir, "input.$ext")
 
         try {
             // 1. Copy stream to cache file
@@ -50,7 +56,7 @@ object AnimatedMediaHelper {
 
             val videoFps = 15
             val videoDelayMs = (1000.0 / videoFps).toInt() // ~67ms per frame at 15 fps
-            val ffmpegCmd = if (isGif) {
+            val ffmpegCmd = if (isGif || isWebp) {
                 "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0\" -vframes $maxFrames \"$framePattern\""
             } else {
                 "-y -i \"${inputFile.absolutePath}\" -vf \"scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2\" -r $videoFps -vframes $maxFrames \"$framePattern\""

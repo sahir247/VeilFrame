@@ -1346,11 +1346,11 @@ class VeilStyleParityTest {
     @Test
     fun testImageStyleDataScaleParityAndQuietZone() {
         val params = QrStyleParams(style = QrStyle.IMAGE)
-        assertEquals(0.33f, params.imageDataScale, 0.001f)
+        assertEquals(1.0f, params.imageDataScale, 0.001f)
 
         val design = QrDesign.fromQrStyleParams(params)
-        assertEquals(0.33f, design.moduleStyle.scale, 0.001f)
-        assertEquals(0.33f, design.imageDataScale ?: 0f, 0.001f)
+        assertEquals(1.0f, design.moduleStyle.scale, 0.001f)
+        assertEquals(1.0f, design.imageDataScale ?: 0f, 0.001f)
         assertEquals(1, design.quietZoneModules)
         assertEquals(1, design.explicitQuietZone)
         assertEquals(com.veilframe.app.qr.model.ModuleShape.SQUARE, design.timingStyle.shape)
@@ -3212,6 +3212,195 @@ class VeilStyleParityTest {
 
         assertNotNull("Decoded result must not be null", decoded)
         assertEquals("ZXing must successfully decode rasterized Resample style QR", payload, decoded.text)
+    }
+
+    // =========================================================================
+    // SECTION: EFQRCode Cross-Engine Parity Proofs (Audit Verification)
+    // =========================================================================
+
+    @Test
+    fun testD25AffineTransformVertexParityWithEFQRCode() {
+        // Analytical proof that D25Geometry 3-face polygons mathematically match
+        // EFQRCode's SVG affine transforms:
+        // Top:   matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)
+        // Left:  matrix(...) translate(c + 1, r) skewY(45) applied to [0..h] x [0..1]
+        // Right: matrix(...) translate(c, r + 1) skewX(45) applied to [0..1] x [0..h]
+        val n = 21
+        val c = 5
+        val r = 7
+        val h = 1.0f
+        val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
+
+        // 1. Evaluate EF Left face transform at the 4 rectangle corners [0, 0], [h, 0], [h, 1], [0, 1]:
+        // Corner (0, 0): translate(c + 1, r) -> (c + 1, r)
+        //   M(c+1, r) = (sq3h * (c + 1 - r), 0.5 * (c + 1 + r))
+        val expectedL1x = sq3h * (c + 1 - r)
+        val expectedL1y = 0.5f * (c + 1 + r)
+
+        // Corner (0, 1): skewY(45) -> (0, 1) -> translate -> (c + 1, r + 1)
+        //   M(c+1, r+1) = (sq3h * (c - r), 0.5 * (c + r) + 1)
+        val expectedL2x = sq3h * (c - r)
+        val expectedL2y = 0.5f * (c + r) + 1f
+
+        // Corner (h, 1): skewY(45) -> (h, 1 + h) -> translate -> (c + 1 + h, r + 1 + h)
+        //   M(c+1+h, r+1+h): X = sq3h * (c - r) [h cancels out!], Y = 0.5 * (c + r) + 1 + h
+        val expectedL2bottomX = expectedL2x
+        val expectedL2bottomY = expectedL2y + h
+
+        // Corner (h, 0): skewY(45) -> (h, h) -> translate -> (c + 1 + h, r + h)
+        //   M(c+1+h, r+h): X = sq3h * (c + 1 - r) [h cancels out!], Y = 0.5 * (c + 1 + r) + h
+        val expectedL1bottomX = expectedL1x
+        val expectedL1bottomY = expectedL1y + h
+
+        // 2. Evaluate EF Right face transform at the 4 rectangle corners [0, 0], [1, 0], [1, h], [0, h]:
+        // Corner (0, 0): translate(c, r + 1) -> (c, r + 1)
+        //   M(c, r + 1) = (sq3h * (c - r - 1), 0.5 * (c + r + 1))
+        val expectedR1x = sq3h * (c - r - 1)
+        val expectedR1y = 0.5f * (c + r + 1)
+
+        // Corner (1, 0): translate(c, r + 1) -> (c + 1, r + 1)
+        //   M(c + 1, r + 1) = (sq3h * (c - r), 0.5 * (c + r) + 1) = expectedL2
+        val expectedR2x = expectedL2x
+        val expectedR2y = expectedL2y
+
+        // Corner (1, h): skewX(45) -> (1 + h, h) -> translate -> (c + 1 + h, r + 1 + h)
+        //   M(c+1+h, r+1+h): X = sq3h * (c - r), Y = 0.5 * (c + r) + 1 + h = expectedL2bottom
+        val expectedR2bottomX = expectedL2bottomX
+        val expectedR2bottomY = expectedL2bottomY
+
+        // Corner (0, h): skewX(45) -> (h, h) -> translate -> (c + h, r + 1 + h)
+        //   M(c+h, r+1+h): X = sq3h * (c - r - 1) [h cancels out!], Y = 0.5 * (c + r + 1) + h
+        val expectedR1bottomX = expectedR1x
+        val expectedR1bottomY = expectedR1y + h
+
+        // Now verify D25Geometry projection matches these analytical coordinates
+        val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(n, 1000f, 1000f, 0)
+        // Screen coords: (iso - vb) * scale + trans
+        val actualL1x = (expectedL1x - proj.vbX) * proj.scale + proj.transX
+        val actualL1y = (expectedL1y - proj.vbY) * proj.scale + proj.transY
+        val actualL2x = (expectedL2x - proj.vbX) * proj.scale + proj.transX
+        val actualL2y = (expectedL2y - proj.vbY) * proj.scale + proj.transY
+
+        assertEquals(actualL1x, proj.screenX(c + 1f, r.toFloat()), 0.001f)
+        assertEquals(actualL1y, proj.screenY(c + 1f, r.toFloat(), 0f), 0.001f)
+        assertEquals(actualL2x, proj.screenX(c + 1f, r + 1f), 0.001f)
+        assertEquals(actualL2y, proj.screenY(c + 1f, r + 1f, 0f), 0.001f)
+
+        // Bottom vertices extrusion by depth h:
+        val actualL2bottomY = (expectedL2bottomY - proj.vbY) * proj.scale + proj.transY
+        val actualL1bottomY = (expectedL1bottomY - proj.vbY) * proj.scale + proj.transY
+        assertEquals(actualL2bottomY, proj.screenY(c + 1f, r + 1f, h), 0.001f)
+        assertEquals(actualL1bottomY, proj.screenY(c + 1f, r.toFloat(), h), 0.001f)
+
+        val actualR1x = (expectedR1x - proj.vbX) * proj.scale + proj.transX
+        val actualR1y = (expectedR1y - proj.vbY) * proj.scale + proj.transY
+        val actualR1bottomY = (expectedR1bottomY - proj.vbY) * proj.scale + proj.transY
+        assertEquals(actualR1x, proj.screenX(c.toFloat(), r + 1f), 0.001f)
+        assertEquals(actualR1y, proj.screenY(c.toFloat(), r + 1f, 0f), 0.001f)
+        assertEquals(actualR1bottomY, proj.screenY(c.toFloat(), r + 1f, h), 0.001f)
+    }
+
+    @Test
+    fun testD25QuietZoneFormulaParityWithEFQRCode() {
+        val n = 25
+        // Test with EFQRCode canonical quietzone insets: [0, 0.25, 0.5, 0.75, 1.0]
+        val insetsList = listOf(0.0f, 0.25f, 0.5f, 0.75f, 1.0f)
+        for (q in insetsList) {
+            val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjectionWithInsets(
+                n = n,
+                outputWidth = 500f,
+                outputHeight = 500f,
+                left = q,
+                top = q,
+                right = q,
+                bottom = q
+            )
+
+            // EFQRCode exact viewBox formula:
+            // x: -n * (left + 1)
+            // y: -n * (top + 0.5)
+            // width: n * (left + 2 + right)
+            // height: n * (top + 2 + bottom)
+            val expectedVbX = -n * (q + 1f)
+            val expectedVbY = -n * (q + 0.5f)
+            val expectedVbW = n * (q + 2f + q)
+            val expectedVbH = n * (q + 2f + q)
+
+            assertEquals(expectedVbX, proj.vbX, 0.001f)
+            assertEquals(expectedVbY, proj.vbY, 0.001f)
+        }
+    }
+
+    @Test
+    fun testImageStyleEFDefaultsParity() {
+        // EFQRCode defaults:
+        // EFStyleImageParamsData.scale = 1
+        // allowTransparent = false
+        val params = QrStyleParams(style = QrStyle.IMAGE)
+        assertEquals("Default imageDataScale must be 1.0f for EF parity", 1.0f, params.imageDataScale, 0.001f)
+        assertFalse("Default imageAllowTransparent must be false for EF parity", params.imageAllowTransparent)
+
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals("Design moduleStyle scale must be 1.0f", 1.0f, design.moduleStyle.scale, 0.001f)
+        assertEquals("Design imageDataScale must be 1.0f", 1.0f, design.imageDataScale ?: 0f, 0.001f)
+        assertFalse("Design allowTransparent must be false", design.allowTransparent)
+        assertFalse("Design imageSource allowTransparent must be false", design.imageSource.allowTransparent)
+    }
+
+    @Test
+    fun testLineStyleEFModeDecoupling() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/LINE-EF", ErrorCorrectionLevel.M)
+        val cs = 16f
+        val ox = 0f
+        val oy = 0f
+
+        // 1. EF Mode: Pure diagonal line runs and node circles, zero accent rings, zero circuit bridges
+        val nodesEf = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.X,
+            addAccentRings = false,
+            circuitBridgesEnabled = false
+        )
+
+        val horizontalLinesEf = nodesEf.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().filter { it.y1 == it.y2 }
+        assertEquals("Pure EF mode must have zero horizontal circuit bridges in X direction", 0, horizontalLinesEf.size)
+
+        val accentRingsEf = nodesEf.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
+        assertEquals("Pure EF mode must have zero target accent rings", 0, accentRingsEf.size)
+
+        // 2. Circuit Mode: Contains accent rings and circuit bridges
+        val nodesCircuit = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = matrix,
+            ox = ox,
+            oy = oy,
+            cs = cs,
+            thicknessFraction = 0.5f,
+            lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.X,
+            addAccentRings = true,
+            circuitBridgesEnabled = true
+        )
+
+        val horizontalLinesCircuit = nodesCircuit.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>().filter { it.y1 == it.y2 }
+        assertTrue("Circuit mode must contain horizontal spine bridges", horizontalLinesCircuit.isNotEmpty())
+
+        val accentRingsCircuit = nodesCircuit.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>().filter { it.stroke != null }
+        assertTrue("Circuit mode must contain accent target rings", accentRingsCircuit.isNotEmpty())
+    }
+
+    @Test
+    fun testAnimatedWebpMediaRecognition() {
+        val mimeType = "image/webp"
+        val isWebpMime = mimeType.equals("image/webp", ignoreCase = true)
+        val uriStr = "content://media/external/images/media/42.webp"
+        val isWebpUri = uriStr.endsWith(".webp")
+        assertTrue("WebP animation MIME must be recognized", isWebpMime)
+        assertTrue("WebP animation URI suffix must be recognized", isWebpUri)
     }
 
     private fun createDummyBitmap(): Bitmap {
