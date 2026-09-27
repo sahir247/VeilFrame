@@ -756,26 +756,23 @@ object SvgExporter {
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
         val bgHex = hexColor(design.palette.background)
 
-        // EFQRCode canonical formula (EFQRCodeStyle25D.swift):
-        //   normLeft = quietzone.left (= qzLeft / n)
-        //   vbX = -n * (normLeft + 1)
-        //   vbY = -n * (normTop + 0.5)
-        //   vbW = n * (normLeft + 2 + normRight)
-        //   vbH = n * (normTop + 2 + normBottom)
-        val normLeft = qzLeft.toDouble() / n.toDouble()
-        val normTop = qzTop.toDouble() / n.toDouble()
-        val normRight = qzRight.toDouble() / n.toDouble()
-        val normBottom = qzBottom.toDouble() / n.toDouble()
+        // EFQRCode canonical formula (EFQRCodeStyle25D.swift) evaluated for integer module counts:
+        //   vbX = -(n + qzLeft)
+        //   vbY = -(n/2 + qzTop)
+        //   vbW = 2n + qzLeft + qzRight
+        //   vbH = 2n + qzTop + qzBottom
+        val vbX = -(n + qzLeft).toDouble()
+        val vbY = -(n / 2.0 + qzTop)
+        val vbW = (2 * n + qzLeft + qzRight).toDouble()
+        val vbH = (2 * n + qzTop + qzBottom).toDouble()
 
-        val vbX = if (qzLeft == 0) "-$n" else "${-n.toDouble() * (normLeft + 1.0)}"
-        val vbY = if (qzTop == 0) -n / 2.0 else -n.toDouble() * (normTop + 0.5)
-        val vbW = n.toDouble() * (normLeft + 2.0 + normRight)
-        val vbH = n.toDouble() * (normTop + 2.0 + normBottom)
+        val vbXStr = if (qzLeft == 0) "-$n" else if (vbX == vbX.toLong().toDouble()) "${vbX.toLong()}" else "$vbX"
+        val vbYStr = if (vbY == vbY.toLong().toDouble()) "${vbY.toLong()}" else "$vbY"
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbX $vbY $vbW $vbH" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect x="$vbX" y="$vbY" width="$vbW" height="$vbH" fill="$bgHex" />""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbXStr $vbYStr $vbW $vbH" width="100%" height="100%">""").append("\n")
+        sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" fill="$bgHex" />""").append("\n")
 
         // Iterate in diagonal wave order (col + row from 0 to 2*(n-1))
         // Back-to-front painter's order ensures foreground blocks properly occlude background blocks

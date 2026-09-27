@@ -1276,13 +1276,100 @@ class VeilStyleParityTest {
             n = 25,
             outputWidth = 500f,
             outputHeight = 500f,
-            quietZoneLeft = 4f,
-            quietZoneTop = 2f,
-            quietZoneRight = 3f,
-            quietZoneBottom = 1f
+            quietZoneLeft = 4,
+            quietZoneTop = 2,
+            quietZoneRight = 3,
+            quietZoneBottom = 1
         )
         assertEquals(-29f, projDirectional.vbX, 0.001f)
         assertEquals(-14.5f, projDirectional.vbY, 0.001f)
+    }
+
+    @Test
+    fun testD25SvgCanvasIrCoordinateParityAcrossQuietZones() {
+        val matrix = QrMatrix("https://veilframe.app/d25-coord-parity", ErrorCorrectionLevel.M)
+        val n = matrix.size
+        val outputSize = 512
+
+        // Cases: L=T=R=B=0, L=T=R=B=1, L=T=R=B=4, and asymmetric L=1, T=2, R=3, B=4
+        val cases = listOf(
+            com.veilframe.app.qr.model.DirectionalInsets(0, 0, 0, 0),
+            com.veilframe.app.qr.model.DirectionalInsets(1, 1, 1, 1),
+            com.veilframe.app.qr.model.DirectionalInsets(4, 4, 4, 4),
+            com.veilframe.app.qr.model.DirectionalInsets(1, 2, 3, 4)
+        )
+
+        for (insets in cases) {
+            val design = QrDesign(
+                style = QrStyle.D25,
+                directionalQuietZone = insets
+            )
+            val geometry = QrGeometry(
+                matrixSize = n,
+                outputWidth = outputSize,
+                outputHeight = outputSize,
+                quietZoneModules = insets.left,
+                quietZoneLeft = insets.left,
+                quietZoneTop = insets.top,
+                quietZoneRight = insets.right,
+                quietZoneBottom = insets.bottom
+            )
+
+            // 1. D25 Projection
+            val proj = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(
+                n = n,
+                outputWidth = outputSize.toFloat(),
+                outputHeight = outputSize.toFloat(),
+                quietZoneLeft = insets.left,
+                quietZoneTop = insets.top,
+                quietZoneRight = insets.right,
+                quietZoneBottom = insets.bottom
+            )
+
+            val expectedVbX = -(n + insets.left).toFloat()
+            val expectedVbY = -(n / 2f + insets.top)
+            val expectedVbW = (2 * n + insets.left + insets.right).toFloat()
+            val expectedVbH = (2 * n + insets.top + insets.bottom).toFloat()
+
+            assertEquals(expectedVbX, proj.vbX, 0.001f)
+            assertEquals(expectedVbY, proj.vbY, 0.001f)
+
+            // 2. SVG Export ViewBox Parity
+            val svg = SvgExporter.generateSvg(matrix, design)
+            val vbXStr = if (insets.left == 0) "-$n" else if (expectedVbX == expectedVbX.toLong().toFloat()) "${expectedVbX.toLong()}" else "$expectedVbX"
+            val vbYStr = if (expectedVbY == expectedVbY.toLong().toFloat()) "${expectedVbY.toLong()}" else "$expectedVbY"
+            val expectedSvgViewBox = "viewBox=\"$vbXStr $vbYStr ${expectedVbW.toDouble()} ${expectedVbH.toDouble()}\""
+            assertTrue("SVG viewBox must match analytical D25 formula for $insets", svg.contains(expectedSvgViewBox))
+
+            // 3. Geometry IR Raster Node Parity
+            val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, design, geometry)
+            val firstPoly = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>().firstOrNull()
+            assertNotNull(firstPoly)
+            val topPt = firstPoly!!.pointsList.first()
+
+            // Find first dark module
+            var firstDarkCol = -1
+            var firstDarkRow = -1
+            outerLoop@ for (diagonal in 0 until (2 * n - 1)) {
+                val minCol = maxOf(0, diagonal - (n - 1))
+                val maxCol = minOf(n - 1, diagonal)
+                for (col in minCol..maxCol) {
+                    val row = diagonal - col
+                    if (matrix.isDark(col, row)) {
+                        firstDarkCol = col
+                        firstDarkRow = row
+                        break@outerLoop
+                    }
+                }
+            }
+            assertTrue(firstDarkCol >= 0)
+
+            val expectedScreenX = proj.screenX(firstDarkCol.toFloat(), firstDarkRow.toFloat())
+            val expectedScreenY = proj.screenY(firstDarkCol.toFloat(), firstDarkRow.toFloat(), 0f)
+
+            assertEquals(expectedScreenX, topPt.first, 0.001f)
+            assertEquals(expectedScreenY, topPt.second, 0.001f)
+        }
     }
 
     @Test

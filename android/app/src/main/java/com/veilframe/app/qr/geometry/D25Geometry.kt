@@ -51,26 +51,20 @@ object D25Geometry {
         n: Int,
         outputWidth: Float,
         outputHeight: Float,
-        quietZoneLeft: Float = 0f,
-        quietZoneTop: Float = 0f,
-        quietZoneRight: Float = 0f,
-        quietZoneBottom: Float = 0f
+        quietZoneLeft: Int = 0,
+        quietZoneTop: Int = 0,
+        quietZoneRight: Int = 0,
+        quietZoneBottom: Int = 0
     ): Projection {
-        // EFQRCode canonical formula (EFQRCodeStyle25D.swift):
-        //   normLeft = quietzone.left (= quietZoneLeft / n)
-        //   vbX = -n * (normLeft + 1)
-        //   vbY = -n * (normTop + 0.5)
-        //   vbW = n * (normLeft + 2 + normRight)
-        //   vbH = n * (normTop + 2 + normBottom)
-        val normLeft = quietZoneLeft / n.toFloat()
-        val normTop = quietZoneTop / n.toFloat()
-        val normRight = quietZoneRight / n.toFloat()
-        val normBottom = quietZoneBottom / n.toFloat()
-
-        val vbX = -n.toFloat() * (normLeft + 1f)
-        val vbY = -n.toFloat() * (normTop + 0.5f)
-        val vbW = n.toFloat() * (normLeft + 2f + normRight)
-        val vbH = n.toFloat() * (normTop + 2f + normBottom)
+        // EFQRCode canonical formula (EFQRCodeStyle25D.swift) evaluated for integer module counts:
+        //   vbX = -(n + quietZoneLeft)
+        //   vbY = -(n/2 + quietZoneTop)
+        //   vbW = 2n + quietZoneLeft + quietZoneRight
+        //   vbH = 2n + quietZoneTop + quietZoneBottom
+        val vbX = -(n + quietZoneLeft).toFloat()
+        val vbY = -(n / 2f + quietZoneTop)
+        val vbW = (2 * n + quietZoneLeft + quietZoneRight).toFloat()
+        val vbH = (2 * n + quietZoneTop + quietZoneBottom).toFloat()
 
         val scaleX = outputWidth / vbW
         val scaleY = outputHeight / vbH
@@ -87,8 +81,7 @@ object D25Geometry {
         outputHeight: Float,
         quietZoneModules: Int = 0
     ): Projection {
-        val qz = quietZoneModules.toFloat()
-        return computeProjection(n, outputWidth, outputHeight, qz, qz, qz, qz)
+        return computeProjection(n, outputWidth, outputHeight, quietZoneModules, quietZoneModules, quietZoneModules, quietZoneModules)
     }
 
     /**
@@ -112,10 +105,10 @@ object D25Geometry {
             n = n,
             outputWidth = geometry.outputWidth.toFloat(),
             outputHeight = geometry.outputHeight.toFloat(),
-            quietZoneLeft = geometry.quietZoneLeft.toFloat(),
-            quietZoneTop = geometry.quietZoneTop.toFloat(),
-            quietZoneRight = geometry.quietZoneRight.toFloat(),
-            quietZoneBottom = geometry.quietZoneBottom.toFloat()
+            quietZoneLeft = geometry.quietZoneLeft,
+            quietZoneTop = geometry.quietZoneTop,
+            quietZoneRight = geometry.quietZoneRight,
+            quietZoneBottom = geometry.quietZoneBottom
         )
 
         val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -216,10 +209,10 @@ object D25Geometry {
             n = n,
             outputWidth = geometry.outputWidth.toFloat(),
             outputHeight = geometry.outputHeight.toFloat(),
-            quietZoneLeft = geometry.quietZoneLeft.toFloat(),
-            quietZoneTop = geometry.quietZoneTop.toFloat(),
-            quietZoneRight = geometry.quietZoneRight.toFloat(),
-            quietZoneBottom = geometry.quietZoneBottom.toFloat()
+            quietZoneLeft = geometry.quietZoneLeft,
+            quietZoneTop = geometry.quietZoneTop,
+            quietZoneRight = geometry.quietZoneRight,
+            quietZoneBottom = geometry.quietZoneBottom
         )
         val nodes = mutableListOf<QrGeometryNode>()
 
