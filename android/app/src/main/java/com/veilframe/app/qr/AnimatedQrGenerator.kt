@@ -95,7 +95,8 @@ object AnimatedQrGenerator {
             val fullSvg = SvgExporter.generateSvg(matrix, frameDesign)
 
             // Extract SVG header and inner body
-            val svgOpenEnd = fullSvg.indexOf('>')
+            val svgTagStart = fullSvg.indexOf("<svg")
+            val svgOpenEnd = if (svgTagStart >= 0) fullSvg.indexOf('>', svgTagStart) else fullSvg.indexOf('>')
             val svgCloseStart = fullSvg.lastIndexOf("</svg>")
 
             if (idx == 0 && svgOpenEnd > 0) {

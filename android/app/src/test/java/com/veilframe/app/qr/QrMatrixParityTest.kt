@@ -287,82 +287,81 @@ MMMMMMMMMMMMMM    MM  MMMM  MMMMMM  MMMM      MMMM      MM  MM
         assertEquals("Pi stress test selects QR Version 26", 26, encoded.version)
         assertEquals("Version 26 is 121x121 modules", 121, encoded.matrix.size)
 
-        val generated = encoded.toQrCodeSwiftString(hasBorder = true, fill = "%%", patch = "  ")
-        // Verify key structural elements of version 26
-        val lines = generated.lines().dropLastWhile { it.isEmpty() }
-        assertEquals("Line count must match (121 modules + 2 border = 123 lines)", 123, lines.size)
-        // Line 0 is top border (spaces). Line 1 starts with 1 border patch (2 spaces) + 7-module finder pattern (14 % characters)
-        assertTrue("Output line 1 must contain version 26 finder pattern", lines[1].startsWith("  " + "%%".repeat(7)))
+        val stream = javaClass.classLoader?.getResourceAsStream("pi_version26_golden.txt")
+            ?: javaClass.getResourceAsStream("/pi_version26_golden.txt")
+        val expectedLines = stream!!.bufferedReader().readLines().filter { it.isNotEmpty() }
+        assertEquals("Pi stress test golden file must contain 123 lines", 123, expectedLines.size)
+        val generatedLines = buildList {
+            val n = encoded.matrix.size
+            add("  ".repeat(n + 2))
+            for (r in 0 until n) {
+                val sb = StringBuilder("  ")
+                for (c in 0 until n) {
+                    sb.append(if (encoded.matrix.isDark(c, r)) "%%" else "  ")
+                }
+                sb.append("  ")
+                add(sb.toString())
+            }
+            add("  ".repeat(n + 2))
+        }
+        assertEquals("Generated representation must contain 123 lines", 123, generatedLines.size)
+        for (i in 0 until 123) {
+            assertEquals("Line $i must match upstream testStressWithPi bit-for-bit", expectedLines[i], generatedLines[i])
+        }
     }
 
     // =========================================================================
-    // SECTION 2: Systematic Multi-Version, Multi-EC Differential Suite
+    // SECTION 2: Systematic Multi-Version, Multi-EC External Oracle Suite
     // =========================================================================
 
-    @Test
-    fun testDifferentialMatrixAcrossVersionsAndEcLevels() {
-        val testCases = listOf(
-            Pair("A", VeilCorrectionLevel.L), // V1
-            Pair("HELLO WORLD", VeilCorrectionLevel.M), // V1
-            Pair("https://example.com/qr", VeilCorrectionLevel.Q), // V2
-            Pair("The quick brown fox jumps over the lazy dog", VeilCorrectionLevel.H), // V4
-            Pair("VeilFrame Art Engine 100% Bit-for-bit Parity Suite 2026", VeilCorrectionLevel.M), // V4
-            Pair("1234567890".repeat(5), VeilCorrectionLevel.L), // V3
-            Pair("UTF-8: 你好世界，こんにちは！🚀🔒", VeilCorrectionLevel.H), // Multibyte UTF-8
-            Pair("Café Münchner Straße №42 — Größter QR-Test", VeilCorrectionLevel.Q) // European characters
-        )
+    data class GoldenVector(
+        val name: String,
+        val text: String,
+        val level: VeilCorrectionLevel,
+        val version: Int,
+        val size: Int,
+        val bitString: String
+    )
 
-        for ((payload, ec) in testCases) {
-            val encoded = VeilQrEncoder.encode(payload, ec)
+    private fun loadGoldenVectors(): List<GoldenVector> {
+        val stream = javaClass.classLoader?.getResourceAsStream("golden_matrices.json")
+            ?: javaClass.getResourceAsStream("/golden_matrices.json")
+            ?: error("golden_matrices.json not found in test resources")
+        val jsonText = stream.bufferedReader().readText()
+        val list = mutableListOf<GoldenVector>()
+        val blocks = jsonText.split("{\n").drop(1)
+        for (b in blocks) {
+            val name = Regex(""""name":\s*"([^"]+)"""").find(b)?.groupValues?.get(1) ?: continue
+            val text = Regex(""""text":\s*"([^"]+)"""").find(b)?.groupValues?.get(1) ?: continue
+            val level = Regex(""""level":\s*"([^"]+)"""").find(b)?.groupValues?.get(1) ?: continue
+            val version = Regex(""""version":\s*(\d+)""").find(b)?.groupValues?.get(1)?.toInt() ?: continue
+            val size = Regex(""""size":\s*(\d+)""").find(b)?.groupValues?.get(1)?.toInt() ?: continue
+            val bitString = Regex(""""bitString":\s*"([^"]+)"""").find(b)?.groupValues?.get(1) ?: continue
+            list.add(GoldenVector(name, text, VeilCorrectionLevel.valueOf(level), version, size, bitString))
+        }
+        return list
+    }
+
+    @Test
+    fun testExternalOracleGoldenCorpusAcrossVersionsAndEcLevels() {
+        val vectors = loadGoldenVectors()
+        assertTrue("Golden vectors corpus must load all 12 vectors", vectors.size >= 12)
+
+        for (vector in vectors) {
+            val encoded = VeilQrEncoder.encode(vector.text, vector.level)
             val matrix = encoded.matrix
-            val model = encoded.model
             val size = matrix.size
 
-            assertEquals("Matrix size must equal model module count", model.moduleCount, size)
-            assertEquals("Version must be consistent", model.typeNumber, matrix.version)
+            assertEquals("${vector.name}: version mismatch", vector.version, encoded.version)
+            assertEquals("${vector.name}: size mismatch", vector.size, size)
 
-            // 1. Bit-for-bit boolean identity
-            for (row in 0 until size) {
-                for (col in 0 until size) {
-                    val modelDark = model.isDark(row, col)
-                    val matrixDark = matrix.isDark(col, row)
-                    assertEquals("Module at (col=$col, row=$row) must match", modelDark, matrixDark)
+            // Bit-for-bit check against external oracle
+            for (row in 0 until vector.size) {
+                for (col in 0 until vector.size) {
+                    val expectedDark = vector.bitString[row * vector.size + col] == '1'
+                    val actualDark = matrix.isDark(col, row)
+                    assertEquals("${vector.name}: bit at (col=$col, row=$row) mismatch against oracle", expectedDark, actualDark)
                 }
-            }
-
-            // 2. Canonical finder placement
-            // Top-Left Finder
-            assertTrue(matrix.isDark(0, 0))
-            assertTrue(matrix.isDark(6, 0))
-            assertTrue(matrix.isDark(0, 6))
-            assertTrue(matrix.isDark(6, 6))
-            assertTrue(matrix.isDark(3, 3)) // Center core
-            assertEquals(QRPointType.POS_CENTER, encoded.pointTypeAt(3, 3))
-            assertEquals(QrModuleRole.FINDER_INNER, matrix.roleAt(3, 3))
-
-            // Top-Right Finder
-            assertTrue(matrix.isDark(size - 7, 0))
-            assertTrue(matrix.isDark(size - 1, 0))
-            assertTrue(matrix.isDark(size - 7, 6))
-            assertTrue(matrix.isDark(size - 1, 6))
-            assertTrue(matrix.isDark(size - 4, 3))
-            assertEquals(QRPointType.POS_CENTER, encoded.pointTypeAt(size - 4, 3))
-
-            // Bottom-Left Finder
-            assertTrue(matrix.isDark(0, size - 7))
-            assertTrue(matrix.isDark(6, size - 7))
-            assertTrue(matrix.isDark(0, size - 1))
-            assertTrue(matrix.isDark(6, size - 1))
-            assertTrue(matrix.isDark(3, size - 4))
-            assertEquals(QRPointType.POS_CENTER, encoded.pointTypeAt(3, size - 4))
-
-            // 3. Timing track alternating bits (row 6 and col 6)
-            for (i in 8 until size - 8) {
-                val expectedDark = (i % 2 == 0)
-                assertEquals("Timing on col 6 at row $i", expectedDark, matrix.isDark(6, i))
-                assertEquals("Timing on row 6 at col $i", expectedDark, matrix.isDark(i, 6))
-                assertEquals(QRPointType.TIMING, encoded.pointTypeAt(6, i))
-                assertEquals(QRPointType.TIMING, encoded.pointTypeAt(i, 6))
             }
         }
     }

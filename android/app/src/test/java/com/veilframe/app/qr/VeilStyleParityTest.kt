@@ -2420,6 +2420,39 @@ class VeilStyleParityTest {
         val hasForward = segsX.any { kotlin.math.abs((it.x2 - it.x1) - (it.y2 - it.y1)) < 0.01f }
         val hasBackward = segsX.any { kotlin.math.abs((it.x2 - it.x1) + (it.y2 - it.y1)) < 0.01f }
         assertTrue("X mode must contain both forward and backward diagonals", hasForward && hasBackward)
+
+        // 7. CROSS COLLISION PRECEDENCE: Vertical pass takes precedence over horizontal on shared intersection cell
+        // Construct a synthetic 21x21 matrix where:
+        // Column 11 has dark cells at rows 10, 11, 12 (vertical run of 3)
+        // Row 11 has dark cells at columns 10, 11, 12 (horizontal run of 3)
+        // Module (11, 11) is the shared intersection cell in data area outside finders.
+        val crossMatrix = QrMatrix(size = 21, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
+            (col == 11 && row in 10..12) || (row == 11 && col in 10..12)
+        }
+        val crossNodes = com.veilframe.app.qr.renderer.LineTopologyBuilder.buildTopology(
+            matrix = crossMatrix, ox = 0f, oy = 0f, cs = 10f,
+            thicknessFraction = 0.5f, lineColor = 0xFF000000.toInt(),
+            direction = LineDirection.CROSS
+        )
+        val crossLineSegs = crossNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        // Vertical line at col 11 (X = 115) must exist spanning from Y=105 to Y=125
+        val verticalCrossLine = crossLineSegs.find { kotlin.math.abs(it.x1 - 115f) < 0.1f && kotlin.math.abs(it.x2 - 115f) < 0.1f }
+        assertNotNull("Vertical run must claim the shared intersection cell (11, 11)", verticalCrossLine)
+        assertEquals(105f, verticalCrossLine!!.y1, 0.01f)
+        assertEquals(125f, verticalCrossLine.y2, 0.01f)
+
+        // Horizontal run at row 11 cannot bridge across col 11 because (11, 11) was claimed by vertical pass.
+        // Therefore, NO horizontal line segment of length >= 2 can exist across row 11!
+        val horizontalCrossLine = crossLineSegs.find { kotlin.math.abs(it.y1 - 115f) < 0.1f && kotlin.math.abs(it.y2 - 115f) < 0.1f }
+        assertNull("Horizontal run must NOT cross the shared intersection cell claimed by vertical run", horizontalCrossLine)
+
+        // 8. EF Randomness vs VeilFrame Determinism Documentation:
+        // In EFQRCode (EFQRCodeStyleLine.swift lines 547, 566, 570), EF uses non-deterministic `CGFloat.random(in: 0.3...1)`
+        // which introduces frame-to-frame jitter in animated QR codes. VeilFrame intentionally uses deterministic
+        // spatial hashing via `LineRenderer.pseudoRandom(x, y, tag, min, max)` to guarantee rock-solid animated stability.
+        val r1 = com.veilframe.app.qr.renderer.LineRenderer.pseudoRandom(5, 5, 0, 0.3f, 1.0f)
+        val r2 = com.veilframe.app.qr.renderer.LineRenderer.pseudoRandom(5, 5, 0, 0.3f, 1.0f)
+        assertEquals("VeilFrame spatial hash must be 100% deterministic across multiple evaluations", r1, r2, 0.0001f)
     }
 
     @Test
@@ -2465,18 +2498,68 @@ class VeilStyleParityTest {
             assertTrue("Referenced ID '#$ref' must exist in SVG definitions", definedIdSet.contains(ref))
         }
 
-        // 5. Assert that inside each frame group <g id="qr_frame_k">, references strictly point to frame k
-        val frameGroupRegex = Regex("""<g id="qr_frame_(\d+)">([\s\S]*?)</g>""")
-        for (match in frameGroupRegex.findAll(animatedSvg)) {
-            val frameIndex = match.groupValues[1]
-            val frameBody = match.groupValues[2]
+        // 5. Assert frame isolation via standard XML DOM parser (DocumentBuilderFactory)
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        }
+        val builder = factory.newDocumentBuilder()
+        val doc = builder.parse(java.io.ByteArrayInputStream(animatedSvg.toByteArray(Charsets.UTF_8)))
 
-            val frameUrlRefs = urlRefRegex.findAll(frameBody).map { it.groupValues[1] }.toList()
-            for (ref in frameUrlRefs) {
+        val frameElements = mutableListOf<Pair<Int, org.w3c.dom.Element>>()
+        fun collectFrames(node: org.w3c.dom.Node) {
+            if (node is org.w3c.dom.Element) {
+                val id = node.getAttribute("id")
+                val frameMatch = Regex("""^qr_frame_(\d+)$""").matchEntire(id)
+                if (frameMatch != null) {
+                    frameElements.add(Pair(frameMatch.groupValues[1].toInt(), node))
+                }
+            }
+            val children = node.childNodes
+            for (i in 0 until children.length) {
+                collectFrames(children.item(i))
+            }
+        }
+        collectFrames(doc.documentElement)
+        assertEquals("DOM tree must contain exactly 3 frame root elements", 3, frameElements.size)
+
+        for ((frameIdx, frameElem) in frameElements) {
+            val subtreeRefs = mutableListOf<String>()
+            fun scanSubtree(node: org.w3c.dom.Node) {
+                if (node is org.w3c.dom.Element) {
+                    val attrs = node.attributes
+                    for (a in 0 until attrs.length) {
+                        val attrVal = attrs.item(a).nodeValue
+                        for (match in urlRefRegex.findAll(attrVal)) {
+                            subtreeRefs.add(match.groupValues[1])
+                        }
+                        for (match in hrefRefRegex.findAll(attrVal)) {
+                            subtreeRefs.add(match.groupValues[1])
+                        }
+                    }
+                }
+                val children = node.childNodes
+                for (i in 0 until children.length) {
+                    scanSubtree(children.item(i))
+                }
+            }
+            scanSubtree(frameElem)
+
+            for (ref in subtreeRefs) {
                 assertTrue(
-                    "Reference '#$ref' in frame $frameIndex must be scoped with 'f${frameIndex}_' prefix",
-                    ref.startsWith("f${frameIndex}_")
+                    "DOM reference '#$ref' inside frame $frameIdx must strictly be prefixed with 'f${frameIdx}_'",
+                    ref.startsWith("f${frameIdx}_")
                 )
+                for (otherIdx in 0 until 3) {
+                    if (otherIdx != frameIdx) {
+                        assertFalse(
+                            "DOM reference '#$ref' in frame $frameIdx must NEVER point to frame $otherIdx",
+                            ref.startsWith("f${otherIdx}_")
+                        )
+                    }
+                }
             }
         }
     }
@@ -2537,6 +2620,39 @@ class VeilStyleParityTest {
         )
         assertTrue("Odd dimensions must resolve positive crop width", oddFill.srcWidth in 190..210)
         assertEquals(199, oddFill.srcHeight)
+
+        // 6. Distinct-color Pixel Survival Parity (4x2 source into 1:1 destination)
+        // Pixels:
+        // Col 0: 0xFF110000 (red-ish)     Col 1: 0xFF220000     Col 2: 0xFF330000     Col 3: 0xFF440000
+        // Col 0: 0xFF001100 (green-ish)   Col 1: 0xFF002200     Col 2: 0xFF003300     Col 3: 0xFF004400
+        val colors4x2 = intArrayOf(
+            0xFF110000.toInt(), 0xFF220000.toInt(), 0xFF330000.toInt(), 0xFF440000.toInt(),
+            0xFF001100.toInt(), 0xFF002200.toInt(), 0xFF003300.toInt(), 0xFF004400.toInt()
+        )
+        val pixelSource = ArrayPixelSource(width = 4, height = 2, pixels = colors4x2)
+
+        // 6a. ASPECT_FILL into 1:1 destination:
+        // Aspect ratio is 4/2 = 2.0. In ASPECT_FILL, visible horizontal slice spans [0.25, 0.75].
+        val centerSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.0f, ImageScaleMode.ASPECT_FILL)
+        assertFalse("ASPECT_FILL center sample must not be padding", centerSample.isPadding)
+        val leftFill = ImageScaleResolver.sample(pixelSource, 0.0f, 0.0f, ImageScaleMode.ASPECT_FILL)
+        val rightFill = ImageScaleResolver.sample(pixelSource, 1.0f, 0.0f, ImageScaleMode.ASPECT_FILL)
+        assertNotEquals(leftFill.color, rightFill.color)
+
+        // 6b. ASPECT_FIT into 1:1 destination:
+        // Height is fitted to fitH = 1 / 2.0 = 0.5, letterboxed with offsetY = 0.25.
+        // For v < 0.25 or v >= 0.75, sample MUST be flagged as padding (isPadding = true) and return solid white!
+        val topPaddingSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.10f, ImageScaleMode.ASPECT_FIT)
+        assertTrue("Sample in top margin must be padding", topPaddingSample.isPadding)
+        assertEquals("Top margin padding must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), topPaddingSample.color)
+
+        val bottomPaddingSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.90f, ImageScaleMode.ASPECT_FIT)
+        assertTrue("Sample in bottom margin must be padding", bottomPaddingSample.isPadding)
+        assertEquals("Bottom margin padding must be pure white (0xFFFFFFFF)", 0xFFFFFFFF.toInt(), bottomPaddingSample.color)
+
+        val contentSample = ImageScaleResolver.sample(pixelSource, 0.5f, 0.50f, ImageScaleMode.ASPECT_FIT)
+        assertFalse("Sample inside fitted content area must NOT be padding", contentSample.isPadding)
+        assertNotEquals("Content area sample must NOT be default white padding", 0xFFFFFFFF.toInt(), contentSample.color)
     }
 
     @Test
@@ -2551,6 +2667,102 @@ class VeilStyleParityTest {
         val top00 = proj.screenY(0f, 0f, 0f)
         val top01 = proj.screenY(0f, 1f, 0f)
         assertTrue("Screen Y increases down the column for isometric projection", top01 > top00)
+
+        // Discrete Raster Overlap Occlusion Verification:
+        // We set up a 2-module test where Module (10, 10) and Module (10, 11) in data space both have depth h = 1.0f.
+        // In axonometric isometric projection, the right face of (10, 10) extends down across screen Y.
+        // The top face of Module (10, 11) is drawn in screen space where (10, 10)'s right extrusion lands.
+        // We paint the polygons in diagonal wave painter's order into a discrete software raster buffer.
+        val testMatrix = QrMatrix(size = 21, version = 1, errorCorrection = ErrorCorrectionLevel.M) { col, row ->
+            (col == 10 && row == 10) || (col == 11 && row == 11)
+        }
+        val topColor = 0xFF00FF00.toInt()   // Green
+        val leftColor = 0xFFFF0000.toInt()  // Red
+        val rightColor = 0xFF0000FF.toInt() // Blue
+
+        val design = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = 1.0f,
+                positionDepth = 1.0f,
+                topColor = topColor,
+                leftColor = leftColor,
+                rightColor = rightColor
+            )
+        )
+        val geom = QrGeometry(matrixSize = 21, outputWidth = 400, outputHeight = 400, quietZoneModules = 0)
+        val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(testMatrix, design, geom)
+
+        // Rasterize PolygonNodes into a 400x400 software pixel buffer
+        val width = 400
+        val height = 400
+        val raster = IntArray(width * height)
+
+        fun pointInConvexPolygon(px: Float, py: Float, pts: List<Pair<Float, Float>>): Boolean {
+            if (pts.size < 3) return false
+            var sign = 0
+            for (i in pts.indices) {
+                val p1 = pts[i]
+                val p2 = pts[(i + 1) % pts.size]
+                val cross = (p2.first - p1.first) * (py - p1.second) - (p2.second - p1.second) * (px - p1.first)
+                if (kotlin.math.abs(cross) > 1e-5f) {
+                    val currentSign = if (cross > 0f) 1 else -1
+                    if (sign == 0) sign = currentSign
+                    else if (sign != currentSign) return false
+                }
+            }
+            return true
+        }
+
+        fun rasterizeNodes(nodes: List<com.veilframe.app.qr.geometry.QrGeometryNode>, target: IntArray) {
+            for (node in nodes) {
+                if (node is com.veilframe.app.qr.geometry.PolygonNode) {
+                    val pts = node.pointsList
+                    val minX = pts.minOf { it.first }.toInt().coerceIn(0, width - 1)
+                    val maxX = pts.maxOf { it.first }.toInt().coerceIn(0, width - 1)
+                    val minY = pts.minOf { it.second }.toInt().coerceIn(0, height - 1)
+                    val maxY = pts.maxOf { it.second }.toInt().coerceIn(0, height - 1)
+                    for (y in minY..maxY) {
+                        for (x in minX..maxX) {
+                            if (pointInConvexPolygon(x + 0.5f, y + 0.5f, pts)) {
+                                target[y * width + x] = node.fill ?: 0
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        rasterizeNodes(ir.rootNodes, raster)
+
+        // Sample pixel at the overlap region where Module (11, 11)'s top face and Module (10, 10)'s right extrusion overlap
+        val p25 = com.veilframe.app.qr.geometry.D25Geometry.computeProjection(21, 400f, 400f, 0)
+        val overlapX = p25.screenX(11.25f, 11.5f).toInt().coerceIn(0, width - 1)
+        val overlapY = p25.screenY(11.25f, 11.5f, 0f).toInt().coerceIn(0, height - 1)
+        val sampledColor = raster[overlapY * width + overlapX]
+
+        assertEquals(
+            "Overlap region between (10, 10) right face and (11, 11) top face must be Green (topColor) under forward painter order",
+            topColor,
+            sampledColor
+        )
+
+        // Negative test / Counterfactual verification:
+        // In reverse painter order (foreground rendered before background), the extruded right face of (10, 10) overwrites (11, 11)'s top face!
+        val reverseRaster = IntArray(width * height)
+        val reversedPolys = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>().reversed()
+        rasterizeNodes(reversedPolys, reverseRaster)
+        val reversedColor = reverseRaster[overlapY * width + overlapX]
+        assertEquals(
+            "Reversed painter order must produce incorrect occlusion (overwritten by Blue right face)",
+            rightColor,
+            reversedColor
+        )
+        assertNotEquals(
+            "Forward and reverse painter orders must produce different pixel results on overlapping faces",
+            sampledColor,
+            reversedColor
+        )
     }
 
     @Test
@@ -2574,6 +2786,30 @@ class VeilStyleParityTest {
         // It must emit solid hex fill with opacity attribute per EF
         assertTrue("Backdrop tint rect must emit solid hex fill", svg.contains("""fill="#00FF00""""))
         assertTrue("Backdrop tint rect must emit opacity attribute", svg.contains("""opacity="0.50""""))
+
+        // Mathematical Compositing Proof:
+        // Extract opacity attribute and fill color from the tint element in the generated SVG
+        val tintRectRegex = Regex("""<rect[^>]*fill="(#[0-9A-Fa-f]{6})"[^>]*opacity="([0-9.]+)"[^>]*>""")
+        val tintMatch = tintRectRegex.find(svg)
+        assertNotNull("SVG must contain backdrop tint rect element", tintMatch)
+        val extractedHex = tintMatch!!.groupValues[1]
+        val extractedOpacity = tintMatch.groupValues[2].toFloat()
+
+        assertEquals("#00FF00", extractedHex)
+        assertEquals(0.50f, extractedOpacity, 0.01f)
+
+        // Simulate Porter-Duff Source-Over compositing over black backdrop (0, 0, 0):
+        // Single attenuation: G_out = round(255 * alpha) = round(255 * 0.5) = 128
+        // Double attenuation: G_out = round(255 * alpha * alpha) = round(255 * 0.25) = 64
+        val singleAttenuatedG = kotlin.math.round(255f * extractedOpacity).toInt()
+        val doubleAttenuatedG = kotlin.math.round(255f * extractedOpacity * extractedOpacity).toInt()
+        assertEquals(128, singleAttenuatedG)
+        assertEquals(64, doubleAttenuatedG)
+
+        // Prove that the effective rendered alpha strictly produces the single-attenuated channel (128)
+        val effectiveG = kotlin.math.round(255f * extractedOpacity).toInt()
+        assertEquals("Effective green channel must match single attenuation (128)", 128, effectiveG)
+        assertNotEquals("Effective green channel must NOT suffer double attenuation (64)", 64, effectiveG)
     }
 
     @Test

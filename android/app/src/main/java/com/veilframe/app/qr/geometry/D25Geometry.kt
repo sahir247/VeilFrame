@@ -126,8 +126,11 @@ object D25Geometry {
 
         val polyPath = Path()
 
-        for (col in 0 until n) {
-            for (row in 0 until n) {
+        for (diagonal in 0 until (2 * n - 1)) {
+            val minCol = maxOf(0, diagonal - (n - 1))
+            val maxCol = minOf(n - 1, diagonal)
+            for (col in minCol..maxCol) {
+                val row = diagonal - col
                 if (!matrix.isDark(col, row)) continue
 
                 val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
@@ -224,8 +227,11 @@ object D25Geometry {
             )
         )
 
-        for (col in 0 until n) {
-            for (row in 0 until n) {
+        for (diagonal in 0 until (2 * n - 1)) {
+            val minCol = maxOf(0, diagonal - (n - 1))
+            val maxCol = minOf(n - 1, diagonal)
+            for (col in minCol..maxCol) {
+                val row = diagonal - col
                 if (!matrix.isDark(col, row)) continue
 
                 val isPosition = matrix.roleAt(col, row) == QrModuleRole.FINDER_INNER ||
