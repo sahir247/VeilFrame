@@ -38,11 +38,7 @@ object SvgExporter {
         design: QrDesign,
         pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
     ): String {
-        val qz = when (design.style) {
-            com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE -> design.explicitQuietZone ?: 1
-            com.veilframe.app.qr.QrStyle.D25 -> design.explicitQuietZone ?: 0
-            else -> design.effectiveQuietZone
-        }
+        val qz = com.veilframe.app.qr.model.QrGeometry.resolveQuietZone(design)
         val qzLeft = design.directionalQuietZone?.left ?: qz
         val qzTop = design.directionalQuietZone?.top ?: qz
         val qzRight = design.directionalQuietZone?.right ?: qz
@@ -70,28 +66,33 @@ object SvgExporter {
         val dataFill = if (hasGradient) "url(#qrGrad)" else fgHex
 
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_FILL) {
-            return generateImageFillSvg(matrix, design, qz, totalSize)
+            return generateImageFillSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE) {
-            return generateImageSvg(matrix, design, qz, totalSize)
+            return generateImageSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.D25) {
             return generate25DSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.BUBBLE) {
-            return generateBubbleSvg(matrix, design, qz, totalSize)
+            return generateBubbleSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.DSJ) {
-            return generateDsjSvg(matrix, design, qz, totalSize)
+            return generateDsjSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.FUNCTION) {
-            return generateFunctionSvg(matrix, design, qz, totalSize)
+            return generateFunctionSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.LINE) {
-            return generateLineSvg(matrix, design, qz, totalSize)
+            return generateLineSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.RANDOM_RECTANGLE) {
-            return generateRandomRectangleSvg(matrix, design, qz, totalSize)
+            return generateRandomRectangleSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
+            val resampleGeom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+            val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, resampleGeom, pixelSource)
+            return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
 
         val sb = StringBuilder()
@@ -498,7 +499,7 @@ object SvgExporter {
         }
 
         // 5. Embedded Logo (if present)
-        appendLogo(sb, design, totalWidth, totalHeight, bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
 
         sb.append("</svg>")
         return sb.toString()
@@ -529,9 +530,13 @@ object SvgExporter {
     private fun generateImageFillSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
         val sourceBmp = design.imageSource.bitmap
         val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
         val bgHex = hexColor(design.imageFillBackgroundColor)
@@ -542,30 +547,30 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
         sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="black"/>""").append("\n")
         for (col in 0 until matrix.size) {
             for (row in 0 until matrix.size) {
                 if (matrix.isDark(col, row)) {
-                    val mx = String.format(Locale.US, "%.2f", col + qz - 0.01)
-                    val my = String.format(Locale.US, "%.2f", row + qz - 0.01)
+                    val mx = String.format(Locale.US, "%.2f", col + qzLeft - 0.01)
+                    val my = String.format(Locale.US, "%.2f", row + qzTop - 0.01)
                     sb.append("""      <rect x="$mx" y="$my" width="1.02" height="1.02" fill="white"/>""").append("\n")
                 }
             }
         }
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
-        sb.append("""  <g x="0" y="0" width="$totalSize" height="$totalSize" mask="url(#hole)">""").append("\n")
-        sb.append("""    <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
+        sb.append("""  <g x="0" y="0" width="$totalWidth" height="$totalHeight" mask="url(#hole)">""").append("\n")
+        sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
         if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qz" y="$qz" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
         }
-        sb.append("""    <rect x="0" y="0" width="$totalSize" height="$totalSize" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
+        sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
         sb.append("  </g>\n")
 
-        appendLogo(sb, design, totalSize, bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
         sb.append("</svg>")
         return sb.toString()
     }
@@ -573,9 +578,13 @@ object SvgExporter {
     private fun generateImageSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
         val sourceBmp = design.imageSource.bitmap
         val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
         val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
@@ -584,18 +593,18 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
         sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="$qz" y="$qz" width="$n" height="$n" fill="white"/>""").append("\n")
-        sb.append("""      <rect x="$qz" y="$qz" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="${n - 8 + qz}" y="$qz" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="$qz" y="${n - 8 + qz}" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeft" y="$qzTop" width="$n" height="$n" fill="white"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeft" y="$qzTop" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="${n - 8 + qzLeft}" y="$qzTop" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeft" y="${n - 8 + qzTop}" width="8" height="8" fill="black"/>""").append("\n")
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
 
         // 1. Canvas background
-        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex"/>""").append("\n")
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex"/>""").append("\n")
 
         // 2. Transparent pre-pass
         if (design.allowTransparent) {
@@ -611,8 +620,8 @@ object SvgExporter {
                     val op = String.format(Locale.US, "%.2f", alpha / 255f)
                     val shape = design.moduleStyle.shape
                     val scale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
-                    val mx = col + qz + (1.0 - scale) / 2.0
-                    val my = row + qz + (1.0 - scale) / 2.0
+                    val mx = col + qzLeft + (1.0 - scale) / 2.0
+                    val my = row + qzTop + (1.0 - scale) / 2.0
                     val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
                         shape = shape,
                         x = mx,
@@ -626,9 +635,9 @@ object SvgExporter {
         }
 
         // 3. Image layer with #hole mask
-        sb.append("""  <g x="$qz" y="$qz" width="$n" height="$n" mask="url(#hole)">""").append("\n")
+        sb.append("""  <g x="$qzLeft" y="$qzTop" width="$n" height="$n" mask="url(#hole)">""").append("\n")
         if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qz" y="$qz" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="xMidYMid slice"/>""").append("\n")
         }
         sb.append("  </g>\n")
 
@@ -636,9 +645,9 @@ object SvgExporter {
         val posLightHex = hexColor(design.positionLightColor)
         val posLightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.positionLightColor))
         val finderBgs = listOf(
-            Pair(qz, qz),
-            Pair(qz + n - 8, qz),
-            Pair(qz, qz + n - 8)
+            Pair(qzLeft, qzTop),
+            Pair(qzLeft + n - 8, qzTop),
+            Pair(qzLeft, qzTop + n - 8)
         )
         for ((bx, by) in finderBgs) {
             sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bx" y="$by" fill="$posLightHex"/>""").append("\n")
@@ -646,7 +655,7 @@ object SvgExporter {
 
         val eyeOuterHex = design.eyeStyle.outerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
         val eyeInnerHex = design.eyeStyle.innerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
-        appendFinders(sb, design, qz, n, eyeOuterHex, bgHex, eyeOuterHex, eyeInnerHex)
+        appendFinders(sb, design, qzLeft, qzTop, n, eyeOuterHex, bgHex, eyeOuterHex, eyeInnerHex)
 
         // 5. Timing modules
         val timingDarkHex = hexColor(design.timingDarkColor)
@@ -662,8 +671,8 @@ object SvgExporter {
                 if (alpha == 0) continue
                 val hex = if (isDark) timingDarkHex else timingLightHex
                 val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qz + (1.0 - timingScale) / 2.0
-                val my = row + qz + (1.0 - timingScale) / 2.0
+                val mx = col + qzLeft + (1.0 - timingScale) / 2.0
+                val my = row + qzTop + (1.0 - timingScale) / 2.0
                 val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
                     shape = timingShape,
                     x = mx,
@@ -690,8 +699,8 @@ object SvgExporter {
                 if (alpha == 0) continue
                 val hex = if (isDark) alignDarkHex else alignLightHex
                 val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qz + (1.0 - alignScale) / 2.0
-                val my = row + qz + (1.0 - alignScale) / 2.0
+                val mx = col + qzLeft + (1.0 - alignScale) / 2.0
+                val my = row + qzTop + (1.0 - alignScale) / 2.0
                 val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
                     shape = alignShape,
                     x = mx,
@@ -718,8 +727,8 @@ object SvgExporter {
                 if (alpha == 0) continue
                 val hex = if (isDark) dataDarkHex else dataLightHex
                 val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qz + (1.0 - dScale) / 2.0
-                val my = row + qz + (1.0 - dScale) / 2.0
+                val mx = col + qzLeft + (1.0 - dScale) / 2.0
+                val my = row + qzTop + (1.0 - dScale) / 2.0
                 val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
                     shape = dShape,
                     x = mx,
@@ -731,7 +740,7 @@ object SvgExporter {
             }
         }
 
-        appendLogo(sb, design, totalSize, bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
         sb.append("</svg>")
         return sb.toString()
     }
@@ -752,8 +761,8 @@ object SvgExporter {
         val leftAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.leftColor))
         val rightHex = hexColor(design.depthStyle.rightColor)
         val rightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.rightColor))
-        val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
-        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
+        val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
+        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
         val bgHex = hexColor(design.palette.background)
 
         // EFQRCode canonical formula (EFQRCodeStyle25D.swift) evaluated for integer module counts:
@@ -791,10 +800,12 @@ object SvgExporter {
 
                 // Top face
                 sb.append("""  <rect opacity="$topAlpha" width="1" height="1" fill="$topHex" x="$col" y="$row" transform="$matrixString"/>""").append("\n")
-                // Left face
-                sb.append("""  <rect opacity="$leftAlpha" width="$hStr" height="1" fill="$leftHex" x="0" y="0" transform="${matrixString}translate(${col + 1},$row) skewY(45)"/>""").append("\n")
-                // Right face
-                sb.append("""  <rect opacity="$rightAlpha" width="1" height="$hStr" fill="$rightHex" x="0" y="0" transform="${matrixString}translate($col,${row + 1}) skewX(45)"/>""").append("\n")
+                if (h > 0.0001f) {
+                    // Left face
+                    sb.append("""  <rect opacity="$leftAlpha" width="$hStr" height="1" fill="$leftHex" x="0" y="0" transform="${matrixString}translate(${col + 1},$row) skewY(45)"/>""").append("\n")
+                    // Right face
+                    sb.append("""  <rect opacity="$rightAlpha" width="1" height="$hStr" fill="$rightHex" x="0" y="0" transform="${matrixString}translate($col,${row + 1}) skewX(45)"/>""").append("\n")
+                }
             }
         }
 
@@ -820,20 +831,19 @@ object SvgExporter {
     private fun generateDsjSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
-        val normGeometry = QrGeometry(
-            matrixSize = matrix.size,
-            outputWidth = totalSize,
-            outputHeight = totalSize,
-            quietZoneModules = qz
-        )
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
         val ir = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
             val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
             sb.append("</svg>")
             sb.toString()
         } else {
@@ -844,10 +854,14 @@ object SvgExporter {
     private fun generateFunctionSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
         val nCount = matrix.size
+        val totalWidth = nCount + qzLeft + qzRight
+        val totalHeight = nCount + qzTop + qzBottom
         val bgHex = hexColor(design.palette.background)
         val posColorHex = hexColor(design.eyeStyle.outerColor ?: design.palette.foreground)
         val posAlpha = colorAlpha(design.eyeStyle.outerColor ?: design.palette.foreground)
@@ -866,16 +880,16 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalSize $totalSize" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect width="$totalSize" height="$totalSize" fill="$bgHex" />""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" />""").append("\n")
 
         var id = 0
 
         // Background ring if CIRCLE function + ROUND dataStyle
         if (funcType == VeilFunctionType.CIRCLE && dataStyle == VeilFunctionDataStyle.ROUND) {
             val ringSw = String.format(Locale.US, "%.3f", nCount.toDouble() / 15.0)
-            val ringCx = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qz)
-            val ringCy = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qz)
+            val ringCx = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qzLeft)
+            val ringCy = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 + qzTop)
             val ringR = String.format(Locale.US, "%.3f", nCount.toDouble() / 2.0 * kotlin.math.sqrt(2.0) * 13.0 / 40.0)
             sb.append("""  <circle opacity="$circleAlpha" key="$id" fill="none" stroke-width="$ringSw" stroke="$circleHex" cx="$ringCx" cy="$ringCy" r="$ringR"/>""").append("\n")
             id++
@@ -887,12 +901,14 @@ object SvgExporter {
             val (svgChunk, nextId) = com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.buildSvgElements(
                 x = fx,
                 y = fy,
-                qz = qz,
+                qz = qzLeft,
                 style = posStyle,
                 size = posSize,
                 colorHex = posColorHex,
                 alpha = posAlpha,
-                idStart = id
+                idStart = id,
+                qzLeft = qzLeft,
+                qzTop = qzTop
             )
             id = nextId
             sb.append(svgChunk)
@@ -907,8 +923,8 @@ object SvgExporter {
 
                 val isDark = matrix.isDark(x, y)
                 val dist = kotlin.math.sqrt(Math.pow(centerCoord - x, 2.0) + Math.pow(centerCoord - y, 2.0)) / maxDist
-                val ax = x + qz
-                val ay = y + qz
+                val ax = x + qzLeft
+                val ay = y + qzTop
 
                 when (funcType) {
                     VeilFunctionType.FADE -> {
@@ -986,7 +1002,7 @@ object SvgExporter {
             }
         }
 
-        appendLogo(sb, design, totalSize, bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
         sb.append("</svg>")
         return sb.toString()
     }
@@ -994,20 +1010,19 @@ object SvgExporter {
     private fun generateLineSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
-        val normGeometry = QrGeometry(
-            matrixSize = matrix.size,
-            outputWidth = totalSize,
-            outputHeight = totalSize,
-            quietZoneModules = qz
-        )
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
         val ir = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
             val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
             sb.append("</svg>")
             sb.toString()
         } else {
@@ -1018,20 +1033,19 @@ object SvgExporter {
     private fun generateBubbleSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
-        val normGeometry = QrGeometry(
-            matrixSize = matrix.size,
-            outputWidth = totalSize,
-            outputHeight = totalSize,
-            quietZoneModules = qz
-        )
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
         val ir = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
             val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, totalSize, hexColor(design.palette.background))
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
             sb.append("</svg>")
             sb.toString()
         } else {
@@ -1042,17 +1056,24 @@ object SvgExporter {
     private fun generateRandomRectangleSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qz: Int,
-        totalSize: Int
+        qzLeft: Int,
+        qzTop: Int,
+        qzRight: Int,
+        qzBottom: Int
     ): String {
-        val normGeometry = QrGeometry(
-            matrixSize = matrix.size,
-            outputWidth = totalSize,
-            outputHeight = totalSize,
-            quietZoneModules = qz
-        )
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
         val ir = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
-        return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val sb = StringBuilder(svg.removeSuffix("</svg>"))
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
+            sb.append("</svg>")
+            sb.toString()
+        } else {
+            svg
+        }
     }
 
     private fun appendFinders(
@@ -1154,7 +1175,7 @@ object SvgExporter {
     }
 
     private fun appendLogo(sb: StringBuilder, design: QrDesign, totalSize: Int, bgHex: String) {
-        appendLogo(sb, design, totalSize, totalSize, bgHex)
+        appendLogo(sb, design, totalSize, 0.0, 0.0, bgHex)
     }
 
     private fun appendLogo(
@@ -1164,14 +1185,30 @@ object SvgExporter {
         totalHeight: Int,
         bgHex: String
     ) {
+        val minDim = minOf(totalWidth, totalHeight)
+        val qzX = (totalWidth - minDim) / 2.0
+        val qzY = (totalHeight - minDim) / 2.0
+        appendLogo(sb, design, minDim, qzX, qzY, bgHex)
+    }
+
+    private fun appendLogo(
+        sb: StringBuilder,
+        design: QrDesign,
+        matrixSize: Int,
+        qzLeft: Double,
+        qzTop: Double,
+        bgHex: String
+    ) {
         val logo = design.logo ?: return
         val logoBmp = logo.bitmap ?: return
 
         val fraction = logo.scaleFraction.coerceIn(0.10f, 0.35f).toDouble()
-        val qrPixelSize = minOf(totalWidth, totalHeight).toDouble()
+        val qrPixelSize = matrixSize.toDouble()
         val logoSize = qrPixelSize * fraction
-        val logoX = (totalWidth - logoSize) / 2.0
-        val logoY = (totalHeight - logoSize) / 2.0
+        val centerX = qzLeft + qrPixelSize / 2.0
+        val centerY = qzTop + qrPixelSize / 2.0
+        val logoX = centerX - logoSize / 2.0
+        val logoY = centerY - logoSize / 2.0
 
         val pad = logo.paddingModules.toDouble()
         val cardX = logoX - pad

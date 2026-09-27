@@ -393,11 +393,11 @@ data class QrDesign(
     val resampleStyle: ResampleStyle = ResampleStyle(),
     val directionalQuietZone: DirectionalInsets? = null
 ) {
-    val effectiveQuietZone: Int get() = explicitQuietZone ?: quietZoneModules
-    val effectiveQuietZoneLeft: Int get() = directionalQuietZone?.left ?: explicitQuietZone ?: quietZoneModules
-    val effectiveQuietZoneTop: Int get() = directionalQuietZone?.top ?: explicitQuietZone ?: quietZoneModules
-    val effectiveQuietZoneRight: Int get() = directionalQuietZone?.right ?: explicitQuietZone ?: quietZoneModules
-    val effectiveQuietZoneBottom: Int get() = directionalQuietZone?.bottom ?: explicitQuietZone ?: quietZoneModules
+    val effectiveQuietZone: Int get() = QrGeometry.resolveQuietZone(this)
+    val effectiveQuietZoneLeft: Int get() = directionalQuietZone?.left ?: effectiveQuietZone
+    val effectiveQuietZoneTop: Int get() = directionalQuietZone?.top ?: effectiveQuietZone
+    val effectiveQuietZoneRight: Int get() = directionalQuietZone?.right ?: effectiveQuietZone
+    val effectiveQuietZoneBottom: Int get() = directionalQuietZone?.bottom ?: effectiveQuietZone
     val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
 
     companion object {

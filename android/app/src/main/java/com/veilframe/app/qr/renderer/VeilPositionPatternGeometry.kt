@@ -187,12 +187,14 @@ object VeilPositionPatternGeometry {
         size: Float,
         colorHex: String,
         alpha: Float,
-        idStart: Int
+        idStart: Int,
+        qzLeft: Int = qz,
+        qzTop: Int = qz
     ): Pair<String, Int> {
         val sb = StringBuilder()
         var id = idStart
-        val ax = x + qz
-        val ay = y + qz
+        val ax = x + qzLeft
+        val ay = y + qzTop
         val alphaStr = String.format(Locale.US, "%.2f", alpha)
         val posSizeStr = String.format(Locale.US, "%.3f", size)
 

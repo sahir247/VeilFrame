@@ -98,17 +98,13 @@ object ScanabilityValidator {
         expectedContent: String,
         isStrict: Boolean
     ): ScanabilityReport {
-        val quietZone = if (design.style == QrStyle.IMAGE_RESAMPLE) {
-            design.explicitQuietZone ?: 1
-        } else {
-            design.effectiveQuietZone
-        }
-        val geometry = QrGeometry(
+        val geometry = QrGeometry.fromDesign(
             matrixSize = matrix.size,
             outputWidth = bitmap.width,
             outputHeight = bitmap.height,
-            quietZoneModules = quietZone
+            design = design
         )
+        val quietZone = geometry.quietZoneModules
 
         // 1. Quiet Zone Check
         val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0) || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL

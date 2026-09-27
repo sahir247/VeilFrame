@@ -68,7 +68,7 @@ object AnimatedQrGenerator {
     ): String {
         require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
 
-        val totalDurationMs = sourceFrames.sumOf { it.durationMs.coerceAtLeast(10) }
+        val totalDurationMs = maxOf(1, sourceFrames.sumOf { it.durationMs })
         val totalDurationSec = totalDurationMs / 1000.0
 
         val frameDefs = StringBuilder()
@@ -112,7 +112,7 @@ object AnimatedQrGenerator {
             frameDefs.append(innerContent).append("\n")
             frameDefs.append("    </g>\n")
 
-            accumulatedMs += frame.durationMs.coerceAtLeast(10)
+            accumulatedMs += frame.durationMs
             if (idx < sourceFrames.size - 1) {
                 val fraction = accumulatedMs.toDouble() / totalDurationMs
                 keyTimes.add(String.format(Locale.US, "%.3f", fraction))
@@ -156,6 +156,8 @@ object AnimatedQrGenerator {
 
     /**
      * Encodes rendered QR frames into an animated GIF byte array.
+     * Pure Kotlin [GifEncoder] is authoritative for all GIF outputs, ensuring
+     * exact centisecond Graphic Control Extension delay bytes and zero FPS drift.
      */
     fun encodeToGif(
         renderedFrames: List<QrFrame>,
@@ -164,43 +166,6 @@ object AnimatedQrGenerator {
         loops: Int = 0
     ): ByteArray {
         require(renderedFrames.isNotEmpty()) { "renderedFrames cannot be empty" }
-
-        val durations = renderedFrames.map { it.durationMs.coerceAtLeast(20) }
-        val minDur = durations.minOrNull() ?: 100
-        val maxDur = durations.maxOrNull() ?: 100
-        val isVariableTiming = (maxDur - minDur) > 5
-
-        // For variable timing, GifEncoder natively encodes exact centisecond per-frame delay bytes.
-        if (isVariableTiming) {
-            return GifEncoder.encode(renderedFrames, width, height, loops)
-        }
-
-        // For constant timing, try FFmpegKit first for optimized palette dithering
-        try {
-            val tempDir = File.createTempFile("qr_gif_", "_dir")
-            tempDir.delete()
-            tempDir.mkdirs()
-            val outFile = File(tempDir, "output.gif")
-            val avgDurationMs = durations.average().toInt().coerceIn(20, 1000)
-            val fps = (1000 / avgDurationMs).coerceIn(1, 50)
-
-            for ((idx, frame) in renderedFrames.withIndex()) {
-                val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
-                FileOutputStream(frameFile).use { out ->
-                    frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
-            }
-            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
-            val cmd = "-y -framerate $fps -i \"$inputPattern\" -vf \"split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3\" -loop $loops \"${outFile.absolutePath}\""
-            val session = FFmpegKit.execute(cmd)
-            if (ReturnCode.isSuccess(session.returnCode) && outFile.exists() && outFile.length() > 0) {
-                val bytes = outFile.readBytes()
-                tempDir.deleteRecursively()
-                return bytes
-            }
-            tempDir.deleteRecursively()
-        } catch (_: Throwable) {
-        }
         return GifEncoder.encode(renderedFrames, width, height, loops)
     }
 
@@ -244,10 +209,8 @@ object AnimatedQrGenerator {
                 }
             }
 
-            val durations = renderedFrames.map { it.durationMs.coerceAtLeast(20) }
-            val minDur = durations.minOrNull() ?: 100
-            val maxDur = durations.maxOrNull() ?: 100
-            val isVariableTiming = (maxDur - minDur) > 5
+            val durations = renderedFrames.map { it.durationMs.coerceAtLeast(1) }
+            val isVariableTiming = durations.distinct().size > 1
 
             val cmd = if (isVariableTiming) {
                 val concatFile = File(tempDir, "input.txt")

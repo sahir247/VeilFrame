@@ -47,7 +47,7 @@ object IrSvgRenderer {
                     sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
                 }
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is CircleNode -> {
                 sb.append(pad).append(String.format(Locale.US, "<circle cx=\"%.4f\" cy=\"%.4f\" r=\"%.4f\"", node.cx, node.cy, node.radius))
@@ -61,14 +61,14 @@ object IrSvgRenderer {
                     }
                 }
                 if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is LineNode -> {
                 sb.append(pad).append(String.format(Locale.US, "<line x1=\"%.4f\" y1=\"%.4f\" x2=\"%.4f\" y2=\"%.4f\" stroke=\"%s\" stroke-width=\"%.4f\"",
                     node.x1, node.y1, node.x2, node.y2, colorToHex(node.strokeColor), node.strokeWidth))
                 if (node.isRoundCap) sb.append(" stroke-linecap=\"round\"")
                 if (node.strokeDashArray != null) sb.append(" stroke-dasharray=\"").append(node.strokeDashArray).append("\"")
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is PolygonNode -> {
                 sb.append(pad).append("<polygon points=\"").append(node.points).append("\"")
@@ -80,7 +80,7 @@ object IrSvgRenderer {
                 }
                 if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is PathNode -> {
                 sb.append(pad).append("<path d=\"").append(node.svgPathData).append("\"")
@@ -92,14 +92,15 @@ object IrSvgRenderer {
                 }
                 if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is ImageNode -> {
                 val base64 = node.base64Data ?: node.bitmap?.let { bitmapToBase64(it) } ?: ""
+                val href = if (base64.startsWith("#")) base64 else "data:image/png;base64,$base64"
                 sb.append(pad).append(String.format(
                     Locale.US,
-                    "<image href=\"data:image/png;base64,%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
-                    base64, node.x, node.y, node.width, node.height
+                    "<image href=\"%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
+                    href, node.x, node.y, node.width, node.height
                 ))
                 if (node.opacity < 1f) {
                     sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
@@ -107,13 +108,16 @@ object IrSvgRenderer {
                 if (node.preserveAspectRatio.isNotEmpty()) {
                     sb.append(" preserveAspectRatio=\"").append(node.preserveAspectRatio).append("\"")
                 }
+                if (node.style != null) {
+                    sb.append(" style=\"").append(node.style).append("\"")
+                }
                 if (node.maskId != null) {
                     sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
                 }
                 if (node.transform != null) {
                     sb.append(" transform=\"").append(node.transform).append("\"")
                 }
-                sb.append("/>\n")
+                sb.append(" />\n")
             }
             is GroupNode -> {
                 sb.append(pad).append("<g")
@@ -131,10 +135,22 @@ object IrSvgRenderer {
 
     fun bitmapToBase64(bitmap: android.graphics.Bitmap?): String {
         if (bitmap == null || bitmap.isRecycled) return ""
-        val stream = java.io.ByteArrayOutputStream()
-        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
-        val byteArray = stream.toByteArray()
-        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+        return try {
+            val stream = java.io.ByteArrayOutputStream()
+            val ok = bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+            val byteArray = stream.toByteArray()
+            if (ok && byteArray.isNotEmpty()) {
+                try {
+                    android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+                } catch (_: Throwable) {
+                    java.util.Base64.getEncoder().encodeToString(byteArray)
+                }
+            } else {
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+            }
+        } catch (_: Throwable) {
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        }
     }
 
     fun colorToHex(color: Int): String {

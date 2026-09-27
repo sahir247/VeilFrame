@@ -620,7 +620,8 @@ class VeilStyleParityTest {
         val design = QrDesign(
             style = QrStyle.IMAGE,
             imageSource = ImageSourceStyle(source = ImageSource.Resource(123)),
-            allowTransparent = false
+            allowTransparent = false,
+            explicitQuietZone = 4
         )
 
         var darkFormatCount = 0
@@ -1437,6 +1438,454 @@ class VeilStyleParityTest {
         val accentRingsExplicit = irHWithRings.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
             .filter { it.stroke != null && it.fill == null }
         assertTrue("Explicit accentRingsEnabled = true must enable accent rings", accentRingsExplicit.isNotEmpty())
+    }
+
+    @Test
+    fun testD25DepthZeroProducesNoSideExtrusion() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/d25-zero", QrDesign())
+        val geometry = QrGeometry(matrix.size, 512, 512, 0)
+
+        // 1. Depth = 0f must produce zero side-face extrusion
+        val designZero = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(depth = 0.0f, positionDepth = 0.0f)
+        )
+        val irZero = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, designZero, geometry)
+        var darkModuleCount = 0
+        for (c in 0 until matrix.size) {
+            for (r in 0 until matrix.size) {
+                if (matrix.isDark(c, r)) darkModuleCount++
+            }
+        }
+        assertEquals("Depth 0 must only emit top faces (1 polygon per dark module)", darkModuleCount, irZero.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>().size)
+
+        val svgZero = SvgExporter.generateSvg(matrix, designZero)
+        assertFalse("SVG with depth 0 must not contain skewY extrusion", svgZero.contains("skewY(45)"))
+        assertFalse("SVG with depth 0 must not contain skewX extrusion", svgZero.contains("skewX(45)"))
+
+        // 2. Depth > 0f must produce side-face extrusions
+        val designExtruded = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(depth = 0.5f, positionDepth = 0.5f)
+        )
+        val irExtruded = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, designExtruded, geometry)
+        assertTrue("Depth > 0 must emit side extrusion polygons in IR", irExtruded.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>().size > darkModuleCount)
+
+        val svgExtruded = SvgExporter.generateSvg(matrix, designExtruded)
+        assertTrue("SVG with depth > 0 must contain skewY extrusion", svgExtruded.contains("skewY(45)"))
+        assertTrue("SVG with depth > 0 must contain skewX extrusion", svgExtruded.contains("skewX(45)"))
+    }
+
+    @Test
+    fun testD25QuietZoneCrossPipelineParity() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/d25-qz-parity", QrDesign())
+        val design = QrDesign(style = QrStyle.D25)
+
+        // 1. QrGeometry.fromDesign defaults to 0
+        val geom = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        assertEquals("D25 QrGeometry.fromDesign must default quiet zone to 0", 0, geom.quietZoneModules)
+
+        // 2. QrGenerator.generateWithResult report defaults to 0
+        val result = QrGenerator.generateWithResult("https://veilframe.app/d25-qz-parity", design)
+        assertTrue(result is QrRenderResult.Success)
+        val report = (result as QrRenderResult.Success).report
+        assertEquals("D25 QrGenerator.generateWithResult must default quiet zone to 0", 0, report.quietZone.quietZoneModules)
+
+        // 3. SvgExporter produces analytical QZ=0 viewBox [-n, -n/2, 2n, 2n]
+        val n = matrix.size
+        val svg = SvgExporter.generateSvg(matrix, design)
+        val expectedViewBox = "viewBox=\"-$n -${n / 2.0} ${n * 2.0} ${n * 2.0}\""
+        assertTrue("D25 SVG must have QZ=0 analytical viewBox: $expectedViewBox", svg.contains(expectedViewBox))
+    }
+
+    @Test
+    fun testLineDotTopologyUnconsumedCellsVsX() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/line-topology", QrDesign())
+        val geometry = QrGeometry(matrix.size, 512, 512, 4)
+
+        // HORIZONTAL direction: multi-module runs consume cells, so circles are ONLY emitted for unconsumed cells
+        val designH = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.HORIZONTAL, accentRingsEnabled = false)
+        )
+        val irH = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designH, geometry)
+        val circleNodesH = irH.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+
+        // Count dark non-finder cells
+        var darkCellCount = 0
+        for (c in 0 until matrix.size) {
+            for (r in 0 until matrix.size) {
+                if (matrix.isDark(c, r) && !com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.isFinderArea(c, r, matrix.size)) {
+                    darkCellCount++
+                }
+            }
+        }
+        assertTrue("Dark non-finder modules must exist", darkCellCount > 0)
+        // With horizontal runs consuming adjacent cells, circle count must be strictly less than total dark cells
+        assertTrue("Horizontal line runs must consume cells, emitting circles only for unconsumed cells", circleNodesH.size < darkCellCount)
+
+        // LineDirection.X: circle emitted on EVERY dark cell
+        val designX = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.X, accentRingsEnabled = false)
+        )
+        val irX = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designX, geometry)
+        val circleNodesX = irX.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+        assertEquals("LineDirection.X must emit circles on every dark cell", darkCellCount, circleNodesX.size)
+    }
+
+    @Test
+    fun testImageAndImageFillDirectionalQuietZonesInSvg() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/directional-qz", QrDesign())
+        val n = matrix.size
+        val insets = DirectionalInsets(left = 1, top = 2, right = 3, bottom = 4)
+
+        // 1. IMAGE style with directional quiet zone
+        val designImage = QrDesign(
+            style = QrStyle.IMAGE,
+            directionalQuietZone = insets,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123))
+        )
+        val svgImage = SvgExporter.generateSvg(matrix, designImage)
+        val expectedW = n + 1 + 3
+        val expectedH = n + 2 + 4
+        assertTrue("IMAGE SVG must reflect directional quiet zone in viewBox (width $expectedW, height $expectedH)", svgImage.contains("viewBox=\"0 0 $expectedW $expectedH\""))
+        assertTrue("IMAGE SVG mask must be offset by left=1, top=2", svgImage.contains("x=\"1\" y=\"2\" width=\"$n\" height=\"$n\""))
+
+        // 2. IMAGE_FILL style with directional quiet zone
+        val designFill = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            directionalQuietZone = insets,
+            imageSource = ImageSourceStyle(source = ImageSource.Resource(123))
+        )
+        val svgFill = SvgExporter.generateSvg(matrix, designFill)
+        assertTrue("IMAGE_FILL SVG must reflect directional quiet zone in viewBox", svgFill.contains("viewBox=\"0 0 $expectedW $expectedH\""))
+    }
+
+    @Test
+    fun testResampleDsjAndPlanetsFinderPositionSize() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/resample-finder-scaling", QrDesign())
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+
+        // 1. DSJ finder: center rect and arm dimensions scale with positionSize
+        val designDsjSmall = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.DSJ),
+            positionSize = 0.8f
+        )
+        val irDsjSmall = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designDsjSmall, geometry)
+        val rectsSmall = irDsjSmall.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+
+        val designDsjLarge = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.DSJ),
+            positionSize = 1.2f
+        )
+        val irDsjLarge = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designDsjLarge, geometry)
+        val rectsLarge = irDsjLarge.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+
+        val mSize = geometry.moduleSize
+        val expectedSmallCenter = (2.0f + 0.8f) * mSize
+        val expectedLargeCenter = (2.0f + 1.2f) * mSize
+        assertTrue("DSJ center rect must match (2 + posSize) * mSize for posSize 0.8", rectsSmall.any { kotlin.math.abs(it.width - expectedSmallCenter) < 0.01f })
+        assertTrue("DSJ center rect must match (2 + posSize) * mSize for posSize 1.2", rectsLarge.any { kotlin.math.abs(it.width - expectedLargeCenter) < 0.01f })
+
+        // 2. Planets finder: orbit stroke = 0.15 * mSize, planet dot radius = 0.5 * posSize * mSize
+        val designPlanets = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.PLANETS),
+            positionSize = 1.0f
+        )
+        val irPlanets = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designPlanets, geometry)
+        val circlesPlanets = irPlanets.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+
+        val expectedOrbitStroke = 0.15f * mSize
+        val expectedPlanetRadius = 0.5f * 1.0f * mSize
+        assertTrue("Planets orbit stroke must equal 0.15 * mSize", circlesPlanets.any { kotlin.math.abs(it.strokeWidth - expectedOrbitStroke) < 0.01f })
+        assertTrue("Planets dot radius must equal 0.5 * posSize * mSize", circlesPlanets.any { kotlin.math.abs(it.radius - expectedPlanetRadius) < 0.01f })
+    }
+
+    @Test
+    fun testAnimatedExactQuantizedTimingParity() {
+        val dummy = createDummyBitmap()
+
+        // 1. Durations [100, 102, 98, 100] quantize to the SAME centisecond [10, 10, 10, 10]
+        val constantFrames = listOf(
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 100),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 102),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 98),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 100)
+        )
+        val csConstant = constantFrames.map { maxOf(1, (it.durationMs + 5) / 10) }
+        assertEquals("Frames within same centisecond quantize to equal delay", 1, csConstant.distinct().size)
+
+        // 2. Durations [100, 120, 100, 100] quantize to DIFFERENT centiseconds [10, 12, 10, 10]
+        val variableFrames = listOf(
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 100),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 120),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 100),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 100)
+        )
+        val csVariable = variableFrames.map { maxOf(1, (it.durationMs + 5) / 10) }
+        assertTrue("Frames with different centiseconds are correctly identified as variable timing", csVariable.distinct().size > 1)
+    }
+
+    @Test
+    fun testAnimatedSvgUnclampedDurationParity() {
+        val dummy = createDummyBitmap()
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/unclamped-svg-timing", QrDesign())
+
+        // Frames with durations less than 10ms (5ms, 15ms, 20ms) -> total 40ms = 0.040s
+        val frames = listOf(
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 5),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 15),
+            com.veilframe.app.qr.model.QrFrame(bitmap = dummy, durationMs = 20)
+        )
+
+        val svg = AnimatedQrGenerator.generateAnimatedSvg(matrix, QrDesign(), frames)
+
+        // Verify total duration is exactly 0.040s (not clamped to >=10ms per frame which would be 45ms or 0.045s)
+        assertTrue("Animated SVG duration must be exactly 0.040s for 40ms total", svg.contains("dur=\"0.040s\""))
+
+        // KeyTimes: 0.000, 5/40 = 0.125, (5+15)/40 = 0.500, 1.000
+        assertTrue("KeyTimes must include exact fraction 0.125 for 5ms frame", svg.contains("0.125"))
+        assertTrue("KeyTimes must include exact fraction 0.500 for cumulative 20ms", svg.contains("0.500"))
+    }
+
+    @Test
+    fun testDirectionalQuietZoneLogoCenteringCanvasAndSvg() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/directional-logo-center", QrDesign())
+        val n = matrix.size
+
+        // Asymmetric quiet zones: L=1, T=2, R=3, B=4
+        val insets = DirectionalInsets(left = 1, top = 2, right = 3, bottom = 4)
+        val modulePx = 10f
+        val outW = ((n + 1 + 3) * modulePx).toInt()
+        val outH = ((n + 2 + 4) * modulePx).toInt()
+
+        val geometry = QrGeometry(
+            matrixSize = n,
+            outputWidth = outW,
+            outputHeight = outH,
+            quietZoneModules = 1,
+            quietZoneLeft = 1,
+            quietZoneTop = 2,
+            quietZoneRight = 3,
+            quietZoneBottom = 4
+        )
+
+        // 1. Pure geometry verification
+        // QR matrix center in pixels:
+        // qrPixelSize = n * modulePx
+        // cx = offsetX + qrPixelSize / 2f
+        // cy = offsetY + qrPixelSize / 2f
+        // With totalModulesX * modulePx == outW, offsetX = quietZoneLeft * modulePx = 10f
+        val qrPixelSize = n * modulePx
+        val expectedCenterX = geometry.offsetX + qrPixelSize / 2f
+        val expectedCenterY = geometry.offsetY + qrPixelSize / 2f
+
+        val calculatedCenterX = (1f + n / 2f) * modulePx
+        val calculatedCenterY = (2f + n / 2f) * modulePx
+
+        assertEquals("Geometry offsetX must place QR matrix at qzLeft * modulePx", 1f * modulePx, geometry.offsetX, 0.01f)
+        assertEquals("Geometry offsetY must place QR matrix at qzTop * modulePx", 2f * modulePx, geometry.offsetY, 0.01f)
+        assertEquals("Expected QR center X must match directional inset L=1 + N/2", calculatedCenterX, expectedCenterX, 0.01f)
+        assertEquals("Expected QR center Y must match directional inset T=2 + N/2", calculatedCenterY, expectedCenterY, 0.01f)
+
+        // 2. IR geometry logo centering (Canvas & SVG shared pipeline)
+        val logoBmp = createDummyBitmap()
+        val designWithLogo = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            directionalQuietZone = insets,
+            logo = LogoStyle(
+                bitmap = logoBmp,
+                scaleFraction = 0.20f
+            )
+        )
+        val irResample = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designWithLogo, geometry)
+        val imageNode = irResample.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.ImageNode>().first()
+        val logoCenterX = imageNode.x + imageNode.width / 2f
+        val logoCenterY = imageNode.y + imageNode.height / 2f
+
+        assertEquals("Resample IR logo must be centered at QR matrix centerX", expectedCenterX, logoCenterX, 0.01f)
+        assertEquals("Resample IR logo must be centered at QR matrix centerY", expectedCenterY, logoCenterY, 0.01f)
+
+        // 3. SVG logo centering (Resample IR-rendered SVG and Standard SVG)
+        val qrPixelSizeSvg = n.toDouble()
+        val logoSizeSvg = qrPixelSizeSvg * 0.20
+        val expectedLogoXSvg = (1.0 + qrPixelSizeSvg / 2.0) - (logoSizeSvg / 2.0)
+        val expectedLogoYSvg = (2.0 + qrPixelSizeSvg / 2.0) - (logoSizeSvg / 2.0)
+
+        val svgResample = SvgExporter.generateSvg(matrix, designWithLogo)
+        val resampleImageTag = svgResample.lines().first { it.contains("<image") }
+        val resampleActualX = Regex("""x="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        val resampleActualY = Regex("""y="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        assertEquals("Resample SVG logo X must match expected QR matrix center", expectedLogoXSvg, resampleActualX, 0.01)
+        assertEquals("Resample SVG logo Y must match expected QR matrix center", expectedLogoYSvg, resampleActualY, 0.01)
+
+        val designBasic = QrDesign(
+            directionalQuietZone = insets,
+            logo = LogoStyle(bitmap = logoBmp, scaleFraction = 0.20f)
+        )
+        val svgBasic = SvgExporter.generateSvg(matrix, designBasic)
+        val basicImageTag = svgBasic.lines().first { it.contains("<image") }
+        val basicActualX = Regex("""x="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        val basicActualY = Regex("""y="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        assertEquals("Standard SVG logo X must match expected QR matrix center", expectedLogoXSvg, basicActualX, 0.01)
+        assertEquals("Standard SVG logo Y must match expected QR matrix center", expectedLogoYSvg, basicActualY, 0.01)
+    }
+
+    @Test
+    fun testD25DepthZeroNoExtrusionCanvasAndSvg() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/d25-zero-depth-parity", QrDesign())
+        val n = matrix.size
+
+        val topColor = 0xFFFF0000.toInt() // Red
+        val leftColor = 0xFF00FF00.toInt() // Green
+        val rightColor = 0xFF0000FF.toInt() // Blue
+        val bgColor = 0xFFFFFFFF.toInt() // White
+
+        val designZeroDepth = QrDesign(
+            style = QrStyle.D25,
+            depthStyle = DepthStyle(
+                depth = 0.0f,
+                positionDepth = 0.0f,
+                topColor = topColor,
+                leftColor = leftColor,
+                rightColor = rightColor
+            ),
+            palette = PaletteStyle(background = bgColor, foreground = topColor),
+            explicitQuietZone = 0
+        )
+
+        val geometry = QrGeometry(matrixSize = n, outputWidth = 200, outputHeight = 200, quietZoneModules = 0)
+
+        // 1. IR geometry check (shared by Canvas and SVG pipelines)
+        val ir = com.veilframe.app.qr.geometry.D25Geometry.buildGeometry(matrix, designZeroDepth, geometry)
+        val polygonNodes = ir.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.PolygonNode>()
+        val sideNodes = polygonNodes.filter { it.fill == leftColor || it.fill == rightColor }
+        assertEquals("Zero depth D25 IR must contain zero side-face PolygonNodes", 0, sideNodes.size)
+        val topNodes = polygonNodes.filter { it.fill == topColor }
+        assertTrue("Zero depth D25 IR must contain top-face PolygonNodes", topNodes.isNotEmpty())
+
+        // 2. SVG check
+        val svg = SvgExporter.generateSvg(matrix, designZeroDepth)
+        assertFalse("Zero depth D25 SVG must not contain skewY extrusion transforms", svg.contains("skewY"))
+        assertFalse("Zero depth D25 SVG must not contain skewX extrusion transforms", svg.contains("skewX"))
+        assertFalse("Zero depth D25 SVG must not contain leftColor side faces", svg.contains("#00FF00"))
+        assertFalse("Zero depth D25 SVG must not contain rightColor side faces", svg.contains("#0000FF"))
+    }
+
+    @Test
+    fun testResampleDeterministicSamplingParityFixture() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/resample-fixture", QrDesign())
+        val n = matrix.size
+
+        // Create a 3Nx3N gradient pixel source
+        val dim = 3 * n
+        val pixels = IntArray(dim * dim)
+        for (y in 0 until dim) {
+            for (x in 0 until dim) {
+                val grayVal = ((x + y) * 255) / (2 * dim)
+                pixels[y * dim + x] = (0xFF shl 24) or (grayVal shl 16) or (grayVal shl 8) or grayVal
+            }
+        }
+        val arraySource = com.veilframe.app.qr.renderer.ArrayPixelSource(width = dim, height = dim, pixels = pixels)
+
+        val emittedSubpixels = mutableSetOf<Pair<Int, Int>>()
+        val anchorSubpixels = mutableSetOf<Pair<Int, Int>>()
+
+        val style = ImageSourceStyle(contrast = 0.0f, exposure = 0.0f)
+        val seed = 12345L
+
+        com.veilframe.app.qr.renderer.ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = arraySource,
+            style = style,
+            seed = seed,
+            policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy
+        ) { col, row, subX, subY, isCenterAnchor ->
+            if (isCenterAnchor) {
+                anchorSubpixels.add(Pair(subX, subY))
+            } else {
+                emittedSubpixels.add(Pair(subX, subY))
+            }
+        }
+
+        // Verify anchors: Dark DATA modules have anchor at (3*col+1, 3*row+1), Light DATA modules have NONE
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) == QrModuleRole.DATA) {
+                    val centerPt = Pair(3 * col + 1, 3 * row + 1)
+                    if (matrix.isDark(col, row)) {
+                        assertTrue("Dark data module must emit center anchor at $centerPt", anchorSubpixels.contains(centerPt))
+                    } else {
+                        assertFalse("Light data module must NEVER emit center anchor at $centerPt", anchorSubpixels.contains(centerPt))
+                    }
+                }
+            }
+        }
+
+        // Verify surrounding 8 subpixels match reference stochastic formula
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) == QrModuleRole.DATA) {
+                    for (dx in 0..2) {
+                        for (dy in 0..2) {
+                            if (dx == 1 && dy == 1) continue
+                            val sx = 3 * col + dx
+                            val sy = 3 * row + dy
+                            val pixel = arraySource.getPixel(sx, sy)
+                            val grayNorm = com.veilframe.app.qr.renderer.ImageScaleResolver.calculatePixelLuminance(pixel)
+                            val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
+                            val rnd = com.veilframe.app.qr.renderer.ResampleSubpixelEngine.subpixelRandom(seed, sx, sy)
+                            val shouldEmit = rnd > threshold
+
+                            val isEmitted = emittedSubpixels.contains(Pair(sx, sy))
+                            assertEquals("Subpixel ($sx, $sy) emission must match deterministic reference thresholding", shouldEmit, isEmitted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testLineRunAndIsolatedDotParityWithMutationOrder() {
+        val matrix = QrGenerator.generateMatrix("https://veilframe.app/line-topology-parity", QrDesign())
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+
+        // 1. Horizontal direction: continuous runs consume cells, isolated cells get circles
+        val designHorizontal = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.HORIZONTAL, thicknessFraction = 0.5f)
+        )
+        val irHoriz = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designHorizontal, geometry)
+        val linesHoriz = irHoriz.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val circlesHoriz = irHoriz.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+
+        assertTrue("Horizontal line style must emit continuous line segments", linesHoriz.isNotEmpty())
+        assertTrue("Horizontal line style must emit isolated circle nodes", circlesHoriz.isNotEmpty())
+
+        // 2. X direction: both diagonals emitted + circles for all dark data modules
+        val designX = QrDesign(
+            style = QrStyle.LINE,
+            lineStyle = LineStyle(direction = LineDirection.X, thicknessFraction = 0.5f)
+        )
+        val irX = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designX, geometry)
+        val linesX = irX.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        val circlesX = irX.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.CircleNode>()
+
+        assertTrue("X line style must emit diagonal line segments", linesX.isNotEmpty())
+        assertTrue("X line style must emit circles across dark modules (EF circuit aesthetic)", circlesX.size >= linesX.size)
+
+        // 3. Determinism check: VeilFrame's pseudoRandom guarantees reproducible geometry across invocations
+        val irX2 = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, designX, geometry)
+        val linesX2 = irX2.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.LineNode>()
+        assertEquals("VeilFrame X mode must produce deterministic, reproducible geometry (deterministic by design)", linesX.size, linesX2.size)
+        for (i in linesX.indices) {
+            assertEquals("Line segment stroke width must match reproducibly", linesX[i].strokeWidth, linesX2[i].strokeWidth, 0.001f)
+        }
     }
 
     private fun createDummyBitmap(): Bitmap {

@@ -71,6 +71,7 @@ object LineTopologyBuilder {
                 matrix.isDark(col, row) && !VeilPositionPatternGeometry.isFinderArea(col, row, n)
             }
         }
+        val unconsumed = Array(n) { col -> BooleanArray(n) { row -> isDataDark[col][row] } }
 
         val segments = mutableListOf<LineSegment>()
 
@@ -86,7 +87,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > x) {
-                                for (i in x..end) ava[i][y] = false
+                                for (i in x..end) {
+                                    ava[i][y] = false
+                                    unconsumed[i][y] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (end + 0.5f) * cs
@@ -112,7 +116,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > y) {
-                                for (i in y..end) ava[x][i] = false
+                                for (i in y..end) {
+                                    ava[x][i] = false
+                                    unconsumed[x][i] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + 0.5f) * cs
@@ -139,7 +146,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > y) {
-                                for (i in y..end) avaV[x][i] = false
+                                for (i in y..end) {
+                                    avaV[x][i] = false
+                                    unconsumed[x][i] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + 0.5f) * cs
@@ -163,7 +173,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > x) {
-                                for (i in x..end) avaH[i][y] = false
+                                for (i in x..end) {
+                                    avaH[i][y] = false
+                                    unconsumed[i][y] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (end + 0.5f) * cs
@@ -193,6 +206,7 @@ object LineTopologyBuilder {
                                 if (end > 1) {
                                     for (i in 0 until end) {
                                         ava[x][y + i] = false
+                                        unconsumed[x][y + i] = false
                                     }
                                     val lx1 = ox + (x + 0.5f) * cs
                                     val ly1 = oy + (y + 0.5f) * cs
@@ -211,6 +225,7 @@ object LineTopologyBuilder {
                                 if (end > 1) {
                                     for (i in 0 until end) {
                                         ava[x + i][y] = false
+                                        unconsumed[x + i][y] = false
                                     }
                                     val lx1 = ox + (x + 0.5f) * cs
                                     val ly1 = oy + (y + 0.5f) * cs
@@ -234,7 +249,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > 1) {
-                                for (i in 0 until end) ava[x + i][y + i] = false
+                                for (i in 0 until end) {
+                                    ava[x + i][y + i] = false
+                                    unconsumed[x + i][y + i] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
@@ -256,7 +274,10 @@ object LineTopologyBuilder {
                                 end++
                             }
                             if (end > 1) {
-                                for (i in 0 until end) ava[x + i][y - i] = false
+                                for (i in 0 until end) {
+                                    ava[x + i][y - i] = false
+                                    unconsumed[x + i][y - i] = false
+                                }
                                 val lx1 = ox + (x + 0.5f) * cs
                                 val ly1 = oy + (y + 0.5f) * cs
                                 val lx2 = ox + (x + end - 0.5f) * cs
@@ -400,15 +421,7 @@ object LineTopologyBuilder {
                         )
                     }
                 } else {
-                    val hasLeft = x > 0 && isDataDark[x - 1][y]
-                    val hasRight = x + 1 < n && isDataDark[x + 1][y]
-                    val hasUp = y > 0 && isDataDark[x][y - 1]
-                    val hasDown = y + 1 < n && isDataDark[x][y + 1]
-
-                    val degree = (if (hasLeft) 1 else 0) + (if (hasRight) 1 else 0) +
-                        (if (hasUp) 1 else 0) + (if (hasDown) 1 else 0)
-
-                    if (degree <= 1) {
+                    if (unconsumed[x][y]) {
                         nodes.add(CircleNode(cx, cy, nodeRadius * clampedLength.coerceIn(0.5f, 1.0f), fill = lineColor))
                         if (addAccentRings && (x * 19 + y * 23) % 5 == 0) {
                             val ringR = cs * 0.44f * clampedLength.coerceIn(0.5f, 1.0f)

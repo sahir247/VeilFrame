@@ -98,8 +98,8 @@ object D25Geometry {
         val leftColor = design.depthStyle.leftColor
         val rightColor = design.depthStyle.rightColor
 
-        val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
-        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
+        val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
+        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
 
         val proj = computeProjection(
             n = n,
@@ -160,31 +160,33 @@ object D25Geometry {
                 polyPath.close()
                 canvas.drawPath(polyPath, topPaint)
 
-                // 2. Left Face
-                val l2x = proj.screenX(c + 1f, r + 1f)
-                val l2y = proj.screenY(c + 1f, r + 1f, h)
-                val l3x = proj.screenX(c + 1f, r)
-                val l3y = proj.screenY(c + 1f, r, h)
+                if (h > 0.0001f) {
+                    // 2. Left Face
+                    val l2x = proj.screenX(c + 1f, r + 1f)
+                    val l2y = proj.screenY(c + 1f, r + 1f, h)
+                    val l3x = proj.screenX(c + 1f, r)
+                    val l3y = proj.screenY(c + 1f, r, h)
 
-                polyPath.reset()
-                polyPath.moveTo(p1x, p1y)
-                polyPath.lineTo(p2x, p2y)
-                polyPath.lineTo(l2x, l2y)
-                polyPath.lineTo(l3x, l3y)
-                polyPath.close()
-                canvas.drawPath(polyPath, leftPaint)
+                    polyPath.reset()
+                    polyPath.moveTo(p1x, p1y)
+                    polyPath.lineTo(p2x, p2y)
+                    polyPath.lineTo(l2x, l2y)
+                    polyPath.lineTo(l3x, l3y)
+                    polyPath.close()
+                    canvas.drawPath(polyPath, leftPaint)
 
-                // 3. Right Face
-                val r3x = proj.screenX(c, r + 1f)
-                val r3y = proj.screenY(c, r + 1f, h)
+                    // 3. Right Face
+                    val r3x = proj.screenX(c, r + 1f)
+                    val r3y = proj.screenY(c, r + 1f, h)
 
-                polyPath.reset()
-                polyPath.moveTo(p3x, p3y)
-                polyPath.lineTo(p2x, p2y)
-                polyPath.lineTo(l2x, l2y)
-                polyPath.lineTo(r3x, r3y)
-                polyPath.close()
-                canvas.drawPath(polyPath, rightPaint)
+                    polyPath.reset()
+                    polyPath.moveTo(p3x, p3y)
+                    polyPath.lineTo(p2x, p2y)
+                    polyPath.lineTo(l2x, l2y)
+                    polyPath.lineTo(r3x, r3y)
+                    polyPath.close()
+                    canvas.drawPath(polyPath, rightPaint)
+                }
             }
         }
     }
@@ -202,8 +204,8 @@ object D25Geometry {
         val leftColor = design.depthStyle.leftColor
         val rightColor = design.depthStyle.rightColor
 
-        val dataH = design.depthStyle.depth.coerceAtLeast(0.1f)
-        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.1f)
+        val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
+        val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
 
         val proj = computeProjection(
             n = n,
@@ -260,29 +262,31 @@ object D25Geometry {
                     )
                 )
 
-                val l2x = proj.screenX(c + 1f, r + 1f)
-                val l2y = proj.screenY(c + 1f, r + 1f, h)
-                val l3x = proj.screenX(c + 1f, r)
-                val l3y = proj.screenY(c + 1f, r, h)
-                val leftPts = listOf(Pair(p1x, p1y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(l3x, l3y))
-                nodes.add(
-                    PolygonNode(
-                        points = "$p1x,$p1y $p2x,$p2y $l2x,$l2y $l3x,$l3y",
-                        pointsList = leftPts,
-                        fill = leftColor
+                if (h > 0.0001f) {
+                    val l2x = proj.screenX(c + 1f, r + 1f)
+                    val l2y = proj.screenY(c + 1f, r + 1f, h)
+                    val l3x = proj.screenX(c + 1f, r)
+                    val l3y = proj.screenY(c + 1f, r, h)
+                    val leftPts = listOf(Pair(p1x, p1y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(l3x, l3y))
+                    nodes.add(
+                        PolygonNode(
+                            points = "$p1x,$p1y $p2x,$p2y $l2x,$l2y $l3x,$l3y",
+                            pointsList = leftPts,
+                            fill = leftColor
+                        )
                     )
-                )
 
-                val r3x = proj.screenX(c, r + 1f)
-                val r3y = proj.screenY(c, r + 1f, h)
-                val rightPts = listOf(Pair(p3x, p3y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(r3x, r3y))
-                nodes.add(
-                    PolygonNode(
-                        points = "$p3x,$p3y $p2x,$p2y $l2x,$l2y $r3x,$r3y",
-                        pointsList = rightPts,
-                        fill = rightColor
+                    val r3x = proj.screenX(c, r + 1f)
+                    val r3y = proj.screenY(c, r + 1f, h)
+                    val rightPts = listOf(Pair(p3x, p3y), Pair(p2x, p2y), Pair(l2x, l2y), Pair(r3x, r3y))
+                    nodes.add(
+                        PolygonNode(
+                            points = "$p3x,$p3y $p2x,$p2y $l2x,$l2y $r3x,$r3y",
+                            pointsList = rightPts,
+                            fill = rightColor
+                        )
                     )
-                )
+                }
             }
         }
 

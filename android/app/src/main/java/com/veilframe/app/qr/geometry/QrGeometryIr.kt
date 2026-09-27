@@ -79,7 +79,8 @@ data class ImageNode(
     val preserveAspectRatio: String = "xMidYMid slice",
     val maskId: String? = null,
     val clipOutRects: List<RectF> = emptyList(),
-    val transform: String? = null
+    val transform: String? = null,
+    val style: String? = null
 ) : QrGeometryNode
 
 data class GroupNode(

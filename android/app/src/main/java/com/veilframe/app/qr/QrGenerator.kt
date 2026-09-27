@@ -138,26 +138,11 @@ object QrGenerator {
             val matrix = generateMatrix(content, design, mode)
 
             val size = design.outputSize.coerceIn(256, 4096)
-            val quietZone = if (mode == GenerationMode.ARTISTIC_ENGINE || design.style == QrStyle.IMAGE_RESAMPLE) {
-                design.explicitQuietZone ?: 1
-            } else {
-                design.effectiveQuietZone
-            }
-
-            val qzLeft = design.directionalQuietZone?.left ?: quietZone
-            val qzTop = design.directionalQuietZone?.top ?: quietZone
-            val qzRight = design.directionalQuietZone?.right ?: quietZone
-            val qzBottom = design.directionalQuietZone?.bottom ?: quietZone
-
-            val geometry = QrGeometry(
+            val geometry = QrGeometry.fromDesign(
                 matrixSize = matrix.size,
                 outputWidth = size,
                 outputHeight = size,
-                quietZoneModules = quietZone,
-                quietZoneLeft = qzLeft,
-                quietZoneTop = qzTop,
-                quietZoneRight = qzRight,
-                quietZoneBottom = qzBottom
+                design = design
             )
 
             val bitmap = generateBitmap(matrix, design, geometry)
@@ -173,8 +158,8 @@ object QrGenerator {
                     isScanReady = false,
                     validationSkipped = true,
                     quietZone = com.veilframe.app.qr.validation.QuietZoneReport(
-                        hasFourModuleMargin = quietZone >= 4,
-                        quietZoneModules = quietZone
+                        hasFourModuleMargin = geometry.quietZoneModules >= 4,
+                        quietZoneModules = geometry.quietZoneModules
                     ),
                     contrast = com.veilframe.app.qr.validation.ContrastReport(0f, 0f, 1f, 1f, 1f, isContrastAdequate = false),
                     finders = com.veilframe.app.qr.validation.FinderIntegrityReport(findersIntact = true, separatorsClear = true),

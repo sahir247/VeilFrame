@@ -32,14 +32,26 @@ class QrGeometry(
     val contentHeight: Float get() = matrixSize * moduleSize
 
     companion object {
+        fun resolveDefaultQuietZone(style: QrStyle, defaultFallback: Int = 4): Int {
+            return when (style) {
+                QrStyle.D25 -> 0
+                QrStyle.IMAGE_RESAMPLE, QrStyle.IMAGE, QrStyle.IMAGE_FILL -> 1
+                else -> defaultFallback
+            }
+        }
+
+        fun resolveQuietZone(design: QrDesign): Int {
+            return design.explicitQuietZone ?: resolveDefaultQuietZone(design.style, design.quietZoneModules)
+        }
+
         fun fromDesign(
             matrixSize: Int,
             outputWidth: Int,
             outputHeight: Int,
             design: QrDesign,
-            defaultQuietZone: Int = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else if (design.style == QrStyle.D25) 0 else 4
+            defaultQuietZone: Int = resolveDefaultQuietZone(design.style)
         ): QrGeometry {
-            val fallbackQz = if (design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE_FILL) 1 else if (design.style == QrStyle.D25) 0 else defaultQuietZone
+            val fallbackQz = resolveDefaultQuietZone(design.style, defaultQuietZone)
             val qz = design.explicitQuietZone ?: fallbackQz
             val qzLeft = design.directionalQuietZone?.left ?: qz
             val qzTop = design.directionalQuietZone?.top ?: qz

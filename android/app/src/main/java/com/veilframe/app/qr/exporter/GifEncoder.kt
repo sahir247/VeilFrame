@@ -68,7 +68,7 @@ class GifEncoder {
     fun addFrame(pixels: IntArray, frameWidth: Int, frameHeight: Int, durationMs: Int = 100) {
         val os = checkNotNull(outputStream) { "GifEncoder must be started before adding frames" }
         val (palette, indexedPixels) = quantizeToPalette(pixels)
-        val delayCentiseconds = max(1, durationMs / 10)
+        val delayCentiseconds = max(1, (durationMs + 5) / 10)
 
         writeGraphicControlExtension(os, delayCentiseconds)
         writeImageDescriptor(os, frameWidth, frameHeight)
