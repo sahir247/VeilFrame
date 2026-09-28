@@ -125,6 +125,7 @@ data class QrStyleParams(
     val lineAccentRingsEnabled: Boolean = false,
     val lineCircuitBridgesEnabled: Boolean = false,
     val lineVariant: com.veilframe.app.qr.model.LineVariant = com.veilframe.app.qr.model.LineVariant.EF,
+    val lineRandomSource: (() -> Float)? = null,
     // --- Random Rectangle specific (VeilFrameStyleRandomRectangle) ---
     val randomRectColor: Int? = null,
     val randomRectSeed: Long = 42L,

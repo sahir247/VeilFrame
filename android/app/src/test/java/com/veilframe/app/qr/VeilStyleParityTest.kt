@@ -1485,14 +1485,11 @@ class VeilStyleParityTest {
             assertNotNull(firstPoly)
             val topPt = firstPoly!!.pointsList.first()
 
-            // Find first dark module
+            // Find first dark module in EF column-major painter order
             var firstDarkCol = -1
             var firstDarkRow = -1
-            outerLoop@ for (diagonal in 0 until (2 * n - 1)) {
-                val minCol = maxOf(0, diagonal - (n - 1))
-                val maxCol = minOf(n - 1, diagonal)
-                for (col in minCol..maxCol) {
-                    val row = diagonal - col
+            outerLoop@ for (col in 0 until n) {
+                for (row in 0 until n) {
                     if (matrix.isDark(col, row)) {
                         firstDarkCol = col
                         firstDarkRow = row
@@ -3159,13 +3156,19 @@ class VeilStyleParityTest {
         // =====================================================================
         // 5. Logo Fraction / Icon Percentage Safety Guard
         // =====================================================================
-        val normalLogo = LogoStyle(scaleFraction = 0.20f)
-        assertEquals(0.20f, normalLogo.scaleFraction, 0.001f)
+        val dummyLogo = createDummyBitmap()
+        val paramsNormalLogo = QrStyleParams(style = QrStyle.BASIC, logo = dummyLogo, logoFraction = 0.20f)
+        val designNormalLogo = QrDesign.fromQrStyleParams(paramsNormalLogo)
+        assertEquals(0.20f, designNormalLogo.logo!!.scaleFraction, 0.001f)
 
         // Defensive guard ensures logo does not obscure QR modules beyond recovery:
-        val excessiveLogoFraction = 0.85f
-        val clampedLogoFraction = excessiveLogoFraction.coerceIn(0.10f, 0.35f)
-        assertEquals("Excessive logo fraction (0.85f -> 0.35f) clamped to safe maximum", 0.35f, clampedLogoFraction, 0.001f)
+        val paramsExcessiveLogo = QrStyleParams(style = QrStyle.BASIC, logo = dummyLogo, logoFraction = 0.85f)
+        val designExcessiveLogo = QrDesign.fromQrStyleParams(paramsExcessiveLogo)
+        assertEquals("Excessive logo fraction (0.85f -> 0.35f) clamped to safe maximum", 0.35f, designExcessiveLogo.logo!!.scaleFraction, 0.001f)
+
+        val paramsNegativeLogo = QrStyleParams(style = QrStyle.BASIC, logo = dummyLogo, logoFraction = -0.10f)
+        val designNegativeLogo = QrDesign.fromQrStyleParams(paramsNegativeLogo)
+        assertEquals("Negative logo fraction (-0.10f -> 0.10f) clamped to safe minimum", 0.10f, designNegativeLogo.logo!!.scaleFraction, 0.001f)
     }
 
     // =========================================================================

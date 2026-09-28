@@ -21,8 +21,8 @@ import kotlin.math.sqrt
  * 2. Left Face: Skewed parallelogram extending down by [height] with [leftColor]
  * 3. Right Face: Skewed parallelogram extending down by [height] with [rightColor]
  *
- * Sorted in diagonal wave order (col + row from 0 to 2*(N-1)) ensuring back-to-front
- * occlusion without z-fighting.
+ * Sorted in column-major order (for col in 0 until n, for row in 0 until n) matching
+ * EFQRCode painter order.
  */
 object D25Geometry {
 

@@ -498,7 +498,7 @@ data class QrDesign(
                 logo = if (params.logo != null) {
                     LogoStyle(
                         bitmap = params.logo,
-                        scaleFraction = params.logoFraction,
+                        scaleFraction = params.logoFraction.coerceIn(0.10f, 0.35f),
                         shape = params.logoShape,
                         borderColor = params.logoBorderColor,
                         borderWidth = params.logoBorderWidth
@@ -536,7 +536,8 @@ data class QrDesign(
                     positionColor = params.positionColor ?: params.foreground,
                     accentRingsEnabled = params.lineAccentRingsEnabled,
                     circuitBridgesEnabled = params.lineCircuitBridgesEnabled,
-                    variant = params.lineVariant
+                    variant = params.lineVariant,
+                    randomSource = params.lineRandomSource
                 ),
                 veilDsjStyle = VeilDsjStyle(
                     lineSize = params.dsjLineSize,

@@ -19,8 +19,8 @@ import com.veilframe.app.qr.QrStyleParams
  * - Left Face: Skewed parallelogram extending down by [height] with [leftColor]
  * - Right Face: Skewed parallelogram extending down by [height] with [rightColor]
  *
- * Modules are drawn in diagonal wave order (col + row from 0 to 2*(N-1))
- * guaranteeing painter's-algorithm visibility without z-fighting.
+ * Modules are drawn in column-major order (for col in 0 until n, for row in 0 until n)
+ * matching EFQRCode painter order.
  */
 class Renderer25D : QrRenderer {
 
