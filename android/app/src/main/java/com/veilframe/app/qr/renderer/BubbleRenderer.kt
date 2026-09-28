@@ -41,7 +41,8 @@ class BubbleRenderer : QrRenderer {
         val cs = geometry.moduleSize
         val ox = geometry.offsetX
         val oy = geometry.offsetY
-        val fgColor = design.palette.foreground
+        // EFQRCode parity: use style-specific bubble colors, not global foreground/background.
+        val fgColor = design.clusterStyle.dataColor
         val bgColor = design.palette.background
         val rng = Random(design.effects.seed)
 
@@ -74,7 +75,7 @@ class BubbleRenderer : QrRenderer {
                     offsetY = oy,
                     style = design.eyeStyle.style,
                     size = design.positionSize,
-                    color = design.eyeStyle.outerColor ?: fgColor
+                    color = design.clusterStyle.positionColor
                 )
             )
         }
@@ -119,8 +120,9 @@ class BubbleRenderer : QrRenderer {
             }
         }
 
-        val outlineColor = fgColor
-        val centerColor = bgColor
+        // EFQRCode parity: data module outline = light blue, center = white
+        val outlineColor = design.clusterStyle.dataColor
+        val centerColor = design.clusterStyle.dataCenterColor
 
         // 3. Scan for 3x3 Cross Bubbles
         for (col in 0 until n - 2) {

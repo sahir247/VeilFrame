@@ -105,6 +105,7 @@ data class QrStyleParams(
     // --- Bubble specific ---
     val bubbleOutlineColor: Int = 0xFF8ED1FC.toInt(),
     val bubbleCenterColor: Int = Color.WHITE,
+    val bubblePositionColor: Int = 0xFF0693E3.toInt(),
     // --- DSJ specific (VeilFrameStyleDSJ) ---
     val dsjLineSize: Float = 0.7f,
     val dsjXSize: Float = 0.7f,

@@ -20,8 +20,9 @@ object BubbleClusterRenderer {
         context: RenderContext
     ) {
         val modulePx = geometry.moduleSize
-        val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
+        // EFQRCode parity: use style-specific bubble colors
+        val fgColor = design.clusterStyle.dataColor
+        val bgColor = design.clusterStyle.dataCenterColor
 
         for (cluster in clusters) {
             val cx = geometry.offsetX + cluster.cx * modulePx

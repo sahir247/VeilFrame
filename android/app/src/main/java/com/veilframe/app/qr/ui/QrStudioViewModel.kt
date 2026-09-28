@@ -94,7 +94,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val dsjXColor: Int = 0xFF0B2D97.toInt(),
         val randomRectSeed: Long = 42L,
         val randomJitterScale: Float = 0.25f,
-        val randomJitterOffset: Float = 0.15f,
+        val randomJitterOffset: Float = 0.0f,
         val randomJitterColor: Float = 0.1f,
         val bubbleAmbient: Boolean = true,
         val bubbleDensity: Float = 0.15f,
@@ -366,7 +366,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
         val moduleFill = when {
             s.style == QrStyle.IMAGE_RESAMPLE -> ModuleFill.IMAGE_SAMPLED
-            s.style == QrStyle.IMAGE_FILL -> ModuleFill.IMAGE_MASKED
+            s.style == QrStyle.IMAGE_FILL -> ModuleFill.IMAGE
             else -> ModuleFill.SOLID
         }
         val moduleShape = when {
@@ -382,7 +382,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             moduleStyle = ModuleStyle(
                 shape = moduleShape,
                 fill = moduleFill,
-                scale = if (s.style == QrStyle.IMAGE) 0.33f else 0.85f,
+                // EFQRCode parity: BASIC, D25, and IMAGE use 1.0 data-module scale.
+                // Other styles use 0.85 as VeilFrame's default.
+                scale = when (s.style) {
+                    QrStyle.BASIC, QrStyle.D25, QrStyle.IMAGE -> 1.0f
+                    else -> 0.85f
+                },
                 cornerRadiusFraction = 0.0f,
                 connected = s.style == QrStyle.DSJ
             ),
@@ -453,7 +458,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             clusterStyle = BubbleClusterStyle(
                 seed = s.resampleSeed,
                 ambientBubbles = s.bubbleAmbient,
-                ambientDensity = s.bubbleDensity
+                ambientDensity = s.bubbleDensity,
+                dataColor = if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF8ED1FC.toInt() else s.foreground,
+                dataCenterColor = if (s.style == QrStyle.BUBBLE && s.background == Color.WHITE) 0xFFFFFFFF.toInt() else s.background,
+                positionColor = if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF0693E3.toInt() else s.foreground
             ),
             veilFunctionStyle = VeilFunctionStyle(
                 functionType = s.veilFunctionType,
@@ -478,7 +486,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             backgroundImageAlpha = s.backgroundImageAlpha,
             imageFillMode = def.imageFillMode,
             style = s.style,
-            imageDataScale = if (s.style == QrStyle.IMAGE) 0.33f else 0.85f,
+            // EFQRCode parity: IMAGE data scale is 1.0 (not 0.33).
+            imageDataScale = if (s.style == QrStyle.IMAGE) 1.0f else 0.85f,
             imageSource = ImageSourceStyle(
                 source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
                 scaleMode = s.sourceImageScaleMode,

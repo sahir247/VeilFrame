@@ -373,7 +373,9 @@ object QrGenerator {
     }
 
     private fun getRendererForDesign(design: QrDesign): QrRenderer {
-        return if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED ||
+        return if (design.style == QrStyle.IMAGE_FILL) {
+            ImageFillRenderer()
+        } else if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED ||
             design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER
         ) {
             ComposableQrRenderer()

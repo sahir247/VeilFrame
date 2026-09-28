@@ -786,11 +786,15 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        // EFQRCode parity: lossless bidirectional mapping for all 7 line directions
         val dirChipId = when (vm.state.value.lineDirection) {
             LineDirection.HORIZONTAL -> R.id.chip_line_dir_x
             LineDirection.VERTICAL -> R.id.chip_line_dir_y
             LineDirection.CROSS -> R.id.chip_line_dir_cross
-            else -> R.id.chip_line_dir_x
+            LineDirection.LOOPBACK, LineDirection.LOOP -> R.id.chip_line_dir_loopback
+            LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT, LineDirection.DIAGONAL_FORWARD -> R.id.chip_line_dir_tl_br
+            LineDirection.TOP_RIGHT_TO_BOTTOM_LEFT, LineDirection.DIAGONAL_BACKWARD -> R.id.chip_line_dir_tr_bl
+            LineDirection.X -> R.id.chip_line_dir_x_pattern
         }
         lineDirGroup?.check(dirChipId)
         lineDirGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
@@ -799,6 +803,10 @@ class QrGenerateTabFragment : Fragment() {
                 R.id.chip_line_dir_x -> LineDirection.HORIZONTAL
                 R.id.chip_line_dir_y -> LineDirection.VERTICAL
                 R.id.chip_line_dir_cross -> LineDirection.CROSS
+                R.id.chip_line_dir_loopback -> LineDirection.LOOPBACK
+                R.id.chip_line_dir_tl_br -> LineDirection.TOP_LEFT_TO_BOTTOM_RIGHT
+                R.id.chip_line_dir_tr_bl -> LineDirection.TOP_RIGHT_TO_BOTTOM_LEFT
+                R.id.chip_line_dir_x_pattern -> LineDirection.X
                 else -> LineDirection.HORIZONTAL
             }
             vm.updateLineDirection(dir)

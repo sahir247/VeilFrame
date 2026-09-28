@@ -988,13 +988,17 @@
                         android:stepSize="0.1"
                         android:value="1.0" />
 
+                    <!-- VeilFrame Extension: Projection angle is NOT consumed by D25Geometry.
+                         EFQRCode uses a fixed isometric projection. This slider is retained as a
+                         planned VeilFrame extension but hidden until the renderer supports it. -->
                     <TextView
                         android:id="@+id/qr_d25_angle_label"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Projection Angle: 45°"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
+                        android:text="Projection Angle: 45° (Extension)"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:visibility="gone" />
 
                     <com.google.android.material.slider.Slider
                         android:id="@+id/qr_d25_angle_slider"
@@ -1003,7 +1007,8 @@
                         android:valueFrom="15.0"
                         android:valueTo="75.0"
                         android:stepSize="5.0"
-                        android:value="45.0" />
+                        android:value="45.0"
+                        android:visibility="gone" />
                 </LinearLayout>
 
                 <!-- LINE Direction, Variant, and Thickness Setting -->
@@ -1050,6 +1055,34 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Cross" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_loopback"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Loopback" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_tl_br"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="↘ Diagonal" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_tr_bl"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="↙ Diagonal" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_x_pattern"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="X" />
                     </com.google.android.material.chip.ChipGroup>
 
                     <TextView
@@ -1174,7 +1207,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Jitter Offset: 0.15"
+                        android:text="Jitter Offset: 0.00"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.slider.Slider
@@ -1184,7 +1217,7 @@
                         android:valueFrom="0.0"
                         android:valueTo="0.3"
                         android:stepSize="0.05"
-                        android:value="0.15" />
+                        android:value="0.0" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_random_rect_seed_btn"

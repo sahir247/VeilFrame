@@ -128,7 +128,13 @@ data class BubbleClusterStyle(
     val ambientDensity: Float = 0.15f,
     val ambientMaxRadius: Float = 0.22f,
     val crossOuterStrokeRatio: Float = 0.45f,
-    val pairStrokeRatio: Float = 0.38f
+    val pairStrokeRatio: Float = 0.38f,
+    /** EF parity: data module outline color. Default: light blue 0x8ED1FC. */
+    val dataColor: Int = 0xFF8ED1FC.toInt(),
+    /** EF parity: data module center color. Default: white. */
+    val dataCenterColor: Int = 0xFFFFFFFF.toInt(),
+    /** EF parity: position detection pattern color. Default: blue 0x0693E3. */
+    val positionColor: Int = 0xFF0693E3.toInt()
 )
 
 enum class BackdropBlendMode {
@@ -311,7 +317,8 @@ data class FunctionStyle(
 data class RandomJitterStyle(
     val seed: Long = 42L,
     val scaleJitter: Float = 0.25f,
-    val offsetJitter: Float = 0.15f,
+    /** EF parity: 0.0 (no positional jitter). Non-zero values are a VeilFrame extension. */
+    val offsetJitter: Float = 0.0f,
     val colorJitter: Float = 0.1f
 )
 
@@ -463,10 +470,11 @@ data class QrDesign(
                 )
             } else null
 
-            val moduleScale = if (params.style == QrStyle.IMAGE) {
-                params.imageDataScale.coerceIn(0.05f, 1.0f)
-            } else {
-                params.dataScale.coerceIn(0.1f, 1.0f)
+            val moduleScale = when (params.style) {
+                QrStyle.BASIC -> if (params.dataScale == 0.85f) 1.0f else params.dataScale.coerceIn(0.1f, 1.0f)
+                QrStyle.D25 -> 1.0f
+                QrStyle.IMAGE -> params.imageDataScale.coerceIn(0.05f, 1.0f)
+                else -> params.dataScale.coerceIn(0.1f, 1.0f)
             }
 
             return QrDesign(
@@ -590,7 +598,12 @@ data class QrDesign(
                         allowTransparent = params.imageAllowTransparent
                     )
                 },
-                clusterStyle = BubbleClusterStyle(seed = params.randomRectSeed),
+                clusterStyle = BubbleClusterStyle(
+                    seed = params.randomRectSeed,
+                    dataColor = if (params.style == QrStyle.BUBBLE && params.foreground == android.graphics.Color.BLACK) params.bubbleOutlineColor else params.foreground,
+                    dataCenterColor = params.bubbleCenterColor,
+                    positionColor = if (params.style == QrStyle.BUBBLE && params.positionColor == null && params.foreground == android.graphics.Color.BLACK) params.bubblePositionColor else (params.positionColor ?: params.foreground)
+                ),
                 allowTransparent = params.imageAllowTransparent,
                 imageDataScale = if (params.style == QrStyle.IMAGE) params.imageDataScale.coerceIn(0.05f, 1.0f) else null,
                 dataColorDark = params.imageDataDarkColor,
