@@ -1174,7 +1174,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Jitter Offset: 0.00"
+                        android:text="Jitter Offset: 0.15"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.slider.Slider
@@ -1184,7 +1184,7 @@
                         android:valueFrom="0.0"
                         android:valueTo="0.3"
                         android:stepSize="0.05"
-                        android:value="0.0" />
+                        android:value="0.15" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_random_rect_seed_btn"

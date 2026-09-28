@@ -21,6 +21,18 @@ import kotlin.random.Random
  */
 class ConnectedOrganicRenderer : QrRenderer {
 
+    companion object {
+        /**
+         * Converts [CompositePrimitiveStyle.lineThickness] continuously and monotonically
+         * into a stroke fraction relative to module size.
+         * Default lineThickness (0.25f) yields exactly 0.75f (canonical default).
+         */
+        fun calculateStrokeFraction(lineThickness: Float): Float {
+            val rawThickness = if (lineThickness <= 0f) 0.25f else lineThickness
+            return (rawThickness * 3.0f).coerceIn(0.15f, 1.0f)
+        }
+    }
+
     override fun render(
         matrix: QrMatrix,
         design: QrDesign,
@@ -45,11 +57,7 @@ class ConnectedOrganicRenderer : QrRenderer {
         )
 
         val fillPaint = context.obtainFill(fgColor)
-        val strokeFraction = if (design.compositeStyle.lineThickness > 0.05f) {
-            (design.compositeStyle.lineThickness * 3.0f).coerceIn(0.2f, 1.0f)
-        } else {
-            0.75f
-        }
+        val strokeFraction = calculateStrokeFraction(design.compositeStyle.lineThickness)
         val strokePaint = context.obtainStroke(fgColor, cs * strokeFraction, Paint.Cap.ROUND)
         val rng = Random(design.effects.seed)
 

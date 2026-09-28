@@ -55,8 +55,7 @@ class RandomRectangleRenderer : QrRenderer {
                 randArr.add(Pair(row, col))
             }
         }
-        val seed = if (design.jitterStyle.seed != 42L) design.jitterStyle.seed else design.effects.seed
-        val rng = Random(seed)
+        val rng = Random(design.jitterStyle.seed)
         randArr.shuffle(rng)
 
         val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()

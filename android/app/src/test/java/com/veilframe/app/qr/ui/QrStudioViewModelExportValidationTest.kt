@@ -438,18 +438,29 @@ class QrStudioViewModelExportValidationTest {
         val vm = QrStudioViewModel(app)
 
         // Case A: IMAGE style, no source photo, no background -> banner visible
+        val stateNoPhotos = QrStudioViewModel.UiState(
+            style = QrStyle.IMAGE,
+            sourceImage = null,
+            backgroundImage = null
+        )
         assertTrue(
             "Source photo required when sourceImage is null",
-            vm.isSourcePhotoRequired(QrStyle.IMAGE, null)
+            vm.isSourcePhotoRequired(stateNoPhotos.style, stateNoPhotos.sourceImage)
         )
 
-        // Case C: IMAGE style, no source photo, even if background image is provided -> banner must STILL be visible!
+        // Case B: IMAGE style, no source photo, even when a background image is configured -> banner must STILL be visible!
+        // (Ensures presence of a canvas backdrop never masks a missing source photo needed for finder cutout masks)
+        val stateBgConfigured = QrStudioViewModel.UiState(
+            style = QrStyle.IMAGE,
+            sourceImage = null,
+            backgroundImageAlpha = 0.80f
+        )
         assertTrue(
-            "Banner must remain visible when sourceImage is null regardless of background",
-            vm.isSourcePhotoRequired(QrStyle.IMAGE, null)
+            "Banner must remain visible when sourceImage is null even if background is configured",
+            vm.isSourcePhotoRequired(stateBgConfigured.style, stateBgConfigured.sourceImage)
         )
 
-        // Case D: Non-IMAGE style (e.g. BASIC, LINE, D25) with no source photo -> banner hidden
+        // Case C: Non-IMAGE style (e.g. BASIC, LINE, D25) with no source photo -> banner hidden
         assertFalse(
             "Basic style does not require source photo",
             vm.isSourcePhotoRequired(QrStyle.BASIC, null)
@@ -478,8 +489,10 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.0f, offsetJitter = 0.0f)
         )
         val ir0 = renderer.generateGeometry(matrix, designScale0, geometry)
-        val innerNodes0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
-        val outerNodes0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[0] }
+        // Decouple node identification: outer shadow rects have opacity < 0.95, inner main rects have opacity >= 0.95
+        val darkRects0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
+        val innerNodes0 = darkRects0.filter { it.opacity >= 0.95f }
+        val outerNodes0 = darkRects0.filter { it.opacity in 0.80f..0.95f }
 
         assertTrue(innerNodes0.isNotEmpty())
         for (node in innerNodes0) {
@@ -498,7 +511,7 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.1f, offsetJitter = 0.0f)
         )
         val ir01 = renderer.generateGeometry(matrix, designScale01, geometry)
-        val innerNodes01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
+        val innerNodes01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).filter { it.opacity >= 0.95f }
         for (node in innerNodes01) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.949 for scaleJitter 0.1", tempRand >= 0.949f)
@@ -512,7 +525,7 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.5f, offsetJitter = 0.0f)
         )
         val ir05 = renderer.generateGeometry(matrix, designScale05, geometry)
-        val innerNodes05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
+        val innerNodes05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).filter { it.opacity >= 0.95f }
         for (node in innerNodes05) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.549 for scaleJitter 0.5", tempRand >= 0.549f)
@@ -545,5 +558,29 @@ class QrStudioViewModelExportValidationTest {
             }
         }
         assertTrue("At least some nodes must exhibit non-zero displacement under offset jitter", nonZeroDisplacementCount > 0)
+    }
+
+    @Test
+    fun testConnectedOrganicRendererContinuousMonotonicThickness() {
+        val thicknesses = listOf(0.05f, 0.06f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.35f, 0.50f)
+        val fractions = thicknesses.map { ConnectedOrganicRenderer.calculateStrokeFraction(it) }
+
+        // Verify strictly non-decreasing and no sudden drops or discontinuities
+        for (i in 0 until fractions.size - 1) {
+            assertTrue(
+                "Stroke fraction at thickness ${thicknesses[i + 1]} (${fractions[i + 1]}) must be >= thickness ${thicknesses[i]} (${fractions[i]})",
+                fractions[i + 1] >= fractions[i]
+            )
+        }
+        // Verify default 0.25f gives exact 0.75 canonical stroke fraction
+        val defaultIdx = thicknesses.indexOf(0.25f)
+        assertEquals(
+            "Default 0.25f thickness must produce exact 0.75 stroke fraction",
+            0.75f,
+            fractions[defaultIdx],
+            0.001f
+        )
+        // Verify uninitialized/zero thickness safely falls back to default 0.75 fraction
+        assertEquals(0.75f, ConnectedOrganicRenderer.calculateStrokeFraction(0.0f), 0.001f)
     }
 }

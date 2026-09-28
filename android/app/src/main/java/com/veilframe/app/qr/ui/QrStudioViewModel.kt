@@ -94,7 +94,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val dsjXColor: Int = 0xFF0B2D97.toInt(),
         val randomRectSeed: Long = 42L,
         val randomJitterScale: Float = 0.25f,
-        val randomJitterOffset: Float = 0.0f,
+        val randomJitterOffset: Float = 0.15f,
         val randomJitterColor: Float = 0.1f,
         val bubbleAmbient: Boolean = true,
         val bubbleDensity: Float = 0.15f,
