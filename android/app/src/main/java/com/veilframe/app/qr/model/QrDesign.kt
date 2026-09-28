@@ -93,6 +93,7 @@ sealed interface ImageSource {
     data class Uri(val value: String) : ImageSource
     data class Resource(val id: Int) : ImageSource
     data class Memory(val bitmap: Bitmap) : ImageSource
+    data class Animated(val frames: List<Bitmap>, val delaysMs: List<Int> = emptyList()) : ImageSource
 }
 
 enum class ImageScaleMode {
@@ -119,7 +120,14 @@ data class ImageSourceStyle(
     val maskAlpha: Float = 0.1f,
     val allowTransparent: Boolean = false
 ) {
-    val bitmap: Bitmap? get() = (source as? ImageSource.Memory)?.bitmap
+    val bitmap: Bitmap? get() = when (source) {
+        is ImageSource.Memory -> source.bitmap
+        is ImageSource.Animated -> source.frames.firstOrNull()
+        else -> null
+    }
+    val animatedFrames: List<Bitmap>? get() = (source as? ImageSource.Animated)?.frames
+    val frameDelaysMs: List<Int>? get() = (source as? ImageSource.Animated)?.delaysMs
+    val isAnimated: Boolean get() = source is ImageSource.Animated
 }
 
 data class BubbleClusterStyle(
@@ -539,8 +547,8 @@ data class QrDesign(
                 style = params.style,
                 timingColor = params.timingColor,
                 alignmentColor = params.alignmentColor,
-                timingStyle = TimingStyle(shape = timingShape, color = params.timingColor),
-                alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor),
+                timingStyle = TimingStyle(shape = timingShape, color = params.timingColor, onlyWhite = params.timingOnlyWhite),
+                alignmentStyle = AlignmentStyle(shape = alignShape, color = params.alignmentColor, onlyWhite = params.alignOnlyWhite),
                 lineStyle = LineStyle(
                     direction = params.lineDirection,
                     thicknessFraction = params.lineThickness,
@@ -587,7 +595,17 @@ data class QrDesign(
                     primitives = if (params.style == QrStyle.DSJ) listOf(ModulePrimitive.LINE, ModulePrimitive.CROSS, ModulePrimitive.X)
                                  else listOf(ModulePrimitive.CROSS, ModulePrimitive.X)
                 ),
-                imageSource = if (resolvedSourceImage != null) {
+                imageSource = if (params.sourceImageAnimatedFrames != null) {
+                    ImageSourceStyle(
+                        source = ImageSource.Animated(params.sourceImageAnimatedFrames, params.sourceImageFrameDelaysMs ?: emptyList()),
+                        opacity = params.sourceImageAlpha,
+                        scaleMode = params.imageScaleMode,
+                        contrast = 0.0f,
+                        exposure = 0.0f,
+                        maskColor = params.imageFillMaskColor,
+                        allowTransparent = params.imageAllowTransparent
+                    )
+                } else if (resolvedSourceImage != null) {
                     ImageSourceStyle(
                         source = ImageSource.Memory(resolvedSourceImage),
                         opacity = params.sourceImageAlpha,

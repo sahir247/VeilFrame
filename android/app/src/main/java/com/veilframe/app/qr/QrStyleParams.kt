@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 
 /**
- * Visual style enum corresponding to the 11 VeilFrame Art Engine rendering modes.
+ * Visual style enum corresponding to the 12 VeilFrame Art Engine rendering modes.
  */
 enum class QrStyle {
     BASIC,              // Classic square modules with per-zone shape overrides
@@ -148,6 +148,12 @@ data class QrStyleParams(
     val resampleSeed: Long = 42L,
     val resampleBackdropTint: Int? = null,
     val resampleRngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED,
+    // --- Timing and Alignment onlyWhite controls (EFQRCode parity) ---
+    val timingOnlyWhite: Boolean = false,
+    val alignOnlyWhite: Boolean = false,
+    // --- Multi-frame animated source image (EFQRCode parity) ---
+    val sourceImageAnimatedFrames: List<Bitmap>? = null,
+    val sourceImageFrameDelaysMs: List<Int>? = null,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
     val alignmentColor: Int? = null

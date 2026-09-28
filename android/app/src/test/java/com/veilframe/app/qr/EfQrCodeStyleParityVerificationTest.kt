@@ -1,9 +1,12 @@
 package com.veilframe.app.qr
 
+import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.geometry.CircleNode
 import com.veilframe.app.qr.geometry.D25Geometry
 import com.veilframe.app.qr.geometry.RectNode
+import com.veilframe.app.qr.geometry.ResampleGeometryBuilder
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.LineRenderer
 import com.veilframe.app.qr.renderer.LineTopologyBuilder
@@ -515,5 +518,159 @@ class EfQrCodeStyleParityVerificationTest {
 
         val defaultPolicy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy()
         assertEquals("Direct ArtisticResamplePolicy() must default to DETERMINISTIC for testing reference simulation", com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC, defaultPolicy.rngMode)
+    }
+
+    private fun allocateBitmapReflectively(): Bitmap {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val field = unsafeClass.getDeclaredField("theUnsafe")
+        field.isAccessible = true
+        val unsafe = field.get(null)
+        val method = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        return method.invoke(unsafe, Bitmap::class.java) as Bitmap
+    }
+
+    @Test
+    fun testResampleTimingAndAlignmentOnlyWhiteParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE_ONLY_WHITE", ErrorCorrectionLevel.H)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 1
+        )
+        val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+
+        // 1. When timingOnlyWhite = true and alignOnlyWhite = true:
+        // Dedicated timing and alignment modules must emit 1x1 subpixel center anchor dots (#Stb and #Sab)
+        // instead of full module size geometry (moduleSize).
+        val paramsOnlyWhite = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingOnlyWhite = true,
+            alignOnlyWhite = true
+        )
+        val designOnlyWhite = QrDesign.fromQrStyleParams(paramsOnlyWhite)
+        assertTrue(designOnlyWhite.timingStyle.onlyWhite)
+        assertTrue(designOnlyWhite.alignmentStyle.onlyWhite)
+
+        val irOnlyWhite = ResampleGeometryBuilder.generateGeometry(matrix, designOnlyWhite, geometry, pixelSource)
+        val mSize = geometry.moduleSize
+
+        // Filter nodes that could be full timing/alignment shapes (width == mSize)
+        val fullModuleNodesOnlyWhite = irOnlyWhite.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - mSize) < 0.01f && Math.abs(it.height - mSize) < 0.01f
+        }
+        // Since onlyWhite is true, neither timing nor alignment should have full module rects
+        assertTrue("No full module rects should be emitted for timing/alignment when onlyWhite=true", fullModuleNodesOnlyWhite.isEmpty())
+
+        // 2. When timingOnlyWhite = false and alignOnlyWhite = false:
+        // Full module geometry is emitted
+        val paramsFull = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingOnlyWhite = false,
+            alignOnlyWhite = false
+        )
+        val designFull = QrDesign.fromQrStyleParams(paramsFull)
+        assertFalse(designFull.timingStyle.onlyWhite)
+        assertFalse(designFull.alignmentStyle.onlyWhite)
+
+        val irFull = ResampleGeometryBuilder.generateGeometry(matrix, designFull, geometry, pixelSource)
+        val fullModuleNodesFull = irFull.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - mSize) < 0.01f && Math.abs(it.height - mSize) < 0.01f
+        }
+        assertTrue("Full module rects must be emitted when onlyWhite=false", fullModuleNodesFull.isNotEmpty())
+    }
+
+    @Test
+    fun testResampleFinderGeometryExactEfParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/FINDER_PARITY", ErrorCorrectionLevel.H)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 1
+        )
+        val mSize = geometry.moduleSize
+        val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+
+        // 1. CLASSIC: Sharp corners (rx = 0, ry = 0) in both hollow and solid modes
+        val designClassicHollow = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val irClassicHollow = ResampleGeometryBuilder.generateGeometry(matrix, designClassicHollow, geometry, pixelSource)
+        val classicFinderOuter = irClassicHollow.rootNodes.filterIsInstance<RectNode>().firstOrNull {
+            Math.abs(it.width - 6f * mSize) < 0.01f
+        }
+        val classicFinderInner = irClassicHollow.rootNodes.filterIsInstance<RectNode>().firstOrNull {
+            Math.abs(it.width - 3f * mSize) < 0.01f
+        }
+        assertNotNull("Classic 6x6 outer finder must exist in hollow mode", classicFinderOuter)
+        assertNotNull("Classic 3x3 inner finder must exist in hollow mode", classicFinderInner)
+        assertEquals("Classic outer finder must have sharp corners (rx=0)", 0f, classicFinderOuter?.rx ?: -1f, 0.001f)
+        assertEquals("Classic inner finder must have sharp corners (rx=0)", 0f, classicFinderInner?.rx ?: -1f, 0.001f)
+
+        val designClassicSolid = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = false)
+        )
+        val irClassicSolid = ResampleGeometryBuilder.generateGeometry(matrix, designClassicSolid, geometry, pixelSource)
+        val solid7x7 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 7f * mSize) < 0.01f }
+        val solid5x5 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 5f * mSize) < 0.01f }
+        assertNotNull("Classic 7x7 outer finder must exist in solid mode", solid7x7)
+        assertNotNull("Classic 5x5 middle finder must exist in solid mode", solid5x5)
+        assertEquals("Solid 7x7 outer finder must have sharp corners (rx=0)", 0f, solid7x7?.rx ?: -1f, 0.001f)
+        assertEquals("Solid 5x5 middle finder must have sharp corners (rx=0)", 0f, solid5x5?.rx ?: -1f, 0.001f)
+
+        // 2. ROUNDED: Inner is CircleNode(r = 1.5 * mSize) matching EF <circle r="4.5"/>
+        val designRounded = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.ROUNDED),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val irRounded = ResampleGeometryBuilder.generateGeometry(matrix, designRounded, geometry, pixelSource)
+        val roundedInnerCircle = irRounded.rootNodes.filterIsInstance<CircleNode>().firstOrNull {
+            Math.abs(it.radius - 1.5f * mSize) < 0.01f
+        }
+        assertNotNull("Rounded finder must use CircleNode with r=1.5*mSize for inner eye matching EF", roundedInnerCircle)
+
+        // 3. CIRCLE: Inner circle r=1.5 * mSize, outer circle stroke r=3.0 * mSize
+        val designCircle = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.CIRCLE),
+            resampleStyle = ResampleStyle(useSourceAsBackdrop = true)
+        )
+        val irCircle = ResampleGeometryBuilder.generateGeometry(matrix, designCircle, geometry, pixelSource)
+        val circleInner = irCircle.rootNodes.filterIsInstance<CircleNode>().firstOrNull {
+            Math.abs(it.radius - 1.5f * mSize) < 0.01f
+        }
+        val circleOuter = irCircle.rootNodes.filterIsInstance<CircleNode>().firstOrNull {
+            Math.abs(it.radius - 3.0f * mSize) < 0.01f && it.stroke != null
+        }
+        assertNotNull("Circle finder must use CircleNode with r=1.5*mSize for inner eye", circleInner)
+        assertNotNull("Circle finder must use CircleNode with r=3.0*mSize for outer stroke", circleOuter)
+    }
+
+    @Test
+    fun testImageSourceAnimatedModelingParity() {
+        val frame1 = allocateBitmapReflectively()
+        val frame2 = allocateBitmapReflectively()
+        val frames = listOf(frame1, frame2)
+        val delays = listOf(100, 200)
+
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            sourceImageAnimatedFrames = frames,
+            sourceImageFrameDelaysMs = delays
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertNotNull(design.imageSource)
+        assertTrue("imageSource must be marked animated", design.imageSource?.isAnimated == true)
+        assertEquals("First frame must be returned by bitmap accessor", frame1, design.imageSource?.bitmap)
+        assertEquals(frames, design.imageSource?.animatedFrames)
+        assertEquals(delays, design.imageSource?.frameDelaysMs)
     }
 }

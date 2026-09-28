@@ -107,7 +107,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val gradientEnd: Int? = null,
         val gradientType: GradientType = GradientType.NONE,
         val directionalQuietZone: DirectionalInsets? = null,
-        val quietZoneChoice: Int? = null
+        val quietZoneChoice: Int? = null,
+        val timingOnlyWhite: Boolean = false,
+        val alignOnlyWhite: Boolean = false
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
     }
@@ -243,6 +245,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeResampleBackdropImage() {
         _state.value = _state.value.copy(resampleBackdropImage = null, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateTimingOnlyWhite(onlyWhite: Boolean) {
+        _state.value = _state.value.copy(timingOnlyWhite = onlyWhite, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateAlignOnlyWhite(onlyWhite: Boolean) {
+        _state.value = _state.value.copy(alignOnlyWhite = onlyWhite, repairNotice = null)
         regenerate(debounceMs = 0)
     }
 
@@ -443,10 +455,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 rightColor = s.d25RightColor
             ),
             timingStyle = TimingStyle(
-                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED,
+                onlyWhite = s.timingOnlyWhite
             ),
             alignmentStyle = AlignmentStyle(
-                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
+                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED,
+                onlyWhite = s.alignOnlyWhite
             ),
             lineStyle = LineStyle(
                 direction = s.lineDirection,

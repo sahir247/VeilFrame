@@ -134,7 +134,7 @@ object ResampleGeometryBuilder {
         // 4. Finders (EF: writeQRCode overlays resampled dots)
         val eyeOuter = design.eyeStyle.outerColor ?: fgColor
         val eyeInner = design.eyeStyle.innerColor ?: fgColor
-        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.hasBackdrop) ||
+        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) ||
             ((design.palette.background ushr 24) and 0xFF) == 0
 
         val finders = listOf(
@@ -160,13 +160,14 @@ object ResampleGeometryBuilder {
                     }
                 }
                 FinderStyle.ROUNDED -> {
+                    // EF .roundedRectangle: Inner is <circle r="4.5"/> (1.5 modules), outer is rounded rect with rx=1.5 modules
                     if (isHollowFinder) {
-                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 2f * mSize, ry = 2f * mSize, stroke = eyeOuter, strokeWidth = posSize * mSize, fill = null))
-                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 1f * mSize, ry = 1f * mSize, fill = eyeInner))
+                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, stroke = eyeOuter, strokeWidth = posSize * mSize, fill = null))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
                     } else {
-                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 2f * mSize, ry = 2f * mSize, fill = eyeOuter))
-                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, fill = design.palette.background))
-                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 1f * mSize, ry = 1f * mSize, fill = eyeInner))
+                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, fill = eyeOuter))
+                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 1.0f * mSize, ry = 1.0f * mSize, fill = design.palette.background))
+                        nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
                     }
                 }
                 FinderStyle.SOFT -> {
@@ -190,6 +191,7 @@ object ResampleGeometryBuilder {
                     nodes.add(PolygonNode(points = "", pointsList = pts, fill = eyeInner))
                 }
                 FinderStyle.PLANETS -> {
+                    // EF .planets: Inner circle r=1.5, outer dashed orbit r=3.0, 4 orbiting planet circles
                     nodes.add(CircleNode(cx, cy, 1.5f * mSize, fill = eyeInner))
                     nodes.add(CircleNode(cx, cy, 3.0f * mSize, stroke = eyeOuter, strokeWidth = 0.15f * mSize, strokeDashArray = "${0.5f * mSize},${0.5f * mSize}"))
                     val planetRadius = 0.5f * posSize * mSize
@@ -211,28 +213,31 @@ object ResampleGeometryBuilder {
                     nodes.add(RectNode(cx - widthVal / 2f, (cy + 3f * mSize) - armDim / 2f, widthVal, armDim, fill = eyeOuter))
                 }
                 else -> {
+                    // EF .rectangle (CLASSIC): Exact sharp square inner 3x3 at fx+2, outer 6x6 stroke at fx+0.5
                     if (isHollowFinder) {
-                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 0.5f * mSize, ry = 0.5f * mSize, stroke = eyeOuter, strokeWidth = posSize * mSize, fill = null))
-                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0.2f * mSize, ry = 0.2f * mSize, fill = eyeInner))
+                        nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 0f, ry = 0f, stroke = eyeOuter, strokeWidth = posSize * mSize, fill = null))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0f, ry = 0f, fill = eyeInner))
                     } else {
-                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 0.5f * mSize, ry = 0.5f * mSize, fill = eyeOuter))
-                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 0.3f * mSize, ry = 0.3f * mSize, fill = design.palette.background))
-                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0.2f * mSize, ry = 0.2f * mSize, fill = eyeInner))
+                        nodes.add(RectNode(fx, fy, 7f * mSize, 7f * mSize, rx = 0f, ry = 0f, fill = eyeOuter))
+                        nodes.add(RectNode(fx + mSize, fy + mSize, 5f * mSize, 5f * mSize, rx = 0f, ry = 0f, fill = design.palette.background))
+                        nodes.add(RectNode(fx + 2f * mSize, fy + 2f * mSize, 3f * mSize, 3f * mSize, rx = 0f, ry = 0f, fill = eyeInner))
                     }
                 }
             }
         }
 
-        // 5. Timing tracks
+        // 5. Timing tracks (EF writeQRCode timing handling)
         val timingColor = (design.timingStyle.color ?: design.timingColor) ?: fgColor
-        if (design.timingStyle.shape != ModuleShape.NONE) {
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
-                    if (!matrix.isDark(col, row)) continue
-                    val tx = ox + col * mSize
-                    val ty = oy + row * mSize
-                    when (design.timingStyle.shape) {
+        val timingOnlyWhite = design.timingStyle.onlyWhite
+        val timingShape = design.timingStyle.shape
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
+                if (!matrix.isDark(col, row)) continue
+                val tx = ox + col * mSize
+                val ty = oy + row * mSize
+                if (timingShape != ModuleShape.NONE && !timingOnlyWhite) {
+                    when (timingShape) {
                         ModuleShape.CIRCLE -> {
                             nodes.add(CircleNode(tx + mSize / 2f, ty + mSize / 2f, mSize / 2f, fill = timingColor))
                         }
@@ -243,21 +248,27 @@ object ResampleGeometryBuilder {
                             nodes.add(RectNode(tx, ty, mSize, mSize, fill = timingColor))
                         }
                     }
+                } else {
+                    // EF #Stb: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3)
+                    val anchorRect = SubpixelGeometry.computeCanvasRect(col, row, ox, oy, mSize, subX = 1, subY = 1)
+                    nodes.add(RectNode(anchorRect.left, anchorRect.top, anchorRect.width, anchorRect.height, fill = timingColor))
                 }
             }
         }
 
-        // 6. Alignment patterns
+        // 6. Alignment patterns (EF writeQRCode alignment handling)
         val alignColor = (design.alignmentStyle.color ?: design.alignmentColor) ?: fgColor
-        if (design.alignmentStyle.shape != ModuleShape.NONE) {
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    val role = matrix.roleAt(col, row)
-                    if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
-                    if (!matrix.isDark(col, row)) continue
-                    val ax = ox + col * mSize
-                    val ay = oy + row * mSize
-                    when (design.alignmentStyle.shape) {
+        val alignOnlyWhite = design.alignmentStyle.onlyWhite
+        val alignShape = design.alignmentStyle.shape
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                val role = matrix.roleAt(col, row)
+                if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
+                if (!matrix.isDark(col, row)) continue
+                val ax = ox + col * mSize
+                val ay = oy + row * mSize
+                if (alignShape != ModuleShape.NONE && !alignOnlyWhite) {
+                    when (alignShape) {
                         ModuleShape.CIRCLE -> {
                             nodes.add(CircleNode(ax + mSize / 2f, ay + mSize / 2f, mSize / 2f, fill = alignColor))
                         }
@@ -268,6 +279,10 @@ object ResampleGeometryBuilder {
                             nodes.add(RectNode(ax, ay, mSize, mSize, fill = alignColor))
                         }
                     }
+                } else {
+                    // EF #Sab: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3)
+                    val anchorRect = SubpixelGeometry.computeCanvasRect(col, row, ox, oy, mSize, subX = 1, subY = 1)
+                    nodes.add(RectNode(anchorRect.left, anchorRect.top, anchorRect.width, anchorRect.height, fill = alignColor))
                 }
             }
         }
