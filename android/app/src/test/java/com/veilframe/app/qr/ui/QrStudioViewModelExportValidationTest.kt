@@ -1,12 +1,14 @@
 package com.veilframe.app.qr.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.ConnectedOrganicRenderer
 import com.veilframe.app.qr.renderer.RandomRectangleRenderer
+import kotlin.math.roundToInt
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -432,6 +434,24 @@ class QrStudioViewModelExportValidationTest {
         assertNotEquals("SVG output must differ when jitter offset is modified", svg0, svg03)
     }
 
+    private fun createTestBitmap(): Bitmap {
+        val bmp: Bitmap? = try {
+            Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        } catch (_: Throwable) {
+            null
+        }
+        return bmp ?: allocateBitmapReflectively()
+    }
+
+    private fun allocateBitmapReflectively(): Bitmap {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val field = unsafeClass.getDeclaredField("theUnsafe")
+        field.isAccessible = true
+        val unsafe = field.get(null)
+        val method = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        return method.invoke(unsafe, Bitmap::class.java) as Bitmap
+    }
+
     @Test
     fun testImageStyleSourcePhotoRequirementPredicates() {
         val app = Application()
@@ -448,19 +468,35 @@ class QrStudioViewModelExportValidationTest {
             vm.isSourcePhotoRequired(stateNoPhotos.style, stateNoPhotos.sourceImage)
         )
 
-        // Case B: IMAGE style, no source photo, even when canvas background opacity is configured -> banner must STILL be visible!
-        // (Ensures presence of canvas backdrop configuration never masks a missing source photo needed for finder cutout masks)
+        val actualBackgroundBitmap = createTestBitmap()
+        assertNotNull(actualBackgroundBitmap)
+
+        // Case B: IMAGE style, no source photo, even when an actual background Bitmap is present -> banner must STILL be visible!
+        // (Ensures presence of canvas backdrop Bitmap never masks a missing source photo needed for finder cutout masks)
         val stateBgConfigured = QrStudioViewModel.UiState(
             style = QrStyle.IMAGE,
             sourceImage = null,
+            backgroundImage = actualBackgroundBitmap,
             backgroundImageAlpha = 0.80f
         )
         assertTrue(
-            "Banner must remain visible when sourceImage is null even if background canvas opacity is configured",
+            "Banner must remain visible when sourceImage is null even if actual background Bitmap is configured",
             vm.isSourcePhotoRequired(stateBgConfigured.style, stateBgConfigured.sourceImage)
         )
 
-        // Case C: Non-IMAGE style (e.g. BASIC, LINE, D25) with no source photo -> banner hidden
+        // Case C: IMAGE style with an actual source photo Bitmap provided -> banner hidden
+        val actualSourceBitmap = createTestBitmap()
+        val stateSourceProvided = QrStudioViewModel.UiState(
+            style = QrStyle.IMAGE,
+            sourceImage = actualSourceBitmap,
+            backgroundImage = actualBackgroundBitmap
+        )
+        assertFalse(
+            "Banner must be hidden when sourceImage Bitmap is provided",
+            vm.isSourcePhotoRequired(stateSourceProvided.style, stateSourceProvided.sourceImage)
+        )
+
+        // Case D: Non-IMAGE style (e.g. BASIC, LINE, D25) with no source photo -> banner hidden
         assertFalse(
             "Basic style does not require source photo",
             vm.isSourcePhotoRequired(QrStyle.BASIC, null)
@@ -492,6 +528,10 @@ class QrStudioViewModelExportValidationTest {
         // Decouple node identification: group by module coordinates (x, y) shared by concentric dual rects
         val darkRects0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
         val darkGroups0 = darkRects0.groupBy { Pair(it.x, it.y) }
+        assertTrue(darkGroups0.isNotEmpty())
+        for ((_, nodes) in darkGroups0) {
+            assertEquals("Each dark module must emit exactly inner + outer rectangles", 2, nodes.size)
+        }
         val innerNodes0 = darkGroups0.values.map { it.minByOrNull { node -> node.width }!! }
         val outerNodes0 = darkGroups0.values.map { it.maxByOrNull { node -> node.width }!! }
 
@@ -513,7 +553,11 @@ class QrStudioViewModelExportValidationTest {
         )
         val ir01 = renderer.generateGeometry(matrix, designScale01, geometry)
         val darkRects01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
-        val innerNodes01 = darkRects01.groupBy { Pair(it.x, it.y) }.values.map { it.minByOrNull { node -> node.width }!! }
+        val darkGroups01 = darkRects01.groupBy { Pair(it.x, it.y) }
+        for ((_, nodes) in darkGroups01) {
+            assertEquals("Each dark module must emit exactly inner + outer rectangles", 2, nodes.size)
+        }
+        val innerNodes01 = darkGroups01.values.map { it.minByOrNull { node -> node.width }!! }
         for (node in innerNodes01) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.949 for scaleJitter 0.1", tempRand >= 0.949f)
@@ -528,7 +572,11 @@ class QrStudioViewModelExportValidationTest {
         )
         val ir05 = renderer.generateGeometry(matrix, designScale05, geometry)
         val darkRects05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
-        val innerNodes05 = darkRects05.groupBy { Pair(it.x, it.y) }.values.map { it.minByOrNull { node -> node.width }!! }
+        val darkGroups05 = darkRects05.groupBy { Pair(it.x, it.y) }
+        for ((_, nodes) in darkGroups05) {
+            assertEquals("Each dark module must emit exactly inner + outer rectangles", 2, nodes.size)
+        }
+        val innerNodes05 = darkGroups05.values.map { it.minByOrNull { node -> node.width }!! }
         for (node in innerNodes05) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.549 for scaleJitter 0.5", tempRand >= 0.549f)
@@ -561,6 +609,94 @@ class QrStudioViewModelExportValidationTest {
             }
         }
         assertTrue("At least some nodes must exhibit non-zero displacement under offset jitter", nonZeroDisplacementCount > 0)
+    }
+
+    @Test
+    fun testRandomRectangleJitterControlsAreIndependent() {
+        val matrix = QrMatrix("https://veilframe.app/independent-jitter", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, (matrix.size + 8) * 16, (matrix.size + 8) * 16, quietZoneModules = 4)
+        val renderer = RandomRectangleRenderer()
+
+        val baseDesign = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 42L),
+            jitterStyle = RandomJitterStyle(seed = 42L, scaleJitter = 0.0f, offsetJitter = 0.2f, colorJitter = 0.15f)
+        )
+        val modifiedScaleDesign = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 42L),
+            jitterStyle = RandomJitterStyle(seed = 42L, scaleJitter = 0.3f, offsetJitter = 0.2f, colorJitter = 0.15f)
+        )
+        val modifiedColorDesign = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 42L),
+            jitterStyle = RandomJitterStyle(seed = 42L, scaleJitter = 0.0f, offsetJitter = 0.2f, colorJitter = 0.40f)
+        )
+        val modifiedOffsetDesign = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 42L),
+            jitterStyle = RandomJitterStyle(seed = 42L, scaleJitter = 0.0f, offsetJitter = 0.45f, colorJitter = 0.15f)
+        )
+
+        val irBase = renderer.generateGeometry(matrix, baseDesign, geometry)
+        val irScale = renderer.generateGeometry(matrix, modifiedScaleDesign, geometry)
+        val irColor = renderer.generateGeometry(matrix, modifiedColorDesign, geometry)
+        val irOffset = renderer.generateGeometry(matrix, modifiedOffsetDesign, geometry)
+
+        val groupsBase = irBase.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).groupBy { Pair(it.x, it.y) }
+        val groupsScale = irScale.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).groupBy { Pair(it.x, it.y) }
+        val groupsColor = irColor.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).groupBy { Pair(it.x, it.y) }
+        val groupsOffset = irOffset.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).groupBy { Pair(it.x, it.y) }
+
+        // Invariant 1: Every dark module always has exactly 2 rectangles (inner + outer) across all configurations
+        for ((_, nodes) in groupsBase) assertEquals(2, nodes.size)
+        for ((_, nodes) in groupsScale) assertEquals(2, nodes.size)
+        for ((_, nodes) in groupsColor) assertEquals(2, nodes.size)
+        for ((_, nodes) in groupsOffset) assertEquals(2, nodes.size)
+
+        val innerColorsBase = groupsBase.values.map { g -> g.minByOrNull { it.width }!!.fill }
+        val innerColorsScale = groupsScale.values.map { g -> g.minByOrNull { it.width }!!.fill }
+        val innerColorsOffset = groupsOffset.values.map { g -> g.minByOrNull { it.width }!!.fill }
+
+        // Invariant 2: Changing scale or offset jitter does NOT change module colors
+        assertEquals("Changing scale jitter must NOT change module colors", innerColorsBase, innerColorsScale)
+        assertEquals("Changing offset jitter must NOT change module colors", innerColorsBase, innerColorsOffset)
+
+        // Invariant 3: Changing scale or color jitter does NOT change module center positions
+        val centersBase = groupsBase.values.map { g ->
+            val inner = g.minByOrNull { it.width }!!
+            Pair((inner.x + inner.width / 2f).roundToInt(), (inner.y + inner.height / 2f).roundToInt())
+        }
+        val centersScale = groupsScale.values.map { g ->
+            val inner = g.minByOrNull { it.width }!!
+            Pair((inner.x + inner.width / 2f).roundToInt(), (inner.y + inner.height / 2f).roundToInt())
+        }
+        val centersColor = groupsColor.values.map { g ->
+            val inner = g.minByOrNull { it.width }!!
+            Pair((inner.x + inner.width / 2f).roundToInt(), (inner.y + inner.height / 2f).roundToInt())
+        }
+        assertEquals("Changing scale jitter must NOT change module center positions", centersBase, centersScale)
+        assertEquals("Changing color jitter must NOT change module center positions", centersBase, centersColor)
+
+        // Invariant 4: Changing color or offset jitter does NOT change module widths
+        val widthsBase = groupsBase.values.map { g -> g.minByOrNull { it.width }!!.width }
+        val widthsColor = groupsColor.values.map { g -> g.minByOrNull { it.width }!!.width }
+        val widthsOffset = groupsOffset.values.map { g -> g.minByOrNull { it.width }!!.width }
+        assertEquals("Changing color jitter must NOT change module widths", widthsBase, widthsColor)
+        assertEquals("Changing offset jitter must NOT change module widths", widthsBase, widthsOffset)
+
+        // Verify the modified controls themselves DO exhibit the expected modifications
+        val widthsScale = groupsScale.values.map { g -> g.minByOrNull { it.width }!!.width }
+        assertNotEquals("Changing scale jitter must change module widths", widthsBase, widthsScale)
+
+        val innerColorsColor = groupsColor.values.map { g -> g.minByOrNull { it.width }!!.fill }
+        assertNotEquals("Changing color jitter must change module colors", innerColorsBase, innerColorsColor)
+
+        val centersOffset = groupsOffset.values.map { g ->
+            val inner = g.minByOrNull { it.width }!!
+            Pair((inner.x + inner.width / 2f).roundToInt(), (inner.y + inner.height / 2f).roundToInt())
+        }
+        assertNotEquals("Changing offset jitter must change module center positions", centersBase, centersOffset)
     }
 
     @Test
