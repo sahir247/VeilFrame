@@ -76,7 +76,9 @@ class ImageRenderer : QrRenderer {
             for (col in 0 until n) {
                 for (row in 0 until n) {
                     val role = matrix.roleAt(col, row)
-                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
+                    val isTimingNone = role == QrModuleRole.TIMING && timingShape == ModuleShape.NONE
+                    val isAlignNone = (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignShape == ModuleShape.NONE
+                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION && !isTimingNone && !isAlignNone) continue
                     val isDark = matrix.isDark(col, row)
                     val color = if (isDark) dataDarkColor else dataLightColor
                     if (colorAlpha(color) == 0) continue

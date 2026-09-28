@@ -1352,7 +1352,7 @@ class VeilStyleParityTest {
         assertEquals(1.0f, design.moduleStyle.scale, 0.001f)
         assertEquals(1.0f, design.imageDataScale ?: 0f, 0.001f)
         assertEquals(1, design.quietZoneModules)
-        assertEquals(1, design.explicitQuietZone)
+        assertNull(design.explicitQuietZone)
         assertEquals(com.veilframe.app.qr.model.ModuleShape.SQUARE, design.timingStyle.shape)
         assertEquals(com.veilframe.app.qr.model.ModuleShape.SQUARE, design.alignmentStyle.shape)
 

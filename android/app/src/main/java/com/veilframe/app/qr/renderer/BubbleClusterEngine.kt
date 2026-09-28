@@ -117,7 +117,7 @@ object BubbleClusterEngine {
                     ) {
                         val strokeW = 0.33f + cellChannelRandom(seed, x, y, 0) * 0.27f // [0.33..0.60]
                         val isCenterDark = matrix.isDark(x + 1, y + 1)
-                        val innerR = if (isCenterDark) 0.5f * (0.5f + cellChannelRandom(seed, x, y, 1) * 0.5f) else 0f
+                        val innerR = if (isCenterDark) (0.25f + cellChannelRandom(seed, x, y, 1) * 0.25f) else 0f
 
                         g1.add(
                             ClusterPrimitive(
@@ -212,7 +212,7 @@ object BubbleClusterEngine {
                 // 5. Singletons and Ambient micro-bubbles
                 if (available[x][y]) {
                     if (matrix.isDark(x, y)) {
-                        val r = 0.5f * (0.5f + cellChannelRandom(seed, x, y, 7) * 0.5f)
+                        val r = (0.25f + cellChannelRandom(seed, x, y, 7) * 0.25f)
                         pointList.add(
                             ClusterPrimitive(
                                 cx = x + 0.5f,

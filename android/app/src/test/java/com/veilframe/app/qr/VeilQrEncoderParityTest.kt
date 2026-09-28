@@ -262,7 +262,7 @@ class VeilQrEncoderParityTest {
     fun testArtisticDefaultQuietZoneSemantics() {
         val defaultDesign = QrDesign()
         assertNull(defaultDesign.explicitQuietZone)
-        assertEquals(4, defaultDesign.quietZoneModules) // SAFE default
+        assertEquals(1, defaultDesign.quietZoneModules) // EF default
 
         val explicitDesign = QrDesign(explicitQuietZone = 2)
         assertEquals(2, explicitDesign.explicitQuietZone)

@@ -140,13 +140,13 @@ class BubbleRenderer : QrRenderer {
                         matrix.isDark(col, row + 1) && matrix.isDark(col + 2, row + 1)
                     ) {
                         val (cx, cy) = geometry.moduleCenter(col + 1, row + 1)
-                        val sw = (0.35f + rng.nextFloat() * 0.15f) * cs
+                        val sw = (0.33f + rng.nextFloat() * 0.27f) * cs
 
                         nodes.add(CircleNode(cx = cx, cy = cy, radius = cs * 1.0f, fill = centerColor))
                         nodes.add(CircleNode(cx = cx, cy = cy, radius = cs * 1.0f, stroke = outlineColor, strokeWidth = sw))
 
                         if (matrix.isDark(col + 1, row + 1)) {
-                            val r2 = (0.28f + rng.nextFloat() * 0.20f) * cs
+                            val r2 = (0.25f + rng.nextFloat() * 0.25f) * cs
                             nodes.add(CircleNode(cx = cx, cy = cy, radius = r2, fill = outlineColor))
                         }
 
@@ -172,7 +172,7 @@ class BubbleRenderer : QrRenderer {
                     val (cx2, cy2) = geometry.moduleCenter(col + 1, row + 1)
                     val midX = (cx1 + cx2) / 2f
                     val midY = (cy1 + cy2) / 2f
-                    val sw = (0.33f + rng.nextFloat() * 0.15f) * cs
+                    val sw = (0.33f + rng.nextFloat() * 0.27f) * cs
 
                     nodes.add(CircleNode(cx = midX, cy = midY, radius = cs * sqrt(0.5f), fill = centerColor))
                     nodes.add(CircleNode(cx = midX, cy = midY, radius = cs * sqrt(0.5f), stroke = outlineColor, strokeWidth = sw))
@@ -195,7 +195,7 @@ class BubbleRenderer : QrRenderer {
                     val (cx1, cy1) = geometry.moduleCenter(col, row)
                     val (_, cy2) = geometry.moduleCenter(col, row + 1)
                     val midY = (cy1 + cy2) / 2f
-                    val sw = (0.35f + rng.nextFloat() * 0.1f) * cs
+                    val sw = (0.36f + rng.nextFloat() * 0.04f) * cs
 
                     nodes.add(CircleNode(cx = cx1, cy = midY, radius = cs * 0.48f, fill = centerColor))
                     nodes.add(CircleNode(cx = cx1, cy = midY, radius = cs * 0.48f, stroke = outlineColor, strokeWidth = sw))
@@ -209,7 +209,7 @@ class BubbleRenderer : QrRenderer {
                     val (cx1, cy1) = geometry.moduleCenter(col, row)
                     val (cx2, _) = geometry.moduleCenter(col + 1, row)
                     val midX = (cx1 + cx2) / 2f
-                    val sw = (0.35f + rng.nextFloat() * 0.1f) * cs
+                    val sw = (0.36f + rng.nextFloat() * 0.04f) * cs
 
                     nodes.add(CircleNode(cx = midX, cy = cy1, radius = cs * 0.48f, fill = centerColor))
                     nodes.add(CircleNode(cx = midX, cy = cy1, radius = cs * 0.48f, stroke = outlineColor, strokeWidth = sw))
@@ -222,7 +222,7 @@ class BubbleRenderer : QrRenderer {
                 if (avail[col][row]) {
                     if (matrix.isDark(col, row)) {
                         val (cx, cy) = geometry.moduleCenter(col, row)
-                        val r = (0.30f + rng.nextFloat() * 0.15f) * cs
+                        val r = (0.25f + rng.nextFloat() * 0.25f) * cs
                         nodes.add(CircleNode(cx = cx, cy = cy, radius = r, fill = outlineColor))
                         avail[col][row] = false
                     } else if (matrix.roleAt(col, row) == QrModuleRole.DATA && design.clusterStyle.ambientBubbles) {

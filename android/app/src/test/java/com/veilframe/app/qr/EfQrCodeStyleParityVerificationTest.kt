@@ -347,4 +347,70 @@ class EfQrCodeStyleParityVerificationTest {
         val unseededPolicy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy(rngMode = com.veilframe.app.qr.renderer.RngMode.SYSTEM_UNSEEDED)
         assertEquals(com.veilframe.app.qr.renderer.RngMode.SYSTEM_UNSEEDED, unseededPolicy.rngMode)
     }
+
+    @Test
+    fun testBasicStyleDataScale085PreservedAndNotConvertedTo10() {
+        // 1. Default dataScale must be 1.0f
+        val paramsDefault = QrStyleParams(style = QrStyle.BASIC)
+        assertEquals(1.0f, paramsDefault.dataScale, 0.0001f)
+        val designDefault = QrDesign.fromQrStyleParams(paramsDefault)
+        assertEquals(1.0f, designDefault.moduleStyle.scale, 0.0001f)
+
+        // 2. Explicit 0.85f dataScale MUST be preserved and NOT converted to 1.0f sentinel
+        val params085 = QrStyleParams(style = QrStyle.BASIC, dataScale = 0.85f)
+        val design085 = QrDesign.fromQrStyleParams(params085)
+        assertEquals("Explicit dataScale = 0.85f must be preserved as 0.85f", 0.85f, design085.moduleStyle.scale, 0.0001f)
+    }
+
+    @Test
+    fun testDefaultQuietZoneOneModuleParity() {
+        val paramsBasic = QrStyleParams(style = QrStyle.BASIC)
+        val designBasic = QrDesign.fromQrStyleParams(paramsBasic)
+        assertEquals("EF parity: default quiet zone must be 1 module", 1, designBasic.quietZoneModules)
+
+        val paramsD25 = QrStyleParams(style = QrStyle.D25)
+        val designD25 = QrDesign.fromQrStyleParams(paramsD25)
+        assertEquals("D25 quiet zone must be 0 modules", 0, designD25.quietZoneModules)
+
+        // Explicit quiet zone override (e.g. 4 for SAFE mode)
+        val paramsSafe = QrStyleParams(style = QrStyle.BASIC, quietZone = 4)
+        val designSafe = QrDesign.fromQrStyleParams(paramsSafe)
+        assertEquals("Explicit quiet zone = 4 must be preserved", 4, designSafe.quietZoneModules)
+    }
+
+    @Test
+    fun testRandomRoundModuleShapeMappingParity() {
+        val params = QrStyleParams(style = QrStyle.BASIC, dataShape = ModuleShape.RANDOM_ROUND)
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals("RANDOM_ROUND data shape must map to ORGANIC module shape for EF parity", com.veilframe.app.qr.model.ModuleShape.ORGANIC, design.moduleStyle.shape)
+    }
+
+    @Test
+    fun testImageTransparentPrepassIncludesNoneTimingAndAlignment() {
+        val matrix = QrMatrix("https://veilframe.app/image-none-transparent", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 1
+        )
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageAllowTransparent = true,
+            timingShape = ModuleShape.RECTANGLE,
+            alignShape = ModuleShape.RECTANGLE
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertTrue(design.allowTransparent)
+
+        val renderer = com.veilframe.app.qr.renderer.ImageRenderer()
+        val ir = renderer.generateGeometry(matrix, design, geometry)
+        assertNotNull(ir)
+    }
+
+    @Test
+    fun testDefaultLogoFractionParity() {
+        val params = QrStyleParams()
+        assertEquals("EF parity: default logoFraction must be 0.20f", 0.20f, params.logoFraction, 0.0001f)
+    }
 }

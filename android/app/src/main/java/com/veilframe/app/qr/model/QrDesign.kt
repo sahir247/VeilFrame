@@ -359,7 +359,7 @@ data class QrDesign(
     val background: BackgroundStyle = BackgroundStyle.Solid(Color.WHITE),
     val logo: LogoStyle? = null,
     val effects: EffectStyle = EffectStyle(),
-    val quietZoneModules: Int = 4,
+    val quietZoneModules: Int = 1,
     val explicitQuietZone: Int? = null,
     val outputSize: Int = 512,
     val backgroundImage: Bitmap? = null,
@@ -421,8 +421,13 @@ data class QrDesign(
             val isRound = params.dataShape == com.veilframe.app.qr.ModuleShape.ROUND ||
                 params.dataShape == com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE
 
-            val moduleShape = if (params.style == QrStyle.BASIC && isRound) {
-                ModuleShape.ROUNDED
+            val moduleShape = if (params.style == QrStyle.BASIC) {
+                when (params.dataShape) {
+                    com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.ROUNDED
+                    com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
+                    com.veilframe.app.qr.ModuleShape.RANDOM_ROUND -> ModuleShape.ORGANIC
+                    else -> def.defaultModuleShape
+                }
             } else {
                 def.defaultModuleShape
             }
@@ -471,7 +476,6 @@ data class QrDesign(
             } else null
 
             val moduleScale = when (params.style) {
-                QrStyle.BASIC -> if (params.dataScale == 0.85f) 1.0f else params.dataScale.coerceIn(0.1f, 1.0f)
                 QrStyle.D25 -> 1.0f
                 QrStyle.IMAGE -> params.imageDataScale.coerceIn(0.05f, 1.0f)
                 else -> params.dataScale.coerceIn(0.1f, 1.0f)
@@ -520,8 +524,8 @@ data class QrDesign(
                     dataHeightRatio = params.d25DataHeight,
                     positionHeightRatio = params.d25PositionHeight
                 ),
-                quietZoneModules = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE_FILL) (params.quietZone ?: 1) else (params.quietZone ?: 4),
-                explicitQuietZone = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE_FILL) (params.quietZone ?: 1) else params.quietZone,
+                quietZoneModules = params.quietZone ?: QrGeometry.resolveDefaultQuietZone(params.style),
+                explicitQuietZone = params.quietZone,
                 directionalQuietZone = directionalQuietZone,
                 outputSize = params.outputSize,
                 backgroundImage = params.backgroundImage,

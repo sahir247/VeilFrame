@@ -32,10 +32,9 @@ class QrGeometry(
     val contentHeight: Float get() = matrixSize * moduleSize
 
     companion object {
-        fun resolveDefaultQuietZone(style: QrStyle, defaultFallback: Int = 4): Int {
+        fun resolveDefaultQuietZone(style: QrStyle, defaultFallback: Int = 1): Int {
             return when (style) {
                 QrStyle.D25 -> 0
-                QrStyle.IMAGE_RESAMPLE, QrStyle.IMAGE, QrStyle.IMAGE_FILL -> 1
                 else -> defaultFallback
             }
         }

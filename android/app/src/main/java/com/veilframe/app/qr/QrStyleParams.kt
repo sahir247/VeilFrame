@@ -25,6 +25,7 @@ enum class QrStyle {
 enum class ModuleShape {
     RECTANGLE,
     ROUND,
+    RANDOM_ROUND,
     ROUNDED_RECTANGLE,
     PLANETS,
     DSJ
@@ -48,8 +49,8 @@ data class QrStyleParams(
     val style: QrStyle = QrStyle.BASIC,
     /** Data module shape (used by BASIC style). */
     val dataShape: ModuleShape = ModuleShape.RECTANGLE,
-    /** Data module scale relative to one cell (0.0–1.0). */
-    val dataScale: Float = 0.85f,
+    /** Data module scale relative to one cell (0.0–1.0). Default is 1.0 for full cell coverage. */
+    val dataScale: Float = 1.0f,
     /** Position-detection pattern shape. */
     val positionShape: ModuleShape = ModuleShape.RECTANGLE,
     /** Position pattern fill color (defaults to foreground). */
@@ -60,8 +61,8 @@ data class QrStyleParams(
     val timingShape: ModuleShape = ModuleShape.RECTANGLE,
     /** Optional logo/icon centered over the QR code. */
     val logo: Bitmap? = null,
-    /** Logo size as fraction of output size (0.0–0.33). */
-    val logoFraction: Float = 0.22f,
+    /** Logo size as fraction of output size (0.0–0.33). Default is 0.20 for EF parity. */
+    val logoFraction: Float = 0.20f,
     /** Optional logo border color. */
     val logoBorderColor: Int? = null,
     /** Optional logo border width in pixels. */
@@ -130,7 +131,7 @@ data class QrStyleParams(
     // --- Random Rectangle specific (VeilFrameStyleRandomRectangle) ---
     val randomRectColor: Int? = null,
     val randomRectSeed: Long = 42L,
-    // --- Quiet Zone (null defaults to 4 for SAFE mode, 1 for artistic mode) ---
+    // --- Quiet Zone (null defaults to 1 for EF parity, 4 for SAFE mode) ---
     val quietZone: Int? = null,
     val quietZoneLeft: Int? = null,
     val quietZoneTop: Int? = null,
@@ -145,7 +146,7 @@ data class QrStyleParams(
     val resampleBackdropScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
     val resampleSeed: Long = 42L,
     val resampleBackdropTint: Int? = null,
-    val resampleRngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC,
+    val resampleRngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
     val alignmentColor: Int? = null
