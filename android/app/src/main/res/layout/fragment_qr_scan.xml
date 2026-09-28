@@ -36,6 +36,7 @@
             android:contentDescription="Camera Disabled" />
 
         <TextView
+            android:id="@+id/qr_camera_permission_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -43,6 +44,7 @@
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <TextView
+            android:id="@+id/qr_camera_permission_desc"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -58,6 +60,15 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="Allow Camera" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/qr_open_settings_btn"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Open Settings"
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_permission_import_gallery_btn"
@@ -122,6 +133,7 @@
 
     <!-- Bottom controls -->
     <LinearLayout
+        android:id="@+id/container_scan_bottom_controls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
@@ -174,7 +186,7 @@
                     android:id="@+id/qr_result_text"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:maxLines="3"
+                    android:maxLines="6"
                     android:ellipsize="end"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:layout_marginTop="4dp" />

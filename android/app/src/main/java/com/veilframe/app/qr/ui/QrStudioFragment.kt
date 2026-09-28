@@ -2,11 +2,13 @@ package com.veilframe.app.qr.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -20,6 +22,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -41,10 +44,11 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.textfield.TextInputLayout
 import com.veilframe.app.R
 import com.veilframe.app.qr.QrStyle
-import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
 import com.veilframe.app.qr.model.ImageScaleMode
+import com.veilframe.app.qr.model.LineDirection
 import com.veilframe.app.qr.model.QrPresetFormatter
+import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.scanner.PayloadParser
 import com.veilframe.app.qr.scanner.QrAction
 import com.veilframe.app.qr.scanner.QrScanner
@@ -258,7 +262,20 @@ class QrGenerateTabFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val previewCard        = view.findViewById<MaterialCardView>(R.id.qr_preview_card)
         val previewImage       = view.findViewById<ImageView>(R.id.qr_preview_image)
+        val previewEmptyState  = view.findViewById<View>(R.id.qr_preview_empty_state)
+        val previewProgress    = view.findViewById<ProgressBar>(R.id.qr_preview_progress)
+
+        // Adaptive preview size: min(screenWidth - 32dp, 360dp)
+        val dm = resources.displayMetrics
+        val targetSize = minOf(dm.widthPixels - (32 * dm.density).toInt(), (360 * dm.density).toInt())
+        previewCard?.layoutParams?.let { lp ->
+            lp.width = targetSize
+            lp.height = targetSize
+            previewCard.layoutParams = lp
+        }
+
         val scanabilityCard    = view.findViewById<MaterialCardView>(R.id.qr_scanability_card)
         val scanabilityIcon    = view.findViewById<ImageView>(R.id.qr_scanability_icon)
         val scanabilityStatus  = view.findViewById<TextView>(R.id.qr_scanability_status)
@@ -332,7 +349,41 @@ class QrGenerateTabFragment : Fragment() {
         val upiChip50000       = view.findViewById<Chip>(R.id.chip_upi_50000)
         val upiChip1lakh       = view.findViewById<Chip>(R.id.chip_upi_1lakh)
 
+        // Complete Form State Hydration from ViewModel
+        val initState = vm.state.value
+        contentInput.setText(initState.content)
+        wifiSsid.setText(initState.wifiSsid)
+        wifiPassword.setText(initState.wifiPassword)
+        wifiSecurity.setSelection(initState.wifiSecurityPos.coerceIn(0, secOptions.size - 1))
+        wifiHidden.isChecked = initState.wifiHidden
+
+        vcardFirst.setText(initState.vcardFirst)
+        vcardLast.setText(initState.vcardLast)
+        vcardPhone.setText(initState.vcardPhone)
+        vcardEmail.setText(initState.vcardEmail)
+        vcardOrg.setText(initState.vcardOrg)
+
+        emailRecipient.setText(initState.emailRecipient)
+        emailSubject.setText(initState.emailSubject)
+        emailBody.setText(initState.emailBody)
+
+        smsPhone.setText(initState.smsPhone)
+        smsBody.setText(initState.smsBody)
+
+        upiVpa.setText(initState.upiVpa)
+        upiAmount.setText(initState.upiAmount)
+
+        val checkedPresetId = initState.activePresetId
+        presetChipGroup.check(checkedPresetId)
+        containerText.visibility  = if (checkedPresetId == R.id.chip_preset_text) View.VISIBLE else View.GONE
+        containerWifi.visibility  = if (checkedPresetId == R.id.chip_preset_wifi) View.VISIBLE else View.GONE
+        containerVcard.visibility = if (checkedPresetId == R.id.chip_preset_vcard) View.VISIBLE else View.GONE
+        containerEmail.visibility = if (checkedPresetId == R.id.chip_preset_email) View.VISIBLE else View.GONE
+        containerSms.visibility   = if (checkedPresetId == R.id.chip_preset_sms) View.VISIBLE else View.GONE
+        containerUpi.visibility   = if (checkedPresetId == R.id.chip_preset_upi) View.VISIBLE else View.GONE
+
         // Generator Config
+        val styleChipGroup     = view.findViewById<ChipGroup>(R.id.qr_style_chip_group)
         val styleSpinner       = view.findViewById<Spinner>(R.id.qr_style_spinner)
         val resSpinner         = view.findViewById<Spinner>(R.id.qr_resolution_spinner)
         val ecSpinner          = view.findViewById<Spinner>(R.id.qr_ec_spinner)
@@ -379,7 +430,7 @@ class QrGenerateTabFragment : Fragment() {
         val saveAnimatedSvgBtn = view.findViewById<MaterialButton>(R.id.qr_save_animated_svg_btn)
         val shareBtn           = view.findViewById<MaterialButton>(R.id.qr_share_btn)
 
-        // Setup Source Scale Spinner
+        // Setup Source Scale Spinner & Restore State from ViewModel
         val scaleOptions = arrayOf("Aspect Fill", "Aspect Fit", "Center Crop", "Stretch")
         val scaleEnums = arrayOf(
             ImageScaleMode.ASPECT_FILL,
@@ -388,6 +439,8 @@ class QrGenerateTabFragment : Fragment() {
             ImageScaleMode.STRETCH
         )
         sourceScaleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, scaleOptions)
+        val currentScaleIdx = scaleEnums.indexOf(vm.state.value.sourceImageScaleMode).coerceAtLeast(0)
+        sourceScaleSpinner.setSelection(currentScaleIdx)
         sourceScaleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 vm.updateSourceImageScaleMode(scaleEnums[pos.coerceIn(0, scaleEnums.size - 1)])
@@ -395,15 +448,17 @@ class QrGenerateTabFragment : Fragment() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
-        // Helper to compile active preset into payload
+        // Helper to compile active preset into payload and update ViewModel form state
         fun compileActivePreset() {
             val checkedId = presetChipGroup.checkedChipId
             val payload = when (checkedId) {
                 R.id.chip_preset_wifi -> {
                     val ssid = wifiSsid.text.toString()
                     val pass = wifiPassword.text.toString()
-                    val sec = secCodes[wifiSecurity.selectedItemPosition.coerceIn(0, secCodes.size - 1)]
+                    val pos = wifiSecurity.selectedItemPosition.coerceIn(0, secCodes.size - 1)
+                    val sec = secCodes[pos]
                     val hidden = wifiHidden.isChecked
+                    vm.updateWifiForm(ssid, pass, pos, hidden)
                     if (ssid.isNotBlank()) QrPresetFormatter.formatWifi(ssid, pass, sec, hidden) else ""
                 }
                 R.id.chip_preset_vcard -> {
@@ -412,6 +467,7 @@ class QrGenerateTabFragment : Fragment() {
                     val phone = vcardPhone.text.toString()
                     val email = vcardEmail.text.toString()
                     val org = vcardOrg.text.toString()
+                    vm.updateVcardForm(first, last, phone, email, org)
                     if (first.isNotBlank() || last.isNotBlank() || phone.isNotBlank()) {
                         QrPresetFormatter.formatVCard(first, last, phone, email, org)
                     } else ""
@@ -420,16 +476,19 @@ class QrGenerateTabFragment : Fragment() {
                     val recipient = emailRecipient.text.toString()
                     val subject = emailSubject.text.toString()
                     val body = emailBody.text.toString()
+                    vm.updateEmailForm(recipient, subject, body)
                     if (recipient.isNotBlank()) QrPresetFormatter.formatEmail(recipient, subject, body) else ""
                 }
                 R.id.chip_preset_sms -> {
                     val phone = smsPhone.text.toString()
                     val body = smsBody.text.toString()
+                    vm.updateSmsForm(phone, body)
                     if (phone.isNotBlank()) QrPresetFormatter.formatSms(phone, body) else ""
                 }
                 R.id.chip_preset_upi -> {
                     val vpa = upiVpa.text.toString().trim()
                     val amount = upiAmount.text.toString().trim()
+                    vm.updateUpiForm(vpa, amount)
                     if (vpa.isNotBlank()) QrPresetFormatter.formatUpi(vpa = vpa, amount = amount) else ""
                 }
                 else -> {
@@ -442,6 +501,7 @@ class QrGenerateTabFragment : Fragment() {
         // Preset Chip Switching
         presetChipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
             val checkedId = checkedIds.firstOrNull() ?: R.id.chip_preset_text
+            vm.updateActivePreset(checkedId)
             containerText.visibility  = if (checkedId == R.id.chip_preset_text) View.VISIBLE else View.GONE
             containerWifi.visibility  = if (checkedId == R.id.chip_preset_wifi) View.VISIBLE else View.GONE
             containerVcard.visibility = if (checkedId == R.id.chip_preset_vcard) View.VISIBLE else View.GONE
@@ -527,6 +587,13 @@ class QrGenerateTabFragment : Fragment() {
             compileActivePreset()
         }
 
+        // If amount was restored, sync slider
+        if (initState.upiAmount.isNotBlank()) {
+            initState.upiAmount.toFloatOrNull()?.let { num ->
+                syncUpiAmount(num, updateText = false, updateSlider = true)
+            }
+        }
+
         upiVpa.addTextChangedListener(object : TextWatcher {
             private var isSelfEditing = false
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -599,20 +666,128 @@ class QrGenerateTabFragment : Fragment() {
         upiChip50000?.setOnClickListener { syncUpiAmount(50000f, updateText = true, updateSlider = true) }
         upiChip1lakh?.setOnClickListener { syncUpiAmount(100000f, updateText = true, updateSlider = true) }
 
-        // 1. Style Spinner (12 Modes with Human-readable Display Names)
+        // 1. Visual Style Selector & Gallery Chips + Spinner Two-Way Sync
         val styles = QrStyle.values()
-        val styleNames = styles.map {
-            QrStyleRegistry.get(it).displayName
-        }
+        val styleNames = styles.map { QrStyleRegistry.get(it).displayName }
         styleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, styleNames)
         styleSpinner.setSelection(styles.indexOf(vm.state.value.style).coerceAtLeast(0))
+
+        val styleToChipId = mapOf<QrStyle, Int>(
+            QrStyle.BASIC to R.id.chip_style_basic,
+            QrStyle.BUBBLE to R.id.chip_style_bubble,
+            QrStyle.D25 to R.id.chip_style_d25,
+            QrStyle.DSJ to R.id.chip_style_dsj,
+            QrStyle.LINE to R.id.chip_style_line,
+            QrStyle.RANDOM_RECTANGLE to R.id.chip_style_random_rect,
+            QrStyle.IMAGE to R.id.chip_style_image,
+            QrStyle.IMAGE_FILL to R.id.chip_style_image_fill,
+            QrStyle.IMAGE_RESAMPLE to R.id.chip_style_image_resample,
+            QrStyle.FUNCTION to R.id.chip_style_func,
+            QrStyle.STYLE_FUNCTION to R.id.chip_style_style_func,
+            QrStyle.CONNECTED_ORGANIC to R.id.chip_style_composite
+        )
+        val chipIdToStyle = styleToChipId.entries.associate { (k, v) -> v to k }
+
+        styleToChipId[vm.state.value.style]?.let { chipId ->
+            styleChipGroup?.check(chipId)
+        }
+
+        styleChipGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
+            val checkedId = checkedIds.firstOrNull() ?: return@setOnCheckedStateChangeListener
+            val selectedStyle = chipIdToStyle[checkedId] ?: return@setOnCheckedStateChangeListener
+            if (vm.state.value.style != selectedStyle) {
+                vm.updateStyle(selectedStyle)
+                styleSpinner.setSelection(styles.indexOf(selectedStyle).coerceAtLeast(0))
+            }
+        }
+
         styleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                if (vm.state.value.style != styles[pos]) {
-                    vm.updateStyle(styles[pos])
+                val selectedStyle = styles[pos]
+                if (vm.state.value.style != selectedStyle) {
+                    vm.updateStyle(selectedStyle)
+                    styleToChipId[selectedStyle]?.let { chipId ->
+                        if (styleChipGroup?.checkedChipId != chipId) {
+                            styleChipGroup?.check(chipId)
+                        }
+                    }
                 }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        // Contextual Style Settings Controls
+        val cardStyleSettings = view.findViewById<MaterialCardView>(R.id.card_style_settings)
+        val containerD25 = view.findViewById<LinearLayout>(R.id.container_style_d25)
+        val d25DepthSlider = view.findViewById<Slider>(R.id.qr_d25_depth_slider)
+        val d25DepthLabel = view.findViewById<TextView>(R.id.qr_d25_depth_label)
+
+        val containerLine = view.findViewById<LinearLayout>(R.id.container_style_line)
+        val lineDirGroup = view.findViewById<ChipGroup>(R.id.qr_line_direction_group)
+        val lineThicknessSlider = view.findViewById<Slider>(R.id.qr_line_thickness_slider)
+        val lineThicknessLabel = view.findViewById<TextView>(R.id.qr_line_thickness_label)
+
+        val containerDsj = view.findViewById<LinearLayout>(R.id.container_style_dsj)
+        val dsjLineSlider = view.findViewById<Slider>(R.id.qr_dsj_line_slider)
+        val dsjLineLabel = view.findViewById<TextView>(R.id.qr_dsj_line_label)
+
+        val containerRandomRect = view.findViewById<LinearLayout>(R.id.container_style_random_rect)
+        val randomRectSeedBtn = view.findViewById<MaterialButton>(R.id.qr_random_rect_seed_btn)
+
+        val containerImageBackdropRequired = view.findViewById<LinearLayout>(R.id.container_image_backdrop_required)
+        val chooseBgRequiredBtn = view.findViewById<MaterialButton>(R.id.qr_choose_bg_required_btn)
+
+        d25DepthSlider?.value = vm.state.value.d25Depth.coerceIn(0.2f, 2.0f)
+        d25DepthLabel?.text = String.format(java.util.Locale.US, "3D Depth: %.2fx", vm.state.value.d25Depth)
+        d25DepthSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateD25Depth(value)
+                d25DepthLabel?.text = String.format(java.util.Locale.US, "3D Depth: %.2fx", value)
+            }
+        }
+
+        val dirChipId = when (vm.state.value.lineDirection) {
+            LineDirection.HORIZONTAL -> R.id.chip_line_dir_x
+            LineDirection.VERTICAL -> R.id.chip_line_dir_y
+            LineDirection.CROSS -> R.id.chip_line_dir_cross
+            else -> R.id.chip_line_dir_x
+        }
+        lineDirGroup?.check(dirChipId)
+        lineDirGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
+            val id = checkedIds.firstOrNull() ?: R.id.chip_line_dir_x
+            val dir = when (id) {
+                R.id.chip_line_dir_x -> LineDirection.HORIZONTAL
+                R.id.chip_line_dir_y -> LineDirection.VERTICAL
+                R.id.chip_line_dir_cross -> LineDirection.CROSS
+                else -> LineDirection.HORIZONTAL
+            }
+            vm.updateLineDirection(dir)
+        }
+        lineThicknessSlider?.value = vm.state.value.lineThickness.coerceIn(0.1f, 1.0f)
+        lineThicknessLabel?.text = String.format(java.util.Locale.US, "Line Thickness: %.2f", vm.state.value.lineThickness)
+        lineThicknessSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateLineThickness(value)
+                lineThicknessLabel?.text = String.format(java.util.Locale.US, "Line Thickness: %.2f", value)
+            }
+        }
+
+        dsjLineSlider?.value = vm.state.value.dsjLineSize.coerceIn(0.3f, 1.0f)
+        dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Line Size: %.2f", vm.state.value.dsjLineSize)
+        dsjLineSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateDsjSizes(value, value)
+                dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Line Size: %.2f", value)
+            }
+        }
+
+        randomRectSeedBtn?.setOnClickListener {
+            vm.randomizeRandomRectSeed()
+            Toast.makeText(requireContext(), "Random pattern seed updated", Toast.LENGTH_SHORT).show()
+        }
+
+        chooseBgRequiredBtn?.setOnClickListener {
+            bgImagePickerLauncher.launch("image/*")
         }
 
         // 2. Resolution Spinner
@@ -730,16 +905,27 @@ class QrGenerateTabFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.state.collect { state ->
-                    state.bitmap?.let { previewImage.setImageBitmap(it) }
+                    // Empty-state vs preview bitmap
+                    if (state.bitmap != null) {
+                        previewImage.setImageBitmap(state.bitmap)
+                        previewImage.visibility = View.VISIBLE
+                        previewEmptyState?.visibility = View.GONE
+                    } else {
+                        previewImage.setImageBitmap(null)
+                        previewImage.visibility = View.GONE
+                        previewEmptyState?.visibility = View.VISIBLE
+                    }
 
-                    // Export buttons enabled/disabled state driven by loading
-                    val isIdle = !state.isLoading
-                    saveBtn.isEnabled = isIdle
-                    saveSvgBtn.isEnabled = isIdle
-                    saveGifBtn?.isEnabled = isIdle
-                    saveVideoBtn?.isEnabled = isIdle
-                    saveAnimatedSvgBtn?.isEnabled = isIdle
-                    shareBtn.isEnabled = isIdle
+                    previewProgress?.visibility = if (state.isRenderingPreview) View.VISIBLE else View.GONE
+
+                    // Export buttons enabled/disabled state driven by isExporting & content presence
+                    val canExport = !state.isExporting && state.bitmap != null
+                    saveBtn.isEnabled = canExport
+                    saveSvgBtn.isEnabled = canExport
+                    saveGifBtn?.isEnabled = canExport
+                    saveVideoBtn?.isEnabled = canExport
+                    saveAnimatedSvgBtn?.isEnabled = canExport
+                    shareBtn.isEnabled = canExport
 
                     // Clarify animated export helper label based on input
                     if (state.animatedFrames.isNotEmpty()) {
@@ -747,6 +933,22 @@ class QrGenerateTabFragment : Fragment() {
                     } else {
                         animatedExportLabel?.text = "Generate looping animation from current QR artwork"
                     }
+
+                    // Contextual Style Settings Card
+                    val showD25 = (state.style == QrStyle.D25)
+                    val showLine = (state.style == QrStyle.LINE)
+                    val showDsj = (state.style == QrStyle.DSJ)
+                    val showRandomRect = (state.style == QrStyle.RANDOM_RECTANGLE)
+                    val showBgRequired = (state.style == QrStyle.IMAGE && state.backgroundImage == null)
+
+                    containerD25?.visibility = if (showD25) View.VISIBLE else View.GONE
+                    containerLine?.visibility = if (showLine) View.VISIBLE else View.GONE
+                    containerDsj?.visibility = if (showDsj) View.VISIBLE else View.GONE
+                    containerRandomRect?.visibility = if (showRandomRect) View.VISIBLE else View.GONE
+                    containerImageBackdropRequired?.visibility = if (showBgRequired) View.VISIBLE else View.GONE
+
+                    val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBgRequired
+                    cardStyleSettings?.visibility = if (hasStyleControls) View.VISIBLE else View.GONE
 
                     // Dynamic Background Image Card
                     if (state.backgroundImage != null) {
@@ -758,8 +960,9 @@ class QrGenerateTabFragment : Fragment() {
                         cardBgControls.visibility = View.GONE
                     }
 
-                    // Dynamic Source Image Card
-                    if (state.sourceImage != null) {
+                    // Dynamic Source Image Card: only show when source image exists AND active style uses it
+                    val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
+                    if (state.sourceImage != null && usesSourceImage) {
                         cardSourceControls.visibility = View.VISIBLE
                         sourceContrastSlider.value = state.sourceImageContrast
                         sourceContrastLabel.text = String.format(java.util.Locale.US, "Contrast: %.2f", state.sourceImageContrast)
@@ -842,6 +1045,7 @@ class QrGenerateTabFragment : Fragment() {
 
                     state.repairNotice?.let { notice ->
                         view?.let { v -> Snackbar.make(v, "Auto-Repair: $notice", Snackbar.LENGTH_LONG).show() }
+                        vm.clearRepairNotice()
                     }
 
                     state.saveResult?.let { msg ->
@@ -879,14 +1083,32 @@ class QrGenerateTabFragment : Fragment() {
  */
 class QrScanTabFragment : Fragment() {
 
+    private enum class CameraUiState {
+        INITIALIZING,
+        PERMISSION_REQUIRED,
+        PERMISSION_DENIED,
+        READY,
+        ERROR,
+        RESULT_PRESENTED
+    }
+
     private var previewView: PreviewView? = null
+    private var scanOverlay: View? = null
     private var resultCard: MaterialCardView? = null
     private var resultType: TextView? = null
     private var resultText: TextView? = null
     private var resultActionBtn: Button? = null
     private var scanAnotherBtn: Button? = null
 
+    private var containerBottomControls: View? = null
+    private var scanGalleryBtn: Button? = null
+
     private var containerPermissionDenied: View? = null
+    private var permTitle: TextView? = null
+    private var permDesc: TextView? = null
+    private var allowCameraBtn: Button? = null
+    private var openSettingsBtn: Button? = null
+
     private var containerCameraError: View? = null
     private var cameraErrorText: TextView? = null
 
@@ -895,15 +1117,17 @@ class QrScanTabFragment : Fragment() {
     private var activeCamera: androidx.camera.core.Camera? = null
     private var activeQrScanner: QrScanner? = null
     private var isScanningPaused: Boolean = false
+    private var hasRequestedPermissionOnce: Boolean = false
+    private var currentUiState: CameraUiState = CameraUiState.INITIALIZING
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
+        hasRequestedPermissionOnce = true
         if (isGranted) {
-            containerPermissionDenied?.visibility = View.GONE
-            startCamera()
+            checkPermissionState()
         } else {
-            containerPermissionDenied?.visibility = View.VISIBLE
+            checkPermissionState()
         }
     }
 
@@ -921,7 +1145,6 @@ class QrScanTabFragment : Fragment() {
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
                 if (raw != null) {
-                    isScanningPaused = true
                     handleScanResult(raw)
                 } else {
                     view?.let { v ->
@@ -971,18 +1194,27 @@ class QrScanTabFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        previewView     = view.findViewById(R.id.qr_camera_preview)
-        resultCard      = view.findViewById(R.id.qr_result_card)
-        resultType      = view.findViewById(R.id.qr_result_type)
-        resultText      = view.findViewById(R.id.qr_result_text)
-        resultActionBtn = view.findViewById(R.id.qr_result_action_btn)
-        scanAnotherBtn  = view.findViewById(R.id.qr_scan_another_btn)
+        previewView               = view.findViewById(R.id.qr_camera_preview)
+        scanOverlay               = view.findViewById(R.id.qr_scan_overlay)
+        resultCard                = view.findViewById(R.id.qr_result_card)
+        resultType                = view.findViewById(R.id.qr_result_type)
+        resultText                = view.findViewById(R.id.qr_result_text)
+        resultActionBtn           = view.findViewById(R.id.qr_result_action_btn)
+        scanAnotherBtn            = view.findViewById(R.id.qr_scan_another_btn)
+
+        containerBottomControls   = view.findViewById(R.id.container_scan_bottom_controls)
+        scanGalleryBtn            = view.findViewById(R.id.qr_scan_gallery_btn)
 
         containerPermissionDenied = view.findViewById(R.id.container_camera_permission_denied)
+        permTitle                 = view.findViewById(R.id.qr_camera_permission_title)
+        permDesc                  = view.findViewById(R.id.qr_camera_permission_desc)
+        allowCameraBtn            = view.findViewById(R.id.qr_allow_camera_btn)
+        openSettingsBtn           = view.findViewById(R.id.qr_open_settings_btn)
+
         containerCameraError      = view.findViewById(R.id.container_camera_error)
         cameraErrorText           = view.findViewById(R.id.qr_camera_error_text)
 
-        view.findViewById<Button>(R.id.qr_scan_gallery_btn).setOnClickListener {
+        scanGalleryBtn?.setOnClickListener {
             qrDecodePickerLauncher.launch("image/*")
         }
         view.findViewById<Button>(R.id.qr_permission_import_gallery_btn)?.setOnClickListener {
@@ -991,26 +1223,78 @@ class QrScanTabFragment : Fragment() {
         view.findViewById<Button>(R.id.qr_error_import_gallery_btn)?.setOnClickListener {
             qrDecodePickerLauncher.launch("image/*")
         }
-        view.findViewById<Button>(R.id.qr_allow_camera_btn)?.setOnClickListener {
+        allowCameraBtn?.setOnClickListener {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+        openSettingsBtn?.setOnClickListener {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", requireContext().packageName, null)
+            }
+            startActivity(intent)
+        }
         view.findViewById<Button>(R.id.qr_camera_retry_btn)?.setOnClickListener {
-            containerCameraError?.visibility = View.GONE
-            startCamera()
+            checkPermissionState()
         }
 
         scanAnotherBtn?.setOnClickListener {
-            resultCard?.visibility = View.GONE
             isScanningPaused = false
+            activeQrScanner?.resumeAnalysis()
+            updateCameraUiState(CameraUiState.READY)
         }
 
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED) {
-            containerPermissionDenied?.visibility = View.GONE
+        checkPermissionState()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (currentUiState == CameraUiState.PERMISSION_DENIED || currentUiState == CameraUiState.PERMISSION_REQUIRED) {
+            checkPermissionState()
+        }
+    }
+
+    private fun updateCameraUiState(state: CameraUiState) {
+        currentUiState = state
+        val isCameraReady = (state == CameraUiState.READY)
+        val isResult = (state == CameraUiState.RESULT_PRESENTED)
+        val isPerm = (state == CameraUiState.PERMISSION_REQUIRED || state == CameraUiState.PERMISSION_DENIED)
+        val isError = (state == CameraUiState.ERROR)
+
+        scanOverlay?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
+        resultCard?.visibility = if (isResult) View.VISIBLE else View.GONE
+        containerPermissionDenied?.visibility = if (isPerm) View.VISIBLE else View.GONE
+        containerCameraError?.visibility = if (isError) View.VISIBLE else View.GONE
+
+        // Mutually exclusive: Bottom controls only visible when camera is ready or showing result
+        containerBottomControls?.visibility = if (isCameraReady || isResult) View.VISIBLE else View.GONE
+        scanGalleryBtn?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
+    }
+
+    private fun checkPermissionState() {
+        val hasPerm = ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPerm) {
+            updateCameraUiState(CameraUiState.INITIALIZING)
             startCamera()
         } else {
-            containerPermissionDenied?.visibility = View.VISIBLE
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            val isPermanent = hasRequestedPermissionOnce &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(requireActivity(), Manifest.permission.CAMERA)
+
+            if (isPermanent) {
+                permTitle?.text = "Camera Permission Disabled"
+                permDesc?.text = "Camera access is disabled. Enable camera access from Android Settings to scan QR codes."
+                allowCameraBtn?.visibility = View.GONE
+                openSettingsBtn?.visibility = View.VISIBLE
+                updateCameraUiState(CameraUiState.PERMISSION_DENIED)
+            } else {
+                permTitle?.text = "Camera access is disabled"
+                permDesc?.text = "VeilFrame needs camera access to scan QR codes with your device."
+                allowCameraBtn?.visibility = View.VISIBLE
+                openSettingsBtn?.visibility = View.GONE
+                updateCameraUiState(CameraUiState.PERMISSION_REQUIRED)
+            }
         }
     }
 
@@ -1022,8 +1306,8 @@ class QrScanTabFragment : Fragment() {
                 bindCameraUseCases()
             } catch (e: Exception) {
                 if (isAdded) {
-                    containerCameraError?.visibility = View.VISIBLE
                     cameraErrorText?.text = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown hardware error"}"
+                    updateCameraUiState(CameraUiState.ERROR)
                 }
             }
         }, ContextCompat.getMainExecutor(requireContext()))
@@ -1052,7 +1336,6 @@ class QrScanTabFragment : Fragment() {
         ) { raw ->
             activity?.runOnUiThread {
                 if (isAdded && !isScanningPaused) {
-                    isScanningPaused = true
                     handleScanResult(raw)
                 }
             }
@@ -1072,18 +1355,19 @@ class QrScanTabFragment : Fragment() {
                 preview,
                 analysis
             )
-            containerCameraError?.visibility = View.GONE
+            updateCameraUiState(CameraUiState.READY)
         } catch (e: Exception) {
             if (isAdded) {
-                containerCameraError?.visibility = View.VISIBLE
                 cameraErrorText?.text = "Camera hardware bind failed: ${e.localizedMessage ?: "Device busy or unsupported"}"
+                updateCameraUiState(CameraUiState.ERROR)
             }
         }
     }
 
     private fun handleScanResult(raw: String) {
+        isScanningPaused = true
+        activeQrScanner?.pauseAnalysis()
         val action = PayloadParser.parse(raw)
-        resultCard?.visibility = View.VISIBLE
         resultType?.text = "Detected: ${action::class.simpleName ?: "QR Code"}"
         resultText?.text = formatActionSummary(action)
         resultActionBtn?.text = formatActionCta(action)
@@ -1091,6 +1375,7 @@ class QrScanTabFragment : Fragment() {
         resultActionBtn?.setOnClickListener {
             executeAction(action)
         }
+        updateCameraUiState(CameraUiState.RESULT_PRESENTED)
     }
 
     private fun formatActionCta(action: QrAction): String = when (action) {
@@ -1108,16 +1393,65 @@ class QrScanTabFragment : Fragment() {
     }
 
     private fun formatActionSummary(action: QrAction): String = when (action) {
-        is QrAction.Url -> action.uri
-        is QrAction.Wifi -> "SSID: ${action.ssid} (Type: ${action.type})"
-        is QrAction.Contact -> "${action.name ?: "Contact"}: ${action.phones.firstOrNull() ?: action.emails.firstOrNull() ?: ""}"
-        is QrAction.UpiPayment -> "UPI: ${action.payeeAddress} (${action.amount ?: "No amount"})"
+        is QrAction.Url -> buildString {
+            append(action.uri)
+            if (!action.host.isNullOrBlank()) {
+                append("\nHost: ${action.host}")
+            }
+        }
+        is QrAction.Wifi -> buildString {
+            append("Network: ${action.ssid}")
+            append("\nSecurity: ${action.type}")
+            if (action.password.isNotBlank()) {
+                append("\nPassword: ${action.password}")
+            }
+            if (action.hidden) {
+                append(" (Hidden)")
+            }
+        }
+        is QrAction.Contact -> buildString {
+            append(action.name ?: "Contact")
+            if (!action.org.isNullOrBlank()) append("\nOrg: ${action.org}")
+            if (action.phones.isNotEmpty()) append("\nPhone: ${action.phones.joinToString(", ")}")
+            if (action.emails.isNotEmpty()) append("\nEmail: ${action.emails.joinToString(", ")}")
+        }
+        is QrAction.UpiPayment -> buildString {
+            if (!action.payeeName.isNullOrBlank()) {
+                append("Payee: ${action.payeeName}\n")
+            }
+            append("VPA: ${action.payeeAddress}")
+            if (action.amount != null) {
+                append("\nAmount: ₹${action.amount}")
+            }
+            if (!action.note.isNullOrBlank()) {
+                append("\nNote: ${action.note}")
+            }
+        }
         is QrAction.Phone -> "Phone: ${action.number}"
-        is QrAction.Sms -> "SMS: ${action.number}"
-        is QrAction.Email -> "Email: ${action.address}"
-        is QrAction.Geo -> "Coordinates: ${action.lat}, ${action.lon}"
-        is QrAction.CalendarEvent -> "Event: ${action.title ?: "Calendar entry"}"
-        is QrAction.OtpAuth -> "OTP Auth: ${action.account ?: action.issuer ?: ""}"
+        is QrAction.Sms -> buildString {
+            append("Recipient: ${action.number}")
+            if (!action.message.isNullOrBlank()) append("\nMessage: ${action.message}")
+        }
+        is QrAction.Email -> buildString {
+            append("To: ${action.address}")
+            if (!action.subject.isNullOrBlank()) append("\nSubject: ${action.subject}")
+            if (!action.body.isNullOrBlank()) append("\nBody: ${action.body}")
+        }
+        is QrAction.Geo -> buildString {
+            append("Coordinates: ${action.lat}, ${action.lon}")
+            if (!action.label.isNullOrBlank()) append("\nLabel: ${action.label}")
+        }
+        is QrAction.CalendarEvent -> buildString {
+            append("Event: ${action.title ?: "Calendar entry"}")
+            if (!action.location.isNullOrBlank()) append("\nLocation: ${action.location}")
+            if (!action.dtStart.isNullOrBlank()) append("\nStarts: ${action.dtStart}")
+            if (!action.description.isNullOrBlank()) append("\nDetails: ${action.description}")
+        }
+        is QrAction.OtpAuth -> buildString {
+            val label = listOfNotNull(action.issuer, action.account).joinToString(": ")
+            append("Service: ${if (label.isNotBlank()) label else "Authenticator"}")
+            append("\nType: ${action.type.uppercase(java.util.Locale.ROOT)} (${action.digits} digits)")
+        }
         is QrAction.Raw -> action.text
     }
 

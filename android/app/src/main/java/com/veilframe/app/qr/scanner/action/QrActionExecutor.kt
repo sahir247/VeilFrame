@@ -18,7 +18,7 @@ import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.qr.scanner.QrAction
 import com.veilframe.app.qr.scanner.UrlDisposition
 
@@ -66,7 +66,7 @@ object QrActionExecutor {
             append("Do you want to open this link in your browser?")
         }
 
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle(if (warning != null) "Security Warning: External Link" else "Open External Link")
             .setMessage(message)
             .setPositiveButton("Open") { _, _ ->
@@ -88,14 +88,14 @@ object QrActionExecutor {
     }
 
     private fun executeWifi(context: Context, action: QrAction.Wifi) {
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Connect to Wi-Fi")
             .setMessage("Network: ${action.ssid}\nSecurity: ${action.type}\n\nConnect to this network?")
             .setPositiveButton("Connect") { _, _ ->
                 connectWifi(context, action)
             }
             .setNeutralButton("View Password") { _, _ ->
-                AlertDialog.Builder(context)
+                MaterialAlertDialogBuilder(context)
                     .setTitle("Wi-Fi Credentials")
                     .setMessage("SSID: ${action.ssid}\nPassword: ${action.password}")
                     .setPositiveButton("Close", null)
@@ -258,7 +258,7 @@ object QrActionExecutor {
             action.title?.let { append("Title: $it\n") }
             append("\nAdd this contact to your address book?")
         }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Add Contact")
             .setMessage(details)
             .setPositiveButton("Add") { _, _ ->
@@ -290,7 +290,7 @@ object QrActionExecutor {
             action.description?.let { append("Description: $it\n") }
             append("\nAdd this event to your calendar?")
         }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Add Calendar Event")
             .setMessage(details)
             .setPositiveButton("Add") { _, _ ->
@@ -315,7 +315,7 @@ object QrActionExecutor {
         val amt = action.amount?.let { "Amount: ${action.currency ?: "INR"} $it\n" } ?: ""
         val note = action.note?.let { "Note: $it\n" } ?: ""
 
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Confirm UPI Payment")
             .setMessage("Payee: ${action.payeeName ?: action.payeeAddress}\nVPA: ${action.payeeAddress}\n$amt$note\nProceed to payment app?")
             .setPositiveButton("Pay") { _, _ ->
@@ -341,7 +341,7 @@ object QrActionExecutor {
         action: QrAction.OtpAuth,
         onShowSecret: ((QrAction.OtpAuth) -> Unit)?
     ) {
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Authenticator Account")
             .setMessage("Account: ${action.account ?: "Unknown"}\nIssuer: ${action.issuer ?: "Unknown"}\nAlgorithm: ${action.algorithm} (${action.digits} digits)\n\nNever share 2FA secret keys.")
             .setPositiveButton("Add to Authenticator") { _, _ ->
@@ -366,7 +366,7 @@ object QrActionExecutor {
             }
             .setNeutralButton("View Key") { _, _ ->
                 onShowSecret?.invoke(action) ?: run {
-                    AlertDialog.Builder(context)
+                    MaterialAlertDialogBuilder(context)
                         .setTitle("Secret Key")
                         .setMessage("Key: ${action.secret ?: "None"}")
                         .setPositiveButton("Close", null)
@@ -378,7 +378,7 @@ object QrActionExecutor {
     }
 
     private fun executePhone(context: Context, action: QrAction.Phone) {
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Confirm Phone Call")
             .setMessage("Do you want to open the dialer for:\n\n${action.number}")
             .setPositiveButton("Dial") { _, _ ->
@@ -395,7 +395,7 @@ object QrActionExecutor {
 
     private fun executeSms(context: Context, action: QrAction.Sms) {
         val msgPreview = action.message?.let { "\nMessage: $it" } ?: ""
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Send SMS")
             .setMessage("Recipient: ${action.number}$msgPreview\n\nOpen messaging app?")
             .setPositiveButton("Open") { _, _ ->
@@ -419,7 +419,7 @@ object QrActionExecutor {
             action.body?.let { append("Body: ").append(it).append("\n") }
             append("\nOpen email client?")
         }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("Send Email")
             .setMessage(details)
             .setPositiveButton("Open") { _, _ ->
@@ -442,7 +442,7 @@ object QrActionExecutor {
             action.label?.let { append("Location: $it\n") }
             append("\nOpen in map application?")
         }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("View Location")
             .setMessage(details)
             .setPositiveButton("Open Map") { _, _ ->
@@ -459,7 +459,7 @@ object QrActionExecutor {
     }
 
     private fun executeRaw(context: Context, action: QrAction.Raw) {
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle("QR Code Content")
             .setMessage(action.text)
             .setPositiveButton("Copy") { _, _ ->

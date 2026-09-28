@@ -77,8 +77,25 @@ class QrScanner(
         }
     }
 
+    @Volatile
+    var isAnalysisPaused: Boolean = false
+
+    fun pauseAnalysis() {
+        isAnalysisPaused = true
+    }
+
+    fun resumeAnalysis() {
+        isAnalysisPaused = false
+    }
+
     @ExperimentalGetImage
     override fun analyze(imageProxy: ImageProxy) {
+        // Fast drop if scanner analysis pipeline is paused (e.g. presenting result / scan another)
+        if (isAnalysisPaused) {
+            imageProxy.close()
+            return
+        }
+
         // 1. Frame gate throttling (~8-10 processed FPS) & single-flight acquisition.
         val token = controller.acquireFrameToken(imageProxy) ?: return
 

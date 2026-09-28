@@ -14,6 +14,7 @@
 
         <!-- QR Preview Card (Material 3 Expressive 24dp Corner) -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/qr_preview_card"
             android:layout_width="260dp"
             android:layout_height="260dp"
             android:layout_gravity="center_horizontal"
@@ -23,13 +24,52 @@
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorSurfaceVariant">
 
-            <ImageView
-                android:id="@+id/qr_preview_image"
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitCenter"
-                android:padding="12dp"
-                android:contentDescription="QR Code Preview" />
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/qr_preview_image"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter"
+                    android:padding="12dp"
+                    android:contentDescription="QR Code Preview" />
+
+                <LinearLayout
+                    android:id="@+id/qr_preview_empty_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="24dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_tool_qr"
+                        app:tint="?attr/colorOutline"
+                        android:alpha="0.45"
+                        android:contentDescription="Empty QR" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Enter content\nto generate QR"
+                        android:gravity="center"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOutline" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/qr_preview_progress"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:visibility="gone" />
+            </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Live Verification Status Card (Material 3 Expressive) -->
@@ -60,7 +100,8 @@
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_marginEnd="10dp"
-                        android:src="@drawable/ic_check_circle"
+                        android:src="@drawable/ic_info_outline"
+                        app:tint="?attr/colorOutline"
                         android:contentDescription="Verification Status" />
 
                     <TextView
@@ -69,7 +110,8 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
-                        android:text="Scanability Check Passed" />
+                        android:textColor="?attr/colorOutline"
+                        android:text="Validating..." />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_scanability_details_toggle"
@@ -87,7 +129,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="Passed on-device QR validation" />
+                    android:text="Running on-device barcode validator..." />
 
                 <!-- Collapsible Technical Diagnostic Section -->
                 <LinearLayout
@@ -752,20 +794,330 @@
 
         <View android:layout_height="16dp" android:layout_width="match_parent" />
 
-        <!-- Style Spinner -->
+        <!-- Visual Style Header & Gallery -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Visual Style (12 Modes)"
+            android:text="Visual Style"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:layout_marginBottom="4dp" />
+            android:layout_marginBottom="6dp" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/qr_style_chip_group"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_basic"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    app:chipIcon="@drawable/ic_tool_qr"
+                    android:text="Basic" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_bubble"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_color_filter"
+                    android:text="Bubble" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_d25"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_tab_video"
+                    android:text="2.5D Isometric" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_dsj"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_crop"
+                    android:text="DSJ Cross" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_line"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_crop"
+                    android:text="Line Stripes" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_random_rect"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_reset"
+                    android:text="Random Rect" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_image"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_tab_image"
+                    android:text="Image Backdrop" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_image_fill"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_tab_image"
+                    android:text="Image Fill" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_image_resample"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_tab_image"
+                    android:text="Image Resample" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_func"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_reset"
+                    android:text="Function Wave" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_style_func"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_reset"
+                    android:text="Style Function" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip_style_composite"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:chipIcon="@drawable/ic_check_circle"
+                    android:text="Connected Organic" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
 
         <Spinner
             android:id="@+id/qr_style_spinner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/spinner_border_bg"
-            android:padding="10dp" />
+            android:padding="8dp" />
+
+        <!-- Contextual Style Settings Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_style_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:visibility="gone"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="1dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="?attr/colorSurfaceVariant">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/qr_style_settings_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Style Options"
+                    android:textAppearance="?attr/textAppearanceTitleSmall" />
+
+                <!-- 2.5D Depth Setting -->
+                <LinearLayout
+                    android:id="@+id/container_style_d25"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:id="@+id/qr_d25_depth_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="3D Depth: 1.00x"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_d25_depth_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.2"
+                        android:valueTo="2.0"
+                        android:stepSize="0.1"
+                        android:value="1.0" />
+                </LinearLayout>
+
+                <!-- LINE Direction and Thickness Setting -->
+                <LinearLayout
+                    android:id="@+id/container_style_line"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Stripe Direction"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/qr_line_direction_group"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_x"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="Horizontal" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_y"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Vertical" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_dir_cross"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Cross" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <TextView
+                        android:id="@+id/qr_line_thickness_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Line Thickness: 0.50"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_line_thickness_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.1"
+                        android:valueTo="1.0"
+                        android:stepSize="0.05"
+                        android:value="0.5" />
+                </LinearLayout>
+
+                <!-- DSJ Line Size Setting -->
+                <LinearLayout
+                    android:id="@+id/container_style_dsj"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:id="@+id/qr_dsj_line_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Cross Line Size: 0.70"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_dsj_line_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.3"
+                        android:valueTo="1.0"
+                        android:stepSize="0.05"
+                        android:value="0.7" />
+                </LinearLayout>
+
+                <!-- RANDOM_RECTANGLE Pattern Seed Setting -->
+                <LinearLayout
+                    android:id="@+id/container_style_random_rect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_random_rect_seed_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:icon="@drawable/ic_reset"
+                        android:text="Randomize Noise Seed" />
+                </LinearLayout>
+
+                <!-- IMAGE Style Requirement Banner -->
+                <LinearLayout
+                    android:id="@+id/container_image_backdrop_required"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/rounded_banner_warning_bg"
+                    android:padding="10dp"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Background Image Required"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:textColor="#D97706" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Image Backdrop renders modules over a photo background."
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_choose_bg_required_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        app:icon="@drawable/ic_tab_image"
+                        android:text="Choose Background" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <View android:layout_height="12dp" android:layout_width="match_parent" />
 
@@ -847,9 +1199,16 @@
                 android:text="Background" />
         </LinearLayout>
 
-        <View android:layout_height="8dp" android:layout_width="match_parent" />
+        <View android:layout_height="12dp" android:layout_width="match_parent" />
 
-        <!-- Media Pickers Row -->
+        <!-- Assets & Media Header & Row -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Assets &amp; Media"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:layout_marginBottom="6dp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -861,15 +1220,8 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:textSize="12sp"
-                android:maxLines="1"
-                android:ellipsize="none"
+                android:layout_marginEnd="6dp"
+                app:icon="@drawable/ic_tool_qr"
                 android:text="Logo" />
 
             <com.google.android.material.button.MaterialButton
@@ -878,16 +1230,9 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:textSize="12sp"
-                android:maxLines="1"
-                android:ellipsize="none"
-                android:text="Source Image" />
+                android:layout_marginEnd="6dp"
+                app:icon="@drawable/ic_tab_image"
+                android:text="Photo" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_bg_image_btn"
@@ -895,14 +1240,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:textSize="12sp"
-                android:maxLines="1"
-                android:ellipsize="none"
+                app:icon="@drawable/ic_tab_video"
                 android:text="Background" />
         </LinearLayout>
 
@@ -1299,7 +1637,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:textSize="11sp"
-                android:text="Anim SVG"
+                android:text="Animated SVG"
                 app:icon="@drawable/ic_action_save" />
         </LinearLayout>
 

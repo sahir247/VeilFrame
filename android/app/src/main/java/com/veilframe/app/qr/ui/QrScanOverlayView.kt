@@ -17,16 +17,11 @@ class QrScanOverlayView @JvmOverloads constructor(
 
     private val density = context.resources.displayMetrics.density
 
-    private val themePrimaryColor: Int = run {
-        val tv = android.util.TypedValue()
-        if (context.theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, tv, true)) {
-            tv.data
-        } else if (context.theme.resolveAttribute(android.R.attr.colorPrimary, tv, true)) {
-            tv.data
-        } else {
-            0xFF00BCD4.toInt()
-        }
-    }
+    private val themePrimaryColor: Int = com.google.android.material.color.MaterialColors.getColor(
+        context,
+        com.google.android.material.R.attr.colorPrimary,
+        0xFF00BCD4.toInt()
+    )
 
     private val dimPaint = Paint().apply { color = 0xAA000000.toInt() }
     private val clearPaint = Paint().apply {

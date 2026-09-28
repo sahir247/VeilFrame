@@ -48,11 +48,43 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val matrix: QrMatrix? = null,
         val design: QrDesign? = null,
         val scanabilityReport: ScanabilityReport? = null,
-        val isLoading: Boolean = false,
+        val isRenderingPreview: Boolean = false,
+        val isExporting: Boolean = false,
+        val exportProgress: Float? = null,
         val saveResult: String? = null,
         val errorMessage: String? = null,
-        val repairNotice: String? = null
-    )
+        val repairNotice: String? = null,
+
+        // Complete Structured Form State (Hydrated on Fragment restoration)
+        val activePresetId: Int = com.veilframe.app.R.id.chip_preset_text,
+        val wifiSsid: String = "",
+        val wifiPassword: String = "",
+        val wifiSecurityPos: Int = 0,
+        val wifiHidden: Boolean = false,
+        val vcardFirst: String = "",
+        val vcardLast: String = "",
+        val vcardPhone: String = "",
+        val vcardEmail: String = "",
+        val vcardOrg: String = "",
+        val emailRecipient: String = "",
+        val emailSubject: String = "",
+        val emailBody: String = "",
+        val smsPhone: String = "",
+        val smsBody: String = "",
+        val upiVpa: String = "",
+        val upiAmount: String = "",
+
+        // Style-Specific Customization Parameters
+        val d25Depth: Float = 1.0f,
+        val lineDirection: LineDirection = LineDirection.X,
+        val lineThickness: Float = 0.5f,
+        val dsjLineSize: Float = 0.7f,
+        val dsjXSize: Float = 0.7f,
+        val randomRectSeed: Long = 42L,
+        val quietZoneChoice: Int? = null
+    ) {
+        val isLoading: Boolean get() = isRenderingPreview || isExporting
+    }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -209,9 +241,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun autoRepair() {
         val s = _state.value
+        val effectiveContent = s.content.trim()
+        if (effectiveContent.isEmpty()) return
         val report = s.scanabilityReport ?: return
         val currentDesign = s.design ?: return
-        val effectiveContent = s.content.ifBlank { "https://example.com" }
 
         val repairResult = AutoRepairEngine.repair(currentDesign, report, effectiveContent)
         val notice = if (repairResult.changesApplied.isNotEmpty()) {
@@ -236,7 +269,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun regenerate(customDesign: QrDesign? = null, debounceMs: Long = 0) {
         val s = _state.value
-        val effectiveContent = s.content.ifBlank { "https://example.com" }
+        val effectiveContent = s.content.trim()
+        if (effectiveContent.isEmpty()) {
+            renderGeneration.incrementAndGet()
+            generateJob?.cancel()
+            generateJob = null
+            _state.value = _state.value.copy(
+                bitmap = null,
+                matrix = null,
+                design = null,
+                scanabilityReport = null,
+                isRenderingPreview = false,
+                errorMessage = null
+            )
+            return
+        }
         val generation = renderGeneration.incrementAndGet()
 
         generateJob?.cancel()
@@ -247,7 +294,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
-            _state.value = _state.value.copy(isLoading = true, errorMessage = null)
+            _state.value = _state.value.copy(isRenderingPreview = true, errorMessage = null)
 
             val design = customDesign ?: buildDesignFromState(_state.value)
             ensureActive()
@@ -266,13 +313,13 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                             matrix = renderResult.matrix,
                             design = renderResult.design,
                             scanabilityReport = renderResult.report,
-                            isLoading = false,
+                            isRenderingPreview = false,
                             errorMessage = null
                         )
                     }
                     is QrRenderResult.Failure -> {
                         _state.value = _state.value.copy(
-                            isLoading = false,
+                            isRenderingPreview = false,
                             errorMessage = renderResult.error
                         )
                     }
@@ -332,6 +379,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 is25D = def.is25D,
                 topColor = s.foreground,
                 leftColor = 0x33000000,
+                rightColor = 0x99000000.toInt(),
+                dataHeightRatio = s.d25Depth,
+                positionHeightRatio = s.d25Depth
+            ),
+            depthStyle = DepthStyle(
+                depth = s.d25Depth,
+                positionDepth = s.d25Depth,
+                topColor = s.foreground,
+                leftColor = 0x33000000,
                 rightColor = 0x99000000.toInt()
             ),
             timingStyle = TimingStyle(
@@ -340,8 +396,20 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             alignmentStyle = AlignmentStyle(
                 shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
             ),
-            quietZoneModules = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else 4,
-            explicitQuietZone = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else null,
+            lineStyle = LineStyle(
+                direction = s.lineDirection,
+                thicknessFraction = s.lineThickness,
+                color = s.foreground
+            ),
+            veilDsjStyle = VeilDsjStyle(
+                lineSize = s.dsjLineSize,
+                xSize = s.dsjXSize
+            ),
+            jitterStyle = RandomJitterStyle(
+                seed = s.randomRectSeed
+            ),
+            quietZoneModules = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else 4,
+            explicitQuietZone = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else null,
             outputSize = effectiveSize,
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,
@@ -376,17 +444,99 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // --- Structured Form State Updaters ---
+
+    fun updateActivePreset(presetId: Int) {
+        _state.value = _state.value.copy(activePresetId = presetId)
+    }
+
+    fun updateWifiForm(ssid: String, pass: String, secPos: Int, hidden: Boolean) {
+        _state.value = _state.value.copy(
+            wifiSsid = ssid,
+            wifiPassword = pass,
+            wifiSecurityPos = secPos,
+            wifiHidden = hidden
+        )
+    }
+
+    fun updateVcardForm(first: String, last: String, phone: String, email: String, org: String) {
+        _state.value = _state.value.copy(
+            vcardFirst = first,
+            vcardLast = last,
+            vcardPhone = phone,
+            vcardEmail = email,
+            vcardOrg = org
+        )
+    }
+
+    fun updateEmailForm(recipient: String, subject: String, body: String) {
+        _state.value = _state.value.copy(
+            emailRecipient = recipient,
+            emailSubject = subject,
+            emailBody = body
+        )
+    }
+
+    fun updateSmsForm(phone: String, body: String) {
+        _state.value = _state.value.copy(
+            smsPhone = phone,
+            smsBody = body
+        )
+    }
+
+    fun updateUpiForm(vpa: String, amount: String) {
+        _state.value = _state.value.copy(
+            upiVpa = vpa,
+            upiAmount = amount
+        )
+    }
+
+    // --- Style-Specific Updaters ---
+
+    fun updateD25Depth(depth: Float) {
+        _state.value = _state.value.copy(d25Depth = depth.coerceIn(0.2f, 2.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateLineDirection(direction: LineDirection) {
+        _state.value = _state.value.copy(lineDirection = direction)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLineThickness(thickness: Float) {
+        _state.value = _state.value.copy(lineThickness = thickness.coerceIn(0.1f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateDsjSizes(lineSize: Float, xSize: Float) {
+        _state.value = _state.value.copy(dsjLineSize = lineSize, dsjXSize = xSize)
+        regenerate(debounceMs = 120)
+    }
+
+    fun randomizeRandomRectSeed() {
+        val newSeed = kotlin.random.Random.nextLong()
+        _state.value = _state.value.copy(randomRectSeed = newSeed)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateQuietZone(modules: Int?) {
+        _state.value = _state.value.copy(quietZoneChoice = modules)
+        regenerate(debounceMs = 0)
+    }
+
+    // --- Export Actions ---
+
     fun saveToGallery() {
         val content = _state.value.content.trim()
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val renderResult = withContext(Dispatchers.Default) {
                 QrGenerator.generateWithResult(content, exportDesign)
@@ -402,12 +552,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = _state.value.copy(
                     saveResult = if (uri != null) "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                     scanabilityReport = report,
-                    isLoading = false
+                    isExporting = false
                 )
             } else {
                 _state.value = _state.value.copy(
                     saveResult = "Save failed: bitmap generation unsuccessful",
-                    isLoading = false
+                    isExporting = false
                 )
             }
         }
@@ -418,12 +568,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val matrix = QrGenerator.generateMatrix(content, exportDesign)
             val renderResult = withContext(Dispatchers.Default) {
@@ -436,7 +586,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     _state.value = _state.value.copy(
                         saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                         scanabilityReport = report,
-                        isLoading = false
+                        isExporting = false
                     )
                     return@launch
                 }
@@ -444,7 +594,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
             _state.value = _state.value.copy(
                 saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed",
-                isLoading = false
+                isExporting = false
             )
         }
     }
@@ -454,12 +604,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val matrix = QrGenerator.generateMatrix(content, exportDesign)
             val frames = if (_state.value.animatedFrames.isNotEmpty()) {
@@ -472,7 +622,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             if (frames.isEmpty()) {
                 _state.value = _state.value.copy(
                     saveResult = "GIF export requires a photo, background image, or animated frames",
-                    isLoading = false
+                    isExporting = false
                 )
                 return@launch
             }
@@ -489,7 +639,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             if (rendered.isEmpty()) {
                 _state.value = _state.value.copy(
                     saveResult = "GIF rendering produced no frames",
-                    isLoading = false
+                    isExporting = false
                 )
                 return@launch
             }
@@ -501,7 +651,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val uri = QrExporter.saveGif(getApplication(), gifBytes)
             _state.value = _state.value.copy(
                 saveResult = if (uri != null) "Animated GIF saved to Gallery (${rendered.size} frames)" else "GIF export failed",
-                isLoading = false
+                isExporting = false
             )
         }
     }
@@ -511,12 +661,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val matrix = QrGenerator.generateMatrix(content, exportDesign)
             val frames = if (_state.value.animatedFrames.isNotEmpty()) {
@@ -532,7 +682,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             if (frames.isEmpty()) {
                 _state.value = _state.value.copy(
                     saveResult = "Video export requires a photo, background image, or video frames",
-                    isLoading = false
+                    isExporting = false
                 )
                 return@launch
             }
@@ -549,7 +699,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             if (rendered.isEmpty()) {
                 _state.value = _state.value.copy(
                     saveResult = "Video rendering produced no frames",
-                    isLoading = false
+                    isExporting = false
                 )
                 return@launch
             }
@@ -565,13 +715,13 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 tempFile.delete()
                 _state.value = _state.value.copy(
                     saveResult = if (uri != null) "MP4 Video saved to Movies" else "Video export write failed",
-                    isLoading = false
+                    isExporting = false
                 )
             } else {
                 tempFile.delete()
                 _state.value = _state.value.copy(
                     saveResult = "Video encoding failed",
-                    isLoading = false
+                    isExporting = false
                 )
             }
         }
@@ -582,12 +732,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val matrix = QrGenerator.generateMatrix(content, exportDesign)
             val frames = if (_state.value.animatedFrames.isNotEmpty()) {
@@ -600,7 +750,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             if (frames.isEmpty()) {
                 _state.value = _state.value.copy(
                     saveResult = "Animated SVG requires frames",
-                    isLoading = false
+                    isExporting = false
                 )
                 return@launch
             }
@@ -608,7 +758,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val uri = QrExporter.saveAnimatedSvg(getApplication(), matrix, exportDesign, frames)
             _state.value = _state.value.copy(
                 saveResult = if (uri != null) "Animated SVG saved to Downloads" else "Animated SVG export failed",
-                isLoading = false
+                isExporting = false
             )
         }
     }
@@ -618,12 +768,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (content.isEmpty()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to share QR code",
-                isLoading = false
+                isExporting = false
             )
             return
         }
         viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
+            _state.value = _state.value.copy(isExporting = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val renderResult = withContext(Dispatchers.Default) {
                 QrGenerator.generateWithResult(content, exportDesign)
@@ -633,7 +783,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 _state.value.bitmap
             }
-            _state.value = _state.value.copy(isLoading = false)
+            _state.value = _state.value.copy(isExporting = false)
             if (bmp != null) {
                 QrExporter.share(getApplication(), bmp)
             }
@@ -642,5 +792,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSaveResult() {
         _state.value = _state.value.copy(saveResult = null)
+    }
+
+    fun clearRepairNotice() {
+        _state.value = _state.value.copy(repairNotice = null)
     }
 }
