@@ -197,7 +197,10 @@ class ResampleImage3x3Test {
             style = QrStyle.IMAGE_RESAMPLE,
             imageSource = style,
             quietZoneModules = 1,
-            explicitQuietZone = 1
+            explicitQuietZone = 1,
+            resampleStyle = ResampleStyle(
+                rngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC
+            )
         )
 
         val geometry = QrGeometry(
@@ -215,7 +218,8 @@ class ResampleImage3x3Test {
             matrix = matrix,
             pixelSource = gradientPixels,
             style = style,
-            seed = 42L
+            seed = 42L,
+            policy = ArtisticResamplePolicy.from(design)
         ) { col, row, subX, subY, _ ->
             val rect = SubpixelGeometry.computeCanvasRect(
                 col = col,
@@ -238,7 +242,7 @@ class ResampleImage3x3Test {
 
         // 3. Extract emitted 3x3 subpixel <rect> elements from SVG
         // Matching: <rect x="X" y="Y" width="W" height="H" fill="..." />
-        val rectRegex = Regex("""<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" fill="[^"]+" />""")
+        val rectRegex = Regex("""<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)" fill="[^"]+" />""")
         val svgRects = rectRegex.findAll(svgXml).map { match ->
             val x = match.groupValues[1].toFloat()
             val y = match.groupValues[2].toFloat()

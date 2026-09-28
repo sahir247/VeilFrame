@@ -41,6 +41,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageOpacity: Float = 1.0f,
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
+        val resampleBackdropImage: Bitmap? = null,
         val resampleUseSourceAsBackdrop: Boolean = false,
         val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
@@ -235,6 +236,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
+    fun updateResampleBackdropImage(bmp: Bitmap?) {
+        _state.value = _state.value.copy(resampleBackdropImage = bmp, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun removeResampleBackdropImage() {
+        _state.value = _state.value.copy(resampleBackdropImage = null, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
     fun randomizeResampleSeed() {
         val newSeed = kotlin.random.Random.nextLong()
         _state.value = _state.value.copy(resampleSeed = newSeed, repairNotice = null)
@@ -263,6 +274,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val srcBmp = s.sourceImage
         if (srcBmp != null && !srcBmp.isRecycled) {
             srcBmp.recycle()
+        }
+        val backdropBmp = s.resampleBackdropImage
+        if (backdropBmp != null && !backdropBmp.isRecycled && backdropBmp !== srcBmp && backdropBmp !== bgBmp) {
+            backdropBmp.recycle()
         }
         _state.value = UiState(content = "")
     }
@@ -503,6 +518,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ),
             resampleStyle = ResampleStyle(
                 seed = s.resampleSeed,
+                backdropBitmap = s.resampleBackdropImage,
                 useSourceAsBackdrop = s.resampleUseSourceAsBackdrop,
                 backdropOpacity = s.resampleBackdropOpacity,
                 backdropScaleMode = s.sourceImageScaleMode,

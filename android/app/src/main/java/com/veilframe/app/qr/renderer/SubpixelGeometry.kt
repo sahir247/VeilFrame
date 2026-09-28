@@ -36,8 +36,9 @@ object SubpixelGeometry {
         val subStep = moduleSize / 3f
         val dx = subX % 3
         val dy = subY % 3
-        val left = moduleLeft + dx * subStep
-        val top = moduleTop + dy * subStep
+        val offset = (antiGapScale - 1.0f) / 2f * subStep
+        val left = moduleLeft + dx * subStep - offset
+        val top = moduleTop + dy * subStep - offset
         val w = subStep * antiGapScale
         val h = subStep * antiGapScale
         return SubpixelRect(left, top, w, h)

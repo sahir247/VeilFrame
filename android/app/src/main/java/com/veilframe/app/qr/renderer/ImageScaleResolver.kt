@@ -3,6 +3,7 @@ package com.veilframe.app.qr.renderer
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
@@ -355,19 +356,40 @@ object ImageScaleResolver {
         val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        val dstBounds = RectF(0f, 0f, tw.toFloat(), th.toFloat())
-        val (srcRect, dstRect) = resolveSrcDst(source.width, source.height, dstBounds, mode)
-
         if (mode == ImageScaleMode.ASPECT_FIT) {
             // Fill padding with pure white
             canvas.drawColor(Color.WHITE)
+        }
+
+        val sw = source.width.toFloat().coerceAtLeast(1f)
+        val sh = source.height.toFloat().coerceAtLeast(1f)
+        val matrix = Matrix()
+
+        when (mode) {
+            ImageScaleMode.STRETCH -> {
+                matrix.setScale(tw.toFloat() / sw, th.toFloat() / sh)
+            }
+            ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
+                val scale = maxOf(tw.toFloat() / sw, th.toFloat() / sh)
+                val dx = (tw.toFloat() - sw * scale) / 2f
+                val dy = (th.toFloat() - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+            }
+            ImageScaleMode.ASPECT_FIT -> {
+                val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
+                val dx = (tw.toFloat() - sw * scale) / 2f
+                val dy = (th.toFloat() - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+            }
         }
 
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
             isFilterBitmap = true
             isDither = true
         }
-        canvas.drawBitmap(source, srcRect, dstRect, paint)
+        canvas.drawBitmap(source, matrix, paint)
 
         return output
     }
@@ -397,7 +419,7 @@ object ImageScaleResolver {
 
     /**
      * Pre-scales [source] into a [PreScaledPixelSource] of dimensions [targetWidth] x [targetHeight]
-     * matching canonical 3N x 3N pre-scaled raster sampling.
+     * matching canonical 3N x 3N pre-scaled raster sampling with fractional crop math.
      */
     fun createPreScaledSource(
         source: Bitmap,
@@ -411,17 +433,40 @@ object ImageScaleResolver {
         val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        val dstBounds = RectF(0f, 0f, tw.toFloat(), th.toFloat())
-        val (srcRect, dstRect) = resolveSrcDst(source.width, source.height, dstBounds, mode)
+        val sw = source.width.toFloat().coerceAtLeast(1f)
+        val sh = source.height.toFloat().coerceAtLeast(1f)
+        val matrix = Matrix()
 
-        if (mode == ImageScaleMode.ASPECT_FIT) {
-            canvas.drawColor(Color.WHITE)
+        val contentBounds: RectF? = when (mode) {
+            ImageScaleMode.STRETCH -> {
+                matrix.setScale(tw.toFloat() / sw, th.toFloat() / sh)
+                null
+            }
+            ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
+                val scale = maxOf(tw.toFloat() / sw, th.toFloat() / sh)
+                val dx = (tw.toFloat() - sw * scale) / 2f
+                val dy = (th.toFloat() - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+                null
+            }
+            ImageScaleMode.ASPECT_FIT -> {
+                canvas.drawColor(Color.WHITE)
+                val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
+                val dx = (tw.toFloat() - sw * scale) / 2f
+                val dy = (th.toFloat() - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+                RectF(dx, dy, dx + sw * scale, dy + sh * scale)
+            }
         }
 
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        canvas.drawBitmap(source, srcRect, dstRect, paint)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            isFilterBitmap = true
+            isDither = true
+        }
+        canvas.drawBitmap(source, matrix, paint)
 
-        val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) dstRect else null
         return PreScaledPixelSource(bitmap = output, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }
 
@@ -446,13 +491,19 @@ object ImageScaleResolver {
                 pixels[y * tw + x] = sample.color
             }
         }
-        val (_, dstRect) = resolveSrcDst(source.width, source.height, RectF(0f, 0f, tw.toFloat(), th.toFloat()), mode)
-        val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) dstRect else null
+        val contentBounds = if (mode == ImageScaleMode.ASPECT_FIT) {
+            val sw = source.width.toFloat().coerceAtLeast(1f)
+            val sh = source.height.toFloat().coerceAtLeast(1f)
+            val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
+            val dx = (tw.toFloat() - sw * scale) / 2f
+            val dy = (th.toFloat() - sh * scale) / 2f
+            RectF(dx, dy, dx + sw * scale, dy + sh * scale)
+        } else null
         return PreScaledPixelSource(bitmap = null, pixels = pixels, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }
 
     /**
-     * Draws [bitmap] scaled according to [mode] within [dstBounds] onto [canvas] with [alpha].
+     * Draws [bitmap] scaled according to [mode] within [dstBounds] onto [canvas] with [alpha] using fractional matrix transformations.
      */
     fun drawScaledBitmap(
         canvas: Canvas,
@@ -461,10 +512,40 @@ object ImageScaleResolver {
         mode: ImageScaleMode,
         alpha: Float = 1.0f
     ) {
-        val (srcRect, dstRect) = resolveSrcDst(bitmap.width, bitmap.height, dstBounds, mode)
+        val sw = bitmap.width.toFloat().coerceAtLeast(1f)
+        val sh = bitmap.height.toFloat().coerceAtLeast(1f)
+        val dw = dstBounds.width()
+        val dh = dstBounds.height()
+        val matrix = Matrix()
+
+        when (mode) {
+            ImageScaleMode.STRETCH -> {
+                matrix.setScale(dw / sw, dh / sh)
+                matrix.postTranslate(dstBounds.left, dstBounds.top)
+            }
+            ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
+                val scale = maxOf(dw / sw, dh / sh)
+                val dx = dstBounds.left + (dw - sw * scale) / 2f
+                val dy = dstBounds.top + (dh - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+            }
+            ImageScaleMode.ASPECT_FIT -> {
+                val scale = minOf(dw / sw, dh / sh)
+                val dx = dstBounds.left + (dw - sw * scale) / 2f
+                val dy = dstBounds.top + (dh - sh * scale) / 2f
+                matrix.setScale(scale, scale)
+                matrix.postTranslate(dx, dy)
+            }
+        }
+
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            isFilterBitmap = true
             this.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
         }
-        canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+        canvas.save()
+        canvas.clipRect(dstBounds)
+        canvas.drawBitmap(bitmap, matrix, paint)
+        canvas.restore()
     }
 }

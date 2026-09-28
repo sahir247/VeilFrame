@@ -31,10 +31,12 @@ object ResampleGeometryBuilder {
             nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, fill = design.palette.background))
         }
 
-        // 2. Source Image as Continuous Backdrop
-        val sourceBmp = design.imageSource.bitmap
-        if (design.resampleStyle.useSourceAsBackdrop) {
-            val base64 = if (sourceBmp != null && !sourceBmp.isRecycled) IrSvgRenderer.bitmapToBase64(sourceBmp) else "#sourceBackdrop"
+        // 2. Continuous Backdrop Image (supports independent backdrop or reused source image)
+        val backdropBmp = design.resampleStyle.backdropBitmap ?: if (design.resampleStyle.useSourceAsBackdrop) design.imageSource.bitmap else null
+        val resampleBmp = design.imageSource.bitmap
+
+        if (design.resampleStyle.hasBackdrop && (backdropBmp != null || design.resampleStyle.useSourceAsBackdrop || design.resampleStyle.backdropBitmap != null)) {
+            val base64 = if (backdropBmp != null && !backdropBmp.isRecycled) IrSvgRenderer.bitmapToBase64(backdropBmp) else "#sourceBackdrop"
             val aspect = when (design.resampleStyle.backdropScaleMode) {
                 com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
                 com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
@@ -52,7 +54,7 @@ object ResampleGeometryBuilder {
                     y = 0f,
                     width = width,
                     height = height,
-                    bitmap = sourceBmp,
+                    bitmap = backdropBmp,
                     base64Data = base64,
                     opacity = design.resampleStyle.backdropOpacity.coerceIn(0f, 1f),
                     preserveAspectRatio = aspect,
@@ -77,11 +79,62 @@ object ResampleGeometryBuilder {
             }
         }
 
-        // 3. Finders
         val fgColor = design.palette.foreground
+
+        // 3. Subpixel dots & center anchors from ResampleSubpixelEngine (EF: writeResImage before writeQRCode)
+        if (pixelSource != null) {
+            ResampleSubpixelEngine.traverseSubpixels(
+                matrix = matrix,
+                pixelSource = pixelSource,
+                style = design.imageSource,
+                seed = design.resampleStyle.seed,
+                policy = ArtisticResamplePolicy.from(design)
+            ) { col, row, sx, sy, _ ->
+                val rect = SubpixelGeometry.computeCanvasRect(
+                    col = col,
+                    row = row,
+                    offsetX = ox,
+                    offsetY = oy,
+                    moduleSize = mSize,
+                    subX = sx,
+                    subY = sy
+                )
+                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
+            }
+        } else if (resampleBmp != null && !resampleBmp.isRecycled) {
+            ResampleSubpixelEngine.traverseSubpixels(
+                matrix = matrix,
+                source = resampleBmp,
+                style = design.imageSource,
+                seed = design.resampleStyle.seed,
+                policy = ArtisticResamplePolicy.from(design)
+            ) { col, row, sx, sy, _ ->
+                val rect = SubpixelGeometry.computeCanvasRect(
+                    col = col,
+                    row = row,
+                    offsetX = ox,
+                    offsetY = oy,
+                    moduleSize = mSize,
+                    subX = sx,
+                    subY = sy
+                )
+                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
+            }
+        } else {
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val role = matrix.roleAt(col, row)
+                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
+                    if (!matrix.isDark(col, row)) continue
+                    nodes.add(RectNode(x = ox + col * mSize, y = oy + row * mSize, width = mSize, height = mSize, fill = fgColor))
+                }
+            }
+        }
+
+        // 4. Finders (EF: writeQRCode overlays resampled dots)
         val eyeOuter = design.eyeStyle.outerColor ?: fgColor
         val eyeInner = design.eyeStyle.innerColor ?: fgColor
-        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) ||
+        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.hasBackdrop) ||
             ((design.palette.background ushr 24) and 0xFF) == 0
 
         val finders = listOf(
@@ -170,7 +223,7 @@ object ResampleGeometryBuilder {
             }
         }
 
-        // 4. Timing tracks
+        // 5. Timing tracks
         val timingColor = (design.timingStyle.color ?: design.timingColor) ?: fgColor
         if (design.timingStyle.shape != ModuleShape.NONE) {
             for (col in 0 until n) {
@@ -194,7 +247,7 @@ object ResampleGeometryBuilder {
             }
         }
 
-        // 5. Alignment patterns
+        // 6. Alignment patterns
         val alignColor = (design.alignmentStyle.color ?: design.alignmentColor) ?: fgColor
         if (design.alignmentStyle.shape != ModuleShape.NONE) {
             for (col in 0 until n) {
@@ -215,56 +268,6 @@ object ResampleGeometryBuilder {
                             nodes.add(RectNode(ax, ay, mSize, mSize, fill = alignColor))
                         }
                     }
-                }
-            }
-        }
-
-        // 6. Subpixel dots & center anchors from ResampleSubpixelEngine
-        if (pixelSource != null) {
-            ResampleSubpixelEngine.traverseSubpixels(
-                matrix = matrix,
-                pixelSource = pixelSource,
-                style = design.imageSource,
-                seed = design.resampleStyle.seed,
-                policy = ArtisticResamplePolicy.from(design)
-            ) { col, row, sx, sy, _ ->
-                val rect = SubpixelGeometry.computeCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = ox,
-                    offsetY = oy,
-                    moduleSize = mSize,
-                    subX = sx,
-                    subY = sy
-                )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
-            }
-        } else if (sourceBmp != null && !sourceBmp.isRecycled) {
-            ResampleSubpixelEngine.traverseSubpixels(
-                matrix = matrix,
-                source = sourceBmp,
-                style = design.imageSource,
-                seed = design.resampleStyle.seed,
-                policy = ArtisticResamplePolicy.from(design)
-            ) { col, row, sx, sy, _ ->
-                val rect = SubpixelGeometry.computeCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = ox,
-                    offsetY = oy,
-                    moduleSize = mSize,
-                    subX = sx,
-                    subY = sy
-                )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
-            }
-        } else {
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    val role = matrix.roleAt(col, row)
-                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
-                    if (!matrix.isDark(col, row)) continue
-                    nodes.add(RectNode(x = ox + col * mSize, y = oy + row * mSize, width = mSize, height = mSize, fill = fgColor))
                 }
             }
         }

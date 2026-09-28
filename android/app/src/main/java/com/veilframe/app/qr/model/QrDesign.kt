@@ -147,12 +147,16 @@ enum class BackdropBlendMode {
 data class ResampleStyle(
     val seed: Long = 42L,
     val useSourceAsBackdrop: Boolean = false,
+    val backdropBitmap: Bitmap? = null,
     val backdropOpacity: Float = 1.0f,
     val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
     val backdropTint: Int? = null,
-    val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC
-)
+    val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED
+) {
+    /** True if a backdrop image should be rendered (either via an independent backdropBitmap or by reusing sourceImage). */
+    val hasBackdrop: Boolean get() = backdropBitmap != null || useSourceAsBackdrop
+}
 
 sealed interface BackgroundStyle {
     data class Solid(val color: Int = Color.WHITE) : BackgroundStyle
@@ -632,6 +636,7 @@ data class QrDesign(
                 resampleStyle = ResampleStyle(
                     seed = params.resampleSeed,
                     useSourceAsBackdrop = params.resampleUseSourceAsBackdrop,
+                    backdropBitmap = params.resampleBackdropImage,
                     backdropOpacity = params.resampleBackdropOpacity,
                     backdropScaleMode = params.resampleBackdropScaleMode,
                     backdropTint = params.resampleBackdropTint,

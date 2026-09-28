@@ -175,8 +175,8 @@ object SvgExporter {
         }
 
         // 2b. Source Image as Continuous Backdrop (for IMAGE_RESAMPLE screenshot parity)
-        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) {
-            val srcBmp = design.imageSource.bitmap
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.hasBackdrop) {
+            val srcBmp = design.resampleStyle.backdropBitmap ?: if (design.resampleStyle.useSourceAsBackdrop) design.imageSource.bitmap else null
             val opacity = String.format(Locale.US, "%.2f", design.resampleStyle.backdropOpacity.coerceIn(0f, 1f))
             val aspect = when (design.resampleStyle.backdropScaleMode) {
                 com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
@@ -1138,7 +1138,7 @@ object SvgExporter {
             Pair(qzLeft + matrixSize - 7, qzTop)
         )
 
-        val isHollowFinder = (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) || colorAlphaInt(design.palette.background) == 0
+        val isHollowFinder = (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE && design.resampleStyle.hasBackdrop) || colorAlphaInt(design.palette.background) == 0
 
         for ((fx, fy) in finders) {
             val cx = fx + 3.5

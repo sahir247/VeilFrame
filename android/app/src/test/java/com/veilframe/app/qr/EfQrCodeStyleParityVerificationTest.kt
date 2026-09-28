@@ -413,4 +413,107 @@ class EfQrCodeStyleParityVerificationTest {
         val params = QrStyleParams()
         assertEquals("EF parity: default logoFraction must be 0.20f", 0.20f, params.logoFraction, 0.0001f)
     }
+
+    @Test
+    fun testResampleIndependentBackdropParity() {
+        val paramsWithBackdrop = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            resampleUseSourceAsBackdrop = false
+        )
+        assertNull(paramsWithBackdrop.resampleBackdropImage)
+
+        val design = QrDesign.fromQrStyleParams(paramsWithBackdrop)
+        assertFalse(design.resampleStyle.hasBackdrop)
+
+        val designExplicitBackdrop = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = false,
+                backdropOpacity = 0.8f
+            )
+        )
+        assertFalse(designExplicitBackdrop.resampleStyle.hasBackdrop)
+
+        val designWithUseSource = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = true,
+                backdropOpacity = 0.8f
+            )
+        )
+        assertTrue(designWithUseSource.resampleStyle.hasBackdrop)
+    }
+
+    @Test
+    fun testResampleSubpixelSymmetricAntiGapCentering() {
+        val moduleSize = 30f
+        val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeRect(
+            subX = 1,
+            subY = 1,
+            moduleLeft = 100f,
+            moduleTop = 200f,
+            moduleSize = moduleSize,
+            antiGapScale = 1.02f
+        )
+        assertEquals(109.9f, rect.left, 0.001f)
+        assertEquals(209.9f, rect.top, 0.001f)
+        assertEquals(10.2f, rect.width, 0.001f)
+        assertEquals(10.2f, rect.height, 0.001f)
+    }
+
+    @Test
+    fun testResampleLayerOrderingParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/RESAMPLE_LAYER_ORDER", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 1
+        )
+        val pixels = IntArray(64 * 64) { 0xFF000000.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            quietZoneModules = 1,
+            palette = PaletteStyle(background = Color.TRANSPARENT),
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = true,
+                backdropOpacity = 0.7f
+            )
+        )
+
+        val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, geometry, pixelSource)
+        val nodes = ir.rootNodes
+        assertTrue("IR nodes must not be empty", nodes.isNotEmpty())
+
+        val backdropIndex = nodes.indexOfFirst { it is com.veilframe.app.qr.geometry.ImageNode }
+        val firstSubpixelDotIndex = nodes.indexOfFirst { it is RectNode && it.width < geometry.moduleSize }
+        val finderIndex = nodes.indexOfFirst { it is RectNode && (it.width == 7f * geometry.moduleSize || it.width == 6f * geometry.moduleSize) }
+
+        assertTrue("Backdrop must be present", backdropIndex >= 0)
+        assertTrue("Subpixel dots must be present", firstSubpixelDotIndex >= 0)
+        assertTrue("Finder must be present", finderIndex >= 0)
+
+        assertTrue("Backdrop must be rendered before subpixel dots", backdropIndex < firstSubpixelDotIndex)
+        assertTrue("Subpixel dots must be rendered before finders/timing/alignment dedicated geometry (EF writeResImage before writeQRCode)", firstSubpixelDotIndex < finderIndex)
+    }
+
+    @Test
+    fun testResampleRngModeDefaultParity() {
+        val params = QrStyleParams(style = QrStyle.IMAGE_RESAMPLE)
+        assertEquals("QrStyleParams resampleRngMode must default to SYSTEM_UNSEEDED for EF parity", com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED, params.resampleRngMode)
+
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals("QrDesign resampleStyle.rngMode must default to SYSTEM_UNSEEDED for EF parity", com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED, design.resampleStyle.rngMode)
+
+        val defaultDesign = QrDesign()
+        assertEquals("QrDesign default resampleStyle.rngMode must default to SYSTEM_UNSEEDED", com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED, defaultDesign.resampleStyle.rngMode)
+
+        val policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy.from(design)
+        assertEquals("ArtisticResamplePolicy rngMode must default to SYSTEM_UNSEEDED for EF parity", com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED, policy.rngMode)
+
+        val defaultPolicy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy()
+        assertEquals("Direct ArtisticResamplePolicy() must default to DETERMINISTIC for testing reference simulation", com.veilframe.app.qr.renderer.ResampleRngMode.DETERMINISTIC, defaultPolicy.rngMode)
+    }
 }
