@@ -156,5 +156,9 @@ data class QrStyleParams(
     val sourceImageFrameDelaysMs: List<Int>? = null,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
-    val alignmentColor: Int? = null
+    val alignmentColor: Int? = null,
+    // --- EFQRCode Resample Image parameters ---
+    val dataColor: Int? = null,
+    val timingSize: Float? = null,
+    val alignSize: Float? = null
 )

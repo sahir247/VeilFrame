@@ -56,6 +56,55 @@ object AnimatedQrGenerator {
     }
 
     /**
+     * Checks if the given [QrDesign] has an animated image source.
+     */
+    fun isDesignAnimated(design: QrDesign): Boolean {
+        return design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+    }
+
+    /**
+     * Extracts a list of [QrFrame] items from the given [QrDesign]'s animated image source.
+     */
+    fun extractSourceFrames(design: QrDesign): List<QrFrame> {
+        val frames = design.imageSource.animatedFrames ?: return emptyList()
+        val delays = design.imageSource.frameDelaysMs ?: emptyList()
+        return frames.mapIndexed { idx, bmp ->
+            val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
+            QrFrame(bitmap = bmp, durationMs = delay)
+        }
+    }
+
+    /**
+     * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps.
+     */
+    fun renderDesign(
+        matrix: QrMatrix,
+        design: QrDesign,
+        outputSize: Int = 512
+    ): List<QrFrame> {
+        val sourceFrames = extractSourceFrames(design)
+        if (sourceFrames.isEmpty()) {
+            val single = design.imageSource.bitmap
+            return if (single != null) listOf(QrFrame(single, 100)) else emptyList()
+        }
+        return renderFrames(matrix, design, sourceFrames, outputSize)
+    }
+
+    /**
+     * Generates an animated SVG document directly from an animated [QrDesign].
+     */
+    fun generateAnimatedSvg(
+        matrix: QrMatrix,
+        design: QrDesign
+    ): String {
+        val sourceFrames = extractSourceFrames(design)
+        if (sourceFrames.isEmpty()) {
+            return SvgExporter.generateSvg(matrix, design)
+        }
+        return generateAnimatedSvg(matrix, design, sourceFrames)
+    }
+
+    /**
      * Generates a fully animated vector SVG document matching reference animated SVG format.
      *
      * Frames are encapsulated within <defs><g id="frame_N"> elements, and cycled via

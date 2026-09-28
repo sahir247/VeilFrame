@@ -122,6 +122,31 @@ object QrGenerator {
     ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
 
     /**
+     * Generates a list of [QrFrame] items for an animated QR design.
+     */
+    fun generateAnimatedFrames(
+        content: String,
+        design: QrDesign,
+        outputSize: Int = 512,
+        mode: GenerationMode = defaultModeFor(design)
+    ): List<com.veilframe.app.qr.model.QrFrame> {
+        val matrix = generateMatrix(content, design, mode)
+        return AnimatedQrGenerator.renderDesign(matrix, design, outputSize)
+    }
+
+    /**
+     * Generates a fully animated vector SVG string for an animated QR design.
+     */
+    fun generateAnimatedSvg(
+        content: String,
+        design: QrDesign,
+        mode: GenerationMode = defaultModeFor(design)
+    ): String {
+        val matrix = generateMatrix(content, design, mode)
+        return AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+    }
+
+    /**
      * Modern domain generation entry point returning typed [QrRenderResult]
      * with automated structural and decode scanability validation.
      */

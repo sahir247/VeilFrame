@@ -673,4 +673,163 @@ class EfQrCodeStyleParityVerificationTest {
         assertEquals(frames, design.imageSource?.animatedFrames)
         assertEquals(delays, design.imageSource?.frameDelaysMs)
     }
+
+    @Test
+    fun testIndependentBackdropHollowFinderParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/INDEPENDENT_BACKDROP", ErrorCorrectionLevel.H)
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 1)
+        val mSize = geometry.moduleSize
+        val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+        val dummyBackdrop = allocateBitmapReflectively()
+
+        // 1. useSourceAsBackdrop = false, BUT backdropBitmap is provided (independent backdrop object):
+        // Must emit hollow stroked finders so the independent backdrop shows through!
+        val designIndependentBackdrop = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = false,
+                backdropBitmap = dummyBackdrop
+            )
+        )
+        val irIndependent = ResampleGeometryBuilder.generateGeometry(matrix, designIndependentBackdrop, geometry, pixelSource)
+        val hollowFinderRects = irIndependent.rootNodes.filterIsInstance<RectNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("Independent backdrop must emit stroked hollow rects for the outer frame", hollowFinderRects.isNotEmpty())
+
+        val bgFillFinderRects = irIndependent.rootNodes.filterIsInstance<RectNode>()
+            .filter { it.fill == designIndependentBackdrop.palette.background && it.width < 512f }
+        assertTrue("Independent backdrop must NOT paint solid background middle rects", bgFillFinderRects.isEmpty())
+
+        // 2. useSourceAsBackdrop = false, and backdropBitmap = null (no backdrop, opaque background):
+        // Must emit solid background middle rects!
+        val designNoBackdrop = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            palette = PaletteStyle(background = Color.WHITE, foreground = Color.BLACK),
+            eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
+            resampleStyle = ResampleStyle(
+                useSourceAsBackdrop = false,
+                backdropBitmap = null
+            )
+        )
+        val irNoBackdrop = ResampleGeometryBuilder.generateGeometry(matrix, designNoBackdrop, geometry, pixelSource)
+        val normalBgFinderRects = irNoBackdrop.rootNodes.filterIsInstance<RectNode>()
+            .filter { it.fill == designNoBackdrop.palette.background && it.width < 512f }
+        assertTrue("Solid finder mode must emit background middle rects when no backdrop is active", normalBgFinderRects.isNotEmpty())
+    }
+
+    @Test
+    fun testTimingAndAlignmentSizeScalingParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/TIMING_ALIGN_SIZE", ErrorCorrectionLevel.H)
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 1)
+        val mSize = geometry.moduleSize
+        val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+
+        // 1. timingSize = 0.5f, alignSize = 1.5f (full geometry)
+        val paramsCustomSize = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingSize = 0.5f,
+            alignSize = 1.5f,
+            timingOnlyWhite = false,
+            alignOnlyWhite = false
+        )
+        val designCustomSize = QrDesign.fromQrStyleParams(paramsCustomSize)
+        val irCustomSize = ResampleGeometryBuilder.generateGeometry(matrix, designCustomSize, geometry, pixelSource)
+
+        val timingNodes = irCustomSize.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - 0.5f * mSize) < 0.01f && Math.abs(it.height - 0.5f * mSize) < 0.01f
+        }
+        assertTrue("timingSize = 0.5f must emit rects scaled to 0.5 * mSize", timingNodes.isNotEmpty())
+
+        val alignNodes = irCustomSize.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - 1.5f * mSize) < 0.01f && Math.abs(it.height - 1.5f * mSize) < 0.01f
+        }
+        assertTrue("alignSize = 1.5f must emit rects scaled to 1.5 * mSize", alignNodes.isNotEmpty())
+
+        // 2. onlyWhite = true with custom sizes
+        val paramsOnlyWhiteCustomSize = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            timingSize = 0.5f,
+            alignSize = 1.5f,
+            timingOnlyWhite = true,
+            alignOnlyWhite = true
+        )
+        val designOnlyWhiteCustomSize = QrDesign.fromQrStyleParams(paramsOnlyWhiteCustomSize)
+        val irOnlyWhiteCustom = ResampleGeometryBuilder.generateGeometry(matrix, designOnlyWhiteCustomSize, geometry, pixelSource)
+
+        val subStep = mSize / 3f
+        val expectedTimingAnchorDim = subStep * 1.02f * 0.5f
+        val expectedAlignAnchorDim = subStep * 1.02f * 1.5f
+
+        val timingAnchorNodes = irOnlyWhiteCustom.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedTimingAnchorDim) < 0.01f
+        }
+        assertTrue("timingOnlyWhite with timingSize = 0.5f must emit anchor dots of dimension subStep * 1.02 * 0.5", timingAnchorNodes.isNotEmpty())
+
+        val alignAnchorNodes = irOnlyWhiteCustom.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedAlignAnchorDim) < 0.01f
+        }
+        assertTrue("alignOnlyWhite with alignSize = 1.5f must emit anchor dots of dimension subStep * 1.02 * 1.5", alignAnchorNodes.isNotEmpty())
+    }
+
+    @Test
+    fun testDataColorIndependentFromForegroundParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/DATA_COLOR_PARITY", ErrorCorrectionLevel.H)
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 1)
+        val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
+        val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
+
+        // When foreground = RED, but dataColor = BLUE
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            foreground = Color.RED,
+            dataColor = Color.BLUE
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals(Color.BLUE, design.dataColorDark)
+
+        val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry, pixelSource)
+        val mSize = geometry.moduleSize
+        val subStep = mSize / 3f
+        val anchorDim = subStep * 1.02f
+
+        // Center anchors of data modules must use dataColor (BLUE), not foreground (RED)
+        val blueAnchors = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.fill == Color.BLUE && Math.abs(it.width - anchorDim) < 0.01f
+        }
+        val redAnchors = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.fill == Color.RED && Math.abs(it.width - anchorDim) < 0.01f
+        }
+        assertTrue("Data module center anchors must use dataColor (BLUE)", blueAnchors.isNotEmpty())
+        assertTrue("Data module center anchors must not use foreground (RED)", redAnchors.isEmpty())
+    }
+
+    @Test
+    fun testAnimatedResampleSvgGenerationParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ANIMATED_SVG", ErrorCorrectionLevel.H)
+        val frame1 = allocateBitmapReflectively()
+        val frame2 = allocateBitmapReflectively()
+        val frames = listOf(frame1, frame2)
+        val delays = listOf(150, 250)
+
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            sourceImageAnimatedFrames = frames,
+            sourceImageFrameDelaysMs = delays
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+
+        val extracted = AnimatedQrGenerator.extractSourceFrames(design)
+        assertEquals(2, extracted.size)
+        assertEquals(150, extracted[0].durationMs)
+        assertEquals(250, extracted[1].durationMs)
+
+        val animatedSvg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+        assertTrue("Generated SVG must contain animate tag", animatedSvg.contains("<animate"))
+        assertTrue("Generated SVG must contain discrete calcMode", animatedSvg.contains("calcMode=\"discrete\""))
+        assertTrue("Generated SVG must contain frame 0 def", animatedSvg.contains("id=\"qr_frame_0\""))
+        assertTrue("Generated SVG must contain frame 1 def", animatedSvg.contains("id=\"qr_frame_1\""))
+    }
 }

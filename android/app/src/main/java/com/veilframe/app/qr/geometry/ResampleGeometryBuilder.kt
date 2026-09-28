@@ -80,6 +80,7 @@ object ResampleGeometryBuilder {
         }
 
         val fgColor = design.palette.foreground
+        val dataColor = if (design.style == QrStyle.IMAGE_RESAMPLE) design.dataColorDark else fgColor
 
         // 3. Subpixel dots & center anchors from ResampleSubpixelEngine (EF: writeResImage before writeQRCode)
         if (pixelSource != null) {
@@ -99,7 +100,7 @@ object ResampleGeometryBuilder {
                     subX = sx,
                     subY = sy
                 )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
+                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
             }
         } else if (resampleBmp != null && !resampleBmp.isRecycled) {
             ResampleSubpixelEngine.traverseSubpixels(
@@ -118,7 +119,7 @@ object ResampleGeometryBuilder {
                     subX = sx,
                     subY = sy
                 )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = fgColor))
+                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
             }
         } else {
             for (col in 0 until n) {
@@ -126,16 +127,23 @@ object ResampleGeometryBuilder {
                     val role = matrix.roleAt(col, row)
                     if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
                     if (!matrix.isDark(col, row)) continue
-                    nodes.add(RectNode(x = ox + col * mSize, y = oy + row * mSize, width = mSize, height = mSize, fill = fgColor))
+                    nodes.add(RectNode(x = ox + col * mSize, y = oy + row * mSize, width = mSize, height = mSize, fill = dataColor))
                 }
             }
         }
 
         // 4. Finders (EF: writeQRCode overlays resampled dots)
-        val eyeOuter = design.eyeStyle.outerColor ?: fgColor
-        val eyeInner = design.eyeStyle.innerColor ?: fgColor
-        val isHollowFinder = (design.style == QrStyle.IMAGE_RESAMPLE && design.resampleStyle.useSourceAsBackdrop) ||
+        val eyeOuter = design.eyeStyle.outerColor
+            ?: if (design.style == QrStyle.IMAGE_RESAMPLE) design.positionDarkColor else fgColor
+        val eyeInner = design.eyeStyle.innerColor
+            ?: if (design.style == QrStyle.IMAGE_RESAMPLE) design.positionDarkColor else eyeOuter
+
+        val hasBackdrop = (design.style == QrStyle.IMAGE_RESAMPLE &&
+            (design.resampleStyle.useSourceAsBackdrop ||
+             design.resampleStyle.backdropBitmap != null ||
+             (design.backgroundLayer.enabled && design.backgroundLayer.bitmap != null))) ||
             ((design.palette.background ushr 24) and 0xFF) == 0
+        val isHollowFinder = hasBackdrop
 
         val finders = listOf(
             Pair(0, 0),
@@ -227,62 +235,81 @@ object ResampleGeometryBuilder {
         }
 
         // 5. Timing tracks (EF writeQRCode timing handling)
-        val timingColor = (design.timingStyle.color ?: design.timingColor) ?: fgColor
+        val timingColor = (design.timingStyle.color ?: design.timingColor)
+            ?: if (design.style == QrStyle.IMAGE_RESAMPLE) design.timingDarkColor else fgColor
         val timingOnlyWhite = design.timingStyle.onlyWhite
         val timingShape = design.timingStyle.shape
+        val timingSize = design.timingSize
+        val subStep = mSize / 3f
+
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
                 if (!matrix.isDark(col, row)) continue
-                val tx = ox + col * mSize
-                val ty = oy + row * mSize
+                val cx = ox + (col + 0.5f) * mSize
+                val cy = oy + (row + 0.5f) * mSize
                 if (timingShape != ModuleShape.NONE && !timingOnlyWhite) {
+                    val sizePx = mSize * timingSize
+                    val halfSize = sizePx / 2f
+                    val left = cx - halfSize
+                    val top = cy - halfSize
                     when (timingShape) {
                         ModuleShape.CIRCLE -> {
-                            nodes.add(CircleNode(tx + mSize / 2f, ty + mSize / 2f, mSize / 2f, fill = timingColor))
+                            nodes.add(CircleNode(cx, cy, halfSize, fill = timingColor))
                         }
                         ModuleShape.ROUNDED -> {
-                            nodes.add(RectNode(tx, ty, mSize, mSize, rx = mSize / 4f, ry = mSize / 4f, fill = timingColor))
+                            nodes.add(RectNode(left, top, sizePx, sizePx, rx = sizePx / 4f, ry = sizePx / 4f, fill = timingColor))
                         }
                         else -> {
-                            nodes.add(RectNode(tx, ty, mSize, mSize, fill = timingColor))
+                            nodes.add(RectNode(left, top, sizePx, sizePx, fill = timingColor))
                         }
                     }
                 } else {
-                    // EF #Stb: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3)
-                    val anchorRect = SubpixelGeometry.computeCanvasRect(col, row, ox, oy, mSize, subX = 1, subY = 1)
-                    nodes.add(RectNode(anchorRect.left, anchorRect.top, anchorRect.width, anchorRect.height, fill = timingColor))
+                    // EF #Stb: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3) with width 1.02 * timingSize
+                    val anchorDim = subStep * 1.02f * timingSize
+                    val left = cx - anchorDim / 2f
+                    val top = cy - anchorDim / 2f
+                    nodes.add(RectNode(left, top, anchorDim, anchorDim, fill = timingColor))
                 }
             }
         }
 
         // 6. Alignment patterns (EF writeQRCode alignment handling)
-        val alignColor = (design.alignmentStyle.color ?: design.alignmentColor) ?: fgColor
+        val alignColor = (design.alignmentStyle.color ?: design.alignmentColor)
+            ?: if (design.style == QrStyle.IMAGE_RESAMPLE) design.alignDarkColor else fgColor
         val alignOnlyWhite = design.alignmentStyle.onlyWhite
         val alignShape = design.alignmentStyle.shape
+        val alignSize = design.alignSize
+
         for (col in 0 until n) {
             for (row in 0 until n) {
                 val role = matrix.roleAt(col, row)
                 if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
                 if (!matrix.isDark(col, row)) continue
-                val ax = ox + col * mSize
-                val ay = oy + row * mSize
+                val cx = ox + (col + 0.5f) * mSize
+                val cy = oy + (row + 0.5f) * mSize
                 if (alignShape != ModuleShape.NONE && !alignOnlyWhite) {
+                    val sizePx = mSize * alignSize
+                    val halfSize = sizePx / 2f
+                    val left = cx - halfSize
+                    val top = cy - halfSize
                     when (alignShape) {
                         ModuleShape.CIRCLE -> {
-                            nodes.add(CircleNode(ax + mSize / 2f, ay + mSize / 2f, mSize / 2f, fill = alignColor))
+                            nodes.add(CircleNode(cx, cy, halfSize, fill = alignColor))
                         }
                         ModuleShape.ROUNDED -> {
-                            nodes.add(RectNode(ax, ay, mSize, mSize, rx = mSize / 4f, ry = mSize / 4f, fill = alignColor))
+                            nodes.add(RectNode(left, top, sizePx, sizePx, rx = sizePx / 4f, ry = sizePx / 4f, fill = alignColor))
                         }
                         else -> {
-                            nodes.add(RectNode(ax, ay, mSize, mSize, fill = alignColor))
+                            nodes.add(RectNode(left, top, sizePx, sizePx, fill = alignColor))
                         }
                     }
                 } else {
-                    // EF #Sab: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3)
-                    val anchorRect = SubpixelGeometry.computeCanvasRect(col, row, ox, oy, mSize, subX = 1, subY = 1)
-                    nodes.add(RectNode(anchorRect.left, anchorRect.top, anchorRect.width, anchorRect.height, fill = alignColor))
+                    // EF #Sab: Center 1x1 subpixel anchor at (col + 1/3, row + 1/3) with width 1.02 * alignSize
+                    val anchorDim = subStep * 1.02f * alignSize
+                    val left = cx - anchorDim / 2f
+                    val top = cy - anchorDim / 2f
+                    nodes.add(RectNode(left, top, anchorDim, anchorDim, fill = alignColor))
                 }
             }
         }
