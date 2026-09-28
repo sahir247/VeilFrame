@@ -10,7 +10,7 @@ object IrSvgRenderer {
     fun render(ir: QrGeometryIr): String {
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" ")
+        sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
         sb.append(String.format(Locale.US, "width=\"%.2f\" height=\"%.2f\" viewBox=\"%s\">\n", ir.width, ir.height, ir.viewBox))
 
         if (ir.defs.isNotEmpty()) {
@@ -129,6 +129,48 @@ object IrSvgRenderer {
                     renderNode(child, sb, indent + 2)
                 }
                 sb.append(pad).append("</g>\n")
+            }
+            is AnimatedGroupNode -> {
+                if (node.frameNodes.isNotEmpty()) {
+                    val framePrefix = node.framePrefix
+                    val totalDurationMs = maxOf(1, node.frameDelaysMs.sum())
+                    val totalDurationSec = totalDurationMs / 1000.0
+
+                    sb.append(pad).append("<g>\n")
+                    sb.append(pad).append("  <defs>\n")
+                    for ((idx, fNodes) in node.frameNodes.withIndex()) {
+                        sb.append(pad).append("    <g id=\"").append(framePrefix).append(idx).append("\">\n")
+                        for (child in fNodes) {
+                            renderNode(child, sb, indent + 6)
+                        }
+                        sb.append(pad).append("    </g>\n")
+                    }
+                    sb.append(pad).append("  </defs>\n")
+
+                    val frameIds = node.frameNodes.indices.map { "#$framePrefix$it" }
+                    val valuesStr = frameIds.joinToString(";")
+                    var accumulatedMs = 0
+                    val keyTimes = mutableListOf<String>()
+                    for ((idx, delay) in node.frameDelaysMs.withIndex()) {
+                        val fraction = accumulatedMs.toDouble() / totalDurationMs
+                        keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                        accumulatedMs += delay
+                    }
+                    val keyTimesStr = keyTimes.joinToString(";")
+                    val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+                    sb.append(pad).append("  <use xlink:href=\"#").append(framePrefix).append("0\">\n")
+                    sb.append(pad).append("    <animate\n")
+                    sb.append(pad).append("      attributeName=\"xlink:href\"\n")
+                    sb.append(pad).append("      values=\"").append(valuesStr).append("\"\n")
+                    sb.append(pad).append("      keyTimes=\"").append(keyTimesStr).append("\"\n")
+                    sb.append(pad).append("      dur=\"").append(durStr).append("s\"\n")
+                    sb.append(pad).append("      repeatCount=\"indefinite\"\n")
+                    sb.append(pad).append("      calcMode=\"discrete\"\n")
+                    sb.append(pad).append("    />\n")
+                    sb.append(pad).append("  </use>\n")
+                    sb.append(pad).append("</g>\n")
+                }
             }
         }
     }

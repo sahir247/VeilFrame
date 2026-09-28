@@ -127,10 +127,10 @@ object IrCanvasRenderer {
                         paint.alpha = (Color.alpha(node.fill) * node.opacity).toInt().coerceIn(0, 255)
                         canvas.drawPath(path, paint)
                     }
-                    if (node.stroke != null && node.strokeWidth > 0f) {
+                    if (node.stroke != null && node.canvasStrokeWidth > 0f) {
                         paint.style = Paint.Style.STROKE
                         paint.color = node.stroke
-                        paint.strokeWidth = node.strokeWidth
+                        paint.strokeWidth = node.canvasStrokeWidth
                         paint.alpha = (Color.alpha(node.stroke) * node.opacity).toInt().coerceIn(0, 255)
                         canvas.drawPath(path, paint)
                     }
@@ -162,6 +162,14 @@ object IrCanvasRenderer {
             is GroupNode -> {
                 val count = canvas.save()
                 for (child in node.children) {
+                    renderNode(child, canvas, paint)
+                }
+                canvas.restoreToCount(count)
+            }
+            is AnimatedGroupNode -> {
+                val firstFrame = node.frameNodes.firstOrNull() ?: emptyList()
+                val count = canvas.save()
+                for (child in firstFrame) {
                     renderNode(child, canvas, paint)
                 }
                 canvas.restoreToCount(count)

@@ -64,8 +64,15 @@ data class PathNode(
     val fill: Int? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
+    val canvasStrokeWidth: Float = strokeWidth,
     val opacity: Float = 1f,
     val transform: String? = null
+) : QrGeometryNode
+
+data class AnimatedGroupNode(
+    val framePrefix: String = "resfm",
+    val frameNodes: List<List<QrGeometryNode>>,
+    val frameDelaysMs: List<Int>
 ) : QrGeometryNode
 
 data class ImageNode(

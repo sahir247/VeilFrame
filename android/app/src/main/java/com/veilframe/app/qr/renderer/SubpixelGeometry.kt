@@ -64,6 +64,47 @@ object SubpixelGeometry {
     }
 
     /**
+     * Computes the bounding rectangle matching exact upstream EFQRCode Sb dot geometry:
+     * EF defines `<rect id="Sb" width="1.02" height="1.02"/>` and positions directly at `(x, y)`
+     * without symmetric backward centering shift `-(1.02 - 1)/2`.
+     */
+    fun computeEfRect(
+        subX: Int,
+        subY: Int,
+        moduleLeft: Float,
+        moduleTop: Float,
+        moduleSize: Float,
+        dotScale: Float = ANTI_GAP_SCALE
+    ): SubpixelRect {
+        val subStep = moduleSize / 3f
+        val dx = subX % 3
+        val dy = subY % 3
+        val left = moduleLeft + dx * subStep
+        val top = moduleTop + dy * subStep
+        val w = subStep * dotScale
+        val h = subStep * dotScale
+        return SubpixelRect(left, top, w, h)
+    }
+
+    /**
+     * Computes the bounding rectangle for exact EFQRCode Sb dot coordinates from matrix column and row.
+     */
+    fun computeEfCanvasRect(
+        col: Int,
+        row: Int,
+        offsetX: Float,
+        offsetY: Float,
+        moduleSize: Float,
+        subX: Int,
+        subY: Int,
+        dotScale: Float = ANTI_GAP_SCALE
+    ): SubpixelRect {
+        val moduleLeft = offsetX + (col * moduleSize)
+        val moduleTop = offsetY + (row * moduleSize)
+        return computeEfRect(subX, subY, moduleLeft, moduleTop, moduleSize, dotScale)
+    }
+
+    /**
      * Normalized coordinate helper for SVG vector export where moduleSize = 1.0.
      *
      * @param col Module column (0 until matrix.size)

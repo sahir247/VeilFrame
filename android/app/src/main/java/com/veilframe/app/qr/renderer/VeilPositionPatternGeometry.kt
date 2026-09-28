@@ -62,8 +62,18 @@ object VeilPositionPatternGeometry {
             }
             FinderStyle.ROUNDED -> {
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
-                val rx = 6f * cs * 0.25f
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, rx = rx, ry = rx, stroke = color, strokeWidth = 1f * size * cs))
+                val squirclePath = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
+                    android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs)
+                )
+                nodes.add(com.veilframe.app.qr.geometry.PathNode(
+                    svgPathData = SQ25_PATH,
+                    androidPath = squirclePath,
+                    fill = null,
+                    stroke = color,
+                    strokeWidth = 100f / 6f * size,
+                    canvasStrokeWidth = 1f * size * cs,
+                    transform = "translate(${ox - 2.5f * cs},${oy - 2.5f * cs}) scale(${6f * cs / 100f},${6f * cs / 100f})"
+                ))
             }
             FinderStyle.PLANETS -> {
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
@@ -135,10 +145,9 @@ object VeilPositionPatternGeometry {
             }
             FinderStyle.ROUNDED -> { // roundedRectangle
                 canvas.drawCircle(cx, cy, 1.5f * cs, fillPaint)
-                val path = Path()
-                val rx = 6f * cs * 0.25f
-                val rectF = android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs)
-                path.addRoundRect(rectF, rx, rx, Path.Direction.CW)
+                val path = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
+                    android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs)
+                )
                 canvas.drawPath(path, strokePaint)
             }
             FinderStyle.PLANETS -> { // planets

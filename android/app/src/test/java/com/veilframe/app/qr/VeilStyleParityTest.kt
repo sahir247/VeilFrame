@@ -1512,7 +1512,7 @@ class VeilStyleParityTest {
         val matrix = QrMatrix("https://veilframe.app/resample-hollow-test", ErrorCorrectionLevel.M)
         val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512)
 
-        // 1. With useSourceAsBackdrop = true, outer finder ring must be hollow (stroke != null, fill == null)
+        // 1. With useSourceAsBackdrop = true, outer finder ring is stroked hollow (stroke != null, fill == null)
         val designHollow = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             palette = PaletteStyle(background = 0xFFFFFFFF.toInt(), foreground = 0xFF000000.toInt()),
@@ -1521,21 +1521,24 @@ class VeilStyleParityTest {
         val irHollow = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designHollow, geometry)
         val hollowFinderRects = irHollow.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
             .filter { it.stroke != null && it.fill == null }
-        assertTrue("Hollow finder mode must emit stroked hollow rects for the outer frame", hollowFinderRects.isNotEmpty())
+        assertTrue("Resample finder must emit stroked hollow rects for the outer frame", hollowFinderRects.isNotEmpty())
         val bgFillFinderRects = irHollow.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
             .filter { it.fill == designHollow.palette.background && it.width < 512f }
-        assertTrue("Hollow finder mode must NOT paint solid 5x5 background rects over finders", bgFillFinderRects.isEmpty())
+        assertTrue("Resample finder must NOT paint solid 5x5 background rects over finders", bgFillFinderRects.isEmpty())
 
-        // 2. With useSourceAsBackdrop = false, normal background rects are present
+        // 2. EF parity: Even with useSourceAsBackdrop = false, EF writeQRCode emits the outer stroked frame without solid 7x7/5x5 background fill
         val designNormal = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             palette = PaletteStyle(background = 0xFFFFFFFF.toInt(), foreground = 0xFF000000.toInt()),
             resampleStyle = ResampleStyle(useSourceAsBackdrop = false)
         )
         val irNormal = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, designNormal, geometry)
+        val normalHollowRects = irNormal.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("EF parity: Resample finder emits stroked frame even when useSourceAsBackdrop is false", normalHollowRects.isNotEmpty())
         val normalBgFinderRects = irNormal.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>()
             .filter { it.fill == designNormal.palette.background && it.width < 512f }
-        assertTrue("Normal finder mode must emit background middle rects when backdrop is false", normalBgFinderRects.isNotEmpty())
+        assertTrue("EF parity: Resample finder must never emit 5x5 background middle rects", normalBgFinderRects.isEmpty())
     }
 
     @Test
@@ -3194,15 +3197,35 @@ class VeilStyleParityTest {
 
         for (node in ir.rootNodes) {
             if (node is com.veilframe.app.qr.geometry.RectNode) {
-                val fill = node.fill ?: continue
-                val minX = node.x.toInt().coerceIn(0, totalPx - 1)
-                val minY = node.y.toInt().coerceIn(0, totalPx - 1)
-                val maxX = (node.x + node.width).toInt().coerceIn(0, totalPx)
-                val maxY = (node.y + node.height).toInt().coerceIn(0, totalPx)
-                for (py in minY until maxY) {
-                    val rowOffset = py * totalPx
-                    for (px in minX until maxX) {
-                        pixels[rowOffset + px] = fill
+                if (node.fill != null) {
+                    val minX = node.x.toInt().coerceIn(0, totalPx - 1)
+                    val minY = node.y.toInt().coerceIn(0, totalPx - 1)
+                    val maxX = (node.x + node.width).toInt().coerceIn(0, totalPx)
+                    val maxY = (node.y + node.height).toInt().coerceIn(0, totalPx)
+                    for (py in minY until maxY) {
+                        val rowOffset = py * totalPx
+                        for (px in minX until maxX) {
+                            pixels[rowOffset + px] = node.fill
+                        }
+                    }
+                }
+                if (node.stroke != null && node.strokeWidth > 0f) {
+                    val halfSw = node.strokeWidth / 2f
+                    val outerLeft = (node.x - halfSw).toInt().coerceIn(0, totalPx - 1)
+                    val outerTop = (node.y - halfSw).toInt().coerceIn(0, totalPx - 1)
+                    val outerRight = (node.x + node.width + halfSw).toInt().coerceIn(0, totalPx)
+                    val outerBottom = (node.y + node.height + halfSw).toInt().coerceIn(0, totalPx)
+                    val innerLeft = (node.x + halfSw).toInt().coerceIn(0, totalPx - 1)
+                    val innerTop = (node.y + halfSw).toInt().coerceIn(0, totalPx - 1)
+                    val innerRight = (node.x + node.width - halfSw).toInt().coerceIn(0, totalPx)
+                    val innerBottom = (node.y + node.height - halfSw).toInt().coerceIn(0, totalPx)
+                    for (py in outerTop until outerBottom) {
+                        val rowOffset = py * totalPx
+                        for (px in outerLeft until outerRight) {
+                            if (px < innerLeft || px >= innerRight || py < innerTop || py >= innerBottom) {
+                                pixels[rowOffset + px] = node.stroke
+                            }
+                        }
                     }
                 }
             }

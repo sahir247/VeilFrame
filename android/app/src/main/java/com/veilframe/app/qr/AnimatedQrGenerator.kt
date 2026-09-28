@@ -44,8 +44,7 @@ object AnimatedQrGenerator {
                 outputSize = outputSize,
                 imageSource = baseDesign.imageSource.copy(
                     source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
-                ),
-                backgroundImage = frame.bitmap
+                )
             )
             val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
             if (renderedBitmap != null) {
@@ -117,6 +116,21 @@ object AnimatedQrGenerator {
     ): String {
         require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
 
+        // For EF parity with IMAGE_RESAMPLE: delegate to layer-isolated native generation
+        // where only the resampled dots layer is animated while backdrop, finders, timing,
+        // alignment, and icon remain completely static outside <animate>.
+        if (baseDesign.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
+            val animatedDesign = baseDesign.copy(
+                imageSource = baseDesign.imageSource.copy(
+                    source = com.veilframe.app.qr.model.ImageSource.Animated(
+                        sourceFrames.map { it.bitmap },
+                        sourceFrames.map { it.durationMs }
+                    )
+                )
+            )
+            return SvgExporter.generateSvg(matrix, animatedDesign)
+        }
+
         val totalDurationMs = maxOf(1, sourceFrames.sumOf { it.durationMs })
         val totalDurationSec = totalDurationMs / 1000.0
 
@@ -137,8 +151,7 @@ object AnimatedQrGenerator {
             val frameDesign = baseDesign.copy(
                 imageSource = baseDesign.imageSource.copy(
                     source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
-                ),
-                backgroundImage = frame.bitmap
+                )
             )
 
             val fullSvg = SvgExporter.generateSvg(matrix, frameDesign)

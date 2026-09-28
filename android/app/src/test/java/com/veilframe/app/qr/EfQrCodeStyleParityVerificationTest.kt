@@ -5,6 +5,7 @@ import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.geometry.CircleNode
 import com.veilframe.app.qr.geometry.D25Geometry
+import com.veilframe.app.qr.geometry.PathNode
 import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.geometry.ResampleGeometryBuilder
 import com.veilframe.app.qr.model.*
@@ -575,10 +576,11 @@ class EfQrCodeStyleParityVerificationTest {
         assertFalse(designFull.alignmentStyle.onlyWhite)
 
         val irFull = ResampleGeometryBuilder.generateGeometry(matrix, designFull, geometry, pixelSource)
+        val expectedFullDim = (3.02f / 3f) * mSize
         val fullModuleNodesFull = irFull.rootNodes.filterIsInstance<RectNode>().filter {
-            Math.abs(it.width - mSize) < 0.01f && Math.abs(it.height - mSize) < 0.01f
+            Math.abs(it.width - expectedFullDim) < 0.01f && Math.abs(it.height - expectedFullDim) < 0.01f
         }
-        assertTrue("Full module rects must be emitted when onlyWhite=false", fullModuleNodesFull.isNotEmpty())
+        assertTrue("Exact EF 3.02/3 * mSize rects must be emitted when onlyWhite=false", fullModuleNodesFull.isNotEmpty())
     }
 
     @Test
@@ -594,7 +596,7 @@ class EfQrCodeStyleParityVerificationTest {
         val pixels = IntArray(64 * 64) { 0xFFFFFFFF.toInt() }
         val pixelSource = com.veilframe.app.qr.renderer.ArrayPixelSource(64, 64, pixels)
 
-        // 1. CLASSIC: Sharp corners (rx = 0, ry = 0) in both hollow and solid modes
+        // 1. CLASSIC: Sharp corners (rx = 0, ry = 0) with 6x6 stroked frame and 3x3 inner fill in all modes (no solid 7x7/5x5 branch)
         val designClassicHollow = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
@@ -602,13 +604,13 @@ class EfQrCodeStyleParityVerificationTest {
         )
         val irClassicHollow = ResampleGeometryBuilder.generateGeometry(matrix, designClassicHollow, geometry, pixelSource)
         val classicFinderOuter = irClassicHollow.rootNodes.filterIsInstance<RectNode>().firstOrNull {
-            Math.abs(it.width - 6f * mSize) < 0.01f
+            Math.abs(it.width - 6f * mSize) < 0.01f && it.stroke != null && it.fill == null
         }
         val classicFinderInner = irClassicHollow.rootNodes.filterIsInstance<RectNode>().firstOrNull {
-            Math.abs(it.width - 3f * mSize) < 0.01f
+            Math.abs(it.width - 3f * mSize) < 0.01f && it.fill != null
         }
-        assertNotNull("Classic 6x6 outer finder must exist in hollow mode", classicFinderOuter)
-        assertNotNull("Classic 3x3 inner finder must exist in hollow mode", classicFinderInner)
+        assertNotNull("Classic 6x6 outer stroked finder must exist in hollow mode", classicFinderOuter)
+        assertNotNull("Classic 3x3 inner filled finder must exist in hollow mode", classicFinderInner)
         assertEquals("Classic outer finder must have sharp corners (rx=0)", 0f, classicFinderOuter?.rx ?: -1f, 0.001f)
         assertEquals("Classic inner finder must have sharp corners (rx=0)", 0f, classicFinderInner?.rx ?: -1f, 0.001f)
 
@@ -618,14 +620,17 @@ class EfQrCodeStyleParityVerificationTest {
             resampleStyle = ResampleStyle(useSourceAsBackdrop = false)
         )
         val irClassicSolid = ResampleGeometryBuilder.generateGeometry(matrix, designClassicSolid, geometry, pixelSource)
+        // EF writeQRCode emits 6x6 stroked frame and 3x3 inner fill directly without solid 7x7/5x5 background fill
+        val solid6x6 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 6f * mSize) < 0.01f && it.stroke != null }
+        val solid3x3 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 3f * mSize) < 0.01f && it.fill != null }
         val solid7x7 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 7f * mSize) < 0.01f }
         val solid5x5 = irClassicSolid.rootNodes.filterIsInstance<RectNode>().firstOrNull { Math.abs(it.width - 5f * mSize) < 0.01f }
-        assertNotNull("Classic 7x7 outer finder must exist in solid mode", solid7x7)
-        assertNotNull("Classic 5x5 middle finder must exist in solid mode", solid5x5)
-        assertEquals("Solid 7x7 outer finder must have sharp corners (rx=0)", 0f, solid7x7?.rx ?: -1f, 0.001f)
-        assertEquals("Solid 5x5 middle finder must have sharp corners (rx=0)", 0f, solid5x5?.rx ?: -1f, 0.001f)
+        assertNotNull("EF parity: 6x6 stroked frame must be emitted even when useSourceAsBackdrop=false", solid6x6)
+        assertNotNull("EF parity: 3x3 inner filled square must be emitted even when useSourceAsBackdrop=false", solid3x3)
+        assertNull("EF parity: No solid 7x7 outer fill exists in EF resample finders", solid7x7)
+        assertNull("EF parity: No solid 5x5 background fill exists in EF resample finders", solid5x5)
 
-        // 2. ROUNDED: Inner is CircleNode(r = 1.5 * mSize) matching EF <circle r="4.5"/>
+        // 2. ROUNDED: Inner is CircleNode(r = 1.5 * mSize) matching EF <circle r="4.5"/>, outer is sq25 PathNode
         val designRounded = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             eyeStyle = EyeStyle(style = FinderStyle.ROUNDED),
@@ -635,7 +640,12 @@ class EfQrCodeStyleParityVerificationTest {
         val roundedInnerCircle = irRounded.rootNodes.filterIsInstance<CircleNode>().firstOrNull {
             Math.abs(it.radius - 1.5f * mSize) < 0.01f
         }
+        val roundedOuterPath = irRounded.rootNodes.filterIsInstance<PathNode>().firstOrNull {
+            it.svgPathData == com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.SQ25_PATH
+        }
         assertNotNull("Rounded finder must use CircleNode with r=1.5*mSize for inner eye matching EF", roundedInnerCircle)
+        assertNotNull("Rounded finder must use PathNode with exact SQ25_PATH for outer frame matching EF", roundedOuterPath)
+        assertTrue("Rounded outer path transform must contain translate and scale", roundedOuterPath?.transform?.contains("scale") == true)
 
         // 3. CIRCLE: Inner circle r=1.5 * mSize, outer circle stroke r=3.0 * mSize
         val designCircle = QrDesign(
@@ -684,7 +694,6 @@ class EfQrCodeStyleParityVerificationTest {
         val dummyBackdrop = allocateBitmapReflectively()
 
         // 1. useSourceAsBackdrop = false, BUT backdropBitmap is provided (independent backdrop object):
-        // Must emit hollow stroked finders so the independent backdrop shows through!
         val designIndependentBackdrop = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             eyeStyle = EyeStyle(style = FinderStyle.CLASSIC),
@@ -702,8 +711,7 @@ class EfQrCodeStyleParityVerificationTest {
             .filter { it.fill == designIndependentBackdrop.palette.background && it.width < 512f }
         assertTrue("Independent backdrop must NOT paint solid background middle rects", bgFillFinderRects.isEmpty())
 
-        // 2. useSourceAsBackdrop = false, and backdropBitmap = null (no backdrop, opaque background):
-        // Must emit solid background middle rects!
+        // 2. EF parity: Even without backdrop, EF writeQRCode emits the outer stroked frame without solid 7x7/5x5 background fill
         val designNoBackdrop = QrDesign(
             style = QrStyle.IMAGE_RESAMPLE,
             palette = PaletteStyle(background = Color.WHITE, foreground = Color.BLACK),
@@ -714,9 +722,12 @@ class EfQrCodeStyleParityVerificationTest {
             )
         )
         val irNoBackdrop = ResampleGeometryBuilder.generateGeometry(matrix, designNoBackdrop, geometry, pixelSource)
+        val noBackdropHollowRects = irNoBackdrop.rootNodes.filterIsInstance<RectNode>()
+            .filter { it.stroke != null && it.fill == null }
+        assertTrue("EF parity: Resample finder emits stroked frame even with no backdrop", noBackdropHollowRects.isNotEmpty())
         val normalBgFinderRects = irNoBackdrop.rootNodes.filterIsInstance<RectNode>()
             .filter { it.fill == designNoBackdrop.palette.background && it.width < 512f }
-        assertTrue("Solid finder mode must emit background middle rects when no backdrop is active", normalBgFinderRects.isNotEmpty())
+        assertTrue("EF parity: Resample finder must never emit background middle rects", normalBgFinderRects.isEmpty())
     }
 
     @Test
@@ -738,17 +749,20 @@ class EfQrCodeStyleParityVerificationTest {
         val designCustomSize = QrDesign.fromQrStyleParams(paramsCustomSize)
         val irCustomSize = ResampleGeometryBuilder.generateGeometry(matrix, designCustomSize, geometry, pixelSource)
 
+        val expectedTimingDim = (3.02f / 3f) * mSize * 0.5f
+        val expectedAlignDim = (3.02f / 3f) * mSize * 1.5f
+
         val timingNodes = irCustomSize.rootNodes.filterIsInstance<RectNode>().filter {
-            Math.abs(it.width - 0.5f * mSize) < 0.01f && Math.abs(it.height - 0.5f * mSize) < 0.01f
+            Math.abs(it.width - expectedTimingDim) < 0.01f && Math.abs(it.height - expectedTimingDim) < 0.01f
         }
-        assertTrue("timingSize = 0.5f must emit rects scaled to 0.5 * mSize", timingNodes.isNotEmpty())
+        assertTrue("timingSize = 0.5f must emit rects scaled to exact (3.02/3) * mSize * 0.5", timingNodes.isNotEmpty())
 
         val alignNodes = irCustomSize.rootNodes.filterIsInstance<RectNode>().filter {
-            Math.abs(it.width - 1.5f * mSize) < 0.01f && Math.abs(it.height - 1.5f * mSize) < 0.01f
+            Math.abs(it.width - expectedAlignDim) < 0.01f && Math.abs(it.height - expectedAlignDim) < 0.01f
         }
-        assertTrue("alignSize = 1.5f must emit rects scaled to 1.5 * mSize", alignNodes.isNotEmpty())
+        assertTrue("alignSize = 1.5f must emit rects scaled to exact (3.02/3) * mSize * 1.5", alignNodes.isNotEmpty())
 
-        // 2. onlyWhite = true with custom sizes
+        // 2. onlyWhite = true with custom sizes and exact EF offsets
         val paramsOnlyWhiteCustomSize = QrStyleParams(
             style = QrStyle.IMAGE_RESAMPLE,
             timingSize = 0.5f,
@@ -759,19 +773,18 @@ class EfQrCodeStyleParityVerificationTest {
         val designOnlyWhiteCustomSize = QrDesign.fromQrStyleParams(paramsOnlyWhiteCustomSize)
         val irOnlyWhiteCustom = ResampleGeometryBuilder.generateGeometry(matrix, designOnlyWhiteCustomSize, geometry, pixelSource)
 
-        val subStep = mSize / 3f
-        val expectedTimingAnchorDim = subStep * 1.02f * 0.5f
-        val expectedAlignAnchorDim = subStep * 1.02f * 1.5f
+        val expectedTimingAnchorDim = (1.02f / 3f) * mSize * 0.5f
+        val expectedAlignAnchorDim = (1.02f / 3f) * mSize * 1.5f
 
         val timingAnchorNodes = irOnlyWhiteCustom.rootNodes.filterIsInstance<RectNode>().filter {
             Math.abs(it.width - expectedTimingAnchorDim) < 0.01f
         }
-        assertTrue("timingOnlyWhite with timingSize = 0.5f must emit anchor dots of dimension subStep * 1.02 * 0.5", timingAnchorNodes.isNotEmpty())
+        assertTrue("timingOnlyWhite with timingSize = 0.5f must emit anchor dots of dimension (1.02/3) * mSize * 0.5", timingAnchorNodes.isNotEmpty())
 
         val alignAnchorNodes = irOnlyWhiteCustom.rootNodes.filterIsInstance<RectNode>().filter {
             Math.abs(it.width - expectedAlignAnchorDim) < 0.01f
         }
-        assertTrue("alignOnlyWhite with alignSize = 1.5f must emit anchor dots of dimension subStep * 1.02 * 1.5", alignAnchorNodes.isNotEmpty())
+        assertTrue("alignOnlyWhite with alignSize = 1.5f must emit anchor dots of dimension (1.02/3) * mSize * 1.5", alignAnchorNodes.isNotEmpty())
     }
 
     @Test
@@ -792,8 +805,7 @@ class EfQrCodeStyleParityVerificationTest {
 
         val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry, pixelSource)
         val mSize = geometry.moduleSize
-        val subStep = mSize / 3f
-        val anchorDim = subStep * 1.02f
+        val anchorDim = (1.02f / 3f) * mSize
 
         // Center anchors of data modules must use dataColor (BLUE), not foreground (RED)
         val blueAnchors = ir.rootNodes.filterIsInstance<RectNode>().filter {
@@ -829,7 +841,33 @@ class EfQrCodeStyleParityVerificationTest {
         val animatedSvg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
         assertTrue("Generated SVG must contain animate tag", animatedSvg.contains("<animate"))
         assertTrue("Generated SVG must contain discrete calcMode", animatedSvg.contains("calcMode=\"discrete\""))
-        assertTrue("Generated SVG must contain frame 0 def", animatedSvg.contains("id=\"qr_frame_0\""))
-        assertTrue("Generated SVG must contain frame 1 def", animatedSvg.contains("id=\"qr_frame_1\""))
+        assertTrue("Generated SVG must contain resfm0 def matching EF", animatedSvg.contains("id=\"resfm0\""))
+        assertTrue("Generated SVG must contain resfm1 def matching EF", animatedSvg.contains("id=\"resfm1\""))
+        assertTrue("Generated SVG must contain xlink:href values matching EF", animatedSvg.contains("values=\"#resfm0;#resfm1\""))
+
+        // Verify that finders are outside <animate> (static layer architecture)
+        val animateIndex = animatedSvg.indexOf("<animate")
+        val strokeFinderIndex = animatedSvg.indexOf("stroke-width=\"1.0000\"")
+        assertTrue("Finders must be emitted outside and after animated resample layer", strokeFinderIndex > animateIndex)
+    }
+
+    @Test
+    fun testGeneratedSvgMatchesEfPrimitivesGoldenTest() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/GOLDEN", ErrorCorrectionLevel.M)
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE,
+            eyeStyle = EyeStyle(style = FinderStyle.ROUNDED),
+            timingStyle = TimingStyle(shape = com.veilframe.app.qr.model.ModuleShape.ROUNDED),
+            timingSize = 1.0f
+        )
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+
+        // 1. Svg contains xmlns:xlink
+        assertTrue("SVG root must declare xmlns:xlink", svg.contains("xmlns:xlink=\"http://www.w3.org/1999/xlink\""))
+        // 2. Rounded finder uses SQ25_PATH
+        assertTrue("Rounded finder in SVG must contain SQ25 path", svg.contains(com.veilframe.app.qr.renderer.VeilPositionPatternGeometry.SQ25_PATH))
+        // 3. No solid 7x7 outer fill or 5x5 background fill
+        assertFalse("SVG must not contain solid 7x7 outer fill", svg.contains("width=\"7.0000\" height=\"7.0000\""))
+        assertFalse("SVG must not contain 5x5 background fill", svg.contains("width=\"5.0000\" height=\"5.0000\""))
     }
 }

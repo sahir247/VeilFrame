@@ -221,15 +221,27 @@ class ResampleImage3x3Test {
             seed = 42L,
             policy = ArtisticResamplePolicy.from(design)
         ) { col, row, subX, subY, _ ->
-            val rect = SubpixelGeometry.computeCanvasRect(
-                col = col,
-                row = row,
-                offsetX = geometry.offsetX,
-                offsetY = geometry.offsetY,
-                moduleSize = geometry.moduleSize,
-                subX = subX,
-                subY = subY
-            )
+            val rect = if (design.style == QrStyle.IMAGE_RESAMPLE) {
+                SubpixelGeometry.computeEfCanvasRect(
+                    col = col,
+                    row = row,
+                    offsetX = geometry.offsetX,
+                    offsetY = geometry.offsetY,
+                    moduleSize = geometry.moduleSize,
+                    subX = subX,
+                    subY = subY
+                )
+            } else {
+                SubpixelGeometry.computeCanvasRect(
+                    col = col,
+                    row = row,
+                    offsetX = geometry.offsetX,
+                    offsetY = geometry.offsetY,
+                    moduleSize = geometry.moduleSize,
+                    subX = subX,
+                    subY = subY
+                )
+            }
             canvasSubpixels.add(rect)
         }
 
