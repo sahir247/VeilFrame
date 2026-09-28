@@ -15,20 +15,33 @@ class QrScanOverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
+    private val density = context.resources.displayMetrics.density
+
+    private val themePrimaryColor: Int = run {
+        val tv = android.util.TypedValue()
+        if (context.theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, tv, true)) {
+            tv.data
+        } else if (context.theme.resolveAttribute(android.R.attr.colorPrimary, tv, true)) {
+            tv.data
+        } else {
+            0xFF00BCD4.toInt()
+        }
+    }
+
     private val dimPaint = Paint().apply { color = 0xAA000000.toInt() }
     private val clearPaint = Paint().apply {
         xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
     }
     private val cornerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF00BCD4.toInt()
-        strokeWidth = 8f
+        color = themePrimaryColor
+        strokeWidth = 4f * density
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
 
     private val finderRect = RectF()
-    private val cornerLen = 40f
-    private val cornerRadius = 16f
+    private val cornerLen = 28f * density
+    private val cornerRadius = 12f * density
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         val side = min(w, h) * 0.7f

@@ -35,11 +35,13 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.textfield.TextInputLayout
 import com.veilframe.app.R
 import com.veilframe.app.qr.QrStyle
+import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
 import com.veilframe.app.qr.model.ImageScaleMode
 import com.veilframe.app.qr.model.QrPresetFormatter
@@ -76,6 +78,16 @@ class QrStudioFragment : Fragment() {
         val toolbar = view.findViewById<MaterialToolbar>(R.id.qr_toolbar)
         val tabs = view.findViewById<TabLayout>(R.id.qr_tabs)
         val pager = view.findViewById<ViewPager2>(R.id.qr_pager)
+        val loadingProgress = view.findViewById<ProgressBar>(R.id.qr_loading_progress)
+
+        // Observe loading state to drive the top-level progress bar
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.state.collect { state ->
+                    loadingProgress?.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+                }
+            }
+        }
 
         // Terminate session cleanly when back is pressed
         val backCallback = object : OnBackPressedCallback(true) {
@@ -357,10 +369,14 @@ class QrGenerateTabFragment : Fragment() {
         val logoSizeSlider     = view.findViewById<Slider>(R.id.qr_logo_size_slider)
         val logoSizeLabel      = view.findViewById<TextView>(R.id.qr_logo_size_label)
 
+        val containerResampleControls = view.findViewById<LinearLayout>(R.id.container_resample_specific_controls)
+        val animatedExportLabel       = view.findViewById<TextView>(R.id.qr_animated_export_label)
+
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
         val saveSvgBtn         = view.findViewById<MaterialButton>(R.id.qr_save_svg_btn)
         val saveGifBtn         = view.findViewById<MaterialButton>(R.id.qr_save_gif_btn)
         val saveVideoBtn       = view.findViewById<MaterialButton>(R.id.qr_save_video_btn)
+        val saveAnimatedSvgBtn = view.findViewById<MaterialButton>(R.id.qr_save_animated_svg_btn)
         val shareBtn           = view.findViewById<MaterialButton>(R.id.qr_share_btn)
 
         // Setup Source Scale Spinner
@@ -583,10 +599,10 @@ class QrGenerateTabFragment : Fragment() {
         upiChip50000?.setOnClickListener { syncUpiAmount(50000f, updateText = true, updateSlider = true) }
         upiChip1lakh?.setOnClickListener { syncUpiAmount(100000f, updateText = true, updateSlider = true) }
 
-        // 1. Style Spinner (12 Modes)
+        // 1. Style Spinner (12 Modes with Human-readable Display Names)
         val styles = QrStyle.values()
         val styleNames = styles.map {
-            it.name.replace('_', ' ').lowercase().replaceFirstChar { c -> c.uppercase() }
+            QrStyleRegistry.get(it).displayName
         }
         styleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, styleNames)
         styleSpinner.setSelection(styles.indexOf(vm.state.value.style).coerceAtLeast(0))
@@ -696,15 +712,16 @@ class QrGenerateTabFragment : Fragment() {
         }
 
         // 5. Actions & Buttons
-        autoRepairBtn.setOnClickListener { vm.autoRepair() }
-        saveBtn.setOnClickListener      { vm.saveToGallery() }
-        saveSvgBtn.setOnClickListener   { vm.saveSvg() }
-        saveGifBtn?.setOnClickListener   { vm.saveGif() }
-        saveVideoBtn?.setOnClickListener { vm.saveVideo() }
-        shareBtn.setOnClickListener     { vm.share() }
-        logoBtn.setOnClickListener      { logoPickerLauncher.launch("image/*") }
-        sourceImgBtn.setOnClickListener { sourceImagePickerLauncher.launch("*/*") }
-        bgImageBtn.setOnClickListener   { bgImagePickerLauncher.launch("image/*") }
+        autoRepairBtn.setOnClickListener      { vm.autoRepair() }
+        saveBtn.setOnClickListener            { vm.saveToGallery() }
+        saveSvgBtn.setOnClickListener         { vm.saveSvg() }
+        saveGifBtn?.setOnClickListener         { vm.saveGif() }
+        saveVideoBtn?.setOnClickListener       { vm.saveVideo() }
+        saveAnimatedSvgBtn?.setOnClickListener { vm.saveAnimatedSvg() }
+        shareBtn.setOnClickListener           { vm.share() }
+        logoBtn.setOnClickListener            { logoPickerLauncher.launch("image/*") }
+        sourceImgBtn.setOnClickListener       { sourceImagePickerLauncher.launch("*/*") }
+        bgImageBtn.setOnClickListener         { bgImagePickerLauncher.launch("image/*") }
 
         fgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = true) }
         bgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = false) }
@@ -714,6 +731,22 @@ class QrGenerateTabFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.state.collect { state ->
                     state.bitmap?.let { previewImage.setImageBitmap(it) }
+
+                    // Export buttons enabled/disabled state driven by loading
+                    val isIdle = !state.isLoading
+                    saveBtn.isEnabled = isIdle
+                    saveSvgBtn.isEnabled = isIdle
+                    saveGifBtn?.isEnabled = isIdle
+                    saveVideoBtn?.isEnabled = isIdle
+                    saveAnimatedSvgBtn?.isEnabled = isIdle
+                    shareBtn.isEnabled = isIdle
+
+                    // Clarify animated export helper label based on input
+                    if (state.animatedFrames.isNotEmpty()) {
+                        animatedExportLabel?.text = "Animation source: ${state.animatedFrames.size} frames"
+                    } else {
+                        animatedExportLabel?.text = "Generate looping animation from current QR artwork"
+                    }
 
                     // Dynamic Background Image Card
                     if (state.backgroundImage != null) {
@@ -725,7 +758,7 @@ class QrGenerateTabFragment : Fragment() {
                         cardBgControls.visibility = View.GONE
                     }
 
-                    // Dynamic Source Image (QR Photo) Card
+                    // Dynamic Source Image Card
                     if (state.sourceImage != null) {
                         cardSourceControls.visibility = View.VISIBLE
                         sourceContrastSlider.value = state.sourceImageContrast
@@ -744,10 +777,13 @@ class QrGenerateTabFragment : Fragment() {
                             sourceOpacityLabel.text = "Opacity: $opacityPct%"
                         }
 
+                        // Contextual RESAMPLE controls: only show when IMAGE_RESAMPLE is active
+                        containerResampleControls?.visibility = if (isResample) View.VISIBLE else View.GONE
+
                         if (resampleBackdropSwitch.isChecked != state.resampleUseSourceAsBackdrop) {
                             resampleBackdropSwitch.isChecked = state.resampleUseSourceAsBackdrop
                         }
-                        containerBackdropOpacity.visibility = if (state.resampleUseSourceAsBackdrop) View.VISIBLE else View.GONE
+                        containerBackdropOpacity.visibility = if (state.resampleUseSourceAsBackdrop && isResample) View.VISIBLE else View.GONE
                         val backdropPct = (state.resampleBackdropOpacity * 100f).toInt().coerceIn(0, 100)
                         resampleBackdropOpacitySlider.value = backdropPct.toFloat()
                         resampleBackdropOpacityLabel.text = "Backdrop Opacity: $backdropPct%"
@@ -765,18 +801,19 @@ class QrGenerateTabFragment : Fragment() {
                         cardLogoControls.visibility = View.GONE
                     }
 
-                    // Update Live Verification Card
+                    // Update Live Verification Card with accurate quiet zone and calibrated text
                     state.scanabilityReport?.let { report ->
                         if (report.isScanReady) {
                             scanabilityCard?.setCardBackgroundColor(0x1816A34A)
                             scanabilityCard?.strokeColor = 0x4016A34A
                             scanabilityIcon?.setImageResource(R.drawable.ic_check_circle)
                             scanabilityIcon?.setColorFilter(0xFF16A34A.toInt())
-                            scanabilityStatus.text = "QR Verified"
+                            scanabilityStatus.text = "Scanability Check Passed"
                             scanabilityStatus.setTextColor(0xFF16A34A.toInt())
-                            scanabilityDetails.text = "Ready to scan with standard camera and payment apps"
+                            scanabilityDetails.text = "Passed on-device QR validation"
                             val engine = if (report.decodeResult.decoderId.contains("ML Kit", ignoreCase = true) || report.decodeResult.decoderId.contains("mlkit", ignoreCase = true)) "Google ML Kit" else "ZXing"
-                            scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: 4 modules"
+                            val qz = state.design?.quietZoneModules ?: if (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_RESAMPLE || state.style == QrStyle.IMAGE_FILL) 1 else 4
+                            scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: $qz module${if (qz == 1) "" else "s"}"
                             autoRepairBtn.visibility = View.GONE
                         } else {
                             scanabilityCard?.setCardBackgroundColor(0x18D97706)
@@ -804,15 +841,15 @@ class QrGenerateTabFragment : Fragment() {
                     }
 
                     state.repairNotice?.let { notice ->
-                        Toast.makeText(requireContext(), "Auto-Repair: $notice", Toast.LENGTH_SHORT).show()
+                        view?.let { v -> Snackbar.make(v, "Auto-Repair: $notice", Snackbar.LENGTH_LONG).show() }
                     }
 
                     state.saveResult?.let { msg ->
-                        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                        view?.let { v -> Snackbar.make(v, msg, Snackbar.LENGTH_SHORT).show() }
                         vm.clearSaveResult()
                     }
                     state.errorMessage?.let { msg ->
-                        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                        view?.let { v -> Snackbar.make(v, msg, Snackbar.LENGTH_SHORT).show() }
                     }
                 }
             }
@@ -847,19 +884,26 @@ class QrScanTabFragment : Fragment() {
     private var resultType: TextView? = null
     private var resultText: TextView? = null
     private var resultActionBtn: Button? = null
+    private var scanAnotherBtn: Button? = null
+
+    private var containerPermissionDenied: View? = null
+    private var containerCameraError: View? = null
+    private var cameraErrorText: TextView? = null
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
     private var activeCamera: androidx.camera.core.Camera? = null
     private var activeQrScanner: QrScanner? = null
+    private var isScanningPaused: Boolean = false
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
+            containerPermissionDenied?.visibility = View.GONE
             startCamera()
         } else {
-            Toast.makeText(requireContext(), "Camera permission required for QR scanning", Toast.LENGTH_SHORT).show()
+            containerPermissionDenied?.visibility = View.VISIBLE
         }
     }
 
@@ -877,9 +921,12 @@ class QrScanTabFragment : Fragment() {
             withContext(Dispatchers.Main) {
                 if (!isAdded) return@withContext
                 if (raw != null) {
+                    isScanningPaused = true
                     handleScanResult(raw)
                 } else {
-                    Toast.makeText(requireContext(), "No QR code found in image", Toast.LENGTH_SHORT).show()
+                    view?.let { v ->
+                        Snackbar.make(v, "No QR code found in image", Snackbar.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -929,15 +976,40 @@ class QrScanTabFragment : Fragment() {
         resultType      = view.findViewById(R.id.qr_result_type)
         resultText      = view.findViewById(R.id.qr_result_text)
         resultActionBtn = view.findViewById(R.id.qr_result_action_btn)
+        scanAnotherBtn  = view.findViewById(R.id.qr_scan_another_btn)
+
+        containerPermissionDenied = view.findViewById(R.id.container_camera_permission_denied)
+        containerCameraError      = view.findViewById(R.id.container_camera_error)
+        cameraErrorText           = view.findViewById(R.id.qr_camera_error_text)
 
         view.findViewById<Button>(R.id.qr_scan_gallery_btn).setOnClickListener {
             qrDecodePickerLauncher.launch("image/*")
         }
+        view.findViewById<Button>(R.id.qr_permission_import_gallery_btn)?.setOnClickListener {
+            qrDecodePickerLauncher.launch("image/*")
+        }
+        view.findViewById<Button>(R.id.qr_error_import_gallery_btn)?.setOnClickListener {
+            qrDecodePickerLauncher.launch("image/*")
+        }
+        view.findViewById<Button>(R.id.qr_allow_camera_btn)?.setOnClickListener {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+        view.findViewById<Button>(R.id.qr_camera_retry_btn)?.setOnClickListener {
+            containerCameraError?.visibility = View.GONE
+            startCamera()
+        }
+
+        scanAnotherBtn?.setOnClickListener {
+            resultCard?.visibility = View.GONE
+            isScanningPaused = false
+        }
 
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
+            containerPermissionDenied?.visibility = View.GONE
             startCamera()
         } else {
+            containerPermissionDenied?.visibility = View.VISIBLE
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
@@ -945,8 +1017,15 @@ class QrScanTabFragment : Fragment() {
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-            bindCameraUseCases()
+            try {
+                cameraProvider = cameraProviderFuture.get()
+                bindCameraUseCases()
+            } catch (e: Exception) {
+                if (isAdded) {
+                    containerCameraError?.visibility = View.VISIBLE
+                    cameraErrorText?.text = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown hardware error"}"
+                }
+            }
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
@@ -972,7 +1051,10 @@ class QrScanTabFragment : Fragment() {
             }
         ) { raw ->
             activity?.runOnUiThread {
-                if (isAdded) handleScanResult(raw)
+                if (isAdded && !isScanningPaused) {
+                    isScanningPaused = true
+                    handleScanResult(raw)
+                }
             }
         }.also { activeQrScanner = it }
 
@@ -990,7 +1072,13 @@ class QrScanTabFragment : Fragment() {
                 preview,
                 analysis
             )
-        } catch (_: Exception) {}
+            containerCameraError?.visibility = View.GONE
+        } catch (e: Exception) {
+            if (isAdded) {
+                containerCameraError?.visibility = View.VISIBLE
+                cameraErrorText?.text = "Camera hardware bind failed: ${e.localizedMessage ?: "Device busy or unsupported"}"
+            }
+        }
     }
 
     private fun handleScanResult(raw: String) {
@@ -998,10 +1086,25 @@ class QrScanTabFragment : Fragment() {
         resultCard?.visibility = View.VISIBLE
         resultType?.text = "Detected: ${action::class.simpleName ?: "QR Code"}"
         resultText?.text = formatActionSummary(action)
+        resultActionBtn?.text = formatActionCta(action)
 
         resultActionBtn?.setOnClickListener {
             executeAction(action)
         }
+    }
+
+    private fun formatActionCta(action: QrAction): String = when (action) {
+        is QrAction.Url -> "Open Link"
+        is QrAction.Wifi -> "Connect to Wi-Fi"
+        is QrAction.Contact -> "Add Contact"
+        is QrAction.UpiPayment -> "Pay with UPI"
+        is QrAction.Phone -> "Call Phone"
+        is QrAction.Sms -> "Send SMS"
+        is QrAction.Email -> "Compose Email"
+        is QrAction.Geo -> "Open Map"
+        is QrAction.CalendarEvent -> "Add Event"
+        is QrAction.OtpAuth -> "Add to Authenticator"
+        is QrAction.Raw -> "Copy Content"
     }
 
     private fun formatActionSummary(action: QrAction): String = when (action) {
@@ -1022,7 +1125,9 @@ class QrScanTabFragment : Fragment() {
         try {
             QrActionExecutor.execute(requireContext(), action)
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Unable to execute action: ${e.message}", Toast.LENGTH_SHORT).show()
+            view?.let { v ->
+                Snackbar.make(v, "Unable to execute action: ${e.message}", Snackbar.LENGTH_SHORT).show()
+            }
         }
     }
 

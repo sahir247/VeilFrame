@@ -377,7 +377,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveToGallery() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
@@ -407,7 +414,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveSvg() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
@@ -436,7 +450,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveGif() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
@@ -486,7 +507,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveVideo() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
@@ -550,7 +578,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveAnimatedSvg() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
@@ -579,7 +614,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun share() {
-        val content = _state.value.content.ifBlank { "https://example.com" }
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to share QR code",
+                isLoading = false
+            )
+            return
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)

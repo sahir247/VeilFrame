@@ -69,7 +69,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
-                        android:text="QR Verified" />
+                        android:text="Scanability Check Passed" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_scanability_details_toggle"
@@ -87,7 +87,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
                     android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="Ready to scan with standard camera and payment apps" />
+                    android:text="Passed on-device QR validation" />
 
                 <!-- Collapsible Technical Diagnostic Section -->
                 <LinearLayout
@@ -887,7 +887,7 @@
                 android:textSize="12sp"
                 android:maxLines="1"
                 android:ellipsize="none"
-                android:text="QR Photo" />
+                android:text="Source Image" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_bg_image_btn"
@@ -903,10 +903,10 @@
                 android:textSize="12sp"
                 android:maxLines="1"
                 android:ellipsize="none"
-                android:text="Backdrop" />
+                android:text="Background" />
         </LinearLayout>
 
-        <!-- Dynamic Source Image / QR Photo Controls Card -->
+        <!-- Dynamic Source Image Controls Card -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_source_image_controls"
             android:layout_width="match_parent"
@@ -934,7 +934,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="QR Photo (Source Image)"
+                        android:text="Source Image"
                         android:textAppearance="?attr/textAppearanceTitleSmall" />
 
                     <com.google.android.material.button.MaterialButton
@@ -1012,79 +1012,88 @@
                     android:stepSize="5"
                     android:value="100" />
 
-                <!-- Continuous Photo Backdrop (Artwork QR / VeilFrame Art style) -->
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginBottom="8dp" />
-
+                <!-- RESAMPLE Specific Options Container -->
                 <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Use Photo as Backdrop"
-                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Draw continuous image behind resample dots"
-                            android:textAppearance="?attr/textAppearanceLabelSmall"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/qr_resample_backdrop_switch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/container_resample_backdrop_opacity"
+                    android:id="@+id/container_resample_specific_controls"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:visibility="visible">
+                    android:visibility="gone">
 
-                    <TextView
-                        android:id="@+id/qr_resample_backdrop_opacity_label"
+                    <!-- Continuous Photo Backdrop (Artwork QR / VeilFrame Art style) -->
+                    <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="Backdrop Opacity: 100%"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="8dp" />
 
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/qr_resample_backdrop_opacity_slider"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:valueFrom="0"
-                        android:valueTo="100"
-                        android:stepSize="5"
-                        android:value="100" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Use Photo as Backdrop"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Draw continuous image behind resample dots"
+                                android:textAppearance="?attr/textAppearanceLabelSmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/qr_resample_backdrop_switch"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="false" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/container_resample_backdrop_opacity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/qr_resample_backdrop_opacity_label"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Backdrop Opacity: 100%"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/qr_resample_backdrop_opacity_slider"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="0"
+                            android:valueTo="100"
+                            android:stepSize="5"
+                            android:value="100" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_resample_seed_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Randomize Resample Seed"
+                        app:icon="@drawable/ic_reset" />
                 </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/qr_resample_seed_btn"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="Randomize Resample Seed"
-                    app:icon="@drawable/ic_reset" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -1245,7 +1254,16 @@
 
         <View android:layout_height="8dp" android:layout_width="match_parent" />
 
-        <!-- Animated Media Export Row (GIF / Video MP4) -->
+        <!-- Animated Media Export Section (GIF / Video MP4 / Animated SVG) -->
+        <TextView
+            android:id="@+id/qr_animated_export_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:text="Generate looping animated media from current QR artwork"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
         <LinearLayout
             android:id="@+id/container_animated_export"
             android:layout_width="match_parent"
@@ -1259,7 +1277,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:text="Save GIF"
                 app:icon="@drawable/ic_action_save" />
 
@@ -1269,9 +1287,20 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textSize="12sp"
-                android:text="Save MP4 Video"
+                android:layout_marginEnd="4dp"
+                android:textSize="11sp"
+                android:text="Save MP4"
                 app:icon="@drawable/ic_tab_video" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_save_animated_svg_btn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="11sp"
+                android:text="Anim SVG"
+                app:icon="@drawable/ic_action_save" />
         </LinearLayout>
 
     </LinearLayout>
