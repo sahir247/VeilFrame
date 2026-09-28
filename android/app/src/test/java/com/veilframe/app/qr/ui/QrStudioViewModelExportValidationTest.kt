@@ -463,4 +463,87 @@ class QrStudioViewModelExportValidationTest {
             vm.isSourcePhotoRequired(QrStyle.D25, null)
         )
     }
+
+    @Test
+    fun testRandomRectangleRendererExactBehavioralBounds() {
+        val matrix = QrMatrix("https://veilframe.app/bounds-test", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, (matrix.size + 8) * 16, (matrix.size + 8) * 16, quietZoneModules = 4)
+        val moduleSize = geometry.moduleSize
+        val renderer = RandomRectangleRenderer()
+
+        // 1. scaleJitter = 0 -> every tempRand = 1.05
+        val designScale0 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 12345L),
+            jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.0f, offsetJitter = 0.0f)
+        )
+        val ir0 = renderer.generateGeometry(matrix, designScale0, geometry)
+        val innerNodes0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
+        val outerNodes0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[0] }
+
+        assertTrue(innerNodes0.isNotEmpty())
+        for (node in innerNodes0) {
+            val tempRand = (node.width / moduleSize).toFloat()
+            assertEquals("scaleJitter = 0 must produce exact 1.05 scale", 1.05f, tempRand, 0.001f)
+        }
+        for (node in outerNodes0) {
+            val outerScale = (node.width / moduleSize).toFloat()
+            assertEquals("scaleJitter = 0 must produce exact 1.20 outer scale (1.05 + 0.15)", 1.20f, outerScale, 0.001f)
+        }
+
+        // 2. scaleJitter = 0.1 -> tempRand in [0.95, 1.15]
+        val designScale01 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 12345L),
+            jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.1f, offsetJitter = 0.0f)
+        )
+        val ir01 = renderer.generateGeometry(matrix, designScale01, geometry)
+        val innerNodes01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
+        for (node in innerNodes01) {
+            val tempRand = (node.width / moduleSize).toFloat()
+            assertTrue("tempRand ($tempRand) must be >= 0.949 for scaleJitter 0.1", tempRand >= 0.949f)
+            assertTrue("tempRand ($tempRand) must be <= 1.151 for scaleJitter 0.1", tempRand <= 1.151f)
+        }
+
+        // 3. scaleJitter = 0.5 -> tempRand in [0.55, 1.55]
+        val designScale05 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 12345L),
+            jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.5f, offsetJitter = 0.0f)
+        )
+        val ir05 = renderer.generateGeometry(matrix, designScale05, geometry)
+        val innerNodes05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).chunked(2).map { it[1] }
+        for (node in innerNodes05) {
+            val tempRand = (node.width / moduleSize).toFloat()
+            assertTrue("tempRand ($tempRand) must be >= 0.549 for scaleJitter 0.5", tempRand >= 0.549f)
+            assertTrue("tempRand ($tempRand) must be <= 1.551 for scaleJitter 0.5", tempRand <= 1.551f)
+        }
+
+        // 4. offsetJitter bounds: abs(dx) <= offsetJitter * moduleSize, abs(dy) <= offsetJitter * moduleSize
+        val offsetJitterValue = 0.3f
+        val designOffset03 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 12345L),
+            jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.0f, offsetJitter = offsetJitterValue)
+        )
+        val irOffset03 = renderer.generateGeometry(matrix, designOffset03, geometry)
+        val nodesOffset0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
+        val nodesOffset03 = irOffset03.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
+
+        val maxAllowedDisplacement = (offsetJitterValue * moduleSize).toFloat() + 0.001f
+        var nonZeroDisplacementCount = 0
+
+        for (i in nodesOffset0.indices) {
+            val dx = kotlin.math.abs(nodesOffset03[i].x - nodesOffset0[i].x)
+            val dy = kotlin.math.abs(nodesOffset03[i].y - nodesOffset0[i].y)
+
+            assertTrue("dx ($dx) must be <= offsetJitter * moduleSize ($maxAllowedDisplacement)", dx <= maxAllowedDisplacement)
+            assertTrue("dy ($dy) must be <= offsetJitter * moduleSize ($maxAllowedDisplacement)", dy <= maxAllowedDisplacement)
+
+            if (dx > 0.0001f || dy > 0.0001f) {
+                nonZeroDisplacementCount++
+            }
+        }
+        assertTrue("At least some nodes must exhibit non-zero displacement under offset jitter", nonZeroDisplacementCount > 0)
+    }
 }

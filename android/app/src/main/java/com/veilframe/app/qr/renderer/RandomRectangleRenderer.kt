@@ -76,9 +76,13 @@ class RandomRectangleRenderer : QrRenderer {
 
             if (matrix.isDark(col, row)) {
                 val scaleJitter = design.jitterStyle.scaleJitter.toDouble()
-                val minScale = (1.05 - scaleJitter).coerceAtLeast(0.1)
-                val maxScale = (1.05 + scaleJitter).coerceAtLeast(minScale + 0.01)
-                val tempRand = rng.nextDouble(minScale, maxScale)
+                val tempRand = if (scaleJitter <= 0.0001) {
+                    1.05
+                } else {
+                    val minScale = (1.05 - scaleJitter).coerceAtLeast(0.1)
+                    val maxScale = (1.05 + scaleJitter).coerceAtLeast(minScale + 0.001)
+                    rng.nextDouble(minScale, maxScale)
+                }
 
                 val colorScale = (design.jitterStyle.colorJitter / 0.1).coerceIn(0.0, 5.0)
                 val randNum = rng.nextDouble(50.0, 50.0 + 180.0 * colorScale)
