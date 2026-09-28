@@ -76,11 +76,35 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
         // Style-Specific Customization Parameters
         val d25Depth: Float = 1.0f,
+        val d25PositionDepth: Float = 1.0f,
+        val d25Angle: Float = 45f,
+        val d25LeftColor: Int = 0x33000000,
+        val d25RightColor: Int = 0x99000000.toInt(),
         val lineDirection: LineDirection = LineDirection.X,
         val lineThickness: Float = 0.5f,
+        val lineVariant: LineVariant = LineVariant.EF,
+        val lineLengthFraction: Float = 1.0f,
+        val lineAccentRings: Boolean = false,
+        val lineCircuitBridges: Boolean = false,
         val dsjLineSize: Float = 0.7f,
         val dsjXSize: Float = 0.7f,
+        val dsjHorizontalColor: Int = 0xFFF6B506.toInt(),
+        val dsjVerticalColor: Int = 0xFFE02020.toInt(),
+        val dsjXColor: Int = 0xFF0B2D97.toInt(),
         val randomRectSeed: Long = 42L,
+        val randomJitterScale: Float = 0.25f,
+        val randomJitterOffset: Float = 0.15f,
+        val randomJitterColor: Float = 0.1f,
+        val bubbleAmbient: Boolean = true,
+        val bubbleDensity: Float = 0.15f,
+        val veilFunctionType: VeilFunctionType = VeilFunctionType.FADE,
+        val veilFunctionDataStyle: VeilFunctionDataStyle = VeilFunctionDataStyle.ROUND,
+        val paramFunctionType: FunctionType = FunctionType.WAVE,
+        val connectedLineThickness: Float = 0.2f,
+        val gradientStart: Int? = null,
+        val gradientEnd: Int? = null,
+        val gradientType: GradientType = GradientType.NONE,
+        val directionalQuietZone: DirectionalInsets? = null,
         val quietZoneChoice: Int? = null
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
@@ -90,6 +114,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
 
     private var generateJob: Job? = null
+    private var exportJob: Job? = null
     private val renderGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     init {
@@ -219,6 +244,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         renderGeneration.incrementAndGet()
         generateJob?.cancel()
         generateJob = null
+        exportJob?.cancel()
+        exportJob = null
         val s = _state.value
         val bmp = s.bitmap
         if (bmp != null && !bmp.isRecycled) {
@@ -333,7 +360,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         terminateSession()
     }
 
-    private fun buildDesignFromState(s: UiState, isPreview: Boolean = true): QrDesign {
+    internal fun buildDesignFromState(s: UiState, isPreview: Boolean = true): QrDesign {
         val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
 
         val moduleFill = when {
@@ -365,7 +392,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ),
             palette = PaletteStyle(
                 foreground = s.foreground,
-                background = s.background
+                background = s.background,
+                gradientStart = s.gradientStart,
+                gradientEnd = s.gradientEnd,
+                gradientType = s.gradientType
             ),
             background = if (s.backgroundImage != null) {
                 BackgroundStyle.Image(s.backgroundImage, s.backgroundImageAlpha)
@@ -378,17 +408,18 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             effects = EffectStyle(
                 is25D = def.is25D,
                 topColor = s.foreground,
-                leftColor = 0x33000000,
-                rightColor = 0x99000000.toInt(),
+                leftColor = s.d25LeftColor,
+                rightColor = s.d25RightColor,
                 dataHeightRatio = s.d25Depth,
-                positionHeightRatio = s.d25Depth
+                positionHeightRatio = s.d25PositionDepth
             ),
             depthStyle = DepthStyle(
                 depth = s.d25Depth,
-                positionDepth = s.d25Depth,
+                positionDepth = s.d25PositionDepth,
+                angleDegrees = s.d25Angle,
                 topColor = s.foreground,
-                leftColor = 0x33000000,
-                rightColor = 0x99000000.toInt()
+                leftColor = s.d25LeftColor,
+                rightColor = s.d25RightColor
             ),
             timingStyle = TimingStyle(
                 shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED
@@ -399,15 +430,46 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             lineStyle = LineStyle(
                 direction = s.lineDirection,
                 thicknessFraction = s.lineThickness,
-                color = s.foreground
+                lengthFraction = s.lineLengthFraction,
+                color = s.foreground,
+                variant = s.lineVariant,
+                accentRingsEnabled = s.lineAccentRings || s.lineVariant == LineVariant.CIRCUIT,
+                circuitBridgesEnabled = s.lineCircuitBridges || s.lineVariant == LineVariant.CIRCUIT
             ),
             veilDsjStyle = VeilDsjStyle(
                 lineSize = s.dsjLineSize,
-                xSize = s.dsjXSize
+                xSize = s.dsjXSize,
+                horizontalLineColor = s.dsjHorizontalColor,
+                verticalLineColor = s.dsjVerticalColor,
+                xColor = s.dsjXColor
             ),
             jitterStyle = RandomJitterStyle(
+                seed = s.randomRectSeed,
+                scaleJitter = s.randomJitterScale,
+                offsetJitter = s.randomJitterOffset,
+                colorJitter = s.randomJitterColor
+            ),
+            clusterStyle = BubbleClusterStyle(
+                seed = s.resampleSeed,
+                ambientBubbles = s.bubbleAmbient,
+                ambientDensity = s.bubbleDensity
+            ),
+            veilFunctionStyle = VeilFunctionStyle(
+                functionType = s.veilFunctionType,
+                dataStyle = s.veilFunctionDataStyle,
+                dataColor = s.foreground,
+                circleColor = s.foreground
+            ),
+            functionStyle = FunctionStyle(
+                type = s.paramFunctionType,
                 seed = s.randomRectSeed
             ),
+            compositeStyle = CompositePrimitiveStyle(
+                primitives = listOf(ModulePrimitive.CROSS, ModulePrimitive.X),
+                lineThickness = s.connectedLineThickness,
+                crossScale = 1.0f
+            ),
+            directionalQuietZone = s.directionalQuietZone,
             quietZoneModules = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else 4,
             explicitQuietZone = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else null,
             outputSize = effectiveSize,
@@ -498,6 +560,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
+    fun updateD25PositionDepth(posDepth: Float) {
+        _state.value = _state.value.copy(d25PositionDepth = posDepth.coerceIn(0.2f, 2.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateD25Angle(angle: Float) {
+        _state.value = _state.value.copy(d25Angle = angle.coerceIn(0f, 90f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateD25Colors(leftColor: Int, rightColor: Int) {
+        _state.value = _state.value.copy(d25LeftColor = leftColor, d25RightColor = rightColor)
+        regenerate(debounceMs = 0)
+    }
+
     fun updateLineDirection(direction: LineDirection) {
         _state.value = _state.value.copy(lineDirection = direction)
         regenerate(debounceMs = 0)
@@ -508,9 +585,46 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
-    fun updateDsjSizes(lineSize: Float, xSize: Float) {
-        _state.value = _state.value.copy(dsjLineSize = lineSize, dsjXSize = xSize)
+    fun updateLineVariant(variant: LineVariant) {
+        _state.value = _state.value.copy(lineVariant = variant)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLineLengthFraction(fraction: Float) {
+        _state.value = _state.value.copy(lineLengthFraction = fraction.coerceIn(0.1f, 1.0f))
         regenerate(debounceMs = 120)
+    }
+
+    fun updateLineTopology(accentRings: Boolean, circuitBridges: Boolean) {
+        _state.value = _state.value.copy(lineAccentRings = accentRings, lineCircuitBridges = circuitBridges)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateDsjSizes(lineSize: Float, xSize: Float) {
+        _state.value = _state.value.copy(
+            dsjLineSize = lineSize.coerceIn(0.1f, 1.0f),
+            dsjXSize = xSize.coerceIn(0.1f, 1.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateDsjLineSize(lineSize: Float) {
+        _state.value = _state.value.copy(dsjLineSize = lineSize.coerceIn(0.1f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateDsjXSize(xSize: Float) {
+        _state.value = _state.value.copy(dsjXSize = xSize.coerceIn(0.1f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateDsjColors(hColor: Int, vColor: Int, xColor: Int) {
+        _state.value = _state.value.copy(
+            dsjHorizontalColor = hColor,
+            dsjVerticalColor = vColor,
+            dsjXColor = xColor
+        )
+        regenerate(debounceMs = 0)
     }
 
     fun randomizeRandomRectSeed() {
@@ -519,12 +633,54 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 0)
     }
 
+    fun updateRandomJitter(scale: Float, offset: Float, color: Float = 0.1f) {
+        _state.value = _state.value.copy(
+            randomJitterScale = scale.coerceIn(0f, 1f),
+            randomJitterOffset = offset.coerceIn(0f, 1f),
+            randomJitterColor = color.coerceIn(0f, 1f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateBubbleCluster(ambient: Boolean, density: Float) {
+        _state.value = _state.value.copy(
+            bubbleAmbient = ambient,
+            bubbleDensity = density.coerceIn(0f, 1f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateVeilFunction(type: VeilFunctionType, dataStyle: VeilFunctionDataStyle) {
+        _state.value = _state.value.copy(veilFunctionType = type, veilFunctionDataStyle = dataStyle)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateParamFunction(type: FunctionType) {
+        _state.value = _state.value.copy(paramFunctionType = type)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateConnectedLineThickness(thickness: Float) {
+        _state.value = _state.value.copy(connectedLineThickness = thickness.coerceIn(0.05f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateGradient(start: Int?, end: Int?, type: GradientType = GradientType.LINEAR) {
+        _state.value = _state.value.copy(gradientStart = start, gradientEnd = end, gradientType = type)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateDirectionalQuietZone(insets: DirectionalInsets?) {
+        _state.value = _state.value.copy(directionalQuietZone = insets)
+        regenerate(debounceMs = 0)
+    }
+
     fun updateQuietZone(modules: Int?) {
         _state.value = _state.value.copy(quietZoneChoice = modules)
         regenerate(debounceMs = 0)
     }
 
-    // --- Export Actions ---
+    // --- Export Actions (Serialized with single-flight Job execution) ---
 
     fun saveToGallery() {
         val content = _state.value.content.trim()
@@ -535,30 +691,33 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign)
-            }
-            if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
-                val (uri, report) = QrExporter.saveToGalleryValidated(
-                    getApplication(),
-                    renderResult.bitmap,
-                    content,
-                    exportDesign,
-                    renderResult.matrix
-                )
-                _state.value = _state.value.copy(
-                    saveResult = if (uri != null) "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                    scanabilityReport = report,
-                    isExporting = false
-                )
-            } else {
-                _state.value = _state.value.copy(
-                    saveResult = "Save failed: bitmap generation unsuccessful",
-                    isExporting = false
-                )
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val renderResult = withContext(Dispatchers.Default) {
+                    QrGenerator.generateWithResult(content, exportDesign)
+                }
+                if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
+                    val (uri, report) = QrExporter.saveToGalleryValidated(
+                        getApplication(),
+                        renderResult.bitmap,
+                        content,
+                        exportDesign,
+                        renderResult.matrix
+                    )
+                    _state.value = _state.value.copy(
+                        saveResult = if (uri != null) "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        saveResult = "Save failed: bitmap generation unsuccessful"
+                    )
+                }
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
         }
     }
@@ -572,30 +731,33 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val matrix = QrGenerator.generateMatrix(content, exportDesign)
-            val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign)
-            }
-            val exportBmp = if (renderResult is QrRenderResult.Success) renderResult.bitmap else null
-            if (exportBmp != null) {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(exportBmp, exportDesign, matrix, content)
-                if (!report.isScanReady && !report.validationSkipped) {
-                    _state.value = _state.value.copy(
-                        saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                        scanabilityReport = report,
-                        isExporting = false
-                    )
-                    return@launch
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val matrix = QrGenerator.generateMatrix(content, exportDesign)
+                val renderResult = withContext(Dispatchers.Default) {
+                    QrGenerator.generateWithResult(content, exportDesign)
                 }
+                val exportBmp = if (renderResult is QrRenderResult.Success) renderResult.bitmap else null
+                if (exportBmp != null) {
+                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(exportBmp, exportDesign, matrix, content)
+                    if (!report.isScanReady && !report.validationSkipped) {
+                        _state.value = _state.value.copy(
+                            saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                            scanabilityReport = report
+                        )
+                        return@launch
+                    }
+                }
+                val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
+                _state.value = _state.value.copy(
+                    saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed"
+                )
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
-            val uri = QrExporter.saveSvg(getApplication(), matrix, exportDesign)
-            _state.value = _state.value.copy(
-                saveResult = if (uri != null) "Vector SVG saved to Downloads" else "SVG export failed",
-                isExporting = false
-            )
         }
     }
 
@@ -608,51 +770,53 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val matrix = QrGenerator.generateMatrix(content, exportDesign)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
-                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
-            }
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val matrix = QrGenerator.generateMatrix(content, exportDesign)
+                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                    _state.value.animatedFrames
+                } else {
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+                }
 
-            if (frames.isEmpty()) {
+                if (frames.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        saveResult = "GIF export requires a photo, background image, or animated frames"
+                    )
+                    return@launch
+                }
+
+                val rendered = withContext(Dispatchers.Default) {
+                    com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
+                        matrix = matrix,
+                        baseDesign = exportDesign,
+                        sourceFrames = frames,
+                        outputSize = exportDesign.outputSize
+                    )
+                }
+
+                if (rendered.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        saveResult = "GIF rendering produced no frames"
+                    )
+                    return@launch
+                }
+
+                val gifBytes = withContext(Dispatchers.Default) {
+                    com.veilframe.app.qr.AnimatedQrGenerator.encodeToGif(rendered)
+                }
+
+                val uri = QrExporter.saveGif(getApplication(), gifBytes)
                 _state.value = _state.value.copy(
-                    saveResult = "GIF export requires a photo, background image, or animated frames",
-                    isExporting = false
+                    saveResult = if (uri != null) "Animated GIF saved to Gallery (${rendered.size} frames)" else "GIF export failed"
                 )
-                return@launch
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
-
-            val rendered = withContext(Dispatchers.Default) {
-                com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
-                    matrix = matrix,
-                    baseDesign = exportDesign,
-                    sourceFrames = frames,
-                    outputSize = exportDesign.outputSize
-                )
-            }
-
-            if (rendered.isEmpty()) {
-                _state.value = _state.value.copy(
-                    saveResult = "GIF rendering produced no frames",
-                    isExporting = false
-                )
-                return@launch
-            }
-
-            val gifBytes = withContext(Dispatchers.Default) {
-                com.veilframe.app.qr.AnimatedQrGenerator.encodeToGif(rendered)
-            }
-
-            val uri = QrExporter.saveGif(getApplication(), gifBytes)
-            _state.value = _state.value.copy(
-                saveResult = if (uri != null) "Animated GIF saved to Gallery (${rendered.size} frames)" else "GIF export failed",
-                isExporting = false
-            )
         }
     }
 
@@ -665,64 +829,65 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val matrix = QrGenerator.generateMatrix(content, exportDesign)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
-                if (baseBmp != null) {
-                    // Create loop sequence of 15 frames for single image
-                    (0 until 15).map { QrFrame(baseBmp, 66) }
-                } else emptyList()
-            }
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val matrix = QrGenerator.generateMatrix(content, exportDesign)
+                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                    _state.value.animatedFrames
+                } else {
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    if (baseBmp != null) {
+                        // Create loop sequence of 15 frames for single image
+                        (0 until 15).map { QrFrame(baseBmp, 66) }
+                    } else emptyList()
+                }
 
-            if (frames.isEmpty()) {
-                _state.value = _state.value.copy(
-                    saveResult = "Video export requires a photo, background image, or video frames",
-                    isExporting = false
-                )
-                return@launch
-            }
+                if (frames.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Video export requires a photo, background image, or video frames"
+                    )
+                    return@launch
+                }
 
-            val rendered = withContext(Dispatchers.Default) {
-                com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
-                    matrix = matrix,
-                    baseDesign = exportDesign,
-                    sourceFrames = frames,
-                    outputSize = exportDesign.outputSize
-                )
-            }
+                val rendered = withContext(Dispatchers.Default) {
+                    com.veilframe.app.qr.AnimatedQrGenerator.renderFrames(
+                        matrix = matrix,
+                        baseDesign = exportDesign,
+                        sourceFrames = frames,
+                        outputSize = exportDesign.outputSize
+                    )
+                }
 
-            if (rendered.isEmpty()) {
-                _state.value = _state.value.copy(
-                    saveResult = "Video rendering produced no frames",
-                    isExporting = false
-                )
-                return@launch
-            }
+                if (rendered.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Video rendering produced no frames"
+                    )
+                    return@launch
+                }
 
-            val context = getApplication<Application>()
-            val tempFile = java.io.File(context.cacheDir, "temp_qr_export_${System.currentTimeMillis()}.mp4")
-            val success = withContext(Dispatchers.IO) {
-                com.veilframe.app.qr.AnimatedQrGenerator.encodeToVideo(rendered, tempFile, fps = 15)
-            }
+                val context = getApplication<Application>()
+                val tempFile = java.io.File(context.cacheDir, "temp_qr_export_${System.currentTimeMillis()}.mp4")
+                val success = withContext(Dispatchers.IO) {
+                    com.veilframe.app.qr.AnimatedQrGenerator.encodeToVideo(rendered, tempFile, fps = 15)
+                }
 
-            if (success && tempFile.exists()) {
-                val uri = QrExporter.saveVideo(context, tempFile)
-                tempFile.delete()
-                _state.value = _state.value.copy(
-                    saveResult = if (uri != null) "MP4 Video saved to Movies" else "Video export write failed",
-                    isExporting = false
-                )
-            } else {
-                tempFile.delete()
-                _state.value = _state.value.copy(
-                    saveResult = "Video encoding failed",
-                    isExporting = false
-                )
+                if (success && tempFile.exists()) {
+                    val uri = QrExporter.saveVideo(context, tempFile)
+                    tempFile.delete()
+                    _state.value = _state.value.copy(
+                        saveResult = if (uri != null) "MP4 Video saved to Movies" else "Video export write failed"
+                    )
+                } else {
+                    tempFile.delete()
+                    _state.value = _state.value.copy(
+                        saveResult = "Video encoding failed"
+                    )
+                }
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
         }
     }
@@ -736,30 +901,33 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val matrix = QrGenerator.generateMatrix(content, exportDesign)
-            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                _state.value.animatedFrames
-            } else {
-                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
-                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
-            }
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val matrix = QrGenerator.generateMatrix(content, exportDesign)
+                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                    _state.value.animatedFrames
+                } else {
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
+                }
 
-            if (frames.isEmpty()) {
+                if (frames.isEmpty()) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Animated SVG requires frames"
+                    )
+                    return@launch
+                }
+
+                val uri = QrExporter.saveAnimatedSvg(getApplication(), matrix, exportDesign, frames)
                 _state.value = _state.value.copy(
-                    saveResult = "Animated SVG requires frames",
-                    isExporting = false
+                    saveResult = if (uri != null) "Animated SVG saved to Downloads" else "Animated SVG export failed"
                 )
-                return@launch
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
-
-            val uri = QrExporter.saveAnimatedSvg(getApplication(), matrix, exportDesign, frames)
-            _state.value = _state.value.copy(
-                saveResult = if (uri != null) "Animated SVG saved to Downloads" else "Animated SVG export failed",
-                isExporting = false
-            )
         }
     }
 
@@ -772,20 +940,24 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        viewModelScope.launch {
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
             _state.value = _state.value.copy(isExporting = true)
-            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-            val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign)
-            }
-            val bmp = if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
-                renderResult.bitmap
-            } else {
-                _state.value.bitmap
-            }
-            _state.value = _state.value.copy(isExporting = false)
-            if (bmp != null) {
-                QrExporter.share(getApplication(), bmp)
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val renderResult = withContext(Dispatchers.Default) {
+                    QrGenerator.generateWithResult(content, exportDesign)
+                }
+                val bmp = if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
+                    renderResult.bitmap
+                } else {
+                    _state.value.bitmap
+                }
+                if (bmp != null) {
+                    QrExporter.share(getApplication(), bmp)
+                }
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
             }
         }
     }

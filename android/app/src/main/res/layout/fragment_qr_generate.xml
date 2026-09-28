@@ -959,7 +959,7 @@
                         android:id="@+id/qr_d25_depth_label"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="3D Depth: 1.00x"
+                        android:text="Body 3D Depth: 1.00x"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.slider.Slider
@@ -970,9 +970,43 @@
                         android:valueTo="2.0"
                         android:stepSize="0.1"
                         android:value="1.0" />
+
+                    <TextView
+                        android:id="@+id/qr_d25_pos_depth_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Finder 3D Depth: 1.00x"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_d25_pos_depth_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.2"
+                        android:valueTo="2.0"
+                        android:stepSize="0.1"
+                        android:value="1.0" />
+
+                    <TextView
+                        android:id="@+id/qr_d25_angle_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Projection Angle: 45°"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_d25_angle_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="15.0"
+                        android:valueTo="75.0"
+                        android:stepSize="5.0"
+                        android:value="45.0" />
                 </LinearLayout>
 
-                <!-- LINE Direction and Thickness Setting -->
+                <!-- LINE Direction, Variant, and Thickness Setting -->
                 <LinearLayout
                     android:id="@+id/container_style_line"
                     android:layout_width="match_parent"
@@ -1019,6 +1053,37 @@
                     </com.google.android.material.chip.ChipGroup>
 
                     <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Line Pattern Topology"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/qr_line_variant_group"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_variant_standard"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="Standard" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_line_variant_circuit"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Circuit Bridge" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <TextView
                         android:id="@+id/qr_line_thickness_label"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -1036,7 +1101,7 @@
                         android:value="0.5" />
                 </LinearLayout>
 
-                <!-- DSJ Line Size Setting -->
+                <!-- DSJ Line & X Cross Size Settings (Separated Independent Controls) -->
                 <LinearLayout
                     android:id="@+id/container_style_dsj"
                     android:layout_width="match_parent"
@@ -1049,7 +1114,7 @@
                         android:id="@+id/qr_dsj_line_label"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Cross Line Size: 0.70"
+                        android:text="Cross Arm Size: 0.70"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.slider.Slider
@@ -1060,9 +1125,26 @@
                         android:valueTo="1.0"
                         android:stepSize="0.05"
                         android:value="0.7" />
+
+                    <TextView
+                        android:id="@+id/qr_dsj_x_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Center X Size: 0.70"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_dsj_x_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.3"
+                        android:valueTo="1.0"
+                        android:stepSize="0.05"
+                        android:value="0.7" />
                 </LinearLayout>
 
-                <!-- RANDOM_RECTANGLE Pattern Seed Setting -->
+                <!-- RANDOM_RECTANGLE Pattern Seed & Jitter Settings -->
                 <LinearLayout
                     android:id="@+id/container_style_random_rect"
                     android:layout_width="match_parent"
@@ -1071,13 +1153,134 @@
                     android:visibility="gone"
                     android:paddingTop="8dp">
 
+                    <TextView
+                        android:id="@+id/qr_random_jitter_scale_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Jitter Scale: 0.25"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_random_jitter_scale_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="0.5"
+                        android:stepSize="0.05"
+                        android:value="0.25" />
+
+                    <TextView
+                        android:id="@+id/qr_random_jitter_offset_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Jitter Offset: 0.15"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_random_jitter_offset_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="0.3"
+                        android:stepSize="0.05"
+                        android:value="0.15" />
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_random_rect_seed_btn"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
                         app:icon="@drawable/ic_reset"
                         android:text="Randomize Noise Seed" />
+                </LinearLayout>
+
+                <!-- BUBBLE Cluster Settings -->
+                <LinearLayout
+                    android:id="@+id/container_style_bubble"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Ambient Bubbles"
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/qr_bubble_ambient_switch"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/qr_bubble_density_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Ambient Density: 15%"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_bubble_density_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.05"
+                        android:valueTo="0.40"
+                        android:stepSize="0.05"
+                        android:value="0.15" />
+                </LinearLayout>
+
+                <!-- FUNCTION Parametric Settings -->
+                <LinearLayout
+                    android:id="@+id/container_style_function"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Function Pattern"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/qr_function_type_group"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_func_fade"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="Radial Fade" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_func_circle"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Concentric Band" />
+                    </com.google.android.material.chip.ChipGroup>
                 </LinearLayout>
 
                 <!-- IMAGE Style Requirement Banner -->
@@ -1094,7 +1297,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Background Image Required"
+                        android:text="Source Photo Required"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
                         android:textColor="#D97706" />
 
@@ -1102,7 +1305,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Image Backdrop renders modules over a photo background."
+                        android:text="Image Backdrop renders data modules over a photo. Please select a source photo."
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -1113,7 +1316,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         app:icon="@drawable/ic_tab_image"
-                        android:text="Choose Background" />
+                        android:text="Choose Photo" />
                 </LinearLayout>
 
             </LinearLayout>

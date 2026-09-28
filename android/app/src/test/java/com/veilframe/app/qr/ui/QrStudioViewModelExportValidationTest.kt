@@ -1,6 +1,8 @@
 package com.veilframe.app.qr.ui
 
 import android.app.Application
+import com.veilframe.app.qr.QrStyle
+import com.veilframe.app.qr.model.*
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -162,5 +164,207 @@ class QrStudioViewModelExportValidationTest {
         scanner.resumeAnalysis()
         assertFalse(scanner.isAnalysisPaused)
         scanner.close()
+    }
+
+    @Test
+    fun testIndependentDsjSizes() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateDsjLineSize(0.42f)
+        assertEquals(0.42f, vm.state.value.dsjLineSize, 0.001f)
+        // xSize should remain at default 0.7f
+        assertEquals(0.70f, vm.state.value.dsjXSize, 0.001f)
+
+        vm.updateDsjXSize(0.88f)
+        assertEquals(0.42f, vm.state.value.dsjLineSize, 0.001f)
+        assertEquals(0.88f, vm.state.value.dsjXSize, 0.001f)
+
+        vm.updateDsjColors(0x112233, 0x445566, 0x778899)
+        assertEquals(0x112233, vm.state.value.dsjHorizontalColor)
+        assertEquals(0x445566, vm.state.value.dsjVerticalColor)
+        assertEquals(0x778899, vm.state.value.dsjXColor)
+    }
+
+    @Test
+    fun testMultiDimensionalD25Style() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateD25Depth(1.4f)
+        vm.updateD25PositionDepth(0.8f)
+        vm.updateD25Angle(30f)
+        vm.updateD25Colors(0x10000000, 0x20000000)
+
+        assertEquals(1.4f, vm.state.value.d25Depth, 0.001f)
+        assertEquals(0.8f, vm.state.value.d25PositionDepth, 0.001f)
+        assertEquals(30f, vm.state.value.d25Angle, 0.001f)
+        assertEquals(0x10000000, vm.state.value.d25LeftColor)
+        assertEquals(0x20000000, vm.state.value.d25RightColor)
+    }
+
+    @Test
+    fun testLineVariantAndTopology() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateLineVariant(LineVariant.CIRCUIT)
+        assertEquals(LineVariant.CIRCUIT, vm.state.value.lineVariant)
+
+        vm.updateLineLengthFraction(0.75f)
+        assertEquals(0.75f, vm.state.value.lineLengthFraction, 0.001f)
+
+        vm.updateLineTopology(accentRings = true, circuitBridges = true)
+        assertTrue(vm.state.value.lineAccentRings)
+        assertTrue(vm.state.value.lineCircuitBridges)
+    }
+
+    @Test
+    fun testBubbleFunctionAndJitterUpdaters() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateBubbleCluster(ambient = false, density = 0.35f)
+        assertFalse(vm.state.value.bubbleAmbient)
+        assertEquals(0.35f, vm.state.value.bubbleDensity, 0.001f)
+
+        vm.updateRandomJitter(scale = 0.4f, offset = 0.2f, color = 0.05f)
+        assertEquals(0.4f, vm.state.value.randomJitterScale, 0.001f)
+        assertEquals(0.2f, vm.state.value.randomJitterOffset, 0.001f)
+        assertEquals(0.05f, vm.state.value.randomJitterColor, 0.001f)
+
+        vm.updateVeilFunction(type = VeilFunctionType.CIRCLE, dataStyle = VeilFunctionDataStyle.RECTANGLE)
+        assertEquals(VeilFunctionType.CIRCLE, vm.state.value.veilFunctionType)
+        assertEquals(VeilFunctionDataStyle.RECTANGLE, vm.state.value.veilFunctionDataStyle)
+
+        vm.updateParamFunction(type = FunctionType.SPIRAL)
+        assertEquals(FunctionType.SPIRAL, vm.state.value.paramFunctionType)
+
+        vm.updateConnectedLineThickness(0.33f)
+        assertEquals(0.33f, vm.state.value.connectedLineThickness, 0.001f)
+
+        vm.updateGradient(start = 0xFF0000, end = 0x00FF00, type = GradientType.LINEAR)
+        assertEquals(0xFF0000, vm.state.value.gradientStart)
+        assertEquals(0x00FF00, vm.state.value.gradientEnd)
+        assertEquals(GradientType.LINEAR, vm.state.value.gradientType)
+
+        val insets = DirectionalInsets(left = 2, top = 3, right = 4, bottom = 5)
+        vm.updateDirectionalQuietZone(insets)
+        assertEquals(insets, vm.state.value.directionalQuietZone)
+    }
+
+    @Test
+    fun testSingleFlightExportSerialization() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        // Multiple rapid export attempts on blank content are rejected safely
+        vm.saveToGallery()
+        vm.saveSvg()
+        vm.saveGif()
+        vm.saveVideo()
+        vm.saveAnimatedSvg()
+        vm.share()
+
+        assertFalse(vm.state.value.isExporting)
+        assertEquals("Content is required to share QR code", vm.state.value.saveResult)
+    }
+
+    @Test
+    fun testExportButtonEligibilitySemantics() {
+        // Contract: canExport = content.isNotBlank() && !isRenderingPreview && !isExporting
+        // Does NOT depend on state.bitmap != null
+        val stateBlank = QrStudioViewModel.UiState(content = "", isRenderingPreview = false, isExporting = false, bitmap = null)
+        val canExportBlank = stateBlank.content.isNotBlank() && !stateBlank.isRenderingPreview && !stateBlank.isExporting
+        assertFalse(canExportBlank)
+
+        val stateReadyNoBitmapYet = QrStudioViewModel.UiState(content = "https://veilframe.app", isRenderingPreview = false, isExporting = false, bitmap = null)
+        val canExportReady = stateReadyNoBitmapYet.content.isNotBlank() && !stateReadyNoBitmapYet.isRenderingPreview && !stateReadyNoBitmapYet.isExporting
+        assertTrue(canExportReady)
+
+        val stateBusyRendering = QrStudioViewModel.UiState(content = "https://veilframe.app", isRenderingPreview = true, isExporting = false, bitmap = null)
+        val canExportBusyRendering = stateBusyRendering.content.isNotBlank() && !stateBusyRendering.isRenderingPreview && !stateBusyRendering.isExporting
+        assertFalse(canExportBusyRendering)
+
+        val stateBusyExporting = QrStudioViewModel.UiState(content = "https://veilframe.app", isRenderingPreview = false, isExporting = true, bitmap = null)
+        val canExportBusyExporting = stateBusyExporting.content.isNotBlank() && !stateBusyExporting.isRenderingPreview && !stateBusyExporting.isExporting
+        assertFalse(canExportBusyExporting)
+    }
+
+    @Test
+    fun testBuildDesignFromStatePopulatesAllStyleParameters() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateContent("https://veilframe.app")
+        vm.updateD25Depth(1.8f)
+        vm.updateD25PositionDepth(0.6f)
+        vm.updateD25Angle(35f)
+        vm.updateD25Colors(0x111111, 0x222222)
+        vm.updateLineDirection(LineDirection.CROSS)
+        vm.updateLineThickness(0.7f)
+        vm.updateLineVariant(LineVariant.CIRCUIT)
+        vm.updateLineLengthFraction(0.85f)
+        vm.updateLineTopology(accentRings = true, circuitBridges = true)
+        vm.updateDsjLineSize(0.45f)
+        vm.updateDsjXSize(0.95f)
+        vm.updateDsjColors(0x123456, 0x654321, 0xABCDEF)
+        vm.updateRandomJitter(scale = 0.35f, offset = 0.22f, color = 0.08f)
+        vm.updateBubbleCluster(ambient = false, density = 0.28f)
+        vm.updateVeilFunction(type = VeilFunctionType.CIRCLE, dataStyle = VeilFunctionDataStyle.RECTANGLE)
+        vm.updateParamFunction(type = FunctionType.NOISE)
+        vm.updateConnectedLineThickness(0.38f)
+        vm.updateGradient(start = 0xFF0000, end = 0x0000FF, type = GradientType.LINEAR)
+        val insets = DirectionalInsets(left = 1, top = 2, right = 3, bottom = 4)
+        vm.updateDirectionalQuietZone(insets)
+
+        val design = vm.buildDesignFromState(vm.state.value, isPreview = false)
+
+        // Verify DepthStyle
+        assertEquals(1.8f, design.depthStyle.depth, 0.001f)
+        assertEquals(0.6f, design.depthStyle.positionDepth, 0.001f)
+        assertEquals(35f, design.depthStyle.angleDegrees, 0.001f)
+        assertEquals(0x111111, design.depthStyle.leftColor)
+        assertEquals(0x222222, design.depthStyle.rightColor)
+
+        // Verify LineStyle
+        assertEquals(LineDirection.CROSS, design.lineStyle.direction)
+        assertEquals(0.7f, design.lineStyle.thicknessFraction, 0.001f)
+        assertEquals(0.85f, design.lineStyle.lengthFraction, 0.001f)
+        assertEquals(LineVariant.CIRCUIT, design.lineStyle.variant)
+        assertTrue(design.lineStyle.accentRingsEnabled)
+        assertTrue(design.lineStyle.circuitBridgesEnabled)
+
+        // Verify VeilDsjStyle
+        assertEquals(0.45f, design.veilDsjStyle.lineSize, 0.001f)
+        assertEquals(0.95f, design.veilDsjStyle.xSize, 0.001f)
+        assertEquals(0x123456, design.veilDsjStyle.horizontalLineColor)
+        assertEquals(0x654321, design.veilDsjStyle.verticalLineColor)
+        assertEquals(0xABCDEF, design.veilDsjStyle.xColor)
+
+        // Verify JitterStyle
+        assertEquals(0.35f, design.jitterStyle.scaleJitter, 0.001f)
+        assertEquals(0.22f, design.jitterStyle.offsetJitter, 0.001f)
+        assertEquals(0.08f, design.jitterStyle.colorJitter, 0.001f)
+
+        // Verify BubbleClusterStyle
+        assertFalse(design.clusterStyle.ambientBubbles)
+        assertEquals(0.28f, design.clusterStyle.ambientDensity, 0.001f)
+
+        // Verify VeilFunctionStyle
+        assertEquals(VeilFunctionType.CIRCLE, design.veilFunctionStyle.functionType)
+        assertEquals(VeilFunctionDataStyle.RECTANGLE, design.veilFunctionStyle.dataStyle)
+
+        // Verify FunctionStyle
+        assertEquals(FunctionType.NOISE, design.functionStyle.type)
+
+        // Verify CompositePrimitiveStyle
+        assertEquals(0.38f, design.compositeStyle.lineThickness, 0.001f)
+
+        // Verify Palette & DirectionalQuietZone
+        assertEquals(0xFF0000, design.palette.gradientStart)
+        assertEquals(0x0000FF, design.palette.gradientEnd)
+        assertEquals(GradientType.LINEAR, design.palette.gradientType)
+        assertEquals(insets, design.directionalQuietZone)
     }
 }

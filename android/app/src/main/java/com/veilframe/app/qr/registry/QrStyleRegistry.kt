@@ -17,6 +17,7 @@ data class QrStyleDefinition(
     val is25D: Boolean = false,
     val imageFillMode: Boolean = false,
     val requiresBackgroundImage: Boolean = false,
+    val requiresSourceImage: Boolean = false,
     val supportsGradients: Boolean = true,
     val rendererFactory: () -> QrRenderer
 )
@@ -70,7 +71,8 @@ object QrStyleRegistry {
             displayName = "Image Backdrop",
             defaultModuleShape = ModuleShape.SQUARE,
             defaultFinderStyle = FinderStyle.CLASSIC,
-            requiresBackgroundImage = true,
+            requiresBackgroundImage = false,
+            requiresSourceImage = true,
             rendererFactory = { ImageRenderer() }
         ),
         QrStyle.IMAGE_RESAMPLE to QrStyleDefinition(

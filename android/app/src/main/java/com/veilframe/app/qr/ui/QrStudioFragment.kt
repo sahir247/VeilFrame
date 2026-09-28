@@ -37,6 +37,7 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
@@ -47,7 +48,9 @@ import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
 import com.veilframe.app.qr.model.ImageScaleMode
 import com.veilframe.app.qr.model.LineDirection
+import com.veilframe.app.qr.model.LineVariant
 import com.veilframe.app.qr.model.QrPresetFormatter
+import com.veilframe.app.qr.model.VeilFunctionType
 import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.scanner.PayloadParser
 import com.veilframe.app.qr.scanner.QrAction
@@ -721,28 +724,65 @@ class QrGenerateTabFragment : Fragment() {
         val containerD25 = view.findViewById<LinearLayout>(R.id.container_style_d25)
         val d25DepthSlider = view.findViewById<Slider>(R.id.qr_d25_depth_slider)
         val d25DepthLabel = view.findViewById<TextView>(R.id.qr_d25_depth_label)
+        val d25PosDepthSlider = view.findViewById<Slider>(R.id.qr_d25_pos_depth_slider)
+        val d25PosDepthLabel = view.findViewById<TextView>(R.id.qr_d25_pos_depth_label)
+        val d25AngleSlider = view.findViewById<Slider>(R.id.qr_d25_angle_slider)
+        val d25AngleLabel = view.findViewById<TextView>(R.id.qr_d25_angle_label)
 
         val containerLine = view.findViewById<LinearLayout>(R.id.container_style_line)
         val lineDirGroup = view.findViewById<ChipGroup>(R.id.qr_line_direction_group)
+        val lineVariantGroup = view.findViewById<ChipGroup>(R.id.qr_line_variant_group)
         val lineThicknessSlider = view.findViewById<Slider>(R.id.qr_line_thickness_slider)
         val lineThicknessLabel = view.findViewById<TextView>(R.id.qr_line_thickness_label)
 
         val containerDsj = view.findViewById<LinearLayout>(R.id.container_style_dsj)
         val dsjLineSlider = view.findViewById<Slider>(R.id.qr_dsj_line_slider)
         val dsjLineLabel = view.findViewById<TextView>(R.id.qr_dsj_line_label)
+        val dsjXSlider = view.findViewById<Slider>(R.id.qr_dsj_x_slider)
+        val dsjXLabel = view.findViewById<TextView>(R.id.qr_dsj_x_label)
 
         val containerRandomRect = view.findViewById<LinearLayout>(R.id.container_style_random_rect)
+        val randomJitterScaleSlider = view.findViewById<Slider>(R.id.qr_random_jitter_scale_slider)
+        val randomJitterScaleLabel = view.findViewById<TextView>(R.id.qr_random_jitter_scale_label)
+        val randomJitterOffsetSlider = view.findViewById<Slider>(R.id.qr_random_jitter_offset_slider)
+        val randomJitterOffsetLabel = view.findViewById<TextView>(R.id.qr_random_jitter_offset_label)
         val randomRectSeedBtn = view.findViewById<MaterialButton>(R.id.qr_random_rect_seed_btn)
+
+        val containerBubble = view.findViewById<LinearLayout>(R.id.container_style_bubble)
+        val bubbleAmbientSwitch = view.findViewById<MaterialSwitch>(R.id.qr_bubble_ambient_switch)
+        val bubbleDensitySlider = view.findViewById<Slider>(R.id.qr_bubble_density_slider)
+        val bubbleDensityLabel = view.findViewById<TextView>(R.id.qr_bubble_density_label)
+
+        val containerFunction = view.findViewById<LinearLayout>(R.id.container_style_function)
+        val functionTypeGroup = view.findViewById<ChipGroup>(R.id.qr_function_type_group)
 
         val containerImageBackdropRequired = view.findViewById<LinearLayout>(R.id.container_image_backdrop_required)
         val chooseBgRequiredBtn = view.findViewById<MaterialButton>(R.id.qr_choose_bg_required_btn)
 
         d25DepthSlider?.value = vm.state.value.d25Depth.coerceIn(0.2f, 2.0f)
-        d25DepthLabel?.text = String.format(java.util.Locale.US, "3D Depth: %.2fx", vm.state.value.d25Depth)
+        d25DepthLabel?.text = String.format(java.util.Locale.US, "Body 3D Depth: %.2fx", vm.state.value.d25Depth)
         d25DepthSlider?.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 vm.updateD25Depth(value)
-                d25DepthLabel?.text = String.format(java.util.Locale.US, "3D Depth: %.2fx", value)
+                d25DepthLabel?.text = String.format(java.util.Locale.US, "Body 3D Depth: %.2fx", value)
+            }
+        }
+
+        d25PosDepthSlider?.value = vm.state.value.d25PositionDepth.coerceIn(0.2f, 2.0f)
+        d25PosDepthLabel?.text = String.format(java.util.Locale.US, "Finder 3D Depth: %.2fx", vm.state.value.d25PositionDepth)
+        d25PosDepthSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateD25PositionDepth(value)
+                d25PosDepthLabel?.text = String.format(java.util.Locale.US, "Finder 3D Depth: %.2fx", value)
+            }
+        }
+
+        d25AngleSlider?.value = vm.state.value.d25Angle.coerceIn(15.0f, 75.0f)
+        d25AngleLabel?.text = String.format(java.util.Locale.US, "Projection Angle: %.0f°", vm.state.value.d25Angle)
+        d25AngleSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateD25Angle(value)
+                d25AngleLabel?.text = String.format(java.util.Locale.US, "Projection Angle: %.0f°", value)
             }
         }
 
@@ -763,6 +803,15 @@ class QrGenerateTabFragment : Fragment() {
             }
             vm.updateLineDirection(dir)
         }
+
+        val variantChipId = if (vm.state.value.lineVariant == LineVariant.CIRCUIT) R.id.chip_line_variant_circuit else R.id.chip_line_variant_standard
+        lineVariantGroup?.check(variantChipId)
+        lineVariantGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
+            val id = checkedIds.firstOrNull() ?: R.id.chip_line_variant_standard
+            val variant = if (id == R.id.chip_line_variant_circuit) LineVariant.CIRCUIT else LineVariant.EF
+            vm.updateLineVariant(variant)
+        }
+
         lineThicknessSlider?.value = vm.state.value.lineThickness.coerceIn(0.1f, 1.0f)
         lineThicknessLabel?.text = String.format(java.util.Locale.US, "Line Thickness: %.2f", vm.state.value.lineThickness)
         lineThicknessSlider?.addOnChangeListener { _, value, fromUser ->
@@ -773,11 +822,38 @@ class QrGenerateTabFragment : Fragment() {
         }
 
         dsjLineSlider?.value = vm.state.value.dsjLineSize.coerceIn(0.3f, 1.0f)
-        dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Line Size: %.2f", vm.state.value.dsjLineSize)
+        dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Arm Size: %.2f", vm.state.value.dsjLineSize)
         dsjLineSlider?.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
-                vm.updateDsjSizes(value, value)
-                dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Line Size: %.2f", value)
+                vm.updateDsjLineSize(value)
+                dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Arm Size: %.2f", value)
+            }
+        }
+
+        dsjXSlider?.value = vm.state.value.dsjXSize.coerceIn(0.3f, 1.0f)
+        dsjXLabel?.text = String.format(java.util.Locale.US, "Center X Size: %.2f", vm.state.value.dsjXSize)
+        dsjXSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateDsjXSize(value)
+                dsjXLabel?.text = String.format(java.util.Locale.US, "Center X Size: %.2f", value)
+            }
+        }
+
+        randomJitterScaleSlider?.value = vm.state.value.randomJitterScale.coerceIn(0.0f, 0.5f)
+        randomJitterScaleLabel?.text = String.format(java.util.Locale.US, "Jitter Scale: %.2f", vm.state.value.randomJitterScale)
+        randomJitterScaleSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateRandomJitter(scale = value, offset = vm.state.value.randomJitterOffset)
+                randomJitterScaleLabel?.text = String.format(java.util.Locale.US, "Jitter Scale: %.2f", value)
+            }
+        }
+
+        randomJitterOffsetSlider?.value = vm.state.value.randomJitterOffset.coerceIn(0.0f, 0.3f)
+        randomJitterOffsetLabel?.text = String.format(java.util.Locale.US, "Jitter Offset: %.2f", vm.state.value.randomJitterOffset)
+        randomJitterOffsetSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateRandomJitter(scale = vm.state.value.randomJitterScale, offset = value)
+                randomJitterOffsetLabel?.text = String.format(java.util.Locale.US, "Jitter Offset: %.2f", value)
             }
         }
 
@@ -786,8 +862,29 @@ class QrGenerateTabFragment : Fragment() {
             Toast.makeText(requireContext(), "Random pattern seed updated", Toast.LENGTH_SHORT).show()
         }
 
+        bubbleAmbientSwitch?.isChecked = vm.state.value.bubbleAmbient
+        bubbleAmbientSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateBubbleCluster(ambient = isChecked, density = vm.state.value.bubbleDensity)
+        }
+        bubbleDensitySlider?.value = vm.state.value.bubbleDensity.coerceIn(0.05f, 0.40f)
+        bubbleDensityLabel?.text = String.format(java.util.Locale.US, "Ambient Density: %d%%", (vm.state.value.bubbleDensity * 100).toInt())
+        bubbleDensitySlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateBubbleCluster(ambient = vm.state.value.bubbleAmbient, density = value)
+                bubbleDensityLabel?.text = String.format(java.util.Locale.US, "Ambient Density: %d%%", (value * 100).toInt())
+            }
+        }
+
+        val funcChipId = if (vm.state.value.veilFunctionType == VeilFunctionType.CIRCLE) R.id.chip_func_circle else R.id.chip_func_fade
+        functionTypeGroup?.check(funcChipId)
+        functionTypeGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
+            val id = checkedIds.firstOrNull() ?: R.id.chip_func_fade
+            val fType = if (id == R.id.chip_func_circle) VeilFunctionType.CIRCLE else VeilFunctionType.FADE
+            vm.updateVeilFunction(type = fType, dataStyle = vm.state.value.veilFunctionDataStyle)
+        }
+
         chooseBgRequiredBtn?.setOnClickListener {
-            bgImagePickerLauncher.launch("image/*")
+            sourceImagePickerLauncher.launch("*/*")
         }
 
         // 2. Resolution Spinner
@@ -895,7 +992,13 @@ class QrGenerateTabFragment : Fragment() {
         saveAnimatedSvgBtn?.setOnClickListener { vm.saveAnimatedSvg() }
         shareBtn.setOnClickListener           { vm.share() }
         logoBtn.setOnClickListener            { logoPickerLauncher.launch("image/*") }
-        sourceImgBtn.setOnClickListener       { sourceImagePickerLauncher.launch("*/*") }
+        sourceImgBtn.setOnClickListener {
+            val usesSource = (vm.state.value.style == QrStyle.IMAGE || vm.state.value.style == QrStyle.IMAGE_FILL || vm.state.value.style == QrStyle.IMAGE_RESAMPLE)
+            if (!usesSource) {
+                Toast.makeText(requireContext(), "Photo source is used by Image, Image Fill, and Image Resample styles", Toast.LENGTH_SHORT).show()
+            }
+            sourceImagePickerLauncher.launch("*/*")
+        }
         bgImageBtn.setOnClickListener         { bgImagePickerLauncher.launch("image/*") }
 
         fgColorBtn.setOnClickListener { showColorPaletteDialog(isForeground = true) }
@@ -918,14 +1021,19 @@ class QrGenerateTabFragment : Fragment() {
 
                     previewProgress?.visibility = if (state.isRenderingPreview) View.VISIBLE else View.GONE
 
-                    // Export buttons enabled/disabled state driven by isExporting & content presence
-                    val canExport = !state.isExporting && state.bitmap != null
+                    // Export buttons enabled/disabled state: content must be non-blank and not actively busy
+                    val canExport = state.content.isNotBlank() && !state.isRenderingPreview && !state.isExporting
                     saveBtn.isEnabled = canExport
                     saveSvgBtn.isEnabled = canExport
                     saveGifBtn?.isEnabled = canExport
                     saveVideoBtn?.isEnabled = canExport
                     saveAnimatedSvgBtn?.isEnabled = canExport
                     shareBtn.isEnabled = canExport
+
+                    // Contextual photo button label and alpha
+                    val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
+                    sourceImgBtn.alpha = if (usesSourceImage) 1.0f else 0.55f
+                    sourceImgBtn.text = if (usesSourceImage) "Source Photo" else "Photo (Image Styles)"
 
                     // Clarify animated export helper label based on input
                     if (state.animatedFrames.isNotEmpty()) {
@@ -939,15 +1047,19 @@ class QrGenerateTabFragment : Fragment() {
                     val showLine = (state.style == QrStyle.LINE)
                     val showDsj = (state.style == QrStyle.DSJ)
                     val showRandomRect = (state.style == QrStyle.RANDOM_RECTANGLE)
-                    val showBgRequired = (state.style == QrStyle.IMAGE && state.backgroundImage == null)
+                    val showBubble = (state.style == QrStyle.BUBBLE)
+                    val showFunction = (state.style == QrStyle.FUNCTION)
+                    val showPhotoRequired = (state.style == QrStyle.IMAGE && state.sourceImage == null)
 
                     containerD25?.visibility = if (showD25) View.VISIBLE else View.GONE
                     containerLine?.visibility = if (showLine) View.VISIBLE else View.GONE
                     containerDsj?.visibility = if (showDsj) View.VISIBLE else View.GONE
                     containerRandomRect?.visibility = if (showRandomRect) View.VISIBLE else View.GONE
-                    containerImageBackdropRequired?.visibility = if (showBgRequired) View.VISIBLE else View.GONE
+                    containerBubble?.visibility = if (showBubble) View.VISIBLE else View.GONE
+                    containerFunction?.visibility = if (showFunction) View.VISIBLE else View.GONE
+                    containerImageBackdropRequired?.visibility = if (showPhotoRequired) View.VISIBLE else View.GONE
 
-                    val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBgRequired
+                    val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBubble || showFunction || showPhotoRequired
                     cardStyleSettings?.visibility = if (hasStyleControls) View.VISIBLE else View.GONE
 
                     // Dynamic Background Image Card
@@ -961,7 +1073,6 @@ class QrGenerateTabFragment : Fragment() {
                     }
 
                     // Dynamic Source Image Card: only show when source image exists AND active style uses it
-                    val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
                     if (state.sourceImage != null && usesSourceImage) {
                         cardSourceControls.visibility = View.VISIBLE
                         sourceContrastSlider.value = state.sourceImageContrast
