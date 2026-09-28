@@ -13,6 +13,7 @@ import com.veilframe.app.qr.validation.AutoRepairEngine
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.exporter.QrExporter
 import com.veilframe.app.qr.model.*
+import com.veilframe.app.qr.registry.QrStyleRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -93,7 +94,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val dsjXColor: Int = 0xFF0B2D97.toInt(),
         val randomRectSeed: Long = 42L,
         val randomJitterScale: Float = 0.25f,
-        val randomJitterOffset: Float = 0.15f,
+        val randomJitterOffset: Float = 0.0f,
         val randomJitterColor: Float = 0.1f,
         val bubbleAmbient: Boolean = true,
         val bubbleDensity: Float = 0.15f,
@@ -663,6 +664,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     fun updateConnectedLineThickness(thickness: Float) {
         _state.value = _state.value.copy(connectedLineThickness = thickness.coerceIn(0.05f, 1.0f))
         regenerate(debounceMs = 120)
+    }
+
+    fun isSourcePhotoRequired(style: QrStyle, sourceImage: Bitmap?): Boolean {
+        return QrStyleRegistry.get(style).requiresSourceImage && sourceImage == null
     }
 
     fun updateGradient(start: Int?, end: Int?, type: GradientType = GradientType.LINEAR) {

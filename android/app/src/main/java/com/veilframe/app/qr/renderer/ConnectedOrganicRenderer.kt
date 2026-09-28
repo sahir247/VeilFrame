@@ -45,7 +45,12 @@ class ConnectedOrganicRenderer : QrRenderer {
         )
 
         val fillPaint = context.obtainFill(fgColor)
-        val strokePaint = context.obtainStroke(fgColor, cs * 0.75f, Paint.Cap.ROUND)
+        val strokeFraction = if (design.compositeStyle.lineThickness > 0.05f) {
+            (design.compositeStyle.lineThickness * 3.0f).coerceIn(0.2f, 1.0f)
+        } else {
+            0.75f
+        }
+        val strokePaint = context.obtainStroke(fgColor, cs * strokeFraction, Paint.Cap.ROUND)
         val rng = Random(design.effects.seed)
 
         // 2. Build neighbor occupancy matrix for stylable data modules

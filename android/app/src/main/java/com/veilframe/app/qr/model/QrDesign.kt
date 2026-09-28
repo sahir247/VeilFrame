@@ -311,7 +311,7 @@ data class FunctionStyle(
 data class RandomJitterStyle(
     val seed: Long = 42L,
     val scaleJitter: Float = 0.25f,
-    val offsetJitter: Float = 0.15f,
+    val offsetJitter: Float = 0.0f,
     val colorJitter: Float = 0.1f
 )
 

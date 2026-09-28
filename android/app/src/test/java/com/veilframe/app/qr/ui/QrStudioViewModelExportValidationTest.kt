@@ -1,8 +1,12 @@
 package com.veilframe.app.qr.ui
 
 import android.app.Application
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
+import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
+import com.veilframe.app.qr.renderer.ConnectedOrganicRenderer
+import com.veilframe.app.qr.renderer.RandomRectangleRenderer
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -366,5 +370,97 @@ class QrStudioViewModelExportValidationTest {
         assertEquals(0x0000FF, design.palette.gradientEnd)
         assertEquals(GradientType.LINEAR, design.palette.gradientType)
         assertEquals(insets, design.directionalQuietZone)
+    }
+
+    @Test
+    fun testRandomRectangleRendererBehavioralScaleJitter() {
+        val matrix = QrMatrix("https://veilframe.app/jitter-test", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, quietZoneModules = 4)
+        val renderer = RandomRectangleRenderer()
+
+        val designScale01 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 99999L),
+            jitterStyle = RandomJitterStyle(seed = 99999L, scaleJitter = 0.1f, offsetJitter = 0.0f)
+        )
+        val designScale05 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 99999L),
+            jitterStyle = RandomJitterStyle(seed = 99999L, scaleJitter = 0.5f, offsetJitter = 0.0f)
+        )
+
+        val ir01 = renderer.generateGeometry(matrix, designScale01, geometry)
+        val ir05 = renderer.generateGeometry(matrix, designScale05, geometry)
+
+        val widths01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).map { it.width }
+        val widths05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).map { it.width }
+
+        assertNotEquals("Different scaleJitter values must produce different rect widths", widths01, widths05)
+
+        val svg01 = SvgExporter.generateSvg(matrix, designScale01)
+        val svg05 = SvgExporter.generateSvg(matrix, designScale05)
+        assertNotEquals("SVG output must differ when jitter scale is modified", svg01, svg05)
+    }
+
+    @Test
+    fun testRandomRectangleRendererBehavioralOffsetJitter() {
+        val matrix = QrMatrix("https://veilframe.app/offset-test", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, quietZoneModules = 4)
+        val renderer = RandomRectangleRenderer()
+
+        val designOffset0 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 88888L),
+            jitterStyle = RandomJitterStyle(seed = 88888L, scaleJitter = 0.25f, offsetJitter = 0.0f)
+        )
+        val designOffset03 = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            effects = EffectStyle(seed = 88888L),
+            jitterStyle = RandomJitterStyle(seed = 88888L, scaleJitter = 0.25f, offsetJitter = 0.3f)
+        )
+
+        val ir0 = renderer.generateGeometry(matrix, designOffset0, geometry)
+        val ir03 = renderer.generateGeometry(matrix, designOffset03, geometry)
+
+        val positions0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).map { Pair(it.x, it.y) }
+        val positions03 = ir03.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).map { Pair(it.x, it.y) }
+
+        assertNotEquals("Different offsetJitter values must produce different module positions", positions0, positions03)
+
+        val svg0 = SvgExporter.generateSvg(matrix, designOffset0)
+        val svg03 = SvgExporter.generateSvg(matrix, designOffset03)
+        assertNotEquals("SVG output must differ when jitter offset is modified", svg0, svg03)
+    }
+
+    @Test
+    fun testImageStyleSourcePhotoRequirementPredicates() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        // Case A: IMAGE style, no source photo, no background -> banner visible
+        assertTrue(
+            "Source photo required when sourceImage is null",
+            vm.isSourcePhotoRequired(QrStyle.IMAGE, null)
+        )
+
+        // Case C: IMAGE style, no source photo, even if background image is provided -> banner must STILL be visible!
+        assertTrue(
+            "Banner must remain visible when sourceImage is null regardless of background",
+            vm.isSourcePhotoRequired(QrStyle.IMAGE, null)
+        )
+
+        // Case D: Non-IMAGE style (e.g. BASIC, LINE, D25) with no source photo -> banner hidden
+        assertFalse(
+            "Basic style does not require source photo",
+            vm.isSourcePhotoRequired(QrStyle.BASIC, null)
+        )
+        assertFalse(
+            "Line style does not require source photo",
+            vm.isSourcePhotoRequired(QrStyle.LINE, null)
+        )
+        assertFalse(
+            "D25 style does not require source photo",
+            vm.isSourcePhotoRequired(QrStyle.D25, null)
+        )
     }
 }

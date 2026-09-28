@@ -1049,7 +1049,7 @@ class QrGenerateTabFragment : Fragment() {
                     val showRandomRect = (state.style == QrStyle.RANDOM_RECTANGLE)
                     val showBubble = (state.style == QrStyle.BUBBLE)
                     val showFunction = (state.style == QrStyle.FUNCTION)
-                    val showPhotoRequired = (state.style == QrStyle.IMAGE && state.sourceImage == null)
+                    val showPhotoRequired = vm.isSourcePhotoRequired(state.style, state.sourceImage)
 
                     containerD25?.visibility = if (showD25) View.VISIBLE else View.GONE
                     containerLine?.visibility = if (showLine) View.VISIBLE else View.GONE

@@ -55,7 +55,8 @@ class RandomRectangleRenderer : QrRenderer {
                 randArr.add(Pair(row, col))
             }
         }
-        val rng = Random(design.effects.seed)
+        val seed = if (design.jitterStyle.seed != 42L) design.jitterStyle.seed else design.effects.seed
+        val rng = Random(seed)
         randArr.shuffle(rng)
 
         val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
@@ -74,8 +75,13 @@ class RandomRectangleRenderer : QrRenderer {
             val col = item.second
 
             if (matrix.isDark(col, row)) {
-                val tempRand = rng.nextDouble(0.8, 1.3)
-                val randNum = rng.nextDouble(50.0, 230.0)
+                val scaleJitter = design.jitterStyle.scaleJitter.toDouble()
+                val minScale = (1.05 - scaleJitter).coerceAtLeast(0.1)
+                val maxScale = (1.05 + scaleJitter).coerceAtLeast(minScale + 0.01)
+                val tempRand = rng.nextDouble(minScale, maxScale)
+
+                val colorScale = (design.jitterStyle.colorJitter / 0.1).coerceIn(0.0, 5.0)
+                val randNum = rng.nextDouble(50.0, 50.0 + 180.0 * colorScale)
 
                 val rValue = clampRGBValue((redValue + randNum).toInt())
                 val gValue = clampRGBValue((greenValue - randNum / 2.0).toInt())
@@ -89,8 +95,19 @@ class RandomRectangleRenderer : QrRenderer {
                 val cellY = oy + row * cs
                 val offset = (tempRand - 1.0) / 2.0
 
-                val x = (cellX - offset * cs).toFloat()
-                val y = (cellY - offset * cs).toFloat()
+                val oxJitter = if (design.jitterStyle.offsetJitter > 0f) {
+                    rng.nextDouble(-1.0, 1.0) * design.jitterStyle.offsetJitter * cs
+                } else {
+                    0.0
+                }
+                val oyJitter = if (design.jitterStyle.offsetJitter > 0f) {
+                    rng.nextDouble(-1.0, 1.0) * design.jitterStyle.offsetJitter * cs
+                } else {
+                    0.0
+                }
+
+                val x = (cellX - offset * cs + oxJitter).toFloat()
+                val y = (cellY - offset * cs + oyJitter).toFloat()
 
                 // Layer 1: Outer shadow rect (width = tempRand + 0.15)
                 val w1 = ((tempRand + 0.15) * cs).toFloat()
