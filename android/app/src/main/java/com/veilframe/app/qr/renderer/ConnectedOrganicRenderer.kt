@@ -23,13 +23,14 @@ class ConnectedOrganicRenderer : QrRenderer {
 
     companion object {
         /**
-         * Converts [CompositePrimitiveStyle.lineThickness] continuously and monotonically
-         * into a stroke fraction relative to module size.
-         * Default lineThickness (0.25f) yields exactly 0.75f (canonical default).
+         * Converts [CompositePrimitiveStyle.lineThickness] into a stroke fraction relative to module size
+         * using a continuous, non-decreasing mapping with an upper saturation at 1.0.
+         * Clamps lower bound to 0.05f to maintain a continuous, non-decreasing contract without zero-point discontinuity.
+         * Canonical default lineThickness (0.25f) yields exactly 0.75f.
          */
         fun calculateStrokeFraction(lineThickness: Float): Float {
-            val rawThickness = if (lineThickness <= 0f) 0.25f else lineThickness
-            return (rawThickness * 3.0f).coerceIn(0.15f, 1.0f)
+            val thickness = lineThickness.coerceAtLeast(0.05f)
+            return (thickness * 3.0f).coerceAtMost(1.0f)
         }
     }
 

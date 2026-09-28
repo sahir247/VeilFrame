@@ -448,15 +448,15 @@ class QrStudioViewModelExportValidationTest {
             vm.isSourcePhotoRequired(stateNoPhotos.style, stateNoPhotos.sourceImage)
         )
 
-        // Case B: IMAGE style, no source photo, even when a background image is configured -> banner must STILL be visible!
-        // (Ensures presence of a canvas backdrop never masks a missing source photo needed for finder cutout masks)
+        // Case B: IMAGE style, no source photo, even when canvas background opacity is configured -> banner must STILL be visible!
+        // (Ensures presence of canvas backdrop configuration never masks a missing source photo needed for finder cutout masks)
         val stateBgConfigured = QrStudioViewModel.UiState(
             style = QrStyle.IMAGE,
             sourceImage = null,
             backgroundImageAlpha = 0.80f
         )
         assertTrue(
-            "Banner must remain visible when sourceImage is null even if background is configured",
+            "Banner must remain visible when sourceImage is null even if background canvas opacity is configured",
             vm.isSourcePhotoRequired(stateBgConfigured.style, stateBgConfigured.sourceImage)
         )
 
@@ -489,10 +489,11 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.0f, offsetJitter = 0.0f)
         )
         val ir0 = renderer.generateGeometry(matrix, designScale0, geometry)
-        // Decouple node identification: outer shadow rects have opacity < 0.95, inner main rects have opacity >= 0.95
+        // Decouple node identification: group by module coordinates (x, y) shared by concentric dual rects
         val darkRects0 = ir0.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
-        val innerNodes0 = darkRects0.filter { it.opacity >= 0.95f }
-        val outerNodes0 = darkRects0.filter { it.opacity in 0.80f..0.95f }
+        val darkGroups0 = darkRects0.groupBy { Pair(it.x, it.y) }
+        val innerNodes0 = darkGroups0.values.map { it.minByOrNull { node -> node.width }!! }
+        val outerNodes0 = darkGroups0.values.map { it.maxByOrNull { node -> node.width }!! }
 
         assertTrue(innerNodes0.isNotEmpty())
         for (node in innerNodes0) {
@@ -511,7 +512,8 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.1f, offsetJitter = 0.0f)
         )
         val ir01 = renderer.generateGeometry(matrix, designScale01, geometry)
-        val innerNodes01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).filter { it.opacity >= 0.95f }
+        val darkRects01 = ir01.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
+        val innerNodes01 = darkRects01.groupBy { Pair(it.x, it.y) }.values.map { it.minByOrNull { node -> node.width }!! }
         for (node in innerNodes01) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.949 for scaleJitter 0.1", tempRand >= 0.949f)
@@ -525,7 +527,8 @@ class QrStudioViewModelExportValidationTest {
             jitterStyle = RandomJitterStyle(seed = 12345L, scaleJitter = 0.5f, offsetJitter = 0.0f)
         )
         val ir05 = renderer.generateGeometry(matrix, designScale05, geometry)
-        val innerNodes05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1).filter { it.opacity >= 0.95f }
+        val darkRects05 = ir05.rootNodes.filterIsInstance<com.veilframe.app.qr.geometry.RectNode>().drop(1)
+        val innerNodes05 = darkRects05.groupBy { Pair(it.x, it.y) }.values.map { it.minByOrNull { node -> node.width }!! }
         for (node in innerNodes05) {
             val tempRand = (node.width / moduleSize).toFloat()
             assertTrue("tempRand ($tempRand) must be >= 0.549 for scaleJitter 0.5", tempRand >= 0.549f)
@@ -562,25 +565,32 @@ class QrStudioViewModelExportValidationTest {
 
     @Test
     fun testConnectedOrganicRendererContinuousMonotonicThickness() {
-        val thicknesses = listOf(0.05f, 0.06f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.35f, 0.50f)
+        val thicknesses = listOf(0.00f, 0.05f, 0.06f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.33333334f, 0.35f, 0.50f, 1.00f)
         val fractions = thicknesses.map { ConnectedOrganicRenderer.calculateStrokeFraction(it) }
 
-        // Verify strictly non-decreasing and no sudden drops or discontinuities
+        // Verify continuous, non-decreasing mapping with upper saturation at 1.0
         for (i in 0 until fractions.size - 1) {
             assertTrue(
                 "Stroke fraction at thickness ${thicknesses[i + 1]} (${fractions[i + 1]}) must be >= thickness ${thicknesses[i]} (${fractions[i]})",
                 fractions[i + 1] >= fractions[i]
             )
         }
-        // Verify default 0.25f gives exact 0.75 canonical stroke fraction
-        val defaultIdx = thicknesses.indexOf(0.25f)
-        assertEquals(
-            "Default 0.25f thickness must produce exact 0.75 stroke fraction",
-            0.75f,
-            fractions[defaultIdx],
-            0.001f
-        )
-        // Verify uninitialized/zero thickness safely falls back to default 0.75 fraction
-        assertEquals(0.75f, ConnectedOrganicRenderer.calculateStrokeFraction(0.0f), 0.001f)
+
+        // Verify lower bound clamping removes zero discontinuity (0.00 and 0.05 both yield 0.15f)
+        assertEquals(0.15f, ConnectedOrganicRenderer.calculateStrokeFraction(0.00f), 0.001f)
+        assertEquals(0.15f, ConnectedOrganicRenderer.calculateStrokeFraction(0.05f), 0.001f)
+
+        // Verify intermediate linear scaling points
+        assertEquals(0.30f, ConnectedOrganicRenderer.calculateStrokeFraction(0.10f), 0.001f)
+        assertEquals(0.45f, ConnectedOrganicRenderer.calculateStrokeFraction(0.15f), 0.001f)
+        assertEquals(0.60f, ConnectedOrganicRenderer.calculateStrokeFraction(0.20f), 0.001f)
+        assertEquals(0.75f, ConnectedOrganicRenderer.calculateStrokeFraction(0.25f), 0.001f)
+        assertEquals(0.90f, ConnectedOrganicRenderer.calculateStrokeFraction(0.30f), 0.001f)
+
+        // Verify explicit upper saturation at 1.0 (capped at one module width)
+        assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(0.33333334f), 0.001f)
+        assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(0.35f), 0.001f)
+        assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(0.50f), 0.001f)
+        assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(1.00f), 0.001f)
     }
 }
