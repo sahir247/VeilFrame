@@ -14,6 +14,11 @@ import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrModuleRole
 import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
+import com.veilframe.app.qr.geometry.QrGeometryIr
+import com.veilframe.app.qr.geometry.QrGeometryNode
+import com.veilframe.app.qr.geometry.RectNode
+import com.veilframe.app.qr.geometry.ImageNode
+import com.veilframe.app.qr.geometry.GroupNode
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.math.max
@@ -49,7 +54,10 @@ object SvgExporter {
         val totalHeight = matrix.size + qzTop + qzBottom
         val totalSize = maxOf(totalWidth, totalHeight)
         val fgHex = hexColor(design.palette.foreground)
-        val bgHex = hexColor(design.palette.background)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgHex = toSvgColor(resolvedBackdropColor).hex
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
+        val bgAlphaStr = formatOpacity(bgAlpha)
         val eyeOuterHex = design.eyeStyle.outerColor?.let { hexColor(it) } ?: fgHex
         val eyeInnerHex = design.eyeStyle.innerColor?.let { hexColor(it) } ?: fgHex
         val timingHex = (design.timingStyle.color ?: design.timingColor)?.let { hexColor(it) }
@@ -96,14 +104,21 @@ object SvgExporter {
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
 
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
+
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
 
-        // 1. Defs (Gradients & Masks)
+        // 1. Defs (Gradients & Masks & Corner Clip)
         val isMasked = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED
-        if (hasGradient || isMasked) {
+        if (hasCornerClip || hasGradient || isMasked) {
             sb.append("  <defs>\n")
+            if (hasCornerClip) {
+                sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            }
             if (hasGradient) {
                 if (isRadial) {
                     sb.append("""    <radialGradient id="qrGrad" cx="50%" cy="50%" r="50%">""").append("\n")
@@ -163,9 +178,24 @@ object SvgExporter {
             }
             sb.append("  </defs>\n")
         }
+        if (hasCornerClip) {
+            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
+        }
 
-        // 2. Background Layer
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" />""").append("\n")
+        // 2. Background Layer (Outer backdrop rectangle)
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
+        if (hasBackdropImg) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = totalWidth.toFloat(),
+                canvasHeight = totalHeight.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val biB64 = bitmapToBase64(preprocessedBackdrop)
+            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+        }
+
         val bgBmp = design.backgroundLayer.bitmap ?: design.backgroundImage
         if (design.backgroundLayer.enabled && bgBmp != null) {
             val bgBase64 = bitmapToBase64(bgBmp)
@@ -513,6 +543,10 @@ object SvgExporter {
 
         } finally {
             preScaledSource?.bitmap?.recycle()
+        }
+
+        if (hasCornerClip) {
+            sb.append("  </g>\n")
         }
 
         // 5. Embedded Logo (if present)
@@ -982,7 +1016,10 @@ object SvgExporter {
         val rightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.depthStyle.rightColor))
         val dataH = design.depthStyle.depth.coerceAtLeast(0.0f)
         val posH = design.depthStyle.positionDepth.coerceAtLeast(0.0f)
-        val bgHex = hexColor(design.palette.background)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgHex = toSvgColor(resolvedBackdropColor).hex
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
+        val bgAlphaStr = formatOpacity(bgAlpha)
 
         // EFQRCode canonical formula (EFQRCodeStyle25D.swift) evaluated for integer module counts:
         //   vbX = -(n + qzLeft)
@@ -997,10 +1034,34 @@ object SvgExporter {
         val vbXStr = if (qzLeft == 0) "-$n" else if (vbX == vbX.toLong().toDouble()) "${vbX.toLong()}" else "$vbX"
         val vbYStr = if (vbY == vbY.toLong().toDouble()) "${vbY.toLong()}" else "$vbY"
 
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
+
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbXStr $vbYStr $vbW $vbH" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" fill="$bgHex" />""").append("\n")
+
+        if (hasCornerClip) {
+            sb.append("  <defs>\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("  </defs>\n")
+            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
+        }
+
+        sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
+
+        if (hasBackdropImg) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = vbW.toFloat(),
+                canvasHeight = vbH.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val biB64 = bitmapToBase64(preprocessedBackdrop)
+            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$vbW" height="$vbH" x="$vbXStr" y="$vbYStr"/>""").append("\n")
+        }
 
         val dataScale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f)
         val posScale = 1.0f
@@ -1041,6 +1102,10 @@ object SvgExporter {
             sb.append("""  </g>""").append("\n")
         }
 
+        if (hasCornerClip) {
+            sb.append("  </g>\n")
+        }
+
         sb.append("</svg>")
         return sb.toString()
     }
@@ -1056,12 +1121,16 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
-        val ir = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
+        val rawIr = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
-            val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
-            sb.append("</svg>")
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
             svg
@@ -1079,7 +1148,15 @@ object SvgExporter {
         val nCount = matrix.size
         val totalWidth = nCount + qzLeft + qzRight
         val totalHeight = nCount + qzTop + qzBottom
-        val bgHex = hexColor(design.palette.background)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgHex = toSvgColor(resolvedBackdropColor).hex
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
+        val bgAlphaStr = formatOpacity(bgAlpha)
+
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
+
         val posColorHex = hexColor(design.eyeStyle.outerColor ?: design.palette.foreground)
         val posAlpha = colorAlpha(design.eyeStyle.outerColor ?: design.palette.foreground)
         val posStyle = design.eyeStyle.style
@@ -1097,8 +1174,28 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" />""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+
+        if (hasCornerClip) {
+            sb.append("  <defs>\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("  </defs>\n")
+            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
+        }
+
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
+
+        if (hasBackdropImg) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = totalWidth.toFloat(),
+                canvasHeight = totalHeight.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val biB64 = bitmapToBase64(preprocessedBackdrop)
+            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+        }
 
         var id = 0
 
@@ -1220,6 +1317,11 @@ object SvgExporter {
         }
 
         appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+
+        if (hasCornerClip) {
+            sb.append("  </g>\n")
+        }
+
         sb.append("</svg>")
         return sb.toString()
     }
@@ -1235,12 +1337,16 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
-        val ir = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
+        val rawIr = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
-            val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
-            sb.append("</svg>")
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
             svg
@@ -1258,12 +1364,16 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
-        val ir = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
+        val rawIr = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
-            val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
-            sb.append("</svg>")
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
             svg
@@ -1281,12 +1391,16 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
-        val ir = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
+        val rawIr = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
-            val sb = StringBuilder(svg.removeSuffix("</svg>"))
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), hexColor(design.palette.background))
-            sb.append("</svg>")
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
             svg
@@ -1427,6 +1541,86 @@ object SvgExporter {
             oy = qzTop,
             qrPixelSize = matrixSize.toDouble(),
             bgHex = bgHex
+        )
+    }
+
+    fun applyBackdropToIr(
+        rawIr: QrGeometryIr,
+        design: QrDesign,
+        totalWidth: Float,
+        totalHeight: Float
+    ): QrGeometryIr {
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgHex = toSvgColor(resolvedBackdropColor).hex
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
+
+        val newDefs = rawIr.defs.toMutableList()
+        if (hasCornerClip) {
+            newDefs.add("""<clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""")
+        }
+
+        val backdropNodes = mutableListOf<QrGeometryNode>()
+        // Outer backdrop rectangle
+        backdropNodes.add(
+            RectNode(
+                x = 0f,
+                y = 0f,
+                width = totalWidth,
+                height = totalHeight,
+                fillString = bgHex,
+                opacity = bgAlpha,
+                alwaysEmitOpacity = true
+            )
+        )
+
+        // Backdrop image if present
+        if (hasBackdropImg) {
+            val preprocessed = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = totalWidth,
+                canvasHeight = totalHeight,
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val base64 = bitmapToBase64(preprocessed)
+            backdropNodes.add(
+                ImageNode(
+                    x = 0f,
+                    y = 0f,
+                    width = totalWidth,
+                    height = totalHeight,
+                    base64Data = base64,
+                    opacity = design.backdropStyle.imageAlpha,
+                    key = "bi",
+                    preserveAspectRatio = ""
+                )
+            )
+        }
+
+        // Filter out any existing canvas background rect to avoid duplicate backdrop
+        val styleNodes = rawIr.rootNodes.filterNot { node ->
+            node is RectNode && node.x == 0f && node.y == 0f &&
+                node.width == totalWidth && node.height == totalHeight &&
+                node.rx == 0f
+        }
+        backdropNodes.addAll(styleNodes)
+
+        val finalNodes = if (hasCornerClip) {
+            listOf(
+                GroupNode(
+                    children = backdropNodes,
+                    clipPathId = "rounded-corners"
+                )
+            )
+        } else {
+            backdropNodes
+        }
+
+        return rawIr.copy(
+            defs = newDefs,
+            rootNodes = finalNodes
         )
     }
 

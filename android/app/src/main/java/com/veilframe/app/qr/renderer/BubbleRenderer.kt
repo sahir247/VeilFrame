@@ -43,7 +43,7 @@ class BubbleRenderer : QrRenderer {
         val oy = geometry.offsetY
         // EFQRCode parity: use style-specific bubble colors, not global foreground/background.
         val fgColor = design.clusterStyle.dataColor
-        val bgColor = design.palette.background
+        val bgColor = design.backdropStyle.color ?: design.palette.background
         val rng = Random(design.effects.seed)
 
         val nodes = mutableListOf<QrGeometryNode>()

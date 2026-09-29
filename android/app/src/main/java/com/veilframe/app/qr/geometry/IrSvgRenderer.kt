@@ -97,10 +97,12 @@ object IrSvgRenderer {
             is ImageNode -> {
                 val base64 = node.base64Data ?: node.bitmap?.let { bitmapToBase64(it) } ?: ""
                 val href = if (base64.startsWith("#")) base64 else "data:image/png;base64,$base64"
+                val keyAttr = if (node.key != null) " key=\"${node.key}\"" else ""
+                val xlinkAttr = if (node.key != null) " xlink:href=\"$href\"" else ""
                 sb.append(pad).append(String.format(
                     Locale.US,
-                    "<image href=\"%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
-                    href, node.x, node.y, node.width, node.height
+                    "<image%s%s href=\"%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
+                    keyAttr, xlinkAttr, href, node.x, node.y, node.width, node.height
                 ))
                 if (node.opacity < 1f) {
                     sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))

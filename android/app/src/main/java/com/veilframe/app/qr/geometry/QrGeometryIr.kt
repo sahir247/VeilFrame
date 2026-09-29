@@ -88,7 +88,8 @@ data class ImageNode(
     val clipPathId: String? = null,
     val clipOutRects: List<RectF> = emptyList(),
     val transform: String? = null,
-    val style: String? = null
+    val style: String? = null,
+    val key: String? = null
 ) : QrGeometryNode
 
 data class AnimatedImageNode(

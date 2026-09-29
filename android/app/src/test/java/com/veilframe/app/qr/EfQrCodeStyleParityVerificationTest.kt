@@ -2007,8 +2007,9 @@ class EfQrCodeStyleParityVerificationTest {
     fun testBackdropColorOverridesPaletteBackgroundParity() {
         val matrix = QrMatrix("https://veilframe.app/backdrop-color", ErrorCorrectionLevel.M)
         val dummyBmp = allocateBitmapReflectively()
+        val redHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.RED)
 
-        // Test QrStyle.IMAGE with palette.background = WHITE and backdropStyle.color = RED
+        // 1. Test QrStyle.IMAGE with palette.background = WHITE and backdropStyle.color = RED
         val imageDesign = QrDesign(
             style = QrStyle.IMAGE,
             imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
@@ -2016,14 +2017,14 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val imageSvg = SvgExporter.generateSvg(matrix, imageDesign)
-        val redHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.RED)
+        val imgTotalW = matrix.size + imageDesign.effectiveQuietZoneLeft + imageDesign.effectiveQuietZoneRight
+        val imgTotalH = matrix.size + imageDesign.effectiveQuietZoneTop + imageDesign.effectiveQuietZoneBottom
         assertTrue(
-            "IMAGE SVG outer backdrop rect must use backdropStyle.color (RED) instead of palette.background (WHITE)",
-            imageSvg.contains("""<rect width="${matrix.size}" height="${matrix.size}" fill="$redHex"""") ||
-            imageSvg.contains("""fill="$redHex"""")
+            "IMAGE SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
+            imageSvg.contains("""<rect width="$imgTotalW" height="$imgTotalH" fill="$redHex"""")
         )
 
-        // Test QrStyle.IMAGE_FILL with palette.background = WHITE and backdropStyle.color = RED
+        // 2. Test QrStyle.IMAGE_FILL with palette.background = WHITE and backdropStyle.color = RED
         val fillDesign = QrDesign(
             style = QrStyle.IMAGE_FILL,
             imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
@@ -2031,9 +2032,40 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val fillSvg = SvgExporter.generateSvg(matrix, fillDesign)
+        val fillTotalW = matrix.size + fillDesign.effectiveQuietZoneLeft + fillDesign.effectiveQuietZoneRight
+        val fillTotalH = matrix.size + fillDesign.effectiveQuietZoneTop + fillDesign.effectiveQuietZoneBottom
         assertTrue(
-            "IMAGE_FILL SVG outer backdrop rect must use backdropStyle.color (RED) instead of palette.background (WHITE)",
-            fillSvg.contains("""fill="$redHex"""")
+            "IMAGE_FILL SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
+            fillSvg.contains("""<rect width="$fillTotalW" height="$fillTotalH" fill="$redHex"""")
+        )
+
+        // 3. Test generic QrStyle.BASIC with palette.background = WHITE and backdropStyle.color = RED
+        val basicDesign = QrDesign(
+            style = QrStyle.BASIC,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.RED)
+        )
+        val basicSvg = SvgExporter.generateSvg(matrix, basicDesign)
+        val basicTotalW = matrix.size + basicDesign.effectiveQuietZoneLeft + basicDesign.effectiveQuietZoneRight
+        val basicTotalH = matrix.size + basicDesign.effectiveQuietZoneTop + basicDesign.effectiveQuietZoneBottom
+        assertTrue(
+            "BASIC SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
+            basicSvg.contains("""<rect width="$basicTotalW" height="$basicTotalH" fill="$redHex"""")
+        )
+
+        // 4. Test QrStyle.LINE with palette.background = WHITE and backdropStyle.color = RED
+        val lineDesign = QrDesign(
+            style = QrStyle.LINE,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.RED)
+        )
+        val lineSvg = SvgExporter.generateSvg(matrix, lineDesign)
+        val lineTotalW = matrix.size + lineDesign.effectiveQuietZoneLeft + lineDesign.effectiveQuietZoneRight
+        val lineFormattedW = String.format(Locale.US, "%.4f", lineTotalW.toFloat())
+        assertTrue(
+            "LINE SVG outer backdrop rect must specifically use backdropStyle.color (RED)",
+            lineSvg.contains("""fill="$redHex"""") &&
+            (lineSvg.contains("""width="$lineTotalW"""") || lineSvg.contains("""width="${lineTotalW.toFloat()}"""") || lineSvg.contains("""width="$lineFormattedW""""))
         )
     }
 
@@ -2081,6 +2113,102 @@ class EfQrCodeStyleParityVerificationTest {
             "Corner radius 12.5 must serialize as rx=\"12.5\" ry=\"12.5\"",
             svgR12_5.contains("""rx="12.5" ry="12.5"""")
         )
+    }
+
+    @Test
+    fun testGenericSvgBackdropContractParity() {
+        val matrix = QrMatrix("https://veilframe.app/generic-svg-backdrop", ErrorCorrectionLevel.M)
+        val dummyBackdropBmp = allocateBitmapReflectively()
+
+        // 1. QrStyle.BASIC (Generic path) with cornerRadius, backdrop image, and backdrop color
+        val basicDesign = QrDesign(
+            style = QrStyle.BASIC,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(
+                color = Color.YELLOW,
+                cornerRadius = 12f,
+                image = dummyBackdropBmp,
+                imageAlpha = 0.85f
+            )
+        )
+        val basicSvg = SvgExporter.generateSvg(matrix, basicDesign)
+        val yellowHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.YELLOW)
+        val basicW = matrix.size + basicDesign.effectiveQuietZoneLeft + basicDesign.effectiveQuietZoneRight
+        val basicH = matrix.size + basicDesign.effectiveQuietZoneTop + basicDesign.effectiveQuietZoneBottom
+        assertTrue("BASIC SVG must contain rounded-corners clipPath definition", basicSvg.contains("""<clipPath id="rounded-corners"><rect width="$basicW" height="$basicH" rx="12" ry="12"/></clipPath>"""))
+        assertTrue("BASIC SVG must clip main group to rounded-corners", basicSvg.contains("""<g clip-path="url(#rounded-corners)">"""))
+        assertTrue("BASIC SVG outer backdrop rect must have fill matching backdropStyle.color", basicSvg.contains("""<rect width="$basicW" height="$basicH" fill="$yellowHex""""))
+        assertTrue("BASIC SVG must contain backdrop image element with key='bi'", basicSvg.contains("""<image key="bi""""))
+        assertTrue("BASIC SVG backdrop image must serialize imageAlpha", basicSvg.contains("""opacity="0.85""""))
+
+        // 2. QrStyle.ROUNDED (Generic path)
+        val roundedDesign = QrDesign(
+            style = QrStyle.BASIC,
+            moduleStyle = ModuleStyle(shape = com.veilframe.app.qr.model.ModuleShape.ROUNDED),
+            backdropStyle = BackdropStyle(cornerRadius = 16f, color = Color.CYAN)
+        )
+        val roundedSvg = SvgExporter.generateSvg(matrix, roundedDesign)
+        val cyanHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.CYAN)
+        assertTrue("ROUNDED SVG must contain rounded-corners clipPath", roundedSvg.contains("""rx="16" ry="16""""))
+        assertTrue("ROUNDED SVG must have outer backdrop rect in CYAN", roundedSvg.contains("""fill="$cyanHex""""))
+
+        // 3. QrStyle.D25
+        val d25Design = QrDesign(
+            style = QrStyle.D25,
+            backdropStyle = BackdropStyle(cornerRadius = 8f, color = Color.MAGENTA, image = dummyBackdropBmp, imageAlpha = 0.6f)
+        )
+        val d25Svg = SvgExporter.generateSvg(matrix, d25Design)
+        val magentaHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.MAGENTA)
+        assertTrue("D25 SVG must contain rounded-corners clipPath", d25Svg.contains("""id="rounded-corners"""") && d25Svg.contains("""rx="8" ry="8""""))
+        assertTrue("D25 SVG must clip group to rounded-corners", d25Svg.contains("""clip-path="url(#rounded-corners)""""))
+        assertTrue("D25 SVG must paint outer backdrop rect in MAGENTA", d25Svg.contains("""fill="$magentaHex""""))
+        assertTrue("D25 SVG must contain backdrop image element with key='bi'", d25Svg.contains("""<image key="bi" opacity="0.6""""))
+
+        // 4. QrStyle.FUNCTION
+        val funcDesign = QrDesign(
+            style = QrStyle.FUNCTION,
+            backdropStyle = BackdropStyle(cornerRadius = 14f, color = Color.BLUE, image = dummyBackdropBmp, imageAlpha = 0.5f)
+        )
+        val funcSvg = SvgExporter.generateSvg(matrix, funcDesign)
+        val blueHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.BLUE)
+        assertTrue("FUNCTION SVG must contain rounded-corners clipPath", funcSvg.contains("""rx="14" ry="14""""))
+        assertTrue("FUNCTION SVG must clip to rounded-corners", funcSvg.contains("""clip-path="url(#rounded-corners)""""))
+        assertTrue("FUNCTION SVG outer backdrop rect must be BLUE", funcSvg.contains("""fill="$blueHex""""))
+        assertTrue("FUNCTION SVG must contain backdrop image", funcSvg.contains("""<image key="bi""""))
+
+        // 5. QrStyle.BUBBLE
+        val bubbleDesign = QrDesign(
+            style = QrStyle.BUBBLE,
+            backdropStyle = BackdropStyle(cornerRadius = 10f, color = Color.GREEN, image = dummyBackdropBmp, imageAlpha = 0.7f)
+        )
+        val bubbleSvg = SvgExporter.generateSvg(matrix, bubbleDesign)
+        val greenHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.GREEN)
+        assertTrue("BUBBLE SVG must contain rounded-corners clipPath", bubbleSvg.contains("""id="rounded-corners"""") && bubbleSvg.contains("""rx="10" ry="10""""))
+        assertTrue("BUBBLE SVG must clip to rounded-corners", bubbleSvg.contains("""clip-path="url(#rounded-corners)""""))
+        assertTrue("BUBBLE SVG outer backdrop rect must be GREEN", bubbleSvg.contains("""fill="$greenHex""""))
+        assertTrue("BUBBLE SVG must contain backdrop image key='bi'", bubbleSvg.contains("""key="bi""""))
+
+        // 6. QrStyle.LINE
+        val lineDesign = QrDesign(
+            style = QrStyle.LINE,
+            backdropStyle = BackdropStyle(cornerRadius = 18f, color = Color.RED, image = dummyBackdropBmp, imageAlpha = 0.9f)
+        )
+        val lineSvg = SvgExporter.generateSvg(matrix, lineDesign)
+        assertTrue("LINE SVG must contain rounded-corners clipPath", lineSvg.contains("""rx="18" ry="18""""))
+        assertTrue("LINE SVG must clip to rounded-corners", lineSvg.contains("""clip-path="url(#rounded-corners)""""))
+        assertTrue("LINE SVG outer backdrop rect must be RED", lineSvg.contains("""fill="#FF0000""""))
+        assertTrue("LINE SVG must contain backdrop image key='bi'", lineSvg.contains("""key="bi""""))
+
+        // 7. QrStyle.DSJ
+        val dsjDesign = QrDesign(
+            style = QrStyle.DSJ,
+            backdropStyle = BackdropStyle(cornerRadius = 6f, color = Color.YELLOW, image = dummyBackdropBmp, imageAlpha = 0.4f)
+        )
+        val dsjSvg = SvgExporter.generateSvg(matrix, dsjDesign)
+        assertTrue("DSJ SVG must contain rounded-corners clipPath", dsjSvg.contains("""rx="6" ry="6""""))
+        assertTrue("DSJ SVG must clip to rounded-corners", dsjSvg.contains("""clip-path="url(#rounded-corners)""""))
+        assertTrue("DSJ SVG outer backdrop rect must be YELLOW", dsjSvg.contains("""fill="$yellowHex""""))
+        assertTrue("DSJ SVG must contain backdrop image key='bi'", dsjSvg.contains("""key="bi""""))
     }
 
     @Test
@@ -2135,6 +2263,36 @@ class EfQrCodeStyleParityVerificationTest {
         assertEquals("ImageFillRenderer Canvas IR background rx must reflect corner radius in pixels", 10f * geometry.moduleSize, fillBgRect.rx, 0.01f)
         val fillBackdropNode = fillIr.rootNodes[1] as ImageNode
         assertEquals("ImageFillRenderer Canvas IR must include backdrop image node", 0.5f, fillBackdropNode.opacity, 0.01f)
+
+        // 3. Verify LineRenderer Canvas IR geometry background uses backdropStyle.color
+        val lineDesign = QrDesign(
+            style = QrStyle.LINE,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.GREEN)
+        )
+        val lineIr = LineRenderer().generateGeometry(matrix, lineDesign, geometry)
+        val lineBgRect = lineIr.rootNodes[0] as RectNode
+        assertEquals("LineRenderer Canvas IR background must use backdropStyle.color", Color.GREEN, lineBgRect.fill)
+
+        // 4. Verify DsjRenderer Canvas IR geometry background uses backdropStyle.color
+        val dsjDesign = QrDesign(
+            style = QrStyle.DSJ,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.MAGENTA)
+        )
+        val dsjIr = DsjRenderer().generateGeometry(matrix, dsjDesign, geometry)
+        val dsjBgRect = dsjIr.rootNodes[0] as RectNode
+        assertEquals("DsjRenderer Canvas IR background must use backdropStyle.color", Color.MAGENTA, dsjBgRect.fill)
+
+        // 5. Verify RandomRectangleRenderer Canvas IR geometry background uses backdropStyle.color
+        val randDesign = QrDesign(
+            style = QrStyle.RANDOM_RECTANGLE,
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.CYAN)
+        )
+        val randIr = RandomRectangleRenderer().generateGeometry(matrix, randDesign, geometry)
+        val randBgRect = randIr.rootNodes[0] as RectNode
+        assertEquals("RandomRectangleRenderer Canvas IR background must use backdropStyle.color", Color.CYAN, randBgRect.fill)
     }
 }
 

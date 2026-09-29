@@ -38,9 +38,10 @@ object ResampleGeometryBuilder {
         }
 
         // 1. Canvas background
-        val bgAlpha = (design.palette.background ushr 24) and 0xFF
+        val resolvedBg = design.backdropStyle.color ?: design.palette.background
+        val bgAlpha = (resolvedBg ushr 24) and 0xFF
         if (bgAlpha > 0) {
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = design.palette.background))
+            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = resolvedBg))
         }
 
         // 2. Continuous Backdrop Image (supports independent backdrop or reused source image)

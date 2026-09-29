@@ -57,7 +57,7 @@ class LineRenderer : QrRenderer {
                 y = 0f,
                 width = geometry.outputWidth.toFloat(),
                 height = geometry.outputHeight.toFloat(),
-                fill = design.palette.background
+                fill = design.backdropStyle.color ?: design.palette.background
             )
         )
 
