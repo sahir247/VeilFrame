@@ -282,14 +282,29 @@ object QrGenerator {
         val canvas = Canvas(bitmap)
         val context = RenderContext()
 
-        // 1. Draw Canvas Background (including Quiet Zone margins)
-        drawBackground(canvas, design, size, context)
+        // EF generic backdrop contract: corner clipping
+        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * geometry.moduleSize else 0f
+        val count = if (crPx > 0f) {
+            val saveCount = canvas.save()
+            val clipPath = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            saveCount
+        } else null
 
-        // 2. Obtain renderer
-        val renderer: QrRenderer = getRendererForDesign(design)
+        try {
+            // 1. Draw Canvas Background (including Quiet Zone margins)
+            drawBackground(canvas, design, size, context)
 
-        // 3. Render QR Code
-        renderer.render(matrix, design, canvas, geometry, context)
+            // 2. Obtain renderer
+            val renderer: QrRenderer = getRendererForDesign(design)
+
+            // 3. Render QR Code
+            renderer.render(matrix, design, canvas, geometry, context)
+        } finally {
+            if (count != null) canvas.restoreToCount(count)
+        }
         return bitmap
     }
 
@@ -347,9 +362,11 @@ object QrGenerator {
         size: Int,
         context: RenderContext
     ) {
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
         when (val background = design.background) {
             is BackgroundStyle.Solid -> {
-                canvas.drawColor(background.color)
+                val effectiveColor = if (design.backdropStyle.color != null) resolvedBackdropColor else background.color
+                canvas.drawColor(effectiveColor)
             }
             is BackgroundStyle.LinearGradient -> {
                 val paint = context.fillPaint
@@ -375,7 +392,7 @@ object QrGenerator {
             }
             is BackgroundStyle.Image -> {
                 // Clear with configured backdrop background color first, then draw background image with specified alpha
-                canvas.drawColor(design.palette.background)
+                canvas.drawColor(resolvedBackdropColor)
                 val paint = context.tempPaint
                 paint.reset()
                 paint.isAntiAlias = true
@@ -394,6 +411,30 @@ object QrGenerator {
             BackgroundStyle.Transparent -> {
                 // Keep transparent ARGB_8888
             }
+        }
+
+        // Draw backdrop image if present and background is not already BackgroundStyle.Image,
+        // and style is not already a dedicated backdrop style (IMAGE or IMAGE_FILL) which renders its own backdrop
+        val isDedicatedBackdropRenderer = design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL
+        val backdropImg = design.backdropStyle.image
+        if (backdropImg != null && !backdropImg.isRecycled && design.background !is BackgroundStyle.Image && !isDedicatedBackdropRenderer) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = backdropImg,
+                canvasWidth = size.toFloat(),
+                canvasHeight = size.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                isFilterBitmap = true
+                alpha = (design.backdropStyle.imageAlpha.coerceIn(0f, 1f) * 255).toInt()
+            }
+            val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
+                preprocessedBackdrop.width,
+                preprocessedBackdrop.height,
+                android.graphics.RectF(0f, 0f, size.toFloat(), size.toFloat()),
+                com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+            )
+            canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)
         }
     }
 

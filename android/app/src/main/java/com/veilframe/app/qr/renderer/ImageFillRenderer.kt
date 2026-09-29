@@ -51,10 +51,35 @@ class ImageFillRenderer : QrRenderer {
         val maskColor = design.imageFillMaskColor
         val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
 
-        // 1. Base canvas background
-        val bgAlpha = (design.palette.background ushr 24) and 0xFF
+        // 1. Base canvas background & Backdrop (EF generic backdrop contract)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgAlpha = (resolvedBackdropColor ushr 24) and 0xFF
+        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * mSize else 0f
         if (bgAlpha > 0) {
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, fill = design.palette.background))
+            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = crPx, ry = crPx, fill = resolvedBackdropColor))
+        }
+
+        val backdropImg = design.backdropStyle.image
+        if (backdropImg != null && !backdropImg.isRecycled) {
+            val preprocessedBackdrop = EfImagePreprocessor.preprocess(
+                source = backdropImg,
+                canvasWidth = width,
+                canvasHeight = height,
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val base64 = IrSvgRenderer.bitmapToBase64(preprocessedBackdrop)
+            nodes.add(
+                ImageNode(
+                    x = 0f,
+                    y = 0f,
+                    width = width,
+                    height = height,
+                    bitmap = preprocessedBackdrop,
+                    base64Data = base64,
+                    opacity = design.backdropStyle.imageAlpha,
+                    preserveAspectRatio = ""
+                )
+            )
         }
 
         // 2. Continuous masked group with hole mask
@@ -171,91 +196,132 @@ class ImageFillRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
-        val isAnimated = design.imageSource.isAnimated && !design.imageSource.animatedFrames.isNullOrEmpty()
-        val sourceImage = if (isAnimated) {
-            val frames = design.imageSource.animatedFrames!!
-            val safeIdx = if (context.frameIndex >= 0) context.frameIndex % frames.size else 0
-            frames.getOrNull(safeIdx) ?: design.imageSource.bitmap
-        } else {
-            design.imageSource.bitmap
-        }
+        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * geometry.moduleSize else 0f
+        val count = if (crPx > 0f) {
+            val saveCount = canvas.save()
+            val clipPath = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            saveCount
+        } else null
 
-        val bgCanvasAlpha = (design.palette.background ushr 24) and 0xFF
-        if (bgCanvasAlpha > 0) {
-            val canvasBgPaint = context.obtainFill(design.palette.background)
-            canvas.drawRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), canvasBgPaint)
-        }
-
-        val n = matrix.size
-        val mSize = geometry.moduleSize
-        val x0 = geometry.offsetX
-        val y0 = geometry.offsetY
-        val dataBounds = geometry.dataRegionBounds()
-
-        val bgColor = design.imageFillBackgroundColor
-        val maskColor = design.imageFillMaskColor
-        val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
-        val imageMode = design.imageSource.scaleMode
-
-        // 1. Offscreen layer for masked QR stencil
-        val layerId = canvas.saveLayer(dataBounds, null)
-
-        // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion
-        val maskPaint = context.obtainFill(Color.WHITE)
-        val antiGap = 0.01f * mSize
-
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                if (matrix.isDark(col, row)) {
-                    val left = x0 + col * mSize - antiGap
-                    val top = y0 + row * mSize - antiGap
-                    val right = x0 + (col + 1) * mSize + antiGap
-                    val bottom = y0 + (row + 1) * mSize + antiGap
-                    canvas.drawRect(left, top, right, bottom, maskPaint)
+        try {
+            val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+            val bgCanvasAlpha = (resolvedBackdropColor ushr 24) and 0xFF
+            if (bgCanvasAlpha > 0) {
+                val canvasBgPaint = context.obtainFill(resolvedBackdropColor)
+                if (crPx > 0f) {
+                    canvas.drawRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, canvasBgPaint)
+                } else {
+                    canvas.drawRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), canvasBgPaint)
                 }
             }
-        }
 
-        // 3. Composite continuous fill content using SRC_IN
-        val contentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-        }
-        val contentLayer = canvas.saveLayer(dataBounds, contentPaint)
-
-        // 3a. Solid backgroundColor across QR area
-        val bgPaint = context.obtainFill(bgColor)
-        canvas.drawRect(dataBounds, bgPaint)
-
-        // 3b. Continuous scaled image across QR area (preprocessed via EfImagePreprocessor for SVG/IR parity)
-        if (sourceImage != null && !sourceImage.isRecycled) {
-            val preprocessed = EfImagePreprocessor.preprocess(
-                source = sourceImage,
-                canvasWidth = dataBounds.width(),
-                canvasHeight = dataBounds.height(),
-                mode = imageMode
-            )
-            val (srcRect, resolvedDst) = ImageScaleResolver.resolveSrcDst(
-                preprocessed.width,
-                preprocessed.height,
-                dataBounds,
-                com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-            )
-            val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                isFilterBitmap = true
-                alpha = (imageAlpha * 255).toInt().coerceIn(0, 255)
+            // Draw backdrop image if configured
+            val backdropImg = design.backdropStyle.image
+            if (backdropImg != null && !backdropImg.isRecycled) {
+                val preprocessedBackdrop = EfImagePreprocessor.preprocess(
+                    source = backdropImg,
+                    canvasWidth = geometry.outputWidth.toFloat(),
+                    canvasHeight = geometry.outputHeight.toFloat(),
+                    mode = design.backdropStyle.imageScaleMode
+                )
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    isFilterBitmap = true
+                    alpha = (design.backdropStyle.imageAlpha.coerceIn(0f, 1f) * 255).toInt()
+                }
+                val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
+                    preprocessedBackdrop.width,
+                    preprocessedBackdrop.height,
+                    RectF(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat()),
+                    com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                )
+                canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)
             }
-            canvas.drawBitmap(preprocessed, srcRect, resolvedDst, imgPaint)
+
+            val isAnimated = design.imageSource.isAnimated && !design.imageSource.animatedFrames.isNullOrEmpty()
+            val sourceImage = if (isAnimated) {
+                val frames = design.imageSource.animatedFrames!!
+                val safeIdx = if (context.frameIndex >= 0) context.frameIndex % frames.size else 0
+                frames.getOrNull(safeIdx) ?: design.imageSource.bitmap
+            } else {
+                design.imageSource.bitmap
+            }
+
+            val n = matrix.size
+            val mSize = geometry.moduleSize
+            val x0 = geometry.offsetX
+            val y0 = geometry.offsetY
+            val dataBounds = geometry.dataRegionBounds()
+
+            val bgColor = design.imageFillBackgroundColor
+            val maskColor = design.imageFillMaskColor
+            val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
+            val imageMode = design.imageSource.scaleMode
+
+            // 1. Offscreen layer for masked QR stencil
+            val layerId = canvas.saveLayer(dataBounds, null)
+
+            // 2. Draw solid stencil mask of all dark modules with anti-gap 1.02 expansion
+            val maskPaint = context.obtainFill(Color.WHITE)
+            val antiGap = 0.01f * mSize
+
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.isDark(col, row)) {
+                        val left = x0 + col * mSize - antiGap
+                        val top = y0 + row * mSize - antiGap
+                        val right = x0 + (col + 1) * mSize + antiGap
+                        val bottom = y0 + (row + 1) * mSize + antiGap
+                        canvas.drawRect(left, top, right, bottom, maskPaint)
+                    }
+                }
+            }
+
+            // 3. Composite continuous fill content using SRC_IN
+            val contentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+            }
+            val contentLayer = canvas.saveLayer(dataBounds, contentPaint)
+
+            // 3a. Solid backgroundColor across QR area
+            val bgPaint = context.obtainFill(bgColor)
+            canvas.drawRect(dataBounds, bgPaint)
+
+            // 3b. Continuous scaled image across QR area (preprocessed via EfImagePreprocessor for SVG/IR parity)
+            if (sourceImage != null && !sourceImage.isRecycled) {
+                val preprocessed = EfImagePreprocessor.preprocess(
+                    source = sourceImage,
+                    canvasWidth = dataBounds.width(),
+                    canvasHeight = dataBounds.height(),
+                    mode = imageMode
+                )
+                val (srcRect, resolvedDst) = ImageScaleResolver.resolveSrcDst(
+                    preprocessed.width,
+                    preprocessed.height,
+                    dataBounds,
+                    com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                )
+                val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    isFilterBitmap = true
+                    alpha = (imageAlpha * 255).toInt().coerceIn(0, 255)
+                }
+                canvas.drawBitmap(preprocessed, srcRect, resolvedDst, imgPaint)
+            }
+
+            // 3c. Solid maskColor tint overlay across QR area
+            val tintPaint = context.obtainFill(maskColor)
+            canvas.drawRect(dataBounds, tintPaint)
+
+            canvas.restoreToCount(contentLayer)
+            canvas.restoreToCount(layerId)
+
+            // 4. Center Logo if present
+            drawLogo(canvas, design, geometry, context)
+        } finally {
+            if (count != null) canvas.restoreToCount(count)
         }
-
-        // 3c. Solid maskColor tint overlay across QR area
-        val tintPaint = context.obtainFill(maskColor)
-        canvas.drawRect(dataBounds, tintPaint)
-
-        canvas.restoreToCount(contentLayer)
-        canvas.restoreToCount(layerId)
-
-        // 4. Center Logo if present
-        drawLogo(canvas, design, geometry, context)
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

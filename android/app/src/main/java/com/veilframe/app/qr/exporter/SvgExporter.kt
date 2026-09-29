@@ -586,7 +586,7 @@ object SvgExporter {
         val imageAlpha = formatOpacity(design.imageSource.opacity)
 
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
-        val crStr = formatOpacity(design.backdropStyle.cornerRadius)
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
         val hasBackdropImg = design.backdropStyle.image != null
 
         val sb = StringBuilder()
@@ -615,12 +615,11 @@ object SvgExporter {
         }
 
         // Quiet-zone background (paints entire viewBox per EFQRCode backdrop contract)
-        val canvasBgAlpha = colorAlpha(design.palette.background)
-        if (canvasBgAlpha > 0f) {
-            val canvasBgHex = toSvgColor(design.palette.background).hex
-            val alphaStr = formatOpacity(canvasBgAlpha)
-            sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
-        }
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val canvasBgAlpha = colorAlpha(resolvedBackdropColor)
+        val canvasBgHex = toSvgColor(resolvedBackdropColor).hex
+        val alphaStr = formatOpacity(canvasBgAlpha)
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
                 source = design.backdropStyle.image!!,
@@ -721,12 +720,13 @@ object SvgExporter {
         val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
         val imageAlpha = formatOpacity(design.imageSource.opacity)
         val n = matrix.size
-        val bgHex = toSvgColor(design.palette.background).hex
-        val bgAlpha = colorAlpha(design.palette.background)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgHex = toSvgColor(resolvedBackdropColor).hex
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
         val bgAlphaStr = formatOpacity(bgAlpha)
 
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
-        val crStr = formatOpacity(design.backdropStyle.cornerRadius)
+        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
         val hasBackdropImg = design.backdropStyle.image != null
 
         val sb = StringBuilder()
@@ -1428,6 +1428,15 @@ object SvgExporter {
             qrPixelSize = matrixSize.toDouble(),
             bgHex = bgHex
         )
+    }
+
+    fun formatCornerRadius(radius: Float): String {
+        val r = maxOf(0f, radius)
+        return if (r % 1f == 0f) {
+            r.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.2f", r).trimEnd('0').trimEnd('.')
+        }
     }
 
     fun formatOpacity(alpha: Float): String {

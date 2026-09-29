@@ -42,10 +42,35 @@ class ImageRenderer : QrRenderer {
 
         val nodes = mutableListOf<QrGeometryNode>()
 
-        // 1. Background Canvas
-        val bgAlpha = colorAlpha(design.palette.background)
+        // 1. Background Canvas & Backdrop (EF generic backdrop contract)
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
+        val bgAlpha = colorAlpha(resolvedBackdropColor)
         if (bgAlpha > 0) {
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, fill = design.palette.background))
+            val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * mSize else 0f
+            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = crPx, ry = crPx, fill = resolvedBackdropColor))
+        }
+
+        val backdropImg = design.backdropStyle.image
+        if (backdropImg != null && !backdropImg.isRecycled) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = backdropImg,
+                canvasWidth = width,
+                canvasHeight = height,
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val base64 = com.veilframe.app.qr.geometry.IrSvgRenderer.bitmapToBase64(preprocessedBackdrop)
+            nodes.add(
+                ImageNode(
+                    x = 0f,
+                    y = 0f,
+                    width = width,
+                    height = height,
+                    bitmap = preprocessedBackdrop,
+                    base64Data = base64,
+                    opacity = design.backdropStyle.imageAlpha,
+                    preserveAspectRatio = ""
+                )
+            )
         }
 
 
@@ -388,8 +413,21 @@ class ImageRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
-        val ir = generateGeometry(matrix, design, geometry)
-        IrCanvasRenderer.render(ir, canvas, frameIndex = context.frameIndex)
+        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * geometry.moduleSize else 0f
+        val count = if (crPx > 0f) {
+            val saveCount = canvas.save()
+            val clipPath = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            saveCount
+        } else null
+        try {
+            val ir = generateGeometry(matrix, design, geometry)
+            IrCanvasRenderer.render(ir, canvas, frameIndex = context.frameIndex)
+        } finally {
+            if (count != null) canvas.restoreToCount(count)
+        }
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

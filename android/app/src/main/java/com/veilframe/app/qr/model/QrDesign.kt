@@ -235,14 +235,14 @@ data class ViewBoxRect(
 )
 
 data class BackdropStyle(
-    val color: Int = Color.WHITE,
+    val color: Int? = null,
     val cornerRadius: Float = 0f,
     val image: Bitmap? = null,
     val imageAlpha: Float = 1.0f,
     val imageScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val fractionalQuietZone: FractionalInsets? = null
 ) {
-    val hasBackdrop: Boolean get() = cornerRadius > 0f || image != null || color != Color.WHITE || fractionalQuietZone != null
+    val hasBackdrop: Boolean get() = cornerRadius > 0f || image != null || color != null || fractionalQuietZone != null
 
     fun calculateViewBox(moduleCount: Int, isResample: Boolean = false): ViewBoxRect {
         val qz = fractionalQuietZone
@@ -265,8 +265,9 @@ data class BackdropStyle(
         val vb = calculateViewBox(moduleCount, isResample)
         val w = String.format(Locale.US, "%.1f", vb.width)
         val h = String.format(Locale.US, "%.1f", vb.height)
-        val bgHex = String.format(Locale.US, "#%06X", 0xFFFFFF and color)
-        val rawAlpha = ((color ushr 24) and 0xFF) / 255f
+        val effectiveColor = color ?: Color.WHITE
+        val bgHex = String.format(Locale.US, "#%06X", 0xFFFFFF and effectiveColor)
+        val rawAlpha = ((effectiveColor ushr 24) and 0xFF) / 255f
         val bgAlpha = String.format(Locale.US, "%.4f", rawAlpha.coerceIn(0f, 1f)).trimEnd('0').trimEnd('.').ifEmpty { "0" }
         val crStr = String.format(Locale.US, "%.2f", cornerRadius)
 
@@ -771,7 +772,7 @@ data class QrDesign(
                     rngMode = params.resampleRngMode
                 ),
                 backdropStyle = BackdropStyle(
-                    color = params.backdropColor ?: params.background,
+                    color = params.backdropColor,
                     cornerRadius = params.backdropCornerRadius ?: params.resampleBackdropCornerRadius,
                     image = params.backdropImage ?: params.resampleBackdropImage ?: params.backgroundImage,
                     imageAlpha = params.backdropImageAlpha ?: (if (params.resampleBackdropImage != null) params.resampleBackdropOpacity else params.backgroundImageAlpha),

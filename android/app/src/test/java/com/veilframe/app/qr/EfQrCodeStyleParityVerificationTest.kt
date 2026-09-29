@@ -13,6 +13,7 @@ import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.*
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 
@@ -1979,8 +1980,9 @@ class EfQrCodeStyleParityVerificationTest {
         )
         val svg = SvgExporter.generateSvg(matrix, designWithBackdrop)
 
-        // Must define rounded-corners clipPath
+        // Must define rounded-corners clipPath with exact corner radius (rx="16" ry="16", not clamped rx="1")
         assertTrue("SVG must define rounded-corners clipPath when cornerRadius > 0", svg.contains("<clipPath id=\"rounded-corners\">"))
+        assertTrue("SVG clip rect must have rx=\"16\" ry=\"16\"", svg.contains("""rx="16" ry="16""""))
         assertTrue("SVG must clip main group to rounded-corners", svg.contains("clip-path=\"url(#rounded-corners)\""))
         // Must include backdrop image <image key="bi" .../>
         assertTrue("SVG must include backdrop image element", svg.contains("""key="bi""""))
@@ -1996,8 +1998,143 @@ class EfQrCodeStyleParityVerificationTest {
         )
         val fillSvg = SvgExporter.generateSvg(matrix, fillDesignWithBackdrop)
         assertTrue("IMAGE_FILL SVG must define rounded-corners clipPath when cornerRadius > 0", fillSvg.contains("<clipPath id=\"rounded-corners\">"))
+        assertTrue("IMAGE_FILL clip rect must have rx=\"12\" ry=\"12\"", fillSvg.contains("""rx="12" ry="12""""))
         assertTrue("IMAGE_FILL SVG must clip main group to rounded-corners", fillSvg.contains("clip-path=\"url(#rounded-corners)\""))
         assertTrue("IMAGE_FILL SVG must include backdrop image element", fillSvg.contains("""key="bi""""))
+    }
+
+    @Test
+    fun testBackdropColorOverridesPaletteBackgroundParity() {
+        val matrix = QrMatrix("https://veilframe.app/backdrop-color", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+
+        // Test QrStyle.IMAGE with palette.background = WHITE and backdropStyle.color = RED
+        val imageDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.RED)
+        )
+        val imageSvg = SvgExporter.generateSvg(matrix, imageDesign)
+        val redHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.RED)
+        assertTrue(
+            "IMAGE SVG outer backdrop rect must use backdropStyle.color (RED) instead of palette.background (WHITE)",
+            imageSvg.contains("""<rect width="${matrix.size}" height="${matrix.size}" fill="$redHex"""") ||
+            imageSvg.contains("""fill="$redHex"""")
+        )
+
+        // Test QrStyle.IMAGE_FILL with palette.background = WHITE and backdropStyle.color = RED
+        val fillDesign = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(color = Color.RED)
+        )
+        val fillSvg = SvgExporter.generateSvg(matrix, fillDesign)
+        assertTrue(
+            "IMAGE_FILL SVG outer backdrop rect must use backdropStyle.color (RED) instead of palette.background (WHITE)",
+            fillSvg.contains("""fill="$redHex"""")
+        )
+    }
+
+    @Test
+    fun testBackdropCornerRadiusNumericFormattingParity() {
+        val matrix = QrMatrix("https://veilframe.app/corner-radius", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+
+        // Test corner radius = 8f (must NOT be clamped to 1.0 by formatOpacity)
+        val designR8 = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            backdropStyle = BackdropStyle(cornerRadius = 8f)
+        )
+        val svgR8 = SvgExporter.generateSvg(matrix, designR8)
+        assertTrue(
+            "Corner radius 8 must serialize as rx=\"8\" ry=\"8\", not clamped rx=\"1\" ry=\"1\"",
+            svgR8.contains("""rx="8" ry="8"""")
+        )
+        assertFalse(
+            "Corner radius 8 must NOT be clamped to rx=\"1\" ry=\"1\"",
+            svgR8.contains("""rx="1" ry="1"""")
+        )
+
+        // Test corner radius = 16f
+        val designR16 = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            backdropStyle = BackdropStyle(cornerRadius = 16f)
+        )
+        val svgR16 = SvgExporter.generateSvg(matrix, designR16)
+        assertTrue(
+            "Corner radius 16 must serialize as rx=\"16\" ry=\"16\"",
+            svgR16.contains("""rx="16" ry="16"""")
+        )
+
+        // Test fractional corner radius = 12.5f
+        val designR12_5 = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            backdropStyle = BackdropStyle(cornerRadius = 12.5f)
+        )
+        val svgR12_5 = SvgExporter.generateSvg(matrix, designR12_5)
+        assertTrue(
+            "Corner radius 12.5 must serialize as rx=\"12.5\" ry=\"12.5\"",
+            svgR12_5.contains("""rx="12.5" ry="12.5"""")
+        )
+    }
+
+    @Test
+    fun testCanvasGenericBackdropContractParity() {
+        val matrix = QrMatrix("https://veilframe.app/canvas-backdrop", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+        val dummyBackdropBmp = allocateBitmapReflectively()
+
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 0
+        )
+
+        // 1. Verify ImageRenderer IR geometry contains resolved backdrop color and backdrop image
+        val imageDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(
+                color = Color.RED,
+                cornerRadius = 8f,
+                image = dummyBackdropBmp,
+                imageAlpha = 0.75f
+            )
+        )
+        val imageRenderer = ImageRenderer()
+        val imageIr = imageRenderer.generateGeometry(matrix, imageDesign, geometry)
+        val imageBgRect = imageIr.rootNodes[0] as RectNode
+        assertEquals("ImageRenderer Canvas IR background must use backdropStyle.color", Color.RED, imageBgRect.fill)
+        assertEquals("ImageRenderer Canvas IR background rx must reflect corner radius in pixels", 8f * geometry.moduleSize, imageBgRect.rx, 0.01f)
+        val imageBackdropNode = imageIr.rootNodes[1] as ImageNode
+        assertEquals("ImageRenderer Canvas IR must include backdrop image node", 0.75f, imageBackdropNode.opacity, 0.01f)
+
+        // 2. Verify ImageFillRenderer IR geometry contains resolved backdrop color and backdrop image
+        val fillDesign = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            palette = PaletteStyle(background = Color.WHITE),
+            backdropStyle = BackdropStyle(
+                color = Color.BLUE,
+                cornerRadius = 10f,
+                image = dummyBackdropBmp,
+                imageAlpha = 0.5f
+            )
+        )
+        val fillRenderer = ImageFillRenderer()
+        val fillIr = fillRenderer.generateGeometry(matrix, fillDesign, geometry)
+        val fillBgRect = fillIr.rootNodes[0] as RectNode
+        assertEquals("ImageFillRenderer Canvas IR background must use backdropStyle.color", Color.BLUE, fillBgRect.fill)
+        assertEquals("ImageFillRenderer Canvas IR background rx must reflect corner radius in pixels", 10f * geometry.moduleSize, fillBgRect.rx, 0.01f)
+        val fillBackdropNode = fillIr.rootNodes[1] as ImageNode
+        assertEquals("ImageFillRenderer Canvas IR must include backdrop image node", 0.5f, fillBackdropNode.opacity, 0.01f)
     }
 }
 
