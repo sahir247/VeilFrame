@@ -27,6 +27,6 @@ class ResampleImageRenderer : ComposableQrRenderer() {
         context: RenderContext
     ) {
         val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry)
-        IrCanvasRenderer.render(ir, canvas)
+        IrCanvasRenderer.render(ir, canvas, frameIndex = context.frameIndex)
     }
 }

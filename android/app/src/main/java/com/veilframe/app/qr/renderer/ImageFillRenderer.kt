@@ -176,7 +176,14 @@ class ImageFillRenderer : QrRenderer {
         geometry: QrGeometry,
         context: RenderContext
     ) {
-        val sourceImage = design.imageSource.bitmap
+        val isAnimated = design.imageSource.isAnimated && !design.imageSource.animatedFrames.isNullOrEmpty()
+        val sourceImage = if (isAnimated) {
+            val frames = design.imageSource.animatedFrames!!
+            val safeIdx = if (context.frameIndex >= 0) context.frameIndex % frames.size else 0
+            frames.getOrNull(safeIdx) ?: design.imageSource.bitmap
+        } else {
+            design.imageSource.bitmap
+        }
 
         val bgCanvasAlpha = (design.palette.background ushr 24) and 0xFF
         if (bgCanvasAlpha > 0) {
@@ -224,9 +231,25 @@ class ImageFillRenderer : QrRenderer {
         val bgPaint = context.obtainFill(bgColor)
         canvas.drawRect(dataBounds, bgPaint)
 
-        // 3b. Continuous scaled image across QR area (if provided)
+        // 3b. Continuous scaled image across QR area (preprocessed via EfImagePreprocessor for SVG/IR parity)
         if (sourceImage != null && !sourceImage.isRecycled) {
-            ImageScaleResolver.drawScaledBitmap(canvas, sourceImage, dataBounds, imageMode, imageAlpha)
+            val preprocessed = EfImagePreprocessor.preprocess(
+                source = sourceImage,
+                canvasWidth = dataBounds.width(),
+                canvasHeight = dataBounds.height(),
+                mode = imageMode
+            )
+            val (srcRect, resolvedDst) = ImageScaleResolver.resolveSrcDst(
+                preprocessed.width,
+                preprocessed.height,
+                dataBounds,
+                com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+            )
+            val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                isFilterBitmap = true
+                alpha = (imageAlpha * 255).toInt().coerceIn(0, 255)
+            }
+            canvas.drawBitmap(preprocessed, srcRect, resolvedDst, imgPaint)
         }
 
         // 3c. Solid maskColor tint overlay across QR area

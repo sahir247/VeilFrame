@@ -398,10 +398,25 @@ object ImageScaleResolver {
      * Standard sRGB / Rec. 709 luminance weights matching CoreGraphics grayscale conversion:
      * gray = 0.2126 * R + 0.7152 * G + 0.0722 * B
      * weightedGray = gray * alpha + (1.0 - alpha) * 255.0
+     *
+     * Note on EFQRCode 7.0.3 CoreGraphics premultiplication divergence:
+     * In EFQRCode (EFQRCodeStyleResampleImage.swift:797-804), the image was drawn into a
+     * CGContext with `CGImageAlphaInfo.premultipliedLast`. This caused CoreGraphics to premultiply
+     * R, G, B channels by alpha (R_cg = R * alpha). When EF's `gamma()` function subsequently
+     * computed `gray = 0.2126 * R_cg + ...` and `weightedGray = gray * alpha + (1 - alpha) * 255`,
+     * alpha was applied twice for semi-transparent pixels (a^2).
+     *
+     * For un-premultiplied sRGB input (standard Android Bitmap.getPixel), [efPremultipliedAlpha] = false
+     * computes the mathematically intended single-alpha blending. Setting [efPremultipliedAlpha] = true
+     * replicates EF's exact CoreGraphics byte buffer output.
      */
-    fun calculateLuminance(r: Int, g: Int, b: Int, a: Float = 1.0f): Float {
-        val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
-        val weightedGray = gray * a + (1.0f - a) * 255.0f
+    fun calculateLuminance(r: Int, g: Int, b: Int, a: Float = 1.0f, efPremultipliedAlpha: Boolean = false): Float {
+        val baseGray = 0.2126f * r + 0.7152f * g + 0.0722f * b
+        val weightedGray = if (efPremultipliedAlpha) {
+            baseGray * a * a + (1.0f - a) * 255.0f
+        } else {
+            baseGray * a + (1.0f - a) * 255.0f
+        }
         return (weightedGray / 255.0f).coerceIn(0.0f, 1.0f)
     }
 
@@ -409,12 +424,12 @@ object ImageScaleResolver {
      * Extracts ARGB channels from a 32-bit packed color integer and computes
      * the standardized alpha-weighted sRGB grayscale luminance in [0.0f, 1.0f].
      */
-    fun calculatePixelLuminance(pixel: Int): Float {
+    fun calculatePixelLuminance(pixel: Int, efPremultipliedAlpha: Boolean = false): Float {
         val a = ((pixel ushr 24) and 0xFF) / 255.0f
         val r = (pixel ushr 16) and 0xFF
         val g = (pixel ushr 8) and 0xFF
         val b = pixel and 0xFF
-        return calculateLuminance(r, g, b, a)
+        return calculateLuminance(r, g, b, a, efPremultipliedAlpha)
     }
 
     /**

@@ -377,7 +377,7 @@ class ImageRenderer : QrRenderer {
         context: RenderContext
     ) {
         val ir = generateGeometry(matrix, design, geometry)
-        IrCanvasRenderer.render(ir, canvas)
+        IrCanvasRenderer.render(ir, canvas, frameIndex = context.frameIndex)
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

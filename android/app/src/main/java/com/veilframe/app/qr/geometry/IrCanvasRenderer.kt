@@ -12,14 +12,14 @@ import android.graphics.RectF
  */
 object IrCanvasRenderer {
 
-    fun render(ir: QrGeometryIr, canvas: Canvas) {
+    fun render(ir: QrGeometryIr, canvas: Canvas, frameIndex: Int = 0) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         for (node in ir.rootNodes) {
-            renderNode(node, canvas, paint)
+            renderNode(node, canvas, paint, frameIndex)
         }
     }
 
-    private fun renderNode(node: QrGeometryNode, canvas: Canvas, paint: Paint) {
+    private fun renderNode(node: QrGeometryNode, canvas: Canvas, paint: Paint, frameIndex: Int = 0) {
         when (node) {
             is RectNode -> {
                 if (node.fill != null) {
@@ -160,7 +160,10 @@ object IrCanvasRenderer {
                 }
             }
             is AnimatedImageNode -> {
-                val bmp = node.frames.firstOrNull()
+                val safeIdx = if (node.frames.isNotEmpty()) {
+                    if (frameIndex >= 0) frameIndex % node.frames.size else 0
+                } else 0
+                val bmp = node.frames.getOrNull(safeIdx)
                 if (bmp != null && !bmp.isRecycled) {
                     val count = canvas.save()
                     for (clipRect in node.clipOutRects) {
@@ -185,15 +188,18 @@ object IrCanvasRenderer {
             is GroupNode -> {
                 val count = canvas.save()
                 for (child in node.children) {
-                    renderNode(child, canvas, paint)
+                    renderNode(child, canvas, paint, frameIndex)
                 }
                 canvas.restoreToCount(count)
             }
             is AnimatedGroupNode -> {
-                val firstFrame = node.frameNodes.firstOrNull() ?: emptyList()
+                val safeIdx = if (node.frameNodes.isNotEmpty()) {
+                    if (frameIndex >= 0) frameIndex % node.frameNodes.size else 0
+                } else 0
+                val targetFrame = node.frameNodes.getOrNull(safeIdx) ?: emptyList()
                 val count = canvas.save()
-                for (child in firstFrame) {
-                    renderNode(child, canvas, paint)
+                for (child in targetFrame) {
+                    renderNode(child, canvas, paint, frameIndex)
                 }
                 canvas.restoreToCount(count)
             }

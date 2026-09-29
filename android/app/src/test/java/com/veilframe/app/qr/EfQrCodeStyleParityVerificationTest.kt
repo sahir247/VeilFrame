@@ -1610,4 +1610,80 @@ class EfQrCodeStyleParityVerificationTest {
         assertSame("Second frame must match frame1", frame1, extracted[1].bitmap)
         assertEquals(180, extracted[1].durationMs)
     }
+
+    @Test
+    fun testIrCanvasRendererMultiFrameExecutionForImageAndResample() {
+        val frame0 = allocateBitmapReflectively()
+        val frame1 = allocateBitmapReflectively()
+
+        // 1. AnimatedImageNode (IMAGE style) multi-frame Canvas evaluation
+        val animImageNode = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 512f,
+            height = 512f,
+            frames = listOf(frame0, frame1),
+            frameDelaysMs = listOf(100, 100),
+            framePrefix = "testfm"
+        )
+        val imageIr = QrGeometryIr(width = 512f, height = 512f, rootNodes = listOf(animImageNode))
+
+        var drawnBitmap: Bitmap? = null
+        val testCanvas = object : Canvas() {
+            override fun drawBitmap(bitmap: Bitmap, src: Rect?, dst: RectF, paint: Paint?) {
+                drawnBitmap = bitmap
+            }
+        }
+
+        IrCanvasRenderer.render(imageIr, testCanvas, frameIndex = 0)
+        assertSame("IrCanvasRenderer must draw frame 0 when frameIndex = 0", frame0, drawnBitmap)
+
+        IrCanvasRenderer.render(imageIr, testCanvas, frameIndex = 1)
+        assertSame("IrCanvasRenderer must draw frame 1 when frameIndex = 1", frame1, drawnBitmap)
+
+        // 2. AnimatedGroupNode (RESAMPLE style) multi-frame Canvas evaluation
+        var drawnRectX = -1f
+        val rectFrame0 = RectNode(x = 10f, y = 10f, width = 5f, height = 5f, fill = Color.BLACK)
+        val rectFrame1 = RectNode(x = 20f, y = 20f, width = 5f, height = 5f, fill = Color.BLACK)
+        val animGroupNode = AnimatedGroupNode(
+            framePrefix = "resfm",
+            frameNodes = listOf(listOf(rectFrame0), listOf(rectFrame1)),
+            frameDelaysMs = listOf(100, 100)
+        )
+        val resampleIr = QrGeometryIr(width = 512f, height = 512f, rootNodes = listOf(animGroupNode))
+
+        val rectCanvas = object : Canvas() {
+            override fun drawRect(left: Float, top: Float, right: Float, bottom: Float, paint: Paint) {
+                drawnRectX = left
+            }
+        }
+
+        IrCanvasRenderer.render(resampleIr, rectCanvas, frameIndex = 0)
+        assertEquals("IrCanvasRenderer must render frame 0 geometry at x=10", 10f, drawnRectX, 0.001f)
+
+        IrCanvasRenderer.render(resampleIr, rectCanvas, frameIndex = 1)
+        assertEquals("IrCanvasRenderer must render frame 1 geometry at x=20", 20f, drawnRectX, 0.001f)
+    }
+
+    @Test
+    fun testCoreGraphicsPremultipliedAlphaMathematicalDiscrepancy() {
+        // Pure red: (255, 0, 0), alpha = 0.5
+        // Un-premultiplied sRGB (Android Bitmap.getPixel):
+        // baseGray = 0.2126 * 255 = 54.213
+        // Standard weightedGray = 54.213 * 0.5 + (1 - 0.5) * 255 = 27.1065 + 127.5 = 154.6065
+        val standardNorm = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 0.5f, efPremultipliedAlpha = false)
+        assertEquals(154.6065f / 255f, standardNorm, 0.001f)
+
+        // EF CoreGraphics CGContext(premultipliedLast) buffer behavior:
+        // CoreGraphics draws red as (255 * 0.5) = 127.5
+        // EF gamma() computes gray = 0.2126 * 127.5 = 27.1065
+        // Then EF applies alpha AGAIN: weightedGray = 27.1065 * 0.5 + (1 - 0.5) * 255 = 13.553 + 127.5 = 141.053
+        val efCoreGraphicsNorm = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 0.5f, efPremultipliedAlpha = true)
+        assertEquals(141.053f / 255f, efCoreGraphicsNorm, 0.001f)
+
+        // For opaque pixels (alpha = 1.0), both paths are strictly identical:
+        val opaqueStandard = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 1.0f, efPremultipliedAlpha = false)
+        val opaqueEf = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 1.0f, efPremultipliedAlpha = true)
+        assertEquals(opaqueStandard, opaqueEf, 0.0001f)
+    }
 }
