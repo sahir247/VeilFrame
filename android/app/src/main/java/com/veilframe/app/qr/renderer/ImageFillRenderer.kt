@@ -80,13 +80,8 @@ class ImageFillRenderer : QrRenderer {
         // 2a. Background inside dark modules
         groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = bgColor))
 
-        val aspect = when (design.imageSource.scaleMode) {
-            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
-            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
-            else -> "xMidYMid slice"
-        }
-
         // 2b. Scaled source image (preprocessed via EfImagePreprocessor matching EFQRCodeStyle.swift:269)
+        // EF parity: preprocessed image already matches canvas ratio; preserveAspectRatio is omitted/empty.
         val canvasW = n * mSize
         val canvasH = n * mSize
         val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
@@ -113,7 +108,7 @@ class ImageFillRenderer : QrRenderer {
                     base64Frames = base64Frames,
                     frameDelaysMs = frameDelaysMs,
                     opacity = imageAlpha,
-                    preserveAspectRatio = aspect,
+                    preserveAspectRatio = "",
                     framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
                 )
             )
@@ -138,7 +133,7 @@ class ImageFillRenderer : QrRenderer {
                         bitmap = preprocessed,
                         base64Data = base64,
                         opacity = imageAlpha,
-                        preserveAspectRatio = aspect
+                        preserveAspectRatio = ""
                     )
                 )
             }

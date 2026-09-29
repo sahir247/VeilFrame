@@ -105,7 +105,7 @@ class VeilStyleParityTest {
         // Verify continuous image container inside <g mask="url(#hole)">
         assertTrue("SVG must contain <g mask=\"url(#hole)\">", svg.contains("mask=\"url(#hole)\""))
         assertTrue("SVG must contain background rect", svg.contains("fill=\"#FAFAFA\""))
-        assertTrue("SVG must contain maskColor tint rect", svg.contains("fill=\"#000000\" opacity=\"0.10\""))
+        assertTrue("SVG must contain maskColor tint rect", svg.contains("fill=\"#000000\"") && (svg.contains("opacity=\"0.10\"") || svg.contains("opacity=\"0.102\"")))
     }
 
     @Test
@@ -1075,7 +1075,7 @@ class VeilStyleParityTest {
         assertTrue("Animated SVG must contain use element referencing #qr_frame_0", animSvg.contains("<use xlink:href=\"#qr_frame_0\">"))
         assertTrue("Animated SVG must contain animate element", animSvg.contains("<animate"))
         assertTrue("Animated SVG must animate xlink:href", animSvg.contains("attributeName=\"xlink:href\""))
-        assertTrue("Animated SVG must cycle frame values", animSvg.contains("values=\"#qr_frame_0;#qr_frame_1;#qr_frame_0\""))
+        assertTrue("Animated SVG must cycle frame values", animSvg.contains("values=\"#qr_frame_0;#qr_frame_1\""))
         assertTrue("Animated SVG must have discrete calcMode", animSvg.contains("calcMode=\"discrete\""))
         assertTrue("Animated SVG must loop indefinitely", animSvg.contains("repeatCount=\"indefinite\""))
         assertTrue("Animated SVG must have total duration 1.000s", animSvg.contains("dur=\"1.000s\""))
@@ -2332,14 +2332,14 @@ class VeilStyleParityTest {
                 imageSource = ImageSourceStyle(source = com.veilframe.app.qr.model.ImageSource.Memory(createDummyBitmap()), scaleMode = mode)
             )
             val svgImage = SvgExporter.generateSvg(matrix, designImage)
-            assertTrue("IMAGE SVG must contain preserveAspectRatio=\"$expected\"", svgImage.contains("""preserveAspectRatio="$expected""""))
+            assertFalse("IMAGE SVG must not contain preserveAspectRatio=\"...\" for EF parity", svgImage.contains("preserveAspectRatio="))
 
             val designFill = QrDesign(
                 style = QrStyle.IMAGE_FILL,
                 imageSource = ImageSourceStyle(source = com.veilframe.app.qr.model.ImageSource.Memory(createDummyBitmap()), scaleMode = mode)
             )
             val svgFill = SvgExporter.generateSvg(matrix, designFill)
-            assertTrue("IMAGE_FILL SVG must contain preserveAspectRatio=\"$expected\"", svgFill.contains("""preserveAspectRatio="$expected""""))
+            assertFalse("IMAGE_FILL SVG must not contain preserveAspectRatio=\"...\" for EF parity", svgFill.contains("preserveAspectRatio="))
         }
     }
 
@@ -4065,11 +4065,11 @@ class VeilStyleParityTest {
         // 4. Image scale mode mapping
         val designFit = designEf.copy(imageSource = designEf.imageSource.copy(scaleMode = ImageScaleMode.ASPECT_FIT))
         val irFit = renderer.generateGeometry(matrix, designFit, geom)
-        assertEquals("xMidYMid meet", irFit.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
+        assertEquals("", irFit.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
 
         val designStretch = designEf.copy(imageSource = designEf.imageSource.copy(scaleMode = ImageScaleMode.STRETCH))
         val irStretch = renderer.generateGeometry(matrix, designStretch, geom)
-        assertEquals("none", irStretch.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
+        assertEquals("", irStretch.rootNodes.filterIsInstance<ImageNode>().first().preserveAspectRatio)
     }
 
     @Test
@@ -4133,7 +4133,7 @@ class VeilStyleParityTest {
         assertEquals("ImageNode width must occupy complete QR area", n * mSize, imageNode.width, 0.001f)
         assertEquals("ImageNode height must occupy complete QR area", n * mSize, imageNode.height, 0.001f)
         assertEquals("ImageNode opacity must match imageSource opacity", 0.85f, imageNode.opacity, 0.001f)
-        assertEquals("ImageNode preserveAspectRatio must match ASPECT_FIT", "xMidYMid meet", imageNode.preserveAspectRatio)
+        assertEquals("ImageNode preserveAspectRatio must be empty to avoid secondary scaling", "", imageNode.preserveAspectRatio)
 
         // Child 2: Tint overlay rect
         val tintNode = group.children[2]

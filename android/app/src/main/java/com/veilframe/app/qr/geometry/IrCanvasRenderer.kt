@@ -148,14 +148,20 @@ object IrCanvasRenderer {
                     paint.isDither = true
                     paint.alpha = (node.opacity.coerceIn(0f, 1f) * 255).toInt()
                     val dstBounds = RectF(node.x, node.y, node.x + node.width, node.y + node.height)
-                    val mode = when {
-                        node.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-                        node.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
-                        node.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
-                        else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                    if (node.preserveAspectRatio.isEmpty()) {
+                        // Preprocessed bitmap already matches target canvas aspect ratio and bounds.
+                        // EF parity: draw directly into dstBounds without second scaling/cropping operation.
+                        canvas.drawBitmap(bmp, null, dstBounds, paint)
+                    } else {
+                        val mode = when {
+                            node.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                            node.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
+                            node.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
+                            else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                        }
+                        val (srcRect, resolvedDst) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(bmp.width, bmp.height, dstBounds, mode)
+                        canvas.drawBitmap(bmp, srcRect, resolvedDst, paint)
                     }
-                    val (srcRect, resolvedDst) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(bmp.width, bmp.height, dstBounds, mode)
-                    canvas.drawBitmap(bmp, srcRect, resolvedDst, paint)
                     canvas.restoreToCount(count)
                 }
             }
@@ -174,14 +180,20 @@ object IrCanvasRenderer {
                     paint.isDither = true
                     paint.alpha = (node.opacity.coerceIn(0f, 1f) * 255).toInt()
                     val dstBounds = RectF(node.x, node.y, node.x + node.width, node.y + node.height)
-                    val mode = when {
-                        node.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-                        node.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
-                        node.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
-                        else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                    if (node.preserveAspectRatio.isEmpty()) {
+                        // Preprocessed bitmap already matches target canvas aspect ratio and bounds.
+                        // EF parity: draw directly into dstBounds without second scaling/cropping operation.
+                        canvas.drawBitmap(bmp, null, dstBounds, paint)
+                    } else {
+                        val mode = when {
+                            node.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                            node.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
+                            node.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
+                            else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                        }
+                        val (srcRect, resolvedDst) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(bmp.width, bmp.height, dstBounds, mode)
+                        canvas.drawBitmap(bmp, srcRect, resolvedDst, paint)
                     }
-                    val (srcRect, resolvedDst) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(bmp.width, bmp.height, dstBounds, mode)
-                    canvas.drawBitmap(bmp, srcRect, resolvedDst, paint)
                     canvas.restoreToCount(count)
                 }
             }

@@ -356,10 +356,9 @@ object ImageScaleResolver {
         val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        if (mode == ImageScaleMode.ASPECT_FIT) {
-            // Fill padding with pure white
-            canvas.drawColor(Color.WHITE)
-        }
+        // EF parity: newly allocated Bitmap is 0x00000000 (transparent), matching
+        // EFQRCode CGImage.clipAndExpandingTransparencyWith() context.clear().
+        // Uncovered letterbox/pillarbox margins remain transparent.
 
         val sw = source.width.toFloat().coerceAtLeast(1f)
         val sh = source.height.toFloat().coerceAtLeast(1f)

@@ -580,15 +580,22 @@ object SvgExporter {
         }
         val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
         val bgHex = toSvgColor(design.imageFillBackgroundColor).hex
-        val bgAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillBackgroundColor))
+        val bgAlpha = formatOpacity(colorAlpha(design.imageFillBackgroundColor))
         val maskHex = toSvgColor(design.imageFillMaskColor).hex
-        val maskAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillMaskColor))
-        val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
+        val maskAlpha = formatOpacity(colorAlpha(design.imageFillMaskColor))
+        val imageAlpha = formatOpacity(design.imageSource.opacity)
+
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatOpacity(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
+        if (hasCornerClip) {
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+        }
         sb.append("""    <mask id="hole">""").append("\n")
         sb.append("""      <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="black"/>""").append("\n")
         for (col in 0 until matrix.size) {
@@ -603,21 +610,32 @@ object SvgExporter {
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
 
+        if (hasCornerClip) {
+            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
+        }
+
         // Quiet-zone background (paints entire viewBox per EFQRCode backdrop contract)
         val canvasBgAlpha = colorAlpha(design.palette.background)
         if (canvasBgAlpha > 0f) {
             val canvasBgHex = toSvgColor(design.palette.background).hex
-            val alphaStr = String.format(Locale.US, "%.2f", canvasBgAlpha)
+            val alphaStr = formatOpacity(canvasBgAlpha)
             sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
+        }
+        if (hasBackdropImg) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = totalWidth.toFloat(),
+                canvasHeight = totalHeight.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val biB64 = bitmapToBase64(preprocessedBackdrop)
+            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
         }
 
         sb.append("""  <g x="0" y="0" width="$totalWidth" height="$totalHeight" mask="url(#hole)">""").append("\n")
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
-        val fillAspect = when (design.imageSource.scaleMode) {
-            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
-            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
-            else -> "xMidYMid slice"
-        }
+
         val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
         val animatedFrames = design.imageSource.animatedFrames
         val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
@@ -640,7 +658,7 @@ object SvgExporter {
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
             for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="$fillAspect"/>""").append("\n")
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
             }
             sb.append("      </defs>\n")
 
@@ -667,10 +685,14 @@ object SvgExporter {
             sb.append("      </use>\n")
             sb.append("    </g>\n")
         } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="$fillAspect"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
         }
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
         sb.append("  </g>\n")
+
+        if (hasCornerClip) {
+            sb.append("  </g>\n")
+        }
 
         appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
         sb.append("</svg>")
@@ -697,14 +719,23 @@ object SvgExporter {
             )
         }
         val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
-        val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
+        val imageAlpha = formatOpacity(design.imageSource.opacity)
         val n = matrix.size
         val bgHex = toSvgColor(design.palette.background).hex
+        val bgAlpha = colorAlpha(design.palette.background)
+        val bgAlphaStr = formatOpacity(bgAlpha)
+
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crStr = formatOpacity(design.backdropStyle.cornerRadius)
+        val hasBackdropImg = design.backdropStyle.image != null
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
+        if (hasCornerClip) {
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+        }
         sb.append("""    <mask id="hole">""").append("\n")
         sb.append("""      <rect x="$qzLeft" y="$qzTop" width="$n" height="$n" fill="white"/>""").append("\n")
         sb.append("""      <rect x="$qzLeft" y="$qzTop" width="8" height="8" fill="black"/>""").append("\n")
@@ -713,21 +744,40 @@ object SvgExporter {
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
 
-        // 1. Canvas background
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex"/>""").append("\n")
+        if (hasCornerClip) {
+            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
+        }
 
-        // 2. Transparent pre-pass
+        // 1. Canvas background (preserves opacity per EF backdrop contract)
+        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
+        if (hasBackdropImg) {
+            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = design.backdropStyle.image!!,
+                canvasWidth = totalWidth.toFloat(),
+                canvasHeight = totalHeight.toFloat(),
+                mode = design.backdropStyle.imageScaleMode
+            )
+            val biB64 = bitmapToBase64(preprocessedBackdrop)
+            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+        }
+
+        // 2. Transparent pre-pass (EFQRCodeStyleImage.swift:635-660: when timing or alignment shape is NONE, fallback to data shape)
         if (design.allowTransparent) {
+            val timingShape = design.timingStyle.shape
+            val alignShape = design.alignmentStyle.shape
             for (col in 0 until n) {
                 for (row in 0 until n) {
                     val role = matrix.roleAt(col, row)
-                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
+                    val isTimingNone = role == QrModuleRole.TIMING && timingShape == ModuleShape.NONE
+                    val isAlignNone = (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignShape == ModuleShape.NONE
+                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION && !isTimingNone && !isAlignNone) continue
                     val isDark = matrix.isDark(col, row)
                     val color = if (isDark) design.dataColorDark else design.dataColorLight
                     val alpha = colorAlphaInt(color)
                     if (alpha == 0) continue
                     val hex = toSvgColor(color).hex
-                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val op = formatOpacity(alpha / 255f)
                     val shape = design.moduleStyle.shape
                     if (shape == ModuleShape.NONE) continue
                     val scale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
@@ -745,13 +795,8 @@ object SvgExporter {
             }
         }
 
-        // 3. Image layer with #hole mask
+        // 3. Image layer with #hole mask (EF parity: no second preserveAspectRatio on preprocessed bitmap)
         sb.append("""  <g x="$qzLeft" y="$qzTop" width="$n" height="$n" mask="url(#hole)">""").append("\n")
-        val imgAspect = when (design.imageSource.scaleMode) {
-            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
-            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
-            else -> "xMidYMid slice"
-        }
         val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
         val animatedFrames = design.imageSource.animatedFrames
         val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
@@ -774,7 +819,7 @@ object SvgExporter {
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
             for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="$imgAspect"/>""").append("\n")
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
             }
             sb.append("      </defs>\n")
 
@@ -801,7 +846,7 @@ object SvgExporter {
             sb.append("      </use>\n")
             sb.append("    </g>\n")
         } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="$imgAspect"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
         }
         sb.append("  </g>\n")
 
@@ -835,7 +880,7 @@ object SvgExporter {
                     val alpha = colorAlphaInt(color)
                     if (alpha == 0) continue
                     val hex = if (isDark) timingDarkHex else timingLightHex
-                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val op = formatOpacity(alpha / 255f)
                     val mx = col + qzLeft + (1.0 - timingScale) / 2.0
                     val my = row + qzTop + (1.0 - timingScale) / 2.0
                     val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
@@ -865,7 +910,7 @@ object SvgExporter {
                     val alpha = colorAlphaInt(color)
                     if (alpha == 0) continue
                     val hex = if (isDark) alignDarkHex else alignLightHex
-                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val op = formatOpacity(alpha / 255f)
                     val mx = col + qzLeft + (1.0 - alignScale) / 2.0
                     val my = row + qzTop + (1.0 - alignScale) / 2.0
                     val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
@@ -895,7 +940,7 @@ object SvgExporter {
                     val alpha = colorAlphaInt(color)
                     if (alpha == 0) continue
                     val hex = if (isDark) dataDarkHex else dataLightHex
-                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val op = formatOpacity(alpha / 255f)
                     val mx = col + qzLeft + (1.0 - dScale) / 2.0
                     val my = row + qzTop + (1.0 - dScale) / 2.0
                     val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
@@ -908,6 +953,10 @@ object SvgExporter {
                     sb.append("""  $elem""").append("\n")
                 }
             }
+        }
+
+        if (hasCornerClip) {
+            sb.append("  </g>\n")
         }
 
         appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
@@ -1379,5 +1428,12 @@ object SvgExporter {
             qrPixelSize = matrixSize.toDouble(),
             bgHex = bgHex
         )
+    }
+
+    fun formatOpacity(alpha: Float): String {
+        val clamped = alpha.coerceIn(0f, 1f)
+        if (clamped >= 1f) return "1"
+        if (clamped <= 0f) return "0"
+        return String.format(Locale.US, "%.4f", clamped).trimEnd('0').trimEnd('.').ifEmpty { "0" }
     }
 }

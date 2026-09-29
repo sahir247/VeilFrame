@@ -209,7 +209,7 @@ object VeilIconPipeline {
         // 3. SQ25 Squircle or Circle Border per EFQRCodeStyle.swift:232
         val borderStroke = if (logo.borderWidth > 0f) logo.borderWidth.toDouble() else (100.0 / iconSize)
         val strokeStr = String.format(Locale.US, "%.3f", borderStroke)
-        val alphaStr = String.format(Locale.US, "%.2f", bdAlpha)
+        val alphaStr = formatOpacity(bdAlpha.toFloat())
 
         if (logo.shape == LogoShape.CIRCLE) {
             val cx = String.format(Locale.US, "%.4f", ox + iconXY + iconSize / 2.0)
@@ -235,7 +235,7 @@ object VeilIconPipeline {
         val imgX = String.format(Locale.US, "%.4f", ox + rectXY)
         val imgY = String.format(Locale.US, "%.4f", oy + rectXY)
         val imgLen = String.format(Locale.US, "%.4f", length)
-        val iconOpacity = String.format(Locale.US, "%.2f", logo.alpha.coerceIn(0f, 1f))
+        val iconOpacity = formatOpacity(logo.alpha)
 
         val isAnimated = logo.isAnimated && !logo.animatedFrames.isNullOrEmpty()
         if (isAnimated) {
@@ -373,5 +373,12 @@ object VeilIconPipeline {
         canvas.clipPath(clipPath)
         canvas.drawBitmap(preprocessed, null, imageRect, imgPaint)
         canvas.restore()
+    }
+
+    fun formatOpacity(alpha: Float): String {
+        val clamped = alpha.coerceIn(0f, 1f)
+        if (clamped >= 1f) return "1"
+        if (clamped <= 0f) return "0"
+        return String.format(Locale.US, "%.4f", clamped).trimEnd('0').trimEnd('.').ifEmpty { "0" }
     }
 }

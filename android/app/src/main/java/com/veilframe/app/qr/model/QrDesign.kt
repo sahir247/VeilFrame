@@ -266,11 +266,12 @@ data class BackdropStyle(
         val w = String.format(Locale.US, "%.1f", vb.width)
         val h = String.format(Locale.US, "%.1f", vb.height)
         val bgHex = String.format(Locale.US, "#%06X", 0xFFFFFF and color)
-        val bgAlpha = String.format(Locale.US, "%.2f", ((color ushr 24) and 0xFF) / 255f)
+        val rawAlpha = ((color ushr 24) and 0xFF) / 255f
+        val bgAlpha = String.format(Locale.US, "%.4f", rawAlpha.coerceIn(0f, 1f)).trimEnd('0').trimEnd('.').ifEmpty { "0" }
         val crStr = String.format(Locale.US, "%.2f", cornerRadius)
 
         val imageMarkup = if (!preprocessedBase64Image.isNullOrEmpty()) {
-            val alphaStr = String.format(Locale.US, "%.2f", imageAlpha.coerceIn(0f, 1f))
+            val alphaStr = String.format(Locale.US, "%.4f", imageAlpha.coerceIn(0f, 1f)).trimEnd('0').trimEnd('.').ifEmpty { "0" }
             """    <image key="bi" opacity="$alphaStr" xlink:href="data:image/png;base64,$preprocessedBase64Image" width="$w" height="$h" x="0" y="0"/>""" + "\n"
         } else ""
 

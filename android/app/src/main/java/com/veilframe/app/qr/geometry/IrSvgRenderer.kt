@@ -103,7 +103,7 @@ object IrSvgRenderer {
                     href, node.x, node.y, node.width, node.height
                 ))
                 if (node.opacity < 1f) {
-                    sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                    sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                 }
                 if (node.preserveAspectRatio.isNotEmpty()) {
                     sb.append(" preserveAspectRatio=\"").append(node.preserveAspectRatio).append("\"")
@@ -126,7 +126,7 @@ object IrSvgRenderer {
                 sb.append(pad).append("<g")
                 if (node.maskId != null) sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
                 if (node.clipPathId != null) sb.append(" clip-path=\"url(#").append(node.clipPathId).append(")\"")
-                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
+                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append(">\n")
                 for (child in node.children) {
@@ -157,7 +157,7 @@ object IrSvgRenderer {
                         sb.append(pad).append("    <image id=\"").append(framePrefix).append(idx).append("\" xlink:href=\"").append(href).append("\"")
                         sb.append(String.format(Locale.US, " width=\"%.4f\" height=\"%.4f\" x=\"%.4f\" y=\"%.4f\"", node.width, node.height, node.x, node.y))
                         if (node.opacity < 1f) {
-                            sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                            sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                         }
                         if (node.preserveAspectRatio.isNotEmpty()) {
                             sb.append(" preserveAspectRatio=\"").append(node.preserveAspectRatio).append("\"")
@@ -265,5 +265,12 @@ object IrSvgRenderer {
         } else {
             String.format(Locale.US, "rgba(%d,%d,%d,%.3f)", r, g, b, a / 255.0f)
         }
+    }
+
+    fun formatOpacity(alpha: Float): String {
+        val clamped = alpha.coerceIn(0f, 1f)
+        if (clamped >= 1f) return "1"
+        if (clamped <= 0f) return "0"
+        return String.format(Locale.US, "%.4f", clamped).trimEnd('0').trimEnd('.').ifEmpty { "0" }
     }
 }

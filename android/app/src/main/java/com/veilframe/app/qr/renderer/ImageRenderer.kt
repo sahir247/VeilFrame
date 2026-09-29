@@ -115,12 +115,8 @@ class ImageRenderer : QrRenderer {
   </mask>"""
         )
 
-        val aspect = when (design.imageSource.scaleMode) {
-            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
-            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
-            else -> "xMidYMid slice"
-        }
-
+        // EF parity (EFQRCodeStyle.swift:271): preprocessed image matches canvas ratio;
+        // no preserveAspectRatio attribute is emitted or re-interpreted.
         if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
             val preprocessedFrames = animatedFrames.map { frame ->
                 EfImagePreprocessor.preprocess(
@@ -141,7 +137,7 @@ class ImageRenderer : QrRenderer {
                     base64Frames = base64Frames,
                     frameDelaysMs = frameDelaysMs,
                     opacity = imageAlpha,
-                    preserveAspectRatio = aspect,
+                    preserveAspectRatio = "",
                     maskId = "hole",
                     clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect),
                     framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
@@ -167,7 +163,7 @@ class ImageRenderer : QrRenderer {
                     bitmap = preprocessed,
                     base64Data = base64,
                     opacity = imageAlpha,
-                    preserveAspectRatio = aspect,
+                    preserveAspectRatio = "",
                     maskId = "hole",
                     clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
                 )

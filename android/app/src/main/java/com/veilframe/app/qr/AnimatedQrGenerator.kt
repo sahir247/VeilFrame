@@ -383,10 +383,9 @@ object AnimatedQrGenerator {
 
         val frameDefs = StringBuilder()
         val frameIds = ArrayList<String>(sourceFrames.size)
-        val keyTimes = ArrayList<String>(sourceFrames.size + 1)
+        val keyTimes = ArrayList<String>(sourceFrames.size)
 
         var accumulatedMs = 0
-        keyTimes.add("0.000")
 
         var baseSvgHeader = ""
         var baseSvgFooter = "</svg>"
@@ -394,6 +393,10 @@ object AnimatedQrGenerator {
         for ((idx, frame) in sourceFrames.withIndex()) {
             val frameId = "qr_frame_$idx"
             frameIds.add("#$frameId")
+
+            val fraction = accumulatedMs.toDouble() / totalDurationMs
+            keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+            accumulatedMs += frame.durationMs
 
             val frameDesign = baseDesign.copy(
                 imageSource = baseDesign.imageSource.copy(
@@ -423,16 +426,10 @@ object AnimatedQrGenerator {
             frameDefs.append("    <g id=\"$frameId\">\n")
             frameDefs.append(scopedContent).append("\n")
             frameDefs.append("    </g>\n")
-
-            accumulatedMs += frame.durationMs
-            if (idx < sourceFrames.size - 1) {
-                val fraction = accumulatedMs.toDouble() / totalDurationMs
-                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
-            }
         }
-        keyTimes.add("1.000")
 
-        val valuesStr = frameIds.joinToString(";") + ";" + frameIds.first()
+        // EF parity (EFQRCodeStyle.swift:292): exactly N keyTimes corresponding to N values in discrete calcMode
+        val valuesStr = frameIds.joinToString(";")
         val keyTimesStr = keyTimes.joinToString(";")
         val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
 

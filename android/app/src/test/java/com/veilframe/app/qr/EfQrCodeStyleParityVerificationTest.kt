@@ -1841,5 +1841,163 @@ class EfQrCodeStyleParityVerificationTest {
         val totalReconciledMs = reconciled.sumOf { it.durationMs }
         assertEquals(400, totalReconciledMs)
     }
+
+    @Test
+    fun testImageAndImageFillSvgNoPreserveAspectRatio() {
+        val matrix = QrMatrix("https://veilframe.app/no-preserve-aspect", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+
+        // 1. IMAGE style SVG must not emit preserveAspectRatio on <image>
+        val imageDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp), scaleMode = ImageScaleMode.ASPECT_FILL)
+        )
+        val imageSvg = SvgExporter.generateSvg(matrix, imageDesign)
+        assertFalse("IMAGE SVG must not emit preserveAspectRatio=\"...\"", imageSvg.contains("preserveAspectRatio="))
+
+        // 2. IMAGE_FILL style SVG must not emit preserveAspectRatio on <image>
+        val imageFillDesign = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp), scaleMode = ImageScaleMode.STRETCH)
+        )
+        val fillSvg = SvgExporter.generateSvg(matrix, imageFillDesign)
+        assertFalse("IMAGE_FILL SVG must not emit preserveAspectRatio=\"...\"", fillSvg.contains("preserveAspectRatio="))
+
+        // 3. IR ImageNode must have preserveAspectRatio = "" for EF parity (avoiding double scale)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val imageIr = ImageRenderer().generateGeometry(matrix, imageDesign, geometry)
+        val imageNode = imageIr.rootNodes.filterIsInstance<ImageNode>().firstOrNull()
+        assertNotNull("ImageNode must be present in IR", imageNode)
+        assertEquals("ImageNode preserveAspectRatio must be empty to avoid secondary scaling", "", imageNode?.preserveAspectRatio)
+
+        val fillIr = ImageFillRenderer().generateGeometry(matrix, imageFillDesign, geometry)
+        val fillImageNode = fillIr.rootNodes.filterIsInstance<GroupNode>().firstOrNull()?.children?.filterIsInstance<ImageNode>()?.firstOrNull()
+        assertNotNull("Fill ImageNode must be present in IR", fillImageNode)
+        assertEquals("Fill ImageNode preserveAspectRatio must be empty to avoid secondary scaling", "", fillImageNode?.preserveAspectRatio)
+    }
+
+    @Test
+    fun testImageSvgPreservesTranslucentBackgroundAlpha() {
+        val matrix = QrMatrix("https://veilframe.app/bg-alpha", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+
+        // Translucent background: 50% opacity white (0x80FFFFFF)
+        val translucentBg = (0x80 shl 24) or 0x00FFFFFF
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            palette = PaletteStyle(background = translucentBg),
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp))
+        )
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // Background rect must carry opacity attribute preserving alpha
+        val expectedAlpha = 0x80 / 255f
+        val formattedExpectedAlpha = String.format(java.util.Locale.US, "%.3f", expectedAlpha).trimEnd('0')
+        assertTrue("Background rect must have opacity preserving alpha ($formattedExpectedAlpha)", svg.contains("opacity=\"$formattedExpectedAlpha\""))
+    }
+
+    @Test
+    fun testImageSvgTransparentPrepassIncludesNoneTimingAndAlignment() {
+        val matrix = QrMatrix("https://veilframe.app/prepass-none", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+
+        // When allowTransparent = true and timingShape = NONE
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            allowTransparent = true,
+            timingStyle = TimingStyle(shape = com.veilframe.app.qr.model.ModuleShape.NONE),
+            alignmentStyle = AlignmentStyle(shape = com.veilframe.app.qr.model.ModuleShape.NONE),
+            moduleStyle = ModuleStyle(shape = com.veilframe.app.qr.model.ModuleShape.SQUARE),
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp))
+        )
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // Find timing module coordinate (row 6, col 8)
+        val qz = design.effectiveQuietZone
+        val timingModuleX = (8 + qz).toDouble()
+        val timingModuleY = (6 + qz).toDouble()
+
+        // In transparent pre-pass, timing modules with shape NONE must be rendered with data shape (SQUARE rect)
+        val expectedTimingRect = """x="$timingModuleX" y="$timingModuleY""""
+        assertTrue("Transparent pre-pass must render timing module with shape NONE", svg.contains(expectedTimingRect))
+    }
+
+    @Test
+    fun testAnimatedSvgDiscreteKeyTimesCountMatchesValuesCount() {
+        val matrix = QrMatrix("https://veilframe.app/anim-keytimes", ErrorCorrectionLevel.M)
+        val frame1 = allocateBitmapReflectively()
+        val frame2 = allocateBitmapReflectively()
+        val frame3 = allocateBitmapReflectively()
+
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            sourceImageAnimatedFrames = listOf(frame1, frame2, frame3),
+            sourceImageFrameDelaysMs = listOf(100, 100, 100)
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        val svg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+
+        // Find values and keyTimes in <animate>
+        val valuesRegex = Regex("""values="([^"]+)"""")
+        val keyTimesRegex = Regex("""keyTimes="([^"]+)"""")
+
+        val valuesMatch = valuesRegex.find(svg)
+        val keyTimesMatch = keyTimesRegex.find(svg)
+
+        assertNotNull("SVG must contain values attribute in animate tag", valuesMatch)
+        assertNotNull("SVG must contain keyTimes attribute in animate tag", keyTimesMatch)
+
+        val values = valuesMatch!!.groupValues[1].split(";")
+        val keyTimes = keyTimesMatch!!.groupValues[1].split(";")
+
+        assertEquals("Values count must match frame count (3)", 3, values.size)
+        assertEquals("KeyTimes count must exactly match values count (3) for EF parity", 3, keyTimes.size)
+
+        // In EFQRCode 7.0.3, for 3 frames (equal duration): keyTimes = 0.000;0.333;0.667
+        assertEquals("0.000", keyTimes[0])
+        assertEquals("0.333", keyTimes[1])
+        assertEquals("0.667", keyTimes[2])
+        // Must NOT contain terminal 1.000
+        assertFalse("KeyTimes must not end with 1.000 in EFQRCode 7.0.3 discrete animation", keyTimes.contains("1.000"))
+    }
+
+    @Test
+    fun testImageSvgBackdropCornerRadiusAndImageParity() {
+        val matrix = QrMatrix("https://veilframe.app/backdrop-parity", ErrorCorrectionLevel.M)
+        val dummyBmp = allocateBitmapReflectively()
+        val dummyBackdropBmp = allocateBitmapReflectively()
+
+        // Test corner radius clipping and backdrop image in IMAGE SVG
+        val designWithBackdrop = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            backdropStyle = BackdropStyle(
+                cornerRadius = 16f,
+                image = dummyBackdropBmp,
+                imageAlpha = 0.8f
+            )
+        )
+        val svg = SvgExporter.generateSvg(matrix, designWithBackdrop)
+
+        // Must define rounded-corners clipPath
+        assertTrue("SVG must define rounded-corners clipPath when cornerRadius > 0", svg.contains("<clipPath id=\"rounded-corners\">"))
+        assertTrue("SVG must clip main group to rounded-corners", svg.contains("clip-path=\"url(#rounded-corners)\""))
+        // Must include backdrop image <image key="bi" .../>
+        assertTrue("SVG must include backdrop image element", svg.contains("""key="bi""""))
+
+        // Also test IMAGE_FILL SVG with corner radius
+        val fillDesignWithBackdrop = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(dummyBmp)),
+            backdropStyle = BackdropStyle(
+                cornerRadius = 12f,
+                image = dummyBackdropBmp
+            )
+        )
+        val fillSvg = SvgExporter.generateSvg(matrix, fillDesignWithBackdrop)
+        assertTrue("IMAGE_FILL SVG must define rounded-corners clipPath when cornerRadius > 0", fillSvg.contains("<clipPath id=\"rounded-corners\">"))
+        assertTrue("IMAGE_FILL SVG must clip main group to rounded-corners", fillSvg.contains("clip-path=\"url(#rounded-corners)\""))
+        assertTrue("IMAGE_FILL SVG must include backdrop image element", fillSvg.contains("""key="bi""""))
+    }
 }
 
