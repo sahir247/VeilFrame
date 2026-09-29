@@ -65,6 +65,21 @@ object ResampleSubpixelEngine {
     }
 
     /**
+     * Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier.
+     */
+    fun computeThreshold(grayNorm: Float, exposure: Float, contrast: Float): Float {
+        return ((grayNorm + exposure - 0.5f) * (contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
+    }
+
+    /**
+     * Calculates the resample threshold for a given pixel color and image style.
+     */
+    fun computeThreshold(pixelColor: Int, style: ImageSourceStyle): Float {
+        val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixelColor)
+        return computeThreshold(grayNorm, style.exposure, style.contrast)
+    }
+
+    /**
      * Traverses the QR matrix and emits all active subpixels into [sink] using an abstract [PixelSource].
      *
      * Protected modules and functional regions are governed by [policy].
@@ -76,6 +91,7 @@ object ResampleSubpixelEngine {
         style: ImageSourceStyle,
         seed: Long = 42L,
         policy: ResamplePolicy = ArtisticResamplePolicy,
+        includeCenterAnchors: Boolean = true,
         sink: SubpixelSink
     ) {
         val n = matrix.size
@@ -105,9 +121,9 @@ object ResampleSubpixelEngine {
             for (col in 0 until n) {
                 for (row in 0 until n) {
                     // 1. Center subpixel (dx=1, dy=1): Reserved for actual QR data bit
-                    val centerSubX = 3 * col + 1
-                    val centerSubY = 3 * row + 1
-                    if (policy.shouldDrawAnchor(matrix, col, row)) {
+                    if (includeCenterAnchors && policy.shouldDrawAnchor(matrix, col, row)) {
+                        val centerSubX = 3 * col + 1
+                        val centerSubY = 3 * row + 1
                         sink.emit(col, row, centerSubX, centerSubY, isCenterAnchor = true)
                     }
 
@@ -130,7 +146,7 @@ object ResampleSubpixelEngine {
                                 val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixel)
 
                                 // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
-                                val threshold = ((grayNorm + style.exposure - 0.5f) * (style.contrast + 1.0f) + 0.5f).coerceIn(0.0f, 1.0f)
+                                val threshold = computeThreshold(grayNorm, style.exposure, style.contrast)
 
                                 val rnd = when (policy.rngMode) {
                                     RngMode.DETERMINISTIC -> subpixelRandom(seed, sx, sy)
@@ -160,6 +176,7 @@ object ResampleSubpixelEngine {
         style: ImageSourceStyle,
         seed: Long = 42L,
         policy: ResamplePolicy = ArtisticResamplePolicy,
+        includeCenterAnchors: Boolean = true,
         sink: SubpixelSink
     ) {
         val n = matrix.size
@@ -177,7 +194,7 @@ object ResampleSubpixelEngine {
         } else null
 
         try {
-            traverseSubpixels(matrix, pixelSource, style, seed, policy, sink)
+            traverseSubpixels(matrix, pixelSource, style, seed, policy, includeCenterAnchors, sink)
         } finally {
             preScaledSource?.bitmap?.recycle()
         }

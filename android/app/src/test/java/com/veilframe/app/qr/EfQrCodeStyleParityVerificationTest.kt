@@ -3,15 +3,9 @@ package com.veilframe.app.qr
 import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
-import com.veilframe.app.qr.geometry.CircleNode
-import com.veilframe.app.qr.geometry.D25Geometry
-import com.veilframe.app.qr.geometry.PathNode
-import com.veilframe.app.qr.geometry.RectNode
-import com.veilframe.app.qr.geometry.ResampleGeometryBuilder
+import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.model.*
-import com.veilframe.app.qr.renderer.LineRenderer
-import com.veilframe.app.qr.renderer.LineTopologyBuilder
-import com.veilframe.app.qr.renderer.RandomRectangleRenderer
+import com.veilframe.app.qr.renderer.*
 import org.junit.Assert.*
 import org.junit.Test
 import kotlin.math.PI
@@ -869,5 +863,656 @@ class EfQrCodeStyleParityVerificationTest {
         // 3. No solid 7x7 outer fill or 5x5 background fill
         assertFalse("SVG must not contain solid 7x7 outer fill", svg.contains("width=\"7.0000\" height=\"7.0000\""))
         assertFalse("SVG must not contain 5x5 background fill", svg.contains("width=\"5.0000\" height=\"5.0000\""))
+    }
+
+    @Test
+    fun testResampleContrastAndExposurePublicApiParity() {
+        // 1. Default contrast/exposure is 0.0f
+        val defaultParams = QrStyleParams(style = QrStyle.IMAGE_RESAMPLE)
+        val defaultDesign = QrDesign.fromQrStyleParams(defaultParams)
+        assertEquals(0.0f, defaultDesign.imageSource.contrast, 0.0001f)
+        assertEquals(0.0f, defaultDesign.imageSource.exposure, 0.0001f)
+
+        // 2. Direct contrast and exposure parameter propagation
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            contrast = 0.5f,
+            exposure = -0.25f
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals(0.5f, design.imageSource.contrast, 0.0001f)
+        assertEquals(-0.25f, design.imageSource.exposure, 0.0001f)
+
+        // 3. sourceImageContrast and sourceImageExposure override
+        val overrideParams = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            contrast = 0.5f,
+            exposure = -0.25f,
+            sourceImageContrast = 0.75f,
+            sourceImageExposure = 0.1f
+        )
+        val overrideDesign = QrDesign.fromQrStyleParams(overrideParams)
+        assertEquals(0.75f, overrideDesign.imageSource.contrast, 0.0001f)
+        assertEquals(0.1f, overrideDesign.imageSource.exposure, 0.0001f)
+
+        // 4. Threshold calculation actively reacts to contrast and exposure
+        val midGray = Color.rgb(128, 128, 128)
+        val thBase = ResampleSubpixelEngine.computeThreshold(midGray, defaultDesign.imageSource)
+        val thHighContrast = ResampleSubpixelEngine.computeThreshold(midGray, design.imageSource)
+        assertNotEquals("Contrast and exposure must actively alter the resample threshold", thBase, thHighContrast)
+    }
+
+    @Test
+    fun testAnimatedResampleCenterAnchorsAreStaticOutsideAnimate() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ANIM_PARITY", ErrorCorrectionLevel.M)
+        val frame1 = allocateBitmapReflectively()
+        val frame2 = allocateBitmapReflectively()
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            sourceImageAnimatedFrames = listOf(frame1, frame2),
+            sourceImageFrameDelaysMs = listOf(100, 100)
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+
+        val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry)
+        val animGroup = ir.rootNodes.filterIsInstance<AnimatedGroupNode>().firstOrNull()
+        assertNotNull("AnimatedGroupNode must be present in rootNodes", animGroup)
+
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+
+        // 1. All rects in frameNodes MUST be strictly stochastic dots (never center anchors (1, 1))
+        for (frame in animGroup!!.frameNodes) {
+            for (node in frame.filterIsInstance<RectNode>()) {
+                val modCol = Math.round((node.x - ox) / mSize - 0.5f).coerceIn(0, matrix.size - 1)
+                val modRow = Math.round((node.y - oy) / mSize - 0.5f).coerceIn(0, matrix.size - 1)
+                val localX = (node.x - (ox + modCol * mSize)) / mSize
+                val localY = (node.y - (oy + modRow * mSize)) / mSize
+                val subX = Math.round(localX * 3f)
+                val subY = Math.round(localY * 3f)
+
+                val isCenterAnchor = (subX == 1 && subY == 1)
+                assertFalse("Frame nodes must strictly contain 8-neighbor stochastic dots and NO center anchors", isCenterAnchor)
+            }
+        }
+
+        // 2. Ordinary dark-module #Sb center anchors must exist as static nodes in rootNodes outside the animated group
+        val animGroupIndex = ir.rootNodes.indexOf(animGroup)
+        val sbAnchors = ir.rootNodes.filterIndexed { index, node ->
+            index > animGroupIndex && node is RectNode && Math.abs(node.width - (1.02f / 3f) * mSize) < 0.01f
+        }
+        assertTrue("Ordinary dark-module #Sb center anchors must be emitted as static nodes after animated group", sbAnchors.isNotEmpty())
+
+        // 3. In animated SVG, <animate> must terminate before #Sb anchors
+        val animatedSvg = AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+        val animateIndex = animatedSvg.indexOf("<animate")
+        assertTrue("<animate> tag must be present", animateIndex > 0)
+        val useEndIndex = animatedSvg.indexOf("</use>", animateIndex)
+        assertTrue("</use> closing tag must be present", useEndIndex > 0)
+        val contentAfterAnimate = animatedSvg.substring(useEndIndex)
+        assertTrue("Static #Sb center anchors must be emitted outside and after animated group", contentAfterAnimate.contains("<rect"))
+    }
+
+    @Test
+    fun testStaticResampleLayerOrderingParityWithEf() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ORDERING", ErrorCorrectionLevel.M)
+        val pixelSource = ArrayPixelSource(100, 100, IntArray(100 * 100) { Color.DKGRAY })
+        val design = QrDesign(
+            style = QrStyle.IMAGE_RESAMPLE
+        )
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+
+        val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry, pixelSource)
+        val nodes = ir.rootNodes
+        val mSize = geometry.moduleSize
+        val ditherDotDim = (1.02f / 3f) * mSize
+
+        // Find the index of the first finder element (classic 3x3 or 6x6)
+        val firstFinderIndex = nodes.indexOfFirst {
+            it is RectNode && (Math.abs(it.width - 3f * mSize) < 0.01f || Math.abs(it.width - 6f * mSize) < 0.01f)
+        }
+        assertTrue("Finders must be present", firstFinderIndex > 0)
+
+        // Find index of the last finder element
+        val lastFinderIndex = nodes.indexOfLast {
+            it is RectNode && (Math.abs(it.width - 3f * mSize) < 0.01f || Math.abs(it.width - 6f * mSize) < 0.01f)
+        }
+
+        // Ordinary #Sb center anchors are added in step 7, AFTER finders, timing, alignment
+        val lastSbIndex = nodes.indexOfLast {
+            it is RectNode && Math.abs(it.width - ditherDotDim) < 0.01f && it.fill == design.dataColorDark
+        }
+
+        assertTrue("All stochastic dither dots must precede finders (EF writeResImage first)", firstFinderIndex > 1)
+        assertTrue("Ordinary #Sb center anchors must be emitted after finders/timing/alignment", lastSbIndex > lastFinderIndex)
+    }
+
+    @Test
+    fun testResampleTimingAndAlignmentNoDuplicateAnchorsOnOnlyWhite() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/NO_DUPLICATES", ErrorCorrectionLevel.M)
+        val bmp = allocateBitmapReflectively()
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            sourceImage = bmp,
+            timingOnlyWhite = true,
+            alignOnlyWhite = true
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+
+        val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry)
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+
+        // For each dark timing module, there must be EXACTLY ONE rect covering its center
+        val n = matrix.size
+        for (col in 0 until n) {
+            for (row in 0 until n) {
+                if (matrix.roleAt(col, row) == QrModuleRole.TIMING && matrix.isDark(col, row)) {
+                    val centerX = ox + (col + 0.5f) * mSize
+                    val centerY = oy + (row + 0.5f) * mSize
+
+                    val coveringRects = ir.rootNodes.filterIsInstance<RectNode>().filter {
+                        it.width < 2f * mSize &&
+                        centerX >= it.x && centerX <= (it.x + it.width) &&
+                        centerY >= it.y && centerY <= (it.y + it.height)
+                    }
+                    assertEquals("Dark timing module ($col, $row) with onlyWhite=true must have exactly 1 rect (no duplicate engine anchor)", 1, coveringRects.size)
+                }
+
+                if ((matrix.roleAt(col, row) == QrModuleRole.ALIGNMENT_CENTER ||
+                     matrix.roleAt(col, row) == QrModuleRole.ALIGNMENT_BORDER) && matrix.isDark(col, row)) {
+                    val centerX = ox + (col + 0.5f) * mSize
+                    val centerY = oy + (row + 0.5f) * mSize
+
+                    val coveringRects = ir.rootNodes.filterIsInstance<RectNode>().filter {
+                        it.width < 2f * mSize &&
+                        centerX >= it.x && centerX <= (it.x + it.width) &&
+                        centerY >= it.y && centerY <= (it.y + it.height)
+                    }
+                    assertEquals("Dark alignment module ($col, $row) with onlyWhite=true must have exactly 1 rect (no duplicate engine anchor)", 1, coveringRects.size)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testResampleBackdropCornerRadiusClippingParity() {
+        val bmp = allocateBitmapReflectively()
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE_RESAMPLE,
+            resampleBackdropImage = bmp,
+            resampleBackdropCornerRadius = 12.5f
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals(12.5f, design.resampleStyle.backdropCornerRadius, 0.0001f)
+
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/BACKDROP", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val ir = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. IR defs must contain clipPath for backdrop
+        val clipDef = ir.defs.find { it.contains("id=\"backdropClip\"") }
+        assertNotNull("Defs must contain clipPath with id 'backdropClip'", clipDef)
+        assertTrue("ClipPath must contain rounded rect with rx and ry", clipDef!!.contains("rx=\"12.5\"") || clipDef.contains("rx=\"12.5000\""))
+
+        // 2. Backdrop image node must reference backdropClip
+        val imageNode = ir.rootNodes.filterIsInstance<ImageNode>().firstOrNull()
+        assertNotNull("Backdrop ImageNode must be present", imageNode)
+        assertEquals("backdropClip", imageNode!!.clipPathId)
+
+        // 3. Rendered SVG must contain clip-path attribute
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        assertTrue("SVG must define clipPath id='backdropClip'", svg.contains("<clipPath id=\"backdropClip\">"))
+        assertTrue("SVG must apply clip-path='url(#backdropClip)'", svg.contains("clip-path=\"url(#backdropClip)\""))
+    }
+
+    @Test
+    fun testImageStyleRoundedFinderSq25Parity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ROUNDED-PARITY", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val mSize = geometry.moduleSize
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            eyeStyle = EyeStyle(style = FinderStyle.ROUNDED),
+            positionSize = 1.0f
+        )
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+
+        // 1. Must emit inner circle of radius 1.5 * mSize matching EF <circle r="1.5"/>
+        val innerCircles = ir.rootNodes.filterIsInstance<CircleNode>().filter {
+            Math.abs(it.radius - 1.5f * mSize) < 0.01f
+        }
+        assertEquals("Must emit 3 inner finder circles for ROUNDED style", 3, innerCircles.size)
+
+        // 2. Must emit outer SQ25 squircle PathNode matching EFQRCodeStyleBasic.sq25
+        val sq25Paths = ir.rootNodes.filterIsInstance<PathNode>().filter {
+            it.svgPathData == VeilPositionPatternGeometry.SQ25_PATH
+        }
+        assertEquals("Must emit 3 outer SQ25 squircle PathNodes for ROUNDED style", 3, sq25Paths.size)
+    }
+
+    @Test
+    fun testImageStyleUnclampedParametersParity() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/UNCLAMPED-PARITY", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 0)
+        val mSize = geometry.moduleSize
+
+        // EF allows unclamped positionSize (e.g. 2.5f) and unclamped dataScale
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            eyeStyle = EyeStyle(style = FinderStyle.DSJ),
+            positionSize = 2.5f,
+            imageDataScale = 1.2f,
+            timingSize = 1.5f,
+            alignSize = 1.5f
+        )
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+
+        // Verify DSJ center rect width reflects unclamped posSize = 2.5: (2.0 + 2.5) * mSize = 4.5 * mSize
+        val dsjRects = ir.rootNodes.filterIsInstance<RectNode>()
+        val expectedCenterW = 4.5f * mSize
+        val centerMatches = dsjRects.filter { Math.abs(it.width - expectedCenterW) < 0.01f }
+        assertTrue("ImageRenderer must not artificially clamp positionSize below 2.5", centerMatches.isNotEmpty())
+    }
+
+    @Test
+    fun testAnimatedImageNodeSmilMarkupParity() {
+        val node = AnimatedImageNode(
+            x = 10f,
+            y = 20f,
+            width = 100f,
+            height = 100f,
+            base64Frames = listOf("FRAME_DATA_0", "FRAME_DATA_1", "FRAME_DATA_2"),
+            frameDelaysMs = listOf(100, 200, 300),
+            framePrefix = "1fm",
+            opacity = 0.85f,
+            maskId = "hole"
+        )
+        val ir = QrGeometryIr(
+            width = 120f,
+            height = 120f,
+            rootNodes = listOf(node)
+        )
+        val svg = IrSvgRenderer.render(ir)
+
+        // 1. Defs must define all 3 frame images
+        assertTrue("Defs must contain frame 0", svg.contains("<image id=\"1fm0\" xlink:href=\"data:image/png;base64,FRAME_DATA_0\""))
+        assertTrue("Defs must contain frame 1", svg.contains("<image id=\"1fm1\" xlink:href=\"data:image/png;base64,FRAME_DATA_1\""))
+        assertTrue("Defs must contain frame 2", svg.contains("<image id=\"1fm2\" xlink:href=\"data:image/png;base64,FRAME_DATA_2\""))
+
+        // 2. SMIL use tag references first frame
+        assertTrue("Use tag must reference #1fm0", svg.contains("<use xlink:href=\"#1fm0\">"))
+
+        // 3. SMIL animate tag with discrete calcMode
+        assertTrue("Animate must target xlink:href", svg.contains("attributeName=\"xlink:href\""))
+        assertTrue("Animate values must chain all frames", svg.contains("values=\"#1fm0;#1fm1;#1fm2\""))
+        // Total duration: 100 + 200 + 300 = 600ms = 0.600s
+        // KeyTimes: 0/600 = 0.000, 100/600 = 0.167, 300/600 = 0.500 (NO trailing 1.0)
+        assertTrue("KeyTimes must match EF formula without terminal 1.0", svg.contains("keyTimes=\"0.000;0.167;0.500\""))
+        assertTrue("Duration must match sum of delays", svg.contains("dur=\"0.600s\""))
+        assertTrue("Must repeat indefinitely", svg.contains("repeatCount=\"indefinite\""))
+        assertTrue("calcMode must be discrete", svg.contains("calcMode=\"discrete\""))
+        assertTrue("Group must apply mask if specified", svg.contains("mask=\"url(#hole)\""))
+    }
+
+    @Test
+    fun testAnimatedKeyTimesDiscreteMathParity() {
+        // Test diverse frame delay sets matching EF formula
+        val delays1 = listOf(200, 200) // equal 50/50
+        val node1 = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 100f,
+            height = 100f,
+            base64Frames = listOf("f0", "f1"),
+            frameDelaysMs = delays1,
+            framePrefix = "test1"
+        )
+        val svg1 = IrSvgRenderer.render(QrGeometryIr(width = 100f, height = 100f, rootNodes = listOf(node1)))
+        assertTrue("2 equal frames must produce 0.000;0.500", svg1.contains("keyTimes=\"0.000;0.500\""))
+        assertTrue("2 equal frames of 200ms must have dur=0.400s", svg1.contains("dur=\"0.400s\""))
+
+        // 4 variable frames: 100, 300, 200, 400 -> total 1000ms
+        val delays2 = listOf(100, 300, 200, 400)
+        val node2 = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 100f,
+            height = 100f,
+            base64Frames = listOf("a", "b", "c", "d"),
+            frameDelaysMs = delays2,
+            framePrefix = "test2"
+        )
+        val svg2 = IrSvgRenderer.render(QrGeometryIr(width = 100f, height = 100f, rootNodes = listOf(node2)))
+        assertTrue("4 frames must produce exactly 4 keyTimes matching accumulated fractions",
+            svg2.contains("keyTimes=\"0.000;0.100;0.400;0.600\""))
+        assertTrue("Total dur must be 1.000s", svg2.contains("dur=\"1.000s\""))
+
+        // Invariant: keyTimes count must equal values count
+        val valuesMatch = Regex("values=\"([^\"]+)\"").find(svg2)?.groupValues?.get(1)?.split(";")
+        val keyTimesMatch = Regex("keyTimes=\"([^\"]+)\"").find(svg2)?.groupValues?.get(1)?.split(";")
+        assertNotNull("Values must be present", valuesMatch)
+        assertNotNull("KeyTimes must be present", keyTimesMatch)
+        assertEquals("Count of keyTimes must match count of frame values", valuesMatch!!.size, keyTimesMatch!!.size)
+        assertEquals("First keyTime must always be 0.000", "0.000", keyTimesMatch.first())
+        assertFalse("KeyTimes must NOT contain terminal 1.000", keyTimesMatch.contains("1.000"))
+    }
+
+    @Test
+    fun testAnimationBoundaryConditionsParity() {
+        // 1. Single frame
+        val singleNode = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 100f,
+            height = 100f,
+            base64Frames = listOf("only_frame"),
+            frameDelaysMs = listOf(150),
+            framePrefix = "single"
+        )
+        val singleSvg = IrSvgRenderer.render(QrGeometryIr(width = 100f, height = 100f, rootNodes = listOf(singleNode)))
+        assertTrue(singleSvg.contains("values=\"#single0\""))
+        assertTrue(singleSvg.contains("keyTimes=\"0.000\""))
+        assertTrue(singleSvg.contains("dur=\"0.150s\""))
+
+        // 2. Empty delays: default 100ms per frame
+        val noDelaysNode = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 100f,
+            height = 100f,
+            base64Frames = listOf("f0", "f1", "f2"),
+            frameDelaysMs = emptyList(),
+            framePrefix = "nodelay"
+        )
+        val noDelaysSvg = IrSvgRenderer.render(QrGeometryIr(width = 100f, height = 100f, rootNodes = listOf(noDelaysNode)))
+        assertTrue(noDelaysSvg.contains("keyTimes=\"0.000;0.333;0.667\""))
+        assertTrue(noDelaysSvg.contains("dur=\"0.300s\""))
+    }
+
+    @Test
+    fun testIconAnimatedSmilSvgParity() {
+        val dummyBmp = allocateBitmapReflectively()
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            logo = LogoStyle(
+                bitmap = dummyBmp,
+                source = ImageSource.Animated(
+                    frames = listOf(dummyBmp, dummyBmp),
+                    delaysMs = listOf(150, 250)
+                ),
+                shape = LogoShape.SQUIRCLE
+            )
+        )
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ANIM-LOGO", ErrorCorrectionLevel.H)
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+
+        // 1. Defs must define logofm0 and logofm1
+        assertTrue("Must define logofm0 in defs", svg.contains("<image id=\"logofm0\""))
+        assertTrue("Must define logofm1 in defs", svg.contains("<image id=\"logofm1\""))
+
+        // 2. Logo squircle clipPath
+        assertTrue("Must define logoClip clipPath", svg.contains("<clipPath id=\"logoClip\">"))
+
+        // 3. SMIL animate with discrete calcMode
+        assertTrue("Use tag must reference logofm0 with logoClip", svg.contains("<use xlink:href=\"#logofm0\" clip-path=\"url(#logoClip)\">"))
+        assertTrue("Animate values must chain logo frames", svg.contains("values=\"#logofm0;#logofm1\""))
+        assertTrue("KeyTimes must match EF formula (150/400 = 0.375)", svg.contains("keyTimes=\"0.000;0.375\""))
+        assertTrue("Duration must be sum (150+250=400ms = 0.400s)", svg.contains("dur=\"0.400s\""))
+        assertTrue("calcMode must be discrete", svg.contains("calcMode=\"discrete\""))
+    }
+
+    @Test
+    fun testAllFivePositionStyles() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/5POS-PARITY", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry(matrix.size, 512, 512, 1)
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+
+        // 1. RECTANGLE / CLASSIC
+        val classicNodes = VeilPositionPatternGeometry.toIrNodes(
+            x = 3, y = 3, moduleSize = mSize, offsetX = ox, offsetY = oy,
+            style = FinderStyle.CLASSIC, size = 1.0f, color = Color.BLACK
+        )
+        assertEquals("Classic must produce 2 nodes (inner rect + outer stroke rect)", 2, classicNodes.size)
+        val classicInner = classicNodes[0] as RectNode
+        val classicOuter = classicNodes[1] as RectNode
+        assertEquals(3f * mSize, classicInner.width, 0.01f)
+        assertEquals(6f * mSize, classicOuter.width, 0.01f)
+
+        // 2. ROUND / CIRCLE
+        val circleNodes = VeilPositionPatternGeometry.toIrNodes(
+            x = 3, y = 3, moduleSize = mSize, offsetX = ox, offsetY = oy,
+            style = FinderStyle.CIRCLE, size = 1.0f, color = Color.BLACK
+        )
+        assertEquals("Circle must produce 2 nodes (inner circle + outer stroke circle)", 2, circleNodes.size)
+        val circleInner = circleNodes[0] as CircleNode
+        val circleOuter = circleNodes[1] as CircleNode
+        assertEquals(1.5f * mSize, circleInner.radius, 0.01f)
+        assertEquals(3.0f * mSize, circleOuter.radius, 0.01f)
+
+        // 3. ROUNDED_RECTANGLE / SQ25
+        val roundedNodes = VeilPositionPatternGeometry.toIrNodes(
+            x = 3, y = 3, moduleSize = mSize, offsetX = ox, offsetY = oy,
+            style = FinderStyle.ROUNDED, size = 1.0f, color = Color.BLACK
+        )
+        assertEquals("Rounded must produce 2 nodes (inner circle + outer SQ25 squircle path)", 2, roundedNodes.size)
+        val roundedInner = roundedNodes[0] as CircleNode
+        val roundedOuter = roundedNodes[1] as PathNode
+        assertEquals(1.5f * mSize, roundedInner.radius, 0.01f)
+        assertEquals(VeilPositionPatternGeometry.SQ25_PATH, roundedOuter.svgPathData)
+
+        // 4. PLANETS
+        val planetNodes = VeilPositionPatternGeometry.toIrNodes(
+            x = 3, y = 3, moduleSize = mSize, offsetX = ox, offsetY = oy,
+            style = FinderStyle.PLANETS, size = 1.0f, color = Color.BLACK
+        )
+        assertEquals("Planets must produce 6 nodes (core + orbit + 4 satellites)", 6, planetNodes.size)
+        val planetCore = planetNodes[0] as CircleNode
+        val planetOrbit = planetNodes[1] as CircleNode
+        assertEquals(1.5f * mSize, planetCore.radius, 0.01f)
+        assertEquals(3.0f * mSize, planetOrbit.radius, 0.01f)
+
+        // 5. DSJ
+        val dsjNodes = VeilPositionPatternGeometry.toIrNodes(
+            x = 3, y = 3, moduleSize = mSize, offsetX = ox, offsetY = oy,
+            style = FinderStyle.DSJ, size = 1.0f, color = Color.BLACK
+        )
+        assertEquals("DSJ must produce 5 nodes (center + 4 protruding tabs)", 5, dsjNodes.size)
+        val dsjCenter = dsjNodes[0] as RectNode
+        assertEquals(3f * mSize, dsjCenter.width, 0.01f)
+    }
+
+    @Test
+    fun testBackdropStyleViewBoxAndQuietZoneParity() {
+        // Standard style with default quiet zone (nil -> 1 module on each side)
+        val defaultBackdrop = BackdropStyle()
+        val vbDefault = defaultBackdrop.calculateViewBox(21)
+        assertEquals("Default viewBox x must be -1", -1f, vbDefault.minX, 0.001f)
+        assertEquals("Default viewBox y must be -1", -1f, vbDefault.minY, 0.001f)
+        assertEquals("Default viewBox width must be N + 2 = 23", 23f, vbDefault.width, 0.001f)
+        assertEquals("Default viewBox height must be N + 2 = 23", 23f, vbDefault.height, 0.001f)
+
+        // Standard style with fractional quiet zone (top=0.1, left=0.1, bottom=0.2, right=0.2)
+        val fractionalBackdrop = BackdropStyle(
+            fractionalQuietZone = FractionalInsets(left = 0.1f, top = 0.1f, right = 0.2f, bottom = 0.2f)
+        )
+        val vbFractional = fractionalBackdrop.calculateViewBox(20)
+        // x = -20 * 0.1 = -2.0, y = -20 * 0.1 = -2.0
+        // width = 20 * (0.1 + 1 + 0.2) = 20 * 1.3 = 26.0
+        // height = 20 * (0.1 + 1 + 0.2) = 20 * 1.3 = 26.0
+        assertEquals(-2.0f, vbFractional.minX, 0.001f)
+        assertEquals(-2.0f, vbFractional.minY, 0.001f)
+        assertEquals(26.0f, vbFractional.width, 0.001f)
+        assertEquals(26.0f, vbFractional.height, 0.001f)
+
+        // RESAMPLE style with default quiet zone (nil -> 3 subpixels on each side)
+        val vbResampleDefault = defaultBackdrop.calculateViewBox(21, isResample = true)
+        assertEquals("Resample default viewBox x must be -3", -3f, vbResampleDefault.minX, 0.001f)
+        assertEquals("Resample default viewBox y must be -3", -3f, vbResampleDefault.minY, 0.001f)
+        assertEquals("Resample default viewBox width must be 3N + 6 = 69", 69f, vbResampleDefault.width, 0.001f)
+        assertEquals("Resample default viewBox height must be 3N + 6 = 69", 69f, vbResampleDefault.height, 0.001f)
+    }
+
+    @Test
+    fun testBackdropStyleSvgContainerParity() {
+        val backdrop = BackdropStyle(
+            color = 0xFFEEEEEE.toInt(),
+            cornerRadius = 16.0f,
+            fractionalQuietZone = FractionalInsets(left = 0.05f, top = 0.05f, right = 0.05f, bottom = 0.05f)
+        )
+        val (openSvg, closeSvg) = backdrop.generateSvgContainer(20, isResample = false, preprocessedBase64Image = "DUMMY_BACKDROP_B64")
+
+        // 1. Root svg tag with viewBox width and height
+        assertTrue("Must contain svg with className Qr-item-svg", openSvg.contains("<svg className=\"Qr-item-svg\""))
+        assertTrue("Width must be 20 * 1.1 = 22.0", openSvg.contains("width=\"22.0\""))
+        assertTrue("Height must be 20 * 1.1 = 22.0", openSvg.contains("height=\"22.0\""))
+
+        // 2. Defs clipPath for rounded corners
+        assertTrue("Must define rounded-corners clipPath", openSvg.contains("<clipPath id=\"rounded-corners\">"))
+        assertTrue("Clip rect must have rx='16.00'", openSvg.contains("rx=\"16.00\""))
+
+        // 3. Background color rect
+        assertTrue("Background rect must fill #EEEEEE", openSvg.contains("fill=\"#EEEEEE\""))
+
+        // 4. Preprocessed backdrop image
+        assertTrue("Must embed preprocessed backdrop image", openSvg.contains("<image key=\"bi\""))
+        assertTrue("Image href must contain base64", openSvg.contains("xlink:href=\"data:image/png;base64,DUMMY_BACKDROP_B64\""))
+
+        // 5. Transform translation to center QR code within quiet zone margin: -left = -(-20 * 0.05) = +1.0
+        assertTrue("Transform must translate by (-minX, -minY)", openSvg.contains("transform=\"translate(1.000, 1.000)\""))
+
+        // 6. Closing tags
+        assertEquals("    </g>\n  </g>\n</svg>", closeSvg)
+    }
+
+    @Test
+    fun testIconPercentageClamp() {
+        val dummyBmp = allocateBitmapReflectively()
+
+        // TC-21: Excessive Icon Percentage (0.85 -> strictly clamped to 0.33)
+        val paramsExcessive = QrStyleParams(
+            style = QrStyle.IMAGE,
+            logo = dummyBmp,
+            logoFraction = 0.85f
+        )
+        val designExcessive = QrDesign.fromQrStyleParams(paramsExcessive)
+        assertNotNull(designExcessive.logo)
+        assertEquals("Icon fraction 0.85 must be clamped to 0.33", 0.33f, designExcessive.logo!!.scaleFraction, 0.001f)
+
+        // Standard 0.20 remains 0.20
+        val paramsNormal = QrStyleParams(
+            style = QrStyle.IMAGE,
+            logo = dummyBmp,
+            logoFraction = 0.20f
+        )
+        val designNormal = QrDesign.fromQrStyleParams(paramsNormal)
+        assertEquals(0.20f, designNormal.logo!!.scaleFraction, 0.001f)
+
+        // Mid-value 0.50 clamped to 0.33
+        val paramsMid = QrStyleParams(
+            style = QrStyle.IMAGE,
+            logo = dummyBmp,
+            logoFraction = 0.50f
+        )
+        val designMid = QrDesign.fromQrStyleParams(paramsMid)
+        assertEquals(0.33f, designMid.logo!!.scaleFraction, 0.001f)
+    }
+
+    @Test
+    fun testIconExact24PaddingOffsetAndSq25Border() {
+        val dummyBmp = allocateBitmapReflectively()
+        val matrix = QrMatrix("https://veilframe.app/icon-test", ErrorCorrectionLevel.H)
+        val geom = QrGeometry.fromDesign(matrix.size, 512, 512, QrDesign())
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            logo = LogoStyle(
+                bitmap = dummyBmp,
+                scaleFraction = 0.20f,
+                shape = LogoShape.SQUIRCLE,
+                borderColor = 0xFF336699.toInt()
+            )
+        )
+
+        val ir = ImageRenderer().generateGeometry(matrix, design, geom)
+        val width = 512f
+        val iconSize = width * 0.20f // 102.4
+        val iconXY = (width - iconSize) / 2f // 204.8
+        val iconOffset = iconXY * 0.024f // 4.9152
+        val rectXY = iconXY - iconOffset // 199.8848
+        val length = iconSize + 2f * iconOffset // 112.2304
+
+        // 1. Verify SQ25 squircle border path node
+        val sq25Node = ir.rootNodes.filterIsInstance<PathNode>().firstOrNull { it.svgPathData == VeilPositionPatternGeometry.SQ25_PATH }
+        assertNotNull("Must include SQ25 squircle border path for LogoShape.SQUIRCLE", sq25Node)
+        assertEquals("Stroke width must be 100.0 / iconSize", 100f / iconSize, sq25Node!!.strokeWidth, 0.001f)
+        assertTrue("Transform must translate by iconXY and scale by iconSize / 100", sq25Node.transform!!.contains("scale(1.024"))
+
+        // 2. Verify preprocessed ImageNode at exact 2.4% offset bounds
+        val imgNode = ir.rootNodes.filterIsInstance<ImageNode>().lastOrNull()
+        assertNotNull("Must include ImageNode for logo", imgNode)
+        assertEquals("X must match rectXY", rectXY, imgNode!!.x, 0.01f)
+        assertEquals("Y must match rectXY", rectXY, imgNode.y, 0.01f)
+        assertEquals("Width must match length", length, imgNode.width, 0.01f)
+        assertEquals("Height must match length", length, imgNode.height, 0.01f)
+        assertEquals("preserveAspectRatio must be empty to eliminate distortion", "", imgNode.preserveAspectRatio)
+    }
+
+    @Test
+    fun testIconAlphaOpacityAttribute() {
+        val dummyBmp = allocateBitmapReflectively()
+        val matrix = QrMatrix("https://veilframe.app/icon-alpha", ErrorCorrectionLevel.H)
+        val geom = QrGeometry.fromDesign(matrix.size, 512, 512, QrDesign())
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            logo = LogoStyle(
+                bitmap = dummyBmp,
+                scaleFraction = 0.20f,
+                alpha = 0.65f
+            )
+        )
+
+        val ir = ImageRenderer().generateGeometry(matrix, design, geom)
+        val imgNode = ir.rootNodes.filterIsInstance<ImageNode>().lastOrNull()
+        assertNotNull(imgNode)
+        assertEquals(0.65f, imgNode!!.opacity, 0.001f)
+
+        val svg = IrSvgRenderer.render(ir)
+        assertTrue("SVG must emit opacity='0.65'", svg.contains("opacity=\"0.65\""))
+    }
+
+    @Test
+    fun testIconAnimationAndMode() {
+        val frame1 = allocateBitmapReflectively()
+        val frame2 = allocateBitmapReflectively()
+        val matrix = QrMatrix("https://veilframe.app/icon-anim", ErrorCorrectionLevel.H)
+        val geom = QrGeometry.fromDesign(matrix.size, 512, 512, QrDesign())
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            logo = LogoStyle(
+                source = ImageSource.Animated(listOf(frame1, frame2), listOf(200, 300)),
+                scaleFraction = 0.20f,
+                alpha = 0.90f
+            )
+        )
+
+        val ir = ImageRenderer().generateGeometry(matrix, design, geom)
+        val animNode = ir.rootNodes.filterIsInstance<AnimatedImageNode>().firstOrNull { it.framePrefix == "logofm" }
+        assertNotNull("Must emit AnimatedImageNode with framePrefix logofm", animNode)
+        assertEquals(2, animNode!!.base64Frames.size)
+        assertEquals(0.90f, animNode.opacity, 0.001f)
+
+        val svg = IrSvgRenderer.render(ir)
+        assertTrue("Must declare discrete animation for logofm", svg.contains("values=\"#logofm0;#logofm1\""))
+        assertTrue("Must use calcMode='discrete'", svg.contains("calcMode=\"discrete\""))
+        assertTrue("Must have total duration 0.500s", svg.contains("dur=\"0.500s\""))
     }
 }

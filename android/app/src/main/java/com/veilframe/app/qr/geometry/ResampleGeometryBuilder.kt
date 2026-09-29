@@ -25,10 +25,22 @@ object ResampleGeometryBuilder {
         val height = geometry.outputHeight.toFloat()
         val nodes = mutableListOf<QrGeometryNode>()
 
+        val defs = mutableListOf<String>()
+        val cornerRadius = design.resampleStyle.backdropCornerRadius
+        if (cornerRadius > 0f) {
+            defs.add(
+                String.format(
+                    java.util.Locale.US,
+                    "<clipPath id=\"backdropClip\"><rect x=\"0\" y=\"0\" width=\"%.4f\" height=\"%.4f\" rx=\"%.4f\" ry=\"%.4f\" /></clipPath>",
+                    width, height, cornerRadius, cornerRadius
+                )
+            )
+        }
+
         // 1. Canvas background
         val bgAlpha = (design.palette.background ushr 24) and 0xFF
         if (bgAlpha > 0) {
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, fill = design.palette.background))
+            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = cornerRadius, ry = cornerRadius, fill = design.palette.background))
         }
 
         // 2. Continuous Backdrop Image (supports independent backdrop or reused source image)
@@ -48,6 +60,7 @@ object ResampleGeometryBuilder {
                 com.veilframe.app.qr.model.BackdropBlendMode.SCREEN -> "mix-blend-mode: screen;"
                 com.veilframe.app.qr.model.BackdropBlendMode.OVERLAY -> "mix-blend-mode: overlay;"
             }
+            val clipId = if (cornerRadius > 0f) "backdropClip" else null
             nodes.add(
                 ImageNode(
                     x = 0f,
@@ -58,6 +71,7 @@ object ResampleGeometryBuilder {
                     base64Data = base64,
                     opacity = design.resampleStyle.backdropOpacity.coerceIn(0f, 1f),
                     preserveAspectRatio = aspect,
+                    clipPathId = clipId,
                     style = blendStyle
                 )
             )
@@ -71,6 +85,8 @@ object ResampleGeometryBuilder {
                         y = 0f,
                         width = width,
                         height = height,
+                        rx = cornerRadius,
+                        ry = cornerRadius,
                         fill = tintRgb,
                         opacity = tintAlpha,
                         alwaysEmitOpacity = true
@@ -82,8 +98,9 @@ object ResampleGeometryBuilder {
         val fgColor = design.palette.foreground
         val dataColor = if (design.style == QrStyle.IMAGE_RESAMPLE) design.dataColorDark else fgColor
 
-        // 3. Subpixel dots & center anchors from ResampleSubpixelEngine (EF: writeResImage before writeQRCode)
+        // 3. Subpixel stochastic non-center dots from ResampleSubpixelEngine (EF: writeResImage before writeQRCode)
         val isAnimated = design.imageSource.isAnimated && !design.imageSource.animatedFrames.isNullOrEmpty()
+        val hasSourceImage = isAnimated || pixelSource != null || (resampleBmp != null && !resampleBmp.isRecycled)
         if (isAnimated) {
             val frames = design.imageSource.animatedFrames!!
             val delays = design.imageSource.frameDelaysMs ?: List(frames.size) { 100 }
@@ -96,18 +113,21 @@ object ResampleGeometryBuilder {
                         source = frameBmp,
                         style = design.imageSource,
                         seed = design.resampleStyle.seed,
-                        policy = ArtisticResamplePolicy.from(design)
-                    ) { col, row, sx, sy, _ ->
-                        val rect = SubpixelGeometry.computeEfCanvasRect(
-                            col = col,
-                            row = row,
-                            offsetX = ox,
-                            offsetY = oy,
-                            moduleSize = mSize,
-                            subX = sx,
-                            subY = sy
-                        )
-                        frameDots.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                        policy = ArtisticResamplePolicy.from(design),
+                        includeCenterAnchors = false
+                    ) { col, row, sx, sy, isCenterAnchor ->
+                        if (!isCenterAnchor) {
+                            val rect = SubpixelGeometry.computeEfCanvasRect(
+                                col = col,
+                                row = row,
+                                offsetX = ox,
+                                offsetY = oy,
+                                moduleSize = mSize,
+                                subX = sx,
+                                subY = sy
+                            )
+                            frameDots.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                        }
                     }
                 }
                 frameNodesList.add(frameDots)
@@ -119,18 +139,21 @@ object ResampleGeometryBuilder {
                 pixelSource = pixelSource,
                 style = design.imageSource,
                 seed = design.resampleStyle.seed,
-                policy = ArtisticResamplePolicy.from(design)
-            ) { col, row, sx, sy, _ ->
-                val rect = SubpixelGeometry.computeEfCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = ox,
-                    offsetY = oy,
-                    moduleSize = mSize,
-                    subX = sx,
-                    subY = sy
-                )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                policy = ArtisticResamplePolicy.from(design),
+                includeCenterAnchors = false
+            ) { col, row, sx, sy, isCenterAnchor ->
+                if (!isCenterAnchor) {
+                    val rect = SubpixelGeometry.computeEfCanvasRect(
+                        col = col,
+                        row = row,
+                        offsetX = ox,
+                        offsetY = oy,
+                        moduleSize = mSize,
+                        subX = sx,
+                        subY = sy
+                    )
+                    nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                }
             }
         } else if (resampleBmp != null && !resampleBmp.isRecycled) {
             ResampleSubpixelEngine.traverseSubpixels(
@@ -138,18 +161,21 @@ object ResampleGeometryBuilder {
                 source = resampleBmp,
                 style = design.imageSource,
                 seed = design.resampleStyle.seed,
-                policy = ArtisticResamplePolicy.from(design)
-            ) { col, row, sx, sy, _ ->
-                val rect = SubpixelGeometry.computeEfCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = ox,
-                    offsetY = oy,
-                    moduleSize = mSize,
-                    subX = sx,
-                    subY = sy
-                )
-                nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                policy = ArtisticResamplePolicy.from(design),
+                includeCenterAnchors = false
+            ) { col, row, sx, sy, isCenterAnchor ->
+                if (!isCenterAnchor) {
+                    val rect = SubpixelGeometry.computeEfCanvasRect(
+                        col = col,
+                        row = row,
+                        offsetX = ox,
+                        offsetY = oy,
+                        moduleSize = mSize,
+                        subX = sx,
+                        subY = sy
+                    )
+                    nodes.add(RectNode(x = rect.left, y = rect.top, width = rect.width, height = rect.height, fill = dataColor))
+                }
             }
         } else {
             for (col in 0 until n) {
@@ -327,7 +353,22 @@ object ResampleGeometryBuilder {
             }
         }
 
-        // 7. Center logo on QR matrix
+        // 7. Ordinary dark-module Sb center anchors (EF writeQRCode data/format/version emission outside animated group)
+        if (hasSourceImage) {
+            val sbDim = (1.02f / 3f) * mSize
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val role = matrix.roleAt(col, row)
+                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
+                    if (!matrix.isDark(col, row)) continue
+                    val x = ox + (col + 1f / 3f) * mSize
+                    val y = oy + (row + 1f / 3f) * mSize
+                    nodes.add(RectNode(x = x, y = y, width = sbDim, height = sbDim, fill = dataColor))
+                }
+            }
+        }
+
+        // 8. Center logo on QR matrix
         design.logo?.bitmap?.let { logoBmp ->
             val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.35f)
             val qrPixelSize = n * mSize
@@ -365,6 +406,7 @@ object ResampleGeometryBuilder {
             width = width,
             height = height,
             viewBox = "0 0 ${width.toInt()} ${height.toInt()}",
+            defs = defs,
             rootNodes = nodes
         )
     }

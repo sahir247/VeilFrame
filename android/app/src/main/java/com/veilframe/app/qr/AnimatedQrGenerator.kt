@@ -96,6 +96,15 @@ object AnimatedQrGenerator {
         matrix: QrMatrix,
         design: QrDesign
     ): String {
+        // Native EF animated styles: SvgExporter generates static QR structure with animated image source
+        if (design.style == com.veilframe.app.qr.QrStyle.IMAGE ||
+            design.style == com.veilframe.app.qr.QrStyle.IMAGE_FILL ||
+            design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
+        ) {
+            if (isDesignAnimated(design)) {
+                return SvgExporter.generateSvg(matrix, design)
+            }
+        }
         val sourceFrames = extractSourceFrames(design)
         if (sourceFrames.isEmpty()) {
             return SvgExporter.generateSvg(matrix, design)

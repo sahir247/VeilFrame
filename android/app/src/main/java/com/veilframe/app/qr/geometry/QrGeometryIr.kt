@@ -85,14 +85,34 @@ data class ImageNode(
     val opacity: Float = 1f,
     val preserveAspectRatio: String = "xMidYMid slice",
     val maskId: String? = null,
+    val clipPathId: String? = null,
     val clipOutRects: List<RectF> = emptyList(),
     val transform: String? = null,
     val style: String? = null
 ) : QrGeometryNode
 
+data class AnimatedImageNode(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val frames: List<Bitmap> = emptyList(),
+    val base64Frames: List<String> = emptyList(),
+    val frameDelaysMs: List<Int> = emptyList(),
+    val opacity: Float = 1f,
+    val preserveAspectRatio: String = "xMidYMid slice",
+    val maskId: String? = null,
+    val clipPathId: String? = null,
+    val clipOutRects: List<RectF> = emptyList(),
+    val transform: String? = null,
+    val style: String? = null,
+    val framePrefix: String = "1fm"
+) : QrGeometryNode
+
 data class GroupNode(
     val children: List<QrGeometryNode>,
     val maskId: String? = null,
+    val clipPathId: String? = null,
     val opacity: Float = 1f,
     val transform: String? = null
 ) : QrGeometryNode

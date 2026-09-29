@@ -52,10 +52,14 @@ class QrGeometry(
         ): QrGeometry {
             val fallbackQz = resolveDefaultQuietZone(design.style, defaultQuietZone)
             val qz = design.explicitQuietZone ?: fallbackQz
-            val qzLeft = design.directionalQuietZone?.left ?: qz
-            val qzTop = design.directionalQuietZone?.top ?: qz
-            val qzRight = design.directionalQuietZone?.right ?: qz
-            val qzBottom = design.directionalQuietZone?.bottom ?: qz
+            val qzLeft = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.left * matrixSize) }
+                ?: design.directionalQuietZone?.left ?: qz
+            val qzTop = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.top * matrixSize) }
+                ?: design.directionalQuietZone?.top ?: qz
+            val qzRight = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.right * matrixSize) }
+                ?: design.directionalQuietZone?.right ?: qz
+            val qzBottom = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.bottom * matrixSize) }
+                ?: design.directionalQuietZone?.bottom ?: qz
             return QrGeometry(
                 matrixSize = matrixSize,
                 outputWidth = outputWidth,

@@ -114,6 +114,9 @@ object IrSvgRenderer {
                 if (node.maskId != null) {
                     sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
                 }
+                if (node.clipPathId != null) {
+                    sb.append(" clip-path=\"url(#").append(node.clipPathId).append(")\"")
+                }
                 if (node.transform != null) {
                     sb.append(" transform=\"").append(node.transform).append("\"")
                 }
@@ -122,6 +125,7 @@ object IrSvgRenderer {
             is GroupNode -> {
                 sb.append(pad).append("<g")
                 if (node.maskId != null) sb.append(" mask=\"url(#").append(node.maskId).append(")\"")
+                if (node.clipPathId != null) sb.append(" clip-path=\"url(#").append(node.clipPathId).append(")\"")
                 if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append(">\n")
@@ -129,6 +133,62 @@ object IrSvgRenderer {
                     renderNode(child, sb, indent + 2)
                 }
                 sb.append(pad).append("</g>\n")
+            }
+            is AnimatedImageNode -> {
+                val base64List = if (node.base64Frames.isNotEmpty()) {
+                    node.base64Frames
+                } else {
+                    node.frames.map { bitmapToBase64(it) }
+                }
+                if (base64List.isNotEmpty()) {
+                    val framePrefix = node.framePrefix
+                    val delaysMs = if (node.frameDelaysMs.isNotEmpty()) node.frameDelaysMs else List(base64List.size) { 100 }
+                    val totalDurationMs = maxOf(1, delaysMs.sum())
+                    val totalDurationSec = totalDurationMs / 1000.0
+
+                    val maskAttr = if (node.maskId != null) " mask=\"url(#${node.maskId})\"" else ""
+                    val clipAttr = if (node.clipPathId != null) " clip-path=\"url(#${node.clipPathId})\"" else ""
+                    val transAttr = if (node.transform != null) " transform=\"${node.transform}\"" else ""
+
+                    sb.append(pad).append("<g").append(maskAttr).append(clipAttr).append(transAttr).append(">\n")
+                    sb.append(pad).append("  <defs>\n")
+                    for ((idx, base64) in base64List.withIndex()) {
+                        val href = if (base64.startsWith("#") || base64.startsWith("data:")) base64 else "data:image/png;base64,$base64"
+                        sb.append(pad).append("    <image id=\"").append(framePrefix).append(idx).append("\" xlink:href=\"").append(href).append("\"")
+                        sb.append(String.format(Locale.US, " width=\"%.4f\" height=\"%.4f\" x=\"%.4f\" y=\"%.4f\"", node.width, node.height, node.x, node.y))
+                        if (node.opacity < 1f) {
+                            sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                        }
+                        if (node.preserveAspectRatio.isNotEmpty()) {
+                            sb.append(" preserveAspectRatio=\"").append(node.preserveAspectRatio).append("\"")
+                        }
+                        sb.append(" />\n")
+                    }
+                    sb.append(pad).append("  </defs>\n")
+
+                    var accumulatedMs = 0
+                    val keyTimes = mutableListOf<String>()
+                    for (delay in delaysMs) {
+                        val fraction = accumulatedMs.toDouble() / totalDurationMs
+                        keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                        accumulatedMs += delay
+                    }
+                    val valuesStr = base64List.indices.joinToString(";") { "#$framePrefix$it" }
+                    val keyTimesStr = keyTimes.joinToString(";")
+                    val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+                    sb.append(pad).append("  <use xlink:href=\"#").append(framePrefix).append("0\">\n")
+                    sb.append(pad).append("    <animate\n")
+                    sb.append(pad).append("      attributeName=\"xlink:href\"\n")
+                    sb.append(pad).append("      values=\"").append(valuesStr).append("\"\n")
+                    sb.append(pad).append("      keyTimes=\"").append(keyTimesStr).append("\"\n")
+                    sb.append(pad).append("      dur=\"").append(durStr).append("s\"\n")
+                    sb.append(pad).append("      repeatCount=\"indefinite\"\n")
+                    sb.append(pad).append("      calcMode=\"discrete\"\n")
+                    sb.append(pad).append("    />\n")
+                    sb.append(pad).append("  </use>\n")
+                    sb.append(pad).append("</g>\n")
+                }
             }
             is AnimatedGroupNode -> {
                 if (node.frameNodes.isNotEmpty()) {

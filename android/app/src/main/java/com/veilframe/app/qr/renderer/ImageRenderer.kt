@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import com.veilframe.app.qr.geometry.*
+import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.QrStyleParams
 
@@ -49,7 +50,7 @@ class ImageRenderer : QrRenderer {
 
 
         val dataShape = design.moduleStyle.shape
-        val dataScale = (design.imageDataScale ?: design.moduleStyle.scale).coerceIn(0.05f, 1.0f)
+        val dataScale = maxOf(0f, (design.imageDataScale ?: design.moduleStyle.scale))
         val dataDarkColor = design.dataColorDark
         val dataLightColor = design.dataColorLight
         val allowTransparent = design.allowTransparent
@@ -57,17 +58,17 @@ class ImageRenderer : QrRenderer {
         val posStyle = design.eyeStyle.style
         val posDarkColor = design.positionDarkColor
         val posLightColor = design.positionLightColor
-        val posSize = design.positionSize.coerceIn(0.1f, 2.0f)
+        val posSize = design.positionSize
 
         val timingShape = design.timingStyle.shape
         val timingDarkColor = design.timingDarkColor
         val timingLightColor = design.timingLightColor
-        val timingSize = design.timingSize.coerceIn(0.1f, 1.0f)
+        val timingSize = design.timingSize
 
         val alignShape = design.alignmentStyle.shape
         val alignDarkColor = design.alignDarkColor
         val alignLightColor = design.alignLightColor
-        val alignSize = design.alignSize.coerceIn(0.1f, 1.0f)
+        val alignSize = design.alignSize
 
         val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
 
@@ -88,14 +89,26 @@ class ImageRenderer : QrRenderer {
         }
 
         // 3. Image Layer with 8x8 Finder Cutout Mask (#hole)
+        //
+        // M2 — EF parity: preprocess before embedding.
+        // EFQRCodeStyle.swift:269 → mode.imageForContent(ofImage:inCanvasOfRatio:) is called
+        // BEFORE pngBase64EncodedString(). We must match this by preprocessing the source
+        // to the QR canvas ratio first, then base64-encoding the preprocessed result.
+        // EF emits no preserveAspectRatio attribute; the embedded image already has correct
+        // geometry, so no consumer-side scaling is needed.
+        val canvasW = n * mSize
+        val canvasH = n * mSize  // QR canvas is always square
+        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+        val animatedFrames = design.imageSource.animatedFrames
+        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
+
         val tlFinderRect = RectF(x0, y0, x0 + 8 * mSize, y0 + 8 * mSize)
         val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize)
         val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize)
-        val base64 = IrSvgRenderer.bitmapToBase64(sourceImage)
 
         val defs = listOf(
             """<mask id="hole">
-    <rect x="$x0" y="$y0" width="${n * mSize}" height="${n * mSize}" fill="white"/>
+    <rect x="$x0" y="$y0" width="${canvasW}" height="${canvasH}" fill="white"/>
     <rect x="$x0" y="$y0" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
     <rect x="${x0 + (n - 8) * mSize}" y="$y0" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
     <rect x="$x0" y="${y0 + (n - 8) * mSize}" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
@@ -103,25 +116,63 @@ class ImageRenderer : QrRenderer {
         )
 
         val aspect = when (design.imageSource.scaleMode) {
-            ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
-            ImageScaleMode.STRETCH -> "none"
+            com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT -> "xMidYMid meet"
+            com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
             else -> "xMidYMid slice"
         }
 
-        nodes.add(
-            ImageNode(
-                x = x0,
-                y = y0,
-                width = n * mSize,
-                height = n * mSize,
-                bitmap = sourceImage,
-                base64Data = base64,
-                opacity = imageAlpha,
-                preserveAspectRatio = aspect,
-                maskId = "hole",
-                clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
+        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
+            val preprocessedFrames = animatedFrames.map { frame ->
+                EfImagePreprocessor.preprocess(
+                    source = frame,
+                    canvasWidth = canvasW,
+                    canvasHeight = canvasH,
+                    mode = design.imageSource.scaleMode
+                )
+            }
+            val base64Frames = preprocessedFrames.map { IrSvgRenderer.bitmapToBase64(it) }
+            nodes.add(
+                AnimatedImageNode(
+                    x = x0,
+                    y = y0,
+                    width = canvasW,
+                    height = canvasH,
+                    frames = preprocessedFrames,
+                    base64Frames = base64Frames,
+                    frameDelaysMs = frameDelaysMs,
+                    opacity = imageAlpha,
+                    preserveAspectRatio = aspect,
+                    maskId = "hole",
+                    clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect),
+                    framePrefix = "1fm"
+                )
             )
-        )
+        } else {
+            val preprocessed = if (sourceImage != null) {
+                EfImagePreprocessor.preprocess(
+                    source = sourceImage,
+                    canvasWidth = canvasW,
+                    canvasHeight = canvasH,
+                    mode = design.imageSource.scaleMode
+                )
+            } else null
+            val base64 = if (preprocessed != null) IrSvgRenderer.bitmapToBase64(preprocessed) else ""
+
+            nodes.add(
+                ImageNode(
+                    x = x0,
+                    y = y0,
+                    width = canvasW,
+                    height = canvasH,
+                    bitmap = preprocessed,
+                    base64Data = base64,
+                    opacity = imageAlpha,
+                    preserveAspectRatio = aspect,
+                    maskId = "hole",
+                    clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
+                )
+            )
+        }
 
         // 4. Finder Patterns (with 8x8 posLightColor backing)
         appendFinderIrNodes(nodes, x0, y0, 3.5f, 3.5f, 0, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
@@ -173,34 +224,80 @@ class ImageRenderer : QrRenderer {
         }
 
         // 8. Center Logo
-        design.logo?.bitmap?.let { logoBmp ->
-            val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.35f)
-            val logoSize = width * fraction
-            val logoX = (width - logoSize) / 2f
-            val logoY = (height - logoSize) / 2f
-            val cardPadding = 0.5f * mSize
-            nodes.add(
-                RectNode(
-                    x = logoX - cardPadding,
-                    y = logoY - cardPadding,
-                    width = logoSize + 2 * cardPadding,
-                    height = logoSize + 2 * cardPadding,
-                    rx = 1.5f * mSize,
-                    ry = 1.5f * mSize,
-                    fill = design.palette.background
+        val logo = design.logo
+        val logoBmp = logo?.effectiveBitmap
+        if (logo != null && logoBmp != null) {
+            val scale = minOf(maxOf(0f, logo.scaleFraction), 0.33f)
+            val iconSize = width * scale
+            val iconXY = (width - iconSize) / 2f
+            val iconOffset = iconXY * 0.024f
+            val rectXY = iconXY - iconOffset
+            val length = iconSize + 2f * iconOffset
+
+            if (logo.shape == com.veilframe.app.qr.model.LogoShape.SQUIRCLE) {
+                val bdColor = logo.borderColor ?: (if (logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) design.palette.background else null)
+                if (bdColor != null) {
+                    val bdAlpha = ((bdColor ushr 24) and 0xFF) / 255f
+                    nodes.add(
+                        PathNode(
+                            svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
+                            fill = bdColor,
+                            stroke = bdColor,
+                            strokeWidth = 100f / iconSize,
+                            opacity = bdAlpha,
+                            transform = String.format(java.util.Locale.US, "translate(%.4f, %.4f) scale(%.6f, %.6f)", iconXY, iconXY, iconSize / 100f, iconSize / 100f)
+                        )
+                    )
+                }
+            } else {
+                val cardPadding = 0.5f * mSize
+                nodes.add(
+                    RectNode(
+                        x = iconXY - cardPadding,
+                        y = iconXY - cardPadding,
+                        width = iconSize + 2 * cardPadding,
+                        height = iconSize + 2 * cardPadding,
+                        rx = 1.5f * mSize,
+                        ry = 1.5f * mSize,
+                        fill = design.palette.background
+                    )
                 )
-            )
-            nodes.add(
-                ImageNode(
-                    x = logoX,
-                    y = logoY,
-                    width = logoSize,
-                    height = logoSize,
-                    bitmap = logoBmp,
-                    base64Data = IrSvgRenderer.bitmapToBase64(logoBmp),
-                    preserveAspectRatio = "xMidYMid meet"
+            }
+
+            val iconOpacity = logo.alpha.coerceIn(0f, 1f)
+            if (logo.isAnimated && logo.animatedFrames?.isNotEmpty() == true) {
+                val logoFrames = logo.animatedFrames ?: emptyList()
+                val logoDelays = logo.frameDelaysMs ?: emptyList()
+                val preprocessedFrames = logoFrames.map { com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(it, length, length, logo.scaleMode) }
+                nodes.add(
+                    AnimatedImageNode(
+                        x = rectXY,
+                        y = rectXY,
+                        width = length,
+                        height = length,
+                        frames = preprocessedFrames,
+                        base64Frames = preprocessedFrames.map { IrSvgRenderer.bitmapToBase64(it) },
+                        frameDelaysMs = logoDelays,
+                        opacity = iconOpacity,
+                        preserveAspectRatio = "",
+                        framePrefix = "logofm"
+                    )
                 )
-            )
+            } else {
+                val preprocessedBmp = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(logoBmp, length, length, logo.scaleMode)
+                nodes.add(
+                    ImageNode(
+                        x = rectXY,
+                        y = rectXY,
+                        width = length,
+                        height = length,
+                        bitmap = preprocessedBmp,
+                        base64Data = IrSvgRenderer.bitmapToBase64(preprocessedBmp),
+                        opacity = iconOpacity,
+                        preserveAspectRatio = ""
+                    )
+                )
+            }
         }
 
         return QrGeometryIr(
@@ -246,8 +343,23 @@ class ImageRenderer : QrRenderer {
                 nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkColor, strokeWidth = 1.0f * sizeFactor * mSize))
             }
             FinderStyle.ROUNDED -> {
-                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, rx = 0.75f * mSize, ry = 0.75f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx - 3.0f * mSize, centerPy - 3.0f * mSize, 6f * mSize, 6f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, stroke = darkColor, strokeWidth = 1.0f * sizeFactor * mSize))
+                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))
+                val ox = centerPx - 0.5f * mSize
+                val oy = centerPy - 0.5f * mSize
+                val squirclePath = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
+                    android.graphics.RectF(ox - 2.5f * mSize, oy - 2.5f * mSize, ox + 3.5f * mSize, oy + 3.5f * mSize)
+                )
+                nodes.add(
+                    PathNode(
+                        svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
+                        androidPath = squirclePath,
+                        fill = null,
+                        stroke = darkColor,
+                        strokeWidth = 100f / 6f * sizeFactor,
+                        canvasStrokeWidth = 1f * sizeFactor * mSize,
+                        transform = "translate(${ox - 2.5f * mSize},${oy - 2.5f * mSize}) scale(${6f * mSize / 100f},${6f * mSize / 100f})"
+                    )
+                )
             }
             FinderStyle.PLANETS -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))

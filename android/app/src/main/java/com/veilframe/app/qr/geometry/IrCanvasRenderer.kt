@@ -159,6 +159,29 @@ object IrCanvasRenderer {
                     canvas.restoreToCount(count)
                 }
             }
+            is AnimatedImageNode -> {
+                val bmp = node.frames.firstOrNull()
+                if (bmp != null && !bmp.isRecycled) {
+                    val count = canvas.save()
+                    for (clipRect in node.clipOutRects) {
+                        canvas.clipOutRect(clipRect)
+                    }
+                    paint.style = Paint.Style.FILL
+                    paint.isFilterBitmap = true
+                    paint.isDither = true
+                    paint.alpha = (node.opacity.coerceIn(0f, 1f) * 255).toInt()
+                    val dstBounds = RectF(node.x, node.y, node.x + node.width, node.y + node.height)
+                    val mode = when {
+                        node.preserveAspectRatio.contains("slice", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                        node.preserveAspectRatio.contains("meet", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT
+                        node.preserveAspectRatio.equals("none", ignoreCase = true) -> com.veilframe.app.qr.model.ImageScaleMode.STRETCH
+                        else -> com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
+                    }
+                    val (srcRect, resolvedDst) = com.veilframe.app.qr.renderer.ImageScaleResolver.resolveSrcDst(bmp.width, bmp.height, dstBounds, mode)
+                    canvas.drawBitmap(bmp, srcRect, resolvedDst, paint)
+                    canvas.restoreToCount(count)
+                }
+            }
             is GroupNode -> {
                 val count = canvas.save()
                 for (child in node.children) {

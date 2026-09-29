@@ -13,6 +13,7 @@ import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrModuleRole
+import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.math.max
@@ -261,65 +262,80 @@ object SvgExporter {
                     pixelSource = resolvedResampleSource,
                     style = design.imageSource,
                     seed = design.resampleStyle.seed,
-                    policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy.from(design)
-                ) { col, row, subX, subY, _ ->
-                    val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
-                        col = col,
-                        row = row,
-                        quietZoneLeft = qzLeft,
-                        quietZoneTop = qzTop,
-                        subX = subX,
-                        subY = subY
-                    )
-                    val sx = String.format(Locale.US, "%.3f", rect.left)
-                    val sy = String.format(Locale.US, "%.3f", rect.top)
-                    val subW = String.format(Locale.US, "%.3f", rect.width)
-                    val subH = String.format(Locale.US, "%.3f", rect.height)
-                    sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
+                    policy = com.veilframe.app.qr.renderer.ArtisticResamplePolicy.from(design),
+                    includeCenterAnchors = false
+                ) { col, row, subX, subY, isCenter ->
+                    if (!isCenter) {
+                        val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
+                            col = col,
+                            row = row,
+                            quietZoneLeft = qzLeft,
+                            quietZoneTop = qzTop,
+                            subX = subX,
+                            subY = subY
+                        )
+                        val sx = String.format(Locale.US, "%.3f", rect.left)
+                        val sy = String.format(Locale.US, "%.3f", rect.top)
+                        val subW = String.format(Locale.US, "%.3f", rect.width)
+                        val subH = String.format(Locale.US, "%.3f", rect.height)
+                        sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
+                    }
                 }
                 // Render protected timing and alignment modules for 3x3 resample
                 val timingFill = timingHex ?: dataFill
                 val alignFill = alignmentHex ?: dataFill
                 val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
-            val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
-            for (col in 0 until matrix.size) {
-                for (row in 0 until matrix.size) {
-                    if (!matrix.isDark(col, row)) continue
-                    val role = matrix.roleAt(col, row)
-                    val x = col + qzLeft
-                    val y = row + qzTop
-                    if (role == QrModuleRole.TIMING) {
-                        if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) continue
-                        val offset = (1.0 - timingScale) / 2.0
-                        val mx = x + offset
-                        val my = y + offset
-                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                            shape = design.timingStyle.shape,
-                            x = mx,
-                            y = my,
-                            size = timingScale,
-                            fill = timingFill
-                        )
-                        sb.append("""  $elem""").append("\n")
-                    } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
-                        if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) continue
-                        val offset = (1.0 - alignScale) / 2.0
-                        val mx = x + offset
-                        val my = y + offset
-                        val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                            shape = design.alignmentStyle.shape,
-                            x = mx,
-                            y = my,
-                            size = alignScale,
-                            fill = alignFill
-                        )
-                        sb.append("""  $elem""").append("\n")
-                    } else if (role == QrModuleRole.FORMAT || role == QrModuleRole.VERSION) {
-                        // Handled via subpixel precision in traverseSubpixels
+                val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f).toDouble()
+                for (col in 0 until matrix.size) {
+                    for (row in 0 until matrix.size) {
+                        if (!matrix.isDark(col, row)) continue
+                        val role = matrix.roleAt(col, row)
+                        val x = col + qzLeft
+                        val y = row + qzTop
+                        if (role == QrModuleRole.TIMING) {
+                            if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) continue
+                            val offset = (1.0 - timingScale) / 2.0
+                            val mx = x + offset
+                            val my = y + offset
+                            val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                                shape = design.timingStyle.shape,
+                                x = mx,
+                                y = my,
+                                size = timingScale,
+                                fill = timingFill
+                            )
+                            sb.append("""  $elem""").append("\n")
+                        } else if (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) {
+                            if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) continue
+                            val offset = (1.0 - alignScale) / 2.0
+                            val mx = x + offset
+                            val my = y + offset
+                            val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                                shape = design.alignmentStyle.shape,
+                                x = mx,
+                                y = my,
+                                size = alignScale,
+                                fill = alignFill
+                            )
+                            sb.append("""  $elem""").append("\n")
+                        } else if (role == QrModuleRole.DATA || role == QrModuleRole.FORMAT || role == QrModuleRole.VERSION) {
+                            val rect = com.veilframe.app.qr.renderer.SubpixelGeometry.computeSvgRect(
+                                col = col,
+                                row = row,
+                                quietZoneLeft = qzLeft,
+                                quietZoneTop = qzTop,
+                                subX = 3 * col + 1,
+                                subY = 3 * row + 1
+                            )
+                            val sx = String.format(Locale.US, "%.3f", rect.left)
+                            val sy = String.format(Locale.US, "%.3f", rect.top)
+                            val subW = String.format(Locale.US, "%.3f", rect.width)
+                            val subH = String.format(Locale.US, "%.3f", rect.height)
+                            sb.append("""  <rect x="$sx" y="$sy" width="$subW" height="$subH" fill="$dataFill" />""").append("\n")
+                        }
                     }
                 }
-            }
-        } else if (isMaskedWithSource) {
+            } else if (isMaskedWithSource) {
             val sourceBmp = design.imageSource.bitmap!!
             val srcBase64 = bitmapToBase64(sourceBmp)
             if (srcBase64.isNotEmpty()) {
@@ -585,7 +601,55 @@ object SvgExporter {
             com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
             else -> "xMidYMid slice"
         }
-        if (imageBase64.isNotEmpty()) {
+        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+        val animatedFrames = design.imageSource.animatedFrames
+        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
+
+        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
+            val preprocessedFrames = animatedFrames.map { frame ->
+                com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                    source = frame,
+                    canvasWidth = matrix.size.toFloat(),
+                    canvasHeight = matrix.size.toFloat(),
+                    mode = design.imageSource.scaleMode
+                )
+            }
+            val base64Frames = preprocessedFrames.map { bitmapToBase64(it) }
+            val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
+            val totalDurationMs = maxOf(1, delaysMs.sum())
+            val totalDurationSec = totalDurationMs / 1000.0
+            val framePrefix = "1fm"
+
+            sb.append("    <g>\n")
+            sb.append("      <defs>\n")
+            for ((idx, b64) in base64Frames.withIndex()) {
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="$fillAspect"/>""").append("\n")
+            }
+            sb.append("      </defs>\n")
+
+            var accumulatedMs = 0
+            val keyTimes = mutableListOf<String>()
+            for (delay in delaysMs) {
+                val fraction = accumulatedMs.toDouble() / totalDurationMs
+                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                accumulatedMs += delay
+            }
+            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
+            val keyTimesStr = keyTimes.joinToString(";")
+            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+            sb.append("""      <use xlink:href="#${framePrefix}0">""").append("\n")
+            sb.append("        <animate\n")
+            sb.append("""          attributeName="xlink:href"""").append("\n")
+            sb.append("""          values="$valuesStr"""").append("\n")
+            sb.append("""          keyTimes="$keyTimesStr"""").append("\n")
+            sb.append("""          dur="${durStr}s"""").append("\n")
+            sb.append("""          repeatCount="indefinite"""").append("\n")
+            sb.append("""          calcMode="discrete"""").append("\n")
+            sb.append("        />\n")
+            sb.append("      </use>\n")
+            sb.append("    </g>\n")
+        } else if (imageBase64.isNotEmpty()) {
             sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha" preserveAspectRatio="$fillAspect"/>""").append("\n")
         }
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
@@ -662,7 +726,55 @@ object SvgExporter {
             com.veilframe.app.qr.model.ImageScaleMode.STRETCH -> "none"
             else -> "xMidYMid slice"
         }
-        if (imageBase64.isNotEmpty()) {
+        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+        val animatedFrames = design.imageSource.animatedFrames
+        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
+
+        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
+            val preprocessedFrames = animatedFrames.map { frame ->
+                com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                    source = frame,
+                    canvasWidth = n.toFloat(),
+                    canvasHeight = n.toFloat(),
+                    mode = design.imageSource.scaleMode
+                )
+            }
+            val base64Frames = preprocessedFrames.map { bitmapToBase64(it) }
+            val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
+            val totalDurationMs = maxOf(1, delaysMs.sum())
+            val totalDurationSec = totalDurationMs / 1000.0
+            val framePrefix = "1fm"
+
+            sb.append("    <g>\n")
+            sb.append("      <defs>\n")
+            for ((idx, b64) in base64Frames.withIndex()) {
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="$imgAspect"/>""").append("\n")
+            }
+            sb.append("      </defs>\n")
+
+            var accumulatedMs = 0
+            val keyTimes = mutableListOf<String>()
+            for (delay in delaysMs) {
+                val fraction = accumulatedMs.toDouble() / totalDurationMs
+                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                accumulatedMs += delay
+            }
+            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
+            val keyTimesStr = keyTimes.joinToString(";")
+            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+            sb.append("""      <use xlink:href="#${framePrefix}0">""").append("\n")
+            sb.append("        <animate\n")
+            sb.append("""          attributeName="xlink:href"""").append("\n")
+            sb.append("""          values="$valuesStr"""").append("\n")
+            sb.append("""          keyTimes="$keyTimesStr"""").append("\n")
+            sb.append("""          dur="${durStr}s"""").append("\n")
+            sb.append("""          repeatCount="indefinite"""").append("\n")
+            sb.append("""          calcMode="discrete"""").append("\n")
+            sb.append("        />\n")
+            sb.append("      </use>\n")
+            sb.append("    </g>\n")
+        } else if (imageBase64.isNotEmpty()) {
             sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha" preserveAspectRatio="$imgAspect"/>""").append("\n")
         }
         sb.append("  </g>\n")
@@ -1153,14 +1265,12 @@ object SvgExporter {
                     sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                 }
                 FinderStyle.ROUNDED -> {
-                    if (isHollowFinder) {
-                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" rx="2" fill="none" stroke="$eyeOuterHex" stroke-width="1" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
-                    } else {
-                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="2" fill="$eyeOuterHex" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="1.5" fill="$bgHex" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" rx="1" fill="$eyeInnerHex" />""").append("\n")
-                    }
+                    val posSize = design.positionSize.toDouble()
+                    val strokeW = 100.0 / 6.0 * posSize
+                    val tx = cx - 3.0
+                    val ty = cy - 3.0
+                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <path d="${VeilPositionPatternGeometry.SQ25_PATH}" stroke="$eyeOuterHex" stroke-width="$strokeW" fill="none" transform="translate($tx,$ty) scale(0.06,0.06)" />""").append("\n")
                 }
                 FinderStyle.SOFT -> {
                     if (isHollowFinder) {
@@ -1282,8 +1392,16 @@ object SvgExporter {
         }
 
         // 2. Logo bitmap with clipPath
-        val base64 = bitmapToBase64(logoBmp)
-        if (base64.isNotEmpty()) {
+        val isLogoAnimated = logo.isAnimated && logo.animatedFrames?.isNotEmpty() == true
+        if (isLogoAnimated) {
+            val logoFrames = logo.animatedFrames ?: emptyList()
+            val rawDelays = logo.frameDelaysMs
+            val logoDelays = if (!rawDelays.isNullOrEmpty()) rawDelays else List(logoFrames.size) { 100 }
+            val totalDurationMs = maxOf(1, logoDelays.sum())
+            val totalDurationSec = totalDurationMs / 1000.0
+            val base64Frames = logoFrames.map { bitmapToBase64(it) }
+            val framePrefix = "logofm"
+
             sb.append("  <defs>\n")
             sb.append("""    <clipPath id="logoClip">""").append("\n")
             when (logo.shape) {
@@ -1303,9 +1421,58 @@ object SvgExporter {
                 }
             }
             sb.append("    </clipPath>\n")
+            for ((idx, b64) in base64Frames.withIndex()) {
+                sb.append("""    <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet"/>""").append("\n")
+            }
             sb.append("  </defs>\n")
 
-            sb.append("""  <image href="data:image/png;base64,$base64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet" clip-path="url(#logoClip)" />""").append("\n")
+            var accumulatedMs = 0
+            val keyTimes = mutableListOf<String>()
+            for (delay in logoDelays) {
+                val fraction = accumulatedMs.toDouble() / totalDurationMs
+                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                accumulatedMs += delay
+            }
+            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
+            val keyTimesStr = keyTimes.joinToString(";")
+            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+            sb.append("""  <use xlink:href="#${framePrefix}0" clip-path="url(#logoClip)">""").append("\n")
+            sb.append("    <animate\n")
+            sb.append("""      attributeName="xlink:href"""").append("\n")
+            sb.append("""      values="$valuesStr"""").append("\n")
+            sb.append("""      keyTimes="$keyTimesStr"""").append("\n")
+            sb.append("""      dur="${durStr}s"""").append("\n")
+            sb.append("""      repeatCount="indefinite"""").append("\n")
+            sb.append("""      calcMode="discrete"""").append("\n")
+            sb.append("    />\n")
+            sb.append("  </use>\n")
+        } else {
+            val base64 = bitmapToBase64(logoBmp)
+            if (base64.isNotEmpty()) {
+                sb.append("  <defs>\n")
+                sb.append("""    <clipPath id="logoClip">""").append("\n")
+                when (logo.shape) {
+                    com.veilframe.app.qr.model.LogoShape.SQUIRCLE -> {
+                        val d = com.veilframe.app.qr.renderer.ShapeGeometry.buildSquircleSvgD(logoX, logoY, logoSize, logoSize)
+                        sb.append("""      <path d="$d" />""").append("\n")
+                    }
+                    com.veilframe.app.qr.model.LogoShape.CIRCLE -> {
+                        val cx = logoX + logoSize / 2.0
+                        val cy = logoY + logoSize / 2.0
+                        val r = logoSize / 2.0
+                        sb.append("""      <circle cx="$cx" cy="$cy" r="$r" />""").append("\n")
+                    }
+                    com.veilframe.app.qr.model.LogoShape.SQUARE -> {
+                        val rx = if (pad > 0.0) pad * 0.5 else 0.5
+                        sb.append("""      <rect x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" rx="$rx" />""").append("\n")
+                    }
+                }
+                sb.append("    </clipPath>\n")
+                sb.append("  </defs>\n")
+
+                sb.append("""  <image href="data:image/png;base64,$base64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet" clip-path="url(#logoClip)" />""").append("\n")
+            }
         }
 
         // 3. Border stroke if specified

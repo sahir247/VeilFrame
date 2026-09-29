@@ -87,17 +87,11 @@ open class ArtisticResamplePolicy(
         // Finders never emit data center anchors (they are drawn as full finder eyes)
         if (ArtisticResampleFunctionalMask.isFinderArea(col, row, matrix.size)) return false
 
-        // Timing modules: when timing style is NONE or onlyWhite, dedicated timing rendering is skipped,
-        // so dark timing modules emit center anchors through the subpixel engine.
-        // Otherwise (default), dedicated timing renderer draws them, so anchor emission is suppressed.
-        if (ArtisticResampleFunctionalMask.isTimingArea(col, row, matrix.size)) {
-            return timingStyle.shape == ModuleShape.NONE || timingStyle.onlyWhite
-        }
+        // Timing tracks: drawn exclusively in the QR-structure pass as #Stb / #Btb (prevent duplicate anchors)
+        if (ArtisticResampleFunctionalMask.isTimingArea(col, row, matrix.size)) return false
 
-        // Alignment modules: emit center anchors only when dedicated alignment renderer is skipped.
-        if (matrix.version >= 2 && ArtisticResampleFunctionalMask.isAlignmentArea(col, row, matrix.version)) {
-            return alignmentStyle.shape == ModuleShape.NONE || alignmentStyle.onlyWhite
-        }
+        // Alignment patterns: drawn exclusively in the QR-structure pass as #Sab / #Bab (prevent duplicate anchors)
+        if (matrix.version >= 2 && ArtisticResampleFunctionalMask.isAlignmentArea(col, row, matrix.version)) return false
 
         // Data, Format, Version all emit center anchors!
         return true

@@ -69,6 +69,10 @@ data class QrStyleParams(
     val logoBorderWidth: Float = 0f,
     /** Optional logo shape (SQUIRCLE, CIRCLE, SQUARE). */
     val logoShape: com.veilframe.app.qr.model.LogoShape = com.veilframe.app.qr.model.LogoShape.SQUIRCLE,
+    /** Logo transparency / opacity (0.0–1.0). Default is 1.0. */
+    val logoAlpha: Float = 1.0f,
+    /** Logo image scale mode (defaults to ASPECT_FILL for EF parity). */
+    val logoScaleMode: com.veilframe.app.qr.model.ImageScaleMode = com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL,
     /** Optional background image (used by IMAGE* and IMAGE_FILL styles). */
     /** Optional background image (used by backdrop and legacy styles). */
     val backgroundImage: Bitmap? = null,
@@ -154,11 +158,26 @@ data class QrStyleParams(
     // --- Multi-frame animated source image (EFQRCode parity) ---
     val sourceImageAnimatedFrames: List<Bitmap>? = null,
     val sourceImageFrameDelaysMs: List<Int>? = null,
+    // --- Multi-frame animated icon / logo (EFQRCode parity) ---
+    val logoAnimatedFrames: List<Bitmap>? = null,
+    val logoFrameDelaysMs: List<Int>? = null,
     // --- Per-zone colors ---
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
     // --- EFQRCode Resample Image parameters ---
+    val contrast: Float = 0.0f,
+    val exposure: Float = 0.0f,
+    val sourceImageContrast: Float? = null,
+    val sourceImageExposure: Float? = null,
+    val resampleBackdropCornerRadius: Float = 0.0f,
     val dataColor: Int? = null,
     val timingSize: Float? = null,
-    val alignSize: Float? = null
+    val alignSize: Float? = null,
+    // --- Unified Backdrop (EFStyleParamBackdrop parity) ---
+    val backdropColor: Int? = null,
+    val backdropCornerRadius: Float? = null,
+    val backdropImage: Bitmap? = null,
+    val backdropImageAlpha: Float? = null,
+    val backdropImageScaleMode: com.veilframe.app.qr.model.ImageScaleMode? = null,
+    val backdropQuietZoneFractional: com.veilframe.app.qr.model.FractionalInsets? = null
 )

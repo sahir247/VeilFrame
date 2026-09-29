@@ -8,6 +8,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.model.ModuleShape
+import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.renderer.*
 import com.veilframe.app.qr.validation.*
 import org.junit.Assert.*
@@ -212,37 +213,12 @@ class ResampleImage3x3Test {
 
         val gradientPixels = createGradientPixelSource(100, 100)
 
-        // 1. Compute expected Canvas subpixels via shared SubpixelGeometry
-        val canvasSubpixels = mutableListOf<SubpixelRect>()
-        ResampleSubpixelEngine.traverseSubpixels(
-            matrix = matrix,
-            pixelSource = gradientPixels,
-            style = style,
-            seed = 42L,
-            policy = ArtisticResamplePolicy.from(design)
-        ) { col, row, subX, subY, _ ->
-            val rect = if (design.style == QrStyle.IMAGE_RESAMPLE) {
-                SubpixelGeometry.computeEfCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = geometry.offsetX,
-                    offsetY = geometry.offsetY,
-                    moduleSize = geometry.moduleSize,
-                    subX = subX,
-                    subY = subY
-                )
-            } else {
-                SubpixelGeometry.computeCanvasRect(
-                    col = col,
-                    row = row,
-                    offsetX = geometry.offsetX,
-                    offsetY = geometry.offsetY,
-                    moduleSize = geometry.moduleSize,
-                    subX = subX,
-                    subY = subY
-                )
-            }
-            canvasSubpixels.add(rect)
+        // 1. Compute expected Canvas subpixels via ResampleGeometryBuilder (which Canvas renderer consumes)
+        val canvasIr = ResampleGeometryBuilder.generateGeometry(matrix, design, geometry, gradientPixels)
+        val canvasSubpixels = canvasIr.rootNodes.filterIsInstance<RectNode>().filter {
+            (it.width / geometry.moduleSize) in 0.30f..0.38f
+        }.map {
+            SubpixelRect(it.x, it.y, it.width, it.height)
         }
 
         assertTrue("Canvas subpixels must have been emitted", canvasSubpixels.isNotEmpty())
@@ -835,9 +811,9 @@ class ResampleImage3x3Test {
             noneTimingPolicy.shouldSample(matrix, lightTimingSx, lightTimingSy)
         )
 
-        // In NONE mode: dark timing modules still emit center anchor
-        assertTrue(
-            "Dark timing module must emit center anchor when timing style is NONE",
+        // In NONE mode: dark timing modules do not emit anchor from stochastic policy (dedicated #Stb emitted in QR-structure pass)
+        assertFalse(
+            "Dark timing module must NOT emit stochastic center anchor when timing style is NONE (handled by QR-structure pass)",
             noneTimingPolicy.shouldDrawAnchor(matrix, foundDarkTimingCol, 6)
         )
 
@@ -861,8 +837,8 @@ class ResampleImage3x3Test {
         val onlyWhitePolicy = ArtisticResamplePolicy(
             timingStyle = TimingStyle(shape = ModuleShape.SQUARE, onlyWhite = true)
         )
-        assertTrue(
-            "Dark timing module must emit center anchor when onlyWhite is true",
+        assertFalse(
+            "Dark timing module must NOT emit stochastic center anchor when onlyWhite is true (handled exclusively by dedicated Stb in QR-structure pass)",
             onlyWhitePolicy.shouldDrawAnchor(matrix, foundDarkTimingCol, 6)
         )
     }

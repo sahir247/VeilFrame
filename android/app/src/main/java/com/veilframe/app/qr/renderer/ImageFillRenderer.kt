@@ -8,12 +8,14 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.geometry.AnimatedImageNode
 import com.veilframe.app.qr.geometry.GroupNode
 import com.veilframe.app.qr.geometry.ImageNode
 import com.veilframe.app.qr.geometry.IrSvgRenderer
 import com.veilframe.app.qr.geometry.QrGeometryIr
 import com.veilframe.app.qr.geometry.QrGeometryNode
 import com.veilframe.app.qr.geometry.RectNode
+import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.model.BackgroundStyle
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
@@ -84,21 +86,62 @@ class ImageFillRenderer : QrRenderer {
             else -> "xMidYMid slice"
         }
 
-        // 2b. Scaled source image
-        if (sourceBmp != null && !sourceBmp.isRecycled) {
-            val base64 = IrSvgRenderer.bitmapToBase64(sourceBmp)
+        // 2b. Scaled source image (preprocessed via EfImagePreprocessor matching EFQRCodeStyle.swift:269)
+        val canvasW = n * mSize
+        val canvasH = n * mSize
+        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+        val animatedFrames = design.imageSource.animatedFrames
+        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
+
+        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
+            val preprocessedFrames = animatedFrames.map { frame ->
+                EfImagePreprocessor.preprocess(
+                    source = frame,
+                    canvasWidth = canvasW,
+                    canvasHeight = canvasH,
+                    mode = design.imageSource.scaleMode
+                )
+            }
+            val base64Frames = preprocessedFrames.map { IrSvgRenderer.bitmapToBase64(it) }
             groupChildren.add(
-                ImageNode(
+                AnimatedImageNode(
                     x = ox,
                     y = oy,
-                    width = n * mSize,
-                    height = n * mSize,
-                    bitmap = sourceBmp,
-                    base64Data = base64,
+                    width = canvasW,
+                    height = canvasH,
+                    frames = preprocessedFrames,
+                    base64Frames = base64Frames,
+                    frameDelaysMs = frameDelaysMs,
                     opacity = imageAlpha,
-                    preserveAspectRatio = aspect
+                    preserveAspectRatio = aspect,
+                    framePrefix = "1fm"
                 )
             )
+        } else {
+            val preprocessed = if (sourceBmp != null && !sourceBmp.isRecycled) {
+                EfImagePreprocessor.preprocess(
+                    source = sourceBmp,
+                    canvasWidth = canvasW,
+                    canvasHeight = canvasH,
+                    mode = design.imageSource.scaleMode
+                )
+            } else null
+            val base64 = if (preprocessed != null) IrSvgRenderer.bitmapToBase64(preprocessed) else ""
+
+            if (preprocessed != null) {
+                groupChildren.add(
+                    ImageNode(
+                        x = ox,
+                        y = oy,
+                        width = canvasW,
+                        height = canvasH,
+                        bitmap = preprocessed,
+                        base64Data = base64,
+                        opacity = imageAlpha,
+                        preserveAspectRatio = aspect
+                    )
+                )
+            }
         }
 
         // 2c. Overlay mask tint

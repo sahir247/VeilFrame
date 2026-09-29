@@ -2,11 +2,13 @@ package com.veilframe.app.qr.model
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.RectF
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.GenerationMode
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.QrStyleParams
 import com.veilframe.app.qr.registry.QrStyleRegistry
+import java.util.Locale
 
 enum class ErrorCorrectionChoice {
     AUTO, L, M, Q, H;
@@ -160,6 +162,7 @@ data class ResampleStyle(
     val backdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
     val backdropBlendMode: BackdropBlendMode = BackdropBlendMode.NORMAL,
     val backdropTint: Int? = null,
+    val backdropCornerRadius: Float = 0.0f,
     val rngMode: com.veilframe.app.qr.renderer.ResampleRngMode = com.veilframe.app.qr.renderer.ResampleRngMode.SYSTEM_UNSEEDED
 ) {
     /** True if a backdrop image should be rendered (either via an independent backdropBitmap or by reusing sourceImage). */
@@ -217,16 +220,108 @@ data class DirectionalInsets(
     val bottom: Int = 4
 )
 
+data class FractionalInsets(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
+
+data class ViewBoxRect(
+    val minX: Float,
+    val minY: Float,
+    val width: Float,
+    val height: Float
+)
+
+data class BackdropStyle(
+    val color: Int = Color.WHITE,
+    val cornerRadius: Float = 0f,
+    val image: Bitmap? = null,
+    val imageAlpha: Float = 1.0f,
+    val imageScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+    val fractionalQuietZone: FractionalInsets? = null
+) {
+    val hasBackdrop: Boolean get() = cornerRadius > 0f || image != null || color != Color.WHITE || fractionalQuietZone != null
+
+    fun calculateViewBox(moduleCount: Int, isResample: Boolean = false): ViewBoxRect {
+        val qz = fractionalQuietZone
+        val scale = if (isResample) 3f else 1f
+        val mc = moduleCount * scale
+        return if (qz != null) {
+            val minX = -mc * qz.left
+            val minY = -mc * qz.top
+            val width = mc * (qz.left + 1f + qz.right)
+            val height = mc * (qz.top + 1f + qz.bottom)
+            ViewBoxRect(minX, minY, width, height)
+        } else {
+            val offset = if (isResample) -3f else -1f
+            val extent = mc + (if (isResample) 6f else 2f)
+            ViewBoxRect(offset, offset, extent, extent)
+        }
+    }
+
+    fun generateSvgContainer(moduleCount: Int, isResample: Boolean = false, preprocessedBase64Image: String? = null): Pair<String, String> {
+        val vb = calculateViewBox(moduleCount, isResample)
+        val w = String.format(Locale.US, "%.1f", vb.width)
+        val h = String.format(Locale.US, "%.1f", vb.height)
+        val bgHex = String.format(Locale.US, "#%06X", 0xFFFFFF and color)
+        val bgAlpha = String.format(Locale.US, "%.2f", ((color ushr 24) and 0xFF) / 255f)
+        val crStr = String.format(Locale.US, "%.2f", cornerRadius)
+
+        val imageMarkup = if (!preprocessedBase64Image.isNullOrEmpty()) {
+            val alphaStr = String.format(Locale.US, "%.2f", imageAlpha.coerceIn(0f, 1f))
+            """    <image key="bi" opacity="$alphaStr" xlink:href="data:image/png;base64,$preprocessedBase64Image" width="$w" height="$h" x="0" y="0"/>""" + "\n"
+        } else ""
+
+        val txStr = String.format(Locale.US, "%.3f", -vb.minX)
+        val tyStr = String.format(Locale.US, "%.3f", -vb.minY)
+
+        val openSvg = """
+<svg className="Qr-item-svg" width="$w" height="$h" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <clipPath id="rounded-corners">
+      <rect width="$w" height="$h" rx="$crStr" ry="$crStr"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#rounded-corners)">
+    <rect width="$w" height="$h" opacity="$bgAlpha" fill="$bgHex"/>
+$imageMarkup    <g width="$w" height="$h" transform="translate($txStr, $tyStr)">
+""".trimIndent()
+
+        val closeSvg = """
+    </g>
+  </g>
+</svg>
+""".trimIndent()
+
+        return Pair(openSvg, closeSvg)
+    }
+}
+
+
 data class LogoStyle(
     val bitmap: Bitmap? = null,
+    val source: ImageSource? = null,
     val scaleFraction: Float = 0.20f,
     val paddingModules: Float = 0.5f,
     val backgroundMode: LogoBackgroundMode = LogoBackgroundMode.AUTO_CONTRAST,
     val customBackgroundColor: Int = Color.WHITE,
     val shape: LogoShape = LogoShape.SQUIRCLE,
     val borderColor: Int? = null,
-    val borderWidth: Float = 0f
-)
+    val borderWidth: Float = 0f,
+    val alpha: Float = 1.0f,
+    val scaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL
+) {
+    val effectiveBitmap: Bitmap? get() = bitmap ?: when (source) {
+        is ImageSource.Memory -> source.bitmap
+        is ImageSource.Animated -> source.frames.firstOrNull()
+        else -> null
+    }
+    val animatedFrames: List<Bitmap>? get() = (source as? ImageSource.Animated)?.frames
+    val frameDelaysMs: List<Int>? get() = (source as? ImageSource.Animated)?.delaysMs
+    val isAnimated: Boolean get() = source is ImageSource.Animated
+}
 
 data class EffectStyle(
     val is25D: Boolean = false,
@@ -418,6 +513,7 @@ data class QrDesign(
         opacity = backgroundImageAlpha
     ),
     val resampleStyle: ResampleStyle = ResampleStyle(),
+    val backdropStyle: BackdropStyle = BackdropStyle(),
     val directionalQuietZone: DirectionalInsets? = null
 ) {
     val effectiveQuietZone: Int get() = QrGeometry.resolveQuietZone(this)
@@ -519,13 +615,25 @@ data class QrDesign(
                 } else {
                     BackgroundStyle.Solid(params.background)
                 },
-                logo = if (params.logo != null) {
+                logo = if (params.logo != null || params.logoAnimatedFrames?.isNotEmpty() == true) {
+                    val logoSource = if (params.logoAnimatedFrames?.isNotEmpty() == true) {
+                        ImageSource.Animated(params.logoAnimatedFrames, params.logoFrameDelaysMs ?: emptyList())
+                    } else if (params.logo != null) {
+                        ImageSource.Memory(params.logo)
+                    } else null
                     LogoStyle(
-                        bitmap = params.logo,
-                        scaleFraction = params.logoFraction.coerceIn(0.10f, 0.35f),
+                        bitmap = params.logo ?: params.logoAnimatedFrames?.firstOrNull(),
+                        source = logoSource,
+                        scaleFraction = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE) {
+                            minOf(maxOf(0f, params.logoFraction), 0.33f)
+                        } else {
+                            params.logoFraction.coerceIn(0.10f, 0.35f)
+                        },
                         shape = params.logoShape,
                         borderColor = params.logoBorderColor,
-                        borderWidth = params.logoBorderWidth
+                        borderWidth = params.logoBorderWidth,
+                        alpha = params.logoAlpha.coerceIn(0f, 1f),
+                        scaleMode = params.logoScaleMode
                     )
                 } else null,
                 effects = EffectStyle(
@@ -595,34 +703,38 @@ data class QrDesign(
                     primitives = if (params.style == QrStyle.DSJ) listOf(ModulePrimitive.LINE, ModulePrimitive.CROSS, ModulePrimitive.X)
                                  else listOf(ModulePrimitive.CROSS, ModulePrimitive.X)
                 ),
-                imageSource = if (params.sourceImageAnimatedFrames != null) {
-                    ImageSourceStyle(
-                        source = ImageSource.Animated(params.sourceImageAnimatedFrames, params.sourceImageFrameDelaysMs ?: emptyList()),
-                        opacity = params.sourceImageAlpha,
-                        scaleMode = params.imageScaleMode,
-                        contrast = 0.0f,
-                        exposure = 0.0f,
-                        maskColor = params.imageFillMaskColor,
-                        allowTransparent = params.imageAllowTransparent
-                    )
-                } else if (resolvedSourceImage != null) {
-                    ImageSourceStyle(
-                        source = ImageSource.Memory(resolvedSourceImage),
-                        opacity = params.sourceImageAlpha,
-                        scaleMode = params.imageScaleMode,
-                        contrast = 0.0f,
-                        exposure = 0.0f,
-                        maskColor = params.imageFillMaskColor,
-                        allowTransparent = params.imageAllowTransparent
-                    )
-                } else {
-                    ImageSourceStyle(
-                        scaleMode = params.imageScaleMode,
-                        contrast = 0.0f,
-                        exposure = 0.0f,
-                        maskColor = params.imageFillMaskColor,
-                        allowTransparent = params.imageAllowTransparent
-                    )
+                imageSource = run {
+                    val effContrast = params.sourceImageContrast ?: params.contrast
+                    val effExposure = params.sourceImageExposure ?: params.exposure
+                    if (params.sourceImageAnimatedFrames != null) {
+                        ImageSourceStyle(
+                            source = ImageSource.Animated(params.sourceImageAnimatedFrames, params.sourceImageFrameDelaysMs ?: emptyList()),
+                            opacity = params.sourceImageAlpha,
+                            scaleMode = params.imageScaleMode,
+                            contrast = effContrast,
+                            exposure = effExposure,
+                            maskColor = params.imageFillMaskColor,
+                            allowTransparent = params.imageAllowTransparent
+                        )
+                    } else if (resolvedSourceImage != null) {
+                        ImageSourceStyle(
+                            source = ImageSource.Memory(resolvedSourceImage),
+                            opacity = params.sourceImageAlpha,
+                            scaleMode = params.imageScaleMode,
+                            contrast = effContrast,
+                            exposure = effExposure,
+                            maskColor = params.imageFillMaskColor,
+                            allowTransparent = params.imageAllowTransparent
+                        )
+                    } else {
+                        ImageSourceStyle(
+                            scaleMode = params.imageScaleMode,
+                            contrast = effContrast,
+                            exposure = effExposure,
+                            maskColor = params.imageFillMaskColor,
+                            allowTransparent = params.imageAllowTransparent
+                        )
+                    }
                 },
                 clusterStyle = BubbleClusterStyle(
                     seed = params.randomRectSeed,
@@ -658,7 +770,16 @@ data class QrDesign(
                     backdropOpacity = params.resampleBackdropOpacity,
                     backdropScaleMode = params.resampleBackdropScaleMode,
                     backdropTint = params.resampleBackdropTint,
+                    backdropCornerRadius = params.resampleBackdropCornerRadius,
                     rngMode = params.resampleRngMode
+                ),
+                backdropStyle = BackdropStyle(
+                    color = params.backdropColor ?: params.background,
+                    cornerRadius = params.backdropCornerRadius ?: params.resampleBackdropCornerRadius,
+                    image = params.backdropImage ?: params.resampleBackdropImage ?: params.backgroundImage,
+                    imageAlpha = params.backdropImageAlpha ?: (if (params.resampleBackdropImage != null) params.resampleBackdropOpacity else params.backgroundImageAlpha),
+                    imageScaleMode = params.backdropImageScaleMode ?: params.resampleBackdropScaleMode,
+                    fractionalQuietZone = params.backdropQuietZoneFractional
                 )
             )
         }
