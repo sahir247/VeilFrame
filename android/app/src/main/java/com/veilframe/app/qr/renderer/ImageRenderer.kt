@@ -144,7 +144,7 @@ class ImageRenderer : QrRenderer {
                     preserveAspectRatio = aspect,
                     maskId = "hole",
                     clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect),
-                    framePrefix = "1fm"
+                    framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
                 )
             )
         } else {
@@ -230,8 +230,7 @@ class ImageRenderer : QrRenderer {
             design = design,
             ox = 0f,
             oy = 0f,
-            qrPixelSize = width,
-            preferredFramePrefix = "logofm"
+            qrPixelSize = width
         )
 
         return QrGeometryIr(

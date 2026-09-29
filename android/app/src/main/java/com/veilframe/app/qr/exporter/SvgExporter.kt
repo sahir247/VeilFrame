@@ -618,7 +618,7 @@ object SvgExporter {
             val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
             val totalDurationMs = maxOf(1, delaysMs.sum())
             val totalDurationSec = totalDurationMs / 1000.0
-            val framePrefix = "1fm"
+            val framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
 
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
@@ -743,7 +743,7 @@ object SvgExporter {
             val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
             val totalDurationMs = maxOf(1, delaysMs.sum())
             val totalDurationSec = totalDurationMs / 1000.0
-            val framePrefix = "1fm"
+            val framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
 
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
@@ -954,17 +954,9 @@ object SvgExporter {
         }
 
         // Draw Center Logo if present in isometric projection
-        design.logo?.bitmap?.let { logoBmp ->
-            val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.33f)
-            val iconSize = n * fraction
-            val iconXY = (n - iconSize) / 2.0
-            val cardPadding = 0.5
+        if (design.logo?.effectiveBitmap != null) {
             sb.append("""  <g transform="$matrixString">""").append("\n")
-            sb.append("""    <rect x="${iconXY - cardPadding}" y="${iconXY - cardPadding}" width="${iconSize + 2 * cardPadding}" height="${iconSize + 2 * cardPadding}" rx="0.5" fill="$bgHex" />""").append("\n")
-            val base64 = bitmapToBase64(logoBmp)
-            if (base64.isNotEmpty()) {
-                sb.append("""    <image href="data:image/png;base64,$base64" x="$iconXY" y="$iconXY" width="$iconSize" height="$iconSize" preserveAspectRatio="xMidYMid meet" />""").append("\n")
-            }
+            com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconSvg(sb, design, 0.0, 0.0, n.toDouble(), bgHex)
             sb.append("""  </g>""").append("\n")
         }
 
@@ -1347,159 +1339,13 @@ object SvgExporter {
         qzTop: Double,
         bgHex: String
     ) {
-        val logo = design.logo ?: return
-        val logoBmp = logo.bitmap ?: return
-
-        val fraction = logo.scaleFraction.coerceIn(0.10f, 0.35f).toDouble()
-        val qrPixelSize = matrixSize.toDouble()
-        val logoSize = qrPixelSize * fraction
-        val centerX = qzLeft + qrPixelSize / 2.0
-        val centerY = qzTop + qrPixelSize / 2.0
-        val logoX = centerX - logoSize / 2.0
-        val logoY = centerY - logoSize / 2.0
-
-        val pad = logo.paddingModules.toDouble()
-        val cardX = logoX - pad
-        val cardY = logoY - pad
-        val cardW = logoSize + 2 * pad
-        val cardH = logoSize + 2 * pad
-
-        // 1. Backing background shape
-        if (logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) {
-            val cardFill = when (logo.backgroundMode) {
-                com.veilframe.app.qr.model.LogoBackgroundMode.AUTO_CONTRAST -> "#FFFFFF"
-                com.veilframe.app.qr.model.LogoBackgroundMode.FOREGROUND -> hexColor(design.palette.foreground)
-                com.veilframe.app.qr.model.LogoBackgroundMode.BACKGROUND -> bgHex
-                com.veilframe.app.qr.model.LogoBackgroundMode.CUSTOM -> hexColor(logo.customBackgroundColor)
-                com.veilframe.app.qr.model.LogoBackgroundMode.NONE -> "none"
-            }
-            when (logo.shape) {
-                com.veilframe.app.qr.model.LogoShape.SQUIRCLE -> {
-                    val d = com.veilframe.app.qr.renderer.ShapeGeometry.buildSquircleSvgD(cardX, cardY, cardW, cardH)
-                    sb.append("""  <path d="$d" fill="$cardFill" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.CIRCLE -> {
-                    val cx = cardX + cardW / 2.0
-                    val cy = cardY + cardH / 2.0
-                    val r = cardW / 2.0
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="$cardFill" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.SQUARE -> {
-                    val rx = if (pad > 0.0) pad else 1.5
-                    sb.append("""  <rect x="$cardX" y="$cardY" width="$cardW" height="$cardH" rx="$rx" fill="$cardFill" />""").append("\n")
-                }
-            }
-        }
-
-        // 2. Logo bitmap with clipPath
-        val isLogoAnimated = logo.isAnimated && logo.animatedFrames?.isNotEmpty() == true
-        if (isLogoAnimated) {
-            val logoFrames = logo.animatedFrames ?: emptyList()
-            val rawDelays = logo.frameDelaysMs
-            val logoDelays = if (!rawDelays.isNullOrEmpty()) rawDelays else List(logoFrames.size) { 100 }
-            val totalDurationMs = maxOf(1, logoDelays.sum())
-            val totalDurationSec = totalDurationMs / 1000.0
-            val base64Frames = logoFrames.map { bitmapToBase64(it) }
-            val framePrefix = "logofm"
-
-            sb.append("  <defs>\n")
-            sb.append("""    <clipPath id="logoClip">""").append("\n")
-            when (logo.shape) {
-                com.veilframe.app.qr.model.LogoShape.SQUIRCLE -> {
-                    val d = com.veilframe.app.qr.renderer.ShapeGeometry.buildSquircleSvgD(logoX, logoY, logoSize, logoSize)
-                    sb.append("""      <path d="$d" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.CIRCLE -> {
-                    val cx = logoX + logoSize / 2.0
-                    val cy = logoY + logoSize / 2.0
-                    val r = logoSize / 2.0
-                    sb.append("""      <circle cx="$cx" cy="$cy" r="$r" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.SQUARE -> {
-                    val rx = if (pad > 0.0) pad * 0.5 else 0.5
-                    sb.append("""      <rect x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" rx="$rx" />""").append("\n")
-                }
-            }
-            sb.append("    </clipPath>\n")
-            for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""    <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet"/>""").append("\n")
-            }
-            sb.append("  </defs>\n")
-
-            var accumulatedMs = 0
-            val keyTimes = mutableListOf<String>()
-            for (delay in logoDelays) {
-                val fraction = accumulatedMs.toDouble() / totalDurationMs
-                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
-                accumulatedMs += delay
-            }
-            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
-            val keyTimesStr = keyTimes.joinToString(";")
-            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
-
-            sb.append("""  <use xlink:href="#${framePrefix}0" clip-path="url(#logoClip)">""").append("\n")
-            sb.append("    <animate\n")
-            sb.append("""      attributeName="xlink:href"""").append("\n")
-            sb.append("""      values="$valuesStr"""").append("\n")
-            sb.append("""      keyTimes="$keyTimesStr"""").append("\n")
-            sb.append("""      dur="${durStr}s"""").append("\n")
-            sb.append("""      repeatCount="indefinite"""").append("\n")
-            sb.append("""      calcMode="discrete"""").append("\n")
-            sb.append("    />\n")
-            sb.append("  </use>\n")
-        } else {
-            val base64 = bitmapToBase64(logoBmp)
-            if (base64.isNotEmpty()) {
-                sb.append("  <defs>\n")
-                sb.append("""    <clipPath id="logoClip">""").append("\n")
-                when (logo.shape) {
-                    com.veilframe.app.qr.model.LogoShape.SQUIRCLE -> {
-                        val d = com.veilframe.app.qr.renderer.ShapeGeometry.buildSquircleSvgD(logoX, logoY, logoSize, logoSize)
-                        sb.append("""      <path d="$d" />""").append("\n")
-                    }
-                    com.veilframe.app.qr.model.LogoShape.CIRCLE -> {
-                        val cx = logoX + logoSize / 2.0
-                        val cy = logoY + logoSize / 2.0
-                        val r = logoSize / 2.0
-                        sb.append("""      <circle cx="$cx" cy="$cy" r="$r" />""").append("\n")
-                    }
-                    com.veilframe.app.qr.model.LogoShape.SQUARE -> {
-                        val rx = if (pad > 0.0) pad * 0.5 else 0.5
-                        sb.append("""      <rect x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" rx="$rx" />""").append("\n")
-                    }
-                }
-                sb.append("    </clipPath>\n")
-                sb.append("  </defs>\n")
-
-                sb.append("""  <image href="data:image/png;base64,$base64" x="$logoX" y="$logoY" width="$logoSize" height="$logoSize" preserveAspectRatio="xMidYMid meet" clip-path="url(#logoClip)" />""").append("\n")
-            }
-        }
-
-        // 3. Border stroke if specified
-        if (logo.borderColor != null && logo.borderWidth > 0f) {
-            val strokeHex = hexColor(logo.borderColor)
-            val strokeW = logo.borderWidth.toDouble()
-            val targetX = if (logo.paddingModules > 0f && logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) cardX else logoX
-            val targetY = if (logo.paddingModules > 0f && logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) cardY else logoY
-            val targetW = if (logo.paddingModules > 0f && logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) cardW else logoSize
-            val targetH = if (logo.paddingModules > 0f && logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) cardH else logoSize
-
-            when (logo.shape) {
-                com.veilframe.app.qr.model.LogoShape.SQUIRCLE -> {
-                    val d = com.veilframe.app.qr.renderer.ShapeGeometry.buildSquircleSvgD(targetX, targetY, targetW, targetH)
-                    sb.append("""  <path d="$d" fill="none" stroke="$strokeHex" stroke-width="$strokeW" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.CIRCLE -> {
-                    val cx = targetX + targetW / 2.0
-                    val cy = targetY + targetH / 2.0
-                    val r = targetW / 2.0
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="$r" fill="none" stroke="$strokeHex" stroke-width="$strokeW" />""").append("\n")
-                }
-                com.veilframe.app.qr.model.LogoShape.SQUARE -> {
-                    val rx = if (pad > 0.0) pad else 1.5
-                    sb.append("""  <rect x="$targetX" y="$targetY" width="$targetW" height="$targetH" rx="$rx" fill="none" stroke="$strokeHex" stroke-width="$strokeW" />""").append("\n")
-                }
-            }
-        }
+        com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconSvg(
+            sb = sb,
+            design = design,
+            ox = qzLeft,
+            oy = qzTop,
+            qrPixelSize = matrixSize.toDouble(),
+            bgHex = bgHex
+        )
     }
 }

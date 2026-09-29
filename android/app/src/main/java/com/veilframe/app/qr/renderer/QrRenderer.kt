@@ -60,8 +60,7 @@ internal fun solidPaint(color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 }
 
 /**
- * Draws the center logo if present, strictly verifying that it does not
- * intersect protected function patterns.
+ * Draws the center logo using the authoritative VeilIconPipeline.
  */
 internal fun drawLogo(
     canvas: Canvas,
@@ -69,100 +68,26 @@ internal fun drawLogo(
     geometry: QrGeometry,
     context: RenderContext
 ) {
-    val logo = design.logo ?: return
-    val bitmap = logo.bitmap ?: return
-
-    val dst = geometry.computeLogoRect(logo.scaleFraction)
-    val pad = geometry.moduleSize * logo.paddingModules
-
-    val paddedRect = RectF(dst.left - pad, dst.top - pad, dst.right + pad, dst.bottom + pad)
-
-    // Draw backing background for high contrast
-    if (logo.backgroundMode != LogoBackgroundMode.NONE) {
-        val bgColor = when (logo.backgroundMode) {
-            LogoBackgroundMode.AUTO_CONTRAST -> 0xFFFFFFFF.toInt()
-            LogoBackgroundMode.FOREGROUND -> design.palette.foreground
-            LogoBackgroundMode.BACKGROUND -> design.palette.background
-            LogoBackgroundMode.CUSTOM -> logo.customBackgroundColor
-            LogoBackgroundMode.NONE -> 0
-        }
-
-        val bgPaint = context.obtainFill(bgColor)
-        when (logo.shape) {
-            LogoShape.SQUIRCLE -> {
-                val path = QrVisualGeometry.createSquirclePath(paddedRect, context.tempPath1)
-                canvas.drawPath(path, bgPaint)
-            }
-            LogoShape.CIRCLE -> {
-                canvas.drawCircle(paddedRect.centerX(), paddedRect.centerY(), paddedRect.width() / 2f, bgPaint)
-            }
-            LogoShape.SQUARE -> {
-                canvas.drawRoundRect(paddedRect, pad, pad, bgPaint)
-            }
-        }
-    }
-
-    // Draw logo bitmap centered inside dst with shape clipping
-    canvas.save()
-    when (logo.shape) {
-        LogoShape.SQUIRCLE -> {
-            val clipPath = QrVisualGeometry.createSquirclePath(dst, context.tempPath1)
-            canvas.clipPath(clipPath)
-        }
-        LogoShape.CIRCLE -> {
-            val clipPath = context.tempPath1.apply {
-                reset()
-                addCircle(dst.centerX(), dst.centerY(), dst.width() / 2f, android.graphics.Path.Direction.CW)
-            }
-            canvas.clipPath(clipPath)
-        }
-        LogoShape.SQUARE -> {
-            if (pad > 0f) {
-                val clipPath = context.tempPath1.apply {
-                    reset()
-                    addRoundRect(dst, pad * 0.5f, pad * 0.5f, android.graphics.Path.Direction.CW)
-                }
-                canvas.clipPath(clipPath)
-            }
-        }
-    }
-    canvas.drawBitmap(bitmap, null, dst, null)
-    canvas.restore()
-
-    // Draw border stroke if configured
-    if (logo.borderColor != null && logo.borderWidth > 0f) {
-        val borderPaint = context.obtainStroke(logo.borderColor, logo.borderWidth)
-        val targetRect = if (logo.paddingModules > 0f && logo.backgroundMode != LogoBackgroundMode.NONE) paddedRect else dst
-        when (logo.shape) {
-            LogoShape.SQUIRCLE -> {
-                val strokePath = QrVisualGeometry.createSquirclePath(targetRect, context.tempPath1)
-                canvas.drawPath(strokePath, borderPaint)
-            }
-            LogoShape.CIRCLE -> {
-                canvas.drawCircle(targetRect.centerX(), targetRect.centerY(), targetRect.width() / 2f, borderPaint)
-            }
-            LogoShape.SQUARE -> {
-                val rx = if (pad > 0f) pad else 1.5f
-                canvas.drawRoundRect(targetRect, rx, rx, borderPaint)
-            }
-        }
-    }
+    com.veilframe.app.qr.geometry.VeilIconPipeline.drawLogo(
+        canvas = canvas,
+        design = design,
+        ox = geometry.offsetX,
+        oy = geometry.offsetY,
+        qrPixelSize = geometry.matrixSize * geometry.moduleSize,
+        context = context
+    )
 }
 
 /**
- * Legacy drawLogo overload.
+ * Legacy drawLogo overload delegating to VeilIconPipeline.
  */
 internal fun drawLogo(canvas: Canvas, params: QrStyleParams, outputSize: Int) {
-    val logo = params.logo ?: return
-    val logoSize = (outputSize * params.logoFraction).coerceIn(1f, outputSize * 0.33f)
-    val left = (outputSize - logoSize) / 2f
-    val top  = (outputSize - logoSize) / 2f
-    val dst = RectF(left, top, left + logoSize, top + logoSize)
-    val pad = logoSize * 0.08f
-    val bgPaint = solidPaint(0xFFFFFFFF.toInt())
-    canvas.drawRoundRect(
-        RectF(dst.left - pad, dst.top - pad, dst.right + pad, dst.bottom + pad),
-        pad * 2f, pad * 2f, bgPaint
+    val design = QrDesign.fromQrStyleParams(params)
+    com.veilframe.app.qr.geometry.VeilIconPipeline.drawLogo(
+        canvas = canvas,
+        design = design,
+        ox = 0f,
+        oy = 0f,
+        qrPixelSize = outputSize.toFloat()
     )
-    canvas.drawBitmap(logo, null, dst, null)
 }

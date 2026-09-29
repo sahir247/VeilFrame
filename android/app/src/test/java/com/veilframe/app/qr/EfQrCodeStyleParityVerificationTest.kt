@@ -1251,16 +1251,18 @@ class EfQrCodeStyleParityVerificationTest {
         val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ANIM-LOGO", ErrorCorrectionLevel.H)
         val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
 
-        // 1. Defs must define logofm0 and logofm1
-        assertTrue("Must define logofm0 in defs", svg.contains("<image id=\"logofm0\""))
-        assertTrue("Must define logofm1 in defs", svg.contains("<image id=\"logofm1\""))
+        // 1. Defs must define dynamic frame 0 and frame 1
+        val prefixMatch = Regex("""<image id="(\d+fm)0"""").find(svg)
+        assertNotNull("Must define dynamic framePrefix0 in defs", prefixMatch)
+        val prefix = prefixMatch!!.groupValues[1]
+        assertTrue("Must define frame 1 in defs", svg.contains("<image id=\"${prefix}1\""))
 
-        // 2. Logo squircle clipPath
-        assertTrue("Must define logoClip clipPath", svg.contains("<clipPath id=\"logoClip\">"))
+        // 2. Logo squircle mask per EFQRCode contract
+        assertTrue("Must define SQ25 mask in defs", svg.contains("<mask id=\"icon"))
 
         // 3. SMIL animate with discrete calcMode
-        assertTrue("Use tag must reference logofm0 with logoClip", svg.contains("<use xlink:href=\"#logofm0\" clip-path=\"url(#logoClip)\">"))
-        assertTrue("Animate values must chain logo frames", svg.contains("values=\"#logofm0;#logofm1\""))
+        assertTrue("Use tag must reference dynamic frame 0", svg.contains("<use xlink:href=\"#${prefix}0\">"))
+        assertTrue("Animate values must chain logo frames", svg.contains("values=\"#${prefix}0;#${prefix}1\""))
         assertTrue("KeyTimes must match EF formula (150/400 = 0.375)", svg.contains("keyTimes=\"0.000;0.375\""))
         assertTrue("Duration must be sum (150+250=400ms = 0.400s)", svg.contains("dur=\"0.400s\""))
         assertTrue("calcMode must be discrete", svg.contains("calcMode=\"discrete\""))
@@ -1505,13 +1507,13 @@ class EfQrCodeStyleParityVerificationTest {
         )
 
         val ir = ImageRenderer().generateGeometry(matrix, design, geom)
-        val animNode = ir.rootNodes.filterIsInstance<AnimatedImageNode>().firstOrNull { it.framePrefix == "logofm" }
-        assertNotNull("Must emit AnimatedImageNode with framePrefix logofm", animNode)
+        val animNode = ir.rootNodes.filterIsInstance<AnimatedImageNode>().firstOrNull { it.framePrefix.endsWith("fm") }
+        assertNotNull("Must emit AnimatedImageNode with dynamic framePrefix", animNode)
         assertEquals(2, animNode!!.base64Frames.size)
         assertEquals(0.90f, animNode.opacity, 0.001f)
 
         val svg = IrSvgRenderer.render(ir)
-        assertTrue("Must declare discrete animation for logofm", svg.contains("values=\"#logofm0;#logofm1\""))
+        assertTrue("Must declare discrete animation with dynamic prefix", svg.contains("values=\"#${animNode.framePrefix}0;#${animNode.framePrefix}1\""))
         assertTrue("Must use calcMode='discrete'", svg.contains("calcMode=\"discrete\""))
         assertTrue("Must have total duration 0.500s", svg.contains("dur=\"0.500s\""))
     }

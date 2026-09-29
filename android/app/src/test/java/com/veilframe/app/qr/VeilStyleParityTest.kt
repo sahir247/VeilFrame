@@ -966,11 +966,11 @@ class VeilStyleParityTest {
         )
         val squircleSvg = SvgExporter.generateSvg(matrix, squircleDesign)
 
-        assertTrue("SVG must contain logo clipPath def", squircleSvg.contains("<clipPath id=\"logoClip\">"))
-        assertTrue("SVG clipPath must contain squircle cubic Bezier path", squircleSvg.contains("<path d=\"M"))
-        assertTrue("SVG image must reference #logoClip", squircleSvg.contains("clip-path=\"url(#logoClip)\""))
+        assertTrue("SVG must contain logo mask def", squircleSvg.contains("<mask id=\"icon"))
+        assertTrue("SVG mask must contain squircle path", squircleSvg.contains(VeilPositionPatternGeometry.SQ25_PATH))
+        assertTrue("SVG image must reference mask", squircleSvg.contains("mask=\"url(#icon"))
         assertTrue("SVG must contain border stroke with #FF0000", squircleSvg.contains("stroke=\"#FF0000\""))
-        assertTrue("SVG must specify stroke-width=\"2.0\"", squircleSvg.contains("stroke-width=\"2.0\""))
+        assertTrue("SVG must specify stroke-width", squircleSvg.contains("stroke-width=\"2.000\""))
 
         // 2. Circle logo with border
         val circleDesign = QrDesign(
@@ -983,9 +983,9 @@ class VeilStyleParityTest {
             )
         )
         val circleSvg = SvgExporter.generateSvg(matrix, circleDesign)
-        assertTrue("SVG clipPath must contain circle element", circleSvg.contains("<circle cx="))
+        assertTrue("SVG mask must contain circle element", circleSvg.contains("<circle cx="))
         assertTrue("SVG must contain border stroke with #00FF00", circleSvg.contains("stroke=\"#00FF00\""))
-        assertTrue("SVG must specify stroke-width=\"1.5\"", circleSvg.contains("stroke-width=\"1.5\""))
+        assertTrue("SVG must specify stroke-width", circleSvg.contains("stroke-width=\"1.500\""))
     }
 
     @Test

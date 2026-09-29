@@ -114,7 +114,7 @@ class ImageFillRenderer : QrRenderer {
                     frameDelaysMs = frameDelaysMs,
                     opacity = imageAlpha,
                     preserveAspectRatio = aspect,
-                    framePrefix = "1fm"
+                    framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
                 )
             )
         } else {
