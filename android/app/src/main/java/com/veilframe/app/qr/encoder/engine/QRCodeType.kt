@@ -53,6 +53,10 @@ object QRCodeType {
                 return i + 1
             }
         }
-        throw IllegalArgumentException("Data length ($forLength bytes) exceeds maximum QR Code capacity")
+        val maxCap = QRCodeLimitLength[QRCodeLimitLength.size - 1][errorCorrectLevel.offset]
+        throw com.veilframe.app.qr.error.QrError.Encoding.CapacityExceeded(
+            actualBytes = forLength,
+            limitBytes = maxCap
+        )
     }
 }

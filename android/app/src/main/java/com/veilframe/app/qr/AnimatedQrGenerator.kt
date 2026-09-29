@@ -5,10 +5,12 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.qr.exporter.GifEncoder
 import com.veilframe.app.qr.exporter.SvgExporter
+import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrFrame
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
+import com.veilframe.app.qr.model.QrOutputResult
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -516,29 +518,60 @@ object AnimatedQrGenerator {
         outputStream.write(bytes)
     }
 
+    enum class VideoStage {
+        VALIDATION,
+        FRAME_WRITE,
+        CONCAT_MANIFEST,
+        FFMPEG_EXECUTION,
+        FINALIZATION
+    }
+
     /**
+     * Strongly typed video encoding pipeline matching EFQRCode video creation contract.
      * Encodes rendered QR frames into an MP4 or MOV video file using FFmpegKit.
      *
-     * @param renderedFrames The sequence of rendered QR frames.
-     * @param outputFile Target video file (.mp4 or .mov).
-     * @param fps Frame rate in frames per second (defaults to 15, overridden if variable timing).
-     * @return true if video encoding succeeded.
+     * @return [QrOutputResult.Success] with [outputFile] or [QrOutputResult.Failure] with structured [QrError.Output.VideoEncodingFailed].
      */
-    fun encodeToVideo(
+    fun encodeToVideoResult(
         renderedFrames: List<QrFrame>,
         outputFile: File,
         fps: Int = 15
-    ): Boolean {
-        if (renderedFrames.isEmpty()) return false
-        val tempDir = File(outputFile.parentFile, "qr_vid_tmp_${System.currentTimeMillis()}")
-        tempDir.mkdirs()
+    ): QrOutputResult<File> {
+        if (renderedFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+
+        val parentDir = outputFile.parentFile ?: File(".")
+        val tempDir = File(parentDir, "qr_vid_tmp_${System.currentTimeMillis()}")
+        if (!tempDir.exists() && !tempDir.mkdirs()) {
+            return QrOutputResult.Failure(
+                QrError.Platform.StorageFailed(tempDir.absolutePath)
+            )
+        }
 
         try {
             // Write frames to temporary PNG sequence
             for ((idx, frame) in renderedFrames.withIndex()) {
                 val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
-                FileOutputStream(frameFile).use { out ->
-                    frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                val writeSuccess = try {
+                    FileOutputStream(frameFile).use { out ->
+                        frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } catch (t: Throwable) {
+                    return QrOutputResult.Failure(
+                        QrError.Output.VideoEncodingFailed(
+                            stage = VideoStage.FRAME_WRITE.name,
+                            cause = t
+                        )
+                    )
+                }
+                if (!writeSuccess) {
+                    return QrOutputResult.Failure(
+                        QrError.Output.VideoEncodingFailed(
+                            stage = VideoStage.FRAME_WRITE.name,
+                            cause = IllegalStateException("Bitmap compression returned false for frame $idx")
+                        )
+                    )
                 }
             }
 
@@ -565,11 +598,41 @@ object AnimatedQrGenerator {
             }
 
             val session = FFmpegKit.execute(cmd)
-            return ReturnCode.isSuccess(session.returnCode)
-        } catch (_: Throwable) {
-            return false
+            val returnCode = session.returnCode
+            return if (ReturnCode.isSuccess(returnCode)) {
+                QrOutputResult.Success(outputFile)
+            } else {
+                QrOutputResult.Failure(
+                    QrError.Output.VideoEncodingFailed(
+                        stage = VideoStage.FFMPEG_EXECUTION.name,
+                        exitCode = returnCode?.value
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            return QrOutputResult.Failure(
+                QrError.Output.VideoEncodingFailed(
+                    stage = VideoStage.FFMPEG_EXECUTION.name,
+                    cause = t
+                )
+            )
         } finally {
             tempDir.deleteRecursively()
         }
     }
+
+    /**
+     * Encodes rendered QR frames into an MP4 or MOV video file using FFmpegKit.
+     * Backwards-compatible facade returning boolean success.
+     *
+     * @param renderedFrames The sequence of rendered QR frames.
+     * @param outputFile Target video file (.mp4 or .mov).
+     * @param fps Frame rate in frames per second (defaults to 15, overridden if variable timing).
+     * @return true if video encoding succeeded.
+     */
+    fun encodeToVideo(
+        renderedFrames: List<QrFrame>,
+        outputFile: File,
+        fps: Int = 15
+    ): Boolean = encodeToVideoResult(renderedFrames, outputFile, fps) is QrOutputResult.Success
 }

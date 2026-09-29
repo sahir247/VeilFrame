@@ -23,6 +23,10 @@ import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.validation.ScanabilityValidator
 import kotlinx.coroutines.runBlocking
 
+import com.veilframe.app.qr.error.QrError
+import com.veilframe.app.qr.model.QrOutputFormat
+import com.veilframe.app.qr.model.QrOutputResult
+
 /**
  * Typed result of a QR code generation operation.
  */
@@ -35,9 +39,16 @@ sealed interface QrRenderResult {
     ) : QrRenderResult
 
     data class Failure(
-        val error: String,
-        val throwable: Throwable? = null
-    ) : QrRenderResult
+        val qrError: QrError,
+        val error: String = qrError.description,
+        val throwable: Throwable? = qrError.cause
+    ) : QrRenderResult {
+        constructor(error: String, throwable: Throwable? = null) : this(
+            qrError = QrError.fromThrowable(throwable, error),
+            error = error,
+            throwable = throwable
+        )
+    }
 }
 
 /**
@@ -86,7 +97,9 @@ object QrGenerator {
         design: QrDesign = QrDesign(),
         mode: GenerationMode = defaultModeFor(design)
     ): QrMatrix {
-        require(content.isNotBlank()) { "QR content must not be blank" }
+        if (content.isBlank()) {
+            throw QrError.Input.EmptyContent
+        }
         val ecLevel = when (mode) {
             GenerationMode.ARTISTIC_ENGINE -> {
                 when (design.correction) {
@@ -156,7 +169,7 @@ object QrGenerator {
         mode: GenerationMode = defaultModeFor(design)
     ): QrRenderResult {
         if (content.isBlank()) {
-            return QrRenderResult.Failure("QR content must not be blank")
+            return QrRenderResult.Failure(QrError.Input.EmptyContent)
         }
 
         try {
@@ -205,7 +218,7 @@ object QrGenerator {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (t: Throwable) {
-            return QrRenderResult.Failure(t.message ?: "Failed to generate QR code", t)
+            return QrRenderResult.Failure(QrError.fromThrowable(t))
         }
     }
 
@@ -231,7 +244,7 @@ object QrGenerator {
         maxAttempts: Int = 3
     ): QrRenderResult {
         if (content.isBlank()) {
-            return QrRenderResult.Failure("QR content must not be blank")
+            return QrRenderResult.Failure(QrError.Input.EmptyContent)
         }
 
         var currentDesign = design
@@ -449,4 +462,15 @@ object QrGenerator {
             QrStyleRegistry.getRenderer(design.style)
         }
     }
+
+    /**
+     * Unified public export dispatcher mirroring EFQRCode generator surface.
+     * Encodes and renders [design] with [content], exporting to [format].
+     */
+    suspend fun export(
+        context: android.content.Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        format: QrOutputFormat = QrOutputFormat.Png
+    ): QrOutputResult<android.net.Uri> = com.veilframe.app.qr.exporter.QrExporter.exportTyped(context, content, design, format)
 }

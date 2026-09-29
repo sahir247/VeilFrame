@@ -3,6 +3,7 @@ package com.veilframe.app.qr.encoder
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 import com.google.zxing.qrcode.encoder.QRCode
+import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.model.FunctionPatternMask
 import com.veilframe.app.qr.model.QrMatrix
 
@@ -26,9 +27,15 @@ object QrEncoder {
         content: String,
         errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M
     ): EncodedQr {
-        require(content.isNotBlank()) { "QR content must not be blank" }
+        if (content.isBlank()) {
+            throw QrError.Input.EmptyContent
+        }
 
-        val qrCode: QRCode = Encoder.encode(content, errorCorrection, null)
+        val qrCode: QRCode = try {
+            Encoder.encode(content, errorCorrection, null)
+        } catch (t: Throwable) {
+            throw QrError.fromThrowable(t, "ZXing encoder failure")
+        }
         val byteMatrix = qrCode.matrix
         val size = byteMatrix.width
         val version = qrCode.version?.versionNumber ?: calculateVersion(size)
