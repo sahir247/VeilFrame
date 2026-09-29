@@ -41,6 +41,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val sourceImageOpacity: Float = 1.0f,
         val sourceImageContrast: Float = 0.0f,
         val sourceImageExposure: Float = 0.0f,
+        val imageAllowTransparent: Boolean = false,
+        val imageDataScale: Float = 1.0f,
         val resampleBackdropImage: Bitmap? = null,
         val resampleUseSourceAsBackdrop: Boolean = false,
         val resampleBackdropOpacity: Float = 1.0f,
@@ -225,6 +227,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSourceImageExposure(exposure: Float) {
         _state.value = _state.value.copy(sourceImageExposure = exposure.coerceIn(-1.0f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateImageAllowTransparent(enabled: Boolean) {
+        _state.value = _state.value.copy(imageAllowTransparent = enabled, repairNotice = null)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateImageDataScale(scale: Float) {
+        _state.value = _state.value.copy(imageDataScale = scale.coerceIn(0.05f, 1.0f), repairNotice = null)
         regenerate(debounceMs = 120)
     }
 
@@ -515,14 +527,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             backgroundImageAlpha = s.backgroundImageAlpha,
             imageFillMode = def.imageFillMode,
             style = s.style,
-            // EFQRCode parity: IMAGE data scale is 1.0 (not 0.33).
-            imageDataScale = if (s.style == QrStyle.IMAGE) 1.0f else 0.85f,
+            allowTransparent = s.imageAllowTransparent,
+            // EFQRCode parity: IMAGE data scale defaults to 1.0 (or customized via UI), not hardcoded 0.33.
+            imageDataScale = if (s.style == QrStyle.IMAGE) s.imageDataScale else 0.85f,
             imageSource = ImageSourceStyle(
                 source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
                 scaleMode = s.sourceImageScaleMode,
                 opacity = s.sourceImageOpacity,
                 contrast = s.sourceImageContrast,
-                exposure = s.sourceImageExposure
+                exposure = s.sourceImageExposure,
+                allowTransparent = s.imageAllowTransparent
             ),
             backgroundLayer = BackgroundLayer(
                 enabled = s.backgroundImage != null,

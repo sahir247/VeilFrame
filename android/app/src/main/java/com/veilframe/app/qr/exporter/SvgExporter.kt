@@ -814,9 +814,9 @@ object SvgExporter {
                     val op = formatOpacity(alpha / 255f)
                     val shape = design.moduleStyle.shape
                     if (shape == ModuleShape.NONE) continue
-                    val scale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
-                    val mx = col + qzLeft + (1.0 - scale) / 2.0
-                    val my = row + qzTop + (1.0 - scale) / 2.0
+                    val scale = 1.0
+                    val mx = col + qzLeft.toDouble()
+                    val my = row + qzTop.toDouble()
                     val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
                         shape = shape,
                         x = mx,

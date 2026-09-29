@@ -2294,5 +2294,88 @@ class EfQrCodeStyleParityVerificationTest {
         val randBgRect = randIr.rootNodes[0] as RectNode
         assertEquals("RandomRectangleRenderer Canvas IR background must use backdropStyle.color", Color.CYAN, randBgRect.fill)
     }
+
+    @Test
+    fun testImageStyleStaticImageAllowTransparentPandaGoldenParity() {
+        val payload = "https://github.com/EFPrefix/EFQRCode"
+        val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
+        val dummyPandaBmp = allocateBitmapReflectively()
+
+        // 1. Configure EFQRCode exact style: .image(params: .init(image: .init(image: .static(...), allowTransparent: true)))
+        // with small data module dots (0.25f) inside the panda
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE,
+            sourceImage = dummyPandaBmp,
+            imageAllowTransparent = true,
+            imageDataScale = 0.25f,
+            imagePositionDarkColor = Color.BLACK,
+            imagePositionLightColor = Color.WHITE
+        )
+
+        val design = QrDesign.fromQrStyleParams(params)
+
+        // 2. Semantic distinction assertion:
+        // Source image is assigned to imageSource, NOT backdropStyle!
+        assertSame("Source image must be mapped to imageSource.bitmap", dummyPandaBmp, design.imageSource.bitmap)
+        assertNull("Backdrop image must remain null; source image is NOT a backdrop", design.backdropStyle.image)
+        assertTrue("allowTransparent flag must be propagated to QrDesign", design.allowTransparent)
+        assertTrue("allowTransparent flag must be propagated to imageSource", design.imageSource.allowTransparent)
+        assertEquals("Data module scale must be 0.25f", 0.25f, design.imageDataScale ?: 1.0f, 0.001f)
+
+        // 3. SVG Generation Verification:
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // (a) Transparent pre-pass:
+        // Must draw full-size (width="1.0" height="1.0" or width="1" height="1") data modules in #000000 BEFORE the image mask
+        val hasPrepass = svg.contains("""width="1.0" height="1.0"""") || svg.contains("""width="1" height="1"""")
+        assertTrue("IMAGE SVG with allowTransparent=true must contain full-size 1.0 pre-pass modules", hasPrepass)
+
+        // (b) Mask #hole with 8x8 cutout boxes over finders:
+        assertTrue("IMAGE SVG must define mask #hole", svg.contains("""<mask id="hole">"""))
+        assertTrue("IMAGE SVG mask must cut out top-left finder", svg.contains("""width="8" height="8" fill="black""""))
+        assertTrue("IMAGE SVG must wrap image layer in mask url(#hole)", svg.contains("""mask="url(#hole)""""))
+
+        // (c) Finders have 8x8 white backing rects (posLightColor):
+        assertTrue("Finders must have 8x8 posLightColor backing", svg.contains("""<rect opacity="1.00" width="8" height="8""""))
+
+        // (d) Scaled data modules on top of image:
+        // Since imageDataScale = 0.25, scaled rects with width="0.25" height="0.25" must be rendered on top
+        assertTrue("Top data layer must render scaled modules with size 0.25", svg.contains("""width="0.25" height="0.25""""))
+
+        // 4. Verify Canvas IR Geometry:
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            quietZoneModules = 1
+        )
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+        assertNotNull(ir)
+
+        // In IR, nodes should contain:
+        // - Pre-pass rect nodes with size = geometry.moduleSize
+        val mSize = geometry.moduleSize.toFloat()
+        val prepassNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - mSize) < 0.01f && Math.abs(it.height - mSize) < 0.01f && it.fill == Color.BLACK
+        }
+        assertTrue("IR must contain pre-pass full-size module nodes", prepassNodes.isNotEmpty())
+
+        // - Top data layer scaled rect nodes with size = mSize * 0.25f
+        val topDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - mSize * 0.25f) < 0.01f && Math.abs(it.height - mSize * 0.25f) < 0.01f
+        }
+        assertTrue("IR must contain scaled top data module nodes (size = 0.25 * mSize)", topDataNodes.isNotEmpty())
+
+        // 5. Semantic distinction: Contrast with Backdrop Image
+        val backdropParams = QrStyleParams(
+            style = QrStyle.IMAGE,
+            backgroundImage = dummyPandaBmp, // using backdrop image instead of source image
+            imageAllowTransparent = false
+        )
+        val backdropDesign = QrDesign.fromQrStyleParams(backdropParams)
+        assertNull("imageSource.bitmap must be null when only backdropImage is provided", backdropDesign.imageSource.bitmap)
+        assertSame("backgroundLayer.bitmap must be assigned when backgroundImage is provided", dummyPandaBmp, backdropDesign.backgroundLayer.bitmap)
+        assertFalse("allowTransparent must be false", backdropDesign.allowTransparent)
+    }
 }
 

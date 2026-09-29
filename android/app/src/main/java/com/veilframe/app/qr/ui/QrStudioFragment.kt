@@ -424,6 +424,10 @@ class QrGenerateTabFragment : Fragment() {
         val logoSizeLabel      = view.findViewById<TextView>(R.id.qr_logo_size_label)
 
         val containerResampleControls = view.findViewById<LinearLayout>(R.id.container_resample_specific_controls)
+        val containerImageControls    = view.findViewById<LinearLayout>(R.id.container_image_specific_controls)
+        val imageAllowTransparentSwitch = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.qr_image_allow_transparent_switch)
+        val imageDataScaleSlider      = view.findViewById<Slider>(R.id.qr_image_data_scale_slider)
+        val imageDataScaleLabel       = view.findViewById<TextView>(R.id.qr_image_data_scale_label)
         val animatedExportLabel       = view.findViewById<TextView>(R.id.qr_animated_export_label)
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
@@ -974,6 +978,17 @@ class QrGenerateTabFragment : Fragment() {
                 sourceOpacityLabel.text = "Opacity: ${value.toInt()}%"
             }
         }
+        imageAllowTransparentSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            if (vm.state.value.imageAllowTransparent != isChecked) {
+                vm.updateImageAllowTransparent(isChecked)
+            }
+        }
+        imageDataScaleSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateImageDataScale(value / 100f)
+                imageDataScaleLabel?.text = "Data Module Scale: ${value.toInt()}%"
+            }
+        }
         resampleBackdropSwitch.setOnCheckedChangeListener { _, isChecked ->
             containerBackdropOpacity.visibility = if (isChecked) View.VISIBLE else View.GONE
             if (vm.state.value.resampleUseSourceAsBackdrop != isChecked) {
@@ -1098,6 +1113,16 @@ class QrGenerateTabFragment : Fragment() {
                             sourceOpacitySlider.value = opacityPct.toFloat()
                             sourceOpacityLabel.text = "Opacity: $opacityPct%"
                         }
+
+                        // Contextual IMAGE controls: only show when IMAGE is active
+                        val isImage = state.style == QrStyle.IMAGE
+                        containerImageControls?.visibility = if (isImage) View.VISIBLE else View.GONE
+                        if (imageAllowTransparentSwitch?.isChecked != state.imageAllowTransparent) {
+                            imageAllowTransparentSwitch?.isChecked = state.imageAllowTransparent
+                        }
+                        val dataScalePct = (state.imageDataScale * 100f).toInt().coerceIn(5, 100)
+                        imageDataScaleSlider?.value = dataScalePct.toFloat()
+                        imageDataScaleLabel?.text = "Data Module Scale: $dataScalePct%"
 
                         // Contextual RESAMPLE controls: only show when IMAGE_RESAMPLE is active
                         containerResampleControls?.visibility = if (isResample) View.VISIBLE else View.GONE
