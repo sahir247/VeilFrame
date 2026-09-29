@@ -12,7 +12,8 @@ import kotlin.math.abs
 class QRCodeModel(
     val data: ByteArray,
     val errorCorrectLevel: VeilCorrectionLevel,
-    val needTypeTable: Boolean = true
+    val needTypeTable: Boolean = true,
+    val explicitMaskPattern: VeilMaskPattern? = null
 ) {
     val typeNumber: Int = QRCodeType.typeNumber(data.size, errorCorrectLevel)
     val moduleCount: Int = typeNumber * 4 + 17
@@ -24,7 +25,7 @@ class QRCodeModel(
 
     init {
         dataCache = createData(typeNumber, errorCorrectLevel, data)
-        bestMaskPattern = findBestMaskPattern()
+        bestMaskPattern = explicitMaskPattern ?: findBestMaskPattern()
         makeImpl(isTest = false, maskPattern = bestMaskPattern)
     }
 

@@ -33,17 +33,19 @@ object VeilQrEncoder {
 
     fun encode(
         content: String,
-        errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H
+        errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H,
+        maskPattern: VeilMaskPattern? = null
     ): VeilEncodedQr {
         val data = content.toByteArray(Charsets.UTF_8)
-        return encode(data, errorCorrection)
+        return encode(data, errorCorrection, maskPattern)
     }
 
     fun encode(
         data: ByteArray,
-        errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H
+        errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H,
+        maskPattern: VeilMaskPattern? = null
     ): VeilEncodedQr {
-        val model = QRCodeModel(data, errorCorrection, needTypeTable = true)
+        val model = QRCodeModel(data, errorCorrection, needTypeTable = true, explicitMaskPattern = maskPattern)
         val typeTable = model.getTypeTable()
 
         val matrix = QrMatrix(

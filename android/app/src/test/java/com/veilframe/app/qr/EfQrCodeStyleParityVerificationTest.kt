@@ -2296,21 +2296,27 @@ class EfQrCodeStyleParityVerificationTest {
     }
 
     @Test
-    fun testImageStyleStaticImageAllowTransparentPandaGoldenParity() {
+    fun testImageStyleLiteralReadmeDefaultConfiguration() {
         val payload = "https://github.com/EFPrefix/EFQRCode"
         val matrix = QrMatrix(payload, ErrorCorrectionLevel.H)
         val dummyPandaBmp = allocateBitmapReflectively()
 
-        // 1. Configure EFQRCode exact style: .image(params: .init(image: .init(image: .static(...), allowTransparent: true)))
-        // with small data module dots (0.25f) inside the panda
+        // 1. Literal README Section 3.1 snippet:
+        // let generator = try? EFQRCode.Generator("https://github.com/EFPrefix/EFQRCode", style: .image(
+        //     params: .init(image: .init(image: .static(image: UIImage(named: "WWF")?.cgImage!), allowTransparent: true)))
+        // )
+        // In EFStyleImageParams.init(...), 'data' defaults to EFStyleImageParamsData(), whose scale is 1.0!
+        // When imageDataScale is omitted, VeilFrame QrStyleParams defaults to 1.0f.
         val params = QrStyleParams(
             style = QrStyle.IMAGE,
             sourceImage = dummyPandaBmp,
             imageAllowTransparent = true,
-            imageDataScale = 0.25f,
+            // imageDataScale is omitted -> defaults to 1.0f!
             imagePositionDarkColor = Color.BLACK,
             imagePositionLightColor = Color.WHITE
         )
+
+        assertEquals("Literal README default imageDataScale must be 1.0f", 1.0f, params.imageDataScale, 0.0001f)
 
         val design = QrDesign.fromQrStyleParams(params)
 
@@ -2320,13 +2326,12 @@ class EfQrCodeStyleParityVerificationTest {
         assertNull("Backdrop image must remain null; source image is NOT a backdrop", design.backdropStyle.image)
         assertTrue("allowTransparent flag must be propagated to QrDesign", design.allowTransparent)
         assertTrue("allowTransparent flag must be propagated to imageSource", design.imageSource.allowTransparent)
-        assertEquals("Data module scale must be 0.25f", 0.25f, design.imageDataScale ?: 1.0f, 0.001f)
+        assertEquals("Data module scale must be 1.0f (full cell coverage)", 1.0f, design.imageDataScale ?: 1.0f, 0.001f)
 
         // 3. SVG Generation Verification:
         val svg = SvgExporter.generateSvg(matrix, design)
 
         // (a) Transparent pre-pass:
-        // Must draw full-size (width="1.0" height="1.0" or width="1" height="1") data modules in #000000 BEFORE the image mask
         val hasPrepass = svg.contains("""width="1.0" height="1.0"""") || svg.contains("""width="1" height="1"""")
         assertTrue("IMAGE SVG with allowTransparent=true must contain full-size 1.0 pre-pass modules", hasPrepass)
 
@@ -2338,9 +2343,10 @@ class EfQrCodeStyleParityVerificationTest {
         // (c) Finders have 8x8 white backing rects (posLightColor):
         assertTrue("Finders must have 8x8 posLightColor backing", svg.contains("""<rect opacity="1.00" width="8" height="8""""))
 
-        // (d) Scaled data modules on top of image:
-        // Since imageDataScale = 0.25, scaled rects with width="0.25" height="0.25" must be rendered on top
-        assertTrue("Top data layer must render scaled modules with size 0.25", svg.contains("""width="0.25" height="0.25""""))
+        // (d) Top data modules with default scale 1.0:
+        // Because imageDataScale is 1.0, top data modules are rendered with full width/height 1.00
+        val hasFullTopModules = svg.contains("""width="1.00" height="1.00"""") || svg.contains("""width="1.0" height="1.0"""")
+        assertTrue("Top data layer with default scale 1.0 must render full-size modules", hasFullTopModules)
 
         // 4. Verify Canvas IR Geometry:
         val geometry = QrGeometry(
@@ -2352,29 +2358,190 @@ class EfQrCodeStyleParityVerificationTest {
         val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
         assertNotNull(ir)
 
-        // In IR, nodes should contain:
-        // - Pre-pass rect nodes with size = geometry.moduleSize
         val mSize = geometry.moduleSize.toFloat()
-        val prepassNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+        val fullSizeNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
             Math.abs(it.width - mSize) < 0.01f && Math.abs(it.height - mSize) < 0.01f && it.fill == Color.BLACK
         }
-        assertTrue("IR must contain pre-pass full-size module nodes", prepassNodes.isNotEmpty())
+        assertTrue("IR must contain full-size module nodes (pre-pass and top data layer at 1.0)", fullSizeNodes.isNotEmpty())
+    }
 
-        // - Top data layer scaled rect nodes with size = mSize * 0.25f
-        val topDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
-            Math.abs(it.width - mSize * 0.25f) < 0.01f && Math.abs(it.height - mSize * 0.25f) < 0.01f
+    @Test
+    fun testImageStyleWwfPandaVisualSampleParity() {
+        // Load WWF.png and WWF_reference_qr.png from test resources using DecodedPngImage
+        val wwfStream = javaClass.classLoader?.getResourceAsStream("WWF.png")
+            ?: javaClass.getResourceAsStream("/WWF.png")
+            ?: javaClass.getResourceAsStream("WWF.png")
+        assertNotNull("WWF.png resource must exist in test classpath", wwfStream)
+        val wwfImg = DecodedPngImage.decode(wwfStream!!)
+        assertEquals("WWF.png must be 480x480", 480, wwfImg.width)
+        assertEquals("WWF.png must be 480x480", 480, wwfImg.height)
+        assertTrue("WWF.png must have alpha channel", wwfImg.hasAlpha)
+
+        val refStream = javaClass.classLoader?.getResourceAsStream("WWF_reference_qr.png")
+            ?: javaClass.getResourceAsStream("/WWF_reference_qr.png")
+            ?: javaClass.getResourceAsStream("WWF_reference_qr.png")
+        assertNotNull("WWF_reference_qr.png resource must exist in test classpath", refStream)
+        val refImg = DecodedPngImage.decode(refStream!!)
+
+        // 1. Reference Image Geometry Diagnostics:
+        assertEquals("Reference QR image must be exactly 702x702 px", 702, refImg.width)
+        assertEquals("Reference QR image must be exactly 702x702 px", 702, refImg.height)
+
+        val moduleSize = 18 // 702 / 39 = 18 px
+        val quietZone = 1   // 1 module = 18 px
+        val matrixSize = 37 // QR Version 5: 39 - 2*1 = 37 modules
+        assertEquals("Grid dimension check", 702, (matrixSize + 2 * quietZone) * moduleSize)
+
+        // 2. Format Info & Error Correction Level Diagnostics:
+        // Format info bits sampled from around top-left finder in WWF_reference_qr.png
+        val formatCols = intArrayOf(0, 1, 2, 3, 4, 5, 7, 8, 8, 8, 8, 8, 8, 8, 8)
+        val formatRows = intArrayOf(8, 8, 8, 8, 8, 8, 8, 8, 7, 5, 4, 3, 2, 1, 0)
+        var rawFormatBits = 0
+        for (i in 0 until 15) {
+            val cx = (quietZone + formatCols[i]) * moduleSize + moduleSize / 2
+            val cy = (quietZone + formatRows[i]) * moduleSize + moduleSize / 2
+            val isDark = ((refImg.getPixel(cx, cy) shr 16) and 0xFF) < 128
+            rawFormatBits = (rawFormatBits shl 1) or (if (isDark) 1 else 0)
         }
-        assertTrue("IR must contain scaled top data module nodes (size = 0.25 * mSize)", topDataNodes.isNotEmpty())
+        val unmaskedFormat = rawFormatBits xor 0x5412
+        val ecBits = (unmaskedFormat shr 13) and 3
+        val maskPattern = (unmaskedFormat shr 10) and 7
+        assertEquals("Reference QR must use Error Correction Level H (ecBits = 2 / '10')", 2, ecBits)
+        assertEquals("Reference QR must use Mask Pattern 4", 4, maskPattern)
 
-        // 5. Semantic distinction: Contrast with Backdrop Image
+        // 3. Bitwise Matrix Parity against VeilFrame VeilQrEncoder (EFQRCode parity engine):
+        val payload = "https://github.com/EyreFree/EFQRCode"
+        val encoded = com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(
+            payload,
+            com.veilframe.app.qr.encoder.engine.VeilCorrectionLevel.H,
+            com.veilframe.app.qr.encoder.engine.VeilMaskPattern._100
+        )
+        val matrix = encoded.matrix
+        assertEquals("VeilFrame matrix size must be 37 (Version 5)", matrixSize, matrix.size)
+        assertEquals("Mask pattern must be Mask 4", com.veilframe.app.qr.encoder.engine.VeilMaskPattern._100, encoded.maskPattern)
+
+        // Run ZXing directly on refImg to get the ground truth decoded payload and EC level
+        val zxingPixels = IntArray(refImg.width * refImg.height)
+        for (y in 0 until refImg.height) {
+            for (x in 0 until refImg.width) {
+                zxingPixels[y * refImg.width + x] = refImg.getPixel(x, y)
+            }
+        }
+        val source = com.google.zxing.RGBLuminanceSource(refImg.width, refImg.height, zxingPixels)
+        val binBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+        try {
+            val zxingResult = com.google.zxing.qrcode.QRCodeReader().decode(binBitmap)
+            println("ZXING DECODED PAYLOAD: '${zxingResult.text}'")
+            println("ZXING RESULT METADATA: ${zxingResult.resultMetadata}")
+        } catch (e: Exception) {
+            println("ZXING FAILED TO DECODE refImg: ${e.message}")
+        }
+
+        var mismatches = 0
+        for (r in 0 until matrixSize) {
+            for (c in 0 until matrixSize) {
+                val cx = (quietZone + c) * moduleSize + moduleSize / 2
+                val cy = (quietZone + r) * moduleSize + moduleSize / 2
+                val refIsDark = ((refImg.getPixel(cx, cy) shr 16) and 0xFF) < 128
+                assertEquals("Bitwise matrix mismatch at ($c, $r)", matrix.isDark(c, r), refIsDark)
+                if (matrix.isDark(c, r) != refIsDark) {
+                    mismatches++
+                }
+            }
+        }
+        assertEquals("Total bitwise matrix mismatches against reference QR image must be exactly 0", 0, mismatches)
+
+
+        // 4. Pixel Diagnostics: White Fur (Centered 6x6 Data Dots) vs Transparent Pre-pass (Full 18x18 Squares)
+        // (a) Isolated dark data module on white fur: col=12, row=10
+        val furCol = 12
+        val furRow = 10
+        assertTrue("Module (12, 10) must be dark in QR matrix", matrix.isDark(furCol, furRow))
+        val furStartX = (quietZone + furCol) * moduleSize
+        val furCenterY = (quietZone + furRow) * moduleSize + moduleSize / 2
+        // In the 18 px horizontal span of this module:
+        // dx=0..5 must be white fur (red > 200)
+        for (dx in 0..5) {
+            val red = (refImg.getPixel(furStartX + dx, furCenterY) shr 16) and 0xFF
+            assertTrue("Left margin of module (12,10) at dx=$dx must be white fur (red=$red)", red > 200)
+        }
+        // dx=6..11 must be the black centered dot (red < 50) -> exactly 6 px wide (scale 6/18 = 0.333)
+        for (dx in 6..11) {
+            val red = (refImg.getPixel(furStartX + dx, furCenterY) shr 16) and 0xFF
+            assertTrue("Center dot of module (12,10) at dx=$dx must be dark (red=$red)", red < 50)
+        }
+        // dx=12..17 must be white fur (red > 200)
+        for (dx in 12..17) {
+            val red = (refImg.getPixel(furStartX + dx, furCenterY) shr 16) and 0xFF
+            assertTrue("Right margin of module (12,10) at dx=$dx must be white fur (red=$red)", red > 200)
+        }
+
+        // (b) Dark module in transparent region of WWF: col=4, row=8
+        val transCol = 4
+        val transRow = 8
+        assertTrue("Module (4, 8) must be dark in QR matrix", matrix.isDark(transCol, transRow))
+        val transStartX = (quietZone + transCol) * moduleSize
+        val transCenterY = (quietZone + transRow) * moduleSize + moduleSize / 2
+        // All 18 pixels must be solid black (pre-pass at full 1.0 scale = 18 px)
+        for (dx in 0 until moduleSize) {
+            val red = (refImg.getPixel(transStartX + dx, transCenterY) shr 16) and 0xFF
+            assertTrue("Pre-pass module (4,8) at dx=$dx must be solid black (red=$red)", red < 50)
+        }
+
+        // 5. VeilFrame Canvas IR & SVG Parity with 1/3 (0.333f) scale:
+        val dummyBmp = allocateBitmapReflectively()
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE,
+            sourceImage = dummyBmp,
+            imageAllowTransparent = true,
+            imageDataScale = 1.0f / 3.0f, // 0.333333f -> exactly 6 px inside 18 px module
+            quietZone = 1,
+            imagePositionDarkColor = Color.BLACK,
+            imagePositionLightColor = Color.WHITE
+        )
+        val design = QrDesign.fromQrStyleParams(params)
+        assertEquals("Data scale must be 1/3", 1.0f / 3.0f, design.imageDataScale ?: 0f, 0.001f)
+
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 702,
+            outputHeight = 702,
+            quietZoneModules = 1
+        )
+        assertEquals("Module size in QrGeometry must be 18 px", 18f, geometry.moduleSize, 0.001f)
+
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+        assertNotNull(ir)
+
+        // IR pre-pass nodes have full module size (18 px)
+        val prepassNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - 18f) < 0.01f && Math.abs(it.height - 18f) < 0.01f && it.fill == Color.BLACK
+        }
+        assertTrue("IR must contain full-size 18 px pre-pass nodes", prepassNodes.isNotEmpty())
+
+        // IR top data nodes have 6 px size (18 * 1/3 = 6 px)
+        val topDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - 6f) < 0.01f && Math.abs(it.height - 6f) < 0.01f
+        }
+        assertTrue("IR must contain scaled 6 px top data module nodes", topDataNodes.isNotEmpty())
+
+        // SVG export checks
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertTrue("SVG must define mask #hole with 8x8 finder cutouts", svg.contains("""<mask id="hole">"""))
+        assertTrue("SVG must cut out 8x8 finder", svg.contains("""width="8" height="8" fill="black""""))
+        assertTrue("SVG must contain 1.0 full-size pre-pass modules", svg.contains("""width="1.0""""))
+        val hasScaledTop = svg.contains("""width="0.33""")
+        assertTrue("SVG must contain 0.33 scaled top data modules", hasScaledTop)
+
+        // 6. Contrast with Backdrop Image (strict semantic separation)
         val backdropParams = QrStyleParams(
             style = QrStyle.IMAGE,
-            backgroundImage = dummyPandaBmp, // using backdrop image instead of source image
+            backgroundImage = dummyBmp,
             imageAllowTransparent = false
         )
         val backdropDesign = QrDesign.fromQrStyleParams(backdropParams)
-        assertNull("imageSource.bitmap must be null when only backdropImage is provided", backdropDesign.imageSource.bitmap)
-        assertSame("backgroundLayer.bitmap must be assigned when backgroundImage is provided", dummyPandaBmp, backdropDesign.backgroundLayer.bitmap)
+        assertNull("imageSource.bitmap must be null when only backgroundImage is set", backdropDesign.imageSource.bitmap)
+        assertSame("backgroundLayer.bitmap must be set when backgroundImage is provided", dummyBmp, backdropDesign.backgroundLayer.bitmap)
         assertFalse("allowTransparent must be false", backdropDesign.allowTransparent)
     }
 }
