@@ -26,8 +26,169 @@ import java.util.Locale
  */
 object AnimatedQrGenerator {
 
+    data class ReconciledFrame(
+        val imageBitmap: Bitmap?,
+        val logoBitmap: Bitmap?,
+        val durationMs: Int
+    )
+
+    /**
+     * Reconciles two independent animation timelines (e.g. animated watermark/image source and animated logo)
+     * into a synchronized sequence of frames by calculating the least common multiple (LCM) of total durations
+     * and stepping through discrete time boundaries, matching reference multi-image animation synchronization.
+     */
+    fun reconcileAnimationTimelines(
+        imageFrames: List<Bitmap>,
+        imageDelaysMs: List<Int>,
+        logoFrames: List<Bitmap>,
+        logoDelaysMs: List<Int>,
+        maxDurationMs: Long = 15000L,
+        maxFrames: Int = 240
+    ): List<ReconciledFrame> {
+        val hasImg = imageFrames.isNotEmpty()
+        val hasLogo = logoFrames.isNotEmpty()
+
+        if (!hasImg && !hasLogo) return emptyList()
+
+        if (hasImg && !hasLogo) {
+            return imageFrames.mapIndexed { idx, bmp ->
+                val delay = imageDelaysMs.getOrElse(idx) { imageDelaysMs.lastOrNull() ?: 100 }
+                ReconciledFrame(bmp, null, delay)
+            }
+        }
+        if (!hasImg && hasLogo) {
+            return logoFrames.mapIndexed { idx, bmp ->
+                val delay = logoDelaysMs.getOrElse(idx) { logoDelaysMs.lastOrNull() ?: 100 }
+                ReconciledFrame(null, bmp, delay)
+            }
+        }
+
+        val safeImgDelays = imageFrames.indices.map { idx ->
+            maxOf(10, imageDelaysMs.getOrElse(idx) { imageDelaysMs.lastOrNull() ?: 100 })
+        }
+        val safeLogoDelays = logoFrames.indices.map { idx ->
+            maxOf(10, logoDelaysMs.getOrElse(idx) { logoDelaysMs.lastOrNull() ?: 100 })
+        }
+
+        val totalImgDur = maxOf(1L, safeImgDelays.sumOf { it.toLong() })
+        val totalLogoDur = maxOf(1L, safeLogoDelays.sumOf { it.toLong() })
+
+        fun gcd(a: Long, b: Long): Long {
+            var x = a
+            var y = b
+            while (y != 0L) {
+                val t = y
+                y = x % y
+                x = t
+            }
+            return x
+        }
+
+        fun lcm(a: Long, b: Long): Long {
+            if (a == 0L || b == 0L) return 0L
+            return (a / gcd(a, b)) * b
+        }
+
+        val rawLcm = lcm(totalImgDur, totalLogoDur)
+        val targetDuration = if (rawLcm in 1..maxDurationMs) rawLcm else minOf(maxOf(totalImgDur, totalLogoDur), maxDurationMs)
+
+        val result = mutableListOf<ReconciledFrame>()
+        var currentTime = 0L
+
+        while (currentTime < targetDuration && result.size < maxFrames) {
+            val tImg = currentTime % totalImgDur
+            val tLogo = currentTime % totalLogoDur
+
+            var accImg = 0L
+            var imgFrameIdx = 0
+            var remImg = safeImgDelays[0].toLong()
+            for ((idx, d) in safeImgDelays.withIndex()) {
+                if (tImg < accImg + d) {
+                    imgFrameIdx = idx
+                    remImg = (accImg + d) - tImg
+                    break
+                }
+                accImg += d
+            }
+
+            var accLogo = 0L
+            var logoFrameIdx = 0
+            var remLogo = safeLogoDelays[0].toLong()
+            for ((idx, d) in safeLogoDelays.withIndex()) {
+                if (tLogo < accLogo + d) {
+                    logoFrameIdx = idx
+                    remLogo = (accLogo + d) - tLogo
+                    break
+                }
+                accLogo += d
+            }
+
+            val stepDur = minOf(remImg, remLogo, targetDuration - currentTime)
+            if (stepDur <= 0L) break
+
+            result.add(
+                ReconciledFrame(
+                    imageBitmap = imageFrames[imgFrameIdx],
+                    logoBitmap = logoFrames[logoFrameIdx],
+                    durationMs = stepDur.toInt()
+                )
+            )
+
+            currentTime += stepDur
+        }
+
+        return result
+    }
+
+    /**
+     * Extracts reconciled frames across both animated image source and animated logo.
+     */
+    fun extractReconciledFrames(design: QrDesign): List<ReconciledFrame> {
+        val imgFrames = design.imageSource.animatedFrames
+        val logoFrames = design.logo?.animatedFrames
+        val hasImgAnim = !imgFrames.isNullOrEmpty()
+        val hasLogoAnim = !logoFrames.isNullOrEmpty()
+
+        if (!hasImgAnim && !hasLogoAnim) {
+            val singleImg = design.imageSource.bitmap
+            val singleLogo = design.logo?.effectiveBitmap
+            return if (singleImg != null || singleLogo != null) {
+                listOf(ReconciledFrame(singleImg, singleLogo, 100))
+            } else {
+                emptyList()
+            }
+        }
+
+        val imgDelays = design.imageSource.frameDelaysMs ?: emptyList()
+        val logoDelays = design.logo?.frameDelaysMs ?: emptyList()
+
+        if (hasImgAnim && hasLogoAnim) {
+            return reconcileAnimationTimelines(
+                imageFrames = imgFrames!!,
+                imageDelaysMs = imgDelays,
+                logoFrames = logoFrames!!,
+                logoDelaysMs = logoDelays
+            )
+        }
+
+        if (hasImgAnim) {
+            val singleLogo = design.logo?.effectiveBitmap
+            return imgFrames!!.mapIndexed { idx, bmp ->
+                val delay = imgDelays.getOrElse(idx) { imgDelays.lastOrNull() ?: 100 }
+                ReconciledFrame(bmp, singleLogo, delay)
+            }
+        }
+
+        val singleImg = design.imageSource.bitmap
+        return logoFrames!!.mapIndexed { idx, bmp ->
+            val delay = logoDelays.getOrElse(idx) { logoDelays.lastOrNull() ?: 100 }
+            ReconciledFrame(singleImg, bmp, delay)
+        }
+    }
+
     /**
      * Renders each frame in [sourceFrames] into a styled, scan-ready QR code bitmap.
+     * Evaluates logo frames based on cumulative timeline playback time rather than naive modulo index.
      */
     fun renderFrames(
         matrix: QrMatrix,
@@ -39,6 +200,7 @@ object AnimatedQrGenerator {
         val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
         val renderedFrames = ArrayList<QrFrame>(sourceFrames.size)
 
+        var accumulatedMs = 0L
         for ((idx, frame) in sourceFrames.withIndex()) {
             val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
             val imgSource = if (hasAnimatedImg) {
@@ -52,7 +214,21 @@ object AnimatedQrGenerator {
             val hasAnimatedLogo = baseDesign.logo?.isAnimated == true && !baseDesign.logo.animatedFrames.isNullOrEmpty()
             val logoSource = if (hasAnimatedLogo) {
                 val lFrames = baseDesign.logo!!.animatedFrames!!
-                val targetFrame = lFrames[idx % lFrames.size]
+                val lDelays = baseDesign.logo.frameDelaysMs ?: emptyList()
+                val safeLDelays = lFrames.indices.map { i ->
+                    maxOf(10, lDelays.getOrElse(i) { lDelays.lastOrNull() ?: 100 })
+                }
+                val totalLogoDur = maxOf(1L, safeLDelays.sumOf { it.toLong() })
+                val tLogo = accumulatedMs % totalLogoDur
+                var acc = 0L
+                var targetFrame = lFrames[0]
+                for ((lIdx, d) in safeLDelays.withIndex()) {
+                    if (tLogo < acc + d) {
+                        targetFrame = lFrames[lIdx]
+                        break
+                    }
+                    acc += d
+                }
                 baseDesign.logo.copy(
                     bitmap = targetFrame,
                     source = com.veilframe.app.qr.model.ImageSource.Memory(targetFrame)
@@ -70,6 +246,7 @@ object AnimatedQrGenerator {
             if (renderedBitmap != null) {
                 renderedFrames.add(QrFrame(bitmap = renderedBitmap, durationMs = frame.durationMs))
             }
+            accumulatedMs += frame.durationMs
         }
         return renderedFrames
     }
@@ -86,22 +263,16 @@ object AnimatedQrGenerator {
 
     /**
      * Extracts a list of [QrFrame] items from the given [QrDesign]'s animated image source or animated logo.
+     * When both image source and logo are animated, returns the synchronized reconciled timeline sequence.
      */
     fun extractSourceFrames(design: QrDesign): List<QrFrame> {
-        val imgFrames = design.imageSource.animatedFrames
-        if (imgFrames != null && imgFrames.isNotEmpty()) {
-            val delays = design.imageSource.frameDelaysMs ?: emptyList()
-            return imgFrames.mapIndexed { idx, bmp ->
-                val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
-                QrFrame(bitmap = bmp, durationMs = delay)
-            }
-        }
-        val logoFrames = design.logo?.animatedFrames
-        if (logoFrames != null && logoFrames.isNotEmpty()) {
-            val delays = design.logo.frameDelaysMs ?: emptyList()
-            return logoFrames.mapIndexed { idx, bmp ->
-                val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
-                QrFrame(bitmap = bmp, durationMs = delay)
+        val reconciled = extractReconciledFrames(design)
+        if (reconciled.isNotEmpty()) {
+            return reconciled.map { rf ->
+                QrFrame(
+                    bitmap = rf.imageBitmap ?: rf.logoBitmap ?: design.imageSource.bitmap ?: design.logo?.effectiveBitmap ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
+                    durationMs = rf.durationMs
+                )
             }
         }
         return emptyList()
@@ -109,18 +280,51 @@ object AnimatedQrGenerator {
 
     /**
      * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps.
+     * Synchronizes timelines when both watermark/image source and logo are animated.
      */
     fun renderDesign(
         matrix: QrMatrix,
         design: QrDesign,
         outputSize: Int = 512
     ): List<QrFrame> {
-        val sourceFrames = extractSourceFrames(design)
-        if (sourceFrames.isEmpty()) {
+        val reconciled = extractReconciledFrames(design)
+        if (reconciled.isEmpty()) {
             val single = design.imageSource.bitmap ?: design.logo?.effectiveBitmap
             return if (single != null) listOf(QrFrame(single, 100)) else emptyList()
         }
-        return renderFrames(matrix, design, sourceFrames, outputSize)
+
+        val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, design)
+        val renderedFrames = ArrayList<QrFrame>(reconciled.size)
+
+        for (rf in reconciled) {
+            val imgSource = if (rf.imageBitmap != null) {
+                design.imageSource.copy(
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(rf.imageBitmap)
+                )
+            } else {
+                design.imageSource
+            }
+
+            val logoSource = if (rf.logoBitmap != null) {
+                design.logo?.copy(
+                    bitmap = rf.logoBitmap,
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(rf.logoBitmap)
+                )
+            } else {
+                design.logo
+            }
+
+            val frameDesign = design.copy(
+                outputSize = outputSize,
+                imageSource = imgSource,
+                logo = logoSource
+            )
+            val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
+            if (renderedBitmap != null) {
+                renderedFrames.add(QrFrame(bitmap = renderedBitmap, durationMs = rf.durationMs))
+            }
+        }
+        return renderedFrames
     }
 
     /**

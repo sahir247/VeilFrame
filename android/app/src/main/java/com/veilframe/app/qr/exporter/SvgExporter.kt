@@ -570,7 +570,15 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val sourceBmp = design.imageSource.bitmap
-        val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
+        val preprocessedStatic = sourceBmp?.let {
+            com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = it,
+                canvasWidth = matrix.size.toFloat(),
+                canvasHeight = matrix.size.toFloat(),
+                mode = design.imageSource.scaleMode
+            )
+        }
+        val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
         val bgHex = toSvgColor(design.imageFillBackgroundColor).hex
         val bgAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.imageFillBackgroundColor))
         val maskHex = toSvgColor(design.imageFillMaskColor).hex
@@ -594,6 +602,15 @@ object SvgExporter {
         }
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
+
+        // Quiet-zone background (paints entire viewBox per EFQRCode backdrop contract)
+        val canvasBgAlpha = colorAlpha(design.palette.background)
+        if (canvasBgAlpha > 0f) {
+            val canvasBgHex = toSvgColor(design.palette.background).hex
+            val alphaStr = String.format(Locale.US, "%.2f", canvasBgAlpha)
+            sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
+        }
+
         sb.append("""  <g x="0" y="0" width="$totalWidth" height="$totalHeight" mask="url(#hole)">""").append("\n")
         sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
         val fillAspect = when (design.imageSource.scaleMode) {
@@ -671,10 +688,18 @@ object SvgExporter {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
         val sourceBmp = design.imageSource.bitmap
-        val imageBase64 = sourceBmp?.let { bitmapToBase64(it) } ?: ""
+        val preprocessedStatic = sourceBmp?.let {
+            com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                source = it,
+                canvasWidth = matrix.size.toFloat(),
+                canvasHeight = matrix.size.toFloat(),
+                mode = design.imageSource.scaleMode
+            )
+        }
+        val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
         val imageAlpha = String.format(Locale.US, "%.2f", design.imageSource.opacity.coerceIn(0f, 1f))
         val n = matrix.size
-        val bgHex = hexColor(design.palette.background)
+        val bgHex = toSvgColor(design.palette.background).hex
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
@@ -701,9 +726,10 @@ object SvgExporter {
                     val color = if (isDark) design.dataColorDark else design.dataColorLight
                     val alpha = colorAlphaInt(color)
                     if (alpha == 0) continue
-                    val hex = hexColor(color)
+                    val hex = toSvgColor(color).hex
                     val op = String.format(Locale.US, "%.2f", alpha / 255f)
                     val shape = design.moduleStyle.shape
+                    if (shape == ModuleShape.NONE) continue
                     val scale = design.moduleStyle.scale.coerceIn(0.1f, 1.0f).toDouble()
                     val mx = col + qzLeft + (1.0 - scale) / 2.0
                     val my = row + qzTop + (1.0 - scale) / 2.0
@@ -780,7 +806,7 @@ object SvgExporter {
         sb.append("  </g>\n")
 
         // 4. Finders (with 8x8 posLightColor backing)
-        val posLightHex = hexColor(design.positionLightColor)
+        val posLightHex = toSvgColor(design.positionLightColor).hex
         val posLightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.positionLightColor))
         val finderBgs = listOf(
             Pair(qzLeft, qzTop),
@@ -791,90 +817,96 @@ object SvgExporter {
             sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bx" y="$by" fill="$posLightHex"/>""").append("\n")
         }
 
-        val eyeOuterHex = design.eyeStyle.outerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
-        val eyeInnerHex = design.eyeStyle.innerColor?.let { hexColor(it) } ?: hexColor(design.positionDarkColor)
+        val eyeOuterHex = design.eyeStyle.outerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
+        val eyeInnerHex = design.eyeStyle.innerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
         appendFinders(sb, design, qzLeft, qzTop, n, eyeOuterHex, bgHex, eyeOuterHex, eyeInnerHex)
 
         // 5. Timing modules
-        val timingDarkHex = hexColor(design.timingDarkColor)
-        val timingLightHex = hexColor(design.timingLightColor)
-        val timingScale = design.timingSize.coerceIn(0.1f, 1.0f).toDouble()
         val timingShape = design.timingStyle.shape
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
-                val isDark = matrix.isDark(col, row)
-                val color = if (isDark) design.timingDarkColor else design.timingLightColor
-                val alpha = colorAlphaInt(color)
-                if (alpha == 0) continue
-                val hex = if (isDark) timingDarkHex else timingLightHex
-                val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qzLeft + (1.0 - timingScale) / 2.0
-                val my = row + qzTop + (1.0 - timingScale) / 2.0
-                val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                    shape = timingShape,
-                    x = mx,
-                    y = my,
-                    size = timingScale,
-                    fill = hex
-                ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
-                sb.append("""  $elem""").append("\n")
+        if (timingShape != ModuleShape.NONE) {
+            val timingDarkHex = toSvgColor(design.timingDarkColor).hex
+            val timingLightHex = toSvgColor(design.timingLightColor).hex
+            val timingScale = design.timingSize.coerceIn(0.1f, 1.0f).toDouble()
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) design.timingDarkColor else design.timingLightColor
+                    val alpha = colorAlphaInt(color)
+                    if (alpha == 0) continue
+                    val hex = if (isDark) timingDarkHex else timingLightHex
+                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val mx = col + qzLeft + (1.0 - timingScale) / 2.0
+                    val my = row + qzTop + (1.0 - timingScale) / 2.0
+                    val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                        shape = timingShape,
+                        x = mx,
+                        y = my,
+                        size = timingScale,
+                        fill = hex
+                    ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
+                    sb.append("""  $elem""").append("\n")
+                }
             }
         }
 
         // 6. Alignment modules
-        val alignDarkHex = hexColor(design.alignDarkColor)
-        val alignLightHex = hexColor(design.alignLightColor)
-        val alignScale = design.alignSize.coerceIn(0.1f, 1.0f).toDouble()
         val alignShape = design.alignmentStyle.shape
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                val role = matrix.roleAt(col, row)
-                if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
-                val isDark = matrix.isDark(col, row)
-                val color = if (isDark) design.alignDarkColor else design.alignLightColor
-                val alpha = colorAlphaInt(color)
-                if (alpha == 0) continue
-                val hex = if (isDark) alignDarkHex else alignLightHex
-                val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qzLeft + (1.0 - alignScale) / 2.0
-                val my = row + qzTop + (1.0 - alignScale) / 2.0
-                val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                    shape = alignShape,
-                    x = mx,
-                    y = my,
-                    size = alignScale,
-                    fill = hex
-                ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
-                sb.append("""  $elem""").append("\n")
+        if (alignShape != ModuleShape.NONE) {
+            val alignDarkHex = toSvgColor(design.alignDarkColor).hex
+            val alignLightHex = toSvgColor(design.alignLightColor).hex
+            val alignScale = design.alignSize.coerceIn(0.1f, 1.0f).toDouble()
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val role = matrix.roleAt(col, row)
+                    if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) design.alignDarkColor else design.alignLightColor
+                    val alpha = colorAlphaInt(color)
+                    if (alpha == 0) continue
+                    val hex = if (isDark) alignDarkHex else alignLightHex
+                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val mx = col + qzLeft + (1.0 - alignScale) / 2.0
+                    val my = row + qzTop + (1.0 - alignScale) / 2.0
+                    val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                        shape = alignShape,
+                        x = mx,
+                        y = my,
+                        size = alignScale,
+                        fill = hex
+                    ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
+                    sb.append("""  $elem""").append("\n")
+                }
             }
         }
 
         // 7. Data modules on top of image
-        val dataDarkHex = hexColor(design.dataColorDark)
-        val dataLightHex = hexColor(design.dataColorLight)
-        val dScale = (design.imageDataScale ?: design.moduleStyle.scale).coerceIn(0.05f, 1.0f).toDouble()
         val dShape = design.moduleStyle.shape
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                val role = matrix.roleAt(col, row)
-                if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
-                val isDark = matrix.isDark(col, row)
-                val color = if (isDark) design.dataColorDark else design.dataColorLight
-                val alpha = colorAlphaInt(color)
-                if (alpha == 0) continue
-                val hex = if (isDark) dataDarkHex else dataLightHex
-                val op = String.format(Locale.US, "%.2f", alpha / 255f)
-                val mx = col + qzLeft + (1.0 - dScale) / 2.0
-                val my = row + qzTop + (1.0 - dScale) / 2.0
-                val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
-                    shape = dShape,
-                    x = mx,
-                    y = my,
-                    size = dScale,
-                    fill = hex
-                ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
-                sb.append("""  $elem""").append("\n")
+        if (dShape != ModuleShape.NONE) {
+            val dataDarkHex = toSvgColor(design.dataColorDark).hex
+            val dataLightHex = toSvgColor(design.dataColorLight).hex
+            val dScale = (design.imageDataScale ?: design.moduleStyle.scale).coerceIn(0.05f, 1.0f).toDouble()
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val role = matrix.roleAt(col, row)
+                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) design.dataColorDark else design.dataColorLight
+                    val alpha = colorAlphaInt(color)
+                    if (alpha == 0) continue
+                    val hex = if (isDark) dataDarkHex else dataLightHex
+                    val op = String.format(Locale.US, "%.2f", alpha / 255f)
+                    val mx = col + qzLeft + (1.0 - dScale) / 2.0
+                    val my = row + qzTop + (1.0 - dScale) / 2.0
+                    val elem = com.veilframe.app.qr.renderer.ProtectedModuleGeometry.buildSvgElement(
+                        shape = dShape,
+                        x = mx,
+                        y = my,
+                        size = dScale,
+                        fill = hex
+                    ).let { if (alpha < 255) it.replaceFirst("fill=\"", "opacity=\"$op\" fill=\"") else it }
+                    sb.append("""  $elem""").append("\n")
+                }
             }
         }
 

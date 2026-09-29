@@ -143,7 +143,7 @@ object ResampleSubpixelEngine {
                                 }
 
                                 val pixel = effectiveSource.getPixel(sx, sy)
-                                val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixel)
+                                val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixel, efPremultipliedAlpha = true)
 
                                 // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
                                 val threshold = computeThreshold(grayNorm, style.exposure, style.contrast)

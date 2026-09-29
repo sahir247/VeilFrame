@@ -411,10 +411,14 @@ object ImageScaleResolver {
      * replicates EF's exact CoreGraphics byte buffer output.
      */
     fun calculateLuminance(r: Int, g: Int, b: Int, a: Float = 1.0f, efPremultipliedAlpha: Boolean = false): Float {
-        val baseGray = 0.2126f * r + 0.7152f * g + 0.0722f * b
         val weightedGray = if (efPremultipliedAlpha) {
-            baseGray * a * a + (1.0f - a) * 255.0f
+            val rPremul = (r * a).toInt().coerceIn(0, 255)
+            val gPremul = (g * a).toInt().coerceIn(0, 255)
+            val bPremul = (b * a).toInt().coerceIn(0, 255)
+            val gray = 0.2126f * rPremul + 0.7152f * gPremul + 0.0722f * bPremul
+            gray * a + (1.0f - a) * 255.0f
         } else {
+            val baseGray = 0.2126f * r + 0.7152f * g + 0.0722f * b
             baseGray * a + (1.0f - a) * 255.0f
         }
         return (weightedGray / 255.0f).coerceIn(0.0f, 1.0f)
@@ -434,7 +438,8 @@ object ImageScaleResolver {
 
     /**
      * Pre-scales [source] into a [PreScaledPixelSource] of dimensions [targetWidth] x [targetHeight]
-     * matching canonical 3N x 3N pre-scaled raster sampling with fractional crop math.
+     * matching canonical EFQRCode 7.0.3 EFImageMode.imageForContent() preprocessing pipeline
+     * followed by 3N x 3N raster sampling with transparent aspect-fit padding.
      */
     fun createPreScaledSource(
         source: Bitmap,
@@ -448,39 +453,32 @@ object ImageScaleResolver {
         val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
-        val sw = source.width.toFloat().coerceAtLeast(1f)
-        val sh = source.height.toFloat().coerceAtLeast(1f)
-        val matrix = Matrix()
+        // EFQRCode 7.0.3 parity: Preprocess source image to intermediate canvas ratio (EFImageMode.imageForContent)
+        val preprocessed = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+            source = source,
+            canvasWidth = tw.toFloat(),
+            canvasHeight = th.toFloat(),
+            mode = mode
+        )
 
-        val contentBounds: RectF? = when (mode) {
-            ImageScaleMode.STRETCH -> {
-                matrix.setScale(tw.toFloat() / sw, th.toFloat() / sh)
-                null
-            }
-            ImageScaleMode.CENTER_CROP, ImageScaleMode.ASPECT_FILL -> {
-                val scale = maxOf(tw.toFloat() / sw, th.toFloat() / sh)
-                val dx = (tw.toFloat() - sw * scale) / 2f
-                val dy = (th.toFloat() - sh * scale) / 2f
-                matrix.setScale(scale, scale)
-                matrix.postTranslate(dx, dy)
-                null
-            }
-            ImageScaleMode.ASPECT_FIT -> {
-                canvas.drawColor(Color.WHITE)
-                val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
-                val dx = (tw.toFloat() - sw * scale) / 2f
-                val dy = (th.toFloat() - sh * scale) / 2f
-                matrix.setScale(scale, scale)
-                matrix.postTranslate(dx, dy)
-                RectF(dx, dy, dx + sw * scale, dy + sh * scale)
-            }
+        val contentBounds: RectF? = if (mode == ImageScaleMode.ASPECT_FIT) {
+            val sw = source.width.toFloat().coerceAtLeast(1f)
+            val sh = source.height.toFloat().coerceAtLeast(1f)
+            val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
+            val dx = (tw.toFloat() - sw * scale) / 2f
+            val dy = (th.toFloat() - sh * scale) / 2f
+            RectF(dx, dy, dx + sw * scale, dy + sh * scale)
+        } else {
+            null
         }
 
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
             isFilterBitmap = true
             isDither = true
         }
-        canvas.drawBitmap(source, matrix, paint)
+        val srcRect = android.graphics.Rect(0, 0, preprocessed.width, preprocessed.height)
+        val dstRect = RectF(0f, 0f, tw.toFloat(), th.toFloat())
+        canvas.drawBitmap(preprocessed, srcRect, dstRect, paint)
 
         return PreScaledPixelSource(bitmap = output, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }

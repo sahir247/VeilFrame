@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.*
@@ -1675,15 +1676,170 @@ class EfQrCodeStyleParityVerificationTest {
         assertEquals(154.6065f / 255f, standardNorm, 0.001f)
 
         // EF CoreGraphics CGContext(premultipliedLast) buffer behavior:
-        // CoreGraphics draws red as (255 * 0.5) = 127.5
-        // EF gamma() computes gray = 0.2126 * 127.5 = 27.1065
-        // Then EF applies alpha AGAIN: weightedGray = 27.1065 * 0.5 + (1 - 0.5) * 255 = 13.553 + 127.5 = 141.053
+        // CoreGraphics draws red as (255 * 0.5) = 127.5 -> rounded to 127 or 128
+        // EF gamma() computes gray from the premultiplied channel byte value
+        // Then EF applies alpha AGAIN: weightedGray = gray * alpha + (1 - alpha) * 255
         val efCoreGraphicsNorm = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 0.5f, efPremultipliedAlpha = true)
-        assertEquals(141.053f / 255f, efCoreGraphicsNorm, 0.001f)
+        val expectedPremulGray = (0.2126 * 127.0) // 127 is (255 * 0.5).toInt()
+        val expectedWeighted = (expectedPremulGray * 0.5 + (1.0 - 0.5) * 255.0) / 255.0
+        assertEquals(expectedWeighted.toFloat(), efCoreGraphicsNorm, 0.001f)
 
         // For opaque pixels (alpha = 1.0), both paths are strictly identical:
         val opaqueStandard = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 1.0f, efPremultipliedAlpha = false)
         val opaqueEf = com.veilframe.app.qr.renderer.ImageScaleResolver.calculateLuminance(255, 0, 0, 1.0f, efPremultipliedAlpha = true)
         assertEquals(opaqueStandard, opaqueEf, 0.0001f)
     }
+
+    @Test
+    fun testImageRendererModuleShapeNoneDoesNotEmitGeometry() {
+        val matrix = QrMatrix("https://veilframe.app", ErrorCorrectionLevel.M)
+        val imgBmp = allocateBitmapReflectively()
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Memory(imgBmp)
+            ),
+            timingStyle = TimingStyle(shape = com.veilframe.app.qr.model.ModuleShape.NONE),
+            alignmentStyle = AlignmentStyle(shape = com.veilframe.app.qr.model.ModuleShape.NONE)
+        )
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+
+        // Verify that no timing or alignment nodes were emitted when shape is NONE
+        // (Previously fell back to RectNode and rendered square timing/alignment modules)
+        val allNodes = mutableListOf<QrGeometryNode>()
+        fun collectNodes(node: QrGeometryNode) {
+            allNodes.add(node)
+            if (node is GroupNode) {
+                for (child in node.children) {
+                    collectNodes(child)
+                }
+            }
+        }
+        for (root in ir.rootNodes) {
+            collectNodes(root)
+        }
+
+        // Find module size in pixel coordinates
+        val moduleSize = geometry.moduleSize.toFloat()
+        val qzPx = geometry.offsetX
+        val timingRowY = qzPx + 6 * moduleSize
+        val timingColX = qzPx + 6 * moduleSize
+
+        // Neither row 6 nor col 6 between finders (indices 8 until matrix.size - 8) should have timing nodes
+        val timingNodes = allNodes.filterIsInstance<RectNode>().filter { rect ->
+            val isTimingRow = rect.y in (timingRowY - 0.5f)..(timingRowY + 0.5f) && rect.x > qzPx + 7 * moduleSize && rect.x < qzPx + (matrix.size - 7) * moduleSize
+            val isTimingCol = rect.x in (timingColX - 0.5f)..(timingColX + 0.5f) && rect.y > qzPx + 7 * moduleSize && rect.y < qzPx + (matrix.size - 7) * moduleSize
+            isTimingRow || isTimingCol
+        }
+        assertTrue("When timingShape is NONE, no timing nodes must be generated on ImageRenderer path", timingNodes.isEmpty())
+    }
+
+    @Test
+    fun testImageRendererAlphaSingleApplication() {
+        val matrix = QrMatrix("https://veilframe.app", ErrorCorrectionLevel.M)
+        val imgBmp = allocateBitmapReflectively()
+        // 50% translucent color with distinct RGB (0x80123456)
+        val translucentColor = (0x80 shl 24) or 0x123456
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Memory(imgBmp)
+            ),
+            dataColorDark = translucentColor,
+            dataColorLight = translucentColor,
+            timingDarkColor = translucentColor,
+            timingLightColor = translucentColor,
+            alignDarkColor = translucentColor,
+            alignLightColor = translucentColor
+        )
+        val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+
+        val allNodes = mutableListOf<QrGeometryNode>()
+        fun collectNodes(node: QrGeometryNode) {
+            allNodes.add(node)
+            if (node is GroupNode) {
+                for (child in node.children) {
+                    collectNodes(child)
+                }
+            }
+        }
+        for (root in ir.rootNodes) {
+            collectNodes(root)
+        }
+
+        // All emitted RectNodes for modules styled with translucentColor should have opaque RGB fill (alpha = 0xFF) and opacity set to 0.5f (128/255)
+        val translucentOpaqueRgb = (translucentColor and 0x00FFFFFF) or 0xFF000000.toInt()
+        val styledModules = allNodes.filterIsInstance<RectNode>().filter { it.fill == translucentOpaqueRgb }
+        assertTrue("Should have emitted module nodes with translucentColor", styledModules.isNotEmpty())
+        for (node in styledModules) {
+            val fillAlpha = (node.fill!! ushr 24) and 0xFF
+            assertEquals("Module fill color must have opaque alpha channel to avoid double-alpha application", 0xFF, fillAlpha)
+            val expectedOpacity = 0x80 / 255f
+            assertEquals("Module opacity must carry the color's original alpha", expectedOpacity, node.opacity, 0.01f)
+        }
+    }
+
+    @Test
+    fun testImageFillSvgPreprocessesStaticBitmapAndEmitsQuietZoneBackdrop() {
+        val matrix = QrMatrix("https://veilframe.app", ErrorCorrectionLevel.M)
+        val rectBmp = allocateBitmapReflectively()
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Memory(rectBmp)
+            ),
+            palette = PaletteStyle(background = Color.WHITE)
+        )
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // 1. Svg must contain quiet-zone background rect covering entire viewBox
+        val n = matrix.size
+        val qz = design.effectiveQuietZone
+        val totalSize = n + 2 * qz
+        assertTrue("ImageFill SVG must contain full-viewBox background rect", svg.contains("""<rect width="$totalSize" height="$totalSize" fill="#FFFFFF""""))
+
+        // 2. SVG defs mask must have width and height matching QR matrix size (n)
+        assertTrue("ImageFill SVG must embed dimensions matching QR matrix size", svg.contains("""width="$n" height="$n""""))
+    }
+
+    @Test
+    fun testAnimatedQrGeneratorTimelineReconciliation() {
+        val frameA = allocateBitmapReflectively()
+        val frameB = allocateBitmapReflectively()
+        val frameX = allocateBitmapReflectively()
+        val frameY = allocateBitmapReflectively()
+
+        // Stream 1 (imageSource): A (100ms), B (300ms) -> total 400ms
+        // Stream 2 (logo): X (200ms), Y (200ms) -> total 400ms
+        val reconciled = AnimatedQrGenerator.reconcileAnimationTimelines(
+            imageFrames = listOf(frameA, frameB),
+            imageDelaysMs = listOf(100, 300),
+            logoFrames = listOf(frameX, frameY),
+            logoDelaysMs = listOf(200, 200)
+        )
+
+        // Reconciled timeline:
+        // [0, 100ms): A + X (dur: 100ms)
+        // [100, 200ms): B + X (dur: 100ms)
+        // [200, 400ms): B + Y (dur: 200ms)
+        assertEquals("Must reconcile into exactly 3 synchronized slices", 3, reconciled.size)
+
+        assertEquals(frameA, reconciled[0].imageBitmap)
+        assertEquals(frameX, reconciled[0].logoBitmap)
+        assertEquals(100, reconciled[0].durationMs)
+
+        assertEquals(frameB, reconciled[1].imageBitmap)
+        assertEquals(frameX, reconciled[1].logoBitmap)
+        assertEquals(100, reconciled[1].durationMs)
+
+        assertEquals(frameB, reconciled[2].imageBitmap)
+        assertEquals(frameY, reconciled[2].logoBitmap)
+        assertEquals(200, reconciled[2].durationMs)
+
+        val totalReconciledMs = reconciled.sumOf { it.durationMs }
+        assertEquals(400, totalReconciledMs)
+    }
 }
+

@@ -83,7 +83,7 @@ class ImageRenderer : QrRenderer {
                     val isDark = matrix.isDark(col, row)
                     val color = if (isDark) dataDarkColor else dataLightColor
                     if (colorAlpha(color) == 0) continue
-                    nodes.add(createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color))
+                    createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color)?.let { nodes.add(it) }
                 }
             }
         }
@@ -179,32 +179,36 @@ class ImageRenderer : QrRenderer {
         appendFinderIrNodes(nodes, x0, y0, n - 3.5f, 3.5f, n - 8, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
         appendFinderIrNodes(nodes, x0, y0, 3.5f, n - 3.5f, 0, n - 8, mSize, posStyle, posDarkColor, posLightColor, posSize)
 
-        // 5. Timing Tracks
-        val timingOffset = (1.0f - timingSize) / 2.0f
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
-                val isDark = matrix.isDark(col, row)
-                val color = if (isDark) timingDarkColor else timingLightColor
-                if (colorAlpha(color) == 0) continue
-                val tx = x0 + (col + timingOffset) * mSize
-                val ty = y0 + (row + timingOffset) * mSize
-                nodes.add(createModuleShapeNode(tx, ty, timingSize * mSize, timingShape, color))
+        // 5. Timing Tracks (skips entirely if timingShape is NONE)
+        if (timingShape != ModuleShape.NONE) {
+            val timingOffset = (1.0f - timingSize) / 2.0f
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) timingDarkColor else timingLightColor
+                    if (colorAlpha(color) == 0) continue
+                    val tx = x0 + (col + timingOffset) * mSize
+                    val ty = y0 + (row + timingOffset) * mSize
+                    createModuleShapeNode(tx, ty, timingSize * mSize, timingShape, color)?.let { nodes.add(it) }
+                }
             }
         }
 
-        // 6. Alignment Patterns
-        val alignOffset = (1.0f - alignSize) / 2.0f
-        for (col in 0 until n) {
-            for (row in 0 until n) {
-                val role = matrix.roleAt(col, row)
-                if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
-                val isDark = matrix.isDark(col, row)
-                val color = if (isDark) alignDarkColor else alignLightColor
-                if (colorAlpha(color) == 0) continue
-                val ax = x0 + (col + alignOffset) * mSize
-                val ay = y0 + (row + alignOffset) * mSize
-                nodes.add(createModuleShapeNode(ax, ay, alignSize * mSize, alignShape, color))
+        // 6. Alignment Patterns (skips entirely if alignShape is NONE)
+        if (alignShape != ModuleShape.NONE) {
+            val alignOffset = (1.0f - alignSize) / 2.0f
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    val role = matrix.roleAt(col, row)
+                    if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
+                    val isDark = matrix.isDark(col, row)
+                    val color = if (isDark) alignDarkColor else alignLightColor
+                    if (colorAlpha(color) == 0) continue
+                    val ax = x0 + (col + alignOffset) * mSize
+                    val ay = y0 + (row + alignOffset) * mSize
+                    createModuleShapeNode(ax, ay, alignSize * mSize, alignShape, color)?.let { nodes.add(it) }
+                }
             }
         }
 
@@ -219,7 +223,7 @@ class ImageRenderer : QrRenderer {
                 if (colorAlpha(color) == 0) continue
                 val dx = x0 + (col + dataOffset) * mSize
                 val dy = y0 + (row + dataOffset) * mSize
-                nodes.add(createModuleShapeNode(dx, dy, dataScale * mSize, dataShape, color))
+                createModuleShapeNode(dx, dy, dataScale * mSize, dataShape, color)?.let { nodes.add(it) }
             }
         }
 
@@ -257,26 +261,34 @@ class ImageRenderer : QrRenderer {
         sizeFactor: Float
     ) {
         // 8x8 backing rect
+        val lightAlpha = colorAlpha(lightColor)
+        val lightOp = lightAlpha / 255f
+        val lightOpaque = (lightColor and 0x00FFFFFF) or (0xFF shl 24)
         nodes.add(
             RectNode(
                 x = x0 + bgCol * mSize,
                 y = y0 + bgRow * mSize,
                 width = 8 * mSize,
                 height = 8 * mSize,
-                fill = lightColor
+                fill = lightOpaque,
+                opacity = lightOp
             )
         )
 
         val centerPx = x0 + cx * mSize
         val centerPy = y0 + cy * mSize
 
+        val darkAlpha = colorAlpha(darkColor)
+        val darkOp = darkAlpha / 255f
+        val darkOpaque = (darkColor and 0x00FFFFFF) or (0xFF shl 24)
+
         when (style) {
             FinderStyle.CIRCLE -> {
-                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))
-                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkColor, strokeWidth = 1.0f * sizeFactor * mSize))
+                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
+                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkOpaque, strokeWidth = 1.0f * sizeFactor * mSize, opacity = darkOp))
             }
             FinderStyle.ROUNDED -> {
-                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))
+                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
                 val ox = centerPx - 0.5f * mSize
                 val oy = centerPy - 0.5f * mSize
                 val squirclePath = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
@@ -287,37 +299,38 @@ class ImageRenderer : QrRenderer {
                         svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
                         androidPath = squirclePath,
                         fill = null,
-                        stroke = darkColor,
+                        stroke = darkOpaque,
                         strokeWidth = 100f / 6f * sizeFactor,
                         canvasStrokeWidth = 1f * sizeFactor * mSize,
+                        opacity = darkOp,
                         transform = "translate(${ox - 2.5f * mSize},${oy - 2.5f * mSize}) scale(${6f * mSize / 100f},${6f * mSize / 100f})"
                     )
                 )
             }
             FinderStyle.PLANETS -> {
-                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkColor))
-                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkColor, strokeWidth = 0.15f * mSize, strokeDashArray = "${0.5f * mSize},${0.5f * mSize}"))
+                nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
+                nodes.add(CircleNode(centerPx, centerPy, 3.0f * mSize, stroke = darkOpaque, strokeWidth = 0.15f * mSize, strokeDashArray = "${0.5f * mSize},${0.5f * mSize}", opacity = darkOp))
                 val planetRadius = 0.5f * sizeFactor * mSize
                 val offsets = floatArrayOf(-3f, 3f)
                 for (dx in offsets) {
-                    nodes.add(CircleNode(centerPx + dx * mSize, centerPy, planetRadius, fill = darkColor))
+                    nodes.add(CircleNode(centerPx + dx * mSize, centerPy, planetRadius, fill = darkOpaque, opacity = darkOp))
                 }
                 for (dy in offsets) {
-                    nodes.add(CircleNode(centerPx, centerPy + dy * mSize, planetRadius, fill = darkColor))
+                    nodes.add(CircleNode(centerPx, centerPy + dy * mSize, planetRadius, fill = darkOpaque, opacity = darkOp))
                 }
             }
             FinderStyle.DSJ -> {
                 val widthVal = (2.0f + sizeFactor) * mSize
                 val armDim = sizeFactor * mSize
-                nodes.add(RectNode(centerPx - widthVal / 2f, centerPy - widthVal / 2f, widthVal, widthVal, fill = darkColor))
-                nodes.add(RectNode((centerPx - 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkColor))
-                nodes.add(RectNode((centerPx + 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkColor))
-                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy - 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkColor))
-                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy + 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkColor))
+                nodes.add(RectNode(centerPx - widthVal / 2f, centerPy - widthVal / 2f, widthVal, widthVal, fill = darkOpaque, opacity = darkOp))
+                nodes.add(RectNode((centerPx - 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkOpaque, opacity = darkOp))
+                nodes.add(RectNode((centerPx + 3f * mSize) - armDim / 2f, centerPy - widthVal / 2f, armDim, widthVal, fill = darkOpaque, opacity = darkOp))
+                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy - 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkOpaque, opacity = darkOp))
+                nodes.add(RectNode(centerPx - widthVal / 2f, (centerPy + 3f * mSize) - armDim / 2f, widthVal, armDim, fill = darkOpaque, opacity = darkOp))
             }
             else -> {
-                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkColor))
-                nodes.add(RectNode(centerPx - 3.0f * mSize, centerPy - 3.0f * mSize, 6f * mSize, 6f * mSize, stroke = darkColor, strokeWidth = 1.0f * sizeFactor * mSize))
+                nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkOpaque, opacity = darkOp))
+                nodes.add(RectNode(centerPx - 3.0f * mSize, centerPy - 3.0f * mSize, 6f * mSize, 6f * mSize, stroke = darkOpaque, strokeWidth = 1.0f * sizeFactor * mSize, opacity = darkOp))
             }
         }
     }
@@ -330,16 +343,19 @@ class ImageRenderer : QrRenderer {
         size: Float,
         shape: ModuleShape,
         color: Int
-    ): QrGeometryNode {
+    ): QrGeometryNode? {
+        if (shape == ModuleShape.NONE) return null
         val alpha = colorAlpha(color)
+        if (alpha == 0) return null
         val op = alpha / 255f
+        val opaqueColor = (color and 0x00FFFFFF) or (0xFF shl 24)
         return when (shape) {
             ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE -> {
                 CircleNode(
                     cx = x + size / 2f,
                     cy = y + size / 2f,
                     radius = size / 2f,
-                    fill = color,
+                    fill = opaqueColor,
                     opacity = op
                 )
             }
@@ -352,7 +368,7 @@ class ImageRenderer : QrRenderer {
                     height = size,
                     rx = rx,
                     ry = rx,
-                    fill = color,
+                    fill = opaqueColor,
                     opacity = op
                 )
             }
@@ -362,7 +378,7 @@ class ImageRenderer : QrRenderer {
                     y = y,
                     width = size,
                     height = size,
-                    fill = color,
+                    fill = opaqueColor,
                     opacity = op
                 )
             }

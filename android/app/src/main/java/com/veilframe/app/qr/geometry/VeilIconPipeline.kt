@@ -78,14 +78,15 @@ object VeilIconPipeline {
         val borderStroke = if (logo.borderWidth > 0f) logo.borderWidth else (100f / iconSize)
         if (bdColor != null) {
             val bdAlpha = ((bdColor ushr 24) and 0xFF) / 255f
+            val bdOpaque = (bdColor and 0x00FFFFFF) or (0xFF shl 24)
             if (logo.shape == LogoShape.CIRCLE) {
                 nodes.add(
                     CircleNode(
                         cx = ox + iconXY + iconSize / 2f,
                         cy = oy + iconXY + iconSize / 2f,
                         radius = iconSize / 2f,
-                        fill = bdColor,
-                        stroke = bdColor,
+                        fill = bdOpaque,
+                        stroke = bdOpaque,
                         strokeWidth = borderStroke,
                         opacity = bdAlpha
                     )
@@ -94,8 +95,8 @@ object VeilIconPipeline {
                 nodes.add(
                     PathNode(
                         svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
-                        fill = bdColor,
-                        stroke = bdColor,
+                        fill = bdOpaque,
+                        stroke = bdOpaque,
                         strokeWidth = borderStroke,
                         opacity = bdAlpha,
                         transform = String.format(
