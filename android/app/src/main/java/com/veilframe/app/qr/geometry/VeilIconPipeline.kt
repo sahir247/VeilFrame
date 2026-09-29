@@ -288,8 +288,25 @@ object VeilIconPipeline {
     }
 
     /**
+     * Resolves the target bitmap for a logo given an animation [frameIndex].
+     * For static logos, returns [LogoStyle.effectiveBitmap].
+     * For animated logos, returns the frame at [frameIndex] % frames.size.
+     */
+    fun resolveLogoBitmap(logo: com.veilframe.app.qr.model.LogoStyle, frameIndex: Int = 0): android.graphics.Bitmap? {
+        val isAnimated = logo.isAnimated && !logo.animatedFrames.isNullOrEmpty()
+        return if (isAnimated) {
+            val frames = logo.animatedFrames!!
+            val safeIdx = if (frameIndex >= 0) frameIndex % frames.size else 0
+            frames.getOrNull(safeIdx) ?: logo.effectiveBitmap
+        } else {
+            logo.effectiveBitmap
+        }
+    }
+
+    /**
      * Authoritative Canvas drawing implementation for Android Canvas renderers.
      * Shares exact 0.33 clamp, SQ25 path, 2.4% offset, and EfImagePreprocessor scaling.
+     * Supports animated logos via [frameIndex] (defaulting to [context.frameIndex] ?: 0).
      */
     fun drawLogo(
         canvas: Canvas,
@@ -297,10 +314,11 @@ object VeilIconPipeline {
         ox: Float,
         oy: Float,
         qrPixelSize: Float,
-        context: RenderContext? = null
+        context: RenderContext? = null,
+        frameIndex: Int = context?.frameIndex ?: 0
     ) {
         val logo = design.logo ?: return
-        val logoBmp = logo.effectiveBitmap ?: return
+        val logoBmp = resolveLogoBitmap(logo, frameIndex) ?: return
 
         // 1. Sizing: universal 0.33 hard cap
         val scale = minOf(maxOf(0f, logo.scaleFraction), 0.33f)
@@ -343,7 +361,7 @@ object VeilIconPipeline {
             canvas.drawPath(clipPath, strokePaint)
         }
 
-        // 5. Preprocessed Image with clipping
+        // 5. Preprocessed Image with clipping (per-frame preprocessing)
         val preprocessed = EfImagePreprocessor.preprocess(logoBmp, length, length, logo.scaleMode)
         val iconAlpha = (logo.alpha.coerceIn(0f, 1f) * 255).toInt()
         val imgPaint = if (iconAlpha < 255) {

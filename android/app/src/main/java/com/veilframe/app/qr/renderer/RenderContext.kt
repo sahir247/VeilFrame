@@ -14,6 +14,11 @@ import android.graphics.RectF
  */
 class RenderContext {
 
+    /**
+     * Current animation frame index for multi-frame canvas rendering (e.g. animated logos/GIF/video).
+     */
+    var frameIndex: Int = 0
+
     val fillPaint: Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }

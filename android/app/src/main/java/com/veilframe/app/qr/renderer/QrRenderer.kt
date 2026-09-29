@@ -66,7 +66,8 @@ internal fun drawLogo(
     canvas: Canvas,
     design: QrDesign,
     geometry: QrGeometry,
-    context: RenderContext
+    context: RenderContext,
+    frameIndex: Int = context.frameIndex
 ) {
     com.veilframe.app.qr.geometry.VeilIconPipeline.drawLogo(
         canvas = canvas,
@@ -74,20 +75,27 @@ internal fun drawLogo(
         ox = geometry.offsetX,
         oy = geometry.offsetY,
         qrPixelSize = geometry.matrixSize * geometry.moduleSize,
-        context = context
+        context = context,
+        frameIndex = frameIndex
     )
 }
 
 /**
  * Legacy drawLogo overload delegating to VeilIconPipeline.
  */
-internal fun drawLogo(canvas: Canvas, params: QrStyleParams, outputSize: Int) {
+internal fun drawLogo(
+    canvas: Canvas,
+    params: QrStyleParams,
+    outputSize: Int,
+    frameIndex: Int = 0
+) {
     val design = QrDesign.fromQrStyleParams(params)
     com.veilframe.app.qr.geometry.VeilIconPipeline.drawLogo(
         canvas = canvas,
         design = design,
         ox = 0f,
         oy = 0f,
-        qrPixelSize = outputSize.toFloat()
+        qrPixelSize = outputSize.toFloat(),
+        frameIndex = frameIndex
     )
 }

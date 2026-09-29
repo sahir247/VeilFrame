@@ -39,12 +39,32 @@ object AnimatedQrGenerator {
         val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
         val renderedFrames = ArrayList<QrFrame>(sourceFrames.size)
 
-        for (frame in sourceFrames) {
-            val frameDesign = baseDesign.copy(
-                outputSize = outputSize,
-                imageSource = baseDesign.imageSource.copy(
+        for ((idx, frame) in sourceFrames.withIndex()) {
+            val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
+            val imgSource = if (hasAnimatedImg) {
+                baseDesign.imageSource.copy(
                     source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
                 )
+            } else {
+                baseDesign.imageSource
+            }
+
+            val hasAnimatedLogo = baseDesign.logo?.isAnimated == true && !baseDesign.logo.animatedFrames.isNullOrEmpty()
+            val logoSource = if (hasAnimatedLogo) {
+                val lFrames = baseDesign.logo!!.animatedFrames!!
+                val targetFrame = lFrames[idx % lFrames.size]
+                baseDesign.logo.copy(
+                    bitmap = targetFrame,
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(targetFrame)
+                )
+            } else {
+                baseDesign.logo
+            }
+
+            val frameDesign = baseDesign.copy(
+                outputSize = outputSize,
+                imageSource = imgSource,
+                logo = logoSource
             )
             val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
             if (renderedBitmap != null) {
@@ -55,22 +75,36 @@ object AnimatedQrGenerator {
     }
 
     /**
-     * Checks if the given [QrDesign] has an animated image source.
+     * Checks if the given [QrDesign] has an animated image source or animated logo.
      */
     fun isDesignAnimated(design: QrDesign): Boolean {
-        return design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+        return design.imageSource.isAnimated ||
+            (design.imageSource.animatedFrames?.isNotEmpty() == true) ||
+            (design.logo?.isAnimated == true) ||
+            (design.logo?.animatedFrames?.isNotEmpty() == true)
     }
 
     /**
-     * Extracts a list of [QrFrame] items from the given [QrDesign]'s animated image source.
+     * Extracts a list of [QrFrame] items from the given [QrDesign]'s animated image source or animated logo.
      */
     fun extractSourceFrames(design: QrDesign): List<QrFrame> {
-        val frames = design.imageSource.animatedFrames ?: return emptyList()
-        val delays = design.imageSource.frameDelaysMs ?: emptyList()
-        return frames.mapIndexed { idx, bmp ->
-            val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
-            QrFrame(bitmap = bmp, durationMs = delay)
+        val imgFrames = design.imageSource.animatedFrames
+        if (imgFrames != null && imgFrames.isNotEmpty()) {
+            val delays = design.imageSource.frameDelaysMs ?: emptyList()
+            return imgFrames.mapIndexed { idx, bmp ->
+                val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
+                QrFrame(bitmap = bmp, durationMs = delay)
+            }
         }
+        val logoFrames = design.logo?.animatedFrames
+        if (logoFrames != null && logoFrames.isNotEmpty()) {
+            val delays = design.logo.frameDelaysMs ?: emptyList()
+            return logoFrames.mapIndexed { idx, bmp ->
+                val delay = delays.getOrElse(idx) { delays.lastOrNull() ?: 100 }
+                QrFrame(bitmap = bmp, durationMs = delay)
+            }
+        }
+        return emptyList()
     }
 
     /**
@@ -83,7 +117,7 @@ object AnimatedQrGenerator {
     ): List<QrFrame> {
         val sourceFrames = extractSourceFrames(design)
         if (sourceFrames.isEmpty()) {
-            val single = design.imageSource.bitmap
+            val single = design.imageSource.bitmap ?: design.logo?.effectiveBitmap
             return if (single != null) listOf(QrFrame(single, 100)) else emptyList()
         }
         return renderFrames(matrix, design, sourceFrames, outputSize)

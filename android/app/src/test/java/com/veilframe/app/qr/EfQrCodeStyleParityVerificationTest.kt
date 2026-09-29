@@ -1,7 +1,11 @@
 package com.veilframe.app.qr
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.model.*
@@ -1516,5 +1520,94 @@ class EfQrCodeStyleParityVerificationTest {
         assertTrue("Must declare discrete animation with dynamic prefix", svg.contains("values=\"#${animNode.framePrefix}0;#${animNode.framePrefix}1\""))
         assertTrue("Must use calcMode='discrete'", svg.contains("calcMode=\"discrete\""))
         assertTrue("Must have total duration 0.500s", svg.contains("dur=\"0.500s\""))
+    }
+
+    @Test
+    fun testCanvasAnimatedLogoFrameResolutionAndDrawing() {
+        val frame0 = allocateBitmapReflectively()
+        val frame1 = allocateBitmapReflectively()
+        val logo = LogoStyle(
+            source = ImageSource.Animated(listOf(frame0, frame1), listOf(100, 150)),
+            scaleFraction = 0.20f
+        )
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            logo = logo
+        )
+
+        // 1. Test resolveLogoBitmap directly
+        val resolved0 = VeilIconPipeline.resolveLogoBitmap(logo, 0)
+        val resolved1 = VeilIconPipeline.resolveLogoBitmap(logo, 1)
+        val resolved2 = VeilIconPipeline.resolveLogoBitmap(logo, 2)
+        assertSame("Frame 0 must resolve to frame0 bitmap", frame0, resolved0)
+        assertSame("Frame 1 must resolve to frame1 bitmap", frame1, resolved1)
+        assertSame("Frame 2 (modulo 2) must wrap to frame0 bitmap", frame0, resolved2)
+
+        // 2. Test Canvas drawLogo captures frame 0 vs frame 1
+        var drawnBitmap: Bitmap? = null
+        val testCanvas = object : Canvas() {
+            override fun drawBitmap(bitmap: Bitmap, src: android.graphics.Rect?, dst: android.graphics.RectF, paint: android.graphics.Paint?) {
+                drawnBitmap = bitmap
+            }
+        }
+
+        // Draw frame 0 explicitly
+        VeilIconPipeline.drawLogo(
+            canvas = testCanvas,
+            design = design,
+            ox = 0f,
+            oy = 0f,
+            qrPixelSize = 512f,
+            frameIndex = 0
+        )
+        assertSame("Canvas must receive frame 0", frame0, drawnBitmap)
+
+        // Draw frame 1 explicitly
+        VeilIconPipeline.drawLogo(
+            canvas = testCanvas,
+            design = design,
+            ox = 0f,
+            oy = 0f,
+            qrPixelSize = 512f,
+            frameIndex = 1
+        )
+        assertSame("Canvas must receive frame 1", frame1, drawnBitmap)
+
+        // 3. Test through RenderContext.frameIndex and QrRenderer.drawLogo delegation
+        val context = RenderContext()
+        val geom = QrGeometry(matrixSize = 25, outputWidth = 512, outputHeight = 512, quietZoneModules = 1)
+
+        context.frameIndex = 0
+        com.veilframe.app.qr.renderer.drawLogo(testCanvas, design, geom, context)
+        assertSame("Delegated QrRenderer.drawLogo must respect context.frameIndex = 0", frame0, drawnBitmap)
+
+        context.frameIndex = 1
+        com.veilframe.app.qr.renderer.drawLogo(testCanvas, design, geom, context)
+        assertSame("Delegated QrRenderer.drawLogo must respect context.frameIndex = 1", frame1, drawnBitmap)
+    }
+
+    @Test
+    fun testAnimatedQrGeneratorExtractsAndRendersAnimatedLogoFrames() {
+        val frame0 = allocateBitmapReflectively()
+        val frame1 = allocateBitmapReflectively()
+        val logo = LogoStyle(
+            source = ImageSource.Animated(listOf(frame0, frame1), listOf(120, 180)),
+            scaleFraction = 0.20f
+        )
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            logo = logo
+        )
+
+        // 1. isDesignAnimated must detect animated logo even if imageSource is static
+        assertTrue("isDesignAnimated must return true for animated logo", AnimatedQrGenerator.isDesignAnimated(design))
+
+        // 2. extractSourceFrames must extract frames from logo
+        val extracted = AnimatedQrGenerator.extractSourceFrames(design)
+        assertEquals("Must extract 2 frames from animated logo", 2, extracted.size)
+        assertSame("First frame must match frame0", frame0, extracted[0].bitmap)
+        assertEquals(120, extracted[0].durationMs)
+        assertSame("Second frame must match frame1", frame1, extracted[1].bitmap)
+        assertEquals(180, extracted[1].durationMs)
     }
 }
