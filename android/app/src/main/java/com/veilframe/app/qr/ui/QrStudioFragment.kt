@@ -45,17 +45,14 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.textfield.TextInputLayout
 import com.veilframe.app.R
 import com.veilframe.app.qr.QrStyle
-import com.veilframe.app.qr.model.ErrorCorrectionChoice
-import com.veilframe.app.qr.model.ImageScaleMode
-import com.veilframe.app.qr.model.LineDirection
-import com.veilframe.app.qr.model.LineVariant
-import com.veilframe.app.qr.model.QrPresetFormatter
-import com.veilframe.app.qr.model.VeilFunctionType
+import com.veilframe.app.qr.model.*
+import com.veilframe.app.qr.renderer.RngMode
 import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.scanner.PayloadParser
 import com.veilframe.app.qr.scanner.QrAction
 import com.veilframe.app.qr.scanner.QrScanner
 import com.veilframe.app.qr.scanner.action.QrActionExecutor
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -192,6 +189,60 @@ class QrGenerateTabFragment : Fragment() {
         }
     }
 
+    private val backdropImagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val ctx = context ?: return@launch
+            val bmp = try {
+                ctx.contentResolver.openInputStream(uri)?.use { stream ->
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeStream(stream, null, options)
+                    val sampleSize = calculateInSampleSize(options, 1024, 1024)
+                    ctx.contentResolver.openInputStream(uri)?.use { s2 ->
+                        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                        BitmapFactory.decodeStream(s2, null, decodeOpts)
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                if (isAdded && bmp != null) {
+                    vm.updateBackdropImage(bmp)
+                }
+            }
+        }
+    }
+
+    private val resampleBackdropPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            val ctx = context ?: return@launch
+            val bmp = try {
+                ctx.contentResolver.openInputStream(uri)?.use { stream ->
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeStream(stream, null, options)
+                    val sampleSize = calculateInSampleSize(options, 1024, 1024)
+                    ctx.contentResolver.openInputStream(uri)?.use { s2 ->
+                        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                        BitmapFactory.decodeStream(s2, null, decodeOpts)
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                if (isAdded && bmp != null) {
+                    vm.updateResampleBackdropImage(bmp)
+                }
+            }
+        }
+    }
+
     private val sourceImagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
@@ -323,6 +374,7 @@ class QrGenerateTabFragment : Fragment() {
         val vcardPhone         = view.findViewById<EditText>(R.id.qr_vcard_phone)
         val vcardEmail         = view.findViewById<EditText>(R.id.qr_vcard_email)
         val vcardOrg           = view.findViewById<EditText>(R.id.qr_vcard_org)
+        val vcardUrl           = view.findViewById<EditText>(R.id.qr_vcard_url)
 
         // 4. Email
         val emailRecipient     = view.findViewById<EditText>(R.id.qr_email_recipient)
@@ -337,6 +389,8 @@ class QrGenerateTabFragment : Fragment() {
         val layoutUpiAmount    = view.findViewById<TextInputLayout>(R.id.layout_upi_amount)
         val upiVpa             = view.findViewById<EditText>(R.id.qr_upi_vpa)
         val upiAmount          = view.findViewById<EditText>(R.id.qr_upi_amount)
+        val upiPayeeName       = view.findViewById<EditText>(R.id.qr_upi_payee_name)
+        val upiNote            = view.findViewById<EditText>(R.id.qr_upi_note)
         val upiAmountSlider    = view.findViewById<Slider>(R.id.qr_upi_amount_slider)
         val upiAmountStatus    = view.findViewById<TextView>(R.id.qr_upi_amount_status)
         val upiClearAmountBtn  = view.findViewById<MaterialButton>(R.id.qr_upi_clear_amount_btn)
@@ -365,6 +419,7 @@ class QrGenerateTabFragment : Fragment() {
         vcardPhone.setText(initState.vcardPhone)
         vcardEmail.setText(initState.vcardEmail)
         vcardOrg.setText(initState.vcardOrg)
+        vcardUrl.setText(initState.vcardUrl)
 
         emailRecipient.setText(initState.emailRecipient)
         emailSubject.setText(initState.emailSubject)
@@ -375,6 +430,8 @@ class QrGenerateTabFragment : Fragment() {
 
         upiVpa.setText(initState.upiVpa)
         upiAmount.setText(initState.upiAmount)
+        upiPayeeName.setText(initState.upiPayeeName)
+        upiNote.setText(initState.upiNote)
 
         val checkedPresetId = initState.activePresetId
         presetChipGroup.check(checkedPresetId)
@@ -474,9 +531,10 @@ class QrGenerateTabFragment : Fragment() {
                     val phone = vcardPhone.text.toString()
                     val email = vcardEmail.text.toString()
                     val org = vcardOrg.text.toString()
-                    vm.updateVcardForm(first, last, phone, email, org)
+                    val url = vcardUrl.text.toString()
+                    vm.updateVcardForm(first, last, phone, email, org, url)
                     if (first.isNotBlank() || last.isNotBlank() || phone.isNotBlank()) {
-                        QrPresetFormatter.formatVCard(first, last, phone, email, org)
+                        QrPresetFormatter.formatVCard(first, last, phone, email, org, url = url)
                     } else ""
                 }
                 R.id.chip_preset_email -> {
@@ -495,8 +553,10 @@ class QrGenerateTabFragment : Fragment() {
                 R.id.chip_preset_upi -> {
                     val vpa = upiVpa.text.toString().trim()
                     val amount = upiAmount.text.toString().trim()
-                    vm.updateUpiForm(vpa, amount)
-                    if (vpa.isNotBlank()) QrPresetFormatter.formatUpi(vpa = vpa, amount = amount) else ""
+                    val payee = upiPayeeName.text.toString().trim()
+                    val note = upiNote.text.toString().trim()
+                    vm.updateUpiForm(vpa, amount, payee, note)
+                    if (vpa.isNotBlank()) QrPresetFormatter.formatUpi(vpa = vpa, amount = amount, payeeName = payee, note = note) else ""
                 }
                 else -> {
                     contentInput.text.toString()
@@ -542,6 +602,7 @@ class QrGenerateTabFragment : Fragment() {
         vcardPhone.addTextChangedListener(liveWatcher)
         vcardEmail.addTextChangedListener(liveWatcher)
         vcardOrg.addTextChangedListener(liveWatcher)
+        vcardUrl.addTextChangedListener(liveWatcher)
 
         emailRecipient.addTextChangedListener(liveWatcher)
         emailSubject.addTextChangedListener(liveWatcher)
@@ -549,6 +610,9 @@ class QrGenerateTabFragment : Fragment() {
 
         smsPhone.addTextChangedListener(liveWatcher)
         smsBody.addTextChangedListener(liveWatcher)
+
+        upiPayeeName.addTextChangedListener(liveWatcher)
+        upiNote.addTextChangedListener(liveWatcher)
 
         // UPI Amount Slider & Text synchronization (Up to 1 Lakh INR)
         var isUpdatingUpiAmount = false
@@ -612,11 +676,19 @@ class QrGenerateTabFragment : Fragment() {
                     val parsed = QrPresetFormatter.parseUpiUri(raw)
                     val extractedPa = parsed["pa"].orEmpty()
                     val extractedAm = parsed["am"].orEmpty()
+                    val extractedPn = parsed["pn"].orEmpty()
+                    val extractedTn = parsed["tn"].orEmpty()
                     if (extractedPa.isNotBlank()) {
                         isSelfEditing = true
                         upiVpa.setText(extractedPa)
                         upiVpa.setSelection(extractedPa.length)
                         isSelfEditing = false
+                    }
+                    if (extractedPn.isNotBlank()) {
+                        upiPayeeName.setText(extractedPn)
+                    }
+                    if (extractedTn.isNotBlank()) {
+                        upiNote.setText(extractedTn)
                     }
                     if (extractedAm.isNotBlank()) {
                         val num = extractedAm.toFloatOrNull()
@@ -790,6 +862,19 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        val d25TopColorBtn = view.findViewById<MaterialButton>(R.id.qr_d25_top_color_btn)
+        val d25LeftColorBtn = view.findViewById<MaterialButton>(R.id.qr_d25_left_color_btn)
+        val d25RightColorBtn = view.findViewById<MaterialButton>(R.id.qr_d25_right_color_btn)
+        d25TopColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.d25TopColor ?: vm.state.value.foreground) { vm.updateD25TopColor(it) }
+        }
+        d25LeftColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.d25LeftColor) { vm.updateD25Colors(leftColor = it, rightColor = vm.state.value.d25RightColor) }
+        }
+        d25RightColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.d25RightColor) { vm.updateD25Colors(leftColor = vm.state.value.d25LeftColor, rightColor = it) }
+        }
+
         // EFQRCode parity: lossless bidirectional mapping for all 7 line directions
         val dirChipId = when (vm.state.value.lineDirection) {
             LineDirection.HORIZONTAL -> R.id.chip_line_dir_x
@@ -833,6 +918,36 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        val lineColorBtn = view.findViewById<MaterialButton>(R.id.qr_line_color_btn)
+        val lineHColorBtn = view.findViewById<MaterialButton>(R.id.qr_line_h_color_btn)
+        val lineVColorBtn = view.findViewById<MaterialButton>(R.id.qr_line_v_color_btn)
+        val lineAccentRingsSwitch = view.findViewById<MaterialSwitch>(R.id.qr_line_accent_rings_switch)
+        val lineCircuitBridgesSwitch = view.findViewById<MaterialSwitch>(R.id.qr_line_circuit_bridges_switch)
+
+        lineColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.lineColor ?: vm.state.value.foreground) {
+                vm.updateLineColors(lineColor = it, hColor = vm.state.value.lineHorizontalColor, vColor = vm.state.value.lineVerticalColor)
+            }
+        }
+        lineHColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.lineHorizontalColor ?: vm.state.value.foreground) {
+                vm.updateLineColors(lineColor = vm.state.value.lineColor, hColor = it, vColor = vm.state.value.lineVerticalColor)
+            }
+        }
+        lineVColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.lineVerticalColor ?: vm.state.value.foreground) {
+                vm.updateLineColors(lineColor = vm.state.value.lineColor, hColor = vm.state.value.lineHorizontalColor, vColor = it)
+            }
+        }
+        lineAccentRingsSwitch?.isChecked = vm.state.value.lineAccentRings
+        lineAccentRingsSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateLineAccentRings(isChecked)
+        }
+        lineCircuitBridgesSwitch?.isChecked = vm.state.value.lineCircuitBridges
+        lineCircuitBridgesSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateLineCircuitBridges(isChecked)
+        }
+
         dsjLineSlider?.value = vm.state.value.dsjLineSize.coerceIn(0.3f, 1.0f)
         dsjLineLabel?.text = String.format(java.util.Locale.US, "Cross Arm Size: %.2f", vm.state.value.dsjLineSize)
         dsjLineSlider?.addOnChangeListener { _, value, fromUser ->
@@ -848,6 +963,26 @@ class QrGenerateTabFragment : Fragment() {
             if (fromUser) {
                 vm.updateDsjXSize(value)
                 dsjXLabel?.text = String.format(java.util.Locale.US, "Center X Size: %.2f", value)
+            }
+        }
+
+        val dsjHColorBtn = view.findViewById<MaterialButton>(R.id.qr_dsj_h_color_btn)
+        val dsjVColorBtn = view.findViewById<MaterialButton>(R.id.qr_dsj_v_color_btn)
+        val dsjXColorBtn = view.findViewById<MaterialButton>(R.id.qr_dsj_x_color_btn)
+
+        dsjHColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.dsjHorizontalColor) {
+                vm.updateDsjColors(hColor = it, vColor = vm.state.value.dsjVerticalColor, xColor = vm.state.value.dsjXColor)
+            }
+        }
+        dsjVColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.dsjVerticalColor) {
+                vm.updateDsjColors(hColor = vm.state.value.dsjHorizontalColor, vColor = it, xColor = vm.state.value.dsjXColor)
+            }
+        }
+        dsjXColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.dsjXColor) {
+                vm.updateDsjColors(hColor = vm.state.value.dsjHorizontalColor, vColor = vm.state.value.dsjVerticalColor, xColor = it)
             }
         }
 
@@ -869,8 +1004,41 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        val randomJitterColorLabel = view.findViewById<TextView>(R.id.qr_random_jitter_color_label)
+        val randomJitterColorSlider = view.findViewById<Slider>(R.id.qr_random_jitter_color_slider)
+        val randomRectColorBtn = view.findViewById<MaterialButton>(R.id.qr_random_rect_color_btn)
+        val randomSeedInput = view.findViewById<EditText>(R.id.qr_random_seed_input)
+
+        randomJitterColorSlider?.value = vm.state.value.randomJitterColor.coerceIn(0.0f, 1.0f)
+        randomJitterColorLabel?.text = String.format(Locale.US, "Color Jitter: %d%%", (vm.state.value.randomJitterColor * 100).toInt())
+        randomJitterColorSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateRandomJitterColor(value)
+                randomJitterColorLabel?.text = String.format(Locale.US, "Color Jitter: %d%%", (value * 100).toInt())
+            }
+        }
+        randomRectColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.randomRectColor ?: vm.state.value.foreground) {
+                vm.updateRandomRectColor(it)
+            }
+        }
+        randomSeedInput?.setText(vm.state.value.randomRectSeed.toString())
+        randomSeedInput?.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val text = s?.toString()?.trim().orEmpty()
+                text.toLongOrNull()?.let { seed ->
+                    if (vm.state.value.randomRectSeed != seed) {
+                        vm.updateRandomRectSeed(seed)
+                    }
+                }
+            }
+        })
+
         randomRectSeedBtn?.setOnClickListener {
             vm.randomizeRandomRectSeed()
+            randomSeedInput?.setText(vm.state.value.randomRectSeed.toString())
             Toast.makeText(requireContext(), "Random pattern seed updated", Toast.LENGTH_SHORT).show()
         }
 
@@ -887,12 +1055,125 @@ class QrGenerateTabFragment : Fragment() {
             }
         }
 
+        val bubbleOutlineColorBtn = view.findViewById<MaterialButton>(R.id.qr_bubble_outline_color_btn)
+        val bubbleCenterColorBtn = view.findViewById<MaterialButton>(R.id.qr_bubble_center_color_btn)
+        val bubblePosColorBtn = view.findViewById<MaterialButton>(R.id.qr_bubble_pos_color_btn)
+
+        bubbleOutlineColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.bubbleOutlineColor ?: vm.state.value.foreground) {
+                vm.updateBubbleColors(outline = it, center = vm.state.value.bubbleCenterColor, position = vm.state.value.bubblePositionColor)
+            }
+        }
+        bubbleCenterColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.bubbleCenterColor ?: vm.state.value.background) {
+                vm.updateBubbleColors(outline = vm.state.value.bubbleOutlineColor, center = it, position = vm.state.value.bubblePositionColor)
+            }
+        }
+        bubblePosColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.bubblePositionColor ?: vm.state.value.foreground) {
+                vm.updateBubbleColors(outline = vm.state.value.bubbleOutlineColor, center = vm.state.value.bubbleCenterColor, position = it)
+            }
+        }
+
         val funcChipId = if (vm.state.value.veilFunctionType == VeilFunctionType.CIRCLE) R.id.chip_func_circle else R.id.chip_func_fade
         functionTypeGroup?.check(funcChipId)
         functionTypeGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
             val id = checkedIds.firstOrNull() ?: R.id.chip_func_fade
             val fType = if (id == R.id.chip_func_circle) VeilFunctionType.CIRCLE else VeilFunctionType.FADE
             vm.updateVeilFunction(type = fType, dataStyle = vm.state.value.veilFunctionDataStyle)
+        }
+
+        val functionDataStyleGroup = view.findViewById<ChipGroup>(R.id.qr_function_data_style_group)
+        val functionDataColorBtn = view.findViewById<MaterialButton>(R.id.qr_function_data_color_btn)
+        val functionCircleColorBtn = view.findViewById<MaterialButton>(R.id.qr_function_circle_color_btn)
+
+        val dataStyleChipId = if (vm.state.value.veilFunctionDataStyle == VeilFunctionDataStyle.RECTANGLE) R.id.chip_func_data_rect else R.id.chip_func_data_round
+        functionDataStyleGroup?.check(dataStyleChipId)
+        functionDataStyleGroup?.setOnCheckedStateChangeListener { _, checkedIds ->
+            val id = checkedIds.firstOrNull() ?: R.id.chip_func_data_round
+            val dStyle = if (id == R.id.chip_func_data_rect) VeilFunctionDataStyle.RECTANGLE else VeilFunctionDataStyle.ROUND
+            vm.updateVeilFunctionDataStyle(dStyle)
+        }
+        functionDataColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.functionDataColor ?: vm.state.value.foreground) {
+                vm.updateFunctionColors(dataColor = it, circleColor = vm.state.value.functionCircleColor)
+            }
+        }
+        functionCircleColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.functionCircleColor ?: vm.state.value.foreground) {
+                vm.updateFunctionColors(dataColor = vm.state.value.functionDataColor, circleColor = it)
+            }
+        }
+
+        // STYLE_FUNCTION Controls
+        val containerStyleFunction = view.findViewById<LinearLayout>(R.id.container_style_style_function)
+        val styleFuncTypeSpinner = view.findViewById<Spinner>(R.id.qr_style_func_type_spinner)
+        val styleFuncFreqLabel = view.findViewById<TextView>(R.id.qr_style_func_freq_label)
+        val styleFuncFreqSlider = view.findViewById<Slider>(R.id.qr_style_func_freq_slider)
+        val styleFuncAmpLabel = view.findViewById<TextView>(R.id.qr_style_func_amp_label)
+        val styleFuncAmpSlider = view.findViewById<Slider>(R.id.qr_style_func_amp_slider)
+
+        val funcTypes = FunctionType.values()
+        val funcTypeNames = funcTypes.map { it.name.lowercase(Locale.US).replaceFirstChar { c -> c.uppercase() } }
+        styleFuncTypeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, funcTypeNames)
+        val currentFuncTypeIdx = funcTypes.indexOf(vm.state.value.paramFunctionType).coerceAtLeast(0)
+        styleFuncTypeSpinner?.setSelection(currentFuncTypeIdx)
+        styleFuncTypeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val selectedType = funcTypes[pos]
+                if (vm.state.value.paramFunctionType != selectedType) {
+                    vm.updateStyleFunctionParams(type = selectedType, freq = vm.state.value.styleFunctionFrequency, amp = vm.state.value.styleFunctionAmplitude)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        styleFuncFreqSlider?.value = vm.state.value.styleFunctionFrequency.coerceIn(0.1f, 2.0f)
+        styleFuncFreqLabel?.text = String.format(Locale.US, "Frequency: %.2f", vm.state.value.styleFunctionFrequency)
+        styleFuncFreqSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateStyleFunctionParams(type = vm.state.value.paramFunctionType, freq = value, amp = vm.state.value.styleFunctionAmplitude)
+                styleFuncFreqLabel?.text = String.format(Locale.US, "Frequency: %.2f", value)
+            }
+        }
+
+        styleFuncAmpSlider?.value = vm.state.value.styleFunctionAmplitude.coerceIn(0.05f, 1.0f)
+        styleFuncAmpLabel?.text = String.format(Locale.US, "Amplitude: %.2f", vm.state.value.styleFunctionAmplitude)
+        styleFuncAmpSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateStyleFunctionParams(type = vm.state.value.paramFunctionType, freq = vm.state.value.styleFunctionFrequency, amp = value)
+                styleFuncAmpLabel?.text = String.format(Locale.US, "Amplitude: %.2f", value)
+            }
+        }
+
+        // CONNECTED_ORGANIC Controls
+        val containerConnectedOrganic = view.findViewById<LinearLayout>(R.id.container_style_connected_organic)
+        val connectedThicknessLabel = view.findViewById<TextView>(R.id.qr_connected_thickness_label)
+        val connectedThicknessSlider = view.findViewById<Slider>(R.id.qr_connected_thickness_slider)
+
+        connectedThicknessSlider?.value = vm.state.value.connectedLineThickness.coerceIn(0.05f, 1.0f)
+        connectedThicknessLabel?.text = String.format(Locale.US, "Connected Line Thickness: %.2f", vm.state.value.connectedLineThickness)
+        connectedThicknessSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateConnectedLineThickness(value)
+                connectedThicknessLabel?.text = String.format(Locale.US, "Connected Line Thickness: %.2f", value)
+            }
+        }
+
+        // IMAGE_FILL Controls
+        val containerImageFill = view.findViewById<LinearLayout>(R.id.container_style_image_fill)
+        val imageFillBgColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_fill_bg_color_btn)
+        val imageFillMaskColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_fill_mask_color_btn)
+
+        imageFillBgColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageFillBackgroundColor) {
+                vm.updateImageFillParams(bgColor = it, maskColor = vm.state.value.imageFillMaskColor)
+            }
+        }
+        imageFillMaskColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageFillMaskColor) {
+                vm.updateImageFillParams(bgColor = vm.state.value.imageFillBackgroundColor, maskColor = it)
+            }
         }
 
         chooseBgRequiredBtn?.setOnClickListener {
@@ -1006,6 +1287,438 @@ class QrGenerateTabFragment : Fragment() {
             Toast.makeText(requireContext(), "Resample pattern randomized", Toast.LENGTH_SHORT).show()
         }
 
+        // IMAGE Specific Controls (Colors & Component Sizes)
+        val imageDataDarkColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_data_dark_color_btn)
+        val imageDataLightColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_data_light_color_btn)
+
+        val imagePosSizeLabel = view.findViewById<TextView>(R.id.qr_image_pos_size_label)
+        val imagePosSizeSlider = view.findViewById<Slider>(R.id.qr_image_pos_size_slider)
+        val imagePosDarkColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_pos_dark_color_btn)
+        val imagePosLightColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_pos_light_color_btn)
+
+        val imageTimingSizeLabel = view.findViewById<TextView>(R.id.qr_image_timing_size_label)
+        val imageTimingSizeSlider = view.findViewById<Slider>(R.id.qr_image_timing_size_slider)
+        val imageTimingDarkColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_timing_dark_color_btn)
+        val imageTimingLightColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_timing_light_color_btn)
+
+        val imageAlignSizeLabel = view.findViewById<TextView>(R.id.qr_image_align_size_label)
+        val imageAlignSizeSlider = view.findViewById<Slider>(R.id.qr_image_align_size_slider)
+        val imageAlignDarkColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_align_dark_color_btn)
+        val imageAlignLightColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_align_light_color_btn)
+
+        imageDataDarkColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageDataDarkColor) {
+                vm.updateImageDataColors(darkColor = it, lightColor = vm.state.value.imageDataLightColor)
+            }
+        }
+        imageDataLightColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageDataLightColor) {
+                vm.updateImageDataColors(darkColor = vm.state.value.imageDataDarkColor, lightColor = it)
+            }
+        }
+
+        imagePosSizeSlider?.value = vm.state.value.imagePositionSize.coerceIn(0.5f, 2.0f)
+        imagePosSizeLabel?.text = String.format(Locale.US, "Position / Finder Size: %.2fx", vm.state.value.imagePositionSize)
+        imagePosSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateImagePositionParams(darkColor = vm.state.value.imagePositionDarkColor, lightColor = vm.state.value.imagePositionLightColor, size = value)
+                imagePosSizeLabel?.text = String.format(Locale.US, "Position / Finder Size: %.2fx", value)
+            }
+        }
+        imagePosDarkColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imagePositionDarkColor) {
+                vm.updateImagePositionParams(darkColor = it, lightColor = vm.state.value.imagePositionLightColor, size = vm.state.value.imagePositionSize)
+            }
+        }
+        imagePosLightColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imagePositionLightColor) {
+                vm.updateImagePositionParams(darkColor = vm.state.value.imagePositionDarkColor, lightColor = it, size = vm.state.value.imagePositionSize)
+            }
+        }
+
+        imageTimingSizeSlider?.value = vm.state.value.imageTimingSize.coerceIn(0.5f, 2.0f)
+        imageTimingSizeLabel?.text = String.format(Locale.US, "Timing Pattern Size: %.2fx", vm.state.value.imageTimingSize)
+        imageTimingSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateImageTimingParams(darkColor = vm.state.value.imageTimingDarkColor, lightColor = vm.state.value.imageTimingLightColor, size = value)
+                imageTimingSizeLabel?.text = String.format(Locale.US, "Timing Pattern Size: %.2fx", value)
+            }
+        }
+        imageTimingDarkColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageTimingDarkColor) {
+                vm.updateImageTimingParams(darkColor = it, lightColor = vm.state.value.imageTimingLightColor, size = vm.state.value.imageTimingSize)
+            }
+        }
+        imageTimingLightColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageTimingLightColor) {
+                vm.updateImageTimingParams(darkColor = vm.state.value.imageTimingDarkColor, lightColor = it, size = vm.state.value.imageTimingSize)
+            }
+        }
+
+        imageAlignSizeSlider?.value = vm.state.value.imageAlignSize.coerceIn(0.5f, 2.0f)
+        imageAlignSizeLabel?.text = String.format(Locale.US, "Alignment Pattern Size: %.2fx", vm.state.value.imageAlignSize)
+        imageAlignSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateImageAlignParams(darkColor = vm.state.value.imageAlignDarkColor, lightColor = vm.state.value.imageAlignLightColor, size = value)
+                imageAlignSizeLabel?.text = String.format(Locale.US, "Alignment Pattern Size: %.2fx", value)
+            }
+        }
+        imageAlignDarkColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageAlignDarkColor) {
+                vm.updateImageAlignParams(darkColor = it, lightColor = vm.state.value.imageAlignLightColor, size = vm.state.value.imageAlignSize)
+            }
+        }
+        imageAlignLightColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.imageAlignLightColor) {
+                vm.updateImageAlignParams(darkColor = vm.state.value.imageAlignDarkColor, lightColor = it, size = vm.state.value.imageAlignSize)
+            }
+        }
+
+        // RESAMPLE Specific Controls
+        val resampleBackdropImgBtn = view.findViewById<MaterialButton>(R.id.qr_resample_backdrop_img_btn)
+        val resampleBackdropImgRemoveBtn = view.findViewById<MaterialButton>(R.id.qr_resample_backdrop_img_remove_btn)
+        val resampleBackdropScaleSpinner = view.findViewById<Spinner>(R.id.qr_resample_backdrop_scale_spinner)
+        val resampleBackdropTintBtn = view.findViewById<MaterialButton>(R.id.qr_resample_backdrop_tint_btn)
+        val resampleBackdropRadiusLabel = view.findViewById<TextView>(R.id.qr_resample_backdrop_radius_label)
+        val resampleBackdropRadiusSlider = view.findViewById<Slider>(R.id.qr_resample_backdrop_radius_slider)
+        val resampleRngSwitch = view.findViewById<MaterialSwitch>(R.id.qr_resample_rng_switch)
+
+        resampleBackdropImgBtn?.setOnClickListener {
+            resampleBackdropPickerLauncher.launch("image/*")
+        }
+        resampleBackdropImgRemoveBtn?.setOnClickListener {
+            vm.removeResampleBackdropImage()
+        }
+
+        resampleBackdropScaleSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, scaleOptions)
+        val currentResampleScaleIdx = scaleEnums.indexOf(vm.state.value.resampleBackdropScaleMode).coerceAtLeast(0)
+        resampleBackdropScaleSpinner?.setSelection(currentResampleScaleIdx)
+        resampleBackdropScaleSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                vm.updateResampleBackdropScaleMode(scaleEnums[pos.coerceIn(0, scaleEnums.size - 1)])
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        resampleBackdropTintBtn?.setOnClickListener {
+            pickColor(vm.state.value.resampleBackdropTint ?: Color.WHITE) {
+                vm.updateResampleBackdropTint(it)
+            }
+        }
+
+        resampleBackdropRadiusSlider?.value = vm.state.value.resampleBackdropCornerRadius.coerceIn(0.0f, 64.0f)
+        resampleBackdropRadiusLabel?.text = String.format(Locale.US, "Backdrop Corner Radius: %.0fdp", vm.state.value.resampleBackdropCornerRadius)
+        resampleBackdropRadiusSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateResampleBackdropRadius(value)
+                resampleBackdropRadiusLabel?.text = String.format(Locale.US, "Backdrop Corner Radius: %.0fdp", value)
+            }
+        }
+
+        resampleRngSwitch?.isChecked = (vm.state.value.resampleRngMode == RngMode.DETERMINISTIC)
+        resampleRngSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateResampleRngMode(if (isChecked) RngMode.DETERMINISTIC else RngMode.SYSTEM_UNSEEDED)
+        }
+
+        // Core Geometry Card
+        val dataShapeSpinner = view.findViewById<Spinner>(R.id.qr_data_shape_spinner)
+        val dataScaleLabel = view.findViewById<TextView>(R.id.qr_data_scale_label)
+        val dataScaleSlider = view.findViewById<Slider>(R.id.qr_data_scale_slider)
+        val finderShapeSpinner = view.findViewById<Spinner>(R.id.qr_finder_shape_spinner)
+        val finderOuterColorBtn = view.findViewById<MaterialButton>(R.id.qr_finder_outer_color_btn)
+        val finderInnerColorBtn = view.findViewById<MaterialButton>(R.id.qr_finder_inner_color_btn)
+        val timingShapeSpinner = view.findViewById<Spinner>(R.id.qr_timing_shape_spinner)
+        val timingColorBtn = view.findViewById<MaterialButton>(R.id.qr_timing_color_btn)
+        val timingOnlyWhiteSwitch = view.findViewById<MaterialSwitch>(R.id.qr_timing_only_white_switch)
+        val alignShapeSpinner = view.findViewById<Spinner>(R.id.qr_align_shape_spinner)
+        val alignColorBtn = view.findViewById<MaterialButton>(R.id.qr_align_color_btn)
+        val alignOnlyWhiteSwitch = view.findViewById<MaterialSwitch>(R.id.qr_align_only_white_switch)
+        val quietZoneLabel = view.findViewById<TextView>(R.id.qr_quiet_zone_label)
+        val quietZoneSlider = view.findViewById<Slider>(R.id.qr_quiet_zone_slider)
+
+        val supportedShapes = listOf(
+            "Square" to ModuleShape.SQUARE,
+            "Rounded" to ModuleShape.ROUNDED,
+            "Circle" to ModuleShape.CIRCLE,
+            "Dot" to ModuleShape.DOT,
+            "Pill" to ModuleShape.PILL,
+            "Diamond" to ModuleShape.DIAMOND,
+            "Hexagon" to ModuleShape.HEX,
+            "Squircle" to ModuleShape.SQUIRCLE,
+            "Star" to ModuleShape.STAR
+        )
+        val shapeLabels = supportedShapes.map { it.first }
+
+        dataShapeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, shapeLabels)
+        val currentDataShapeIdx = supportedShapes.indexOfFirst { it.second == vm.state.value.dataShape }.coerceAtLeast(0)
+        dataShapeSpinner?.setSelection(currentDataShapeIdx)
+        dataShapeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val shape = supportedShapes[pos].second
+                if (vm.state.value.dataShape != shape) {
+                    vm.updateDataShape(shape)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        dataScaleSlider?.value = vm.state.value.dataScale.coerceIn(0.1f, 1.0f)
+        dataScaleLabel?.text = String.format(Locale.US, "Data Module Scale: %d%%", (vm.state.value.dataScale * 100).toInt())
+        dataScaleSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateDataScale(value)
+                dataScaleLabel?.text = String.format(Locale.US, "Data Module Scale: %d%%", (value * 100).toInt())
+            }
+        }
+
+        val finderStyles = listOf(
+            "Classic" to FinderStyle.CLASSIC,
+            "Rounded" to FinderStyle.ROUNDED,
+            "Circle" to FinderStyle.CIRCLE,
+            "Soft" to FinderStyle.SOFT,
+            "Frame" to FinderStyle.FRAME,
+            "Planets" to FinderStyle.PLANETS,
+            "DSJ" to FinderStyle.DSJ
+        )
+        val finderLabels = finderStyles.map { it.first }
+        finderShapeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, finderLabels)
+        val currentFinderIdx = finderStyles.indexOfFirst { it.second == vm.state.value.finderStyle }.coerceAtLeast(0)
+        finderShapeSpinner?.setSelection(currentFinderIdx)
+        finderShapeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val style = finderStyles[pos].second
+                if (vm.state.value.finderStyle != style) {
+                    vm.updateFinderStyle(style)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        finderOuterColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.finderOuterColor ?: vm.state.value.foreground) {
+                vm.updateFinderColors(outer = it, inner = vm.state.value.finderInnerColor)
+            }
+        }
+        finderInnerColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.finderInnerColor ?: vm.state.value.foreground) {
+                vm.updateFinderColors(outer = vm.state.value.finderOuterColor, inner = it)
+            }
+        }
+
+        timingShapeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, shapeLabels)
+        val currentTimingShapeIdx = supportedShapes.indexOfFirst { it.second == vm.state.value.timingShape }.coerceAtLeast(0)
+        timingShapeSpinner?.setSelection(currentTimingShapeIdx)
+        timingShapeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val shape = supportedShapes[pos].second
+                if (vm.state.value.timingShape != shape) {
+                    vm.updateTimingShape(shape)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        timingColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.timingColor ?: vm.state.value.foreground) {
+                vm.updateTimingColor(it)
+            }
+        }
+        timingOnlyWhiteSwitch?.isChecked = vm.state.value.timingOnlyWhite
+        timingOnlyWhiteSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateTimingOnlyWhite(isChecked)
+        }
+
+        alignShapeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, shapeLabels)
+        val currentAlignShapeIdx = supportedShapes.indexOfFirst { it.second == vm.state.value.alignShape }.coerceAtLeast(0)
+        alignShapeSpinner?.setSelection(currentAlignShapeIdx)
+        alignShapeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val shape = supportedShapes[pos].second
+                if (vm.state.value.alignShape != shape) {
+                    vm.updateAlignShape(shape)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        alignColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.alignmentColor ?: vm.state.value.foreground) {
+                vm.updateAlignmentColor(it)
+            }
+        }
+        alignOnlyWhiteSwitch?.isChecked = vm.state.value.alignOnlyWhite
+        alignOnlyWhiteSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            vm.updateAlignOnlyWhite(isChecked)
+        }
+
+        val currentQuietZone = vm.state.value.quietZoneChoice ?: 4
+        quietZoneSlider?.value = currentQuietZone.toFloat().coerceIn(0.0f, 10.0f)
+        quietZoneLabel?.text = "Quiet Zone Margin: $currentQuietZone modules"
+        quietZoneSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val qz = value.toInt()
+                vm.updateQuietZone(qz)
+                quietZoneLabel?.text = "Quiet Zone Margin: $qz modules"
+            }
+        }
+
+        // Gradient Effects Card
+        val gradientTypeSpinner = view.findViewById<Spinner>(R.id.qr_gradient_type_spinner)
+        val gradientStartColorBtn = view.findViewById<MaterialButton>(R.id.qr_gradient_start_color_btn)
+        val gradientEndColorBtn = view.findViewById<MaterialButton>(R.id.qr_gradient_end_color_btn)
+        val gradientClearBtn = view.findViewById<MaterialButton>(R.id.qr_gradient_clear_btn)
+
+        val gradientTypes = listOf(
+            "None" to GradientType.NONE,
+            "Linear" to GradientType.LINEAR,
+            "Radial" to GradientType.RADIAL,
+            "Sweep" to GradientType.SWEEP
+        )
+        val gradientLabels = gradientTypes.map { it.first }
+        gradientTypeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, gradientLabels)
+        val currentGradIdx = gradientTypes.indexOfFirst { it.second == vm.state.value.gradientType }.coerceAtLeast(0)
+        gradientTypeSpinner?.setSelection(currentGradIdx)
+        gradientTypeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val gType = gradientTypes[pos].second
+                if (vm.state.value.gradientType != gType) {
+                    vm.updateGradient(start = vm.state.value.gradientStart, end = vm.state.value.gradientEnd, type = gType)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        gradientStartColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.gradientStart ?: vm.state.value.foreground) {
+                val gType = if (vm.state.value.gradientType == GradientType.NONE) GradientType.LINEAR else vm.state.value.gradientType
+                vm.updateGradient(start = it, end = vm.state.value.gradientEnd ?: vm.state.value.foreground, type = gType)
+            }
+        }
+        gradientEndColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.gradientEnd ?: vm.state.value.foreground) {
+                val gType = if (vm.state.value.gradientType == GradientType.NONE) GradientType.LINEAR else vm.state.value.gradientType
+                vm.updateGradient(start = vm.state.value.gradientStart ?: vm.state.value.foreground, end = it, type = gType)
+            }
+        }
+        gradientClearBtn?.setOnClickListener {
+            vm.updateGradient(start = null, end = null, type = GradientType.NONE)
+            gradientTypeSpinner?.setSelection(0)
+        }
+
+        // Backdrop & Frame Controls Card
+        val backdropColorBtn = view.findViewById<MaterialButton>(R.id.qr_backdrop_color_btn)
+        val backdropImageBtn = view.findViewById<MaterialButton>(R.id.qr_backdrop_image_btn)
+        val backdropImageRemoveBtn = view.findViewById<MaterialButton>(R.id.qr_backdrop_image_remove_btn)
+        val backdropRadiusLabel = view.findViewById<TextView>(R.id.qr_backdrop_radius_label)
+        val backdropRadiusSlider = view.findViewById<Slider>(R.id.qr_backdrop_radius_slider)
+        val backdropImageAlphaLabel = view.findViewById<TextView>(R.id.qr_backdrop_image_alpha_label)
+        val backdropImageAlphaSlider = view.findViewById<Slider>(R.id.qr_backdrop_image_alpha_slider)
+        val backdropScaleSpinner = view.findViewById<Spinner>(R.id.qr_backdrop_scale_spinner)
+
+        backdropColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.backdropColor ?: vm.state.value.background) {
+                vm.updateBackdropColor(it)
+            }
+        }
+        backdropImageBtn?.setOnClickListener {
+            backdropImagePickerLauncher.launch("image/*")
+        }
+        backdropImageRemoveBtn?.setOnClickListener {
+            vm.updateBackdropImage(null)
+        }
+
+        backdropRadiusSlider?.value = vm.state.value.backdropCornerRadius.coerceIn(0.0f, 64.0f)
+        backdropRadiusLabel?.text = String.format(Locale.US, "Frame Corner Radius: %.0fdp", vm.state.value.backdropCornerRadius)
+        backdropRadiusSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateBackdropRadius(value)
+                backdropRadiusLabel?.text = String.format(Locale.US, "Frame Corner Radius: %.0fdp", value)
+            }
+        }
+
+        val currentAlphaPct = (vm.state.value.backdropImageAlpha * 100f).toInt().coerceIn(0, 100)
+        backdropImageAlphaSlider?.value = currentAlphaPct.toFloat()
+        backdropImageAlphaLabel?.text = "Backdrop Image Opacity: $currentAlphaPct%"
+        backdropImageAlphaSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateBackdropImageAlpha(value / 100f)
+                backdropImageAlphaLabel?.text = "Backdrop Image Opacity: ${value.toInt()}%"
+            }
+        }
+
+        backdropScaleSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, scaleOptions)
+        val currentBackdropScaleIdx = scaleEnums.indexOf(vm.state.value.backdropImageScaleMode).coerceAtLeast(0)
+        backdropScaleSpinner?.setSelection(currentBackdropScaleIdx)
+        backdropScaleSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                vm.updateBackdropScaleMode(scaleEnums[pos.coerceIn(0, scaleEnums.size - 1)])
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        // Expanded Logo Card Controls
+        val logoShapeSpinner = view.findViewById<Spinner>(R.id.qr_logo_shape_spinner)
+        val logoAlphaLabel = view.findViewById<TextView>(R.id.qr_logo_alpha_label)
+        val logoAlphaSlider = view.findViewById<Slider>(R.id.qr_logo_alpha_slider)
+        val logoBorderWidthLabel = view.findViewById<TextView>(R.id.qr_logo_border_width_label)
+        val logoBorderWidthSlider = view.findViewById<Slider>(R.id.qr_logo_border_width_slider)
+        val logoBorderColorBtn = view.findViewById<MaterialButton>(R.id.qr_logo_border_color_btn)
+        val logoScaleModeSpinner = view.findViewById<Spinner>(R.id.qr_logo_scale_mode_spinner)
+
+        val logoShapes = listOf(
+            "Squircle" to LogoShape.SQUIRCLE,
+            "Circle" to LogoShape.CIRCLE,
+            "Square" to LogoShape.SQUARE
+        )
+        val logoShapeLabels = logoShapes.map { it.first }
+        logoShapeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, logoShapeLabels)
+        val currentLogoShapeIdx = logoShapes.indexOfFirst { it.second == vm.state.value.logoShape }.coerceAtLeast(0)
+        logoShapeSpinner?.setSelection(currentLogoShapeIdx)
+        logoShapeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val shape = logoShapes[pos].second
+                if (vm.state.value.logoShape != shape) {
+                    vm.updateLogoShape(shape)
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        val currentLogoAlphaPct = (vm.state.value.logoAlpha * 100f).toInt().coerceIn(10, 100)
+        logoAlphaSlider?.value = currentLogoAlphaPct.toFloat()
+        logoAlphaLabel?.text = "Logo Opacity: $currentLogoAlphaPct%"
+        logoAlphaSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateLogoAlpha(value / 100f)
+                logoAlphaLabel?.text = "Logo Opacity: ${value.toInt()}%"
+            }
+        }
+
+        logoBorderWidthSlider?.value = vm.state.value.logoBorderWidth.coerceIn(0.0f, 32.0f)
+        logoBorderWidthLabel?.text = String.format(Locale.US, "Border Width: %.0fdp", vm.state.value.logoBorderWidth)
+        logoBorderWidthSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateLogoBorderWidth(value)
+                logoBorderWidthLabel?.text = String.format(Locale.US, "Border Width: %.0fdp", value)
+            }
+        }
+
+        logoBorderColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.logoBorderColor ?: Color.WHITE) {
+                vm.updateLogoBorderColor(it)
+            }
+        }
+
+        logoScaleModeSpinner?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, scaleOptions)
+        val currentLogoScaleIdx = scaleEnums.indexOf(vm.state.value.logoScaleMode).coerceAtLeast(0)
+        logoScaleModeSpinner?.setSelection(currentLogoScaleIdx)
+        logoScaleModeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                vm.updateLogoScaleMode(scaleEnums[pos.coerceIn(0, scaleEnums.size - 1)])
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
         // 5. Actions & Buttons
         autoRepairBtn.setOnClickListener      { vm.autoRepair() }
         saveBtn.setOnClickListener            { vm.saveToGallery() }
@@ -1053,10 +1766,10 @@ class QrGenerateTabFragment : Fragment() {
                     saveAnimatedSvgBtn?.isEnabled = canExport
                     shareBtn.isEnabled = canExport
 
-                    // Contextual photo button label and alpha
+                    // Contextual photo button label and alpha: Static short label to avoid wrapping
                     val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
                     sourceImgBtn.alpha = if (usesSourceImage) 1.0f else 0.55f
-                    sourceImgBtn.text = if (usesSourceImage) "Source Photo" else "Photo (Image Styles)"
+                    sourceImgBtn.text = "Photo"
 
                     // Clarify animated export helper label based on input
                     if (state.animatedFrames.isNotEmpty()) {
@@ -1072,6 +1785,9 @@ class QrGenerateTabFragment : Fragment() {
                     val showRandomRect = (state.style == QrStyle.RANDOM_RECTANGLE)
                     val showBubble = (state.style == QrStyle.BUBBLE)
                     val showFunction = (state.style == QrStyle.FUNCTION)
+                    val showStyleFunction = (state.style == QrStyle.STYLE_FUNCTION)
+                    val showConnectedOrganic = (state.style == QrStyle.CONNECTED_ORGANIC)
+                    val showImageFill = (state.style == QrStyle.IMAGE_FILL)
                     val showPhotoRequired = vm.isSourcePhotoRequired(state.style, state.sourceImage)
 
                     containerD25?.visibility = if (showD25) View.VISIBLE else View.GONE
@@ -1080,9 +1796,12 @@ class QrGenerateTabFragment : Fragment() {
                     containerRandomRect?.visibility = if (showRandomRect) View.VISIBLE else View.GONE
                     containerBubble?.visibility = if (showBubble) View.VISIBLE else View.GONE
                     containerFunction?.visibility = if (showFunction) View.VISIBLE else View.GONE
+                    containerStyleFunction?.visibility = if (showStyleFunction) View.VISIBLE else View.GONE
+                    containerConnectedOrganic?.visibility = if (showConnectedOrganic) View.VISIBLE else View.GONE
+                    containerImageFill?.visibility = if (showImageFill) View.VISIBLE else View.GONE
                     containerImageBackdropRequired?.visibility = if (showPhotoRequired) View.VISIBLE else View.GONE
 
-                    val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBubble || showFunction || showPhotoRequired
+                    val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBubble || showFunction || showStyleFunction || showConnectedOrganic || showImageFill || showPhotoRequired
                     cardStyleSettings?.visibility = if (hasStyleControls) View.VISIBLE else View.GONE
 
                     // Dynamic Background Image Card
@@ -1219,6 +1938,21 @@ class QrGenerateTabFragment : Fragment() {
                 vm.updateBackground(selectedColor)
             }
         }.show()
+    }
+
+    private fun pickColor(
+        initialColor: Int,
+        contrastAgainstColor: Int = Color.WHITE,
+        isForeground: Boolean = true,
+        onColorPicked: (Int) -> Unit
+    ) {
+        QrColorPickerDialog(
+            context = requireContext(),
+            initialColor = initialColor,
+            contrastAgainstColor = contrastAgainstColor,
+            isForeground = isForeground,
+            onColorSelected = onColorPicked
+        ).show()
     }
 }
 

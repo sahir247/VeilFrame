@@ -14,6 +14,7 @@ import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.exporter.QrExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.registry.QrStyleRegistry
+import com.veilframe.app.qr.renderer.RngMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -70,6 +71,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val vcardPhone: String = "",
         val vcardEmail: String = "",
         val vcardOrg: String = "",
+        val vcardUrl: String = "",
         val emailRecipient: String = "",
         val emailSubject: String = "",
         val emailBody: String = "",
@@ -77,17 +79,34 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val smsBody: String = "",
         val upiVpa: String = "",
         val upiAmount: String = "",
+        val upiPayeeName: String = "",
+        val upiNote: String = "",
+
+        // Geometry & Zone Shapes / Colors
+        val dataShape: ModuleShape = ModuleShape.SQUARE,
+        val dataScale: Float = 1.0f,
+        val finderStyle: FinderStyle = FinderStyle.CLASSIC,
+        val finderOuterColor: Int? = null,
+        val finderInnerColor: Int? = null,
+        val timingShape: ModuleShape = ModuleShape.ROUNDED,
+        val timingColor: Int? = null,
+        val alignShape: ModuleShape = ModuleShape.ROUNDED,
+        val alignmentColor: Int? = null,
 
         // Style-Specific Customization Parameters
         val d25Depth: Float = 1.0f,
         val d25PositionDepth: Float = 1.0f,
         val d25Angle: Float = 45f,
+        val d25TopColor: Int? = null,
         val d25LeftColor: Int = 0x33000000,
         val d25RightColor: Int = 0x99000000.toInt(),
         val lineDirection: LineDirection = LineDirection.X,
         val lineThickness: Float = 0.5f,
         val lineVariant: LineVariant = LineVariant.EF,
         val lineLengthFraction: Float = 1.0f,
+        val lineColor: Int? = null,
+        val lineHorizontalColor: Int? = null,
+        val lineVerticalColor: Int? = null,
         val lineAccentRings: Boolean = false,
         val lineCircuitBridges: Boolean = false,
         val dsjLineSize: Float = 0.7f,
@@ -95,16 +114,51 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val dsjHorizontalColor: Int = 0xFFF6B506.toInt(),
         val dsjVerticalColor: Int = 0xFFE02020.toInt(),
         val dsjXColor: Int = 0xFF0B2D97.toInt(),
+        val randomRectColor: Int? = null,
         val randomRectSeed: Long = 42L,
         val randomJitterScale: Float = 0.25f,
         val randomJitterOffset: Float = 0.0f,
         val randomJitterColor: Float = 0.1f,
         val bubbleAmbient: Boolean = true,
         val bubbleDensity: Float = 0.15f,
+        val bubbleOutlineColor: Int? = null,
+        val bubbleCenterColor: Int? = null,
+        val bubblePositionColor: Int? = null,
         val veilFunctionType: VeilFunctionType = VeilFunctionType.FADE,
         val veilFunctionDataStyle: VeilFunctionDataStyle = VeilFunctionDataStyle.ROUND,
+        val functionDataColor: Int? = null,
+        val functionCircleColor: Int? = null,
         val paramFunctionType: FunctionType = FunctionType.WAVE,
+        val styleFunctionFrequency: Float = 0.5f,
+        val styleFunctionAmplitude: Float = 0.25f,
         val connectedLineThickness: Float = 0.2f,
+        val imageFillBackgroundColor: Int = Color.WHITE,
+        val imageFillMaskColor: Int = 0x1A000000,
+        val imageDataDarkColor: Int = Color.BLACK,
+        val imageDataLightColor: Int = Color.WHITE,
+        val imagePositionDarkColor: Int = Color.BLACK,
+        val imagePositionLightColor: Int = Color.WHITE,
+        val imagePositionSize: Float = 1.0f,
+        val imageTimingDarkColor: Int = Color.BLACK,
+        val imageTimingLightColor: Int = Color.WHITE,
+        val imageTimingSize: Float = 1.0f,
+        val imageAlignDarkColor: Int = Color.BLACK,
+        val imageAlignLightColor: Int = Color.WHITE,
+        val imageAlignSize: Float = 1.0f,
+        val resampleBackdropScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+        val resampleBackdropTint: Int? = null,
+        val resampleBackdropCornerRadius: Float = 0.0f,
+        val resampleRngMode: RngMode = RngMode.SYSTEM_UNSEEDED,
+        val backdropColor: Int? = null,
+        val backdropCornerRadius: Float = 0.0f,
+        val backdropImage: Bitmap? = null,
+        val backdropImageAlpha: Float = 1.0f,
+        val backdropImageScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
+        val logoShape: LogoShape = LogoShape.SQUIRCLE,
+        val logoAlpha: Float = 1.0f,
+        val logoBorderWidth: Float = 0.0f,
+        val logoBorderColor: Int? = null,
+        val logoScaleMode: ImageScaleMode = ImageScaleMode.ASPECT_FILL,
         val gradientStart: Int? = null,
         val gradientEnd: Int? = null,
         val gradientType: GradientType = GradientType.NONE,
@@ -406,9 +460,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val moduleFill = when {
             s.style == QrStyle.IMAGE_RESAMPLE -> ModuleFill.IMAGE_SAMPLED
             s.style == QrStyle.IMAGE_FILL -> ModuleFill.IMAGE
+            s.gradientStart != null && s.gradientEnd != null -> ModuleFill.LINEAR_GRADIENT
             else -> ModuleFill.SOLID
         }
         val moduleShape = when {
+            s.style == QrStyle.BASIC -> s.dataShape
             s.style == QrStyle.BUBBLE -> ModuleShape.BUBBLE_CLUSTER
             else -> def.defaultModuleShape
         }
@@ -421,19 +477,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             moduleStyle = ModuleStyle(
                 shape = moduleShape,
                 fill = moduleFill,
-                // EFQRCode parity: BASIC, D25, and IMAGE use 1.0 data-module scale.
+                // EFQRCode parity: BASIC, D25, and IMAGE use 1.0 data-module scale (or user configured).
                 // Other styles use 0.85 as VeilFrame's default.
                 scale = when (s.style) {
-                    QrStyle.BASIC, QrStyle.D25, QrStyle.IMAGE -> 1.0f
+                    QrStyle.BASIC -> s.dataScale
+                    QrStyle.D25 -> 1.0f
+                    QrStyle.IMAGE -> s.imageDataScale
                     else -> 0.85f
                 },
-                cornerRadiusFraction = 0.0f,
+                cornerRadiusFraction = if (moduleShape == ModuleShape.ROUNDED) 0.35f else 0.0f,
                 connected = s.style == QrStyle.DSJ
             ),
             eyeStyle = EyeStyle(
-                style = def.defaultFinderStyle,
-                outerColor = s.foreground,
-                innerColor = s.foreground
+                style = if (s.style == QrStyle.BASIC) s.finderStyle else def.defaultFinderStyle,
+                outerColor = s.finderOuterColor ?: s.foreground,
+                innerColor = s.finderInnerColor ?: s.foreground
             ),
             palette = PaletteStyle(
                 foreground = s.foreground,
@@ -448,11 +506,19 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 BackgroundStyle.Solid(s.background)
             },
             logo = if (s.logo != null) {
-                LogoStyle(bitmap = s.logo, scaleFraction = s.logoFraction)
+                LogoStyle(
+                    bitmap = s.logo,
+                    scaleFraction = s.logoFraction,
+                    shape = s.logoShape,
+                    borderColor = s.logoBorderColor,
+                    borderWidth = s.logoBorderWidth,
+                    alpha = s.logoAlpha,
+                    scaleMode = s.logoScaleMode
+                )
             } else null,
             effects = EffectStyle(
                 is25D = def.is25D,
-                topColor = s.foreground,
+                topColor = s.d25TopColor ?: s.foreground,
                 leftColor = s.d25LeftColor,
                 rightColor = s.d25RightColor,
                 dataHeightRatio = s.d25Depth,
@@ -462,23 +528,27 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 depth = s.d25Depth,
                 positionDepth = s.d25PositionDepth,
                 angleDegrees = s.d25Angle,
-                topColor = s.foreground,
+                topColor = s.d25TopColor ?: s.foreground,
                 leftColor = s.d25LeftColor,
                 rightColor = s.d25RightColor
             ),
+            timingColor = s.timingColor,
+            alignmentColor = s.alignmentColor,
             timingStyle = TimingStyle(
-                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED,
+                shape = if (s.style == QrStyle.BASIC) s.timingShape else (if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED),
+                color = s.timingColor,
                 onlyWhite = s.timingOnlyWhite
             ),
             alignmentStyle = AlignmentStyle(
-                shape = if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED,
+                shape = if (s.style == QrStyle.BASIC) s.alignShape else (if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED),
+                color = s.alignmentColor,
                 onlyWhite = s.alignOnlyWhite
             ),
             lineStyle = LineStyle(
                 direction = s.lineDirection,
                 thicknessFraction = s.lineThickness,
                 lengthFraction = s.lineLengthFraction,
-                color = s.foreground,
+                color = s.lineColor ?: s.foreground,
                 variant = s.lineVariant,
                 accentRingsEnabled = s.lineAccentRings || s.lineVariant == LineVariant.CIRCUIT,
                 circuitBridgesEnabled = s.lineCircuitBridges || s.lineVariant == LineVariant.CIRCUIT
@@ -500,18 +570,20 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 seed = s.resampleSeed,
                 ambientBubbles = s.bubbleAmbient,
                 ambientDensity = s.bubbleDensity,
-                dataColor = if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF8ED1FC.toInt() else s.foreground,
-                dataCenterColor = if (s.style == QrStyle.BUBBLE && s.background == Color.WHITE) 0xFFFFFFFF.toInt() else s.background,
-                positionColor = if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF0693E3.toInt() else s.foreground
+                dataColor = s.bubbleOutlineColor ?: (if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF8ED1FC.toInt() else s.foreground),
+                dataCenterColor = s.bubbleCenterColor ?: (if (s.style == QrStyle.BUBBLE && s.background == Color.WHITE) 0xFFFFFFFF.toInt() else s.background),
+                positionColor = s.bubblePositionColor ?: (if (s.style == QrStyle.BUBBLE && s.foreground == Color.BLACK) 0xFF0693E3.toInt() else s.foreground)
             ),
             veilFunctionStyle = VeilFunctionStyle(
                 functionType = s.veilFunctionType,
                 dataStyle = s.veilFunctionDataStyle,
-                dataColor = s.foreground,
-                circleColor = s.foreground
+                dataColor = s.functionDataColor ?: s.foreground,
+                circleColor = s.functionCircleColor ?: s.foreground
             ),
             functionStyle = FunctionStyle(
                 type = s.paramFunctionType,
+                frequency = s.styleFunctionFrequency,
+                amplitude = s.styleFunctionAmplitude,
                 seed = s.randomRectSeed
             ),
             compositeStyle = CompositePrimitiveStyle(
@@ -530,6 +602,20 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             allowTransparent = s.imageAllowTransparent,
             // EFQRCode parity: IMAGE data scale defaults to 1.0 (or customized via UI), not hardcoded 0.33.
             imageDataScale = if (s.style == QrStyle.IMAGE) s.imageDataScale else 0.85f,
+            dataColorDark = s.imageDataDarkColor,
+            dataColorLight = s.imageDataLightColor,
+            positionDarkColor = s.imagePositionDarkColor,
+            positionLightColor = s.imagePositionLightColor,
+            positionSize = s.imagePositionSize,
+            timingDarkColor = s.imageTimingDarkColor,
+            timingLightColor = s.imageTimingLightColor,
+            timingSize = s.imageTimingSize,
+            alignDarkColor = s.imageAlignDarkColor,
+            alignLightColor = s.imageAlignLightColor,
+            alignSize = s.imageAlignSize,
+            imageFillBackgroundColor = s.imageFillBackgroundColor,
+            imageFillMaskColor = s.imageFillMaskColor,
+            randomRectColor = s.randomRectColor ?: (if (s.style == QrStyle.RANDOM_RECTANGLE && s.foreground == Color.BLACK) 0xFF14AA3C.toInt() else s.foreground),
             imageSource = ImageSourceStyle(
                 source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
                 scaleMode = s.sourceImageScaleMode,
@@ -549,8 +635,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 backdropBitmap = s.resampleBackdropImage,
                 useSourceAsBackdrop = s.resampleUseSourceAsBackdrop,
                 backdropOpacity = s.resampleBackdropOpacity,
-                backdropScaleMode = s.sourceImageScaleMode,
-                backdropBlendMode = BackdropBlendMode.NORMAL
+                backdropScaleMode = s.resampleBackdropScaleMode,
+                backdropTint = s.resampleBackdropTint,
+                backdropCornerRadius = s.resampleBackdropCornerRadius,
+                rngMode = s.resampleRngMode
+            ),
+            backdropStyle = BackdropStyle(
+                color = s.backdropColor,
+                cornerRadius = s.backdropCornerRadius,
+                image = s.backdropImage ?: s.resampleBackdropImage ?: s.backgroundImage,
+                imageAlpha = s.backdropImageAlpha,
+                imageScaleMode = s.backdropImageScaleMode
             )
         )
         return if (s.style == QrStyle.IMAGE_RESAMPLE) {
@@ -575,13 +670,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun updateVcardForm(first: String, last: String, phone: String, email: String, org: String) {
+    fun updateVcardForm(first: String, last: String, phone: String, email: String, org: String, url: String = "") {
         _state.value = _state.value.copy(
             vcardFirst = first,
             vcardLast = last,
             vcardPhone = phone,
             vcardEmail = email,
-            vcardOrg = org
+            vcardOrg = org,
+            vcardUrl = url
         )
     }
 
@@ -600,10 +696,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun updateUpiForm(vpa: String, amount: String) {
+    fun updateUpiForm(vpa: String, amount: String, payeeName: String = "", note: String = "") {
         _state.value = _state.value.copy(
             upiVpa = vpa,
-            upiAmount = amount
+            upiAmount = amount,
+            upiPayeeName = payeeName,
+            upiNote = note
         )
     }
 
@@ -735,6 +833,250 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateQuietZone(modules: Int?) {
         _state.value = _state.value.copy(quietZoneChoice = modules)
+        regenerate(debounceMs = 0)
+    }
+
+    // --- Geometry & Module Shape / Scale Updaters ---
+
+    fun updateDataShape(shape: ModuleShape) {
+        _state.value = _state.value.copy(dataShape = shape)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateDataScale(scale: Float) {
+        _state.value = _state.value.copy(dataScale = scale.coerceIn(0.1f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateFinderStyle(style: FinderStyle) {
+        _state.value = _state.value.copy(finderStyle = style)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateFinderColors(outer: Int?, inner: Int?) {
+        _state.value = _state.value.copy(finderOuterColor = outer, finderInnerColor = inner)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateTimingShape(shape: ModuleShape) {
+        _state.value = _state.value.copy(timingShape = shape)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateTimingColor(color: Int?) {
+        _state.value = _state.value.copy(timingColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateAlignShape(shape: ModuleShape) {
+        _state.value = _state.value.copy(alignShape = shape)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateAlignmentColor(color: Int?) {
+        _state.value = _state.value.copy(alignmentColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    // --- Style Colors & Parameter Updaters ---
+
+    fun updateBubbleColors(outline: Int?, center: Int?, position: Int?) {
+        _state.value = _state.value.copy(
+            bubbleOutlineColor = outline,
+            bubbleCenterColor = center,
+            bubblePositionColor = position
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateD25TopColor(color: Int?) {
+        _state.value = _state.value.copy(d25TopColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLineColors(lineColor: Int?, hColor: Int? = null, vColor: Int? = null) {
+        _state.value = _state.value.copy(
+            lineColor = lineColor,
+            lineHorizontalColor = hColor,
+            lineVerticalColor = vColor
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLineAccentRings(enabled: Boolean) {
+        _state.value = _state.value.copy(lineAccentRings = enabled)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLineCircuitBridges(enabled: Boolean) {
+        _state.value = _state.value.copy(lineCircuitBridges = enabled)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateRandomRectColor(color: Int?) {
+        _state.value = _state.value.copy(randomRectColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateRandomRectSeed(seed: Long) {
+        _state.value = _state.value.copy(randomRectSeed = seed)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateRandomJitterColor(color: Float) {
+        _state.value = _state.value.copy(randomJitterColor = color.coerceIn(0f, 1f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateVeilFunctionDataStyle(dataStyle: VeilFunctionDataStyle) {
+        _state.value = _state.value.copy(veilFunctionDataStyle = dataStyle)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateFunctionColors(dataColor: Int?, circleColor: Int?) {
+        _state.value = _state.value.copy(functionDataColor = dataColor, functionCircleColor = circleColor)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateStyleFunctionParams(type: FunctionType, freq: Float, amp: Float) {
+        _state.value = _state.value.copy(
+            paramFunctionType = type,
+            styleFunctionFrequency = freq.coerceIn(0.1f, 2.0f),
+            styleFunctionAmplitude = amp.coerceIn(0.05f, 1.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateImageFillParams(bgColor: Int, maskColor: Int) {
+        _state.value = _state.value.copy(imageFillBackgroundColor = bgColor, imageFillMaskColor = maskColor)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateImageDataColors(darkColor: Int, lightColor: Int) {
+        _state.value = _state.value.copy(imageDataDarkColor = darkColor, imageDataLightColor = lightColor)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateImagePositionParams(darkColor: Int, lightColor: Int, size: Float) {
+        _state.value = _state.value.copy(
+            imagePositionDarkColor = darkColor,
+            imagePositionLightColor = lightColor,
+            imagePositionSize = size.coerceIn(0.5f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateImageTimingParams(darkColor: Int, lightColor: Int, size: Float) {
+        _state.value = _state.value.copy(
+            imageTimingDarkColor = darkColor,
+            imageTimingLightColor = lightColor,
+            imageTimingSize = size.coerceIn(0.5f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateImageAlignParams(darkColor: Int, lightColor: Int, size: Float) {
+        _state.value = _state.value.copy(
+            imageAlignDarkColor = darkColor,
+            imageAlignLightColor = lightColor,
+            imageAlignSize = size.coerceIn(0.5f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateResampleAdvanced(
+        scaleMode: ImageScaleMode,
+        tint: Int?,
+        cornerRadius: Float,
+        rngMode: RngMode
+    ) {
+        _state.value = _state.value.copy(
+            resampleBackdropScaleMode = scaleMode,
+            resampleBackdropTint = tint,
+            resampleBackdropCornerRadius = cornerRadius.coerceIn(0f, 64f),
+            resampleRngMode = rngMode
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateBackdrop(color: Int?, cornerRadius: Float, image: Bitmap?, alpha: Float, scaleMode: ImageScaleMode) {
+        _state.value = _state.value.copy(
+            backdropColor = color,
+            backdropCornerRadius = cornerRadius.coerceIn(0f, 64f),
+            backdropImage = image,
+            backdropImageAlpha = alpha.coerceIn(0f, 1f),
+            backdropImageScaleMode = scaleMode
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateBackdropColor(color: Int?) {
+        _state.value = _state.value.copy(backdropColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateBackdropRadius(radius: Float) {
+        _state.value = _state.value.copy(backdropCornerRadius = radius.coerceIn(0f, 64f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateBackdropImage(image: Bitmap?) {
+        _state.value = _state.value.copy(backdropImage = image)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateBackdropImageAlpha(alpha: Float) {
+        _state.value = _state.value.copy(backdropImageAlpha = alpha.coerceIn(0f, 1f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateBackdropScaleMode(mode: ImageScaleMode) {
+        _state.value = _state.value.copy(backdropImageScaleMode = mode)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateResampleBackdropScaleMode(mode: ImageScaleMode) {
+        _state.value = _state.value.copy(resampleBackdropScaleMode = mode)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateResampleBackdropTint(tint: Int?) {
+        _state.value = _state.value.copy(resampleBackdropTint = tint)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateResampleBackdropRadius(radius: Float) {
+        _state.value = _state.value.copy(resampleBackdropCornerRadius = radius.coerceIn(0f, 64f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateResampleRngMode(mode: RngMode) {
+        _state.value = _state.value.copy(resampleRngMode = mode)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLogoShape(shape: LogoShape) {
+        _state.value = _state.value.copy(logoShape = shape)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLogoAlpha(alpha: Float) {
+        _state.value = _state.value.copy(logoAlpha = alpha.coerceIn(0.1f, 1.0f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateLogoBorderWidth(width: Float) {
+        _state.value = _state.value.copy(logoBorderWidth = width.coerceIn(0f, 32f))
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateLogoBorderColor(color: Int?) {
+        _state.value = _state.value.copy(logoBorderColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateLogoScaleMode(mode: ImageScaleMode) {
+        _state.value = _state.value.copy(logoScaleMode = mode)
         regenerate(debounceMs = 0)
     }
 
