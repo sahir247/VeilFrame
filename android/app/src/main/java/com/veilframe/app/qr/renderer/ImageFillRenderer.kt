@@ -149,10 +149,22 @@ class ImageFillRenderer : QrRenderer {
 
         nodes.add(GroupNode(children = groupChildren, maskId = "hole"))
 
+        val defs = mutableListOf(maskDef)
+
+        // 3. Center Logo (EFQRCodeStyleImageFill.swift:263-276 writeIcon parity)
+        com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconNodes(
+            nodes = nodes,
+            defs = defs,
+            design = design,
+            ox = ox,
+            oy = oy,
+            qrPixelSize = n * mSize
+        )
+
         return QrGeometryIr(
             width = width,
             height = height,
-            defs = listOf(maskDef),
+            defs = defs,
             rootNodes = nodes
         )
     }

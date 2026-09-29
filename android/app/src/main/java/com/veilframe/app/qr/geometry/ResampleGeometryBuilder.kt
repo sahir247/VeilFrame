@@ -368,39 +368,15 @@ object ResampleGeometryBuilder {
             }
         }
 
-        // 8. Center logo on QR matrix
-        design.logo?.bitmap?.let { logoBmp ->
-            val fraction = design.logo.scaleFraction.coerceIn(0.10f, 0.35f)
-            val qrPixelSize = n * mSize
-            val qrCenterX = ox + qrPixelSize / 2f
-            val qrCenterY = oy + qrPixelSize / 2f
-            val logoSize = qrPixelSize * fraction
-            val logoX = qrCenterX - logoSize / 2f
-            val logoY = qrCenterY - logoSize / 2f
-            val cardPadding = 0.5f * mSize
-            nodes.add(
-                RectNode(
-                    x = logoX - cardPadding,
-                    y = logoY - cardPadding,
-                    width = logoSize + 2 * cardPadding,
-                    height = logoSize + 2 * cardPadding,
-                    rx = 1.5f * mSize,
-                    ry = 1.5f * mSize,
-                    fill = design.palette.background
-                )
-            )
-            nodes.add(
-                ImageNode(
-                    x = logoX,
-                    y = logoY,
-                    width = logoSize,
-                    height = logoSize,
-                    bitmap = logoBmp,
-                    base64Data = IrSvgRenderer.bitmapToBase64(logoBmp),
-                    preserveAspectRatio = "xMidYMid meet"
-                )
-            )
-        }
+        // 8. Center logo on QR matrix (EFQRCodeStyleResampleImage.swift:471,673 writeIcon parity)
+        VeilIconPipeline.appendIconNodes(
+            nodes = nodes,
+            defs = defs,
+            design = design,
+            ox = ox,
+            oy = oy,
+            qrPixelSize = n * mSize
+        )
 
         return QrGeometryIr(
             width = width,

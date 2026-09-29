@@ -106,7 +106,7 @@ class ImageRenderer : QrRenderer {
         val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize)
         val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize)
 
-        val defs = listOf(
+        val defs = mutableListOf(
             """<mask id="hole">
     <rect x="$x0" y="$y0" width="${canvasW}" height="${canvasH}" fill="white"/>
     <rect x="$x0" y="$y0" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
@@ -224,81 +224,15 @@ class ImageRenderer : QrRenderer {
         }
 
         // 8. Center Logo
-        val logo = design.logo
-        val logoBmp = logo?.effectiveBitmap
-        if (logo != null && logoBmp != null) {
-            val scale = minOf(maxOf(0f, logo.scaleFraction), 0.33f)
-            val iconSize = width * scale
-            val iconXY = (width - iconSize) / 2f
-            val iconOffset = iconXY * 0.024f
-            val rectXY = iconXY - iconOffset
-            val length = iconSize + 2f * iconOffset
-
-            if (logo.shape == com.veilframe.app.qr.model.LogoShape.SQUIRCLE) {
-                val bdColor = logo.borderColor ?: (if (logo.backgroundMode != com.veilframe.app.qr.model.LogoBackgroundMode.NONE) design.palette.background else null)
-                if (bdColor != null) {
-                    val bdAlpha = ((bdColor ushr 24) and 0xFF) / 255f
-                    nodes.add(
-                        PathNode(
-                            svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
-                            fill = bdColor,
-                            stroke = bdColor,
-                            strokeWidth = 100f / iconSize,
-                            opacity = bdAlpha,
-                            transform = String.format(java.util.Locale.US, "translate(%.4f, %.4f) scale(%.6f, %.6f)", iconXY, iconXY, iconSize / 100f, iconSize / 100f)
-                        )
-                    )
-                }
-            } else {
-                val cardPadding = 0.5f * mSize
-                nodes.add(
-                    RectNode(
-                        x = iconXY - cardPadding,
-                        y = iconXY - cardPadding,
-                        width = iconSize + 2 * cardPadding,
-                        height = iconSize + 2 * cardPadding,
-                        rx = 1.5f * mSize,
-                        ry = 1.5f * mSize,
-                        fill = design.palette.background
-                    )
-                )
-            }
-
-            val iconOpacity = logo.alpha.coerceIn(0f, 1f)
-            if (logo.isAnimated && logo.animatedFrames?.isNotEmpty() == true) {
-                val logoFrames = logo.animatedFrames ?: emptyList()
-                val logoDelays = logo.frameDelaysMs ?: emptyList()
-                val preprocessedFrames = logoFrames.map { com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(it, length, length, logo.scaleMode) }
-                nodes.add(
-                    AnimatedImageNode(
-                        x = rectXY,
-                        y = rectXY,
-                        width = length,
-                        height = length,
-                        frames = preprocessedFrames,
-                        base64Frames = preprocessedFrames.map { IrSvgRenderer.bitmapToBase64(it) },
-                        frameDelaysMs = logoDelays,
-                        opacity = iconOpacity,
-                        preserveAspectRatio = "",
-                        framePrefix = "logofm"
-                    )
-                )
-            } else {
-                val preprocessedBmp = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(logoBmp, length, length, logo.scaleMode)
-                nodes.add(
-                    ImageNode(
-                        x = rectXY,
-                        y = rectXY,
-                        width = length,
-                        height = length,
-                        bitmap = preprocessedBmp,
-                        base64Data = IrSvgRenderer.bitmapToBase64(preprocessedBmp),
-                        opacity = iconOpacity,
-                        preserveAspectRatio = ""
-                    )
-                )
-            }
-        }
+        com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconNodes(
+            nodes = nodes,
+            defs = defs,
+            design = design,
+            ox = 0f,
+            oy = 0f,
+            qrPixelSize = width,
+            preferredFramePrefix = "logofm"
+        )
 
         return QrGeometryIr(
             width = width,

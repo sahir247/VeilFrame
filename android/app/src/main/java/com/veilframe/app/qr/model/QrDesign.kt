@@ -624,11 +624,7 @@ data class QrDesign(
                     LogoStyle(
                         bitmap = params.logo ?: params.logoAnimatedFrames?.firstOrNull(),
                         source = logoSource,
-                        scaleFraction = if (params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_RESAMPLE) {
-                            minOf(maxOf(0f, params.logoFraction), 0.33f)
-                        } else {
-                            params.logoFraction.coerceIn(0.10f, 0.35f)
-                        },
+                        scaleFraction = minOf(maxOf(0f, params.logoFraction), 0.33f),
                         shape = params.logoShape,
                         borderColor = params.logoBorderColor,
                         borderWidth = params.logoBorderWidth,

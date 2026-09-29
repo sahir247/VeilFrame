@@ -1850,15 +1850,21 @@ class VeilStyleParityTest {
         // 3. SVG logo centering (Resample IR-rendered SVG and Standard SVG)
         val qrPixelSizeSvg = n.toDouble()
         val logoSizeSvg = qrPixelSizeSvg * 0.20
-        val expectedLogoXSvg = (1.0 + qrPixelSizeSvg / 2.0) - (logoSizeSvg / 2.0)
-        val expectedLogoYSvg = (2.0 + qrPixelSizeSvg / 2.0) - (logoSizeSvg / 2.0)
+        val iconXYSvg = (qrPixelSizeSvg - logoSizeSvg) / 2.0
+        val iconOffsetSvg = iconXYSvg * 0.024 // EFQRCode 2.4% geometric expansion
+        val expectedLogoXSvg = 1.0 + iconXYSvg - iconOffsetSvg
+        val expectedLogoYSvg = 2.0 + iconXYSvg - iconOffsetSvg
 
         val svgResample = SvgExporter.generateSvg(matrix, designWithLogo)
         val resampleImageTag = svgResample.lines().first { it.contains("<image") }
         val resampleActualX = Regex("""x="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
         val resampleActualY = Regex("""y="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
-        assertEquals("Resample SVG logo X must match expected QR matrix center", expectedLogoXSvg, resampleActualX, 0.01)
-        assertEquals("Resample SVG logo Y must match expected QR matrix center", expectedLogoYSvg, resampleActualY, 0.01)
+        val resampleActualW = Regex("""width="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        val resampleActualH = Regex("""height="([0-9.]+)"""").find(resampleImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        assertEquals("Resample SVG logo X must match expected EF offset coordinates", expectedLogoXSvg, resampleActualX, 0.01)
+        assertEquals("Resample SVG logo Y must match expected EF offset coordinates", expectedLogoYSvg, resampleActualY, 0.01)
+        assertEquals("Resample SVG logo center X must match expected QR matrix center", 1.0 + qrPixelSizeSvg / 2.0, resampleActualX + resampleActualW / 2.0, 0.01)
+        assertEquals("Resample SVG logo center Y must match expected QR matrix center", 2.0 + qrPixelSizeSvg / 2.0, resampleActualY + resampleActualH / 2.0, 0.01)
 
         val designBasic = QrDesign(
             directionalQuietZone = insets,
@@ -1868,8 +1874,10 @@ class VeilStyleParityTest {
         val basicImageTag = svgBasic.lines().first { it.contains("<image") }
         val basicActualX = Regex("""x="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
         val basicActualY = Regex("""y="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
-        assertEquals("Standard SVG logo X must match expected QR matrix center", expectedLogoXSvg, basicActualX, 0.01)
-        assertEquals("Standard SVG logo Y must match expected QR matrix center", expectedLogoYSvg, basicActualY, 0.01)
+        val basicActualW = Regex("""width="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        val basicActualH = Regex("""height="([0-9.]+)"""").find(basicImageTag)?.groupValues?.get(1)?.toDouble() ?: 0.0
+        assertEquals("Standard SVG logo center X must match expected QR matrix center", 1.0 + qrPixelSizeSvg / 2.0, basicActualX + basicActualW / 2.0, 0.01)
+        assertEquals("Standard SVG logo center Y must match expected QR matrix center", 2.0 + qrPixelSizeSvg / 2.0, basicActualY + basicActualH / 2.0, 0.01)
     }
 
     @Test
@@ -3167,11 +3175,11 @@ class VeilStyleParityTest {
         // Defensive guard ensures logo does not obscure QR modules beyond recovery:
         val paramsExcessiveLogo = QrStyleParams(style = QrStyle.BASIC, logo = dummyLogo, logoFraction = 0.85f)
         val designExcessiveLogo = QrDesign.fromQrStyleParams(paramsExcessiveLogo)
-        assertEquals("Excessive logo fraction (0.85f -> 0.35f) clamped to safe maximum", 0.35f, designExcessiveLogo.logo!!.scaleFraction, 0.001f)
+        assertEquals("Excessive logo fraction (0.85f -> 0.33f) clamped to safe maximum", 0.33f, designExcessiveLogo.logo!!.scaleFraction, 0.001f)
 
         val paramsNegativeLogo = QrStyleParams(style = QrStyle.BASIC, logo = dummyLogo, logoFraction = -0.10f)
         val designNegativeLogo = QrDesign.fromQrStyleParams(paramsNegativeLogo)
-        assertEquals("Negative logo fraction (-0.10f -> 0.10f) clamped to safe minimum", 0.10f, designNegativeLogo.logo!!.scaleFraction, 0.001f)
+        assertEquals("Negative logo fraction (-0.10f -> 0.0f) clamped to safe minimum", 0.0f, designNegativeLogo.logo!!.scaleFraction, 0.001f)
     }
 
     // =========================================================================
