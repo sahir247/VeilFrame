@@ -34,10 +34,22 @@ object ArtisticResampleProfile {
      * full behavioral and visual alignment across Canvas, SVG, and export pipelines.
      */
     fun applyProfile(design: QrDesign): QrDesign {
-        val timingShape = if (design.timingStyle.shape == ModuleShape.NONE) ModuleShape.NONE else DEFAULT_TIMING_SHAPE
-        val alignShape = if (design.alignmentStyle.shape == ModuleShape.NONE) ModuleShape.NONE else DEFAULT_ALIGNMENT_SHAPE
+        val timingShape = if (design.timingStyle.shape == ModuleShape.NONE) {
+            ModuleShape.NONE
+        } else if (design.timingStyle.shape != ModuleShape.ROUNDED) {
+            design.timingStyle.shape
+        } else {
+            DEFAULT_TIMING_SHAPE
+        }
+        val alignShape = if (design.alignmentStyle.shape == ModuleShape.NONE) {
+            ModuleShape.NONE
+        } else if (design.alignmentStyle.shape != ModuleShape.ROUNDED) {
+            design.alignmentStyle.shape
+        } else {
+            DEFAULT_ALIGNMENT_SHAPE
+        }
         return design.copy(
-            quietZoneModules = DEFAULT_QUIET_ZONE_MODULES,
+            quietZoneModules = design.explicitQuietZone ?: DEFAULT_QUIET_ZONE_MODULES,
             explicitQuietZone = design.explicitQuietZone ?: DEFAULT_QUIET_ZONE_MODULES,
             timingStyle = design.timingStyle.copy(shape = timingShape),
             alignmentStyle = design.alignmentStyle.copy(shape = alignShape),

@@ -122,6 +122,7 @@ abstract class BaseQrRenderer : QrRenderer {
             outerColor = design.eyeStyle.outerColor ?: fgColor,
             innerColor = design.eyeStyle.innerColor ?: fgColor,
             backgroundColor = bgColor,
+            scale = design.positionSize,
             context = context
         )
     }

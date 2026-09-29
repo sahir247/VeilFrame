@@ -141,6 +141,34 @@ class QrGenerateTabFragment : Fragment() {
         if (uri == null) return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             val ctx = context ?: return@launch
+            val mimeType = ctx.contentResolver.getType(uri) ?: ""
+            val uriStr = uri.toString().lowercase(java.util.Locale.ROOT)
+            val isGif = mimeType.equals("image/gif", ignoreCase = true) || uriStr.endsWith(".gif")
+            val isWebp = mimeType.equals("image/webp", ignoreCase = true) || uriStr.endsWith(".webp")
+            val isVideo = mimeType.startsWith("video/", ignoreCase = true) ||
+                uriStr.endsWith(".mp4") || uriStr.endsWith(".mov") || uriStr.endsWith(".webm") || uriStr.endsWith(".mkv")
+
+            if (isGif || isWebp || isVideo) {
+                val frames = com.veilframe.app.qr.AnimatedMediaHelper.extractFrames(ctx, uri)
+                if (frames.size > 1) {
+                    withContext(Dispatchers.Main) {
+                        if (isAdded) {
+                            vm.updateLogoAnimatedFrames(frames.map { it.bitmap }, frames.map { it.durationMs })
+                            val label = if (isGif) "GIF" else if (isWebp) "WebP" else "video"
+                            Toast.makeText(requireContext(), "Imported animated logo $label (${frames.size} frames)", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return@launch
+                } else if (frames.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        if (isAdded) {
+                            vm.updateLogo(frames[0].bitmap)
+                        }
+                    }
+                    return@launch
+                }
+            }
+
             val bmp = try {
                 ctx.contentResolver.openInputStream(uri)?.use { stream ->
                     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -489,6 +517,7 @@ class QrGenerateTabFragment : Fragment() {
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
         val saveSvgBtn         = view.findViewById<MaterialButton>(R.id.qr_save_svg_btn)
+        val saveJpegBtn        = view.findViewById<MaterialButton>(R.id.qr_save_jpeg_btn)
         val saveGifBtn         = view.findViewById<MaterialButton>(R.id.qr_save_gif_btn)
         val saveVideoBtn       = view.findViewById<MaterialButton>(R.id.qr_save_video_btn)
         val saveAnimatedSvgBtn = view.findViewById<MaterialButton>(R.id.qr_save_animated_svg_btn)
@@ -1400,6 +1429,13 @@ class QrGenerateTabFragment : Fragment() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        val resampleDataColorBtn = view.findViewById<MaterialButton>(R.id.qr_resample_data_color_btn)
+        resampleDataColorBtn?.setOnClickListener {
+            pickColor(vm.state.value.resampleDataColor ?: vm.state.value.foreground) {
+                vm.updateResampleDataColor(it)
+            }
+        }
+
         resampleBackdropTintBtn?.setOnClickListener {
             pickColor(vm.state.value.resampleBackdropTint ?: Color.WHITE) {
                 vm.updateResampleBackdropTint(it)
@@ -1425,16 +1461,32 @@ class QrGenerateTabFragment : Fragment() {
         val dataScaleLabel = view.findViewById<TextView>(R.id.qr_data_scale_label)
         val dataScaleSlider = view.findViewById<Slider>(R.id.qr_data_scale_slider)
         val finderShapeSpinner = view.findViewById<Spinner>(R.id.qr_finder_shape_spinner)
+        val positionSizeLabel = view.findViewById<TextView>(R.id.qr_position_size_label)
+        val positionSizeSlider = view.findViewById<Slider>(R.id.qr_position_size_slider)
         val finderOuterColorBtn = view.findViewById<MaterialButton>(R.id.qr_finder_outer_color_btn)
         val finderInnerColorBtn = view.findViewById<MaterialButton>(R.id.qr_finder_inner_color_btn)
         val timingShapeSpinner = view.findViewById<Spinner>(R.id.qr_timing_shape_spinner)
+        val timingSizeLabel = view.findViewById<TextView>(R.id.qr_timing_size_label)
+        val timingSizeSlider = view.findViewById<Slider>(R.id.qr_timing_size_slider)
         val timingColorBtn = view.findViewById<MaterialButton>(R.id.qr_timing_color_btn)
         val timingOnlyWhiteSwitch = view.findViewById<MaterialSwitch>(R.id.qr_timing_only_white_switch)
         val alignShapeSpinner = view.findViewById<Spinner>(R.id.qr_align_shape_spinner)
+        val alignSizeLabel = view.findViewById<TextView>(R.id.qr_align_size_label)
+        val alignSizeSlider = view.findViewById<Slider>(R.id.qr_align_size_slider)
         val alignColorBtn = view.findViewById<MaterialButton>(R.id.qr_align_color_btn)
         val alignOnlyWhiteSwitch = view.findViewById<MaterialSwitch>(R.id.qr_align_only_white_switch)
         val quietZoneLabel = view.findViewById<TextView>(R.id.qr_quiet_zone_label)
         val quietZoneSlider = view.findViewById<Slider>(R.id.qr_quiet_zone_slider)
+        val asymmetricQzSwitch = view.findViewById<MaterialSwitch>(R.id.qr_asymmetric_qz_switch)
+        val containerAsymmetricQz = view.findViewById<LinearLayout>(R.id.container_asymmetric_qz)
+        val qzLeftLabel = view.findViewById<TextView>(R.id.qr_qz_left_label)
+        val qzLeftSlider = view.findViewById<Slider>(R.id.qr_qz_left_slider)
+        val qzTopLabel = view.findViewById<TextView>(R.id.qr_qz_top_label)
+        val qzTopSlider = view.findViewById<Slider>(R.id.qr_qz_top_slider)
+        val qzRightLabel = view.findViewById<TextView>(R.id.qr_qz_right_label)
+        val qzRightSlider = view.findViewById<Slider>(R.id.qr_qz_right_slider)
+        val qzBottomLabel = view.findViewById<TextView>(R.id.qr_qz_bottom_label)
+        val qzBottomSlider = view.findViewById<Slider>(R.id.qr_qz_bottom_slider)
 
         val supportedShapes = listOf(
             "Square" to ModuleShape.SQUARE,
@@ -1494,6 +1546,15 @@ class QrGenerateTabFragment : Fragment() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        positionSizeSlider?.value = vm.state.value.positionSize.coerceIn(0.5f, 1.5f)
+        positionSizeLabel?.text = String.format(Locale.US, "Finder / Position Size: %d%%", (vm.state.value.positionSize * 100).toInt())
+        positionSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updatePositionSize(value)
+                positionSizeLabel?.text = String.format(Locale.US, "Finder / Position Size: %d%%", (value * 100).toInt())
+            }
+        }
+
         finderOuterColorBtn?.setOnClickListener {
             pickColor(vm.state.value.finderOuterColor ?: vm.state.value.foreground) {
                 vm.updateFinderColors(outer = it, inner = vm.state.value.finderInnerColor)
@@ -1516,6 +1577,15 @@ class QrGenerateTabFragment : Fragment() {
                 }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
+
+        timingSizeSlider?.value = vm.state.value.timingSize.coerceIn(0.2f, 1.5f)
+        timingSizeLabel?.text = String.format(Locale.US, "Timing Pattern Size: %d%%", (vm.state.value.timingSize * 100).toInt())
+        timingSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateTimingSize(value)
+                timingSizeLabel?.text = String.format(Locale.US, "Timing Pattern Size: %d%%", (value * 100).toInt())
+            }
         }
 
         timingColorBtn?.setOnClickListener {
@@ -1541,6 +1611,15 @@ class QrGenerateTabFragment : Fragment() {
             override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
+        alignSizeSlider?.value = vm.state.value.alignSize.coerceIn(0.2f, 1.5f)
+        alignSizeLabel?.text = String.format(Locale.US, "Alignment Pattern Size: %d%%", (vm.state.value.alignSize * 100).toInt())
+        alignSizeSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                vm.updateAlignSize(value)
+                alignSizeLabel?.text = String.format(Locale.US, "Alignment Pattern Size: %d%%", (value * 100).toInt())
+            }
+        }
+
         alignColorBtn?.setOnClickListener {
             pickColor(vm.state.value.alignmentColor ?: vm.state.value.foreground) {
                 vm.updateAlignmentColor(it)
@@ -1559,6 +1638,59 @@ class QrGenerateTabFragment : Fragment() {
                 val qz = value.toInt()
                 vm.updateQuietZone(qz)
                 quietZoneLabel?.text = "Quiet Zone Margin: $qz modules"
+            }
+        }
+
+        asymmetricQzSwitch?.isChecked = vm.state.value.useAsymmetricQuietZone
+        containerAsymmetricQz?.visibility = if (vm.state.value.useAsymmetricQuietZone) View.VISIBLE else View.GONE
+        quietZoneSlider?.isEnabled = !vm.state.value.useAsymmetricQuietZone
+
+        qzLeftSlider?.value = vm.state.value.quietZoneLeft.coerceIn(0.0f, 10.0f)
+        qzLeftLabel?.text = String.format(Locale.US, "Left Margin: %.1f modules", vm.state.value.quietZoneLeft)
+        qzTopSlider?.value = vm.state.value.quietZoneTop.coerceIn(0.0f, 10.0f)
+        qzTopLabel?.text = String.format(Locale.US, "Top Margin: %.1f modules", vm.state.value.quietZoneTop)
+        qzRightSlider?.value = vm.state.value.quietZoneRight.coerceIn(0.0f, 10.0f)
+        qzRightLabel?.text = String.format(Locale.US, "Right Margin: %.1f modules", vm.state.value.quietZoneRight)
+        qzBottomSlider?.value = vm.state.value.quietZoneBottom.coerceIn(0.0f, 10.0f)
+        qzBottomLabel?.text = String.format(Locale.US, "Bottom Margin: %.1f modules", vm.state.value.quietZoneBottom)
+
+        fun updateAsymmetricMargins() {
+            val enabled = asymmetricQzSwitch?.isChecked ?: false
+            val left = qzLeftSlider?.value ?: 4.0f
+            val top = qzTopSlider?.value ?: 4.0f
+            val right = qzRightSlider?.value ?: 4.0f
+            val bottom = qzBottomSlider?.value ?: 4.0f
+            vm.updateAsymmetricQuietZone(enabled, left, top, right, bottom)
+        }
+
+        asymmetricQzSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            containerAsymmetricQz?.visibility = if (isChecked) View.VISIBLE else View.GONE
+            quietZoneSlider?.isEnabled = !isChecked
+            updateAsymmetricMargins()
+        }
+
+        qzLeftSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                qzLeftLabel?.text = String.format(Locale.US, "Left Margin: %.1f modules", value)
+                updateAsymmetricMargins()
+            }
+        }
+        qzTopSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                qzTopLabel?.text = String.format(Locale.US, "Top Margin: %.1f modules", value)
+                updateAsymmetricMargins()
+            }
+        }
+        qzRightSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                qzRightLabel?.text = String.format(Locale.US, "Right Margin: %.1f modules", value)
+                updateAsymmetricMargins()
+            }
+        }
+        qzBottomSlider?.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                qzBottomLabel?.text = String.format(Locale.US, "Bottom Margin: %.1f modules", value)
+                updateAsymmetricMargins()
             }
         }
 
@@ -1723,11 +1855,12 @@ class QrGenerateTabFragment : Fragment() {
         autoRepairBtn.setOnClickListener      { vm.autoRepair() }
         saveBtn.setOnClickListener            { vm.saveToGallery() }
         saveSvgBtn.setOnClickListener         { vm.saveSvg() }
+        saveJpegBtn?.setOnClickListener        { vm.saveJpeg() }
         saveGifBtn?.setOnClickListener         { vm.saveGif() }
         saveVideoBtn?.setOnClickListener       { vm.saveVideo() }
         saveAnimatedSvgBtn?.setOnClickListener { vm.saveAnimatedSvg() }
         shareBtn.setOnClickListener           { vm.share() }
-        logoBtn.setOnClickListener            { logoPickerLauncher.launch("image/*") }
+        logoBtn.setOnClickListener            { logoPickerLauncher.launch("*/*") }
         sourceImgBtn.setOnClickListener {
             val usesSource = (vm.state.value.style == QrStyle.IMAGE || vm.state.value.style == QrStyle.IMAGE_FILL || vm.state.value.style == QrStyle.IMAGE_RESAMPLE)
             if (!usesSource) {
@@ -1761,6 +1894,7 @@ class QrGenerateTabFragment : Fragment() {
                     val canExport = state.content.isNotBlank() && !state.isRenderingPreview && !state.isExporting
                     saveBtn.isEnabled = canExport
                     saveSvgBtn.isEnabled = canExport
+                    saveJpegBtn?.isEnabled = canExport
                     saveGifBtn?.isEnabled = canExport
                     saveVideoBtn?.isEnabled = canExport
                     saveAnimatedSvgBtn?.isEnabled = canExport
@@ -1858,7 +1992,7 @@ class QrGenerateTabFragment : Fragment() {
                     }
 
                     // Dynamic Logo Card
-                    if (state.logo != null) {
+                    if (state.logo != null || state.logoAnimatedFrames.isNotEmpty()) {
                         cardLogoControls.visibility = View.VISIBLE
                         val sizePct = (state.logoFraction * 100f).toInt().coerceIn(10, 35)
                         logoSizeSlider.value = sizePct.toFloat()

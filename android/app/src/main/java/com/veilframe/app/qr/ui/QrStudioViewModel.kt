@@ -163,9 +163,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val gradientEnd: Int? = null,
         val gradientType: GradientType = GradientType.NONE,
         val directionalQuietZone: DirectionalInsets? = null,
+        val fractionalQuietZone: FractionalInsets? = null,
         val quietZoneChoice: Int? = null,
+        val useAsymmetricQuietZone: Boolean = false,
+        val quietZoneLeft: Float = 4f,
+        val quietZoneTop: Float = 4f,
+        val quietZoneRight: Float = 4f,
+        val quietZoneBottom: Float = 4f,
         val timingOnlyWhite: Boolean = false,
-        val alignOnlyWhite: Boolean = false
+        val alignOnlyWhite: Boolean = false,
+        val positionSize: Float = 1.0f,
+        val timingSize: Float = 1.0f,
+        val alignSize: Float = 1.0f,
+        val resampleDataColor: Int? = null,
+        val logoAnimatedFrames: List<Bitmap> = emptyList(),
+        val logoFrameDelaysMs: List<Int> = emptyList()
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
     }
@@ -220,7 +232,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeLogo() {
-        _state.value = _state.value.copy(logo = null, repairNotice = null)
+        _state.value = _state.value.copy(
+            logo = null,
+            logoAnimatedFrames = emptyList(),
+            logoFrameDelaysMs = emptyList(),
+            repairNotice = null
+        )
         regenerate(debounceMs = 0)
     }
 
@@ -463,10 +480,13 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             s.gradientStart != null && s.gradientEnd != null -> ModuleFill.LINEAR_GRADIENT
             else -> ModuleFill.SOLID
         }
-        val moduleShape = when {
-            s.style == QrStyle.BASIC -> s.dataShape
-            s.style == QrStyle.BUBBLE -> ModuleShape.BUBBLE_CLUSTER
-            else -> def.defaultModuleShape
+        val moduleShape = when (s.style) {
+            QrStyle.BUBBLE -> ModuleShape.BUBBLE_CLUSTER
+            QrStyle.D25 -> ModuleShape.SQUARE
+            QrStyle.LINE -> ModuleShape.LINE
+            QrStyle.DSJ -> ModuleShape.CONNECTED
+            QrStyle.CONNECTED_ORGANIC -> ModuleShape.ORGANIC
+            else -> s.dataShape
         }
 
         // Staged preview pipeline: 512px during interactive editor preview, full s.outputSize for export
@@ -480,16 +500,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 // EFQRCode parity: BASIC, D25, and IMAGE use 1.0 data-module scale (or user configured).
                 // Other styles use 0.85 as VeilFrame's default.
                 scale = when (s.style) {
-                    QrStyle.BASIC -> s.dataScale
                     QrStyle.D25 -> 1.0f
                     QrStyle.IMAGE -> s.imageDataScale
-                    else -> 0.85f
+                    else -> s.dataScale
                 },
                 cornerRadiusFraction = if (moduleShape == ModuleShape.ROUNDED) 0.35f else 0.0f,
                 connected = s.style == QrStyle.DSJ
             ),
             eyeStyle = EyeStyle(
-                style = if (s.style == QrStyle.BASIC) s.finderStyle else def.defaultFinderStyle,
+                style = s.finderStyle,
                 outerColor = s.finderOuterColor ?: s.foreground,
                 innerColor = s.finderInnerColor ?: s.foreground
             ),
@@ -505,9 +524,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 BackgroundStyle.Solid(s.background)
             },
-            logo = if (s.logo != null) {
+            logo = if (s.logo != null || s.logoAnimatedFrames.isNotEmpty()) {
                 LogoStyle(
-                    bitmap = s.logo,
+                    bitmap = s.logo ?: s.logoAnimatedFrames.firstOrNull(),
+                    source = if (s.logoAnimatedFrames.isNotEmpty()) {
+                        ImageSource.Animated(s.logoAnimatedFrames, s.logoFrameDelaysMs)
+                    } else if (s.logo != null) {
+                        ImageSource.Memory(s.logo)
+                    } else null,
                     scaleFraction = s.logoFraction,
                     shape = s.logoShape,
                     borderColor = s.logoBorderColor,
@@ -535,13 +559,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             timingColor = s.timingColor,
             alignmentColor = s.alignmentColor,
             timingStyle = TimingStyle(
-                shape = if (s.style == QrStyle.BASIC) s.timingShape else (if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED),
+                shape = s.timingShape,
                 color = s.timingColor,
+                scale = s.timingSize,
                 onlyWhite = s.timingOnlyWhite
             ),
             alignmentStyle = AlignmentStyle(
-                shape = if (s.style == QrStyle.BASIC) s.alignShape else (if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE) ModuleShape.SQUARE else ModuleShape.ROUNDED),
+                shape = s.alignShape,
                 color = s.alignmentColor,
+                scale = s.alignSize,
                 onlyWhite = s.alignOnlyWhite
             ),
             lineStyle = LineStyle(
@@ -602,17 +628,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             allowTransparent = s.imageAllowTransparent,
             // EFQRCode parity: IMAGE data scale defaults to 1.0 (or customized via UI), not hardcoded 0.33.
             imageDataScale = if (s.style == QrStyle.IMAGE) s.imageDataScale else 0.85f,
-            dataColorDark = s.imageDataDarkColor,
+            dataColorDark = if (s.style == QrStyle.IMAGE_RESAMPLE && s.resampleDataColor != null) {
+                s.resampleDataColor!!
+            } else if (s.style == QrStyle.IMAGE) {
+                s.imageDataDarkColor
+            } else {
+                s.foreground
+            },
             dataColorLight = s.imageDataLightColor,
             positionDarkColor = s.imagePositionDarkColor,
             positionLightColor = s.imagePositionLightColor,
-            positionSize = s.imagePositionSize,
+            positionSize = s.positionSize,
             timingDarkColor = s.imageTimingDarkColor,
             timingLightColor = s.imageTimingLightColor,
-            timingSize = s.imageTimingSize,
+            timingSize = s.timingSize,
             alignDarkColor = s.imageAlignDarkColor,
             alignLightColor = s.imageAlignLightColor,
-            alignSize = s.imageAlignSize,
+            alignSize = s.alignSize,
             imageFillBackgroundColor = s.imageFillBackgroundColor,
             imageFillMaskColor = s.imageFillMaskColor,
             randomRectColor = s.randomRectColor ?: (if (s.style == QrStyle.RANDOM_RECTANGLE && s.foreground == Color.BLACK) 0xFF14AA3C.toInt() else s.foreground),
@@ -645,7 +677,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 cornerRadius = s.backdropCornerRadius,
                 image = s.backdropImage ?: s.resampleBackdropImage ?: s.backgroundImage,
                 imageAlpha = s.backdropImageAlpha,
-                imageScaleMode = s.backdropImageScaleMode
+                imageScaleMode = s.backdropImageScaleMode,
+                fractionalQuietZone = s.fractionalQuietZone
             )
         )
         return if (s.style == QrStyle.IMAGE_RESAMPLE) {
@@ -866,6 +899,108 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     fun updateTimingColor(color: Int?) {
         _state.value = _state.value.copy(timingColor = color)
         regenerate(debounceMs = 0)
+    }
+
+    fun updatePositionSize(size: Float) {
+        _state.value = _state.value.copy(
+            positionSize = size.coerceIn(0.2f, 2.0f),
+            imagePositionSize = size.coerceIn(0.2f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateTimingSize(size: Float) {
+        _state.value = _state.value.copy(
+            timingSize = size.coerceIn(0.2f, 2.0f),
+            imageTimingSize = size.coerceIn(0.2f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateAlignSize(size: Float) {
+        _state.value = _state.value.copy(
+            alignSize = size.coerceIn(0.2f, 2.0f),
+            imageAlignSize = size.coerceIn(0.2f, 2.0f)
+        )
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateResampleDataColor(color: Int?) {
+        _state.value = _state.value.copy(resampleDataColor = color)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateAsymmetricQuietZone(enabled: Boolean, left: Float = 4f, top: Float = 4f, right: Float = 4f, bottom: Float = 4f) {
+        if (!enabled) {
+            _state.value = _state.value.copy(
+                useAsymmetricQuietZone = false,
+                directionalQuietZone = null,
+                fractionalQuietZone = null
+            )
+        } else {
+            _state.value = _state.value.copy(
+                useAsymmetricQuietZone = true,
+                quietZoneLeft = left,
+                quietZoneTop = top,
+                quietZoneRight = right,
+                quietZoneBottom = bottom,
+                directionalQuietZone = DirectionalInsets(left.toInt(), top.toInt(), right.toInt(), bottom.toInt()),
+                fractionalQuietZone = FractionalInsets(left, top, right, bottom)
+            )
+        }
+        regenerate(debounceMs = 120)
+    }
+
+    fun updateLogoAnimatedFrames(frames: List<Bitmap>, delays: List<Int> = emptyList()) {
+        _state.value = _state.value.copy(
+            logo = frames.firstOrNull(),
+            logoAnimatedFrames = frames,
+            logoFrameDelaysMs = delays,
+            repairNotice = null
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun saveJpeg() {
+        val content = _state.value.content.trim()
+        if (content.isEmpty()) {
+            _state.value = _state.value.copy(
+                saveResult = "Content is required to export QR code",
+                isExporting = false
+            )
+            return
+        }
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
+            _state.value = _state.value.copy(isExporting = true)
+            try {
+                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val renderResult = withContext(Dispatchers.Default) {
+                    QrGenerator.generateWithResult(content, exportDesign)
+                }
+                if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
+                    val (uri, report) = QrExporter.saveToGalleryValidated(
+                        getApplication(),
+                        renderResult.bitmap,
+                        content,
+                        exportDesign,
+                        renderResult.matrix,
+                        format = Bitmap.CompressFormat.JPEG,
+                        quality = 95
+                    )
+                    _state.value = _state.value.copy(
+                        saveResult = if (uri != null) "JPEG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})" else "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        saveResult = "Save failed: bitmap generation unsuccessful"
+                    )
+                }
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
+            }
+        }
     }
 
     fun updateAlignShape(shape: ModuleShape) {

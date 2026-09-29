@@ -1969,7 +1969,7 @@
                     android:stepSize="0.05"
                     android:value="1.0" />
 
-                <!-- Finder / Position Shape & Colors -->
+                <!-- Finder / Position Shape, Size & Colors -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -1985,10 +1985,27 @@
                     android:background="@drawable/spinner_border_bg"
                     android:padding="8dp" />
 
+                <TextView
+                    android:id="@+id/qr_position_size_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Finder / Position Size: 100%"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_position_size_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.5"
+                    android:valueTo="1.5"
+                    android:stepSize="0.05"
+                    android:value="1.0" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
@@ -2015,7 +2032,7 @@
                         android:text="Finder Inner" />
                 </LinearLayout>
 
-                <!-- Timing Pattern Shape, Color, OnlyWhite -->
+                <!-- Timing Pattern Shape, Size, Color, OnlyWhite -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -2031,10 +2048,27 @@
                     android:background="@drawable/spinner_border_bg"
                     android:padding="8dp" />
 
-                <LinearLayout
+                <TextView
+                    android:id="@+id/qr_timing_size_label"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
+                    android:text="Timing Pattern Size: 100%"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_timing_size_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.2"
+                    android:valueTo="1.5"
+                    android:stepSize="0.05"
+                    android:value="1.0" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -2057,7 +2091,7 @@
                         android:text="Only White" />
                 </LinearLayout>
 
-                <!-- Alignment Pattern Shape, Color, OnlyWhite -->
+                <!-- Alignment Pattern Shape, Size, Color, OnlyWhite -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -2073,10 +2107,27 @@
                     android:background="@drawable/spinner_border_bg"
                     android:padding="8dp" />
 
-                <LinearLayout
+                <TextView
+                    android:id="@+id/qr_align_size_label"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
+                    android:text="Alignment Pattern Size: 100%"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/qr_align_size_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.2"
+                    android:valueTo="1.5"
+                    android:stepSize="0.05"
+                    android:value="1.0" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -2116,6 +2167,104 @@
                     android:valueTo="10.0"
                     android:stepSize="1.0"
                     android:value="4.0" />
+
+                <!-- Asymmetric Quiet Zone Switch & Edge Sliders (EF EdgeInsets) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Asymmetric Quiet Zone (EF Insets)"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/qr_asymmetric_qz_switch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="false" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/container_asymmetric_qz"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/qr_qz_left_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Left Margin: 4.0 modules"
+                        android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_qz_left_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="10.0"
+                        android:stepSize="0.5"
+                        android:value="4.0" />
+
+                    <TextView
+                        android:id="@+id/qr_qz_top_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Top Margin: 4.0 modules"
+                        android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_qz_top_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="10.0"
+                        android:stepSize="0.5"
+                        android:value="4.0" />
+
+                    <TextView
+                        android:id="@+id/qr_qz_right_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Right Margin: 4.0 modules"
+                        android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_qz_right_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="10.0"
+                        android:stepSize="0.5"
+                        android:value="4.0" />
+
+                    <TextView
+                        android:id="@+id/qr_qz_bottom_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Bottom Margin: 4.0 modules"
+                        android:textAppearance="?attr/textAppearanceLabelSmall" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/qr_qz_bottom_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0.0"
+                        android:valueTo="10.0"
+                        android:stepSize="0.5"
+                        android:value="4.0" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -2830,6 +2979,18 @@
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_resample_data_color_btn"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:paddingHorizontal="4dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:text="Data Color" />
+
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/qr_resample_backdrop_tint_btn"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="0dp"
@@ -3250,6 +3411,19 @@
                 android:paddingHorizontal="4dp"
                 app:iconPadding="4dp"
                 android:text="SVG" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/qr_save_jpeg_btn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:paddingHorizontal="4dp"
+                app:iconPadding="4dp"
+                android:text="JPEG" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_share_btn"

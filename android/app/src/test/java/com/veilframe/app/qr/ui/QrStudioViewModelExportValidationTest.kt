@@ -52,7 +52,12 @@ class QrStudioViewModelExportValidationTest {
         assertEquals("Content is required to export QR code", vm.state.value.saveResult)
         assertFalse(vm.state.value.isLoading)
 
-        // 6. Share
+        // 6. Save JPEG
+        vm.saveJpeg()
+        assertEquals("Content is required to export QR code", vm.state.value.saveResult)
+        assertFalse(vm.state.value.isLoading)
+
+        // 7. Share
         vm.share()
         assertEquals("Content is required to share QR code", vm.state.value.saveResult)
         assertFalse(vm.state.value.isLoading)
@@ -728,5 +733,68 @@ class QrStudioViewModelExportValidationTest {
         assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(0.35f), 0.001f)
         assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(0.50f), 0.001f)
         assertEquals(1.00f, ConnectedOrganicRenderer.calculateStrokeFraction(1.00f), 0.001f)
+    }
+
+    @Test
+    fun testBuildDesignFromStateParity() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateContent("https://veilframe.app/parity-test")
+
+        // 1. Finder size, Timing size, Align size
+        vm.updatePositionSize(1.25f)
+        vm.updateTimingSize(0.85f)
+        vm.updateAlignSize(0.75f)
+
+        // 2. Universal finder style on BUBBLE
+        vm.updateStyle(QrStyle.BUBBLE)
+        vm.updateFinderStyle(FinderStyle.ROUNDED)
+        var design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(1.25f, design.positionSize, 0.001f)
+        assertEquals(0.85f, design.timingSize, 0.001f)
+        assertEquals(0.75f, design.alignSize, 0.001f)
+        assertEquals(0.85f, design.timingStyle.scale, 0.001f)
+        assertEquals(0.75f, design.alignmentStyle.scale, 0.001f)
+        assertEquals(FinderStyle.ROUNDED, design.eyeStyle.style)
+
+        // 3. Universal data shape & finder style on IMAGE
+        vm.updateStyle(QrStyle.IMAGE)
+        vm.updateDataShape(ModuleShape.CIRCLE)
+        vm.updateFinderStyle(FinderStyle.SOFT)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(ModuleShape.CIRCLE, design.moduleStyle.shape)
+        assertEquals(FinderStyle.SOFT, design.eyeStyle.style)
+
+        // 4. RESAMPLE specific dataColor and timing/alignment shape
+        vm.updateStyle(QrStyle.IMAGE_RESAMPLE)
+        vm.updateResampleDataColor(0xFF336699.toInt())
+        vm.updateTimingShape(ModuleShape.DIAMOND)
+        vm.updateAlignShape(ModuleShape.HEX)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(0xFF336699.toInt(), design.dataColorDark)
+        assertEquals(ModuleShape.DIAMOND, design.timingStyle.shape)
+        assertEquals(ModuleShape.HEX, design.alignmentStyle.shape)
+
+        // 5. Asymmetric & fractional quiet zones
+        vm.updateAsymmetricQuietZone(true, 1.5f, 2.5f, 3.5f, 4.5f)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertNotNull(design.directionalQuietZone)
+        assertEquals(1, design.directionalQuietZone!!.left)
+        assertEquals(2, design.directionalQuietZone!!.top)
+        assertEquals(3, design.directionalQuietZone!!.right)
+        assertEquals(4, design.directionalQuietZone!!.bottom)
+        assertNotNull(design.backdropStyle.fractionalQuietZone)
+        assertEquals(1.5f, design.backdropStyle.fractionalQuietZone!!.left, 0.001f)
+        assertEquals(2.5f, design.backdropStyle.fractionalQuietZone!!.top, 0.001f)
+        assertEquals(3.5f, design.backdropStyle.fractionalQuietZone!!.right, 0.001f)
+        assertEquals(4.5f, design.backdropStyle.fractionalQuietZone!!.bottom, 0.001f)
+
+        // 6. Animated logo
+        val dummyBitmap = createTestBitmap()
+        vm.updateLogoAnimatedFrames(listOf(dummyBitmap, dummyBitmap), listOf(100, 100))
+        design = vm.buildDesignFromState(vm.state.value)
+        assertNotNull(design.logo)
+        assertTrue(design.logo!!.source is ImageSource.Animated)
+        assertEquals(2, (design.logo!!.source as ImageSource.Animated).frames.size)
     }
 }
