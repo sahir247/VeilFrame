@@ -23,7 +23,6 @@ android {
 
     signingConfigs {
         create("release") {
-            val isCi = System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true"
             val keystorePath = System.getenv("KEYSTORE_PATH") ?: project.findProperty("KEYSTORE_PATH") as String?
             val storePass = System.getenv("KEYSTORE_PASSWORD") ?: project.findProperty("KEYSTORE_PASSWORD") as String?
             val keyAl = System.getenv("KEY_ALIAS") ?: project.findProperty("KEY_ALIAS") as String?
@@ -47,7 +46,7 @@ android {
                 keyPassword = keyPass
             } else {
                 val hasReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
-                if (hasReleaseTask || isCi) {
+                if (hasReleaseTask) {
                     throw GradleException("Release keystore credentials missing! Release builds cannot be signed with debug keys. Provide KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD.")
                 }
             }
