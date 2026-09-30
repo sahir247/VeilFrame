@@ -1,7 +1,10 @@
 # ADR 0003: EFQRCode 7.0.3 Parity Architecture & Differential Verification Boundary
 
 ## Status
-Accepted / Implemented (Commit `8139597`)
+
+Status: Accepted  
+Implementation baseline: 8139597  
+ADR recorded in: 3a22647
 
 ## Context
 
@@ -57,7 +60,7 @@ EFQRCode 7.0.3 defines 10 native style enumerations. VeilFrame provides 10 EF-de
 
 ### 3. Error Boundary Architecture
 
-EFQRCode models errors via a compact Swift enum `EFQRCodeError` (covering data capacity, encoding failure, context creation, and internal errors). 
+EFQRCode uses a compact error enum with 15 top-level cases, spanning data/encoding, color/image generation, animation/video, and internal failures (including `dataLengthExceedsCapacityLimit`, `text`, color-space failures, mutable-data/CGImage/CGContext/SVG/image-data failures, animated-image failure, video failure, and `internalError`). 
 
 VeilFrame establishes an **EFQRCode-compatible error boundary + VeilFrame-native richer domain taxonomy**:
 
@@ -79,7 +82,7 @@ QrError (Sealed Domain Hierarchy)
 
 ### 4. Output Format Surface Coverage
 
-VeilFrame covers 100% of EFQRCode 7.0.3's documented output format family via `QrOutputFormat`:
+VeilFrame covers the EFQRCode 7.0.3 documented export format families used by the parity audit via `QrOutputFormat`:
 - **Static**: PNG, JPEG (with quality parameter), SVG, PDF (Android `PdfDocument` vector/raster embedding).
 - **Animated**: GIF (pure Kotlin `GifEncoder`), APNG (FFmpegKit APNG multiplexer), SVG (discrete `<animate>` discrete keyTimes), MP4, MOV, M4V (`VideoContainer` abstraction).
 
