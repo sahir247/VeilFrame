@@ -178,11 +178,61 @@ let metadata = OracleMetadata(
     scope: "Tier 4A (Versions 1-26, L/M/Q/H, UTF-8, URLs, ApolloZhu tests)"
 )
 
-let corpus = OracleCorpus(oracle: metadata, vectors: results)
+func escapeJsonString(_ str: String) -> String {
+    if let data = try? JSONEncoder().encode(str),
+       let s = String(data: data, encoding: .utf8) {
+        return s
+    }
+    var result = "\""
+    for scalar in str.unicodeScalars {
+        switch scalar.value {
+        case 0x22: result.append("\\\"")
+        case 0x5C: result.append("\\\\")
+        case 0x08: result.append("\\b")
+        case 0x0C: result.append("\\f")
+        case 0x0A: result.append("\\n")
+        case 0x0D: result.append("\\r")
+        case 0x09: result.append("\\t")
+        default:
+            if scalar.value < 0x20 {
+                result.append(String(format: "\\u%04x", scalar.value))
+            } else {
+                result.append(Character(scalar))
+            }
+        }
+    }
+    result.append("\"")
+    return result
+}
 
-let encoder = JSONEncoder()
-encoder.outputFormatting = [.prettyPrinted]
-let jsonData = try encoder.encode(corpus)
+var jsonOutput = "{\n"
+jsonOutput += "  \"oracle\": {\n"
+jsonOutput += "    \"efqrcode_version\": \(escapeJsonString(metadata.efqrcode_version)),\n"
+jsonOutput += "    \"qrcode_swift_version\": \(escapeJsonString(metadata.qrcode_swift_version)),\n"
+jsonOutput += "    \"qrcode_swift_revision\": \(escapeJsonString(metadata.qrcode_swift_revision)),\n"
+jsonOutput += "    \"generator_commit\": \(escapeJsonString(metadata.generator_commit)),\n"
+jsonOutput += "    \"description\": \(escapeJsonString(metadata.description)),\n"
+jsonOutput += "    \"scope\": \(escapeJsonString(metadata.scope))\n"
+jsonOutput += "  },\n"
+jsonOutput += "  \"vectors\": [\n"
+
+for (idx, v) in results.enumerated() {
+    jsonOutput += "    {\n"
+    jsonOutput += "      \"name\": \(escapeJsonString(v.name)),\n"
+    jsonOutput += "      \"text\": \(escapeJsonString(v.text)),\n"
+    jsonOutput += "      \"level\": \(escapeJsonString(v.level)),\n"
+    jsonOutput += "      \"version\": \(v.version),\n"
+    jsonOutput += "      \"size\": \(v.size),\n"
+    jsonOutput += "      \"bitString\": \(escapeJsonString(v.bitString))\n"
+    jsonOutput += (idx == results.count - 1) ? "    }\n" : "    },\n"
+}
+
+jsonOutput += "  ]\n"
+jsonOutput += "}"
+
+guard let jsonData = jsonOutput.data(using: .utf8) else {
+    fatalError("Failed to encode JSON output as UTF-8 data")
+}
 
 let outputPath = CommandLine.arguments.count > 1
     ? CommandLine.arguments[1]
