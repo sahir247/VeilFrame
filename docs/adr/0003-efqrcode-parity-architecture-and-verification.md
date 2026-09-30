@@ -107,10 +107,10 @@ This achieves multi-barcode detection **API compatibility**, while leveraging ba
 
 | Verification Level | Target | Status | Methodology |
 |---|---|---|---|
-| **Tier 1: Internal Unit Tests** | 399/399 Tests | ✅ Complete | Verifies internal consistency, parameter propagation, error classification, and subpixel math. |
+| **Tier 1: Internal Unit Tests** | 406/406 Tests | ✅ Complete | Verifies internal consistency, parameter propagation, error classification, and subpixel math. |
 | **Tier 2: Mathematical Parity** | Reed-Solomon & Matrix | ✅ Complete | Verified against ISO 18004 specification and embedded upstream vectors across versions 1–40. |
 | **Tier 3: Error & Surface Coverage**| Types & Formats | ✅ Complete | Full coverage of PDF, APNG, M4V, GIF, SVG, PNG, JPEG, fail-closed I/O. |
-| **Tier 4: Upstream Matrix Oracle** | Bit-by-bit differential | 🔄 Next Phase | Plan: Generate a frozen binary test matrix directly from Swift EFQRCode 7.0.3 in CI and assert `QRCodeSwift == VeilQrEncoder` across all versions and masks. |
+| **Tier 4: Upstream Matrix Oracle** | Bit-by-bit differential | ✅ Implemented | Swift SPM oracle (`tools/efqrcode-oracle`) compiles against `QRCodeSwift` / `EFQRCode` in CI, generates frozen test matrices, and asserts 100% bit-for-bit equivalence in `Tier4UpstreamMatrixOracleTest` (126 vectors, Versions 1–26 x L/M/Q/H, UTF-8, URLs). |
 | **Tier 5: Pixel & SVG Golden Diffs** | Rendered output equivalence | 🔄 Next Phase | Plan: Produce normalized SVG DOM and deterministic raster diffs against macOS CoreGraphics reference renders. |
 | **Tier 6: Cross-Device Recognition** | Decoder benchmark | 🔄 Next Phase | Benchmark ZXing multi-pass against Core Image on real-world distorted test sets. |
 
@@ -118,4 +118,4 @@ This achieves multi-barcode detection **API compatibility**, while leveraging ba
 
 ## Verdict
 
-VeilFrame has successfully established **EFQRCode 7.0.3 parity architecture and major behavioral alignment**: default error correction, quiet-zone geometry, parameter propagation, typed error taxonomy, fail-closed storage, and full export surface coverage are fully implemented. Complete bit-by-bit and pixel-by-pixel equivalence will be tracked under the Tier 4 and Tier 5 differential verification roadmap.
+VeilFrame has established **EFQRCode 7.0.3 parity architecture, major behavioral alignment, and Tier 4 Upstream Matrix Differential Equivalence**: default error correction, quiet-zone geometry, parameter propagation, typed error taxonomy, fail-closed storage, full export surface coverage, and bit-for-bit matrix identity against upstream Swift `QRCodeSwift` / `EFQRCode 7.0.3` are fully implemented and verified in CI. Rendered pixel and SVG diffs will be tracked under the Tier 5 roadmap.

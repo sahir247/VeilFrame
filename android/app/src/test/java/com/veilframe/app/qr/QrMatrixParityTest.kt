@@ -327,7 +327,7 @@ MMMMMMMMMMMMMM    MM  MMMM  MMMMMM  MMMM      MMMM      MM  MM
         val stream = javaClass.classLoader?.getResourceAsStream("golden_matrices.json")
             ?: javaClass.getResourceAsStream("/golden_matrices.json")
             ?: error("golden_matrices.json not found in test resources")
-        val jsonText = stream.bufferedReader().readText()
+        val jsonText = stream.bufferedReader().readText().replace("\r\n", "\n")
         val list = mutableListOf<GoldenVector>()
         val blocks = jsonText.split("{\n").drop(1)
         for (b in blocks) {

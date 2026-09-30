@@ -122,11 +122,52 @@ jobs:
           "
 
   # ------------------------------------------------------------------ #
+  # 1b. Tier 4: EFQRCode Upstream Matrix Differential Oracle           #
+  # ------------------------------------------------------------------ #
+  tier4-matrix-oracle:
+    name: Tier 4 Upstream Matrix Oracle (macOS / Swift)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Verify Swift Toolchain
+        run: swift --version
+
+      - name: Run Upstream Swift Oracle Generator
+        working-directory: tools/efqrcode-oracle
+        run: |
+          swift run oracle-generator ../../android/app/src/test/resources/tier4_upstream_oracle_matrices.json
+
+      - name: Assert Zero Drift in Committed Oracle Matrices
+        run: |
+          git status --porcelain android/app/src/test/resources/tier4_upstream_oracle_matrices.json
+          git diff --exit-code android/app/src/test/resources/tier4_upstream_oracle_matrices.json
+
+      - name: Run Tier 4 Bit-for-Bit Android Test Suite
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --tests "com.veilframe.app.qr.Tier4UpstreamMatrixOracleTest"
+
+  # ------------------------------------------------------------------ #
   # 2. Release Gate: Enforces Clean Tests on all 3 OS Platforms         #
   # ------------------------------------------------------------------ #
   release-gate:
     name: Release Gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [test, tier4-matrix-oracle]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     env:
       QT_QPA_PLATFORM: offscreen
