@@ -46,9 +46,19 @@ class LineRenderer : QrRenderer {
         val ox = geometry.offsetX
         val oy = geometry.offsetY
 
-        val posColor = design.lineStyle.positionColor ?: design.palette.foreground
-        val posStyle = design.lineStyle.positionStyle
-        val posSize = design.lineStyle.positionSize
+        val posColor = design.lineStyle.positionColor
+            ?: design.eyeStyle.outerColor
+            ?: design.palette.foreground
+        val posStyle = if (design.lineStyle.positionStyle != FinderStyle.CLASSIC) {
+            design.lineStyle.positionStyle
+        } else {
+            design.eyeStyle.style
+        }
+        val posSize = if (design.lineStyle.positionSize != 1.0f) {
+            design.lineStyle.positionSize
+        } else {
+            design.positionSize
+        }
 
         val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
         nodes.add(

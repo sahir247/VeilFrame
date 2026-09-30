@@ -15,18 +15,24 @@ class QrGeometry(
     val quietZoneLeft: Int = quietZoneModules,
     val quietZoneTop: Int = quietZoneModules,
     val quietZoneRight: Int = quietZoneModules,
-    val quietZoneBottom: Int = quietZoneModules
+    val quietZoneBottom: Int = quietZoneModules,
+    val quietZoneLeftFloat: Float = quietZoneLeft.toFloat(),
+    val quietZoneTopFloat: Float = quietZoneTop.toFloat(),
+    val quietZoneRightFloat: Float = quietZoneRight.toFloat(),
+    val quietZoneBottomFloat: Float = quietZoneBottom.toFloat()
 ) {
-    val totalModulesX: Int = matrixSize + quietZoneLeft + quietZoneRight
-    val totalModulesY: Int = matrixSize + quietZoneTop + quietZoneBottom
+    val totalModulesXFloat: Float = matrixSize + quietZoneLeftFloat + quietZoneRightFloat
+    val totalModulesYFloat: Float = matrixSize + quietZoneTopFloat + quietZoneBottomFloat
+    val totalModulesX: Int = Math.round(totalModulesXFloat)
+    val totalModulesY: Int = Math.round(totalModulesYFloat)
     val totalModules: Int = maxOf(totalModulesX, totalModulesY)
-    val moduleWidth: Float = outputWidth.toFloat() / totalModulesX
-    val moduleHeight: Float = outputHeight.toFloat() / totalModulesY
+    val moduleWidth: Float = outputWidth.toFloat() / totalModulesXFloat
+    val moduleHeight: Float = outputHeight.toFloat() / totalModulesYFloat
     val moduleSize: Float = minOf(moduleWidth, moduleHeight)
 
     // Offsets to center the QR matrix inside the canvas if non-square or if quiet zones differ
-    val offsetX: Float = (outputWidth - (totalModulesX * moduleSize)) / 2f + (quietZoneLeft * moduleSize)
-    val offsetY: Float = (outputHeight - (totalModulesY * moduleSize)) / 2f + (quietZoneTop * moduleSize)
+    val offsetX: Float = (outputWidth - (totalModulesXFloat * moduleSize)) / 2f + (quietZoneLeftFloat * moduleSize)
+    val offsetY: Float = (outputHeight - (totalModulesYFloat * moduleSize)) / 2f + (quietZoneTopFloat * moduleSize)
 
     val contentWidth: Float get() = matrixSize * moduleSize
     val contentHeight: Float get() = matrixSize * moduleSize
@@ -52,23 +58,35 @@ class QrGeometry(
         ): QrGeometry {
             val fallbackQz = resolveDefaultQuietZone(design.style, defaultQuietZone)
             val qz = design.explicitQuietZone ?: fallbackQz
-            val qzLeft = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.left * matrixSize) }
-                ?: design.directionalQuietZone?.left ?: qz
-            val qzTop = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.top * matrixSize) }
-                ?: design.directionalQuietZone?.top ?: qz
-            val qzRight = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.right * matrixSize) }
-                ?: design.directionalQuietZone?.right ?: qz
-            val qzBottom = design.backdropStyle.fractionalQuietZone?.let { Math.round(it.bottom * matrixSize) }
-                ?: design.directionalQuietZone?.bottom ?: qz
+            val fracQz = design.backdropStyle.fractionalQuietZone
+            val dirQz = design.directionalQuietZone
+
+            val qzLeftFloat: Float = fracQz?.let { it.left * matrixSize }
+                ?: dirQz?.leftFloat
+                ?: qz.toFloat()
+            val qzTopFloat: Float = fracQz?.let { it.top * matrixSize }
+                ?: dirQz?.topFloat
+                ?: qz.toFloat()
+            val qzRightFloat: Float = fracQz?.let { it.right * matrixSize }
+                ?: dirQz?.rightFloat
+                ?: qz.toFloat()
+            val qzBottomFloat: Float = fracQz?.let { it.bottom * matrixSize }
+                ?: dirQz?.bottomFloat
+                ?: qz.toFloat()
+
             return QrGeometry(
                 matrixSize = matrixSize,
                 outputWidth = outputWidth,
                 outputHeight = outputHeight,
                 quietZoneModules = qz,
-                quietZoneLeft = qzLeft,
-                quietZoneTop = qzTop,
-                quietZoneRight = qzRight,
-                quietZoneBottom = qzBottom
+                quietZoneLeft = Math.round(qzLeftFloat),
+                quietZoneTop = Math.round(qzTopFloat),
+                quietZoneRight = Math.round(qzRightFloat),
+                quietZoneBottom = Math.round(qzBottomFloat),
+                quietZoneLeftFloat = qzLeftFloat,
+                quietZoneTopFloat = qzTopFloat,
+                quietZoneRightFloat = qzRightFloat,
+                quietZoneBottomFloat = qzBottomFloat
             )
         }
     }

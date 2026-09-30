@@ -490,6 +490,26 @@ object AnimatedQrGenerator {
     }
 
     /**
+     * Typed GIF encoding pipeline returning [QrOutputResult].
+     */
+    fun encodeToGifResult(
+        renderedFrames: List<QrFrame>,
+        width: Int = renderedFrames.firstOrNull()?.bitmap?.width ?: 512,
+        height: Int = renderedFrames.firstOrNull()?.bitmap?.height ?: 512,
+        loops: Int = 0
+    ): QrOutputResult<ByteArray> {
+        if (renderedFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+        return try {
+            val bytes = GifEncoder.encode(renderedFrames, width, height, loops)
+            QrOutputResult.Success(bytes)
+        } catch (t: Throwable) {
+            QrOutputResult.Failure(QrError.Output.GifEncodingFailed(t.message ?: "GIF encoding failed", t))
+        }
+    }
+
+    /**
      * Encodes rendered QR frames into an animated GIF byte array.
      * Pure Kotlin [GifEncoder] is authoritative for all GIF outputs, ensuring
      * exact centisecond Graphic Control Extension delay bytes and zero FPS drift.
@@ -500,8 +520,9 @@ object AnimatedQrGenerator {
         height: Int = renderedFrames.firstOrNull()?.bitmap?.height ?: 512,
         loops: Int = 0
     ): ByteArray {
-        require(renderedFrames.isNotEmpty()) { "renderedFrames cannot be empty" }
-        return GifEncoder.encode(renderedFrames, width, height, loops)
+        val res = encodeToGifResult(renderedFrames, width, height, loops)
+        if (res is QrOutputResult.Failure) throw res.error
+        return (res as QrOutputResult.Success).value
     }
 
     /**
@@ -516,6 +537,60 @@ object AnimatedQrGenerator {
     ) {
         val bytes = encodeToGif(renderedFrames, width, height, loops)
         outputStream.write(bytes)
+    }
+
+    /**
+     * Strongly typed APNG encoding pipeline matching EFQRCode animated PNG creation contract.
+     * Encodes rendered QR frames into an APNG file using FFmpegKit.
+     */
+    fun encodeToApngResult(
+        renderedFrames: List<QrFrame>,
+        outputFile: File,
+        fps: Int = 15,
+        loops: Int = 0
+    ): QrOutputResult<File> {
+        if (renderedFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+        val parentDir = outputFile.parentFile ?: File(".")
+        val tempDir = File(parentDir, "qr_apng_tmp_${System.currentTimeMillis()}")
+        if (!tempDir.exists() && !tempDir.mkdirs()) {
+            return QrOutputResult.Failure(QrError.Platform.StorageFailed(tempDir.absolutePath))
+        }
+
+        try {
+            for ((idx, frame) in renderedFrames.withIndex()) {
+                val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
+                val writeSuccess = try {
+                    FileOutputStream(frameFile).use { out ->
+                        frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } catch (t: Throwable) {
+                    return QrOutputResult.Failure(QrError.Output.ApngEncodingFailed("Failed writing frame $idx", t))
+                }
+                if (!writeSuccess) {
+                    return QrOutputResult.Failure(QrError.Output.ApngEncodingFailed("Bitmap compression failed for frame $idx"))
+                }
+            }
+
+            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+            val cmd = "-y -framerate $fps -i \"$inputPattern\" -plays $loops -f apng \"${outputFile.absolutePath}\""
+            val session = FFmpegKit.execute(cmd)
+            val returnCode = session.returnCode
+            return if (ReturnCode.isSuccess(returnCode)) {
+                QrOutputResult.Success(outputFile)
+            } else {
+                QrOutputResult.Failure(
+                    QrError.Output.ApngEncodingFailed(
+                        "FFmpeg APNG encoding failed with return code ${returnCode?.value}"
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            return QrOutputResult.Failure(QrError.Output.ApngEncodingFailed(t.message ?: "APNG encoding failed", t))
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     enum class VideoStage {

@@ -172,6 +172,16 @@ sealed class QrError(
             override val cause: Throwable? = null
         ) : Output("GIF encoding failed: $reason", cause)
 
+        data class ApngEncodingFailed(
+            val reason: String,
+            override val cause: Throwable? = null
+        ) : Output("APNG encoding failed: $reason", cause)
+
+        data class PdfExportFailed(
+            val reason: String,
+            override val cause: Throwable? = null
+        ) : Output("PDF export failed: $reason", cause)
+
         data class VideoEncodingFailed(
             val stage: String,
             val exitCode: Int? = null,
@@ -242,17 +252,22 @@ sealed class QrError(
                 return Input.EmptyContent
             }
 
-            // Capacity & Data limits (ZXing WriterException or VeilQrEncoder capacity limits)
-            if (throwable is com.google.zxing.WriterException ||
-                msg.contains("capacity", ignoreCase = true) ||
+            // Capacity & Data limits vs General ZXing WriterException
+            val isCapacityLimit = msg.contains("capacity", ignoreCase = true) ||
                 msg.contains("exceeds", ignoreCase = true) ||
                 msg.contains("data too big", ignoreCase = true) ||
-                msg.contains("LimitLength", ignoreCase = true)
-            ) {
+                msg.contains("LimitLength", ignoreCase = true) ||
+                msg.contains("Data length", ignoreCase = true)
+
+            if (isCapacityLimit) {
                 val match = Regex("""(\d+)\s*bytes.*?(\d+)\s*bytes""", RegexOption.IGNORE_CASE).find(msg)
                 val actual = match?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 val limit = match?.groupValues?.get(2)?.toIntOrNull() ?: 0
                 return Encoding.CapacityExceeded(actual, limit, throwable)
+            }
+
+            if (throwable is com.google.zxing.WriterException) {
+                return Encoding.EngineFailure("ZXing", msg, throwable)
             }
 
             // General IllegalArgumentException

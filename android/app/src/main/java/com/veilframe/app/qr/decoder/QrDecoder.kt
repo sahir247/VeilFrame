@@ -12,6 +12,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.multi.qrcode.QRCodeMultiReader
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -32,6 +33,10 @@ data class DecodeResult(
 interface QrDecoder : java.io.Closeable {
     val id: String
     suspend fun decode(bitmap: Bitmap): DecodeResult
+    suspend fun decodeMultiple(bitmap: Bitmap): List<DecodeResult> {
+        val single = decode(bitmap)
+        return if (single.success && single.text != null) listOf(single) else emptyList()
+    }
     override fun close() {}
 }
 
@@ -144,6 +149,67 @@ class ZxingQrDecoder : QrDecoder {
         }
     }
 
+    override suspend fun decodeMultiple(bitmap: Bitmap): List<DecodeResult> {
+        val startTime = System.currentTimeMillis()
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        val source = RGBLuminanceSource(width, height, pixels)
+        val multiReader = QRCodeMultiReader()
+        val hints = mapOf(
+            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+            DecodeHintType.TRY_HARDER to true
+        )
+
+        val allResults = mutableListOf<DecodeResult>()
+
+        fun tryMulti(binBitmap: BinaryBitmap): Boolean {
+            return try {
+                val results = multiReader.decodeMultiple(binBitmap, hints)
+                val latency = System.currentTimeMillis() - startTime
+                if (results != null && results.isNotEmpty()) {
+                    for (r in results) {
+                        if (!r.text.isNullOrEmpty()) {
+                            allResults.add(
+                                DecodeResult(
+                                    success = true,
+                                    text = r.text,
+                                    latencyMs = latency,
+                                    decoderId = id
+                                )
+                            )
+                        }
+                    }
+                    true
+                } else false
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        // Pass 1: HybridBinarizer
+        if (!tryMulti(BinaryBitmap(HybridBinarizer(source)))) {
+            // Pass 2: GlobalHistogramBinarizer
+            if (!tryMulti(BinaryBitmap(GlobalHistogramBinarizer(source)))) {
+                val inverted = source.invert()
+                // Pass 3: Inverted Hybrid
+                if (!tryMulti(BinaryBitmap(HybridBinarizer(inverted)))) {
+                    // Pass 4: Inverted GlobalHistogram
+                    tryMulti(BinaryBitmap(GlobalHistogramBinarizer(inverted)))
+                }
+            }
+        }
+
+        if (allResults.isNotEmpty()) {
+            return allResults.distinctBy { it.text }
+        }
+
+        val single = decode(bitmap)
+        return if (single.success && single.text != null) listOf(single) else emptyList()
+    }
+
     override fun close() {
         threadLocalReader.remove()
     }
@@ -218,9 +284,74 @@ class MlKitQrDecoder : QrDecoder {
         }
     }
 
+    override suspend fun decodeMultiple(bitmap: Bitmap): List<DecodeResult> = suspendCancellableCoroutine { cont ->
+        val startTime = System.currentTimeMillis()
+        try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            scanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    val latency = System.currentTimeMillis() - startTime
+                    val list = barcodes.mapNotNull { b ->
+                        b.rawValue?.let { text ->
+                            DecodeResult(
+                                success = true,
+                                text = text,
+                                latencyMs = latency,
+                                decoderId = id
+                            )
+                        }
+                    }
+                    cont.resume(list)
+                }
+                .addOnFailureListener { exception ->
+                    val latency = System.currentTimeMillis() - startTime
+                    cont.resume(
+                        listOf(
+                            DecodeResult(
+                                success = false,
+                                text = null,
+                                latencyMs = latency,
+                                error = exception.message ?: "ML Kit error",
+                                decoderId = id
+                            )
+                        )
+                    )
+                }
+        } catch (e: Exception) {
+            val latency = System.currentTimeMillis() - startTime
+            cont.resume(
+                listOf(
+                    DecodeResult(
+                        success = false,
+                        text = null,
+                        latencyMs = latency,
+                        error = e.message ?: "Failed to process bitmap",
+                        decoderId = id
+                    )
+                )
+            )
+        }
+    }
+
     override fun close() {
         try {
             scanner.close()
         } catch (_: Exception) {}
+    }
+}
+
+/**
+ * EFQRCode multi-QR recognition parity facade.
+ *
+ * In EFQRCode:
+ * `EFQRCode.recognize(image: CGImage) -> [String]?`
+ */
+object QrRecognizer {
+    suspend fun recognize(
+        bitmap: Bitmap,
+        decoder: QrDecoder = ZxingQrDecoder()
+    ): List<String> {
+        val results = decoder.decodeMultiple(bitmap)
+        return results.filter { it.success && !it.text.isNullOrEmpty() }.mapNotNull { it.text }
     }
 }

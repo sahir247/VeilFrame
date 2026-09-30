@@ -250,4 +250,93 @@ class QrErrorTaxonomyParityTest {
         assertEquals(1, report.warnings.size)
         assertNotNull(report.repairSuggestions)
     }
+
+    @Test
+    fun testZxingGeneralWriterExceptionMappedToEngineFailureNotCapacityExceeded() {
+        val generalWriterEx = WriterException("Generic Reed-Solomon math failure")
+        val translated = QrError.fromThrowable(generalWriterEx)
+        assertTrue(
+            "General ZXing WriterException without capacity keyword must map to EngineFailure",
+            translated is QrError.Encoding.EngineFailure
+        )
+        val engineFailure = translated as QrError.Encoding.EngineFailure
+        assertEquals("ZXing", engineFailure.engine)
+        assertTrue(engineFailure.description.contains("Generic Reed-Solomon math failure"))
+    }
+
+    @Test
+    fun testPdfAndApngAndM4vOutputFormats() {
+        val pdf = QrOutputFormat.Pdf(pageWidthPoints = 595, pageHeightPoints = 842)
+        assertEquals("application/pdf", pdf.mimeType)
+        assertEquals("pdf", pdf.extension)
+        assertEquals(595, pdf.pageWidthPoints)
+        assertEquals(842, pdf.pageHeightPoints)
+
+        val apng = QrOutputFormat.Apng(loopCount = 0, fps = 24)
+        assertEquals("image/apng", apng.mimeType)
+        assertEquals("png", apng.extension)
+        assertEquals(24, apng.fps)
+
+        val m4v = QrOutputFormat.Video(fps = 30, container = QrOutputFormat.VideoContainer.M4V)
+        assertEquals("video/x-m4v", m4v.mimeType)
+        assertEquals("m4v", m4v.extension)
+        assertEquals(30, m4v.fps)
+    }
+
+    @Test
+    fun testAnimatedQrGeneratorEncodeToGifResultEmptyFrames() {
+        val result = AnimatedQrGenerator.encodeToGifResult(emptyList())
+        assertTrue("Empty frames must return Failure", result is QrOutputResult.Failure)
+        val failure = result as QrOutputResult.Failure
+        assertEquals(QrError.Animation.EmptyFrames, failure.error)
+    }
+
+    @Test
+    fun testParityEfGenerationModeDefaults() {
+        val content = "https://veilframe.app/parity"
+        val basicDesign = QrDesign(style = QrStyle.BASIC)
+
+        // PARITY_EF matrix must default to EC level H (matching EFQRCode errorCorrectLevel = .h)
+        val parityMatrix = QrGenerator.generateParityMatrix(content, basicDesign)
+        assertEquals(com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.H, parityMatrix.errorCorrection)
+
+        // SAFE matrix for BASIC with no logo defaults to M
+        val safeMatrix = QrGenerator.generateMatrix(content, basicDesign, mode = GenerationMode.SAFE)
+        assertEquals(com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M, safeMatrix.errorCorrection)
+
+        // PARITY_EF generateParity must use 1 module quiet zone (matching EF backdrop quietzone = nil -> 1 module)
+        val parityResult = QrGenerator.generateParity(content, basicDesign)
+        assertTrue(parityResult is QrRenderResult.Success)
+        val success = parityResult as QrRenderResult.Success
+        assertEquals(1, success.design.quietZoneModules)
+    }
+
+    @Test
+    fun testQrRecognizerParityFacade() {
+        // Test QrRecognizer recognize facade
+        val dummyDecoder = object : com.veilframe.app.qr.decoder.QrDecoder {
+            override val id: String = "TestDecoder"
+            override suspend fun decode(bitmap: android.graphics.Bitmap): com.veilframe.app.qr.decoder.DecodeResult =
+                com.veilframe.app.qr.decoder.DecodeResult(success = true, text = "https://example.com/1")
+            override suspend fun decodeMultiple(bitmap: android.graphics.Bitmap): List<com.veilframe.app.qr.decoder.DecodeResult> =
+                listOf(
+                    com.veilframe.app.qr.decoder.DecodeResult(success = true, text = "https://example.com/1"),
+                    com.veilframe.app.qr.decoder.DecodeResult(success = true, text = "https://example.com/2")
+                )
+        }
+
+        kotlinx.coroutines.runBlocking {
+            val unsafeClass = Class.forName("sun.misc.Unsafe")
+            val field = unsafeClass.getDeclaredField("theUnsafe")
+            field.isAccessible = true
+            val unsafe = field.get(null)
+            val method = unsafeClass.getMethod("allocateInstance", Class::class.java)
+            val dummyBitmap = method.invoke(unsafe, android.graphics.Bitmap::class.java) as android.graphics.Bitmap
+
+            val recognized = com.veilframe.app.qr.decoder.QrRecognizer.recognize(dummyBitmap, dummyDecoder)
+            assertEquals(2, recognized.size)
+            assertEquals("https://example.com/1", recognized[0])
+            assertEquals("https://example.com/2", recognized[1])
+        }
+    }
 }

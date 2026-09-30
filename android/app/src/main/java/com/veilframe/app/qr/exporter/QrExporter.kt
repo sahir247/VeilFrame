@@ -178,7 +178,14 @@ object QrExporter {
                     ?: return@withContext QrOutputResult.Failure(
                         QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
                     )
-                context.contentResolver.openOutputStream(uri)?.use { out ->
+                val stream = context.contentResolver.openOutputStream(uri)
+                if (stream == null) {
+                    context.contentResolver.delete(uri, null, null)
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                    )
+                }
+                stream.use { out ->
                     out.write(svgData.toByteArray(Charsets.UTF_8))
                 }
                 cv.clear()
@@ -259,7 +266,14 @@ object QrExporter {
                     ?: return@withContext QrOutputResult.Failure(
                         QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
                     )
-                context.contentResolver.openOutputStream(uri)?.use { out ->
+                val stream = context.contentResolver.openOutputStream(uri)
+                if (stream == null) {
+                    context.contentResolver.delete(uri, null, null)
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                    )
+                }
+                stream.use { out ->
                     out.write(gifBytes)
                 }
                 cv.clear()
@@ -326,7 +340,7 @@ object QrExporter {
     ): Uri? = saveAnimatedSvgTyped(context, matrix, design, frames).getOrNull()
 
     /**
-     * Saves a video file (.mp4 or .mov) returning typed [QrOutputResult].
+     * Saves a video file (.mp4, .mov, or .m4v) returning typed [QrOutputResult].
      */
     suspend fun saveVideoTyped(
         context: Context,
@@ -337,10 +351,13 @@ object QrExporter {
                 QrError.Output.VideoEncodingFailed("Video file does not exist or is empty")
             )
         }
-        val isMov = videoFile.extension.equals("mov", ignoreCase = true)
-        val ext = if (isMov) "mov" else "mp4"
-        val mime = if (isMov) "video/quicktime" else "video/mp4"
-        val name = timestampName(ext)
+        val ext = videoFile.extension.lowercase(Locale.US)
+        val mime = when (ext) {
+            "mov" -> "video/quicktime"
+            "m4v" -> "video/x-m4v"
+            else -> "video/mp4"
+        }
+        val name = timestampName(if (ext.isNotEmpty()) ext else "mp4")
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -354,7 +371,14 @@ object QrExporter {
                     ?: return@withContext QrOutputResult.Failure(
                         QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
                     )
-                context.contentResolver.openOutputStream(uri)?.use { out ->
+                val stream = context.contentResolver.openOutputStream(uri)
+                if (stream == null) {
+                    context.contentResolver.delete(uri, null, null)
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                    )
+                }
+                stream.use { out ->
                     videoFile.inputStream().use { input -> input.copyTo(out) }
                 }
                 cv.clear()
@@ -384,12 +408,176 @@ object QrExporter {
     }
 
     /**
-     * Saves an MP4 video file to the device Movies/VeilFrame directory.
+     * Saves a video file to the device Movies/VeilFrame directory.
      */
     suspend fun saveVideo(
         context: Context,
         videoFile: File
     ): Uri? = saveVideoTyped(context, videoFile).getOrNull()
+
+    /**
+     * Saves [bitmap] as a printable PDF document returning typed [QrOutputResult].
+     */
+    suspend fun savePdfTyped(
+        context: Context,
+        bitmap: Bitmap,
+        pageWidthPoints: Int = 595,
+        pageHeightPoints: Int = 842
+    ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
+        if (bitmap.isRecycled) {
+            return@withContext QrOutputResult.Failure(
+                QrError.Rendering.BitmapAllocationFailed(
+                    width = 0,
+                    height = 0,
+                    cause = IllegalStateException("Cannot export recycled bitmap to PDF")
+                )
+            )
+        }
+        val name = timestampName("pdf")
+        val document = android.graphics.pdf.PdfDocument()
+        try {
+            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidthPoints, pageHeightPoints, 1).create()
+            val page = document.startPage(pageInfo)
+            val canvas = page.canvas
+            val scale = (pageWidthPoints.toFloat() * 0.8f) / bitmap.width.toFloat()
+            val targetW = bitmap.width * scale
+            val targetH = bitmap.height * scale
+            val left = (pageWidthPoints - targetW) / 2f
+            val top = (pageHeightPoints - targetH) / 2f
+            val src = android.graphics.Rect(0, 0, bitmap.width, bitmap.height)
+            val dst = android.graphics.RectF(left, top, left + targetW, top + targetH)
+            canvas.drawBitmap(bitmap, src, dst, null)
+            document.finishPage(page)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                    ?: return@withContext QrOutputResult.Failure(
+                        QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
+                    )
+                val stream = context.contentResolver.openOutputStream(uri)
+                if (stream == null) {
+                    context.contentResolver.delete(uri, null, null)
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                    )
+                }
+                stream.use { out ->
+                    document.writeTo(out)
+                }
+                cv.clear()
+                cv.put(MediaStore.Downloads.IS_PENDING, 0)
+                context.contentResolver.update(uri, cv, null, null)
+                QrOutputResult.Success(uri)
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
+                if (!dir.exists() && !dir.mkdirs()) {
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed(dir.absolutePath)
+                    )
+                }
+                val file = File(dir, name)
+                FileOutputStream(file).use { out ->
+                    document.writeTo(out)
+                }
+                val uri = try {
+                    androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                } catch (_: Exception) {
+                    Uri.fromFile(file)
+                }
+                QrOutputResult.Success(uri)
+            }
+        } catch (t: Throwable) {
+            QrOutputResult.Failure(QrError.fromThrowable(t))
+        } finally {
+            document.close()
+        }
+    }
+
+    /**
+     * Saves [bitmap] as a printable PDF document.
+     */
+    suspend fun savePdf(
+        context: Context,
+        bitmap: Bitmap,
+        pageWidthPoints: Int = 595,
+        pageHeightPoints: Int = 842
+    ): Uri? = savePdfTyped(context, bitmap, pageWidthPoints, pageHeightPoints).getOrNull()
+
+    /**
+     * Saves an animated PNG (APNG) file returning typed [QrOutputResult].
+     */
+    suspend fun saveApngTyped(
+        context: Context,
+        apngFile: File
+    ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
+        if (!apngFile.exists() || apngFile.length() == 0L) {
+            return@withContext QrOutputResult.Failure(
+                QrError.Output.ApngEncodingFailed("APNG file does not exist or is empty")
+            )
+        }
+        val name = timestampName("png")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv)
+                    ?: return@withContext QrOutputResult.Failure(
+                        QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
+                    )
+                val stream = context.contentResolver.openOutputStream(uri)
+                if (stream == null) {
+                    context.contentResolver.delete(uri, null, null)
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                    )
+                }
+                stream.use { out ->
+                    apngFile.inputStream().use { input -> input.copyTo(out) }
+                }
+                cv.clear()
+                cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+                context.contentResolver.update(uri, cv, null, null)
+                QrOutputResult.Success(uri)
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VeilFrame")
+                if (!dir.exists() && !dir.mkdirs()) {
+                    return@withContext QrOutputResult.Failure(
+                        QrError.Platform.StorageFailed(dir.absolutePath)
+                    )
+                }
+                val file = File(dir, name)
+                apngFile.copyTo(file, overwrite = true)
+                val uri = try {
+                    androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                } catch (_: Exception) {
+                    Uri.fromFile(file)
+                }
+                QrOutputResult.Success(uri)
+            }
+        } catch (t: Throwable) {
+            QrOutputResult.Failure(QrError.fromThrowable(t))
+        }
+    }
+
+    /**
+     * Saves an animated PNG (APNG) file to the device Pictures/VeilFrame gallery.
+     */
+    suspend fun saveApng(
+        context: Context,
+        apngFile: File
+    ): Uri? = saveApngTyped(context, apngFile).getOrNull()
 
     /**
      * Authoritative typed export dispatcher implementing EFQRCode-grade multi-format export pipeline.
@@ -451,6 +639,17 @@ object QrExporter {
                     saveSvgTyped(context, matrix, design)
                 }
             }
+            is QrOutputFormat.Pdf -> {
+                val renderResult = QrGenerator.generateWithResult(content, design)
+                if (renderResult is QrRenderResult.Failure) {
+                    return QrOutputResult.Failure(renderResult.qrError)
+                }
+                val bmp = (renderResult as QrRenderResult.Success).bitmap
+                    ?: return QrOutputResult.Failure(
+                        QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
+                    )
+                savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints)
+            }
             is QrOutputFormat.Gif -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(design)
                 if (frames.isEmpty()) {
@@ -464,13 +663,30 @@ object QrExporter {
                 }
                 saveGifTyped(context, gifBytes)
             }
+            is QrOutputFormat.Apng -> {
+                val frames = AnimatedQrGenerator.extractSourceFrames(design)
+                if (frames.isEmpty()) {
+                    return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+                }
+                val rendered = AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
+                val tempFile = File.createTempFile("qr_export_", ".png", context.cacheDir)
+                try {
+                    val apngResult = AnimatedQrGenerator.encodeToApngResult(rendered, tempFile, format.fps, format.loopCount)
+                    if (apngResult is QrOutputResult.Failure) {
+                        return QrOutputResult.Failure(apngResult.error)
+                    }
+                    saveApngTyped(context, tempFile)
+                } finally {
+                    tempFile.delete()
+                }
+            }
             is QrOutputFormat.Video -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(design)
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
                 val rendered = AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
-                val ext = if (format.isMov) "mov" else "mp4"
+                val ext = format.container.ext
                 val tempFile = File.createTempFile("qr_export_", ".$ext", context.cacheDir)
                 try {
                     val vidResult = AnimatedQrGenerator.encodeToVideoResult(rendered, tempFile, format.fps)

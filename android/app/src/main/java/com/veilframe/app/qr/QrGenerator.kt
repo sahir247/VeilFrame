@@ -70,7 +70,15 @@ enum class GenerationMode {
      * - Enforces quiet zones and scanability validation.
      * - Allows closed-loop auto-repair feedback.
      */
-    SAFE
+    SAFE,
+
+    /**
+     * EFQRCode 7.0.3 exact behavioral parity mode:
+     * - Defaults to error correction level H (30%) when AUTO is specified (matching EFQRCode's default errorCorrectLevel = .h).
+     * - Defaults to 1 quiet-zone module across all styles including BASIC (matching EFQRCode's EFStyleParamBackdrop default quietzone = nil -> 1 module).
+     * - Uses exact reference generator matrix encoding.
+     */
+    PARITY_EF
 }
 
 /**
@@ -101,13 +109,13 @@ object QrGenerator {
             throw QrError.Input.EmptyContent
         }
         val ecLevel = when (mode) {
-            GenerationMode.ARTISTIC_ENGINE -> {
+            GenerationMode.ARTISTIC_ENGINE, GenerationMode.PARITY_EF -> {
                 when (design.correction) {
                     ErrorCorrectionChoice.L -> ErrorCorrectionLevel.L
                     ErrorCorrectionChoice.M -> ErrorCorrectionLevel.M
                     ErrorCorrectionChoice.Q -> ErrorCorrectionLevel.Q
                     ErrorCorrectionChoice.H -> ErrorCorrectionLevel.H
-                    ErrorCorrectionChoice.AUTO -> ErrorCorrectionLevel.H // VeilFrame Art default is strictly H
+                    ErrorCorrectionChoice.AUTO -> ErrorCorrectionLevel.H // EFQRCode default is strictly H
                 }
             }
             GenerationMode.SAFE -> {
@@ -119,7 +127,7 @@ object QrGenerator {
             }
         }
 
-        return if (mode == GenerationMode.ARTISTIC_ENGINE) {
+        return if (mode == GenerationMode.ARTISTIC_ENGINE || mode == GenerationMode.PARITY_EF) {
             com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel).matrix
         } else {
             QrEncoder.encode(content, ecLevel).matrix
@@ -133,6 +141,14 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
+
+    /**
+     * Directly generates the EFQRCode 7.0.3 parity [QrMatrix] with default EC level H.
+     */
+    fun generateParityMatrix(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrMatrix = generateMatrix(content, design, mode = GenerationMode.PARITY_EF)
 
     /**
      * Generates a list of [QrFrame] items for an animated QR design.
@@ -173,22 +189,30 @@ object QrGenerator {
         }
 
         try {
-            val matrix = generateMatrix(content, design, mode)
+            val effectiveDesign = if (mode == GenerationMode.PARITY_EF &&
+                design.explicitQuietZone == null &&
+                design.directionalQuietZone == null &&
+                design.backdropStyle.fractionalQuietZone == null
+            ) {
+                design.copy(quietZoneModules = 1)
+            } else design
 
-            val size = design.outputSize.coerceIn(256, 4096)
+            val matrix = generateMatrix(content, effectiveDesign, mode)
+
+            val size = effectiveDesign.outputSize.coerceIn(256, 4096)
             val geometry = QrGeometry.fromDesign(
                 matrixSize = matrix.size,
                 outputWidth = size,
                 outputHeight = size,
-                design = design
+                design = effectiveDesign
             )
 
-            val bitmap = generateBitmap(matrix, design, geometry)
+            val bitmap = generateBitmap(matrix, effectiveDesign, geometry)
 
             val report = if (bitmap != null) {
                 // Validate scanability (Fast validator)
                 runBlocking {
-                    ScanabilityValidator.validateFast(bitmap, design, matrix, content)
+                    ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
                 }
             } else {
                 // Headless unit testing fallback where android.graphics.Bitmap is not available on JVM
@@ -213,7 +237,7 @@ object QrGenerator {
                 bitmap = bitmap,
                 report = report,
                 matrix = matrix,
-                design = design
+                design = effectiveDesign
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -229,6 +253,14 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
+
+    /**
+     * Convenience entry point for generating QR code with EFQRCode 7.0.3 exact behavioral parity.
+     */
+    fun generateParity(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)
 
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.

@@ -217,8 +217,23 @@ data class DirectionalInsets(
     val left: Int = 4,
     val top: Int = 4,
     val right: Int = 4,
-    val bottom: Int = 4
-)
+    val bottom: Int = 4,
+    val leftFloat: Float = left.toFloat(),
+    val topFloat: Float = top.toFloat(),
+    val rightFloat: Float = right.toFloat(),
+    val bottomFloat: Float = bottom.toFloat()
+) {
+    constructor(left: Float, top: Float, right: Float, bottom: Float) : this(
+        left = left.toInt(),
+        top = top.toInt(),
+        right = right.toInt(),
+        bottom = bottom.toInt(),
+        leftFloat = left,
+        topFloat = top,
+        rightFloat = right,
+        bottomFloat = bottom
+    )
+}
 
 data class FractionalInsets(
     val left: Float,
