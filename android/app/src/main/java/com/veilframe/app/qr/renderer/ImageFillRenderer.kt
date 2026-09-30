@@ -14,6 +14,7 @@ import com.veilframe.app.qr.geometry.ImageNode
 import com.veilframe.app.qr.geometry.IrSvgRenderer
 import com.veilframe.app.qr.geometry.QrGeometryIr
 import com.veilframe.app.qr.geometry.QrGeometryNode
+import com.veilframe.app.qr.geometry.QrMaskDefinition
 import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.model.BackgroundStyle
@@ -82,11 +83,11 @@ class ImageFillRenderer : QrRenderer {
             )
         }
 
+        val antiGap = 0.01f * mSize
         // 2. Continuous masked group with hole mask
         val maskDef = buildString {
             append("""<mask id="hole">""")
             append("""<rect x="0" y="0" width="$width" height="$height" fill="black"/>""")
-            val antiGap = 0.01f * mSize
             for (col in 0 until n) {
                 for (row in 0 until n) {
                     if (matrix.isDark(col, row)) {
@@ -167,9 +168,26 @@ class ImageFillRenderer : QrRenderer {
         // 2c. Overlay mask tint
         groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = maskColor))
 
-        nodes.add(GroupNode(children = groupChildren, maskId = "hole"))
+        val stencilPath = android.graphics.Path().apply {
+            for (col in 0 until n) {
+                for (row in 0 until n) {
+                    if (matrix.isDark(col, row)) {
+                        val left = ox + col * mSize - antiGap
+                        val top = oy + row * mSize - antiGap
+                        val right = ox + (col + 1) * mSize + antiGap
+                        val bottom = oy + (row + 1) * mSize + antiGap
+                        addRect(left, top, right, bottom, android.graphics.Path.Direction.CW)
+                    }
+                }
+            }
+        }
+
+        nodes.add(GroupNode(children = groupChildren, maskId = "hole", clipPath = stencilPath))
 
         val defs = mutableListOf(maskDef)
+        val masks = mutableMapOf<String, QrMaskDefinition>(
+            "hole" to QrMaskDefinition(id = "hole", clipPath = stencilPath)
+        )
 
         // 3. Center Logo (EFQRCodeStyleImageFill.swift:263-276 writeIcon parity)
         com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconNodes(
@@ -178,13 +196,15 @@ class ImageFillRenderer : QrRenderer {
             design = design,
             ox = ox,
             oy = oy,
-            qrPixelSize = n * mSize
+            qrPixelSize = n * mSize,
+            masks = masks
         )
 
         return QrGeometryIr(
             width = width,
             height = height,
             defs = defs,
+            masks = masks,
             rootNodes = nodes
         )
     }

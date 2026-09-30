@@ -53,7 +53,8 @@ object VeilIconPipeline {
         design: QrDesign,
         ox: Float,
         oy: Float,
-        qrPixelSize: Float
+        qrPixelSize: Float,
+        masks: MutableMap<String, QrMaskDefinition>? = null
     ) {
         val logo = design.logo ?: return
         val logoBmp = logo.effectiveBitmap ?: return
@@ -73,7 +74,16 @@ object VeilIconPipeline {
         val markClips = nextUniqueMark()
         val randomIdClips = "icon$markClips"
 
-        // 3. Border per EFQRCodeStyle.swift:232 (SQ25 squircle or circle)
+        // 3. Border & Mask Geometry per EFQRCodeStyle.swift:232-245 (SQ25 squircle or circle)
+        val borderRect = RectF(ox + iconXY, oy + iconXY, ox + iconXY + iconSize, oy + iconXY + iconSize)
+        val clipPath = if (logo.shape == LogoShape.CIRCLE) {
+            Path().apply {
+                addCircle(borderRect.centerX(), borderRect.centerY(), borderRect.width() / 2f, Path.Direction.CW)
+            }
+        } else {
+            QrVisualGeometry.createSquirclePath(borderRect)
+        }
+
         val bdColor = logo.borderColor ?: if (logo.backgroundMode != LogoBackgroundMode.NONE) design.palette.background else null
         val borderStroke = if (logo.borderWidth > 0f) logo.borderWidth else (100f / iconSize)
         if (bdColor != null) {
@@ -95,9 +105,11 @@ object VeilIconPipeline {
                 nodes.add(
                     PathNode(
                         svgPathData = VeilPositionPatternGeometry.SQ25_PATH,
+                        androidPath = clipPath,
                         fill = bdOpaque,
                         stroke = bdOpaque,
                         strokeWidth = borderStroke,
+                        canvasStrokeWidth = borderStroke,
                         opacity = bdAlpha,
                         transform = String.format(
                             Locale.US,
@@ -112,7 +124,7 @@ object VeilIconPipeline {
             }
         }
 
-        // 4. SVG Mask in Defs per EFQRCodeStyle.swift:241-245
+        // 4. SVG Mask in Defs per EFQRCodeStyle.swift:241-245 & Mask Definition Registration
         if (logo.shape == LogoShape.CIRCLE) {
             val cx = ox + iconXY + iconSize / 2f
             val cy = oy + iconXY + iconSize / 2f
@@ -130,6 +142,7 @@ object VeilIconPipeline {
             defs.add("""<path id="$randomIdDefs" d="${VeilPositionPatternGeometry.SQ25_PATH}"/>""")
             defs.add("""<mask id="$randomIdClips"><use xlink:href="#$randomIdDefs" overflow="visible" fill="#ffffff" transform="$maskTransform"/></mask>""")
         }
+        masks?.put(randomIdClips, QrMaskDefinition(id = randomIdClips, clipPath = clipPath))
 
         // 5. Preprocessing & Embedding per EFQRCodeStyle.swift:247-250 (dynamic framePrefix)
         val iconOpacity = logo.alpha.coerceIn(0f, 1f)
@@ -152,6 +165,7 @@ object VeilIconPipeline {
                     opacity = iconOpacity,
                     preserveAspectRatio = "",
                     maskId = randomIdClips,
+                    clipPath = clipPath,
                     framePrefix = framePrefix
                 )
             )
@@ -167,7 +181,8 @@ object VeilIconPipeline {
                     base64Data = IrSvgRenderer.bitmapToBase64(preprocessedBmp),
                     opacity = iconOpacity,
                     preserveAspectRatio = "",
-                    maskId = randomIdClips
+                    maskId = randomIdClips,
+                    clipPath = clipPath
                 )
             )
         }

@@ -1683,15 +1683,29 @@ object SvgExporter {
         }
         backdropNodes.addAll(styleNodes)
 
+        val cornerPath = if (hasCornerClip) {
+            val cr = maxOf(0f, design.backdropStyle.cornerRadius)
+            android.graphics.Path().apply {
+                addRoundRect(0f, 0f, totalWidth, totalHeight, cr, cr, android.graphics.Path.Direction.CW)
+            }
+        } else null
+
         val finalNodes = if (hasCornerClip) {
             listOf(
                 GroupNode(
                     children = backdropNodes,
-                    clipPathId = "rounded-corners"
+                    clipPathId = "rounded-corners",
+                    clipPath = cornerPath
                 )
             )
         } else {
             backdropNodes
+        }
+
+        val updatedMasks = if (hasCornerClip && cornerPath != null) {
+            rawIr.masks + ("rounded-corners" to com.veilframe.app.qr.geometry.QrMaskDefinition("rounded-corners", clipPath = cornerPath))
+        } else {
+            rawIr.masks
         }
 
         return rawIr.copy(
@@ -1699,6 +1713,7 @@ object SvgExporter {
             height = totalHeight,
             viewBox = com.veilframe.app.qr.geometry.QrGeometryIr.defaultViewBox(totalWidth, totalHeight),
             defs = newDefs,
+            masks = updatedMasks,
             rootNodes = finalNodes
         )
     }

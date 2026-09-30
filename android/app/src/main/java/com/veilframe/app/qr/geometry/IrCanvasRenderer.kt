@@ -15,11 +15,17 @@ object IrCanvasRenderer {
     fun render(ir: QrGeometryIr, canvas: Canvas, frameIndex: Int = 0) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         for (node in ir.rootNodes) {
-            renderNode(node, canvas, paint, frameIndex)
+            renderNode(node, canvas, paint, frameIndex, ir.masks)
         }
     }
 
-    private fun renderNode(node: QrGeometryNode, canvas: Canvas, paint: Paint, frameIndex: Int = 0) {
+    fun renderNode(
+        node: QrGeometryNode,
+        canvas: Canvas,
+        paint: Paint = Paint(Paint.ANTI_ALIAS_FLAG),
+        frameIndex: Int = 0,
+        masks: Map<String, QrMaskDefinition> = emptyMap()
+    ) {
         when (node) {
             is RectNode -> {
                 if (node.fill != null) {
@@ -140,7 +146,20 @@ object IrCanvasRenderer {
                 val bmp = node.bitmap
                 if (bmp != null && !bmp.isRecycled) {
                     val count = canvas.save()
-                    for (clipRect in node.clipOutRects) {
+                    val effectiveClip = node.clipPath
+                        ?: node.maskId?.let { masks[it]?.clipPath }
+                        ?: node.clipPathId?.let { masks[it]?.clipPath }
+                    if (effectiveClip != null) {
+                        canvas.clipPath(effectiveClip)
+                    }
+                    val effectiveClipOuts = if (node.clipOutRects.isNotEmpty()) {
+                        node.clipOutRects
+                    } else {
+                        node.maskId?.let { masks[it]?.clipOutRects }
+                            ?: node.clipPathId?.let { masks[it]?.clipOutRects }
+                            ?: emptyList()
+                    }
+                    for (clipRect in effectiveClipOuts) {
                         canvas.clipOutRect(clipRect)
                     }
                     paint.style = Paint.Style.FILL
@@ -172,7 +191,20 @@ object IrCanvasRenderer {
                 val bmp = node.frames.getOrNull(safeIdx)
                 if (bmp != null && !bmp.isRecycled) {
                     val count = canvas.save()
-                    for (clipRect in node.clipOutRects) {
+                    val effectiveClip = node.clipPath
+                        ?: node.maskId?.let { masks[it]?.clipPath }
+                        ?: node.clipPathId?.let { masks[it]?.clipPath }
+                    if (effectiveClip != null) {
+                        canvas.clipPath(effectiveClip)
+                    }
+                    val effectiveClipOuts = if (node.clipOutRects.isNotEmpty()) {
+                        node.clipOutRects
+                    } else {
+                        node.maskId?.let { masks[it]?.clipOutRects }
+                            ?: node.clipPathId?.let { masks[it]?.clipOutRects }
+                            ?: emptyList()
+                    }
+                    for (clipRect in effectiveClipOuts) {
                         canvas.clipOutRect(clipRect)
                     }
                     paint.style = Paint.Style.FILL
@@ -199,8 +231,24 @@ object IrCanvasRenderer {
             }
             is GroupNode -> {
                 val count = canvas.save()
+                val effectiveClip = node.clipPath
+                    ?: node.maskId?.let { masks[it]?.clipPath }
+                    ?: node.clipPathId?.let { masks[it]?.clipPath }
+                if (effectiveClip != null) {
+                    canvas.clipPath(effectiveClip)
+                }
+                val effectiveClipOuts = if (node.clipOutRects.isNotEmpty()) {
+                    node.clipOutRects
+                } else {
+                    node.maskId?.let { masks[it]?.clipOutRects }
+                        ?: node.clipPathId?.let { masks[it]?.clipOutRects }
+                        ?: emptyList()
+                }
+                for (clipRect in effectiveClipOuts) {
+                    canvas.clipOutRect(clipRect)
+                }
                 for (child in node.children) {
-                    renderNode(child, canvas, paint, frameIndex)
+                    renderNode(child, canvas, paint, frameIndex, masks)
                 }
                 canvas.restoreToCount(count)
             }
@@ -211,7 +259,7 @@ object IrCanvasRenderer {
                 val targetFrame = node.frameNodes.getOrNull(safeIdx) ?: emptyList()
                 val count = canvas.save()
                 for (child in targetFrame) {
-                    renderNode(child, canvas, paint, frameIndex)
+                    renderNode(child, canvas, paint, frameIndex, masks)
                 }
                 canvas.restoreToCount(count)
             }

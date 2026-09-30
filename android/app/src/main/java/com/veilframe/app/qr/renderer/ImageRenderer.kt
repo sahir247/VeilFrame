@@ -127,9 +127,15 @@ class ImageRenderer : QrRenderer {
         val animatedFrames = design.imageSource.animatedFrames
         val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
 
-        val tlFinderRect = RectF(x0, y0, x0 + 8 * mSize, y0 + 8 * mSize)
-        val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize)
-        val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize)
+        val tlFinderRect = RectF(x0, y0, x0 + 8 * mSize, y0 + 8 * mSize).apply {
+            left = x0; top = y0; right = x0 + 8 * mSize; bottom = y0 + 8 * mSize
+        }
+        val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize).apply {
+            left = x0 + (n - 8) * mSize; top = y0; right = x0 + n * mSize; bottom = y0 + 8 * mSize
+        }
+        val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize).apply {
+            left = x0; top = y0 + (n - 8) * mSize; right = x0 + 8 * mSize; bottom = y0 + n * mSize
+        }
 
         val defs = mutableListOf(
             """<mask id="hole">
@@ -138,6 +144,12 @@ class ImageRenderer : QrRenderer {
     <rect x="${x0 + (n - 8) * mSize}" y="$y0" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
     <rect x="$x0" y="${y0 + (n - 8) * mSize}" width="${8 * mSize}" height="${8 * mSize}" fill="black"/>
   </mask>"""
+        )
+        val masks = mutableMapOf<String, QrMaskDefinition>(
+            "hole" to QrMaskDefinition(
+                id = "hole",
+                clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
+            )
         )
 
         // EF parity (EFQRCodeStyle.swift:271): preprocessed image matches canvas ratio;
@@ -255,7 +267,8 @@ class ImageRenderer : QrRenderer {
             design = design,
             ox = geometry.offsetX,
             oy = geometry.offsetY,
-            qrPixelSize = matrix.size * geometry.moduleSize
+            qrPixelSize = matrix.size * geometry.moduleSize,
+            masks = masks
         )
 
         return QrGeometryIr(
@@ -263,6 +276,7 @@ class ImageRenderer : QrRenderer {
             height = height,
             viewBox = QrGeometryIr.defaultViewBox(width, height),
             defs = defs,
+            masks = masks,
             rootNodes = nodes
         )
     }

@@ -87,6 +87,7 @@ data class ImageNode(
     val maskId: String? = null,
     val clipPathId: String? = null,
     val clipOutRects: List<RectF> = emptyList(),
+    val clipPath: Path? = null,
     val transform: String? = null,
     val style: String? = null,
     val key: String? = null
@@ -105,6 +106,7 @@ data class AnimatedImageNode(
     val maskId: String? = null,
     val clipPathId: String? = null,
     val clipOutRects: List<RectF> = emptyList(),
+    val clipPath: Path? = null,
     val transform: String? = null,
     val style: String? = null,
     val framePrefix: String = "1fm"
@@ -114,9 +116,21 @@ data class GroupNode(
     val children: List<QrGeometryNode>,
     val maskId: String? = null,
     val clipPathId: String? = null,
+    val clipPath: Path? = null,
+    val clipOutRects: List<RectF> = emptyList(),
     val opacity: Float = 1f,
     val transform: String? = null
 ) : QrGeometryNode
+
+/**
+ * Backend-neutral mask and clipping definition.
+ * Holds canonical vector paths and bounding exclusion rectangles for Canvas and SVG parity.
+ */
+data class QrMaskDefinition(
+    val id: String,
+    val clipPath: Path? = null,
+    val clipOutRects: List<RectF> = emptyList()
+)
 
 /**
  * Complete document-level geometry definition for a QR code.
@@ -126,6 +140,7 @@ data class QrGeometryIr(
     val height: Float,
     val viewBox: String = defaultViewBox(width, height),
     val defs: List<String> = emptyList(),
+    val masks: Map<String, QrMaskDefinition> = emptyMap(),
     val rootNodes: List<QrGeometryNode> = emptyList()
 ) {
     companion object {

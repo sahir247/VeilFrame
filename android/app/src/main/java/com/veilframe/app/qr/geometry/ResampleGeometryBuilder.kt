@@ -26,7 +26,14 @@ object ResampleGeometryBuilder {
         val nodes = mutableListOf<QrGeometryNode>()
 
         val defs = mutableListOf<String>()
+        val masks = mutableMapOf<String, QrMaskDefinition>()
         val cornerRadius = design.resampleStyle.backdropCornerRadius
+        val backdropPath = if (cornerRadius > 0f) {
+            android.graphics.Path().apply {
+                addRoundRect(0f, 0f, width, height, cornerRadius, cornerRadius, android.graphics.Path.Direction.CW)
+            }
+        } else null
+
         if (cornerRadius > 0f) {
             defs.add(
                 String.format(
@@ -35,6 +42,9 @@ object ResampleGeometryBuilder {
                     width, height, cornerRadius, cornerRadius
                 )
             )
+            if (backdropPath != null) {
+                masks["backdropClip"] = QrMaskDefinition(id = "backdropClip", clipPath = backdropPath)
+            }
         }
 
         // 1. Canvas background
@@ -73,6 +83,8 @@ object ResampleGeometryBuilder {
                     opacity = design.resampleStyle.backdropOpacity.coerceIn(0f, 1f),
                     preserveAspectRatio = aspect,
                     clipPathId = clipId,
+                    maskId = clipId,
+                    clipPath = backdropPath,
                     style = blendStyle
                 )
             )
@@ -376,7 +388,8 @@ object ResampleGeometryBuilder {
             design = design,
             ox = ox,
             oy = oy,
-            qrPixelSize = n * mSize
+            qrPixelSize = n * mSize,
+            masks = masks
         )
 
         return QrGeometryIr(
@@ -384,6 +397,7 @@ object ResampleGeometryBuilder {
             height = height,
             viewBox = QrGeometryIr.defaultViewBox(width, height),
             defs = defs,
+            masks = masks,
             rootNodes = nodes
         )
     }
