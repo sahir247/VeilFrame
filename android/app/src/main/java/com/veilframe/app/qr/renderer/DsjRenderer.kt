@@ -261,8 +261,8 @@ class DsjRenderer : QrRenderer {
         }
 
         return QrGeometryIr(
-            width = geometry.outputWidth.toFloat(),
-            height = geometry.outputHeight.toFloat(),
+            width = geometry.outputWidthFloat,
+            height = geometry.outputHeightFloat,
             rootNodes = nodes
         )
     }

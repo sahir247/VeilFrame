@@ -124,7 +124,15 @@ data class GroupNode(
 data class QrGeometryIr(
     val width: Float,
     val height: Float,
-    val viewBox: String = "0 0 ${width.toInt()} ${height.toInt()}",
+    val viewBox: String = defaultViewBox(width, height),
     val defs: List<String> = emptyList(),
     val rootNodes: List<QrGeometryNode> = emptyList()
-)
+) {
+    companion object {
+        fun defaultViewBox(w: Float, h: Float): String {
+            val wStr = if (w % 1f == 0f) w.toInt().toString() else String.format(java.util.Locale.US, "%.4f", w).trimEnd('0').trimEnd('.')
+            val hStr = if (h % 1f == 0f) h.toInt().toString() else String.format(java.util.Locale.US, "%.4f", h).trimEnd('0').trimEnd('.')
+            return "0 0 $wStr $hStr"
+        }
+    }
+}

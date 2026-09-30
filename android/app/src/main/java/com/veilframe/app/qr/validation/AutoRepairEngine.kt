@@ -32,7 +32,7 @@ object AutoRepairEngine {
         for (reason in report.repairSuggestions) {
             when (reason) {
                 RepairReason.RESTORE_QUIET_ZONE -> {
-                    if (design.quietZoneModules < 4 || (design.explicitQuietZone != null && design.explicitQuietZone < 4)) {
+                    if (design.effectiveQuietZone < 4 || (design.explicitQuietZone != null && design.explicitQuietZone < 4)) {
                         design = design.copy(quietZoneModules = 4, explicitQuietZone = 4)
                         changes.add("Restored 4-module quiet zone")
                     }

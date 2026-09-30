@@ -135,7 +135,7 @@ class Step1ArchitectureParityTest {
 
         // Level 4: quietZoneModules overrides style default
         val designLevel4 = QrDesign(
-            style = QrStyle.BASIC,
+            style = QrStyle.D25, // D25 style default is 0, but explicit quietZoneModules is 5
             quietZoneModules = 5,
             explicitQuietZone = null,
             directionalQuietZone = null,
@@ -144,10 +144,9 @@ class Step1ArchitectureParityTest {
         val resolved4 = QrGeometry.resolveQuietZone(designLevel4, matrixSize)
         assertEquals(ResolvedQuietZone(5f, 5f, 5f, 5f), resolved4)
 
-        // Level 5: style default applied when explicit configurations are omitted
+        // Level 5: style default applied when explicit configurations and quietZoneModules are omitted
         val designLevel5D25 = QrDesign(
             style = QrStyle.D25,
-            quietZoneModules = 0,
             explicitQuietZone = null,
             directionalQuietZone = null,
             backdropStyle = BackdropStyle(fractionalQuietZone = null)
@@ -196,23 +195,36 @@ class Step1ArchitectureParityTest {
         val matrix = QrMatrix("VEIL", ErrorCorrectionLevel.M)
         assertEquals(21, matrix.size)
 
-        val design = QrDesign(
-            style = QrStyle.BASIC,
-            backdropStyle = BackdropStyle(
-                fractionalQuietZone = FractionalInsets(0.10f, 0.10f, 0.10f, 0.10f)
-            )
+        val stylesToTest = listOf(
+            QrStyle.BASIC,
+            QrStyle.LINE,
+            QrStyle.BUBBLE,
+            QrStyle.DSJ,
+            QrStyle.RANDOM_RECTANGLE,
+            QrStyle.IMAGE_RESAMPLE,
+            QrStyle.IMAGE,
+            QrStyle.IMAGE_FILL
         )
 
-        val geometry = QrGeometry.fromDesign(matrix.size, 504, 504, design)
-        assertEquals(2.1f, geometry.quietZoneLeftFloat, 0.001f)
-        assertEquals(2.1f, geometry.quietZoneTopFloat, 0.001f)
-        assertEquals(2.1f, geometry.quietZoneRightFloat, 0.001f)
-        assertEquals(2.1f, geometry.quietZoneBottomFloat, 0.001f)
-        assertEquals(25.2f, geometry.totalModulesXFloat, 0.001f)
-        assertEquals(25.2f, geometry.totalModulesYFloat, 0.001f)
+        for (testStyle in stylesToTest) {
+            val design = QrDesign(
+                style = testStyle,
+                backdropStyle = BackdropStyle(
+                    fractionalQuietZone = FractionalInsets(0.10f, 0.10f, 0.10f, 0.10f)
+                )
+            )
 
-        val svg = SvgExporter.generateSvg(matrix, design)
-        assertTrue("SVG viewBox must preserve fractional extent 25.2", svg.contains("viewBox=\"0 0 25.2 25.2\""))
+            val geometry = QrGeometry.fromDesign(matrix.size, 504f, 504f, design)
+            assertEquals("Style $testStyle: quietZoneLeftFloat must be 2.1", 2.1f, geometry.quietZoneLeftFloat, 0.001f)
+            assertEquals("Style $testStyle: quietZoneTopFloat must be 2.1", 2.1f, geometry.quietZoneTopFloat, 0.001f)
+            assertEquals("Style $testStyle: quietZoneRightFloat must be 2.1", 2.1f, geometry.quietZoneRightFloat, 0.001f)
+            assertEquals("Style $testStyle: quietZoneBottomFloat must be 2.1", 2.1f, geometry.quietZoneBottomFloat, 0.001f)
+            assertEquals("Style $testStyle: totalModulesXFloat must be 25.2", 25.2f, geometry.totalModulesXFloat, 0.001f)
+            assertEquals("Style $testStyle: totalModulesYFloat must be 25.2", 25.2f, geometry.totalModulesYFloat, 0.001f)
+
+            val svg = SvgExporter.generateSvg(matrix, design)
+            assertTrue("Style $testStyle: SVG viewBox must preserve fractional extent 25.2", svg.contains("viewBox=\"0 0 25.2 25.2\""))
+        }
     }
 
     @Test

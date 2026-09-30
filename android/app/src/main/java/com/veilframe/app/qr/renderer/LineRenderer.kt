@@ -128,8 +128,8 @@ class LineRenderer : QrRenderer {
         )
 
         return com.veilframe.app.qr.geometry.QrGeometryIr(
-            width = geometry.outputWidth.toFloat(),
-            height = geometry.outputHeight.toFloat(),
+            width = geometry.outputWidthFloat,
+            height = geometry.outputHeightFloat,
             rootNodes = nodes
         )
     }

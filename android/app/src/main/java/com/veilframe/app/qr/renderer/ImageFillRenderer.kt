@@ -42,8 +42,8 @@ class ImageFillRenderer : QrRenderer {
         val mSize = geometry.moduleSize
         val ox = geometry.offsetX
         val oy = geometry.offsetY
-        val width = geometry.outputWidth.toFloat()
-        val height = geometry.outputHeight.toFloat()
+        val width = geometry.outputWidthFloat
+        val height = geometry.outputHeightFloat
         val nodes = mutableListOf<QrGeometryNode>()
 
         val sourceBmp = design.imageSource.bitmap

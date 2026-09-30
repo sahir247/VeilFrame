@@ -190,7 +190,7 @@ class BubbleClusterAndImageMaskedTest {
             )
         )
 
-        val totalSize = matrix.size + 2 * design.quietZoneModules
+        val totalSize = matrix.size + 2 * design.effectiveQuietZone
         val svg = SvgExporter.generateSvg(matrix, design)
         assertTrue("SVG must contain mask definition", svg.contains("<mask id=\"qrDataMask\">"))
         assertTrue("SVG must have black mask base", svg.contains("<rect width=\"$totalSize\" height=\"$totalSize\" fill=\"black\" />"))

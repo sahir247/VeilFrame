@@ -21,8 +21,8 @@ object ResampleGeometryBuilder {
         val mSize = geometry.moduleSize
         val ox = geometry.offsetX
         val oy = geometry.offsetY
-        val width = geometry.outputWidth.toFloat()
-        val height = geometry.outputHeight.toFloat()
+        val width = geometry.outputWidthFloat
+        val height = geometry.outputHeightFloat
         val nodes = mutableListOf<QrGeometryNode>()
 
         val defs = mutableListOf<String>()
@@ -382,7 +382,7 @@ object ResampleGeometryBuilder {
         return QrGeometryIr(
             width = width,
             height = height,
-            viewBox = "0 0 ${width.toInt()} ${height.toInt()}",
+            viewBox = QrGeometryIr.defaultViewBox(width, height),
             defs = defs,
             rootNodes = nodes
         )

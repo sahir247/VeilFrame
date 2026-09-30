@@ -107,7 +107,7 @@ object SvgExporter {
             return generateRandomRectangleSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
-            val resampleGeom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
+            val resampleGeom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
             val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, resampleGeom, pixelSource)
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
@@ -1145,7 +1145,7 @@ object SvgExporter {
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
         val rawIr = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1363,7 +1363,7 @@ object SvgExporter {
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
         val rawIr = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1390,7 +1390,7 @@ object SvgExporter {
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
         val rawIr = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1417,7 +1417,7 @@ object SvgExporter {
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
         val rawIr = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1631,9 +1631,11 @@ object SvgExporter {
         val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
         val hasBackdropImg = design.backdropStyle.image != null
 
+        val twStr = formatCoord(totalWidth.toDouble())
+        val thStr = formatCoord(totalHeight.toDouble())
         val newDefs = rawIr.defs.toMutableList()
         if (hasCornerClip) {
-            newDefs.add("""<clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""")
+            newDefs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
         }
 
         val backdropNodes = mutableListOf<QrGeometryNode>()
@@ -1693,6 +1695,9 @@ object SvgExporter {
         }
 
         return rawIr.copy(
+            width = totalWidth,
+            height = totalHeight,
+            viewBox = com.veilframe.app.qr.geometry.QrGeometryIr.defaultViewBox(totalWidth, totalHeight),
             defs = newDefs,
             rootNodes = finalNodes
         )

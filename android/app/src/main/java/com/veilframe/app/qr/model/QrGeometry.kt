@@ -26,8 +26,8 @@ data class ResolvedQuietZone(
 
 class QrGeometry(
     val matrixSize: Int,
-    val outputWidth: Int,
-    val outputHeight: Int,
+    val outputWidthFloat: Float,
+    val outputHeightFloat: Float,
     val quietZoneModules: Int = 4,
     val quietZoneLeft: Int = quietZoneModules,
     val quietZoneTop: Int = quietZoneModules,
@@ -38,18 +38,49 @@ class QrGeometry(
     val quietZoneRightFloat: Float = quietZoneRight.toFloat(),
     val quietZoneBottomFloat: Float = quietZoneBottom.toFloat()
 ) {
+    val outputWidth: Int get() = Math.round(outputWidthFloat)
+    val outputHeight: Int get() = Math.round(outputHeightFloat)
+
+    constructor(
+        matrixSize: Int,
+        outputWidth: Int,
+        outputHeight: Int,
+        quietZoneModules: Int = 4,
+        quietZoneLeft: Int = quietZoneModules,
+        quietZoneTop: Int = quietZoneModules,
+        quietZoneRight: Int = quietZoneModules,
+        quietZoneBottom: Int = quietZoneModules,
+        quietZoneLeftFloat: Float = quietZoneLeft.toFloat(),
+        quietZoneTopFloat: Float = quietZoneTop.toFloat(),
+        quietZoneRightFloat: Float = quietZoneRight.toFloat(),
+        quietZoneBottomFloat: Float = quietZoneBottom.toFloat()
+    ) : this(
+        matrixSize = matrixSize,
+        outputWidthFloat = outputWidth.toFloat(),
+        outputHeightFloat = outputHeight.toFloat(),
+        quietZoneModules = quietZoneModules,
+        quietZoneLeft = quietZoneLeft,
+        quietZoneTop = quietZoneTop,
+        quietZoneRight = quietZoneRight,
+        quietZoneBottom = quietZoneBottom,
+        quietZoneLeftFloat = quietZoneLeftFloat,
+        quietZoneTopFloat = quietZoneTopFloat,
+        quietZoneRightFloat = quietZoneRightFloat,
+        quietZoneBottomFloat = quietZoneBottomFloat
+    )
+
     val totalModulesXFloat: Float = matrixSize + quietZoneLeftFloat + quietZoneRightFloat
     val totalModulesYFloat: Float = matrixSize + quietZoneTopFloat + quietZoneBottomFloat
     val totalModulesX: Int = Math.round(totalModulesXFloat)
     val totalModulesY: Int = Math.round(totalModulesYFloat)
     val totalModules: Int = maxOf(totalModulesX, totalModulesY)
-    val moduleWidth: Float = outputWidth.toFloat() / totalModulesXFloat
-    val moduleHeight: Float = outputHeight.toFloat() / totalModulesYFloat
+    val moduleWidth: Float = outputWidthFloat / totalModulesXFloat
+    val moduleHeight: Float = outputHeightFloat / totalModulesYFloat
     val moduleSize: Float = minOf(moduleWidth, moduleHeight)
 
     // Offsets to center the QR matrix inside the canvas if non-square or if quiet zones differ
-    val offsetX: Float = (outputWidth - (totalModulesXFloat * moduleSize)) / 2f + (quietZoneLeftFloat * moduleSize)
-    val offsetY: Float = (outputHeight - (totalModulesYFloat * moduleSize)) / 2f + (quietZoneTopFloat * moduleSize)
+    val offsetX: Float = (outputWidthFloat - (totalModulesXFloat * moduleSize)) / 2f + (quietZoneLeftFloat * moduleSize)
+    val offsetY: Float = (outputHeightFloat - (totalModulesYFloat * moduleSize)) / 2f + (quietZoneTopFloat * moduleSize)
 
     val contentWidth: Float get() = matrixSize * moduleSize
     val contentHeight: Float get() = matrixSize * moduleSize
@@ -67,8 +98,8 @@ class QrGeometry(
          * 1. [BackdropStyle.fractionalQuietZone] (percentage of matrix size)
          * 2. [QrDesign.directionalQuietZone] (asymmetric float insets)
          * 3. [QrDesign.explicitQuietZone] (explicit integer override)
-         * 4. [QrDesign.quietZoneModules] (design-level module count)
-         * 5. Style default (e.g. D25 defaults to 0 unless explicitly configured)
+         * 4. [QrDesign.quietZoneModules] (design-level module count override)
+         * 5. Style default (e.g. D25 defaults to 0, other styles default to 1)
          */
         fun resolveQuietZone(design: QrDesign, matrixSize: Int = 21): ResolvedQuietZone {
             val fracQz = design.backdropStyle.fractionalQuietZone
@@ -94,8 +125,8 @@ class QrGeometry(
                 val f = eqz.toFloat()
                 return ResolvedQuietZone(f, f, f, f)
             }
-            val fallback = resolveDefaultQuietZone(design.style, design.quietZoneModules).toFloat()
-            return ResolvedQuietZone(fallback, fallback, fallback, fallback)
+            val f = design.quietZoneModules.toFloat()
+            return ResolvedQuietZone(f, f, f, f)
         }
 
         fun resolveQuietZone(design: QrDesign): Int {
@@ -104,26 +135,15 @@ class QrGeometry(
 
         fun fromDesign(
             matrixSize: Int,
-            outputWidth: Int,
-            outputHeight: Int,
-            design: QrDesign,
-            defaultQuietZone: Int? = null
+            outputWidth: Float,
+            outputHeight: Float,
+            design: QrDesign
         ): QrGeometry {
-            val resolvedQz = if (defaultQuietZone != null &&
-                design.explicitQuietZone == null &&
-                design.backdropStyle.fractionalQuietZone == null &&
-                design.directionalQuietZone == null
-            ) {
-                val f = defaultQuietZone.toFloat()
-                ResolvedQuietZone(f, f, f, f)
-            } else {
-                resolveQuietZone(design, matrixSize)
-            }
-
+            val resolvedQz = resolveQuietZone(design, matrixSize)
             return QrGeometry(
                 matrixSize = matrixSize,
-                outputWidth = outputWidth,
-                outputHeight = outputHeight,
+                outputWidthFloat = outputWidth,
+                outputHeightFloat = outputHeight,
                 quietZoneModules = resolvedQz.maxMarginInt,
                 quietZoneLeft = resolvedQz.leftInt,
                 quietZoneTop = resolvedQz.topInt,
@@ -135,6 +155,18 @@ class QrGeometry(
                 quietZoneBottomFloat = resolvedQz.bottom
             )
         }
+
+        fun fromDesign(
+            matrixSize: Int,
+            outputWidth: Int,
+            outputHeight: Int,
+            design: QrDesign
+        ): QrGeometry = fromDesign(
+            matrixSize = matrixSize,
+            outputWidth = outputWidth.toFloat(),
+            outputHeight = outputHeight.toFloat(),
+            design = design
+        )
     }
 
     /**

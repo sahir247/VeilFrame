@@ -483,13 +483,13 @@ data class QrDesign(
     val background: BackgroundStyle = BackgroundStyle.Solid(Color.WHITE),
     val logo: LogoStyle? = null,
     val effects: EffectStyle = EffectStyle(),
-    val quietZoneModules: Int = 1,
+    val style: QrStyle = QrStyle.BASIC,
+    val quietZoneModules: Int = QrGeometry.resolveDefaultQuietZone(style),
     val explicitQuietZone: Int? = null,
     val outputSize: Int = 512,
     val backgroundImage: Bitmap? = null,
     val backgroundImageAlpha: Float = 0.25f,
     val imageFillMode: Boolean = false,
-    val style: QrStyle = QrStyle.BASIC,
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
     val timingStyle: TimingStyle = if (style == QrStyle.IMAGE_RESAMPLE || style == QrStyle.IMAGE) TimingStyle(shape = ModuleShape.SQUARE, color = timingColor) else TimingStyle(color = timingColor),
@@ -533,11 +533,16 @@ data class QrDesign(
     val backdropStyle: BackdropStyle = BackdropStyle(),
     val directionalQuietZone: DirectionalInsets? = null
 ) {
-    val effectiveQuietZone: Int get() = QrGeometry.resolveQuietZone(this)
-    val effectiveQuietZoneLeft: Int get() = directionalQuietZone?.left ?: effectiveQuietZone
-    val effectiveQuietZoneTop: Int get() = directionalQuietZone?.top ?: effectiveQuietZone
-    val effectiveQuietZoneRight: Int get() = directionalQuietZone?.right ?: effectiveQuietZone
-    val effectiveQuietZoneBottom: Int get() = directionalQuietZone?.bottom ?: effectiveQuietZone
+    val resolvedQuietZone: ResolvedQuietZone get() = QrGeometry.resolveQuietZone(this, 21)
+    val effectiveQuietZone: Int get() = resolvedQuietZone.maxMarginInt
+    val effectiveQuietZoneLeft: Int get() = resolvedQuietZone.leftInt
+    val effectiveQuietZoneTop: Int get() = resolvedQuietZone.topInt
+    val effectiveQuietZoneRight: Int get() = resolvedQuietZone.rightInt
+    val effectiveQuietZoneBottom: Int get() = resolvedQuietZone.bottomInt
+    val effectiveQuietZoneLeftFloat: Float get() = resolvedQuietZone.left
+    val effectiveQuietZoneTopFloat: Float get() = resolvedQuietZone.top
+    val effectiveQuietZoneRightFloat: Float get() = resolvedQuietZone.right
+    val effectiveQuietZoneBottomFloat: Float get() = resolvedQuietZone.bottom
     val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
 
     companion object {

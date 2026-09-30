@@ -36,8 +36,8 @@ class ImageRenderer : QrRenderer {
         val mSize = geometry.moduleSize
         val x0 = geometry.offsetX
         val y0 = geometry.offsetY
-        val width = geometry.outputWidth.toFloat()
-        val height = geometry.outputHeight.toFloat()
+        val width = geometry.outputWidthFloat
+        val height = geometry.outputHeightFloat
         val sourceImage = design.imageSource.bitmap
 
         val nodes = mutableListOf<QrGeometryNode>()
@@ -261,7 +261,7 @@ class ImageRenderer : QrRenderer {
         return QrGeometryIr(
             width = width,
             height = height,
-            viewBox = "0 0 ${width.toInt()} ${height.toInt()}",
+            viewBox = QrGeometryIr.defaultViewBox(width, height),
             defs = defs,
             rootNodes = nodes
         )
