@@ -98,7 +98,17 @@ let namedVectors: [(name: String, text: String, level: QRErrorCorrectLevel, leve
     ("UTF8_BENGALI_H", "বাংলা ভাষার কিউআর কোড", .H, "H"),
     ("UTF8_CHINESE_M", "中文测试二维码", .M, "M"),
     ("UTF8_JAPANESE_Q", "日本語のQRコードテスト", .Q, "Q"),
-    ("UTF8_EMOJI_H", "🔒🛡️ VeilFrame Privacy 🚀", .H, "H")
+    ("UTF8_EMOJI_H", "🔒🛡️ VeilFrame Privacy 🚀", .H, "H"),
+
+    // 4. Natural Mask Pattern Verification (All 8 masks 0..7 triggered naturally via optimal penalty loss)
+    ("MASK_0_NATURAL", "@", .L, "L"),
+    ("MASK_1_NATURAL", "9", .H, "H"),
+    ("MASK_2_NATURAL", "!", .M, "M"),
+    ("MASK_3_NATURAL", "1", .L, "L"),
+    ("MASK_4_NATURAL", "!", .L, "L"),
+    ("MASK_5_NATURAL", "?", .M, "M"),
+    ("MASK_6_NATURAL", "V", .H, "H"),
+    ("MASK_7_NATURAL", "!", .H, "H")
 ]
 
 var results: [OracleVector] = []
@@ -125,7 +135,7 @@ for v in namedVectors {
     ))
 }
 
-print("==> Generating systematic matrix across Versions 1..26 x L/M/Q/H...")
+print("==> Generating systematic matrix across Versions 1..40 x L/M/Q/H...")
 let levels: [(QRErrorCorrectLevel, String, Int)] = [
     (.L, "L", 0),
     (.M, "M", 1),
@@ -133,7 +143,7 @@ let levels: [(QRErrorCorrectLevel, String, Int)] = [
     (.H, "H", 3)
 ]
 
-for v in 1...26 {
+for v in 1...40 {
     for (lvl, lvlStr, col) in levels {
         let minLen = (v == 1) ? 1 : (QRCodeType.QRCodeLimitLength[v - 2][col] + 1)
         let maxLen = QRCodeType.QRCodeLimitLength[v - 1][col]
@@ -175,7 +185,7 @@ let metadata = OracleMetadata(
     qrcode_swift_revision: "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
     generator_commit: "8ddc531",
     description: "Upstream QRCodeSwift matrix oracle vectors for EFQRCode 7.0.3 parity verification",
-    scope: "Tier 4A (Versions 1-26, L/M/Q/H, UTF-8, URLs, ApolloZhu tests)"
+    scope: "Tier 4 (Full V1-40 Range, L/M/Q/H, All 8 Mask Patterns, UTF-8, URLs)"
 )
 
 func escapeJsonString(_ str: String) -> String {

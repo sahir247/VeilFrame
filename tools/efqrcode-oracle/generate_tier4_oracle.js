@@ -4,7 +4,7 @@ const fs = require('fs');
 let code = fs.readFileSync('scratch/qrcode.js', 'utf8');
 code = code.replace(
   'QRCode.CorrectLevel = QRErrorCorrectLevel;',
-  'QRCode.CorrectLevel = QRErrorCorrectLevel; global.QRRSBlock = QRRSBlock; global.QRCodeLimitLength = QRCodeLimitLength; global.QRCodeModel = QRCodeModel; global.QRErrorCorrectLevel = QRErrorCorrectLevel;'
+  'QRCode.CorrectLevel = QRErrorCorrectLevel; global.QRRSBlock = QRRSBlock; global.QRCodeLimitLength = QRCodeLimitLength; global.QRCodeModel = QRCodeModel; global.QRErrorCorrectLevel = QRErrorCorrectLevel; global.QRUtil = QRUtil;'
 );
 // In Swift QRCodeSwift, text.data(using: .utf8) produces raw standard UTF-8 bytes (no surrogate bug, no BOM).
 const startIdx = code.indexOf('function QR8bitByte(data)');
@@ -15,6 +15,52 @@ code = code.slice(0, startIdx) + `function QR8bitByte(data) {
   this.parsedData = Array.from(Buffer.from(data, 'utf8'));
 }\n\n\t` + code.slice(endIdx);
 eval(code);
+
+// Upstream Swift QRCodeSwift uses Int arithmetic for lostPoint penalty calculation (lines 334-416 of QRCodeModel.swift)
+global.QRUtil.getLostPoint = function(qrCode) {
+  var moduleCount = qrCode.getModuleCount();
+  var lostPoint = 0;
+  for (var row = 0; row < moduleCount; row++) {
+    for (var col = 0; col < moduleCount; col++) {
+      var sameCount = 0;
+      var dark = qrCode.isDark(row, col);
+      for (var r = -1; r <= 1; r++) {
+        if (row + r < 0 || moduleCount <= row + r) continue;
+        for (var c = -1; c <= 1; c++) {
+          if (col + c < 0 || moduleCount <= col + c) continue;
+          if (r == 0 && c == 0) continue;
+          if (dark == qrCode.isDark(row + r, col + c)) sameCount++;
+        }
+      }
+      if (sameCount > 5) lostPoint += (3 + sameCount - 5);
+    }
+  }
+  for (var row = 0; row < moduleCount - 1; row++) {
+    for (var col = 0; col < moduleCount - 1; col++) {
+      var count = 0;
+      if (qrCode.isDark(row, col)) count++;
+      if (qrCode.isDark(row + 1, col)) count++;
+      if (qrCode.isDark(row, col + 1)) count++;
+      if (qrCode.isDark(row + 1, col + 1)) count++;
+      if (count == 0 || count == 4) lostPoint += 3;
+    }
+  }
+  for (var row = 0; row < moduleCount; row++) {
+    for (var col = 0; col < moduleCount - 6; col++) {
+      if (qrCode.isDark(row, col) && !qrCode.isDark(row, col + 1) && qrCode.isDark(row, col + 2) && qrCode.isDark(row, col + 3) && qrCode.isDark(row, col + 4) && !qrCode.isDark(row, col + 5) && qrCode.isDark(row, col + 6)) lostPoint += 40;
+      if (qrCode.isDark(col, row) && !qrCode.isDark(col + 1, row) && qrCode.isDark(col + 2, row) && qrCode.isDark(col + 3, row) && qrCode.isDark(col + 4, row) && !qrCode.isDark(col + 5, row) && qrCode.isDark(col + 6, row)) lostPoint += 40;
+    }
+  }
+  var darkCount = 0;
+  for (var col = 0; col < moduleCount; col++) {
+    for (var row = 0; row < moduleCount; row++) {
+      if (qrCode.isDark(row, col)) darkCount++;
+    }
+  }
+  var ratio = Math.floor(Math.abs(Math.floor(Math.floor(100 * darkCount / moduleCount) / moduleCount) - 50) / 5);
+  lostPoint += ratio * 10;
+  return lostPoint;
+};
 
 const levelCol = { L: 0, M: 1, Q: 2, H: 3 };
 const qLevels = {
@@ -68,7 +114,17 @@ const namedVectors = [
   { name: "UTF8_BENGALI_H", text: "বাংলা ভাষার কিউআর কোড", level: "H" },
   { name: "UTF8_CHINESE_M", text: "中文测试二维码", level: "M" },
   { name: "UTF8_JAPANESE_Q", text: "日本語のQRコードテスト", level: "Q" },
-  { name: "UTF8_EMOJI_H", text: "🔒🛡️ VeilFrame Privacy 🚀", level: "H" }
+  { name: "UTF8_EMOJI_H", text: "🔒🛡️ VeilFrame Privacy 🚀", level: "H" },
+
+  // 4. Natural Mask Pattern Verification (All 8 masks 0..7 triggered naturally via optimal penalty loss)
+  { name: "MASK_0_NATURAL", text: "@", level: "L" },
+  { name: "MASK_1_NATURAL", text: "9", level: "H" },
+  { name: "MASK_2_NATURAL", text: "!", level: "M" },
+  { name: "MASK_3_NATURAL", text: "1", level: "L" },
+  { name: "MASK_4_NATURAL", text: "!", level: "L" },
+  { name: "MASK_5_NATURAL", text: "?", level: "M" },
+  { name: "MASK_6_NATURAL", text: "V", level: "H" },
+  { name: "MASK_7_NATURAL", text: "!", level: "H" }
 ];
 
 const result = [];
@@ -94,8 +150,8 @@ for (const v of namedVectors) {
   });
 }
 
-// 2. Systematic matrix for Versions 1 to 26 across ALL 4 EC levels (L, M, Q, H)
-for (let v = 1; v <= 26; v++) {
+// 2. Systematic matrix for Versions 1 to 40 across ALL 4 EC levels (L, M, Q, H)
+for (let v = 1; v <= 40; v++) {
   for (const lvl of ['L', 'M', 'Q', 'H']) {
     const col = levelCol[lvl];
     const minLen = v === 1 ? 1 : (global.QRCodeLimitLength[v - 2][col] + 1);
@@ -136,7 +192,7 @@ const corpus = {
     qrcode_swift_revision: "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
     generator_commit: "8ddc531",
     description: "Upstream QRCodeSwift matrix oracle vectors for EFQRCode 7.0.3 parity verification",
-    scope: "Tier 4A (Versions 1-26, L/M/Q/H, UTF-8, URLs, ApolloZhu tests)"
+    scope: "Tier 4 (Full V1-40 Range, L/M/Q/H, All 8 Mask Patterns, UTF-8, URLs)"
   },
   vectors: result
 };
