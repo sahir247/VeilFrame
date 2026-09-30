@@ -1,6 +1,20 @@
 import Foundation
 import QRCodeSwift
 
+struct OracleCorpus: Codable {
+    let oracle: OracleMetadata
+    let vectors: [OracleVector]
+}
+
+struct OracleMetadata: Codable {
+    let efqrcode_version: String
+    let qrcode_swift_version: String
+    let qrcode_swift_revision: String
+    let generator_commit: String
+    let description: String
+    let scope: String
+}
+
 struct OracleVector: Codable {
     let name: String
     let text: String
@@ -108,9 +122,20 @@ for v in 1...26 {
 
 print("==> Total oracle vectors generated: \(results.count)")
 
+let metadata = OracleMetadata(
+    efqrcode_version: "7.0.3",
+    qrcode_swift_version: "2.3.1",
+    qrcode_swift_revision: "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
+    generator_commit: "8ddc531",
+    description: "Upstream QRCodeSwift matrix oracle vectors for EFQRCode 7.0.3 parity verification",
+    scope: "Tier 4A (Versions 1-26, L/M/Q/H, UTF-8, URLs, ApolloZhu tests)"
+)
+
+let corpus = OracleCorpus(oracle: metadata, vectors: results)
+
 let encoder = JSONEncoder()
 encoder.outputFormatting = [.prettyPrinted]
-let jsonData = try encoder.encode(results)
+let jsonData = try encoder.encode(corpus)
 
 let outputPath = CommandLine.arguments.count > 1
     ? CommandLine.arguments[1]

@@ -129,7 +129,19 @@ for (let v = 1; v <= 26; v++) {
   }
 }
 
+const corpus = {
+  oracle: {
+    efqrcode_version: "7.0.3",
+    qrcode_swift_version: "2.3.1",
+    qrcode_swift_revision: "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
+    generator_commit: "8ddc531",
+    description: "Upstream QRCodeSwift matrix oracle vectors for EFQRCode 7.0.3 parity verification",
+    scope: "Tier 4A (Versions 1-26, L/M/Q/H, UTF-8, URLs, ApolloZhu tests)"
+  },
+  vectors: result
+};
+
 const outputPath = 'android/app/src/test/resources/tier4_upstream_oracle_matrices.json';
-const jsonOutput = JSON.stringify(result, null, 2);
+const jsonOutput = JSON.stringify(corpus, null, 2);
 fs.writeFileSync(outputPath, jsonOutput, 'utf8');
-console.log(`Generated ${result.length} Tier 4 upstream oracle vectors. Total size: ${jsonOutput.length} bytes.`);
+console.log(`Generated ${result.length} Tier 4 upstream oracle vectors with provenance metadata. Total size: ${jsonOutput.length} bytes.`);

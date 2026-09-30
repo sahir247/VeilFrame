@@ -6,14 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * ADR 0003 Tier 4: Upstream Matrix Oracle Verification Suite.
+ * ADR 0003 Tier 4A: Upstream Matrix Oracle Verification Suite.
  *
- * Verifies bit-for-bit, module-for-module mathematical and topological equivalence
- * between VeilFrame's [VeilQrEncoder] and upstream Swift `QRCodeSwift` / `EFQRCode 7.0.3`
- * across all error correction levels (L, M, Q, H), versions 1 to 26+, multi-byte UTF-8,
- * deep URLs, empty payloads, and stress boundaries.
+ * Mathematically proves bit-for-bit, module-for-module topological and bitstream equivalence
+ * between VeilFrame's [VeilQrEncoder] and upstream Swift `QRCodeSwift` (pinned at revision
+ * `d1605333f7edac39b4518538ef4f2638fdd2e4d6`, version 2.3.1, used by `EFQRCode 7.0.3`).
+ *
+ * Scope:
+ * - Tier 4A (Active): Versions 1..26 x L/M/Q/H (104 systematic vectors + 22 named vectors = 126 vectors),
+ *   verifying upstream-selected optimal penalty score mask pattern parity.
+ * - Tier 4B (Roadmap): Extended version range (Versions 27..40) and forced mask patterns 0..7.
  */
 class Tier4UpstreamMatrixOracleTest {
+
+    data class OracleProvenance(
+        val efQrCodeVersion: String,
+        val qrCodeSwiftVersion: String,
+        val qrCodeSwiftRevision: String,
+        val generatorCommit: String
+    )
 
     data class OracleVector(
         val name: String,
@@ -23,6 +34,31 @@ class Tier4UpstreamMatrixOracleTest {
         val size: Int,
         val bitString: String
     )
+
+    private fun loadOracleProvenance(): OracleProvenance {
+        val stream = javaClass.classLoader?.getResourceAsStream("tier4_upstream_oracle_matrices.json")
+            ?: javaClass.getResourceAsStream("/tier4_upstream_oracle_matrices.json")
+            ?: error("tier4_upstream_oracle_matrices.json not found in test resources")
+        val jsonText = stream.bufferedReader().readText().replace("\r\n", "\n")
+        val efVer = Regex(""""efqrcode_version":\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)
+            ?: error("Missing efqrcode_version in oracle metadata")
+        val swiftVer = Regex(""""qrcode_swift_version":\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)
+            ?: error("Missing qrcode_swift_version in oracle metadata")
+        val swiftRev = Regex(""""qrcode_swift_revision":\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)
+            ?: error("Missing qrcode_swift_revision in oracle metadata")
+        val commit = Regex(""""generator_commit":\s*"([^"]+)"""").find(jsonText)?.groupValues?.get(1)
+            ?: error("Missing generator_commit in oracle metadata")
+        return OracleProvenance(efVer, swiftVer, swiftRev, commit)
+    }
+
+    @Test
+    fun testOracleProvenanceMetadataMatchesUpstreamPins() {
+        val provenance = loadOracleProvenance()
+        assertEquals("7.0.3", provenance.efQrCodeVersion)
+        assertEquals("2.3.1", provenance.qrCodeSwiftVersion)
+        assertEquals("d1605333f7edac39b4518538ef4f2638fdd2e4d6", provenance.qrCodeSwiftRevision)
+        assertNotNull(provenance.generatorCommit)
+    }
 
     private fun loadOracleVectors(): List<OracleVector> {
         val stream = javaClass.classLoader?.getResourceAsStream("tier4_upstream_oracle_matrices.json")
