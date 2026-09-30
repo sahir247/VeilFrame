@@ -179,10 +179,6 @@ let metadata = OracleMetadata(
 )
 
 func escapeJsonString(_ str: String) -> String {
-    if let data = try? JSONEncoder().encode(str),
-       let s = String(data: data, encoding: .utf8) {
-        return s
-    }
     var result = "\""
     for scalar in str.unicodeScalars {
         switch scalar.value {

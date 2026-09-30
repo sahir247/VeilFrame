@@ -8,3 +8,4 @@ calibration/v1.0/*.tar.gz binary
 *.jar binary
 *.sh text eol=lf
 gradlew text eol=lf
+android/app/src/test/resources/tier4_upstream_oracle_matrices.json text eol=lf
