@@ -125,7 +125,7 @@ class BubbleClusterAndImageMaskedTest {
                 )
 
                 // Software rasterize QR code including finders, timing, data clusters, and ambient bubbles
-                val scale = 8 // 8 pixels per module
+                val scale = 10 // 10 pixels per module
                 val qz = 4
                 val n = matrix.size
                 val totalModules = n + (2 * qz)

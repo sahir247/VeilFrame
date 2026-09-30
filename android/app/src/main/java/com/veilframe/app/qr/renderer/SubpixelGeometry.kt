@@ -123,8 +123,32 @@ object SubpixelGeometry {
     ): SubpixelRect = computeSvgRect(col, row, quietZone, quietZone, subX, subY, antiGapScale)
 
     /**
-     * Normalized coordinate helper for SVG vector export supporting asymmetric quiet zones.
+     * Normalized coordinate helper for SVG vector export supporting asymmetric floating-point quiet zones.
      */
+    fun computeSvgRect(
+        col: Int,
+        row: Int,
+        quietZoneLeft: Float,
+        quietZoneTop: Float,
+        subX: Int,
+        subY: Int,
+        antiGapScale: Float = ANTI_GAP_SCALE
+    ): SubpixelRect {
+        val moduleLeft = col.toFloat() + quietZoneLeft
+        val moduleTop = row.toFloat() + quietZoneTop
+        return computeRect(subX, subY, moduleLeft, moduleTop, 1.0f, antiGapScale)
+    }
+
+    fun computeSvgRect(
+        col: Int,
+        row: Int,
+        quietZoneLeft: Double,
+        quietZoneTop: Double,
+        subX: Int,
+        subY: Int,
+        antiGapScale: Float = ANTI_GAP_SCALE
+    ): SubpixelRect = computeSvgRect(col, row, quietZoneLeft.toFloat(), quietZoneTop.toFloat(), subX, subY, antiGapScale)
+
     fun computeSvgRect(
         col: Int,
         row: Int,
@@ -133,9 +157,5 @@ object SubpixelGeometry {
         subX: Int,
         subY: Int,
         antiGapScale: Float = ANTI_GAP_SCALE
-    ): SubpixelRect {
-        val moduleLeft = (col + quietZoneLeft).toFloat()
-        val moduleTop = (row + quietZoneTop).toFloat()
-        return computeRect(subX, subY, moduleLeft, moduleTop, 1.0f, antiGapScale)
-    }
+    ): SubpixelRect = computeSvgRect(col, row, quietZoneLeft.toFloat(), quietZoneTop.toFloat(), subX, subY, antiGapScale)
 }

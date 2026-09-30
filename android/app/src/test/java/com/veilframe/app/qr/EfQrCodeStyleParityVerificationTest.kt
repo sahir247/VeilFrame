@@ -1436,7 +1436,7 @@ class EfQrCodeStyleParityVerificationTest {
     fun testIconExact24PaddingOffsetAndSq25Border() {
         val dummyBmp = allocateBitmapReflectively()
         val matrix = QrMatrix("https://veilframe.app/icon-test", ErrorCorrectionLevel.H)
-        val geom = QrGeometry.fromDesign(matrix.size, 512, 512, QrDesign())
+        val geom = QrGeometry(matrix.size, 512, 512, quietZoneModules = 0)
 
         val design = QrDesign(
             style = QrStyle.IMAGE,

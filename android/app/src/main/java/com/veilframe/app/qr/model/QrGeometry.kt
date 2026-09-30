@@ -7,6 +7,23 @@ import com.veilframe.app.qr.QrStyle
  * Maps logical QR matrix coordinates into output canvas pixel coordinates,
  * strictly incorporating the non-negotiable 4-module Quiet Zone.
  */
+/**
+ * Canonical resolved quiet zone margins in floating-point module units.
+ */
+data class ResolvedQuietZone(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+) {
+    val leftInt: Int get() = Math.round(left)
+    val topInt: Int get() = Math.round(top)
+    val rightInt: Int get() = Math.round(right)
+    val bottomInt: Int get() = Math.round(bottom)
+    val maxMargin: Float get() = maxOf(left, top, right, bottom)
+    val maxMarginInt: Int get() = Math.round(maxMargin)
+}
+
 class QrGeometry(
     val matrixSize: Int,
     val outputWidth: Int,
@@ -45,8 +62,44 @@ class QrGeometry(
             }
         }
 
+        /**
+         * Resolves canonical quiet zone margins following the unified precedence:
+         * 1. [BackdropStyle.fractionalQuietZone] (percentage of matrix size)
+         * 2. [QrDesign.directionalQuietZone] (asymmetric float insets)
+         * 3. [QrDesign.explicitQuietZone] (explicit integer override)
+         * 4. [QrDesign.quietZoneModules] (design-level module count)
+         * 5. Style default (e.g. D25 defaults to 0 unless explicitly configured)
+         */
+        fun resolveQuietZone(design: QrDesign, matrixSize: Int = 21): ResolvedQuietZone {
+            val fracQz = design.backdropStyle.fractionalQuietZone
+            if (fracQz != null) {
+                return ResolvedQuietZone(
+                    left = fracQz.left * matrixSize,
+                    top = fracQz.top * matrixSize,
+                    right = fracQz.right * matrixSize,
+                    bottom = fracQz.bottom * matrixSize
+                )
+            }
+            val dirQz = design.directionalQuietZone
+            if (dirQz != null) {
+                return ResolvedQuietZone(
+                    left = dirQz.leftFloat,
+                    top = dirQz.topFloat,
+                    right = dirQz.rightFloat,
+                    bottom = dirQz.bottomFloat
+                )
+            }
+            val eqz = design.explicitQuietZone
+            if (eqz != null) {
+                val f = eqz.toFloat()
+                return ResolvedQuietZone(f, f, f, f)
+            }
+            val fallback = resolveDefaultQuietZone(design.style, design.quietZoneModules).toFloat()
+            return ResolvedQuietZone(fallback, fallback, fallback, fallback)
+        }
+
         fun resolveQuietZone(design: QrDesign): Int {
-            return design.explicitQuietZone ?: resolveDefaultQuietZone(design.style, design.quietZoneModules)
+            return resolveQuietZone(design, 21).maxMarginInt
         }
 
         fun fromDesign(
@@ -54,39 +107,32 @@ class QrGeometry(
             outputWidth: Int,
             outputHeight: Int,
             design: QrDesign,
-            defaultQuietZone: Int = resolveDefaultQuietZone(design.style)
+            defaultQuietZone: Int? = null
         ): QrGeometry {
-            val fallbackQz = resolveDefaultQuietZone(design.style, defaultQuietZone)
-            val qz = design.explicitQuietZone ?: fallbackQz
-            val fracQz = design.backdropStyle.fractionalQuietZone
-            val dirQz = design.directionalQuietZone
-
-            val qzLeftFloat: Float = fracQz?.let { it.left * matrixSize }
-                ?: dirQz?.leftFloat
-                ?: qz.toFloat()
-            val qzTopFloat: Float = fracQz?.let { it.top * matrixSize }
-                ?: dirQz?.topFloat
-                ?: qz.toFloat()
-            val qzRightFloat: Float = fracQz?.let { it.right * matrixSize }
-                ?: dirQz?.rightFloat
-                ?: qz.toFloat()
-            val qzBottomFloat: Float = fracQz?.let { it.bottom * matrixSize }
-                ?: dirQz?.bottomFloat
-                ?: qz.toFloat()
+            val resolvedQz = if (defaultQuietZone != null &&
+                design.explicitQuietZone == null &&
+                design.backdropStyle.fractionalQuietZone == null &&
+                design.directionalQuietZone == null
+            ) {
+                val f = defaultQuietZone.toFloat()
+                ResolvedQuietZone(f, f, f, f)
+            } else {
+                resolveQuietZone(design, matrixSize)
+            }
 
             return QrGeometry(
                 matrixSize = matrixSize,
                 outputWidth = outputWidth,
                 outputHeight = outputHeight,
-                quietZoneModules = qz,
-                quietZoneLeft = Math.round(qzLeftFloat),
-                quietZoneTop = Math.round(qzTopFloat),
-                quietZoneRight = Math.round(qzRightFloat),
-                quietZoneBottom = Math.round(qzBottomFloat),
-                quietZoneLeftFloat = qzLeftFloat,
-                quietZoneTopFloat = qzTopFloat,
-                quietZoneRightFloat = qzRightFloat,
-                quietZoneBottomFloat = qzBottomFloat
+                quietZoneModules = resolvedQz.maxMarginInt,
+                quietZoneLeft = resolvedQz.leftInt,
+                quietZoneTop = resolvedQz.topInt,
+                quietZoneRight = resolvedQz.rightInt,
+                quietZoneBottom = resolvedQz.bottomInt,
+                quietZoneLeftFloat = resolvedQz.left,
+                quietZoneTopFloat = resolvedQz.top,
+                quietZoneRightFloat = resolvedQz.right,
+                quietZoneBottomFloat = resolvedQz.bottom
             )
         }
     }

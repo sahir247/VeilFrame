@@ -39,16 +39,24 @@ import kotlin.random.Random
  */
 object SvgExporter {
 
+    fun formatCoord(v: Double): String {
+        return if (v % 1.0 == 0.0) {
+            v.toLong().toString()
+        } else {
+            String.format(Locale.US, "%.4f", v).trimEnd('0').trimEnd('.')
+        }
+    }
+
     fun generateSvg(
         matrix: QrMatrix,
         design: QrDesign,
         pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
     ): String {
-        val qz = com.veilframe.app.qr.model.QrGeometry.resolveQuietZone(design)
-        val qzLeft = design.directionalQuietZone?.left ?: qz
-        val qzTop = design.directionalQuietZone?.top ?: qz
-        val qzRight = design.directionalQuietZone?.right ?: qz
-        val qzBottom = design.directionalQuietZone?.bottom ?: qz
+        val resolvedQz = com.veilframe.app.qr.model.QrGeometry.resolveQuietZone(design, matrix.size)
+        val qzLeft = resolvedQz.left.toDouble()
+        val qzTop = resolvedQz.top.toDouble()
+        val qzRight = resolvedQz.right.toDouble()
+        val qzBottom = resolvedQz.bottom.toDouble()
 
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
@@ -99,7 +107,7 @@ object SvgExporter {
             return generateRandomRectangleSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE) {
-            val resampleGeom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+            val resampleGeom = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
             val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, resampleGeom, pixelSource)
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
@@ -108,16 +116,19 @@ object SvgExporter {
         val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
         val hasBackdropImg = design.backdropStyle.image != null
 
+        val twStr = formatCoord(totalWidth)
+        val thStr = formatCoord(totalHeight)
+
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
 
         // 1. Defs (Gradients & Masks & Corner Clip)
         val isMasked = design.moduleStyle.fill == ModuleFill.IMAGE_MASKED
         if (hasCornerClip || hasGradient || isMasked) {
             sb.append("  <defs>\n")
             if (hasCornerClip) {
-                sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+                sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
             }
             if (hasGradient) {
                 if (isRadial) {
@@ -134,7 +145,7 @@ object SvgExporter {
             }
             if (isMasked) {
                 sb.append("""    <mask id="qrDataMask">""").append("\n")
-                sb.append("""      <rect width="$totalWidth" height="$totalHeight" fill="black" />""").append("\n")
+                sb.append("""      <rect width="$twStr" height="$thStr" fill="black" />""").append("\n")
                 if (design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER) {
                     val clusters = com.veilframe.app.qr.renderer.BubbleClusterEngine.computeClusters(matrix, design)
                     for (cluster in clusters) {
@@ -183,7 +194,7 @@ object SvgExporter {
         }
 
         // 2. Background Layer (Outer backdrop rectangle)
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
+        sb.append("""  <rect width="$twStr" height="$thStr" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
                 source = design.backdropStyle.image!!,
@@ -193,7 +204,7 @@ object SvgExporter {
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
-            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
 
         val bgBmp = design.backgroundLayer.bitmap ?: design.backgroundImage
@@ -201,7 +212,7 @@ object SvgExporter {
             val bgBase64 = bitmapToBase64(bgBmp)
             if (bgBase64.isNotEmpty()) {
                 val opacity = String.format(Locale.US, "%.2f", design.backgroundLayer.opacity)
-                sb.append("""  <image href="data:image/png;base64,$bgBase64" width="$totalWidth" height="$totalHeight" preserveAspectRatio="xMidYMid slice" opacity="$opacity" />""").append("\n")
+                sb.append("""  <image href="data:image/png;base64,$bgBase64" width="$twStr" height="$thStr" preserveAspectRatio="xMidYMid slice" opacity="$opacity" />""").append("\n")
             }
         }
 
@@ -223,10 +234,10 @@ object SvgExporter {
             if (srcBmp != null && !srcBmp.isRecycled) {
                 val srcBase64 = bitmapToBase64(srcBmp)
                 if (srcBase64.isNotEmpty()) {
-                    sb.append("""  <image href="data:image/png;base64,$srcBase64" width="$totalWidth" height="$totalHeight" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
+                    sb.append("""  <image href="data:image/png;base64,$srcBase64" width="$twStr" height="$thStr" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
                 }
             } else if (pixelSource != null || design.imageSource.source != null) {
-                sb.append("""  <image href="#sourceBackdrop" width="$totalWidth" height="$totalHeight" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
+                sb.append("""  <image href="#sourceBackdrop" width="$twStr" height="$thStr" preserveAspectRatio="$aspect" opacity="$opacity"$blendStyle />""").append("\n")
             }
             val tint = design.resampleStyle.backdropTint
             if (tint != null) {
@@ -246,7 +257,7 @@ object SvgExporter {
                     val th = String.format(Locale.US, "%.3f", dstRect.bottom - dstRect.top)
                     sb.append("""  <rect x="$tx" y="$ty" width="$tw" height="$th" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
                 } else {
-                    sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
+                    sb.append("""  <rect width="$twStr" height="$thStr" fill="$tintHex" opacity="$tintAlpha" />""").append("\n")
                 }
             }
         }
@@ -550,7 +561,7 @@ object SvgExporter {
         }
 
         // 5. Embedded Logo (if present)
-        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
 
         sb.append("</svg>")
         return sb.toString()
@@ -596,13 +607,18 @@ object SvgExporter {
     private fun generateImageFillSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
+        val twStr = formatCoord(totalWidth)
+        val thStr = formatCoord(totalHeight)
+        val qzLeftStr = formatCoord(qzLeft)
+        val qzTopStr = formatCoord(qzTop)
+
         val sourceBmp = design.imageSource.bitmap
         val preprocessedStatic = sourceBmp?.let {
             com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
@@ -625,13 +641,13 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
         if (hasCornerClip) {
-            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
         }
         sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="0" y="0" width="$twStr" height="$thStr" fill="black"/>""").append("\n")
         for (col in 0 until matrix.size) {
             for (row in 0 until matrix.size) {
                 if (matrix.isDark(col, row)) {
@@ -653,7 +669,7 @@ object SvgExporter {
         val canvasBgAlpha = colorAlpha(resolvedBackdropColor)
         val canvasBgHex = toSvgColor(resolvedBackdropColor).hex
         val alphaStr = formatOpacity(canvasBgAlpha)
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
+        sb.append("""  <rect width="$twStr" height="$thStr" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
                 source = design.backdropStyle.image!!,
@@ -663,11 +679,11 @@ object SvgExporter {
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
-            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
 
-        sb.append("""  <g x="0" y="0" width="$totalWidth" height="$totalHeight" mask="url(#hole)">""").append("\n")
-        sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
+        sb.append("""  <g x="0" y="0" width="$twStr" height="$thStr" mask="url(#hole)">""").append("\n")
+        sb.append("""    <rect x="0" y="0" width="$twStr" height="$thStr" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
 
         val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
         val animatedFrames = design.imageSource.animatedFrames
@@ -691,7 +707,7 @@ object SvgExporter {
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
             for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeftStr" y="$qzTopStr" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
             }
             sb.append("      </defs>\n")
 
@@ -718,16 +734,16 @@ object SvgExporter {
             sb.append("      </use>\n")
             sb.append("    </g>\n")
         } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeftStr" y="$qzTopStr" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
         }
-        sb.append("""    <rect x="0" y="0" width="$totalWidth" height="$totalHeight" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
+        sb.append("""    <rect x="0" y="0" width="$twStr" height="$thStr" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
         sb.append("  </g>\n")
 
         if (hasCornerClip) {
             sb.append("  </g>\n")
         }
 
-        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
         sb.append("</svg>")
         return sb.toString()
     }
@@ -735,13 +751,18 @@ object SvgExporter {
     private fun generateImageSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
+        val twStr = formatCoord(totalWidth)
+        val thStr = formatCoord(totalHeight)
+        val qzLeftStr = formatCoord(qzLeft)
+        val qzTopStr = formatCoord(qzTop)
+
         val sourceBmp = design.imageSource.bitmap
         val preprocessedStatic = sourceBmp?.let {
             com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
@@ -765,16 +786,16 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
         sb.append("  <defs>\n")
         if (hasCornerClip) {
-            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
         }
         sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="$qzLeft" y="$qzTop" width="$n" height="$n" fill="white"/>""").append("\n")
-        sb.append("""      <rect x="$qzLeft" y="$qzTop" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="${n - 8 + qzLeft}" y="$qzTop" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="$qzLeft" y="${n - 8 + qzTop}" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" fill="white"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="${formatCoord(n - 8 + qzLeft)}" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
+        sb.append("""      <rect x="$qzLeftStr" y="${formatCoord(n - 8 + qzTop)}" width="8" height="8" fill="black"/>""").append("\n")
         sb.append("    </mask>\n")
         sb.append("  </defs>\n")
 
@@ -783,7 +804,7 @@ object SvgExporter {
         }
 
         // 1. Canvas background (preserves opacity per EF backdrop contract)
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
+        sb.append("""  <rect width="$twStr" height="$thStr" fill="$bgHex" opacity="$bgAlphaStr"/>""").append("\n")
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
                 source = design.backdropStyle.image!!,
@@ -793,7 +814,7 @@ object SvgExporter {
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
-            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
 
         // 2. Transparent pre-pass (EFQRCodeStyleImage.swift:635-660: when timing or alignment shape is NONE, fallback to data shape)
@@ -830,7 +851,7 @@ object SvgExporter {
         }
 
         // 3. Image layer with #hole mask (EF parity: no second preserveAspectRatio on preprocessed bitmap)
-        sb.append("""  <g x="$qzLeft" y="$qzTop" width="$n" height="$n" mask="url(#hole)">""").append("\n")
+        sb.append("""  <g x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" mask="url(#hole)">""").append("\n")
         val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
         val animatedFrames = design.imageSource.animatedFrames
         val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
@@ -853,7 +874,7 @@ object SvgExporter {
             sb.append("    <g>\n")
             sb.append("      <defs>\n")
             for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
+                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
             }
             sb.append("      </defs>\n")
 
@@ -880,7 +901,7 @@ object SvgExporter {
             sb.append("      </use>\n")
             sb.append("    </g>\n")
         } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeft" y="$qzTop" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
+            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
         }
         sb.append("  </g>\n")
 
@@ -893,7 +914,9 @@ object SvgExporter {
             Pair(qzLeft, qzTop + n - 8)
         )
         for ((bx, by) in finderBgs) {
-            sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bx" y="$by" fill="$posLightHex"/>""").append("\n")
+            val bxStr = formatCoord(bx)
+            val byStr = formatCoord(by)
+            sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bxStr" y="$byStr" fill="$posLightHex"/>""").append("\n")
         }
 
         val eyeOuterHex = design.eyeStyle.outerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
@@ -993,7 +1016,7 @@ object SvgExporter {
             sb.append("  </g>\n")
         }
 
-        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
         sb.append("</svg>")
         return sb.toString()
     }
@@ -1001,10 +1024,10 @@ object SvgExporter {
     private fun generate25DSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int = 0,
-        qzTop: Int = 0,
-        qzRight: Int = 0,
-        qzBottom: Int = 0
+        qzLeft: Double = 0.0,
+        qzTop: Double = 0.0,
+        qzRight: Double = 0.0,
+        qzBottom: Double = 0.0
     ): String {
         val n = matrix.size
         val matrixString = "matrix(0.8660254037844386,0.5,-0.8660254037844386,0.5,0,0)"
@@ -1026,13 +1049,15 @@ object SvgExporter {
         //   vbY = -(n/2 + qzTop)
         //   vbW = 2n + qzLeft + qzRight
         //   vbH = 2n + qzTop + qzBottom
-        val vbX = -(n + qzLeft).toDouble()
+        val vbX = -(n + qzLeft)
         val vbY = -(n / 2.0 + qzTop)
-        val vbW = (2 * n + qzLeft + qzRight).toDouble()
-        val vbH = (2 * n + qzTop + qzBottom).toDouble()
+        val vbW = (2 * n + qzLeft + qzRight)
+        val vbH = (2 * n + qzTop + qzBottom)
 
-        val vbXStr = if (qzLeft == 0) "-$n" else if (vbX == vbX.toLong().toDouble()) "${vbX.toLong()}" else "$vbX"
+        val vbXStr = if (qzLeft == 0.0) "-$n" else if (vbX == vbX.toLong().toDouble()) "${vbX.toLong()}" else "$vbX"
         val vbYStr = if (vbY == vbY.toLong().toDouble()) "${vbY.toLong()}" else "$vbY"
+        val vbWStr = "$vbW"
+        val vbHStr = "$vbH"
 
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
         val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
@@ -1040,16 +1065,16 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbXStr $vbYStr $vbW $vbH" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="$vbXStr $vbYStr $vbWStr $vbHStr" width="100%" height="100%">""").append("\n")
 
         if (hasCornerClip) {
             sb.append("  <defs>\n")
-            sb.append("""    <clipPath id="rounded-corners"><rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect x="$vbXStr" y="$vbYStr" width="$vbWStr" height="$vbHStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
             sb.append("  </defs>\n")
             sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
         }
 
-        sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbW" height="$vbH" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
+        sb.append("""  <rect x="$vbXStr" y="$vbYStr" width="$vbWStr" height="$vbHStr" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
 
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
@@ -1113,14 +1138,14 @@ object SvgExporter {
     private fun generateDsjSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
         val rawIr = com.veilframe.app.qr.renderer.DsjRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1129,7 +1154,7 @@ object SvgExporter {
             val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
             val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
             val sb = StringBuilder(prefix)
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
             sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
@@ -1140,14 +1165,16 @@ object SvgExporter {
     private fun generateFunctionSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val nCount = matrix.size
         val totalWidth = nCount + qzLeft + qzRight
         val totalHeight = nCount + qzTop + qzBottom
+        val twStr = formatCoord(totalWidth)
+        val thStr = formatCoord(totalHeight)
         val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
         val bgHex = toSvgColor(resolvedBackdropColor).hex
         val bgAlpha = colorAlpha(resolvedBackdropColor)
@@ -1174,16 +1201,16 @@ object SvgExporter {
 
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $totalWidth $totalHeight" width="100%" height="100%">""").append("\n")
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
 
         if (hasCornerClip) {
             sb.append("  <defs>\n")
-            sb.append("""    <clipPath id="rounded-corners"><rect width="$totalWidth" height="$totalHeight" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
             sb.append("  </defs>\n")
             sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
         }
 
-        sb.append("""  <rect width="$totalWidth" height="$totalHeight" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
+        sb.append("""  <rect width="$twStr" height="$thStr" fill="$bgHex" opacity="$bgAlphaStr" />""").append("\n")
 
         if (hasBackdropImg) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
@@ -1194,7 +1221,7 @@ object SvgExporter {
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
-            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$totalWidth" height="$totalHeight" x="0" y="0"/>""").append("\n")
+            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
 
         var id = 0
@@ -1316,7 +1343,7 @@ object SvgExporter {
             }
         }
 
-        appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+        appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
 
         if (hasCornerClip) {
             sb.append("  </g>\n")
@@ -1329,14 +1356,14 @@ object SvgExporter {
     private fun generateLineSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
         val rawIr = com.veilframe.app.qr.renderer.LineRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1345,7 +1372,7 @@ object SvgExporter {
             val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
             val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
             val sb = StringBuilder(prefix)
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
             sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
@@ -1356,14 +1383,14 @@ object SvgExporter {
     private fun generateBubbleSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
         val rawIr = com.veilframe.app.qr.renderer.BubbleRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1372,7 +1399,7 @@ object SvgExporter {
             val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
             val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
             val sb = StringBuilder(prefix)
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
             sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
@@ -1383,14 +1410,14 @@ object SvgExporter {
     private fun generateRandomRectangleSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        qzLeft: Int,
-        qzTop: Int,
-        qzRight: Int,
-        qzBottom: Int
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
     ): String {
         val totalWidth = matrix.size + qzLeft + qzRight
         val totalHeight = matrix.size + qzTop + qzBottom
-        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth, totalHeight, design)
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, Math.round(totalWidth).toInt(), Math.round(totalHeight).toInt(), design)
         val rawIr = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -1399,7 +1426,7 @@ object SvgExporter {
             val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
             val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
             val sb = StringBuilder(prefix)
-            appendLogo(sb, design, matrix.size, qzLeft.toDouble(), qzTop.toDouble(), bgHex)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
             sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
             sb.toString()
         } else {
@@ -1410,7 +1437,7 @@ object SvgExporter {
     private fun appendFinders(
         sb: StringBuilder,
         design: QrDesign,
-        qz: Int,
+        qz: Double,
         matrixSize: Int,
         fgHex: String,
         bgHex: String,
@@ -1423,8 +1450,35 @@ object SvgExporter {
     private fun appendFinders(
         sb: StringBuilder,
         design: QrDesign,
+        qz: Int,
+        matrixSize: Int,
+        fgHex: String,
+        bgHex: String,
+        eyeOuterHex: String,
+        eyeInnerHex: String
+    ) {
+        appendFinders(sb, design, qz.toDouble(), qz.toDouble(), matrixSize, fgHex, bgHex, eyeOuterHex, eyeInnerHex)
+    }
+
+    private fun appendFinders(
+        sb: StringBuilder,
+        design: QrDesign,
         qzLeft: Int,
         qzTop: Int,
+        matrixSize: Int,
+        fgHex: String,
+        bgHex: String,
+        eyeOuterHex: String,
+        eyeInnerHex: String
+    ) {
+        appendFinders(sb, design, qzLeft.toDouble(), qzTop.toDouble(), matrixSize, fgHex, bgHex, eyeOuterHex, eyeInnerHex)
+    }
+
+    private fun appendFinders(
+        sb: StringBuilder,
+        design: QrDesign,
+        qzLeft: Double,
+        qzTop: Double,
         matrixSize: Int,
         fgHex: String,
         bgHex: String,
@@ -1442,46 +1496,56 @@ object SvgExporter {
         for ((fx, fy) in finders) {
             val cx = fx + 3.5
             val cy = fy + 3.5
+            val cxStr = formatCoord(cx)
+            val cyStr = formatCoord(cy)
+            val fxStr = formatCoord(fx)
+            val fyStr = formatCoord(fy)
 
             when (design.eyeStyle.style) {
                 FinderStyle.CIRCLE -> {
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="3.5" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="3.5" fill="$eyeOuterHex" />""").append("\n")
                     if (!isHollowFinder) {
-                        sb.append("""  <circle cx="$cx" cy="$cy" r="2.5" fill="$bgHex" />""").append("\n")
+                        sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="2.5" fill="$bgHex" />""").append("\n")
                     }
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                 }
                 FinderStyle.ROUNDED -> {
                     val posSize = design.positionSize.toDouble()
                     val strokeW = 100.0 / 6.0 * posSize
-                    val tx = cx - 3.0
-                    val ty = cy - 3.0
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    val tx = formatCoord(cx - 3.0)
+                    val ty = formatCoord(cy - 3.0)
+                    sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                     sb.append("""  <path d="${VeilPositionPatternGeometry.SQ25_PATH}" stroke="$eyeOuterHex" stroke-width="$strokeW" fill="none" transform="translate($tx,$ty) scale(0.06,0.06)" />""").append("\n")
                 }
                 FinderStyle.SOFT -> {
                     if (isHollowFinder) {
-                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" rx="1.5" fill="none" stroke="$eyeOuterHex" stroke-width="1" />""").append("\n")
-                        sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                        val fx05 = formatCoord(fx + 0.5)
+                        val fy05 = formatCoord(fy + 0.5)
+                        sb.append("""  <rect x="$fx05" y="$fy05" width="6" height="6" rx="1.5" fill="none" stroke="$eyeOuterHex" stroke-width="1" />""").append("\n")
+                        sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                     } else {
-                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
-                        sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                        val fx1 = formatCoord(fx + 1.0)
+                        val fy1 = formatCoord(fy + 1.0)
+                        sb.append("""  <rect x="$fxStr" y="$fyStr" width="7" height="7" rx="1.5" fill="$eyeOuterHex" />""").append("\n")
+                        sb.append("""  <rect x="$fx1" y="$fy1" width="5" height="5" rx="0.8" fill="$bgHex" />""").append("\n")
+                        sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
                     }
                 }
                 FinderStyle.FRAME -> {
-                    sb.append("""  <rect x="${fx + 0.4}" y="${fy + 0.4}" width="6.2" height="6.2" rx="1" fill="none" stroke="$eyeOuterHex" stroke-width="0.8" />""").append("\n")
-                    val pts = "${cx},${cy - 1.5} ${cx + 1.5},${cy} ${cx},${cy + 1.5} ${cx - 1.5},${cy}"
+                    val fx04 = formatCoord(fx + 0.4)
+                    val fy04 = formatCoord(fy + 0.4)
+                    sb.append("""  <rect x="$fx04" y="$fy04" width="6.2" height="6.2" rx="1" fill="none" stroke="$eyeOuterHex" stroke-width="0.8" />""").append("\n")
+                    val pts = "$cxStr,${formatCoord(cy - 1.5)} ${formatCoord(cx + 1.5)},$cyStr $cxStr,${formatCoord(cy + 1.5)} ${formatCoord(cx - 1.5)},$cyStr"
                     sb.append("""  <polygon points="$pts" fill="$eyeInnerHex" />""").append("\n")
                 }
                 FinderStyle.PLANETS -> {
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="1.5" fill="$eyeInnerHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="$cy" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.15" stroke-dasharray="0.5,0.5" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="$cyStr" r="3" fill="none" stroke="$eyeOuterHex" stroke-width="0.15" stroke-dasharray="0.5,0.5" />""").append("\n")
                     val planetRadius = 0.5 * design.positionSize
-                    sb.append("""  <circle cx="${cx - 3}" cy="$cy" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="${cx + 3}" cy="$cy" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy - 3}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <circle cx="$cx" cy="${cy + 3}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="${formatCoord(cx - 3.0)}" cy="$cyStr" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="${formatCoord(cx + 3.0)}" cy="$cyStr" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="${formatCoord(cy - 3.0)}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle cx="$cxStr" cy="${formatCoord(cy + 3.0)}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
                 }
                 FinderStyle.DSJ -> {
                     val posSize = design.positionSize.toDouble()
@@ -1489,20 +1553,30 @@ object SvgExporter {
                     val armDim = posSize
                     val halfW = widthVal / 2.0
                     val halfArm = armDim / 2.0
-                    sb.append("""  <rect x="${cx - halfW}" y="${cy - halfW}" width="$widthVal" height="$widthVal" fill="$eyeInnerHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - 3.0 - halfArm}" y="${cy - halfW}" width="$armDim" height="$widthVal" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx + 3.0 - halfArm}" y="${cy - halfW}" width="$armDim" height="$widthVal" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - halfW}" y="${cy - 3.0 - halfArm}" width="$widthVal" height="$armDim" fill="$eyeOuterHex" />""").append("\n")
-                    sb.append("""  <rect x="${cx - halfW}" y="${cy + 3.0 - halfArm}" width="$widthVal" height="$armDim" fill="$eyeOuterHex" />""").append("\n")
+                    val wStr = formatCoord(widthVal)
+                    val aStr = formatCoord(armDim)
+                    sb.append("""  <rect x="${formatCoord(cx - halfW)}" y="${formatCoord(cy - halfW)}" width="$wStr" height="$wStr" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <rect x="${formatCoord(cx - 3.0 - halfArm)}" y="${formatCoord(cy - halfW)}" width="$aStr" height="$wStr" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${formatCoord(cx + 3.0 - halfArm)}" y="${formatCoord(cy - halfW)}" width="$aStr" height="$wStr" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${formatCoord(cx - halfW)}" y="${formatCoord(cy - 3.0 - halfArm)}" width="$wStr" height="$aStr" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <rect x="${formatCoord(cx - halfW)}" y="${formatCoord(cy + 3.0 - halfArm)}" width="$wStr" height="$aStr" fill="$eyeOuterHex" />""").append("\n")
                 }
                 else -> {
                     if (isHollowFinder) {
-                        sb.append("""  <rect x="${fx + 0.5}" y="${fy + 0.5}" width="6" height="6" fill="none" stroke="$eyeOuterHex" stroke-width="1" rx="0.5" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                        val fx05 = formatCoord(fx + 0.5)
+                        val fy05 = formatCoord(fy + 0.5)
+                        val fx2 = formatCoord(fx + 2.0)
+                        val fy2 = formatCoord(fy + 2.0)
+                        sb.append("""  <rect x="$fx05" y="$fy05" width="6" height="6" fill="none" stroke="$eyeOuterHex" stroke-width="1" rx="0.5" />""").append("\n")
+                        sb.append("""  <rect x="$fx2" y="$fy2" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
                     } else {
-                        sb.append("""  <rect x="$fx" y="$fy" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 1}" y="${fy + 1}" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
-                        sb.append("""  <rect x="${fx + 2}" y="${fy + 2}" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
+                        val fx1 = formatCoord(fx + 1.0)
+                        val fy1 = formatCoord(fy + 1.0)
+                        val fx2 = formatCoord(fx + 2.0)
+                        val fy2 = formatCoord(fy + 2.0)
+                        sb.append("""  <rect x="$fxStr" y="$fyStr" width="7" height="7" fill="$eyeOuterHex" rx="0.5" />""").append("\n")
+                        sb.append("""  <rect x="$fx1" y="$fy1" width="5" height="5" fill="$bgHex" rx="0.3" />""").append("\n")
+                        sb.append("""  <rect x="$fx2" y="$fy2" width="3" height="3" fill="$eyeInnerHex" rx="0.2" />""").append("\n")
                     }
                 }
             }

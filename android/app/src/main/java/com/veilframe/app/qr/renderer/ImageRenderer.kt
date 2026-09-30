@@ -253,9 +253,9 @@ class ImageRenderer : QrRenderer {
             nodes = nodes,
             defs = defs,
             design = design,
-            ox = 0f,
-            oy = 0f,
-            qrPixelSize = width
+            ox = geometry.offsetX,
+            oy = geometry.offsetY,
+            qrPixelSize = matrix.size * geometry.moduleSize
         )
 
         return QrGeometryIr(

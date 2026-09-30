@@ -188,17 +188,25 @@ object VeilPositionPatternGeometry {
         }
     }
 
+    private fun formatCoord(v: Double): String {
+        return if (v % 1.0 == 0.0) {
+            v.toLong().toString()
+        } else {
+            String.format(Locale.US, "%.4f", v).trimEnd('0').trimEnd('.')
+        }
+    }
+
     fun buildSvgElements(
         x: Int,
         y: Int,
-        qz: Int,
+        qz: Double,
         style: FinderStyle,
         size: Float,
         colorHex: String,
         alpha: Float,
         idStart: Int,
-        qzLeft: Int = qz,
-        qzTop: Int = qz
+        qzLeft: Double = qz,
+        qzTop: Double = qz
     ): Pair<String, Int> {
         val sb = StringBuilder()
         var id = idStart
@@ -206,47 +214,57 @@ object VeilPositionPatternGeometry {
         val ay = y + qzTop
         val alphaStr = String.format(Locale.US, "%.2f", alpha)
         val posSizeStr = String.format(Locale.US, "%.3f", size)
+        val axMinus1 = formatCoord(ax - 1.0)
+        val ayMinus1 = formatCoord(ay - 1.0)
+        val axMinus25 = formatCoord(ax - 2.5)
+        val ayMinus25 = formatCoord(ay - 2.5)
+        val cx = formatCoord(ax + 0.5)
+        val cy = formatCoord(ay + 0.5)
 
         when (style) {
             FinderStyle.CLASSIC -> { // rectangle
-                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="${ax - 1}" y="${ay - 1}"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="$axMinus1" y="$ayMinus1"/>""").append("\n")
                 id++
-                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="${ax - 2.5}" y="${ay - 2.5}" width="6" height="6"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="$axMinus25" y="$ayMinus25" width="6" height="6"/>""").append("\n")
                 id++
             }
             FinderStyle.CIRCLE -> { // round
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 0.5}" cy="${ay + 0.5}" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" cx="${ax + 0.5}" cy="${ay + 0.5}" r="3"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" cx="$cx" cy="$cy" r="3"/>""").append("\n")
                 id++
             }
             FinderStyle.ROUNDED -> { // roundedRectangle
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 0.5}" cy="${ay + 0.5}" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
                 val sw = String.format(Locale.US, "%.3f", 100.0 / 6.0 * size)
-                sb.append("""  <path key="$id" opacity="$alphaStr" d="$SQ25_PATH" stroke="$colorHex" stroke-width="$sw" fill="none" transform="translate(${ax - 2.5},${ay - 2.5}) scale(0.06,0.06)"/>""").append("\n")
+                sb.append("""  <path key="$id" opacity="$alphaStr" d="$SQ25_PATH" stroke="$colorHex" stroke-width="$sw" fill="none" transform="translate($axMinus25,$ayMinus25) scale(0.06,0.06)"/>""").append("\n")
                 id++
             }
             FinderStyle.PLANETS -> { // planets
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 0.5}" cy="${ay + 0.5}" r="1.5"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cy" r="1.5"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="0.15" stroke-dasharray="0.5,0.5" stroke="$colorHex" cx="${ax + 0.5}" cy="${ay + 0.5}" r="3"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="none" stroke-width="0.15" stroke-dasharray="0.5,0.5" stroke="$colorHex" cx="$cx" cy="$cy" r="3"/>""").append("\n")
                 id++
                 val satR = String.format(Locale.US, "%.3f", 0.5 * size)
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 3 + 0.5}" cy="${ay + 0.5}" r="$satR"/>""").append("\n")
+                val cxPlus3 = formatCoord(ax + 3.5)
+                val cxMinus3 = formatCoord(ax - 2.5)
+                val cyPlus3 = formatCoord(ay + 3.5)
+                val cyMinus3 = formatCoord(ay - 2.5)
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cxPlus3" cy="$cy" r="$satR"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax - 3 + 0.5}" cy="${ay + 0.5}" r="$satR"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cxMinus3" cy="$cy" r="$satR"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 0.5}" cy="${ay + 3 + 0.5}" r="$satR"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cyPlus3" r="$satR"/>""").append("\n")
                 id++
-                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="${ax + 0.5}" cy="${ay - 3 + 0.5}" r="$satR"/>""").append("\n")
+                sb.append("""  <circle key="$id" opacity="$alphaStr" fill="$colorHex" cx="$cx" cy="$cyMinus3" r="$satR"/>""").append("\n")
                 id++
             }
             FinderStyle.DSJ -> { // dsj
                 val widthVal = 3.0f - (1.0f - size)
                 val widthValStr = String.format(Locale.US, "%.3f", widthVal)
-                val xTemp = ax + (1.0f - size) / 2.0f
-                val yTemp = ay + (1.0f - size) / 2.0f
+                val xTemp = ax + (1.0 - size.toDouble()) / 2.0
+                val yTemp = ay + (1.0 - size.toDouble()) / 2.0
                 val xtStr = String.format(Locale.US, "%.3f", xTemp - 1)
                 val ytStr = String.format(Locale.US, "%.3f", yTemp - 1)
 
@@ -266,12 +284,36 @@ object VeilPositionPatternGeometry {
                 id++
             }
             else -> {
-                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="${ax - 1}" y="${ay - 1}"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$alphaStr" width="3" height="3" fill="$colorHex" x="$axMinus1" y="$ayMinus1"/>""").append("\n")
                 id++
-                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="${ax - 2.5}" y="${ay - 2.5}" width="6" height="6"/>""").append("\n")
+                sb.append("""  <rect key="$id" opacity="$alphaStr" fill="none" stroke-width="$posSizeStr" stroke="$colorHex" x="$axMinus25" y="$ayMinus25" width="6" height="6"/>""").append("\n")
                 id++
             }
         }
         return Pair(sb.toString(), id)
     }
+
+    fun buildSvgElements(
+        x: Int,
+        y: Int,
+        qz: Int,
+        style: FinderStyle,
+        size: Float,
+        colorHex: String,
+        alpha: Float,
+        idStart: Int,
+        qzLeft: Int = qz,
+        qzTop: Int = qz
+    ): Pair<String, Int> = buildSvgElements(
+        x = x,
+        y = y,
+        qz = qz.toDouble(),
+        style = style,
+        size = size,
+        colorHex = colorHex,
+        alpha = alpha,
+        idStart = idStart,
+        qzLeft = qzLeft.toDouble(),
+        qzTop = qzTop.toDouble()
+    )
 }

@@ -1,5 +1,6 @@
 package com.veilframe.app.qr.encoder
 
+import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 import com.google.zxing.qrcode.encoder.QRCode
@@ -31,8 +32,12 @@ object QrEncoder {
             throw QrError.Input.EmptyContent
         }
 
+        val hints = mapOf(
+            EncodeHintType.CHARACTER_SET to "UTF-8"
+        )
+
         val qrCode: QRCode = try {
-            Encoder.encode(content, errorCorrection, null)
+            Encoder.encode(content, errorCorrection, hints)
         } catch (t: Throwable) {
             throw QrError.fromThrowable(t, "ZXing encoder failure")
         }
