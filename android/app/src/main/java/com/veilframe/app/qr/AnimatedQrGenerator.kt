@@ -240,8 +240,11 @@ object AnimatedQrGenerator {
             imageSource = imgSource,
             logo = logoSource
         )
-        val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
-        return renderedBitmap?.let { QrFrame(bitmap = it, durationMs = sourceFrame.durationMs) }
+        val renderedResult = QrGenerator.generateBitmapResult(matrix, frameDesign, geometry)
+        return when (renderedResult) {
+            is QrGenerator.BitmapRenderResult.Success -> QrFrame(bitmap = renderedResult.bitmap, durationMs = sourceFrame.durationMs)
+            is QrGenerator.BitmapRenderResult.Failure -> null
+        }
     }
 
     /**
@@ -353,9 +356,13 @@ object AnimatedQrGenerator {
                 imageSource = imgSource,
                 logo = logoSource
             )
-            val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
-            if (renderedBitmap != null) {
-                renderedFrames.add(QrFrame(bitmap = renderedBitmap, durationMs = rf.durationMs))
+            when (val renderedResult = QrGenerator.generateBitmapResult(matrix, frameDesign, geometry)) {
+                is QrGenerator.BitmapRenderResult.Success -> {
+                    renderedFrames.add(QrFrame(bitmap = renderedResult.bitmap, durationMs = rf.durationMs))
+                }
+                is QrGenerator.BitmapRenderResult.Failure -> {
+                    // Frame allocation/rendering failed
+                }
             }
         }
         return renderedFrames

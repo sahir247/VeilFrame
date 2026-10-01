@@ -2,10 +2,13 @@ package com.veilframe.app.qr.geometry
 
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 
 /**
  * Renders a [QrGeometryIr] directly onto an Android [Canvas].
@@ -19,6 +22,43 @@ object IrCanvasRenderer {
         }
     }
 
+    private fun applyFill(geometryFill: GeometryFill?, fill: Int?, opacity: Float, paint: Paint): Boolean {
+        if (geometryFill != null) {
+            paint.style = Paint.Style.FILL
+            when (geometryFill) {
+                is GeometryFill.Solid -> {
+                    paint.shader = null
+                    paint.color = geometryFill.color
+                    paint.alpha = (Color.alpha(geometryFill.color) * opacity).toInt().coerceIn(0, 255)
+                }
+                is GeometryFill.LinearGradient -> {
+                    paint.shader = LinearGradient(
+                        geometryFill.x0, geometryFill.y0, geometryFill.x1, geometryFill.y1,
+                        geometryFill.startColor, geometryFill.endColor,
+                        Shader.TileMode.CLAMP
+                    )
+                    paint.alpha = (opacity.coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255)
+                }
+                is GeometryFill.RadialGradient -> {
+                    paint.shader = RadialGradient(
+                        geometryFill.cx, geometryFill.cy, geometryFill.radius,
+                        geometryFill.centerColor, geometryFill.edgeColor,
+                        Shader.TileMode.CLAMP
+                    )
+                    paint.alpha = (opacity.coerceIn(0f, 1f) * 255).toInt().coerceIn(0, 255)
+                }
+            }
+            return true
+        } else if (fill != null) {
+            paint.style = Paint.Style.FILL
+            paint.shader = null
+            paint.color = fill
+            paint.alpha = (Color.alpha(fill) * opacity).toInt().coerceIn(0, 255)
+            return true
+        }
+        return false
+    }
+
     fun renderNode(
         node: QrGeometryNode,
         canvas: Canvas,
@@ -28,18 +68,17 @@ object IrCanvasRenderer {
     ) {
         when (node) {
             is RectNode -> {
-                if (node.fill != null) {
-                    paint.style = Paint.Style.FILL
-                    paint.color = node.fill
-                    paint.alpha = (Color.alpha(node.fill) * node.opacity).toInt().coerceIn(0, 255)
+                if (applyFill(node.geometryFill, node.fill, node.opacity, paint)) {
                     if (node.rx > 0f || node.ry > 0f) {
                         canvas.drawRoundRect(node.x, node.y, node.x + node.width, node.y + node.height, node.rx, node.ry, paint)
                     } else {
                         canvas.drawRect(node.x, node.y, node.x + node.width, node.y + node.height, paint)
                     }
+                    paint.shader = null
                 }
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     paint.style = Paint.Style.STROKE
+                    paint.shader = null
                     paint.color = node.stroke
                     paint.strokeWidth = node.strokeWidth
                     paint.alpha = (Color.alpha(node.stroke) * node.opacity).toInt().coerceIn(0, 255)
@@ -51,14 +90,13 @@ object IrCanvasRenderer {
                 }
             }
             is CircleNode -> {
-                if (node.fill != null) {
-                    paint.style = Paint.Style.FILL
-                    paint.color = node.fill
-                    paint.alpha = (Color.alpha(node.fill) * node.opacity).toInt().coerceIn(0, 255)
+                if (applyFill(node.geometryFill, node.fill, node.opacity, paint)) {
                     canvas.drawCircle(node.cx, node.cy, node.radius, paint)
+                    paint.shader = null
                 }
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     paint.style = Paint.Style.STROKE
+                    paint.shader = null
                     paint.color = node.stroke
                     paint.strokeWidth = node.strokeWidth
                     paint.alpha = (Color.alpha(node.stroke) * node.opacity).toInt().coerceIn(0, 255)
@@ -76,6 +114,7 @@ object IrCanvasRenderer {
             }
             is LineNode -> {
                 paint.style = Paint.Style.STROKE
+                paint.shader = null
                 paint.color = node.strokeColor
                 paint.strokeWidth = node.strokeWidth
                 paint.strokeCap = if (node.isRoundCap) Paint.Cap.ROUND else Paint.Cap.BUTT
@@ -110,14 +149,13 @@ object IrCanvasRenderer {
                         poly.close()
                     }
                 }
-                if (node.fill != null) {
-                    paint.style = Paint.Style.FILL
-                    paint.color = node.fill
-                    paint.alpha = (Color.alpha(node.fill) * node.opacity).toInt().coerceIn(0, 255)
+                if (applyFill(node.geometryFill, node.fill, node.opacity, paint)) {
                     canvas.drawPath(poly, paint)
+                    paint.shader = null
                 }
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     paint.style = Paint.Style.STROKE
+                    paint.shader = null
                     paint.color = node.stroke
                     paint.strokeWidth = node.strokeWidth
                     paint.alpha = (Color.alpha(node.stroke) * node.opacity).toInt().coerceIn(0, 255)
@@ -127,14 +165,13 @@ object IrCanvasRenderer {
             is PathNode -> {
                 val path = node.androidPath
                 if (path != null) {
-                    if (node.fill != null) {
-                        paint.style = Paint.Style.FILL
-                        paint.color = node.fill
-                        paint.alpha = (Color.alpha(node.fill) * node.opacity).toInt().coerceIn(0, 255)
+                    if (applyFill(node.geometryFill, node.fill, node.opacity, paint)) {
                         canvas.drawPath(path, paint)
+                        paint.shader = null
                     }
                     if (node.stroke != null && node.canvasStrokeWidth > 0f) {
                         paint.style = Paint.Style.STROKE
+                        paint.shader = null
                         paint.color = node.stroke
                         paint.strokeWidth = node.canvasStrokeWidth
                         paint.alpha = (Color.alpha(node.stroke) * node.opacity).toInt().coerceIn(0, 255)

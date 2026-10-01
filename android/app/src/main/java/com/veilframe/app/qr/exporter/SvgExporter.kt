@@ -121,7 +121,8 @@ object SvgExporter {
             val ir = com.veilframe.app.qr.geometry.BasicGeometryBuilder.generateGeometry(
                 matrix = matrix,
                 design = design,
-                geometry = geometry
+                geometry = geometry,
+                profile = design.basicProfile
             )
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }

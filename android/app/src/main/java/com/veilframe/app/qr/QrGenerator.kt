@@ -10,6 +10,7 @@ import android.graphics.Shader
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.encoder.QrEncoder
 import com.veilframe.app.qr.model.BackgroundStyle
+import com.veilframe.app.qr.model.BasicGeometryProfile
 import com.veilframe.app.qr.model.ErrorCorrectionChoice
 import com.veilframe.app.qr.model.ModuleFill
 import com.veilframe.app.qr.model.ModuleShape
@@ -252,12 +253,15 @@ object QrGenerator {
         }
 
         try {
-            val effectiveDesign = if (mode == GenerationMode.PARITY_EF &&
-                design.explicitQuietZone == null &&
-                design.directionalQuietZone == null &&
-                design.backdropStyle.fractionalQuietZone == null
-            ) {
-                design.copy(quietZoneModules = 1)
+            val effectiveDesign = if (mode == GenerationMode.PARITY_EF) {
+                val qz = if (design.explicitQuietZone == null &&
+                    design.directionalQuietZone == null &&
+                    design.backdropStyle.fractionalQuietZone == null
+                ) 1 else design.quietZoneModules
+                design.copy(
+                    basicProfile = BasicGeometryProfile.EF_PARITY,
+                    quietZoneModules = qz
+                )
             } else design
 
             val matrix = generateMatrix(content, effectiveDesign, mode)
@@ -422,6 +426,10 @@ object QrGenerator {
      * Directly renders a [QrMatrix] into a styled [Bitmap] according to [design] and [geometry].
      * Returns null if native Bitmap allocation fails.
      */
+    @Deprecated(
+        message = "Use generateBitmapResult(matrix, design, geometry) for typed error handling.",
+        replaceWith = ReplaceWith("generateBitmapResult(matrix, design, geometry)")
+    )
     fun generateBitmap(
         matrix: QrMatrix,
         design: QrDesign,

@@ -31,7 +31,8 @@ class BasicRenderer : IrBackedQrRenderer {
         return BasicGeometryBuilder.generateGeometry(
             matrix = matrix,
             design = design,
-            geometry = geometry
+            geometry = geometry,
+            profile = design.basicProfile
         )
     }
 

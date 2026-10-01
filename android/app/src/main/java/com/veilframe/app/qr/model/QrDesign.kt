@@ -472,6 +472,11 @@ data class BackgroundLayer(
     val tintColor: Int? = null
 )
 
+enum class BasicGeometryProfile {
+    VEILFRAME,
+    EF_PARITY
+}
+
 /**
  * Domain specification of complete QR visual design intent.
  */
@@ -484,6 +489,7 @@ data class QrDesign(
     val logo: LogoStyle? = null,
     val effects: EffectStyle = EffectStyle(),
     val style: QrStyle = QrStyle.BASIC,
+    val basicProfile: BasicGeometryProfile = BasicGeometryProfile.VEILFRAME,
     val quietZoneModules: Int = QrGeometry.resolveDefaultQuietZone(style),
     val explicitQuietZone: Int? = null,
     val outputSize: Int = 512,

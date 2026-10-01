@@ -5,6 +5,29 @@ import android.graphics.Path
 import android.graphics.RectF
 
 /**
+ * Backend-neutral paint fill definition (Solid, LinearGradient, RadialGradient).
+ * Bridges Canvas Shader allocation with SVG gradient element references.
+ */
+sealed interface GeometryFill {
+    data class Solid(val color: Int) : GeometryFill
+    data class LinearGradient(
+        val startColor: Int,
+        val endColor: Int,
+        val x0: Float,
+        val y0: Float,
+        val x1: Float,
+        val y1: Float
+    ) : GeometryFill
+    data class RadialGradient(
+        val centerColor: Int,
+        val edgeColor: Int,
+        val cx: Float,
+        val cy: Float,
+        val radius: Float
+    ) : GeometryFill
+}
+
+/**
  * Unified Geometry Intermediate Representation (IR) node.
  * Single source of truth for both Canvas rasterization and SVG vector emission.
  */
@@ -19,6 +42,7 @@ data class RectNode(
     val ry: Float = 0f,
     val fill: Int? = null,
     val fillString: String? = null,
+    val geometryFill: GeometryFill? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val strokeWidthString: String? = null,
@@ -34,6 +58,7 @@ data class CircleNode(
     val radius: Float,
     val fill: Int? = null,
     val fillString: String? = null,
+    val geometryFill: GeometryFill? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val strokeWidthString: String? = null,
@@ -57,6 +82,7 @@ data class PolygonNode(
     val pointsList: List<Pair<Float, Float>> = emptyList(),
     val fill: Int? = null,
     val fillString: String? = null,
+    val geometryFill: GeometryFill? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val opacity: Float = 1f,
@@ -68,6 +94,7 @@ data class PathNode(
     val androidPath: Path? = null,
     val fill: Int? = null,
     val fillString: String? = null,
+    val geometryFill: GeometryFill? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val strokeWidthString: String? = null,

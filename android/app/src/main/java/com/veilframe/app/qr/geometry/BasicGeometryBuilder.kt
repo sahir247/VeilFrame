@@ -15,12 +15,12 @@ import kotlin.random.Random
  * Builds a unified, authoritative [QrGeometryIr] representation for [com.veilframe.app.qr.QrStyle.BASIC].
  *
  * Implements EFQRCode 7.0.3 SVG document generation semantics:
- * 1. Document Backdrop (Background color / quiet zone margin & corner clipping)
+ * 1. Document Backdrop (Full BackgroundStyle support: Solid, LinearGradient, RadialGradient, Image, Transparent)
  * 2. Position Patterns (Canonical EF 3x3 inner / 6x6 outer geometry via [VeilPositionPatternGeometry])
- * 3. Timing Patterns (Role-aware shape, scale, and color)
- * 4. Alignment Patterns (Role-aware shape, scale, and color)
- * 5. Format & Version Information (Forced square modules per ISO/IEC 18004 and EF spec)
- * 6. Data Modules (Role-aware shape, scale, corner radius, and stochastic/seeded randomness)
+ * 3. Timing Patterns (Role-aware shape, scale, and color with EF profile support)
+ * 4. Alignment Patterns (Role-aware shape, scale, and color with EF profile support)
+ * 5. Format & Version Information (Profile-driven: EF data-style parity or VeilFrame forced-square safety)
+ * 6. Data Modules (Role-aware shape, backend-neutral gradient fill, EF size/4 corner radius)
  * 7. Logo Artwork (Base64 embedded vector/bitmap node via [VeilIconPipeline])
  *
  * Provides a single mathematical source of truth across Android Canvas rasterization
@@ -31,7 +31,8 @@ object BasicGeometryBuilder {
     fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
-        geometry: QrGeometry
+        geometry: QrGeometry,
+        profile: BasicGeometryProfile = design.basicProfile
     ): QrGeometryIr {
         val nCount = matrix.size
         val cs = geometry.moduleSize
@@ -62,15 +63,34 @@ object BasicGeometryBuilder {
         if (hasCornerClip) {
             defs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
         }
-        if (hasGradient) {
-            val gradStartHex = String.format(Locale.US, "#%06X", 0xFFFFFF and design.palette.gradientStart!!)
-            val gradEndHex = String.format(Locale.US, "#%06X", 0xFFFFFF and design.palette.gradientEnd!!)
+
+        val dataGeomFill: GeometryFill? = if (hasGradient) {
+            val gradStart = design.palette.gradientStart!!
+            val gradEnd = design.palette.gradientEnd!!
+            val gradStartHex = String.format(Locale.US, "#%06X", 0xFFFFFF and gradStart)
+            val gradEndHex = String.format(Locale.US, "#%06X", 0xFFFFFF and gradEnd)
             if (isRadial) {
                 defs.add("""<radialGradient id="qrGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="$gradStartHex" /><stop offset="100%" stop-color="$gradEndHex" /></radialGradient>""")
+                GeometryFill.RadialGradient(
+                    centerColor = gradStart,
+                    edgeColor = gradEnd,
+                    cx = totalWidth / 2f,
+                    cy = totalHeight / 2f,
+                    radius = maxOf(totalWidth, totalHeight) / 2f
+                )
             } else {
                 defs.add("""<linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="$gradStartHex" /><stop offset="100%" stop-color="$gradEndHex" /></linearGradient>""")
+                GeometryFill.LinearGradient(
+                    startColor = gradStart,
+                    endColor = gradEnd,
+                    x0 = 0f,
+                    y0 = 0f,
+                    x1 = totalWidth,
+                    y1 = totalHeight
+                )
             }
-        }
+        } else null
+
         if (isMasked) {
             val maskSb = StringBuilder()
             maskSb.append("""<mask id="qrDataMask"><rect width="$twStr" height="$thStr" fill="black" />""")
@@ -121,23 +141,23 @@ object BasicGeometryBuilder {
             defs.add(maskSb.toString())
         }
 
-        // 1. BACKDROP: Output canvas background rectangle & image
-        appendBackdrop(nodes, design, geometry)
+        // 1. BACKDROP: Output canvas background rectangle & image (all BackgroundStyle variants)
+        appendBackdrop(nodes, defs, design, geometry)
 
         // 2. FINDERS: Canonical position patterns
-        appendFinders(nodes, nCount, cs, ox, oy, design)
+        appendFinders(nodes, nCount, cs, ox, oy, design, profile)
 
         // 3. TIMING: Timing pattern modules
-        appendTiming(nodes, matrix, nCount, geometry, design, rng)
+        appendTiming(nodes, matrix, nCount, geometry, design, rng, profile)
 
         // 4. ALIGNMENT: Alignment pattern modules
-        appendAlignment(nodes, matrix, nCount, geometry, design, rng)
+        appendAlignment(nodes, matrix, nCount, geometry, design, rng, profile)
 
-        // 5. FORMAT & VERSION: Protected function patterns (strictly forced square per specification)
-        appendFormatAndVersion(nodes, matrix, nCount, geometry, design)
+        // 5. FORMAT & VERSION: Protected function patterns
+        appendFormatAndVersion(nodes, matrix, nCount, geometry, design, profile, rng, hasGradient, dataGeomFill)
 
         // 6. DATA: Primary QR data modules
-        appendData(nodes, matrix, nCount, geometry, design, rng, hasGradient)
+        appendData(nodes, matrix, nCount, geometry, design, rng, hasGradient, dataGeomFill, profile)
 
         // 7. LOGO: Icon node if present
         appendLogo(nodes, defs, masks, design, ox, oy, nCount, cs)
@@ -176,6 +196,7 @@ object BasicGeometryBuilder {
 
     private fun appendBackdrop(
         nodes: MutableList<QrGeometryNode>,
+        defs: MutableList<String>,
         design: QrDesign,
         geometry: QrGeometry
     ) {
@@ -183,26 +204,123 @@ object BasicGeometryBuilder {
         val th = geometry.outputHeightFloat
         if (tw <= 0f || th <= 0f) return
 
-        val bgColor = design.backdropStyle.color ?: design.palette.background
-        val bgHex = IrSvgRenderer.colorToHex(bgColor)
-        val bgAlpha = ((bgColor ushr 24) and 0xFF) / 255f
+        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
 
-        nodes.add(
-            RectNode(
-                x = 0f,
-                y = 0f,
-                width = tw,
-                height = th,
-                fill = bgColor,
-                fillString = bgHex,
-                opacity = bgAlpha,
-                alwaysEmitOpacity = true
-            )
-        )
+        when (val background = design.background) {
+            is BackgroundStyle.Solid -> {
+                val effectiveColor = if (design.backdropStyle.color != null) resolvedBackdropColor else background.color
+                val bgHex = IrSvgRenderer.colorToHex(effectiveColor)
+                val bgAlpha = ((effectiveColor ushr 24) and 0xFF) / 255f
+                nodes.add(
+                    RectNode(
+                        x = 0f,
+                        y = 0f,
+                        width = tw,
+                        height = th,
+                        fill = effectiveColor,
+                        fillString = bgHex,
+                        geometryFill = GeometryFill.Solid(effectiveColor),
+                        opacity = bgAlpha,
+                        alwaysEmitOpacity = true
+                    )
+                )
+            }
+            is BackgroundStyle.LinearGradient -> {
+                val startHex = IrSvgRenderer.colorToHex(background.startColor)
+                val endHex = IrSvgRenderer.colorToHex(background.endColor)
+                defs.add("""<linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="$startHex" /><stop offset="100%" stop-color="$endHex" /></linearGradient>""")
+                nodes.add(
+                    RectNode(
+                        x = 0f,
+                        y = 0f,
+                        width = tw,
+                        height = th,
+                        fill = background.startColor,
+                        fillString = "url(#bgGrad)",
+                        geometryFill = GeometryFill.LinearGradient(
+                            startColor = background.startColor,
+                            endColor = background.endColor,
+                            x0 = 0f,
+                            y0 = 0f,
+                            x1 = tw,
+                            y1 = th
+                        )
+                    )
+                )
+            }
+            is BackgroundStyle.RadialGradient -> {
+                val centerHex = IrSvgRenderer.colorToHex(background.centerColor)
+                val edgeHex = IrSvgRenderer.colorToHex(background.edgeColor)
+                defs.add("""<radialGradient id="bgRadGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="$centerHex" /><stop offset="100%" stop-color="$edgeHex" /></radialGradient>""")
+                val radius = maxOf(tw, th) / 2f
+                nodes.add(
+                    RectNode(
+                        x = 0f,
+                        y = 0f,
+                        width = tw,
+                        height = th,
+                        fill = background.centerColor,
+                        fillString = "url(#bgRadGrad)",
+                        geometryFill = GeometryFill.RadialGradient(
+                            centerColor = background.centerColor,
+                            edgeColor = background.edgeColor,
+                            cx = tw / 2f,
+                            cy = th / 2f,
+                            radius = radius
+                        )
+                    )
+                )
+            }
+            is BackgroundStyle.Image -> {
+                val bgHex = IrSvgRenderer.colorToHex(resolvedBackdropColor)
+                val bgAlpha = ((resolvedBackdropColor ushr 24) and 0xFF) / 255f
+                nodes.add(
+                    RectNode(
+                        x = 0f,
+                        y = 0f,
+                        width = tw,
+                        height = th,
+                        fill = resolvedBackdropColor,
+                        fillString = bgHex,
+                        geometryFill = GeometryFill.Solid(resolvedBackdropColor),
+                        opacity = bgAlpha,
+                        alwaysEmitOpacity = true
+                    )
+                )
+                if (!background.bitmap.isRecycled) {
+                    val scaleMode = if (background.fitCenter) ImageScaleMode.ASPECT_FIT else ImageScaleMode.ASPECT_FILL
+                    val preprocessed = EfImagePreprocessor.preprocess(
+                        source = background.bitmap,
+                        canvasWidth = tw,
+                        canvasHeight = th,
+                        mode = scaleMode
+                    )
+                    val base64 = IrSvgRenderer.bitmapToBase64(preprocessed)
+                    nodes.add(
+                        ImageNode(
+                            x = 0f,
+                            y = 0f,
+                            width = tw,
+                            height = th,
+                            bitmap = preprocessed,
+                            base64Data = base64,
+                            opacity = background.alpha.coerceIn(0f, 1f),
+                            key = "bgImg",
+                            preserveAspectRatio = if (background.fitCenter) "xMidYMid meet" else "xMidYMid slice"
+                        )
+                    )
+                }
+            }
+            BackgroundStyle.Transparent -> {
+                // Transparent background: emit no backdrop rect
+            }
+        }
 
-        if (design.backdropStyle.image != null) {
+        // Draw backdrop image if configured and background is not already BackgroundStyle.Image
+        val backdropImg = design.backdropStyle.image
+        if (backdropImg != null && !backdropImg.isRecycled && design.background !is BackgroundStyle.Image) {
             val preprocessed = EfImagePreprocessor.preprocess(
-                source = design.backdropStyle.image!!,
+                source = backdropImg,
                 canvasWidth = tw,
                 canvasHeight = th,
                 mode = design.backdropStyle.imageScaleMode
@@ -221,6 +339,27 @@ object BasicGeometryBuilder {
                     preserveAspectRatio = ""
                 )
             )
+        } else if (design.backgroundImage != null && !design.backgroundImage.isRecycled && design.background !is BackgroundStyle.Image) {
+            val preprocessed = EfImagePreprocessor.preprocess(
+                source = design.backgroundImage,
+                canvasWidth = tw,
+                canvasHeight = th,
+                mode = ImageScaleMode.ASPECT_FILL
+            )
+            val base64 = IrSvgRenderer.bitmapToBase64(preprocessed)
+            nodes.add(
+                ImageNode(
+                    x = 0f,
+                    y = 0f,
+                    width = tw,
+                    height = th,
+                    bitmap = preprocessed,
+                    base64Data = base64,
+                    opacity = design.backgroundImageAlpha,
+                    key = "bgImgBackdrop",
+                    preserveAspectRatio = "xMidYMid slice"
+                )
+            )
         }
     }
 
@@ -230,7 +369,8 @@ object BasicGeometryBuilder {
         cs: Float,
         ox: Float,
         oy: Float,
-        design: QrDesign
+        design: QrDesign,
+        profile: BasicGeometryProfile
     ) {
         val posColor = design.eyeStyle.outerColor ?: design.palette.foreground
         val posStyle = design.eyeStyle.style
@@ -264,11 +404,17 @@ object BasicGeometryBuilder {
         nCount: Int,
         geometry: QrGeometry,
         design: QrDesign,
-        rng: Random
+        rng: Random,
+        profile: BasicGeometryProfile
     ) {
         if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) return
 
-        val timingShape = design.timingStyle.shape
+        // In EF_PARITY mode, default timing shape is rectangle (SQUARE) unless explicitly customized
+        val timingShape = if (profile == BasicGeometryProfile.EF_PARITY && design.timingStyle.shape == ModuleShape.ROUNDED) {
+            ModuleShape.SQUARE
+        } else {
+            design.timingStyle.shape
+        }
         val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f)
         val timingColor = design.timingStyle.color ?: design.timingColor ?: design.palette.foreground
 
@@ -285,7 +431,8 @@ object BasicGeometryBuilder {
                         rect = rect,
                         fill = timingColor,
                         design = design,
-                        rng = rng
+                        rng = rng,
+                        profile = profile
                     )
                 )
             }
@@ -298,11 +445,17 @@ object BasicGeometryBuilder {
         nCount: Int,
         geometry: QrGeometry,
         design: QrDesign,
-        rng: Random
+        rng: Random,
+        profile: BasicGeometryProfile
     ) {
         if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) return
 
-        val alignShape = design.alignmentStyle.shape
+        // In EF_PARITY mode, default alignment shape is rectangle (SQUARE) unless explicitly customized
+        val alignShape = if (profile == BasicGeometryProfile.EF_PARITY && design.alignmentStyle.shape == ModuleShape.ROUNDED) {
+            ModuleShape.SQUARE
+        } else {
+            design.alignmentStyle.shape
+        }
         val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f)
         val alignColor = design.alignmentStyle.color ?: design.alignmentColor ?: design.palette.foreground
 
@@ -320,7 +473,8 @@ object BasicGeometryBuilder {
                         rect = rect,
                         fill = alignColor,
                         design = design,
-                        rng = rng
+                        rng = rng,
+                        profile = profile
                     )
                 )
             }
@@ -332,9 +486,19 @@ object BasicGeometryBuilder {
         matrix: QrMatrix,
         nCount: Int,
         geometry: QrGeometry,
-        design: QrDesign
+        design: QrDesign,
+        profile: BasicGeometryProfile,
+        rng: Random,
+        hasGradient: Boolean,
+        dataGeomFill: GeometryFill?
     ) {
         val fgColor = design.palette.foreground
+        val dataShape = design.moduleStyle.shape
+        val dataScale = if (profile == BasicGeometryProfile.EF_PARITY) {
+            design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
+        } else 1.0f
+        val fillString = if (hasGradient && profile == BasicGeometryProfile.EF_PARITY) "url(#qrGrad)" else null
+        val geomFill = if (hasGradient && profile == BasicGeometryProfile.EF_PARITY) dataGeomFill else null
 
         for (col in 0 until nCount) {
             for (row in 0 until nCount) {
@@ -343,19 +507,37 @@ object BasicGeometryBuilder {
                 if (!matrix.isDark(col, row)) continue
                 if (VeilPositionPatternGeometry.isFinderArea(col, row, nCount)) continue
 
-                // Format & Version patterns MUST remain standard square blocks
-                val rect = geometry.moduleRect(col, row, 1.0f)
-                val w = rect.right - rect.left
-                val h = rect.bottom - rect.top
-                nodes.add(
-                    RectNode(
-                        x = rect.left,
-                        y = rect.top,
-                        width = w,
-                        height = h,
-                        fill = fgColor
+                val rect = geometry.moduleRect(col, row, dataScale)
+                if (profile == BasicGeometryProfile.EF_PARITY && dataShape != ModuleShape.SQUARE) {
+                    // Under EF_PARITY: format & version modules follow EF data style
+                    nodes.add(
+                        BasicShapeGeometry.buildNode(
+                            shape = dataShape,
+                            rect = rect,
+                            fill = fgColor,
+                            design = design,
+                            rng = rng,
+                            fillString = fillString,
+                            geometryFill = geomFill,
+                            profile = profile
+                        )
                     )
-                )
+                } else {
+                    // Under VEILFRAME (or EF rectangle data): standard forced square blocks
+                    val w = rect.right - rect.left
+                    val h = rect.bottom - rect.top
+                    nodes.add(
+                        RectNode(
+                            x = rect.left,
+                            y = rect.top,
+                            width = w,
+                            height = h,
+                            fill = fgColor,
+                            fillString = fillString,
+                            geometryFill = geomFill
+                        )
+                    )
+                }
             }
         }
     }
@@ -367,7 +549,9 @@ object BasicGeometryBuilder {
         geometry: QrGeometry,
         design: QrDesign,
         rng: Random,
-        hasGradient: Boolean
+        hasGradient: Boolean,
+        dataGeomFill: GeometryFill?,
+        profile: BasicGeometryProfile
     ) {
         val dataShape = design.moduleStyle.shape
         val dataScale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
@@ -388,7 +572,9 @@ object BasicGeometryBuilder {
                         fill = dataColor,
                         design = design,
                         rng = rng,
-                        fillString = fillString
+                        fillString = fillString,
+                        geometryFill = dataGeomFill,
+                        profile = profile
                     )
                 )
             }
@@ -425,13 +611,20 @@ object BasicGeometryBuilder {
  */
 object BasicShapeGeometry {
 
+    /**
+     * EFQRCode 7.0.3 corner radius formula for roundedRectangle: `size / 4.0`.
+     */
+    fun efRoundedRadius(rect: RectF): Float = minOf(rect.right - rect.left, rect.bottom - rect.top) / 4f
+
     fun buildNode(
         shape: ModuleShape,
         rect: RectF,
         fill: Int,
         design: QrDesign,
         rng: Random? = null,
-        fillString: String? = null
+        fillString: String? = null,
+        geometryFill: GeometryFill? = null,
+        profile: BasicGeometryProfile = BasicGeometryProfile.VEILFRAME
     ): QrGeometryNode {
         val cx = (rect.left + rect.right) / 2f
         val cy = (rect.top + rect.bottom) / 2f
@@ -440,30 +633,34 @@ object BasicShapeGeometry {
 
         return when (shape) {
             ModuleShape.NONE -> {
-                RectNode(x = rect.left, y = rect.top, width = 0f, height = 0f, fill = null, fillString = fillString)
+                RectNode(x = rect.left, y = rect.top, width = 0f, height = 0f, fill = null, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.SQUARE -> {
-                RectNode(x = rect.left, y = rect.top, width = w, height = h, fill = fill, fillString = fillString)
+                RectNode(x = rect.left, y = rect.top, width = w, height = h, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.CIRCLE -> {
-                CircleNode(cx = cx, cy = cy, radius = w / 2f, fill = fill, fillString = fillString)
+                CircleNode(cx = cx, cy = cy, radius = w / 2f, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.DOT -> {
-                CircleNode(cx = cx, cy = cy, radius = (w / 2f) * 0.75f, fill = fill, fillString = fillString)
+                CircleNode(cx = cx, cy = cy, radius = (w / 2f) * 0.75f, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.ROUNDED -> {
-                val rx = w * design.moduleStyle.cornerRadiusFraction.coerceIn(0.1f, 0.5f)
-                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString)
+                val rx = if (profile == BasicGeometryProfile.EF_PARITY) {
+                    efRoundedRadius(rect)
+                } else {
+                    w * design.moduleStyle.cornerRadiusFraction.coerceIn(0.1f, 0.5f)
+                }
+                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.ORGANIC -> {
                 // EF randomRound: r = 0.5 * Double.random(in: 0.33..<1.0)
                 val factor = rng?.let { it.nextDouble(0.33, 1.0).toFloat() } ?: 0.85f
-                CircleNode(cx = cx, cy = cy, radius = (w / 2f) * factor, fill = fill, fillString = fillString)
+                CircleNode(cx = cx, cy = cy, radius = (w / 2f) * factor, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.SQUIRCLE -> {
                 val d = ShapeGeometry.buildSquircleSvgD(rect.left.toDouble(), rect.top.toDouble(), w.toDouble(), h.toDouble())
                 val path = QrVisualGeometry.createSquirclePath(rect)
-                PathNode(svgPathData = d, androidPath = path, fill = fill, fillString = fillString)
+                PathNode(svgPathData = d, androidPath = path, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.DIAMOND -> {
                 val pts = listOf(
@@ -476,7 +673,8 @@ object BasicShapeGeometry {
                     points = pts.joinToString(" ") { String.format(Locale.US, "%.3f,%.3f", it.first, it.second) },
                     pointsList = pts,
                     fill = fill,
-                    fillString = fillString
+                    fillString = fillString,
+                    geometryFill = geometryFill
                 )
             }
             ModuleShape.HEX -> {
@@ -492,7 +690,8 @@ object BasicShapeGeometry {
                     points = pts.joinToString(" ") { String.format(Locale.US, "%.3f,%.3f", it.first, it.second) },
                     pointsList = pts,
                     fill = fill,
-                    fillString = fillString
+                    fillString = fillString,
+                    geometryFill = geometryFill
                 )
             }
             ModuleShape.STAR -> {
@@ -509,22 +708,23 @@ object BasicShapeGeometry {
                     points = pts.joinToString(" ") { String.format(Locale.US, "%.3f,%.3f", it.first, it.second) },
                     pointsList = pts,
                     fill = fill,
-                    fillString = fillString
+                    fillString = fillString,
+                    geometryFill = geometryFill
                 )
             }
             ModuleShape.BUBBLE -> {
                 val rx = w * 0.42f
                 val ry = h * 0.42f
-                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString)
+                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.PILL -> {
                 val rx = w / 2f
                 val ry = h * 0.25f
-                RectNode(x = rect.left, y = cy - ry, width = w, height = ry * 2f, rx = rx, ry = ry, fill = fill, fillString = fillString)
+                RectNode(x = rect.left, y = cy - ry, width = w, height = ry * 2f, rx = rx, ry = ry, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.CONNECTED, ModuleShape.LINE, ModuleShape.BUBBLE_CLUSTER, ModuleShape.CUSTOM -> {
                 val rx = w * 0.15f
-                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString)
+                RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
         }
     }
