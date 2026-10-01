@@ -17,7 +17,32 @@ sealed interface GeometryFill {
         val y0: Float,
         val x1: Float,
         val y1: Float
-    ) : GeometryFill
+    ) : GeometryFill {
+        companion object {
+            fun fromAngle(
+                width: Float,
+                height: Float,
+                startColor: Int,
+                endColor: Int,
+                angleDegrees: Float
+            ): LinearGradient {
+                val cx = width / 2f
+                val cy = height / 2f
+                val rad = Math.toRadians(angleDegrees.toDouble())
+                val halfLen = (Math.abs(width * Math.cos(rad)) + Math.abs(height * Math.sin(rad))) / 2.0
+                val dx = (Math.cos(rad) * halfLen).toFloat()
+                val dy = (Math.sin(rad) * halfLen).toFloat()
+                return LinearGradient(
+                    startColor = startColor,
+                    endColor = endColor,
+                    x0 = cx - dx,
+                    y0 = cy - dy,
+                    x1 = cx + dx,
+                    y1 = cy + dy
+                )
+            }
+        }
+    }
     data class RadialGradient(
         val centerColor: Int,
         val edgeColor: Int,
