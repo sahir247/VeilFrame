@@ -708,12 +708,11 @@ object QrExporter {
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
-                val rendered = AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
-                val gifBytes = try {
-                    AnimatedQrGenerator.encodeToGif(rendered, design.outputSize, design.outputSize, format.loopCount)
-                } catch (t: Throwable) {
-                    return QrOutputResult.Failure(QrError.Output.GifEncodingFailed(t.message ?: "GIF encoding failed", t))
+                val gifResult = AnimatedQrGenerator.encodeToGifStreaming(matrix, design, frames, design.outputSize, format.loopCount)
+                if (gifResult is QrOutputResult.Failure) {
+                    return QrOutputResult.Failure(gifResult.error)
                 }
+                val gifBytes = (gifResult as QrOutputResult.Success).value
                 saveGifTyped(context, gifBytes)
             }
             is QrOutputFormat.Apng -> {
@@ -721,10 +720,17 @@ object QrExporter {
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
-                val rendered = AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
                 val tempFile = File.createTempFile("qr_export_", ".png", context.cacheDir)
                 try {
-                    val apngResult = AnimatedQrGenerator.encodeToApngResult(rendered, tempFile, format.fps, format.loopCount)
+                    val apngResult = AnimatedQrGenerator.encodeToApngStreaming(
+                        matrix = matrix,
+                        baseDesign = design,
+                        sourceFrames = frames,
+                        outputFile = tempFile,
+                        fps = format.fps,
+                        loops = format.loopCount,
+                        outputSize = design.outputSize
+                    )
                     if (apngResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(apngResult.error)
                     }
@@ -738,11 +744,17 @@ object QrExporter {
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
-                val rendered = AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
                 val ext = format.container.ext
                 val tempFile = File.createTempFile("qr_export_", ".$ext", context.cacheDir)
                 try {
-                    val vidResult = AnimatedQrGenerator.encodeToVideoResult(rendered, tempFile, format.fps)
+                    val vidResult = AnimatedQrGenerator.encodeToVideoStreaming(
+                        matrix = matrix,
+                        baseDesign = design,
+                        sourceFrames = frames,
+                        outputFile = tempFile,
+                        fps = format.fps,
+                        outputSize = design.outputSize
+                    )
                     if (vidResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(vidResult.error)
                     }

@@ -189,6 +189,86 @@ object AnimatedQrGenerator {
     }
 
     /**
+     * Renders a single animation frame at the specified [accumulatedMs] point in the timeline.
+     * Accurately selects animated logo and artwork frames for that point in time.
+     */
+    fun renderFrameAt(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrame: QrFrame,
+        accumulatedMs: Long,
+        outputSize: Int = 512,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
+    ): QrFrame? {
+        val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
+        val imgSource = if (hasAnimatedImg) {
+            baseDesign.imageSource.copy(
+                source = com.veilframe.app.qr.model.ImageSource.Memory(sourceFrame.bitmap)
+            )
+        } else {
+            baseDesign.imageSource
+        }
+
+        val hasAnimatedLogo = baseDesign.logo?.isAnimated == true && !baseDesign.logo.animatedFrames.isNullOrEmpty()
+        val logoSource = if (hasAnimatedLogo) {
+            val lFrames = baseDesign.logo!!.animatedFrames!!
+            val lDelays = baseDesign.logo.frameDelaysMs ?: emptyList()
+            val safeLDelays = lFrames.indices.map { i ->
+                maxOf(10, lDelays.getOrElse(i) { lDelays.lastOrNull() ?: 100 })
+            }
+            val totalLogoDur = maxOf(1L, safeLDelays.sumOf { it.toLong() })
+            val tLogo = accumulatedMs % totalLogoDur
+            var acc = 0L
+            var targetFrame = lFrames[0]
+            for ((lIdx, d) in safeLDelays.withIndex()) {
+                if (tLogo < acc + d) {
+                    targetFrame = lFrames[lIdx]
+                    break
+                }
+                acc += d
+            }
+            baseDesign.logo.copy(
+                bitmap = targetFrame,
+                source = com.veilframe.app.qr.model.ImageSource.Memory(targetFrame)
+            )
+        } else {
+            baseDesign.logo
+        }
+
+        val frameDesign = baseDesign.copy(
+            outputSize = outputSize,
+            imageSource = imgSource,
+            logo = logoSource
+        )
+        val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
+        return renderedBitmap?.let { QrFrame(bitmap = it, durationMs = sourceFrame.durationMs) }
+    }
+
+    /**
+     * Streams rendered QR frames one-by-one to a consumer callback (P2.2).
+     * Enables encoders to write each frame to disk or stream immediately and release/recycle its bitmap,
+     * maintaining low memory consumption regardless of frame count or resolution.
+     */
+    inline fun renderFramesStreaming(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        outputSize: Int = 512,
+        crossinline onFrameRendered: (index: Int, totalFrames: Int, frame: QrFrame) -> Unit
+    ) {
+        require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
+        val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
+        var accumulatedMs = 0L
+        for ((idx, frame) in sourceFrames.withIndex()) {
+            val rendered = renderFrameAt(matrix, baseDesign, frame, accumulatedMs, outputSize, geometry)
+            if (rendered != null) {
+                onFrameRendered(idx, sourceFrames.size, rendered)
+            }
+            accumulatedMs += frame.durationMs
+        }
+    }
+
+    /**
      * Renders each frame in [sourceFrames] into a styled, scan-ready QR code bitmap.
      * Evaluates logo frames based on cumulative timeline playback time rather than naive modulo index.
      */
@@ -198,59 +278,11 @@ object AnimatedQrGenerator {
         sourceFrames: List<QrFrame>,
         outputSize: Int = 512
     ): List<QrFrame> {
-        require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
-        val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
-        val renderedFrames = ArrayList<QrFrame>(sourceFrames.size)
-
-        var accumulatedMs = 0L
-        for ((idx, frame) in sourceFrames.withIndex()) {
-            val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
-            val imgSource = if (hasAnimatedImg) {
-                baseDesign.imageSource.copy(
-                    source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
-                )
-            } else {
-                baseDesign.imageSource
-            }
-
-            val hasAnimatedLogo = baseDesign.logo?.isAnimated == true && !baseDesign.logo.animatedFrames.isNullOrEmpty()
-            val logoSource = if (hasAnimatedLogo) {
-                val lFrames = baseDesign.logo!!.animatedFrames!!
-                val lDelays = baseDesign.logo.frameDelaysMs ?: emptyList()
-                val safeLDelays = lFrames.indices.map { i ->
-                    maxOf(10, lDelays.getOrElse(i) { lDelays.lastOrNull() ?: 100 })
-                }
-                val totalLogoDur = maxOf(1L, safeLDelays.sumOf { it.toLong() })
-                val tLogo = accumulatedMs % totalLogoDur
-                var acc = 0L
-                var targetFrame = lFrames[0]
-                for ((lIdx, d) in safeLDelays.withIndex()) {
-                    if (tLogo < acc + d) {
-                        targetFrame = lFrames[lIdx]
-                        break
-                    }
-                    acc += d
-                }
-                baseDesign.logo.copy(
-                    bitmap = targetFrame,
-                    source = com.veilframe.app.qr.model.ImageSource.Memory(targetFrame)
-                )
-            } else {
-                baseDesign.logo
-            }
-
-            val frameDesign = baseDesign.copy(
-                outputSize = outputSize,
-                imageSource = imgSource,
-                logo = logoSource
-            )
-            val renderedBitmap = QrGenerator.generateBitmap(matrix, frameDesign, geometry)
-            if (renderedBitmap != null) {
-                renderedFrames.add(QrFrame(bitmap = renderedBitmap, durationMs = frame.durationMs))
-            }
-            accumulatedMs += frame.durationMs
+        val result = ArrayList<QrFrame>(sourceFrames.size)
+        renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { _, _, frame ->
+            result.add(frame)
         }
-        return renderedFrames
+        return result
     }
 
     /**
@@ -542,6 +574,48 @@ object AnimatedQrGenerator {
     }
 
     /**
+     * Strongly typed streaming GIF encoding pipeline (P2.2).
+     * Renders frames one-by-one directly into [GifEncoder] and immediately recycles each bitmap,
+     * maintaining peak memory at a single frame rather than buffering all full-resolution frames.
+     */
+    fun encodeToGifStreaming(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        outputSize: Int = 512,
+        loops: Int = 0
+    ): QrOutputResult<ByteArray> {
+        if (sourceFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+        val bos = ByteArrayOutputStream()
+        val encoder = GifEncoder()
+        encoder.start(bos, outputSize, outputSize, loops)
+        var renderedCount = 0
+        try {
+            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { _, _, frame ->
+                renderedCount++
+                try {
+                    encoder.addFrame(frame.bitmap, frame.durationMs)
+                } finally {
+                    try {
+                        if (!frame.bitmap.isRecycled) {
+                            frame.bitmap.recycle()
+                        }
+                    } catch (_: Throwable) {}
+                }
+            }
+            if (renderedCount == 0) {
+                return QrOutputResult.Failure(QrError.Rendering.BitmapAllocationFailed(outputSize, outputSize))
+            }
+            encoder.finish()
+            return QrOutputResult.Success(bos.toByteArray())
+        } catch (t: Throwable) {
+            return QrOutputResult.Failure(QrError.Output.GifEncodingFailed(t.message ?: "GIF encoding failed", t))
+        }
+    }
+
+    /**
      * Strongly typed APNG encoding pipeline matching EFQRCode animated PNG creation contract.
      * Encodes rendered QR frames into an APNG file using FFmpegKit.
      */
@@ -576,6 +650,99 @@ object AnimatedQrGenerator {
             }
 
             val cmd = buildApngFfmpegCommand(renderedFrames, tempDir, outputFile, fps, loops)
+            val session = FFmpegKit.execute(cmd)
+            val returnCode = session.returnCode
+            return if (ReturnCode.isSuccess(returnCode)) {
+                QrOutputResult.Success(outputFile)
+            } else {
+                QrOutputResult.Failure(
+                    QrError.Output.ApngEncodingFailed(
+                        "FFmpeg APNG encoding failed with return code ${returnCode?.value}"
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            return QrOutputResult.Failure(QrError.Output.ApngEncodingFailed(t.message ?: "APNG encoding failed", t))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Strongly typed streaming APNG encoding pipeline (P2.2).
+     * Renders frames one-by-one to temporary PNG files and immediately recycles each bitmap,
+     * keeping peak memory at a single frame bitmap before delegating to FFmpeg.
+     */
+    fun encodeToApngStreaming(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        outputFile: File,
+        fps: Int = 15,
+        loops: Int = 0,
+        outputSize: Int = baseDesign.outputSize
+    ): QrOutputResult<File> {
+        if (sourceFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+        val parentDir = outputFile.parentFile ?: File(".")
+        val tempDir = File(parentDir, "qr_apng_tmp_${System.currentTimeMillis()}")
+        if (!tempDir.exists() && !tempDir.mkdirs()) {
+            return QrOutputResult.Failure(QrError.Platform.StorageFailed(tempDir.absolutePath))
+        }
+
+        val frameDurations = mutableListOf<Int>()
+        var renderedCount = 0
+
+        try {
+            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
+                renderedCount++
+                frameDurations.add(frame.durationMs.coerceAtLeast(1))
+                val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
+                val writeSuccess = try {
+                    FileOutputStream(frameFile).use { out ->
+                        frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } catch (t: Throwable) {
+                    throw IllegalStateException("Failed writing frame $idx: ${t.message}", t)
+                } finally {
+                    try {
+                        if (!frame.bitmap.isRecycled) {
+                            frame.bitmap.recycle()
+                        }
+                    } catch (_: Throwable) {}
+                }
+                if (!writeSuccess) {
+                    throw IllegalStateException("Bitmap compression returned false for frame $idx")
+                }
+            }
+
+            if (renderedCount == 0) {
+                return QrOutputResult.Failure(QrError.Rendering.BitmapAllocationFailed(outputSize, outputSize))
+            }
+
+            val isVariableTiming = frameDurations.distinct().size > 1
+            val cmd = if (isVariableTiming) {
+                val concatFile = File(tempDir, "input.txt")
+                val sb = StringBuilder()
+                sb.append("ffconcat version 1.0\n")
+                for ((idx, dur) in frameDurations.withIndex()) {
+                    val durSec = String.format(Locale.US, "%.4f", dur / 1000.0)
+                    sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", idx)).append("'\n")
+                    sb.append("duration ").append(durSec).append("\n")
+                }
+                sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", frameDurations.size - 1)).append("'\n")
+                concatFile.writeText(sb.toString())
+                "-y -f concat -safe 0 -i \"${concatFile.absolutePath}\" -plays $loops -f apng \"${outputFile.absolutePath}\""
+            } else {
+                val frameDurMs = frameDurations.firstOrNull() ?: (1000 / fps.coerceAtLeast(1))
+                val effectiveFps = if (frameDurMs > 0 && frameDurMs != 1000 / fps) {
+                    kotlin.math.round(1000.0 / frameDurMs).toInt().coerceIn(1, 120)
+                } else fps
+                val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+                "-y -framerate $effectiveFps -i \"$inputPattern\" -plays $loops -f apng \"${outputFile.absolutePath}\""
+            }
+
             val session = FFmpegKit.execute(cmd)
             val returnCode = session.returnCode
             return if (ReturnCode.isSuccess(returnCode)) {
@@ -726,6 +893,104 @@ object AnimatedQrGenerator {
             return QrOutputResult.Failure(
                 QrError.Output.VideoEncodingFailed(
                     stage = VideoStage.FFMPEG_EXECUTION.name,
+                    cause = t
+                )
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Strongly typed streaming Video encoding pipeline (P2.2).
+     * Renders frames one-by-one to temporary PNG files and immediately recycles each bitmap,
+     * maintaining peak memory at a single frame bitmap before invoking FFmpeg.
+     */
+    fun encodeToVideoStreaming(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        outputFile: File,
+        fps: Int = 15,
+        outputSize: Int = baseDesign.outputSize
+    ): QrOutputResult<File> {
+        if (sourceFrames.isEmpty()) {
+            return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+        }
+        val parentDir = outputFile.parentFile ?: File(".")
+        val tempDir = File(parentDir, "qr_vid_tmp_${System.currentTimeMillis()}")
+        if (!tempDir.exists() && !tempDir.mkdirs()) {
+            return QrOutputResult.Failure(
+                QrError.Platform.StorageFailed(tempDir.absolutePath)
+            )
+        }
+
+        val frameDurations = mutableListOf<Int>()
+        var renderedCount = 0
+
+        try {
+            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
+                renderedCount++
+                frameDurations.add(frame.durationMs.coerceAtLeast(1))
+                val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
+                val writeSuccess = try {
+                    FileOutputStream(frameFile).use { out ->
+                        frame.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } catch (t: Throwable) {
+                    throw IllegalStateException("Failed writing frame $idx: ${t.message}", t)
+                } finally {
+                    try {
+                        if (!frame.bitmap.isRecycled) {
+                            frame.bitmap.recycle()
+                        }
+                    } catch (_: Throwable) {}
+                }
+                if (!writeSuccess) {
+                    throw IllegalStateException("Bitmap compression returned false for frame $idx")
+                }
+            }
+
+            if (renderedCount == 0) {
+                return QrOutputResult.Failure(QrError.Rendering.BitmapAllocationFailed(outputSize, outputSize))
+            }
+
+            val isVariableTiming = frameDurations.distinct().size > 1
+            val cmd = if (isVariableTiming) {
+                val concatFile = File(tempDir, "input.txt")
+                val sb = StringBuilder()
+                sb.append("ffconcat version 1.0\n")
+                for ((idx, dur) in frameDurations.withIndex()) {
+                    val durSec = String.format(Locale.US, "%.4f", dur / 1000.0)
+                    sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", idx)).append("'\n")
+                    sb.append("duration ").append(durSec).append("\n")
+                }
+                sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", frameDurations.size - 1)).append("'\n")
+                concatFile.writeText(sb.toString())
+                "-y -f concat -safe 0 -i \"${concatFile.absolutePath}\" -vsync vfr -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
+            } else {
+                val frameDurMs = frameDurations.firstOrNull() ?: 66
+                val effectiveFps = if (fps > 0) fps else kotlin.math.round(1000.0 / frameDurMs).toInt().coerceIn(1, 120)
+                val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+                "-y -framerate $effectiveFps -i \"$inputPattern\" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \"${outputFile.absolutePath}\""
+            }
+
+            val session = FFmpegKit.execute(cmd)
+            val returnCode = session.returnCode
+            return if (ReturnCode.isSuccess(returnCode)) {
+                QrOutputResult.Success(outputFile)
+            } else {
+                QrOutputResult.Failure(
+                    QrError.Output.VideoEncodingFailed(
+                        stage = VideoStage.FFMPEG_EXECUTION.name,
+                        exitCode = returnCode?.value
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            return QrOutputResult.Failure(
+                QrError.Output.VideoEncodingFailed(
+                    stage = VideoStage.FRAME_WRITE.name,
                     cause = t
                 )
             )

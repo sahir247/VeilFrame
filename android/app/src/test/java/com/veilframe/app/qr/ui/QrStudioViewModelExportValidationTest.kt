@@ -3,12 +3,15 @@ package com.veilframe.app.qr.ui
 import android.app.Application
 import android.graphics.Bitmap
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.AnimatedQrGenerator
 import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrStyle
+import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.ConnectedOrganicRenderer
 import com.veilframe.app.qr.renderer.RandomRectangleRenderer
+import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -996,4 +999,73 @@ class QrStudioViewModelExportValidationTest {
         assertTrue(verifiedResult is com.veilframe.app.qr.QrRenderResult.Success)
         assertTrue(unverifiedResult is com.veilframe.app.qr.QrRenderResult.Success)
     }
+
+    @Test
+    fun testResolutionTieringPreviewVsExport() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        // 1. Output size is coerced in [256, 4096]
+        vm.updateOutputSize(100)
+        assertEquals(256, vm.state.value.outputSize)
+
+        vm.updateOutputSize(8000)
+        assertEquals(4096, vm.state.value.outputSize)
+
+        // 2. High-resolution export (4096): preview is clamped to 512, export preserves 4096
+        val previewDesign4096 = vm.buildDesignFromState(vm.state.value, isPreview = true)
+        assertEquals(512, previewDesign4096.outputSize)
+        val exportDesign4096 = vm.buildDesignFromState(vm.state.value, isPreview = false)
+        assertEquals(4096, exportDesign4096.outputSize)
+
+        // 3. Medium-resolution export (1024): preview is clamped to 512, export preserves 1024
+        vm.updateOutputSize(1024)
+        val previewDesign1024 = vm.buildDesignFromState(vm.state.value, isPreview = true)
+        assertEquals(512, previewDesign1024.outputSize)
+        val exportDesign1024 = vm.buildDesignFromState(vm.state.value, isPreview = false)
+        assertEquals(1024, exportDesign1024.outputSize)
+
+        // 4. Low-resolution export (256): both preview and export stay at 256
+        vm.updateOutputSize(256)
+        val previewDesign256 = vm.buildDesignFromState(vm.state.value, isPreview = true)
+        assertEquals(256, previewDesign256.outputSize)
+        val exportDesign256 = vm.buildDesignFromState(vm.state.value, isPreview = false)
+        assertEquals(256, exportDesign256.outputSize)
+    }
+
+    @Test
+    fun testStreamingAnimationPipelinesEmptyFrames() {
+        val dummyMatrix = QrGenerator.generateMatrix("https://veilframe.app")
+        val dummyDesign = QrDesign()
+
+        // 1. GIF streaming with empty frames returns EmptyFrames failure
+        val gifResult = AnimatedQrGenerator.encodeToGifStreaming(
+            matrix = dummyMatrix,
+            baseDesign = dummyDesign,
+            sourceFrames = emptyList()
+        )
+        assertTrue(gifResult is QrOutputResult.Failure)
+        assertEquals(QrError.Animation.EmptyFrames, (gifResult as QrOutputResult.Failure).error)
+
+        // 2. Video streaming with empty frames returns EmptyFrames failure
+        val vidResult = AnimatedQrGenerator.encodeToVideoStreaming(
+            matrix = dummyMatrix,
+            baseDesign = dummyDesign,
+            sourceFrames = emptyList(),
+            outputFile = File("target.mp4")
+        )
+        assertTrue(vidResult is QrOutputResult.Failure)
+        assertEquals(QrError.Animation.EmptyFrames, (vidResult as QrOutputResult.Failure).error)
+
+        // 3. APNG streaming with empty frames returns EmptyFrames failure
+        val apngResult = AnimatedQrGenerator.encodeToApngStreaming(
+            matrix = dummyMatrix,
+            baseDesign = dummyDesign,
+            sourceFrames = emptyList(),
+            outputFile = File("target.png")
+        )
+        assertTrue(apngResult is QrOutputResult.Failure)
+        assertEquals(QrError.Animation.EmptyFrames, (apngResult as QrOutputResult.Failure).error)
+    }
 }
+

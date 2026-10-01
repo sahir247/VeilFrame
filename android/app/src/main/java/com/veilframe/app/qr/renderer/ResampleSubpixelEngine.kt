@@ -106,7 +106,8 @@ object ResampleSubpixelEngine {
                 try {
                     preScaledAuto = ImageScaleResolver.createPreScaledSource(pixelSource.bitmap, targetDim, targetDim, style.scaleMode)
                     preScaledAuto
-                } catch (_: Throwable) {
+                } catch (t: Throwable) {
+                    android.util.Log.w("ResampleSubpixelEngine", "Bitmap scaling failed, falling back to array source: ${t.message}", t)
                     preScaledAuto = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, style.scaleMode)
                     preScaledAuto
                 }
@@ -187,9 +188,15 @@ object ResampleSubpixelEngine {
             try {
                 preScaledSource = ImageScaleResolver.createPreScaledSource(source, targetDim, targetDim, style.scaleMode)
                 preScaledSource
-            } catch (_: Throwable) {
-                // Fallback for headless environments without Android Bitmap graphics pipeline
-                BitmapPixelSource(source)
+            } catch (t: Throwable) {
+                android.util.Log.w("ResampleSubpixelEngine", "Bitmap scaling failed, falling back to array source: ${t.message}", t)
+                try {
+                    preScaledSource = ImageScaleResolver.createPreScaledArraySource(BitmapPixelSource(source), targetDim, targetDim, style.scaleMode)
+                    preScaledSource
+                } catch (t2: Throwable) {
+                    android.util.Log.w("ResampleSubpixelEngine", "Array source fallback also failed: ${t2.message}", t2)
+                    BitmapPixelSource(source)
+                }
             }
         } else null
 

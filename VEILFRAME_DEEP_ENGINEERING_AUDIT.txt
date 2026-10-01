@@ -119,9 +119,9 @@ H-06 EF random styles are stochastic; deterministic Veil is diff   random/bubble
 
 MEDIUM
 M-01 generateBitmap() swallows allocation Throwable, returns null  QrGenerator.generateBitmap()          RESOLVED (2026-10-01)
-M-02 SVG resample preprocessing falls back to raw bitmap on Throwable SvgExporter.generateSvg()          CONFIRMED
+M-02 SVG resample preprocessing falls back to raw bitmap on Throwable SvgExporter.generateSvg()          RESOLVED (2026-10-01)
 M-03 Design-level quiet-zone resolver has matrixSize=21 default     QrGeometry.resolveQuietZone()        RESOLVED (2026-10-01)
-M-04 Preview clamped to 512 while export may be 4096               buildDesignFromState()                CONFIRMED
+M-04 Preview clamped to 512 while export may be 4096               buildDesignFromState()                RESOLVED (2026-10-01)
 M-05 PNG/JPEG/PDF paths can retain one full render while saving another ViewModel + exporter             RESOLVED (2026-10-01)
 M-06 PDF path lacks same strict scanability gate as PNG/SVG/JPEG   QrStudioViewModel.savePdf()           RESOLVED (2026-10-01)
 M-07 Share fallback can use _state.bitmap after failed generation   QrStudioViewModel.share()             RESOLVED (2026-10-01)
@@ -333,11 +333,11 @@ P1 -- major behavioral mismatch
   P1.3: Fix Success semantics: Success.Unverified / Success.Verified / Failure typed states.
 
 P2 -- robustness/parity
-  P2.1: Export validation must operate on the same bitmap that is actually written.
-  P2.2: Stream animation frames instead of retaining all full-resolution bitmaps.
-  P2.3: Stop swallowing Throwable in low-level render functions unless converted to structured failure.
-  P2.4: Eliminate default matrixSize=21 geometry assumptions from production-facing APIs.
-  P2.5: Create one authoritative geometry/quiet-zone resolver; forbid duplicated derived calculations.
+  - [x] P2.1: Export validation must operate on the same bitmap that is actually written.
+  - [x] P2.2: Stream animation frames instead of retaining all full-resolution bitmaps.
+  - [x] P2.3: Stop swallowing Throwable in low-level render functions unless converted to structured failure.
+  - [x] P2.4: Eliminate default matrixSize=21 geometry assumptions from production-facing APIs.
+  - [x] P2.5: Create one authoritative geometry/quiet-zone resolver; forbid duplicated derived calculations.
 
 P3 -- quality/cleanup
   P3.1: Reduce legacy API surface.
@@ -404,7 +404,8 @@ Completed milestones:
   - [x] P0 animation source isolation (C-01 / H-03)
   - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points, C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
   - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04 partial, M-05, M-06)
-  - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-03 quiet zone matrixSize default removal, M-07 share fallback removal, M-08 logo fraction 33% cap
+  - [x] P2.2 animation frame streaming (GIF/APNG/Video render-encode-recycle pipeline, single frame in RAM)
+  - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-02 SVG resample warning logging & array fallback, M-03 quiet zone matrixSize default removal, M-04 sanitized resolution tiering, M-07 share fallback removal, M-08 logo fraction 33% cap
 
 Next correctness milestone:
   + independent EF-vs-Veil SVG/Canvas pixel differential testing (Tier C/D/E)

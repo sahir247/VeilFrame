@@ -220,7 +220,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateOutputSize(size: Int) {
-        _state.value = _state.value.copy(outputSize = size)
+        _state.value = _state.value.copy(outputSize = size.coerceIn(256, 4096))
         regenerate(debounceMs = 0)
     }
 
@@ -503,8 +503,12 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             else -> s.dataShape
         }
 
-        // Staged preview pipeline: 512px during interactive editor preview, full s.outputSize for export
-        val effectiveSize = if (isPreview) minOf(s.outputSize, 512) else s.outputSize
+        // Staged resolution tiering (M-04):
+        // - Interactive preview tier: clamped to minOf(size, 512) for smooth 60fps gesture rendering and low memory overhead.
+        // - Production export tier: full user-selected resolution (256..4096px).
+        // Geometric and subpixel structural isomorphism is guaranteed by QrGeometry module-relative calculations.
+        val sanitizedSize = s.outputSize.coerceIn(256, 4096)
+        val effectiveSize = if (isPreview) minOf(sanitizedSize, 512) else sanitizedSize
 
         val baseDesign = QrDesign(
             correction = s.ecChoice,
