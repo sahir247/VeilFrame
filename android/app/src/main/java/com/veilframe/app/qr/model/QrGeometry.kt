@@ -169,6 +169,13 @@ class QrGeometry(
         )
     }
 
+    private fun createRectF(l: Float, t: Float, r: Float, b: Float): RectF = RectF(l, t, r, b).apply {
+        left = l
+        top = t
+        right = r
+        bottom = b
+    }
+
     /**
      * Returns the bounding rectangle in output pixels for the module at (col, row).
      */
@@ -179,14 +186,14 @@ class QrGeometry(
         val bottom = top + moduleSize
 
         if (scale == 1.0f) {
-            return RectF(left, top, right, bottom)
+            return createRectF(left, top, right, bottom)
         }
 
         val cx = (left + right) / 2f
         val cy = (top + bottom) / 2f
         val halfW = (moduleSize * scale) / 2f
         val halfH = (moduleSize * scale) / 2f
-        return RectF(cx - halfW, cy - halfH, cx + halfW, cy + halfH)
+        return createRectF(cx - halfW, cy - halfH, cx + halfW, cy + halfH)
     }
 
     /**
@@ -202,11 +209,13 @@ class QrGeometry(
      * Returns the pixel bounding box for the entire data region (excluding quiet zone).
      */
     fun dataRegionBounds(): RectF {
-        return RectF(
+        val contentW = matrixSize * moduleSize
+        val contentH = matrixSize * moduleSize
+        return createRectF(
             offsetX,
             offsetY,
-            offsetX + (matrixSize * moduleSize),
-            offsetY + (matrixSize * moduleSize)
+            offsetX + contentW,
+            offsetY + contentH
         )
     }
 
@@ -222,7 +231,7 @@ class QrGeometry(
         }
         val left = offsetX + (startCol * moduleSize)
         val top = offsetY + (startRow * moduleSize)
-        return RectF(left, top, left + (7 * moduleSize), top + (7 * moduleSize))
+        return createRectF(left, top, left + (7 * moduleSize), top + (7 * moduleSize))
     }
 
     /**
@@ -234,7 +243,7 @@ class QrGeometry(
         val cx = offsetX + (qrPixelSize / 2f)
         val cy = offsetY + (qrPixelSize / 2f)
         val half = logoPixelSize / 2f
-        return RectF(cx - half, cy - half, cx + half, cy + half)
+        return createRectF(cx - half, cy - half, cx + half, cy + half)
     }
 
     /**

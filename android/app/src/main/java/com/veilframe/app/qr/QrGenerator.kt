@@ -176,6 +176,32 @@ object QrGenerator {
     }
 
     /**
+     * Generates a true vector SVG document directly for a [matrix] and [design].
+     */
+    fun generateSvg(
+        matrix: QrMatrix,
+        design: QrDesign
+    ): String {
+        return if (AnimatedQrGenerator.isDesignAnimated(design)) {
+            AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+        } else {
+            com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+        }
+    }
+
+    /**
+     * Generates a true vector SVG document directly for [content] and [design].
+     */
+    fun generateSvg(
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design)
+    ): String {
+        val matrix = generateMatrix(content, design, mode)
+        return generateSvg(matrix, design)
+    }
+
+    /**
      * Modern domain generation entry point returning typed [QrRenderResult]
      * with automated structural and decode scanability validation.
      */
@@ -325,6 +351,22 @@ object QrGenerator {
         } ?: return null
 
         val canvas = Canvas(bitmap)
+        renderToCanvas(matrix, design, canvas, geometry)
+        return bitmap
+    }
+
+    /**
+     * Directly renders a [matrix] and [design] onto an existing [canvas] and [geometry].
+     * Allows test harnesses, print/PDF engines, and custom drawing pipelines to render
+     * without requiring an intermediate Bitmap allocation.
+     */
+    fun renderToCanvas(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
+    ) {
+        val size = geometry.outputWidth
         val context = RenderContext()
 
         // EF generic backdrop contract: corner clipping
@@ -350,7 +392,6 @@ object QrGenerator {
         } finally {
             if (count != null) canvas.restoreToCount(count)
         }
-        return bitmap
     }
 
     /**
