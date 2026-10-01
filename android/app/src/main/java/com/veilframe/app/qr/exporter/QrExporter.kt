@@ -312,19 +312,15 @@ object QrExporter {
 
     /**
      * Saves animated SVG markup returning typed [QrOutputResult].
+     * [design] is the authoritative single source of truth for artwork frames and timing.
      */
     suspend fun saveAnimatedSvgTyped(
         context: Context,
         matrix: QrMatrix,
-        design: QrDesign,
-        frames: List<QrFrame> = emptyList()
+        design: QrDesign
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
         val svgData = try {
-            if (frames.isNotEmpty()) {
-                AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
-            } else {
-                AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
-            }
+            AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
         } catch (t: Throwable) {
             return@withContext QrOutputResult.Failure(
                 QrError.Rendering.SvgRenderFailed(t.message ?: "Animated SVG generation failed", t)
@@ -334,14 +330,60 @@ object QrExporter {
     }
 
     /**
+     * Compatibility overload routing externally supplied source artwork frames safely
+     * into [QrDesign.imageSource] as [ImageSource.Animated] so [design] remains the single source of truth.
+     * Prevents pre-rendered QR bitmaps from being nested/double-rendered into SVG vector trees.
+     */
+    @Deprecated(
+        "Use saveAnimatedSvgTyped(context, matrix, design) where QrDesign is the single source of truth.",
+        ReplaceWith("saveAnimatedSvgTyped(context, matrix, design)")
+    )
+    suspend fun saveAnimatedSvgTyped(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign,
+        sourceArtworkFrames: List<QrFrame>
+    ): QrOutputResult<Uri> {
+        val safeDesign = if (sourceArtworkFrames.isNotEmpty()) {
+            design.copy(
+                imageSource = design.imageSource.copy(
+                    source = com.veilframe.app.qr.model.ImageSource.Animated(
+                        sourceArtworkFrames.map { it.bitmap },
+                        sourceArtworkFrames.map { it.durationMs }
+                    )
+                )
+            )
+        } else {
+            design
+        }
+        return saveAnimatedSvgTyped(context, matrix, safeDesign)
+    }
+
+    /**
      * Saves animated SVG markup to the Downloads or Documents directory.
+     * [design] is the authoritative single source of truth for artwork frames and timing.
      */
     suspend fun saveAnimatedSvg(
         context: Context,
         matrix: QrMatrix,
+        design: QrDesign
+    ): Uri? = saveAnimatedSvgTyped(context, matrix, design).getOrNull()
+
+    /**
+     * Compatibility overload routing externally supplied source artwork frames safely
+     * into [QrDesign.imageSource] as [ImageSource.Animated].
+     */
+    @Suppress("DEPRECATION")
+    @Deprecated(
+        "Use saveAnimatedSvg(context, matrix, design) where QrDesign is the single source of truth.",
+        ReplaceWith("saveAnimatedSvg(context, matrix, design)")
+    )
+    suspend fun saveAnimatedSvg(
+        context: Context,
+        matrix: QrMatrix,
         design: QrDesign,
-        frames: List<QrFrame> = emptyList()
-    ): Uri? = saveAnimatedSvgTyped(context, matrix, design, frames).getOrNull()
+        sourceArtworkFrames: List<QrFrame>
+    ): Uri? = saveAnimatedSvgTyped(context, matrix, design, sourceArtworkFrames).getOrNull()
 
     /**
      * Saves a video file (.mp4, .mov, or .m4v) returning typed [QrOutputResult].
