@@ -397,8 +397,8 @@ Confirmed strong areas:
   4. Scanability: Real decoder/quality validation beyond just rendering an artistic QR.
 
 Why not stronger than PARTIAL PARITY:
-  1. Default UI/API behavior diverges from EF defaults.
-  2. Canvas/SVG pixel parity is not independently proven.
+  1. [RESOLVED 2026-10-01] Default UI/API behavior now defaults to PARITY_EF (VeilQrEncoder, EC Level H, 1-module margin; safe mode explicitly selectable via SAFE).
+  2. Canvas/SVG pixel parity is structurally aligned via QrGeometryIr but not independently proven via pixel oracle.
   3. [RESOLVED 2026-10-01] Animation export rendered-QR-as-source bug (C-01 / H-03).
 
 Completed milestones:
