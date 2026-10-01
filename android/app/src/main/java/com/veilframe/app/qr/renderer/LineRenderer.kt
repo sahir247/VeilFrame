@@ -65,8 +65,8 @@ class LineRenderer : QrRenderer {
             com.veilframe.app.qr.geometry.RectNode(
                 x = 0f,
                 y = 0f,
-                width = geometry.outputWidth.toFloat(),
-                height = geometry.outputHeight.toFloat(),
+                width = geometry.outputWidthFloat,
+                height = geometry.outputHeightFloat,
                 fill = design.backdropStyle.color ?: design.palette.background
             )
         )

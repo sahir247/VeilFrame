@@ -220,7 +220,7 @@ class ImageFillRenderer : QrRenderer {
         val count = if (crPx > 0f) {
             val saveCount = canvas.save()
             val clipPath = android.graphics.Path().apply {
-                addRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+                addRoundRect(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat, crPx, crPx, android.graphics.Path.Direction.CW)
             }
             canvas.clipPath(clipPath)
             saveCount
@@ -232,9 +232,9 @@ class ImageFillRenderer : QrRenderer {
             if (bgCanvasAlpha > 0) {
                 val canvasBgPaint = context.obtainFill(resolvedBackdropColor)
                 if (crPx > 0f) {
-                    canvas.drawRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, canvasBgPaint)
+                    canvas.drawRoundRect(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat, crPx, crPx, canvasBgPaint)
                 } else {
-                    canvas.drawRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), canvasBgPaint)
+                    canvas.drawRect(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat, canvasBgPaint)
                 }
             }
 
@@ -243,8 +243,8 @@ class ImageFillRenderer : QrRenderer {
             if (backdropImg != null && !backdropImg.isRecycled) {
                 val preprocessedBackdrop = EfImagePreprocessor.preprocess(
                     source = backdropImg,
-                    canvasWidth = geometry.outputWidth.toFloat(),
-                    canvasHeight = geometry.outputHeight.toFloat(),
+                    canvasWidth = geometry.outputWidthFloat,
+                    canvasHeight = geometry.outputHeightFloat,
                     mode = design.backdropStyle.imageScaleMode
                 )
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -254,7 +254,7 @@ class ImageFillRenderer : QrRenderer {
                 val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
                     preprocessedBackdrop.width,
                     preprocessedBackdrop.height,
-                    RectF(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat()),
+                    RectF(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat),
                     com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
                 )
                 canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)

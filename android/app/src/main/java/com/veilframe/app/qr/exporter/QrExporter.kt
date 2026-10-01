@@ -317,10 +317,14 @@ object QrExporter {
         context: Context,
         matrix: QrMatrix,
         design: QrDesign,
-        frames: List<QrFrame>
+        frames: List<QrFrame> = emptyList()
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
         val svgData = try {
-            AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
+            if (frames.isNotEmpty()) {
+                AnimatedQrGenerator.generateAnimatedSvg(matrix, design, frames)
+            } else {
+                AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+            }
         } catch (t: Throwable) {
             return@withContext QrOutputResult.Failure(
                 QrError.Rendering.SvgRenderFailed(t.message ?: "Animated SVG generation failed", t)
@@ -336,7 +340,7 @@ object QrExporter {
         context: Context,
         matrix: QrMatrix,
         design: QrDesign,
-        frames: List<QrFrame>
+        frames: List<QrFrame> = emptyList()
     ): Uri? = saveAnimatedSvgTyped(context, matrix, design, frames).getOrNull()
 
     /**
@@ -623,12 +627,8 @@ object QrExporter {
             }
             is QrOutputFormat.Svg -> {
                 if (AnimatedQrGenerator.isDesignAnimated(design)) {
-                    val frames = AnimatedQrGenerator.extractSourceFrames(design)
-                    val rendered = if (frames.isNotEmpty()) {
-                        AnimatedQrGenerator.renderFrames(matrix, design, frames, design.outputSize)
-                    } else emptyList()
                     val svgData = try {
-                        AnimatedQrGenerator.generateAnimatedSvg(matrix, design, rendered)
+                        AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
                     } catch (t: Throwable) {
                         return QrOutputResult.Failure(
                             QrError.Rendering.SvgRenderFailed(t.message ?: "Animated SVG generation failed", t)

@@ -271,9 +271,9 @@ object ScanabilityValidator {
         val vbY = -n.toFloat() / 2.0f
         val vbW = n.toFloat() * 2.0f
         val vbH = n.toFloat() * 2.0f
-        val scale = minOf(geometry.outputWidth.toFloat() / vbW, geometry.outputHeight.toFloat() / vbH)
-        val transX = (geometry.outputWidth.toFloat() - vbW * scale) / 2f
-        val transY = (geometry.outputHeight.toFloat() - vbH * scale) / 2f
+        val scale = minOf(geometry.outputWidthFloat / vbW, geometry.outputHeightFloat / vbH)
+        val transX = (geometry.outputWidthFloat - vbW * scale) / 2f
+        val transY = (geometry.outputHeightFloat - vbH * scale) / 2f
 
         for (row in 0 until matrix.size step step) {
             for (col in 0 until matrix.size step step) {
@@ -345,9 +345,9 @@ object ScanabilityValidator {
             val vbY = -n.toFloat() / 2.0f
             val vbW = n.toFloat() * 2.0f
             val vbH = n.toFloat() * 2.0f
-            val scale = minOf(geometry.outputWidth.toFloat() / vbW, geometry.outputHeight.toFloat() / vbH)
-            val transX = (geometry.outputWidth.toFloat() - vbW * scale) / 2f
-            val transY = (geometry.outputHeight.toFloat() - vbH * scale) / 2f
+            val scale = minOf(geometry.outputWidthFloat / vbW, geometry.outputHeightFloat / vbH)
+            val transX = (geometry.outputWidthFloat - vbW * scale) / 2f
+            val transY = (geometry.outputHeightFloat - vbH * scale) / 2f
             val u = col + 0.5f
             val v = row + 0.5f
             Pair(((sq3h * (u - v)) - vbX) * scale + transX, (0.5f * (u + v) - vbY) * scale + transY)

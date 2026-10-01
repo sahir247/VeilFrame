@@ -543,6 +543,18 @@ data class QrDesign(
     val effectiveQuietZoneTopFloat: Float get() = resolvedQuietZone.top
     val effectiveQuietZoneRightFloat: Float get() = resolvedQuietZone.right
     val effectiveQuietZoneBottomFloat: Float get() = resolvedQuietZone.bottom
+
+    fun resolveQuietZone(matrixSize: Int): ResolvedQuietZone = QrGeometry.resolveQuietZone(this, matrixSize)
+    fun effectiveQuietZone(matrixSize: Int): Int = resolveQuietZone(matrixSize).maxMarginInt
+    fun effectiveQuietZoneLeft(matrixSize: Int): Int = resolveQuietZone(matrixSize).leftInt
+    fun effectiveQuietZoneTop(matrixSize: Int): Int = resolveQuietZone(matrixSize).topInt
+    fun effectiveQuietZoneRight(matrixSize: Int): Int = resolveQuietZone(matrixSize).rightInt
+    fun effectiveQuietZoneBottom(matrixSize: Int): Int = resolveQuietZone(matrixSize).bottomInt
+    fun effectiveQuietZoneLeftFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).left
+    fun effectiveQuietZoneTopFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).top
+    fun effectiveQuietZoneRightFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).right
+    fun effectiveQuietZoneBottomFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).bottom
+
     val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
 
     companion object {

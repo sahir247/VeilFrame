@@ -53,22 +53,15 @@ object D25Geometry {
         n: Int,
         outputWidth: Float,
         outputHeight: Float,
-        quietZoneLeft: Int = 0,
-        quietZoneTop: Int = 0,
-        quietZoneRight: Int = 0,
-        quietZoneBottom: Int = 0
+        quietZoneLeft: Float = 0f,
+        quietZoneTop: Float = 0f,
+        quietZoneRight: Float = 0f,
+        quietZoneBottom: Float = 0f
     ): Projection {
-        // Canonical EFQRCode formula (EFQRCodeStyle25D.swift):
-        // When quiet zone is expressed as integer module counts, the fractional insets are (qz / n).
-        // Substituting left = qzLeft / n into:
-        //   vbX = -n * (left + 1) = -(n + qzLeft)
-        //   vbY = -n * (top + 0.5) = -(n/2 + qzTop)
-        //   vbW = n * (left + 2 + right) = 2n + qzLeft + qzRight
-        //   vbH = n * (top + 2 + bottom) = 2n + qzTop + qzBottom
-        val vbX = -(n + quietZoneLeft).toFloat()
+        val vbX = -(n + quietZoneLeft)
         val vbY = -(n / 2f + quietZoneTop)
-        val vbW = (2 * n + quietZoneLeft + quietZoneRight).toFloat()
-        val vbH = (2 * n + quietZoneTop + quietZoneBottom).toFloat()
+        val vbW = (2 * n + quietZoneLeft + quietZoneRight)
+        val vbH = (2 * n + quietZoneTop + quietZoneBottom)
 
         val scaleX = outputWidth / vbW
         val scaleY = outputHeight / vbH
@@ -78,6 +71,19 @@ object D25Geometry {
 
         return Projection(scale, transX, transY, vbX, vbY, vbW, vbH)
     }
+
+    fun computeProjection(
+        n: Int,
+        outputWidth: Float,
+        outputHeight: Float,
+        quietZoneLeft: Int,
+        quietZoneTop: Int,
+        quietZoneRight: Int,
+        quietZoneBottom: Int
+    ): Projection = computeProjection(
+        n, outputWidth, outputHeight,
+        quietZoneLeft.toFloat(), quietZoneTop.toFloat(), quietZoneRight.toFloat(), quietZoneBottom.toFloat()
+    )
 
     /**
      * Computes isometric projection using EFQRCode's canonical fractional quiet zone insets:
@@ -138,12 +144,12 @@ object D25Geometry {
 
         val proj = computeProjection(
             n = n,
-            outputWidth = geometry.outputWidth.toFloat(),
-            outputHeight = geometry.outputHeight.toFloat(),
-            quietZoneLeft = geometry.quietZoneLeft,
-            quietZoneTop = geometry.quietZoneTop,
-            quietZoneRight = geometry.quietZoneRight,
-            quietZoneBottom = geometry.quietZoneBottom
+            outputWidth = geometry.outputWidthFloat,
+            outputHeight = geometry.outputHeightFloat,
+            quietZoneLeft = geometry.quietZoneLeftFloat,
+            quietZoneTop = geometry.quietZoneTopFloat,
+            quietZoneRight = geometry.quietZoneRightFloat,
+            quietZoneBottom = geometry.quietZoneBottomFloat
         )
 
         val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -245,12 +251,12 @@ object D25Geometry {
 
         val proj = computeProjection(
             n = n,
-            outputWidth = geometry.outputWidth.toFloat(),
-            outputHeight = geometry.outputHeight.toFloat(),
-            quietZoneLeft = geometry.quietZoneLeft,
-            quietZoneTop = geometry.quietZoneTop,
-            quietZoneRight = geometry.quietZoneRight,
-            quietZoneBottom = geometry.quietZoneBottom
+            outputWidth = geometry.outputWidthFloat,
+            outputHeight = geometry.outputHeightFloat,
+            quietZoneLeft = geometry.quietZoneLeftFloat,
+            quietZoneTop = geometry.quietZoneTopFloat,
+            quietZoneRight = geometry.quietZoneRightFloat,
+            quietZoneBottom = geometry.quietZoneBottomFloat
         )
         val nodes = mutableListOf<QrGeometryNode>()
 
@@ -258,8 +264,8 @@ object D25Geometry {
             RectNode(
                 x = 0f,
                 y = 0f,
-                width = geometry.outputWidth.toFloat(),
-                height = geometry.outputHeight.toFloat(),
+                width = geometry.outputWidthFloat,
+                height = geometry.outputHeightFloat,
                 fill = design.palette.background
             )
         )

@@ -431,7 +431,7 @@ class ImageRenderer : QrRenderer {
         val count = if (crPx > 0f) {
             val saveCount = canvas.save()
             val clipPath = android.graphics.Path().apply {
-                addRoundRect(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+                addRoundRect(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat, crPx, crPx, android.graphics.Path.Direction.CW)
             }
             canvas.clipPath(clipPath)
             saveCount

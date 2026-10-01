@@ -31,7 +31,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
         val sourceBitmap = design.resampleStyle.backdropBitmap ?: if (design.resampleStyle.useSourceAsBackdrop) design.imageSource.bitmap else null
         if (design.style == QrStyle.IMAGE_RESAMPLE && sourceBitmap != null && !sourceBitmap.isRecycled) {
             if (true) {
-                val fullBounds = RectF(0f, 0f, geometry.outputWidth.toFloat(), geometry.outputHeight.toFloat())
+                val fullBounds = RectF(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat)
                 val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
                     sourceBitmap.width,
                     sourceBitmap.height,

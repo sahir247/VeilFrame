@@ -45,13 +45,13 @@ class DsjRenderer : QrRenderer {
         val posSize = design.positionSize
 
         val nodes = mutableListOf<QrGeometryNode>()
-        if (geometry.outputWidth > 0 && geometry.outputHeight > 0) {
+        if (geometry.outputWidthFloat > 0f && geometry.outputHeightFloat > 0f) {
             nodes.add(
                 RectNode(
                     x = 0f,
                     y = 0f,
-                    width = geometry.outputWidth.toFloat(),
-                    height = geometry.outputHeight.toFloat(),
+                    width = geometry.outputWidthFloat,
+                    height = geometry.outputHeightFloat,
                     fill = design.backdropStyle.color ?: design.palette.background
                 )
             )

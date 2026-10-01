@@ -1590,14 +1590,14 @@ object SvgExporter {
     private fun appendLogo(
         sb: StringBuilder,
         design: QrDesign,
-        totalWidth: Int,
-        totalHeight: Int,
+        totalWidth: Double,
+        totalHeight: Double,
         bgHex: String
     ) {
         val minDim = minOf(totalWidth, totalHeight)
         val qzX = (totalWidth - minDim) / 2.0
         val qzY = (totalHeight - minDim) / 2.0
-        appendLogo(sb, design, minDim, qzX, qzY, bgHex)
+        appendLogo(sb, design, minDim.toInt(), qzX, qzY, bgHex)
     }
 
     private fun appendLogo(

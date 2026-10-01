@@ -77,8 +77,8 @@ class RandomRectangleRenderer : QrRenderer {
             com.veilframe.app.qr.geometry.RectNode(
                 x = 0f,
                 y = 0f,
-                width = geometry.outputWidth.toFloat(),
-                height = geometry.outputHeight.toFloat(),
+                width = geometry.outputWidthFloat,
+                height = geometry.outputHeightFloat,
                 fill = design.backdropStyle.color ?: design.palette.background
             )
         )
@@ -189,13 +189,14 @@ class RandomRectangleRenderer : QrRenderer {
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {
         val design = QrDesign.fromQrStyleParams(params)
-        val qz = design.effectiveQuietZone
-        val totalPx = ((matrix.size + 2 * qz) * cellSize).toInt()
-        val geometry = QrGeometry(
+        val resolvedQz = QrGeometry.resolveQuietZone(design, matrix.size)
+        val totalPxW = (matrix.size + resolvedQz.left + resolvedQz.right) * cellSize
+        val totalPxH = (matrix.size + resolvedQz.top + resolvedQz.bottom) * cellSize
+        val geometry = QrGeometry.fromDesign(
             matrixSize = matrix.size,
-            outputWidth = totalPx,
-            outputHeight = totalPx,
-            quietZoneModules = qz
+            outputWidth = totalPxW,
+            outputHeight = totalPxH,
+            design = design
         )
         render(matrix, design, canvas, geometry, RenderContext())
     }

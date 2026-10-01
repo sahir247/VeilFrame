@@ -439,11 +439,13 @@ object AnimatedQrGenerator {
         if (baseSvgHeader.isNotEmpty()) {
             sb.append(baseSvgHeader).append("\n")
         } else {
-            val n = matrix.size
-            val qz = baseDesign.effectiveQuietZone
-            val totalSize = n + 2 * qz
+            val resolvedQz = com.veilframe.app.qr.model.QrGeometry.resolveQuietZone(baseDesign, matrix.size)
+            val totalW = matrix.size + resolvedQz.left + resolvedQz.right
+            val totalH = matrix.size + resolvedQz.top + resolvedQz.bottom
+            val twStr = SvgExporter.formatCoord(totalW.toDouble())
+            val thStr = SvgExporter.formatCoord(totalH.toDouble())
             sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 $totalSize $totalSize\" width=\"100%\" height=\"100%\">\n")
+            sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 $twStr $thStr\" width=\"100%\" height=\"100%\">\n")
         }
 
         sb.append("  <defs>\n")
@@ -573,8 +575,7 @@ object AnimatedQrGenerator {
                 }
             }
 
-            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
-            val cmd = "-y -framerate $fps -i \"$inputPattern\" -plays $loops -f apng \"${outputFile.absolutePath}\""
+            val cmd = buildApngFfmpegCommand(renderedFrames, tempDir, outputFile, fps, loops)
             val session = FFmpegKit.execute(cmd)
             val returnCode = session.returnCode
             return if (ReturnCode.isSuccess(returnCode)) {
@@ -590,6 +591,43 @@ object AnimatedQrGenerator {
             return QrOutputResult.Failure(QrError.Output.ApngEncodingFailed(t.message ?: "APNG encoding failed", t))
         } finally {
             tempDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Constructs the FFmpeg command for APNG encoding.
+     * When frames have variable durations, constructs an ffconcat manifest script
+     * with exact per-frame durations to prevent APNG timing distortion.
+     */
+    fun buildApngFfmpegCommand(
+        renderedFrames: List<QrFrame>,
+        tempDir: File,
+        outputFile: File,
+        fps: Int = 15,
+        loops: Int = 0
+    ): String {
+        val durations = renderedFrames.map { it.durationMs.coerceAtLeast(1) }
+        val isVariableTiming = durations.distinct().size > 1
+
+        return if (isVariableTiming) {
+            val concatFile = File(tempDir, "input.txt")
+            val sb = StringBuilder()
+            sb.append("ffconcat version 1.0\n")
+            for ((idx, frame) in renderedFrames.withIndex()) {
+                val durSec = String.format(Locale.US, "%.4f", frame.durationMs.coerceAtLeast(1) / 1000.0)
+                sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", idx)).append("'\n")
+                sb.append("duration ").append(durSec).append("\n")
+            }
+            sb.append("file '").append(String.format(Locale.US, "frame_%04d.png", renderedFrames.size - 1)).append("'\n")
+            concatFile.writeText(sb.toString())
+            "-y -f concat -safe 0 -i \"${concatFile.absolutePath}\" -plays $loops -f apng \"${outputFile.absolutePath}\""
+        } else {
+            val frameDurMs = durations.firstOrNull() ?: (1000 / fps.coerceAtLeast(1))
+            val effectiveFps = if (frameDurMs > 0 && frameDurMs != 1000 / fps) {
+                kotlin.math.round(1000.0 / frameDurMs).toInt().coerceIn(1, 120)
+            } else fps
+            val inputPattern = File(tempDir, "frame_%04d.png").absolutePath
+            "-y -framerate $effectiveFps -i \"$inputPattern\" -plays $loops -f apng \"${outputFile.absolutePath}\""
         }
     }
 
