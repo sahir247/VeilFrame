@@ -101,7 +101,7 @@ class QrGeometry(
          * 4. [QrDesign.quietZoneModules] (design-level module count override)
          * 5. Style default (e.g. D25 defaults to 0, other styles default to 1)
          */
-        fun resolveQuietZone(design: QrDesign, matrixSize: Int = 21): ResolvedQuietZone {
+        fun resolveQuietZone(design: QrDesign, matrixSize: Int): ResolvedQuietZone {
             val fracQz = design.backdropStyle.fractionalQuietZone
             if (fracQz != null) {
                 return ResolvedQuietZone(
@@ -129,6 +129,10 @@ class QrGeometry(
             return ResolvedQuietZone(f, f, f, f)
         }
 
+        @Deprecated(
+            message = "Calling resolveQuietZone without matrixSize assumes V1 (21x21) which produces incorrect fractional margins for larger matrices. Use resolveQuietZone(design, matrixSize) instead.",
+            replaceWith = ReplaceWith("resolveQuietZone(design, matrixSize)")
+        )
         fun resolveQuietZone(design: QrDesign): Int {
             return resolveQuietZone(design, 21).maxMarginInt
         }

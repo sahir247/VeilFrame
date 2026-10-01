@@ -243,7 +243,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateLogoFraction(fraction: Float) {
-        _state.value = _state.value.copy(logoFraction = fraction.coerceIn(0.10f, 0.35f))
+        _state.value = _state.value.copy(logoFraction = fraction.coerceIn(0.10f, 0.33f))
         regenerate(debounceMs = 120)
     }
 
@@ -1325,13 +1325,25 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val matrix = QrGenerator.generateMatrix(content, exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign)
                 }
-                val exportBmp = if (renderResult is QrRenderResult.Success) renderResult.bitmap else null
-                if (exportBmp != null) {
-                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(exportBmp, exportDesign, matrix, content)
+                val (bmp, matrix) = when (renderResult) {
+                    is QrRenderResult.Success -> Pair(renderResult.bitmap, renderResult.matrix)
+                    is QrRenderResult.Failure -> {
+                        _state.value = _state.value.copy(
+                            saveResult = "SVG export failed: ${renderResult.error}"
+                        )
+                        return@launch
+                    }
+                }
+                if (bmp != null) {
+                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                        bmp,
+                        exportDesign,
+                        matrix,
+                        content
+                    )
                     if (!report.isScanReady && !report.validationSkipped) {
                         _state.value = _state.value.copy(
                             saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
@@ -1340,8 +1352,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         return@launch
                     }
                 }
+                val svgData = withContext(Dispatchers.Default) {
+                    QrGenerator.generateSvg(matrix, exportDesign)
+                }
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, exportDesign, QrOutputFormat.Svg)
+                    QrExporter.saveSvgStringTyped(getApplication(), svgData)
                 }
                 _state.value = _state.value.copy(
                     saveResult = if (exportResult.isSuccess) "Vector SVG saved to Downloads" else "SVG export failed: ${exportResult.errorOrNull()?.description}"
@@ -1592,14 +1607,35 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign)
                 }
-                val bmp = if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
-                    renderResult.bitmap
-                } else {
-                    _state.value.bitmap
+                val bmp = when (renderResult) {
+                    is QrRenderResult.Success -> renderResult.bitmap
+                    is QrRenderResult.Failure -> {
+                        _state.value = _state.value.copy(
+                            saveResult = "Share failed: ${renderResult.error}"
+                        )
+                        return@launch
+                    }
                 }
-                if (bmp != null) {
-                    QrExporter.share(getApplication(), bmp)
+                if (bmp == null) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Share failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                    )
+                    return@launch
                 }
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                    bmp,
+                    exportDesign,
+                    renderResult.matrix,
+                    content
+                )
+                if (!report.isScanReady && !report.validationSkipped) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Share rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                    return@launch
+                }
+                QrExporter.share(getApplication(), bmp)
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
             }

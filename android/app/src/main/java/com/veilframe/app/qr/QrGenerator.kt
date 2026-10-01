@@ -346,7 +346,8 @@ object QrGenerator {
         val size = geometry.outputWidth
         val bitmap = try {
             Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            android.util.Log.w("QrGenerator", "Bitmap allocation failed for ${size}x${size}: ${t.message}", t)
             null
         } ?: return null
 

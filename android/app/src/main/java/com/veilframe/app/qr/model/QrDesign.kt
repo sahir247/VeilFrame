@@ -533,15 +533,29 @@ data class QrDesign(
     val backdropStyle: BackdropStyle = BackdropStyle(),
     val directionalQuietZone: DirectionalInsets? = null
 ) {
+    @Deprecated(
+        message = "Evaluating quiet zone without matrix size assumes V1 (21x21). Use resolveQuietZone(matrixSize) with actual QR matrix size.",
+        replaceWith = ReplaceWith("resolveQuietZone(matrixSize)")
+    )
+    @Suppress("DEPRECATION")
     val resolvedQuietZone: ResolvedQuietZone get() = QrGeometry.resolveQuietZone(this, 21)
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZone(matrixSize).", ReplaceWith("effectiveQuietZone(matrixSize)"))
     val effectiveQuietZone: Int get() = resolvedQuietZone.maxMarginInt
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneLeft(matrixSize).", ReplaceWith("effectiveQuietZoneLeft(matrixSize)"))
     val effectiveQuietZoneLeft: Int get() = resolvedQuietZone.leftInt
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneTop(matrixSize).", ReplaceWith("effectiveQuietZoneTop(matrixSize)"))
     val effectiveQuietZoneTop: Int get() = resolvedQuietZone.topInt
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneRight(matrixSize).", ReplaceWith("effectiveQuietZoneRight(matrixSize)"))
     val effectiveQuietZoneRight: Int get() = resolvedQuietZone.rightInt
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneBottom(matrixSize).", ReplaceWith("effectiveQuietZoneBottom(matrixSize)"))
     val effectiveQuietZoneBottom: Int get() = resolvedQuietZone.bottomInt
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneLeftFloat(matrixSize).", ReplaceWith("effectiveQuietZoneLeftFloat(matrixSize)"))
     val effectiveQuietZoneLeftFloat: Float get() = resolvedQuietZone.left
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneTopFloat(matrixSize).", ReplaceWith("effectiveQuietZoneTopFloat(matrixSize)"))
     val effectiveQuietZoneTopFloat: Float get() = resolvedQuietZone.top
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneRightFloat(matrixSize).", ReplaceWith("effectiveQuietZoneRightFloat(matrixSize)"))
     val effectiveQuietZoneRightFloat: Float get() = resolvedQuietZone.right
+    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneBottomFloat(matrixSize).", ReplaceWith("effectiveQuietZoneBottomFloat(matrixSize)"))
     val effectiveQuietZoneBottomFloat: Float get() = resolvedQuietZone.bottom
 
     fun resolveQuietZone(matrixSize: Int): ResolvedQuietZone = QrGeometry.resolveQuietZone(this, matrixSize)

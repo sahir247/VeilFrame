@@ -1994,7 +1994,7 @@ class QrGenerateTabFragment : Fragment() {
                     // Dynamic Logo Card
                     if (state.logo != null || state.logoAnimatedFrames.isNotEmpty()) {
                         cardLogoControls.visibility = View.VISIBLE
-                        val sizePct = (state.logoFraction * 100f).toInt().coerceIn(10, 35)
+                        val sizePct = (state.logoFraction * 100f).toInt().coerceIn(10, 33)
                         logoSizeSlider.value = sizePct.toFloat()
                         logoSizeLabel.text = "Size: $sizePct%"
                     } else {

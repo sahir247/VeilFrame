@@ -854,4 +854,67 @@ class QrStudioViewModelExportValidationTest {
         vm.saveAnimatedSvg()
         assertEquals("Animated SVG requires frames", vm.state.value.saveResult)
     }
+
+    @Test
+    fun testLogoFractionCappedAt33Percent() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.updateLogoFraction(0.45f)
+        assertEquals(0.33f, vm.state.value.logoFraction, 0.001f)
+
+        vm.updateLogoFraction(0.35f)
+        assertEquals(0.33f, vm.state.value.logoFraction, 0.001f)
+
+        vm.updateLogoFraction(0.05f)
+        assertEquals(0.10f, vm.state.value.logoFraction, 0.001f)
+
+        vm.updateLogoFraction(0.25f)
+        assertEquals(0.25f, vm.state.value.logoFraction, 0.001f)
+    }
+
+    @Test
+    fun testShareDoesNotFallBackToStalePreviewBitmapOnFailure() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateContent("https://veilframe.app")
+
+        val stalePreviewBmp = createTestBitmap()
+        val field = QrStudioViewModel::class.java.getDeclaredField("_state")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stateFlow = field.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<QrStudioViewModel.UiState>
+        stateFlow.value = stateFlow.value.copy(
+            content = "https://veilframe.app",
+            bitmap = stalePreviewBmp
+        )
+
+        val exportJobField = QrStudioViewModel::class.java.getDeclaredField("exportJob")
+        exportJobField.isAccessible = true
+
+        // On headless JVM, generateWithResult creates a matrix but bitmap is null.
+        // share() must NOT fall back to stalePreviewBmp; it must cleanly fail with a structured message.
+        vm.share()
+        val job = exportJobField.get(vm) as? kotlinx.coroutines.Job
+        kotlinx.coroutines.runBlocking {
+            job?.join()
+        }
+        assertTrue(vm.state.value.saveResult?.startsWith("Share failed") == true)
+    }
+
+    @Test
+    fun testQuietZoneResolverCalculatesAgainstActualMatrixSize() {
+        val fracDesign = QrDesign(
+            backdropStyle = BackdropStyle(
+                fractionalQuietZone = FractionalInsets(0.10f, 0.10f, 0.10f, 0.10f)
+            )
+        )
+        // For V1 (matrixSize = 21): 21 * 0.10 = 2.1 modules
+        val qzV1 = QrGeometry.resolveQuietZone(fracDesign, 21)
+        assertEquals(2.1f, qzV1.left, 0.001f)
+
+        // For V10 (matrixSize = 57): 57 * 0.10 = 5.7 modules
+        val qzV10 = QrGeometry.resolveQuietZone(fracDesign, 57)
+        assertEquals(5.7f, qzV10.left, 0.001f)
+    }
 }

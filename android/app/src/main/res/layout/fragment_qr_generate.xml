@@ -3285,7 +3285,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:valueFrom="10"
-                    android:valueTo="35"
+                    android:valueTo="33"
                     android:stepSize="1"
                     android:value="20" />
 
