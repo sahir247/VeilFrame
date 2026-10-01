@@ -31,12 +31,40 @@ import com.veilframe.app.qr.model.QrOutputResult
  * Typed result of a QR code generation operation.
  */
 sealed interface QrRenderResult {
-    data class Success(
-        val bitmap: Bitmap?,
-        val report: ScanabilityReport,
-        val matrix: QrMatrix,
+    sealed interface Success : QrRenderResult {
+        val bitmap: Bitmap?
+        val report: ScanabilityReport
+        val matrix: QrMatrix
         val design: QrDesign
-    ) : QrRenderResult
+        val isVerified: Boolean get() = report.isScanReady
+
+        data class Verified(
+            override val bitmap: Bitmap?,
+            override val report: ScanabilityReport,
+            override val matrix: QrMatrix,
+            override val design: QrDesign
+        ) : Success
+
+        data class Unverified(
+            override val bitmap: Bitmap?,
+            override val report: ScanabilityReport,
+            override val matrix: QrMatrix,
+            override val design: QrDesign
+        ) : Success
+
+        companion object {
+            operator fun invoke(
+                bitmap: Bitmap?,
+                report: ScanabilityReport,
+                matrix: QrMatrix,
+                design: QrDesign
+            ): Success = if (report.isScanReady) {
+                Verified(bitmap, report, matrix, design)
+            } else {
+                Unverified(bitmap, report, matrix, design)
+            }
+        }
+    }
 
     data class Failure(
         val qrError: QrError,
@@ -284,6 +312,24 @@ object QrGenerator {
      * Convenience entry point for generating QR code with EFQRCode 7.0.3 exact behavioral parity.
      */
     fun generateParity(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)
+
+    /**
+     * Canonical entry point for generating safe, production-grade QR codes
+     * using ISO/IEC 18004 ZXing encoding, standard 4-module quiet zone, and closed-loop validation.
+     */
+    fun generateSafe(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.SAFE)
+
+    /**
+     * Canonical entry point for generating exact EFQRCode 7.0.3 parity QR codes
+     * using VeilQrEncoder bit-for-bit parity, EC Level H default, and 1-module quiet zone.
+     */
+    fun generateEfCompatible(
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)

@@ -3,6 +3,7 @@ package com.veilframe.app.qr.ui
 import android.app.Application
 import android.graphics.Bitmap
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.model.*
@@ -916,5 +917,83 @@ class QrStudioViewModelExportValidationTest {
         // For V10 (matrixSize = 57): 57 * 0.10 = 5.7 modules
         val qzV10 = QrGeometry.resolveQuietZone(fracDesign, 57)
         assertEquals(5.7f, qzV10.left, 0.001f)
+    }
+
+    @Test
+    fun testGeometryPolicySeparatesEfParityFromSafeProduction() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateStyle(QrStyle.BASIC)
+
+        // 1. Default policy is SafeProduction: Basic QR defaults to 4 modules
+        assertEquals(QrGeometryPolicy.SafeProduction, vm.state.value.geometryPolicy)
+        var design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(4, design.quietZoneModules)
+        assertNull("explicitQuietZone must remain null when not chosen by user", design.explicitQuietZone)
+
+        // 2. Switch to EfParity policy: Basic QR defaults to 1 module (EFQRCode parity)
+        vm.updateGeometryPolicy(QrGeometryPolicy.EfParity)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(1, design.quietZoneModules)
+        assertNull("explicitQuietZone must remain null when policy provides default", design.explicitQuietZone)
+
+        // 3. User explicit choice overrides both policies
+        vm.updateQuietZone(6)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(6, design.quietZoneModules)
+        assertEquals(6, design.explicitQuietZone)
+
+        // 4. Resetting explicit choice restores policy default
+        vm.updateQuietZone(null)
+        design = vm.buildDesignFromState(vm.state.value)
+        assertEquals(1, design.quietZoneModules)
+        assertNull(design.explicitQuietZone)
+    }
+
+    @Test
+    fun testExplicitGenerationModeSelection() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        assertNull(vm.state.value.generationMode)
+
+        vm.updateGenerationMode(com.veilframe.app.qr.GenerationMode.PARITY_EF)
+        assertEquals(com.veilframe.app.qr.GenerationMode.PARITY_EF, vm.state.value.generationMode)
+
+        vm.updateGenerationMode(com.veilframe.app.qr.GenerationMode.SAFE)
+        assertEquals(com.veilframe.app.qr.GenerationMode.SAFE, vm.state.value.generationMode)
+    }
+
+    @Test
+    fun testSuccessVerifiedAndUnverifiedStates() {
+        val dummyMatrix = QrGenerator.generateMatrix("https://veilframe.app")
+        val dummyDesign = QrDesign()
+
+        // 1. Verified report
+        val verifiedReport = com.veilframe.app.qr.validation.ScanabilityReport(
+            isScanReady = true,
+            validationSkipped = false,
+            quietZone = com.veilframe.app.qr.validation.QuietZoneReport(true, 4),
+            contrast = com.veilframe.app.qr.validation.ContrastReport(1f, 1f, 0f, 0f, 1f, true),
+            finders = com.veilframe.app.qr.validation.FinderIntegrityReport(true, true),
+            logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(true, "https://veilframe.app"),
+            errorCorrection = dummyMatrix.errorCorrection,
+            warnings = emptyList(),
+            repairSuggestions = emptyList()
+        )
+        val verifiedResult = com.veilframe.app.qr.QrRenderResult.Success(null, verifiedReport, dummyMatrix, dummyDesign)
+        assertTrue(verifiedResult is com.veilframe.app.qr.QrRenderResult.Success.Verified)
+        assertTrue(verifiedResult.isVerified)
+
+        // 2. Unverified report (e.g. headless unit test or scan check failure)
+        val unverifiedReport = verifiedReport.copy(isScanReady = false)
+        val unverifiedResult = com.veilframe.app.qr.QrRenderResult.Success(null, unverifiedReport, dummyMatrix, dummyDesign)
+        assertTrue(unverifiedResult is com.veilframe.app.qr.QrRenderResult.Success.Unverified)
+        assertFalse(unverifiedResult.isVerified)
+
+        // 3. Both are instances of Success (backwards compatibility)
+        assertTrue(verifiedResult is com.veilframe.app.qr.QrRenderResult.Success)
+        assertTrue(unverifiedResult is com.veilframe.app.qr.QrRenderResult.Success)
     }
 }

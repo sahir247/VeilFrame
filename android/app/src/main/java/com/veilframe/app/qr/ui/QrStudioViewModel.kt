@@ -178,7 +178,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val alignSize: Float = 1.0f,
         val resampleDataColor: Int? = null,
         val logoAnimatedFrames: List<Bitmap> = emptyList(),
-        val logoFrameDelaysMs: List<Int> = emptyList()
+        val logoFrameDelaysMs: List<Int> = emptyList(),
+        val geometryPolicy: com.veilframe.app.qr.model.QrGeometryPolicy = com.veilframe.app.qr.model.QrGeometryPolicy.SafeProduction,
+        val generationMode: GenerationMode? = null
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
     }
@@ -197,6 +199,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     fun updateContent(text: String) {
         _state.value = _state.value.copy(content = text, repairNotice = null)
         regenerate(debounceMs = 150)
+    }
+
+    fun updateGeometryPolicy(policy: com.veilframe.app.qr.model.QrGeometryPolicy) {
+        _state.value = _state.value.copy(geometryPolicy = policy)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateGenerationMode(mode: GenerationMode?) {
+        _state.value = _state.value.copy(generationMode = mode)
+        regenerate(debounceMs = 0)
     }
 
     fun updateStyle(style: QrStyle) {
@@ -439,7 +451,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
-            val renderResult = QrGenerator.generateWithResult(effectiveContent, design)
+            val mode = s.generationMode ?: QrGenerator.defaultModeFor(design)
+            val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
@@ -622,8 +635,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 crossScale = 1.0f
             ),
             directionalQuietZone = s.directionalQuietZone,
-            quietZoneModules = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else 4,
-            explicitQuietZone = s.quietZoneChoice ?: if (s.style == QrStyle.IMAGE || s.style == QrStyle.IMAGE_RESAMPLE || s.style == QrStyle.IMAGE_FILL) 1 else null,
+            quietZoneModules = s.quietZoneChoice ?: s.geometryPolicy.defaultQuietZoneModules(s.style),
+            explicitQuietZone = s.quietZoneChoice,
             outputSize = effectiveSize,
             backgroundImage = s.backgroundImage,
             backgroundImageAlpha = s.backgroundImageAlpha,
@@ -979,8 +992,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign)
+                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
                 val bmp = when (renderResult) {
                     is QrRenderResult.Success -> renderResult.bitmap
@@ -1259,8 +1273,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign)
+                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
                 val bmp = when (renderResult) {
                     is QrRenderResult.Success -> renderResult.bitmap
@@ -1325,8 +1340,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign)
+                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
                 val (bmp, matrix) = when (renderResult) {
                     is QrRenderResult.Success -> Pair(renderResult.bitmap, renderResult.matrix)
@@ -1381,8 +1397,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign)
+                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
                 val bmp = when (renderResult) {
                     is QrRenderResult.Success -> renderResult.bitmap
@@ -1604,8 +1621,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign)
+                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
                 val bmp = when (renderResult) {
                     is QrRenderResult.Success -> renderResult.bitmap

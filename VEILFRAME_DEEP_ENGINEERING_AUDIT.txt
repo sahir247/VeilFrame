@@ -79,25 +79,21 @@ C-02 NORMAL UI GENERATION IS NOT EFQRCode ENCODER PARITY FOR BASIC
 Severity: P1 / Confidence: CONFIRMED
 File: QrGenerator.kt / Function: defaultModeFor()
 
-  fun defaultModeFor(design: QrDesign): GenerationMode =
-    if (design.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
-
 SAFE uses QrEncoder.encode() (ZXing) rather than VeilQrEncoder.encode().
 SAFE also uses AUTO -> M; EFQRCode default is H.
 Result: EFQRCode-compatible encoder != default BASIC UI encoder.
 Fix: Separate EF parity API -> VeilQrEncoder -> EF defaults
      from  Safe QR API  -> ZXing -> safety-oriented defaults.
+Status: RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points added. UI state supports explicit generationMode setting, selecting VeilQrEncoder with EC Level H parity or ZXing with safety defaults across preview and export.
 
 C-03 UI BUILDS AN EXPLICIT 4-MODULE QUIET ZONE WHERE EF DEFAULTS TO 1
 Severity: P1 / Confidence: CONFIRMED
 File: QrStudioViewModel.kt / Function: buildDesignFromState()
 
-  quietZoneModules = s.quietZoneChoice ?: if (IMAGE styles) 1 else 4
-
 EF basic default ~1 module margin vs VeilFrame QR Studio default 4 modules for most styles.
-explicitQuietZone is explicitly populated, so PARITY_EF mode cannot restore EF default automatically.
-Quiet zone changes: output bounds, matrix offset, logo centering, finder location in canvas coords,
-SVG viewBox, scanability, visual scale of the QR inside a fixed output.
+explicitQuietZone was explicitly populated even when quietZoneChoice was null, preventing PARITY_EF from restoring EF defaults.
+Fix: Separate EF default geometry (qz=1) from safe geometry (qz=4) via explicit policy objects.
+Status: RESOLVED (2026-10-01) - Introduced QrGeometryPolicy (EfParity with 1-module margin vs SafeProduction with 4-module margin). explicitQuietZone is now strictly null unless explicitly chosen by the user, allowing EF parity mode to apply 1-module margins unhindered.
 
 C-04 GENERATION CAN REPORT SUCCESS WITH A FAILED SCANABILITY REPORT
 Severity: P1 / Confidence: CONFIRMED
@@ -106,13 +102,14 @@ File: QrGenerator.kt / Function: generateWithResult()
 Returns QrRenderResult.Success(...) even if report.isScanReady == false.
 Callers can receive Success + QR that failed scanability validation.
 Fix: Introduce Success.Unverified / Success.Verified / Failure typed states.
+Status: RESOLVED (2026-10-01) - Introduced Success.Verified and Success.Unverified typed states with isVerified property and backwards-compatible companion invoke.
 
 3. HIGH / MEDIUM / LOW ISSUES
 ==============================
 
 HIGH
-H-01 UI default BASIC uses SAFE/ZXing not parity encoder          QrGenerator.defaultModeFor()         CONFIRMED
-H-02 UI default quiet zone is 4 for most styles                   QrStudioViewModel.buildDesignFromState CONFIRMED
+H-01 UI default BASIC uses SAFE/ZXing not parity encoder          QrGenerator.defaultModeFor()         RESOLVED (2026-10-01)
+H-02 UI default quiet zone is 4 for most styles                   QrStudioViewModel.buildDesignFromState RESOLVED (2026-10-01)
 H-03 Animated export can consume _state.bitmap as source artwork   saveGif/saveVideo/saveAnimatedSvg()   RESOLVED (2026-10-01)
 H-04 Validation and actual export are separate render passes
      PNG/JPEG/PDF: RESOLVED (2026-10-01) - Single-render Bitmap validation & direct export
@@ -405,12 +402,12 @@ Why not stronger than PARTIAL PARITY:
 
 Completed milestones:
   - [x] P0 animation source isolation (C-01 / H-03)
+  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points, C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
   - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04 partial, M-05, M-06)
   - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-03 quiet zone matrixSize default removal, M-07 share fallback removal, M-08 logo fraction 33% cap
 
 Next correctness milestone:
-  + P1 canonical EF-mode defaults
-  + independent EF-vs-Veil SVG/Canvas pixel differential testing
+  + independent EF-vs-Veil SVG/Canvas pixel differential testing (Tier C/D/E)
 
 ==================================================
 END OF AUDIT
