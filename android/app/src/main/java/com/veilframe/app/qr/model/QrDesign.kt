@@ -611,17 +611,9 @@ data class QrDesign(
                 else -> ModuleFill.SOLID
             }
 
-            val timingShape = when (params.timingShape) {
-                com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
-                com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> if (params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE) ModuleShape.SQUARE else ModuleShape.ROUNDED
-            }
+            val timingShape = mapStyleParamShape(params.timingShape)
 
-            val alignShape = when (params.alignShape) {
-                com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
-                com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
-                else -> if (params.style == QrStyle.IMAGE_RESAMPLE || params.style == QrStyle.IMAGE) ModuleShape.SQUARE else ModuleShape.ROUNDED
-            }
+            val alignShape = mapStyleParamShape(params.alignShape)
 
             val resolvedSourceImage = params.sourceImage
 
@@ -832,6 +824,23 @@ data class QrDesign(
                     fractionalQuietZone = params.backdropQuietZoneFractional
                 )
             )
+        }
+
+        /**
+         * Maps a [com.veilframe.app.qr.ModuleShape] (QrStyleParams legacy enum) to the
+         * corresponding [ModuleShape] (QrDesign model enum).
+         *
+         * Canonical mapping (AGENTS.md §3 / GUIDE.txt Issue 1):
+         *   RECTANGLE        → SQUARE   (EF-compatible default; never ROUNDED)
+         *   ROUND            → CIRCLE
+         *   ROUNDED_RECTANGLE→ ROUNDED
+         *   PLANETS / DSJ / unknown → SQUARE  (deterministic safe fallback)
+         */
+        private fun mapStyleParamShape(shape: com.veilframe.app.qr.ModuleShape): ModuleShape = when (shape) {
+            com.veilframe.app.qr.ModuleShape.RECTANGLE -> ModuleShape.SQUARE
+            com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
+            com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
+            else -> ModuleShape.SQUARE
         }
     }
 }

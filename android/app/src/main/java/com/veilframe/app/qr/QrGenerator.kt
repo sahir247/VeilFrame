@@ -190,6 +190,9 @@ object QrGenerator {
 
     /**
      * Generates a list of [QrFrame] items for an animated QR design.
+     *
+     * Uses [effectiveDesignForMode] so that PARITY_EF mode applies the EF profile
+     * to both matrix encoding AND frame rendering — they cannot diverge.
      */
     fun generateAnimatedFrames(
         content: String,
@@ -197,20 +200,25 @@ object QrGenerator {
         outputSize: Int = 512,
         mode: GenerationMode = defaultModeFor(design)
     ): List<com.veilframe.app.qr.model.QrFrame> {
-        val matrix = generateMatrix(content, design, mode)
-        return AnimatedQrGenerator.renderDesign(matrix, design, outputSize)
+        val effectiveDesign = effectiveDesignForMode(design, mode)
+        val matrix = generateMatrix(content, effectiveDesign, mode)
+        return AnimatedQrGenerator.renderDesign(matrix, effectiveDesign, outputSize)
     }
 
     /**
      * Generates a fully animated vector SVG string for an animated QR design.
+     *
+     * Uses [effectiveDesignForMode] so that PARITY_EF mode applies the EF profile
+     * to both matrix encoding AND SVG rendering — they cannot diverge (GUIDE.txt Issue 2).
      */
     fun generateAnimatedSvg(
         content: String,
         design: QrDesign,
         mode: GenerationMode = defaultModeFor(design)
     ): String {
-        val matrix = generateMatrix(content, design, mode)
-        return AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+        val effectiveDesign = effectiveDesignForMode(design, mode)
+        val matrix = generateMatrix(content, effectiveDesign, mode)
+        return AnimatedQrGenerator.generateAnimatedSvg(matrix, effectiveDesign)
     }
 
     /**
@@ -236,23 +244,7 @@ object QrGenerator {
         design: QrDesign = QrDesign(),
         mode: GenerationMode = defaultModeFor(design)
     ): String {
-        val effectiveDesign = if (mode == GenerationMode.PARITY_EF) {
-            val qz = if (
-                design.explicitQuietZone == null &&
-                design.directionalQuietZone == null &&
-                design.backdropStyle.fractionalQuietZone == null
-            ) {
-                1
-            } else {
-                design.quietZoneModules
-            }
-            design.copy(
-                basicProfile = BasicGeometryProfile.EF_PARITY,
-                quietZoneModules = qz
-            )
-        } else {
-            design
-        }
+        val effectiveDesign = effectiveDesignForMode(design, mode)
         val matrix = generateMatrix(content, effectiveDesign, mode)
         return generateSvg(matrix, effectiveDesign)
     }
@@ -287,16 +279,7 @@ object QrGenerator {
         }
 
         try {
-            val effectiveDesign = if (mode == GenerationMode.PARITY_EF) {
-                val qz = if (design.explicitQuietZone == null &&
-                    design.directionalQuietZone == null &&
-                    design.backdropStyle.fractionalQuietZone == null
-                ) 1 else design.quietZoneModules
-                design.copy(
-                    basicProfile = BasicGeometryProfile.EF_PARITY,
-                    quietZoneModules = qz
-                )
-            } else design
+            val effectiveDesign = effectiveDesignForMode(design, mode)
 
             val matrix = generateMatrix(content, effectiveDesign, mode)
 
@@ -575,6 +558,38 @@ object QrGenerator {
         return baos.toByteArray()
     }
 
+    /**
+     * Authoritative parity-normalization helper (GUIDE.txt Issue 2 / AGENTS.md §4).
+     *
+     * For [GenerationMode.PARITY_EF]:
+     *   - Sets [QrDesign.basicProfile] to [BasicGeometryProfile.EF_PARITY].
+     *   - Defaults quiet zone to 1 module only when no explicit, directional, or
+     *     fractional quiet-zone override is present.
+     *   - Preserves all other design fields unchanged.
+     *
+     * For [GenerationMode.SAFE] and [GenerationMode.ARTISTIC_ENGINE]: returns [design] as-is.
+     *
+     * This is the single location that performs parity normalization.
+     * All entry points (generateWithResult, generateSvg, generateAnimatedSvg,
+     * generateAnimatedFrames) must call this and nowhere else.
+     */
+    private fun effectiveDesignForMode(
+        design: QrDesign,
+        mode: GenerationMode
+    ): QrDesign = if (mode == GenerationMode.PARITY_EF) {
+        val qz = if (
+            design.explicitQuietZone == null &&
+            design.directionalQuietZone == null &&
+            design.backdropStyle.fractionalQuietZone == null
+        ) 1 else design.quietZoneModules
+        design.copy(
+            basicProfile = BasicGeometryProfile.EF_PARITY,
+            quietZoneModules = qz
+        )
+    } else {
+        design
+    }
+
     private fun drawBackground(
         canvas: Canvas,
         design: QrDesign,
@@ -591,12 +606,24 @@ object QrGenerator {
                 val paint = context.fillPaint
                 paint.reset()
                 paint.isAntiAlias = true
+                // Issue 6 fix: use angleDegrees from the model instead of hardcoded diagonal.
+                // GeometryFill.LinearGradient.fromAngle() computes the same endpoints used
+                // by the SVG path, keeping Canvas and SVG mathematically identical.
+                val w = size.toFloat()
+                val h = size.toFloat()
+                val spec = com.veilframe.app.qr.geometry.GeometryFill.LinearGradient.fromAngle(
+                    width = w,
+                    height = h,
+                    startColor = background.startColor,
+                    endColor = background.endColor,
+                    angleDegrees = background.angleDegrees
+                )
                 paint.shader = LinearGradient(
-                    0f, 0f, size.toFloat(), size.toFloat(),
+                    spec.x0, spec.y0, spec.x1, spec.y1,
                     background.startColor, background.endColor,
                     Shader.TileMode.CLAMP
                 )
-                canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+                canvas.drawRect(0f, 0f, w, h, paint)
             }
             is BackgroundStyle.RadialGradient -> {
                 val paint = context.fillPaint

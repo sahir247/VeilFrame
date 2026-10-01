@@ -237,7 +237,19 @@ object BasicGeometryBuilder {
             is BackgroundStyle.LinearGradient -> {
                 val startStop = formatStop("0%", background.startColor)
                 val endStop = formatStop("100%", background.endColor)
-                defs.add("""<linearGradient id="bgGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="$twStr" y2="$thStr">$startStop$endStop</linearGradient>""")
+                // Issue 6 fix: compute endpoints from angleDegrees so SVG matches Canvas.
+                val bgSpec = GeometryFill.LinearGradient.fromAngle(
+                    width = tw,
+                    height = th,
+                    startColor = background.startColor,
+                    endColor = background.endColor,
+                    angleDegrees = background.angleDegrees
+                )
+                val x0Str = SvgExporter.formatCoord(bgSpec.x0.toDouble())
+                val y0Str = SvgExporter.formatCoord(bgSpec.y0.toDouble())
+                val x1Str = SvgExporter.formatCoord(bgSpec.x1.toDouble())
+                val y1Str = SvgExporter.formatCoord(bgSpec.y1.toDouble())
+                defs.add("""<linearGradient id="bgGrad" gradientUnits="userSpaceOnUse" x1="$x0Str" y1="$y0Str" x2="$x1Str" y2="$y1Str">$startStop$endStop</linearGradient>""")
                 nodes.add(
                     RectNode(
                         x = 0f,
@@ -246,14 +258,7 @@ object BasicGeometryBuilder {
                         height = th,
                         fill = background.startColor,
                         fillString = "url(#bgGrad)",
-                        geometryFill = GeometryFill.LinearGradient(
-                            startColor = background.startColor,
-                            endColor = background.endColor,
-                            x0 = 0f,
-                            y0 = 0f,
-                            x1 = tw,
-                            y1 = th
-                        )
+                        geometryFill = bgSpec
                     )
                 )
             }
