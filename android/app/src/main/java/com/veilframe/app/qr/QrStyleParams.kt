@@ -5,8 +5,27 @@ import android.graphics.Color
 
 /**
  * Visual style enum corresponding to the 12 VeilFrame Art Engine rendering modes.
+ *
+ * Architecture Taxonomy (Audit Section 4 & 18 - P3.3):
+ *
+ * 1. Canonical EFQRCode 7.0.3 Behavioral Parity Styles (10 styles):
+ *    - [BASIC]: Classic square/geometric modules with finder & per-zone shape overrides
+ *    - [BUBBLE]: Multi-scale cluster bubbles (3x3, 2x2, 1x2, 1x1) with upstream palette
+ *    - [D25]: 2.5D isometric projection (three-face extruded cubes)
+ *    - [DSJ]: DJ-cross finders, diagonal X crosses, and directional lines
+ *    - [IMAGE_FILL]: Background image baked into stencil-masked module colors
+ *    - [IMAGE]: Dual-pass background image overlay composited with foreground QR
+ *    - [IMAGE_RESAMPLE]: 3x3 subpixel resample with luminance thresholding & stochastic sampling
+ *    - [LINE]: Horizontal, vertical, diagonal X, and cross directional line patterns
+ *    - [RANDOM_RECTANGLE]: Randomized dual-rectangle modules with noise & shadow layers
+ *    - [FUNCTION]: Cosine radial fade gradient & concentric circular band functions
+ *
+ * 2. Intentional VeilFrame Architectural Extensions (2 styles):
+ *    - [STYLE_FUNCTION]: Advanced parameter-driven mathematical function override
+ *    - [CONNECTED_ORGANIC]: Graph-connected organic bezier module paths and bridges
  */
 enum class QrStyle {
+    // --- Canonical EFQRCode 7.0.3 Parity Styles ---
     BASIC,              // Classic square modules with per-zone shape overrides
     BUBBLE,             // Organic bubble-cluster modules
     D25,                // 2.5D isometric projection (three-face cubes)
@@ -17,8 +36,16 @@ enum class QrStyle {
     LINE,               // Horizontal/vertical stripe patterns
     RANDOM_RECTANGLE,   // Randomized rectangle modules with noise
     FUNCTION,           // Function-based custom module shapes
-    STYLE_FUNCTION,     // Style-level function override
-    CONNECTED_ORGANIC   // Organic graph-connected module paths
+
+    // --- VeilFrame-Only Extension Styles ---
+    STYLE_FUNCTION,     // Style-level function override (VeilFrame extension)
+    CONNECTED_ORGANIC;  // Organic graph-connected module paths (VeilFrame extension)
+
+    /** True if this style mirrors an official upstream EFQRCode 7.0.3 style. */
+    val isEfParityStyle: Boolean get() = this != STYLE_FUNCTION && this != CONNECTED_ORGANIC
+
+    /** True if this style is an intentional VeilFrame-specific artistic extension. */
+    val isVeilFrameExtension: Boolean get() = this == STYLE_FUNCTION || this == CONNECTED_ORGANIC
 }
 
 /** Shape options for individual module zones (position patterns, data modules, etc.). */

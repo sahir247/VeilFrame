@@ -180,7 +180,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val logoAnimatedFrames: List<Bitmap> = emptyList(),
         val logoFrameDelaysMs: List<Int> = emptyList(),
         val geometryPolicy: com.veilframe.app.qr.model.QrGeometryPolicy = com.veilframe.app.qr.model.QrGeometryPolicy.SafeProduction,
-        val generationMode: GenerationMode? = null
+        val generationMode: GenerationMode = GenerationMode.PARITY_EF
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
     }
@@ -206,7 +206,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 0)
     }
 
-    fun updateGenerationMode(mode: GenerationMode?) {
+    fun updateGenerationMode(mode: GenerationMode) {
         _state.value = _state.value.copy(generationMode = mode)
         regenerate(debounceMs = 0)
     }
@@ -451,7 +451,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
-            val mode = s.generationMode ?: QrGenerator.defaultModeFor(design)
+            val mode = s.generationMode
             val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
@@ -996,7 +996,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
+                val mode = _state.value.generationMode
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
@@ -1277,7 +1277,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
+                val mode = _state.value.generationMode
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
@@ -1344,7 +1344,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
+                val mode = _state.value.generationMode
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
@@ -1401,7 +1401,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
+                val mode = _state.value.generationMode
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }
@@ -1625,7 +1625,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode ?: QrGenerator.defaultModeFor(exportDesign)
+                val mode = _state.value.generationMode
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign, mode = mode)
                 }

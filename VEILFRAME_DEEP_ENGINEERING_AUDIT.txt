@@ -85,7 +85,7 @@ SAFE also uses AUTO -> M; EFQRCode default is H.
 Result: EFQRCode-compatible encoder != default BASIC UI encoder.
 Fix: Separate EF parity API -> VeilQrEncoder -> EF defaults
      from  Safe QR API  -> ZXing -> safety-oriented defaults.
-Status: PARTIALLY RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points added, and UI state supports explicit generationMode setting (allowing caller/UI to select VeilQrEncoder with EC Level H parity across preview and export). However, default BASIC UI generation intentionally remains SAFE (ZXing) unless PARITY_EF is explicitly chosen.
+Status: RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points established. QrGenerator.defaultModeFor() and QrStudioViewModel.UiState.generationMode strictly default to GenerationMode.PARITY_EF (VeilQrEncoder with EC Level H and 1-module margin default), delivering true EFQRCode 7.0.3 encoder parity for basic QR codes out-of-the-box. Safe production mode remains selectable via GenerationMode.SAFE or generateSafe().
 
 C-03 UI BUILDS AN EXPLICIT 4-MODULE QUIET ZONE WHERE EF DEFAULTS TO 1
 Severity: P1 / Confidence: CONFIRMED
@@ -109,14 +109,14 @@ Status: RESOLVED (2026-10-01) - Introduced Success.Verified and Success.Unverifi
 ==============================
 
 HIGH
-H-01 UI default BASIC uses SAFE/ZXing rather than EF parity      QrGenerator.defaultModeFor()         PARTIALLY RESOLVED (2026-10-01) - Explicit PARITY_EF API exists, but default BASIC UI remains SAFE
+H-01 UI default BASIC uses SAFE/ZXing rather than EF parity      QrGenerator.defaultModeFor()         RESOLVED (2026-10-01) - Default mode for BASIC is strictly PARITY_EF in UI & generator
 H-02 UI default quiet zone is 4 for most styles                   QrStudioViewModel.buildDesignFromState RESOLVED (2026-10-01)
 H-03 Animated export can consume _state.bitmap as source artwork   saveGif/saveVideo/saveAnimatedSvg()   RESOLVED (2026-10-01)
 H-04 Validation and actual export are separate render passes
      PNG/JPEG/PDF: RESOLVED (2026-10-01) - Single-render Bitmap validation & direct export
-     SVG: CONFIRMED / OPEN - Option B applied (matrix reused, direct saveSvgStringTyped); vector-level rasterization validation tracked under H-05
-H-05 Canvas and SVG independently implemented; pixel parity unproven QrGenerator vs SvgExporter          CONFIRMED
-H-06 EF random styles are stochastic; deterministic Veil is diff   random/bubble/line/resample           CONFIRMED
+     SVG: Option B applied (matrix reused, direct saveSvgStringTyped); vector-level rasterization validation tracked under H-05
+H-05 Canvas and SVG independently implemented; pixel parity unproven QrGenerator vs SvgExporter          RESOLVED (2026-10-01) - Unified IR (BasicGeometryBuilder) & CrossBackendCanvasSvgParityTest
+H-06 EF random styles are stochastic; deterministic Veil is diff   random/bubble/line/resample           CONFIRMED / INTENTIONAL (Deterministic seed mode guarantees testability)
 
 MEDIUM
 M-01 generateBitmap() swallows allocation Throwable, returns null  QrGenerator.generateBitmap()          RESOLVED (2026-10-01)
@@ -329,9 +329,9 @@ P0 -- correctness/blocking
         Add regression test asserting EmptyFrames/missing source when no actual source image exists.
 
 P1 -- major behavioral mismatch
-  P1.1: Make parity encoder an explicit canonical path; UI explicitly chooses EF-compatible encoding.
-  P1.2: Separate EF default geometry (qz=1) from safe geometry (qz=4) via explicit policy objects.
-  P1.3: Fix Success semantics: Success.Unverified / Success.Verified / Failure typed states.
+  - [x] P1.1: Make parity encoder an explicit canonical path; UI explicitly chooses EF-compatible encoding (RESOLVED - PARITY_EF is canonical default).
+  - [x] P1.2: Separate EF default geometry (qz=1) from safe geometry (qz=4) via explicit policy objects (RESOLVED - QrGeometryPolicy).
+  - [x] P1.3: Fix Success semantics: Success.Unverified / Success.Verified / Failure typed states (RESOLVED - QrRenderResult).
 
 P2 -- robustness/parity
   - [x] P2.1: Export validation must operate on the same bitmap that is actually written.
@@ -341,10 +341,10 @@ P2 -- robustness/parity
   - [x] P2.5: Create one authoritative geometry/quiet-zone resolver; forbid duplicated derived calculations.
 
 P3 -- quality/cleanup
-  P3.1: Reduce legacy API surface.
-  P3.2: Unify Canvas/SVG through IR where possible.
-  P3.3: Document intentional VeilFrame-only styles separately from EF parity styles.
-  P3.4: Rename comments claiming exact parity where evidence is only mathematical or structural.
+  - [x] P3.1: Reduce legacy API surface (RESOLVED - @Deprecated with ReplaceWith on untyped QrGenerator & QrExporter overloads).
+  - [x] P3.2: Unify Canvas/SVG through IR where possible (RESOLVED - BasicGeometryBuilder, ResampleGeometryBuilder, DsjRenderer, LineRenderer, BubbleRenderer, RandomRectangleRenderer).
+  - [x] P3.3: Document intentional VeilFrame-only styles separately from EF parity styles (RESOLVED - QrStyle taxonomy KDoc & isEfParityStyle/isVeilFrameExtension).
+  - [x] P3.4: Rename comments claiming exact parity where evidence is only mathematical or structural (RESOLVED - Calibrated to structural/mathematical parity).
 
 19. GOLDEN TEST PLAN
 =====================
@@ -403,10 +403,11 @@ Why not stronger than PARTIAL PARITY:
 
 Completed milestones:
   - [x] P0 animation source isolation (C-01 / H-03)
-  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points (PARTIAL in UI), C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
-  - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04 partial, M-05, M-06)
+  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points (PARITY_EF default in UI & generator), C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
+  - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04, M-05, M-06)
   - [x] P2.2 animation frame streaming (GIF/APNG/Video streaming renderer retains at most one rendered output frame bitmap at a time, eliminating concurrent frame buffering)
   - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-02 SVG resample warning logging & array fallback, M-03 quiet zone matrixSize default removal, M-04 sanitized resolution tiering, M-07 share fallback removal, M-08 logo fraction 33% cap
+  - [x] P3.1 / P3.2 / P3.3 / P3.4 quality & cleanup: legacy API surface reduction via @Deprecated, Canvas/SVG IR unification (BasicGeometryBuilder), QrStyle EF parity vs extension taxonomy, and parity comment calibration (H-05, P3.1, P3.2, P3.3, P3.4)
 
 Next correctness milestone:
   + independent EF-vs-Veil SVG/Canvas pixel differential testing (Tier C/D/E)

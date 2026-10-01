@@ -569,7 +569,7 @@ data class QrDesign(
     fun effectiveQuietZoneRightFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).right
     fun effectiveQuietZoneBottomFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).bottom
 
-    val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
+    val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.PARITY_EF
 
     companion object {
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {

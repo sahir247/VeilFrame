@@ -128,6 +128,10 @@ object QrExporter {
      * Saves [bitmap] to the device Pictures/VeilFrame gallery.
      * Backwards-compatible nullable URI return.
      */
+    @Deprecated(
+        message = "Use saveBitmapTyped(context, bitmap, format, quality) for typed error handling.",
+        replaceWith = ReplaceWith("saveBitmapTyped(context, bitmap, format, quality).getOrNull()")
+    )
     suspend fun saveToGallery(
         context: Context,
         bitmap: Bitmap,
@@ -138,6 +142,10 @@ object QrExporter {
     /**
      * Validates [bitmap] with strict scanability gate prior to saving.
      */
+    @Deprecated(
+        message = "Use exportTyped(context, content, design, format) for unified validation and export.",
+        replaceWith = ReplaceWith("exportTyped(context, content, design, QrOutputFormat.Png)")
+    )
     suspend fun saveToGalleryValidated(
         context: Context,
         bitmap: Bitmap,
@@ -151,6 +159,7 @@ object QrExporter {
         if (!report.isScanReady) {
             return Pair(null, report)
         }
+        @Suppress("DEPRECATION")
         val uri = saveToGallery(context, bitmap, format, quality)
         return Pair(uri, report)
     }
@@ -237,6 +246,10 @@ object QrExporter {
     /**
      * Saves true vector SVG markup to the Downloads or Documents directory.
      */
+    @Deprecated(
+        message = "Use saveSvgTyped(context, matrix, design) for typed error handling.",
+        replaceWith = ReplaceWith("saveSvgTyped(context, matrix, design).getOrNull()")
+    )
     suspend fun saveSvg(
         context: Context,
         matrix: QrMatrix,
@@ -307,6 +320,10 @@ object QrExporter {
     /**
      * Saves animated GIF bytes to the device Pictures/VeilFrame gallery.
      */
+    @Deprecated(
+        message = "Use saveGifTyped(context, gifBytes) for typed error handling.",
+        replaceWith = ReplaceWith("saveGifTyped(context, gifBytes).getOrNull()")
+    )
     suspend fun saveGif(
         context: Context,
         gifBytes: ByteArray
@@ -374,6 +391,10 @@ object QrExporter {
      * Saves animated SVG markup to the Downloads or Documents directory.
      * [design] is the authoritative single source of truth for artwork frames and timing.
      */
+    @Deprecated(
+        message = "Use saveAnimatedSvgTyped(context, matrix, design) for typed error handling.",
+        replaceWith = ReplaceWith("saveAnimatedSvgTyped(context, matrix, design).getOrNull()")
+    )
     suspend fun saveAnimatedSvg(
         context: Context,
         matrix: QrMatrix,
@@ -467,6 +488,10 @@ object QrExporter {
     /**
      * Saves a video file to the device Movies/VeilFrame directory.
      */
+    @Deprecated(
+        message = "Use saveVideoTyped(context, videoFile) for typed error handling.",
+        replaceWith = ReplaceWith("saveVideoTyped(context, videoFile).getOrNull()")
+    )
     suspend fun saveVideo(
         context: Context,
         videoFile: File
@@ -560,6 +585,10 @@ object QrExporter {
     /**
      * Saves [bitmap] as a printable PDF document.
      */
+    @Deprecated(
+        message = "Use savePdfTyped(context, bitmap, pageWidthPoints, pageHeightPoints) for typed error handling.",
+        replaceWith = ReplaceWith("savePdfTyped(context, bitmap, pageWidthPoints, pageHeightPoints).getOrNull()")
+    )
     suspend fun savePdf(
         context: Context,
         bitmap: Bitmap,
@@ -631,6 +660,10 @@ object QrExporter {
     /**
      * Saves an animated PNG (APNG) file to the device Pictures/VeilFrame gallery.
      */
+    @Deprecated(
+        message = "Use saveApngTyped(context, apngFile) for typed error handling.",
+        replaceWith = ReplaceWith("saveApngTyped(context, apngFile).getOrNull()")
+    )
     suspend fun saveApng(
         context: Context,
         apngFile: File

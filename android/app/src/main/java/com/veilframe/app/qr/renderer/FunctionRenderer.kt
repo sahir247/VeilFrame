@@ -18,7 +18,7 @@ import kotlin.math.sqrt
 /**
  * Style 10 — FUNCTION (Mathematical Function Custom Module Shapes)
  *
- * Implements VeilFrameStyleFunction with exact mathematical parity:
+ * Implements VeilFrameStyleFunction with analytical mathematical parity:
  * - 5 position finder styles (.rectangle, .round, .roundedRectangle, .planets, .dsj) via [VeilPositionPatternGeometry].
  * - Two canonical mathematical functions:
  *   1. FADE: Cosine radial gradient function `(1 - cos(PI * dist)) / 6 + 1/5`.

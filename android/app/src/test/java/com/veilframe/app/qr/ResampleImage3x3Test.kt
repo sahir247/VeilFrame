@@ -577,9 +577,14 @@ class ResampleImage3x3Test {
             QrGenerator.defaultModeFor(resampleDesign)
         )
         assertEquals(
-            "BASIC must default to SAFE",
-            GenerationMode.SAFE,
+            "BASIC defaultModeFor must map to PARITY_EF for canonical EFQRCode parity",
+            GenerationMode.PARITY_EF,
             QrGenerator.defaultModeFor(basicDesign)
+        )
+        assertEquals(
+            "BASIC defaultModeFor with preferSafe=true must map to SAFE",
+            GenerationMode.SAFE,
+            QrGenerator.defaultModeFor(basicDesign, preferSafe = true)
         )
 
         // 2. QrDesign property parity
@@ -588,7 +593,7 @@ class ResampleImage3x3Test {
             resampleDesign.recommendedGenerationMode
         )
         assertEquals(
-            GenerationMode.SAFE,
+            GenerationMode.PARITY_EF,
             basicDesign.recommendedGenerationMode
         )
 

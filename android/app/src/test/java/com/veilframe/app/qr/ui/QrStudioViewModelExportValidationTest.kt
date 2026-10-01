@@ -958,7 +958,7 @@ class QrStudioViewModelExportValidationTest {
         val app = Application()
         val vm = QrStudioViewModel(app)
 
-        assertNull(vm.state.value.generationMode)
+        assertEquals(com.veilframe.app.qr.GenerationMode.PARITY_EF, vm.state.value.generationMode)
 
         vm.updateGenerationMode(com.veilframe.app.qr.GenerationMode.PARITY_EF)
         assertEquals(com.veilframe.app.qr.GenerationMode.PARITY_EF, vm.state.value.generationMode)

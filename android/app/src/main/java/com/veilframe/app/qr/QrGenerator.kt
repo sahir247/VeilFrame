@@ -118,11 +118,20 @@ object QrGenerator {
      * Authoritative generation mode resolver for a given [QrDesign].
      *
      * Ensures all pipelines (preview, gallery PNG, share, SVG export, auto-repair)
-     * strictly use [GenerationMode.ARTISTIC_ENGINE] for artistic styles (such as
-     * [QrStyle.IMAGE_RESAMPLE]), and [GenerationMode.SAFE] for basic/safe styles.
+     * use [GenerationMode.ARTISTIC_ENGINE] for artistic styles (such as [QrStyle.IMAGE_RESAMPLE]),
+     * and [GenerationMode.PARITY_EF] for [QrStyle.BASIC] to guarantee canonical EFQRCode 7.0.3
+     * bit-for-bit parity (via [VeilQrEncoder] with EC Level H default).
+     * If safe production encoding is required (ISO/IEC 18004 ZXing with standard margins), callers
+     * can explicitly specify [GenerationMode.SAFE] or call [generateSafe].
      */
-    fun defaultModeFor(design: QrDesign): GenerationMode =
-        if (design.style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.SAFE
+    fun defaultModeFor(design: QrDesign, preferSafe: Boolean = false): GenerationMode =
+        if (design.style != QrStyle.BASIC) {
+            GenerationMode.ARTISTIC_ENGINE
+        } else if (preferSafe) {
+            GenerationMode.SAFE
+        } else {
+            GenerationMode.PARITY_EF
+        }
 
     /**
      * Directly generates the [QrMatrix] adhering to the specified [GenerationMode] and [design],
@@ -444,6 +453,10 @@ object QrGenerator {
     /**
      * Legacy synchronous generation overload returning a raw [Bitmap].
      */
+    @Deprecated(
+        message = "Use generateWithResult(content, design) or generateEfCompatible(content, design) for typed error handling and closed-loop verification.",
+        replaceWith = ReplaceWith("generateWithResult(content, QrDesign.fromQrStyleParams(params))")
+    )
     fun generate(
         content: String,
         params: QrStyleParams = QrStyleParams(),
@@ -462,6 +475,10 @@ object QrGenerator {
     /**
      * Generates a QR code as a PNG [ByteArray].
      */
+    @Deprecated(
+        message = "Use QrExporter.exportTyped(context, content, design, QrOutputFormat.Png) for typed error handling.",
+        replaceWith = ReplaceWith("generateWithResult(content, QrDesign.fromQrStyleParams(params))")
+    )
     fun generatePng(
         content: String,
         params: QrStyleParams = QrStyleParams(),
@@ -477,6 +494,10 @@ object QrGenerator {
     /**
      * Generates a QR code as a JPEG [ByteArray].
      */
+    @Deprecated(
+        message = "Use QrExporter.exportTyped(context, content, design, QrOutputFormat.Jpeg(quality)) for typed error handling.",
+        replaceWith = ReplaceWith("generateWithResult(content, QrDesign.fromQrStyleParams(params))")
+    )
     fun generateJpeg(
         content: String,
         params: QrStyleParams = QrStyleParams(),

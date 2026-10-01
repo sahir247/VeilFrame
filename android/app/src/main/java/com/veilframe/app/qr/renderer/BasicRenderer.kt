@@ -21,6 +21,13 @@ import kotlin.random.Random
  */
 class BasicRenderer : BaseQrRenderer() {
 
+    fun generateGeometry(
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry
+    ): com.veilframe.app.qr.geometry.QrGeometryIr =
+        com.veilframe.app.qr.geometry.BasicGeometryBuilder.generateGeometry(matrix, design, geometry)
+
     override fun renderDataModules(
         canvas: Canvas,
         matrix: QrMatrix,

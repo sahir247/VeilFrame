@@ -16,7 +16,7 @@ import kotlin.math.max
 /**
  * Style 4 — DSJ (DJ-cross)
  *
- * Implements VeilFrameStyleDSJ with exact parity:
+ * Implements VeilFrameStyleDSJ with structural algorithm parity:
  * - 5 position finder styles (.dsj, .rectangle, .round, .roundedRectangle, .planets) via [VeilPositionPatternGeometry].
  * - 5-stage data grouping algorithm:
  *   1. 3x3 X-pattern diagonal line crosses (xColor)

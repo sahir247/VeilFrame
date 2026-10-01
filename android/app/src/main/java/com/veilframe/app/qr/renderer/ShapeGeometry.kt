@@ -14,7 +14,7 @@ import java.util.Random
  * 1. Android Canvas [Path] geometry (for direct view rendering and bitmap export).
  * 2. SVG vector element markup (for vector export and `<mask id="qrDataMask">` stencils).
  *
- * Guarantees 100% geometric parity between Canvas and SVG representations for all [ModuleShape] variants.
+ * Guarantees structural and mathematical geometric parity between Canvas and SVG representations for all [ModuleShape] variants.
  */
 object ShapeGeometry {
 
@@ -188,7 +188,7 @@ object ShapeGeometry {
                 """<circle cx="$cx" cy="$cy" r="$r" fill="$fill" />"""
             }
 
-            // Pill (100% parity with Canvas rx = width / 2, ry = height * 0.25)
+            // Pill (structural mathematical parity with Canvas rx = width / 2, ry = height * 0.25)
             shape == ModuleShape.PILL -> {
                 val rx = scale / 2.0
                 val ry = scale * 0.25
