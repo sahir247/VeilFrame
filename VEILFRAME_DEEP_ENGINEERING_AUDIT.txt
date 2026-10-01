@@ -5,7 +5,8 @@ AUDIT BASIS
 -----------
 EFQRCode: 7.0.3  tag: 07ff9e2e83a4bbd384e5a8e33b47f389c9aac762
 Bundled QR dependency: swift_qrcodejs 2.3.1  rev: d1605333f7edac39b4518538ef4f2638fdd2e4d6
-VeilFrame revision: sahir247/VeilFrame  bf1a10d9b346a2aba6d8b8fb82905c1344696e39
+VeilFrame audit baseline: sahir247/VeilFrame  bf1a10d9b346a2aba6d8b8fb82905c1344696e39
+Current remediation revision: c4c1b7437711f20487ef46ec78d65847eac489cb
 Android QR implementation: android/app/src/main/java/com/veilframe/app/qr/
 
 METHODOLOGY: Source and committed test/oracle corpus were inspected; Android Gradle test suite,
@@ -84,7 +85,7 @@ SAFE also uses AUTO -> M; EFQRCode default is H.
 Result: EFQRCode-compatible encoder != default BASIC UI encoder.
 Fix: Separate EF parity API -> VeilQrEncoder -> EF defaults
      from  Safe QR API  -> ZXing -> safety-oriented defaults.
-Status: RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points added. UI state supports explicit generationMode setting, selecting VeilQrEncoder with EC Level H parity or ZXing with safety defaults across preview and export.
+Status: PARTIALLY RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points added, and UI state supports explicit generationMode setting (allowing caller/UI to select VeilQrEncoder with EC Level H parity across preview and export). However, default BASIC UI generation intentionally remains SAFE (ZXing) unless PARITY_EF is explicitly chosen.
 
 C-03 UI BUILDS AN EXPLICIT 4-MODULE QUIET ZONE WHERE EF DEFAULTS TO 1
 Severity: P1 / Confidence: CONFIRMED
@@ -108,7 +109,7 @@ Status: RESOLVED (2026-10-01) - Introduced Success.Verified and Success.Unverifi
 ==============================
 
 HIGH
-H-01 UI default BASIC uses SAFE/ZXing not parity encoder          QrGenerator.defaultModeFor()         RESOLVED (2026-10-01)
+H-01 UI default BASIC uses SAFE/ZXing rather than EF parity      QrGenerator.defaultModeFor()         PARTIALLY RESOLVED (2026-10-01) - Explicit PARITY_EF API exists, but default BASIC UI remains SAFE
 H-02 UI default quiet zone is 4 for most styles                   QrStudioViewModel.buildDesignFromState RESOLVED (2026-10-01)
 H-03 Animated export can consume _state.bitmap as source artwork   saveGif/saveVideo/saveAnimatedSvg()   RESOLVED (2026-10-01)
 H-04 Validation and actual export are separate render passes
@@ -273,9 +274,9 @@ Export peak:
 Recommended architecture:
   Preview: 512px max
   Static export: render once -> validate same bitmap -> encode/save -> release bitmap
-  Animated export: streaming frame renderer -> encode frame -> release frame -> next frame
+  Animated export: streaming frame renderer -> encode frame -> release frame -> next frame (At most one rendered QR frame bitmap is intentionally retained by the streaming renderer at a time)
 
-Assessment: Preview GOOD / Export memory NEEDS HARDENING
+Assessment: Preview GOOD / Export memory RESOLVED for static single-render and streaming animation frame pipelines
 
 15. SCANNABILITY AUDIT
 =======================
@@ -402,9 +403,9 @@ Why not stronger than PARTIAL PARITY:
 
 Completed milestones:
   - [x] P0 animation source isolation (C-01 / H-03)
-  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points, C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
+  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points (PARTIAL in UI), C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
   - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04 partial, M-05, M-06)
-  - [x] P2.2 animation frame streaming (GIF/APNG/Video render-encode-recycle pipeline, single frame in RAM)
+  - [x] P2.2 animation frame streaming (GIF/APNG/Video streaming renderer retains at most one rendered output frame bitmap at a time, eliminating concurrent frame buffering)
   - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-02 SVG resample warning logging & array fallback, M-03 quiet zone matrixSize default removal, M-04 sanitized resolution tiering, M-07 share fallback removal, M-08 logo fraction 33% cap
 
 Next correctness milestone:
@@ -412,6 +413,6 @@ Next correctness milestone:
 
 ==================================================
 END OF AUDIT
-EFQRCode 7.0.3 (07ff9e2e) vs VeilFrame (bf1a10d9)
+EFQRCode 7.0.3 (07ff9e2e) vs VeilFrame (audit baseline: bf1a10d9 / current: c4c1b74)
 Generated: 2026-10-01
 ==================================================
