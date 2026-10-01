@@ -229,15 +229,49 @@ object QrGenerator {
 
     /**
      * Generates a true vector SVG document directly for [content] and [design].
+     * Propagates effective EF_PARITY quiet zone and profile settings when running in PARITY_EF mode.
      */
     fun generateSvg(
         content: String,
         design: QrDesign = QrDesign(),
         mode: GenerationMode = defaultModeFor(design)
     ): String {
-        val matrix = generateMatrix(content, design, mode)
-        return generateSvg(matrix, design)
+        val effectiveDesign = if (mode == GenerationMode.PARITY_EF) {
+            val qz = if (
+                design.explicitQuietZone == null &&
+                design.directionalQuietZone == null &&
+                design.backdropStyle.fractionalQuietZone == null
+            ) {
+                1
+            } else {
+                design.quietZoneModules
+            }
+            design.copy(
+                basicProfile = BasicGeometryProfile.EF_PARITY,
+                quietZoneModules = qz
+            )
+        } else {
+            design
+        }
+        val matrix = generateMatrix(content, effectiveDesign, mode)
+        return generateSvg(matrix, effectiveDesign)
     }
+
+    /**
+     * Generates an exact EFQRCode 7.0.3 parity SVG document directly for [content] and [design].
+     */
+    fun generateEfCompatibleSvg(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): String = generateSvg(content, design, mode = GenerationMode.PARITY_EF)
+
+    /**
+     * Convenience entry point for generating parity SVG with EFQRCode 7.0.3 exact behavioral parity.
+     */
+    fun generateParitySvg(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): String = generateSvg(content, design, mode = GenerationMode.PARITY_EF)
 
     /**
      * Modern domain generation entry point returning typed [QrRenderResult]

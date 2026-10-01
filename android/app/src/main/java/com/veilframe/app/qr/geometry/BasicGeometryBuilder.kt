@@ -67,19 +67,26 @@ object BasicGeometryBuilder {
         val dataGeomFill: GeometryFill? = if (hasGradient) {
             val gradStart = design.palette.gradientStart!!
             val gradEnd = design.palette.gradientEnd!!
-            val gradStartHex = String.format(Locale.US, "#%06X", 0xFFFFFF and gradStart)
-            val gradEndHex = String.format(Locale.US, "#%06X", 0xFFFFFF and gradEnd)
+            val startStop = formatStop("0%", gradStart)
+            val endStop = formatStop("100%", gradEnd)
+            val cx = totalWidth / 2f
+            val cy = totalHeight / 2f
+            val radius = maxOf(totalWidth, totalHeight) / 2f
+            val cxStr = SvgExporter.formatCoord(cx.toDouble())
+            val cyStr = SvgExporter.formatCoord(cy.toDouble())
+            val rStr = SvgExporter.formatCoord(radius.toDouble())
+
             if (isRadial) {
-                defs.add("""<radialGradient id="qrGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="$gradStartHex" /><stop offset="100%" stop-color="$gradEndHex" /></radialGradient>""")
+                defs.add("""<radialGradient id="qrGrad" gradientUnits="userSpaceOnUse" cx="$cxStr" cy="$cyStr" r="$rStr">$startStop$endStop</radialGradient>""")
                 GeometryFill.RadialGradient(
                     centerColor = gradStart,
                     edgeColor = gradEnd,
-                    cx = totalWidth / 2f,
-                    cy = totalHeight / 2f,
-                    radius = maxOf(totalWidth, totalHeight) / 2f
+                    cx = cx,
+                    cy = cy,
+                    radius = radius
                 )
             } else {
-                defs.add("""<linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="$gradStartHex" /><stop offset="100%" stop-color="$gradEndHex" /></linearGradient>""")
+                defs.add("""<linearGradient id="qrGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="$twStr" y2="$thStr">$startStop$endStop</linearGradient>""")
                 GeometryFill.LinearGradient(
                     startColor = gradStart,
                     endColor = gradEnd,
@@ -203,6 +210,8 @@ object BasicGeometryBuilder {
         val tw = geometry.outputWidthFloat
         val th = geometry.outputHeightFloat
         if (tw <= 0f || th <= 0f) return
+        val twStr = SvgExporter.formatCoord(tw.toDouble())
+        val thStr = SvgExporter.formatCoord(th.toDouble())
 
         val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
 
@@ -226,9 +235,9 @@ object BasicGeometryBuilder {
                 )
             }
             is BackgroundStyle.LinearGradient -> {
-                val startHex = IrSvgRenderer.colorToHex(background.startColor)
-                val endHex = IrSvgRenderer.colorToHex(background.endColor)
-                defs.add("""<linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="$startHex" /><stop offset="100%" stop-color="$endHex" /></linearGradient>""")
+                val startStop = formatStop("0%", background.startColor)
+                val endStop = formatStop("100%", background.endColor)
+                defs.add("""<linearGradient id="bgGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="$twStr" y2="$thStr">$startStop$endStop</linearGradient>""")
                 nodes.add(
                     RectNode(
                         x = 0f,
@@ -249,10 +258,13 @@ object BasicGeometryBuilder {
                 )
             }
             is BackgroundStyle.RadialGradient -> {
-                val centerHex = IrSvgRenderer.colorToHex(background.centerColor)
-                val edgeHex = IrSvgRenderer.colorToHex(background.edgeColor)
-                defs.add("""<radialGradient id="bgRadGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="$centerHex" /><stop offset="100%" stop-color="$edgeHex" /></radialGradient>""")
+                val startStop = formatStop("0%", background.centerColor)
+                val endStop = formatStop("100%", background.edgeColor)
                 val radius = maxOf(tw, th) / 2f
+                val cxStr = SvgExporter.formatCoord((tw / 2f).toDouble())
+                val cyStr = SvgExporter.formatCoord((th / 2f).toDouble())
+                val rStr = SvgExporter.formatCoord(radius.toDouble())
+                defs.add("""<radialGradient id="bgRadGrad" gradientUnits="userSpaceOnUse" cx="$cxStr" cy="$cyStr" r="$rStr">$startStop$endStop</radialGradient>""")
                 nodes.add(
                     RectNode(
                         x = 0f,
@@ -409,12 +421,8 @@ object BasicGeometryBuilder {
     ) {
         if (design.timingStyle.shape == ModuleShape.NONE || design.timingStyle.onlyWhite) return
 
-        // In EF_PARITY mode, default timing shape is rectangle (SQUARE) unless explicitly customized
-        val timingShape = if (profile == BasicGeometryProfile.EF_PARITY && design.timingStyle.shape == ModuleShape.ROUNDED) {
-            ModuleShape.SQUARE
-        } else {
-            design.timingStyle.shape
-        }
+        // Timing shape defaults to SQUARE (model default) and honors explicit customization
+        val timingShape = design.timingStyle.shape
         val timingScale = design.timingStyle.scale.coerceIn(0.5f, 1.0f)
         val timingColor = design.timingStyle.color ?: design.timingColor ?: design.palette.foreground
 
@@ -450,12 +458,8 @@ object BasicGeometryBuilder {
     ) {
         if (design.alignmentStyle.shape == ModuleShape.NONE || design.alignmentStyle.onlyWhite) return
 
-        // In EF_PARITY mode, default alignment shape is rectangle (SQUARE) unless explicitly customized
-        val alignShape = if (profile == BasicGeometryProfile.EF_PARITY && design.alignmentStyle.shape == ModuleShape.ROUNDED) {
-            ModuleShape.SQUARE
-        } else {
-            design.alignmentStyle.shape
-        }
+        // Alignment shape defaults to SQUARE (model default) and honors explicit customization
+        val alignShape = design.alignmentStyle.shape
         val alignScale = design.alignmentStyle.scale.coerceIn(0.5f, 1.0f)
         val alignColor = design.alignmentStyle.color ?: design.alignmentColor ?: design.palette.foreground
 
@@ -603,6 +607,16 @@ object BasicGeometryBuilder {
             )
         }
     }
+
+    private fun formatStop(offset: String, color: Int): String {
+        val hex = String.format(Locale.US, "#%06X", 0xFFFFFF and color)
+        val alpha = ((color ushr 24) and 0xFF) / 255f
+        val opacityAttr = if (alpha < 1.0f) {
+            val opStr = String.format(Locale.US, "%.4f", alpha).trimEnd('0').trimEnd('.')
+            """ stop-opacity="$opStr""""
+        } else ""
+        return """<stop offset="$offset" stop-color="$hex"$opacityAttr />"""
+    }
 }
 
 /**
@@ -653,7 +667,9 @@ object BasicShapeGeometry {
                 RectNode(x = rect.left, y = rect.top, width = w, height = h, rx = rx, ry = rx, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }
             ModuleShape.ORGANIC -> {
-                // EF randomRound: r = 0.5 * Double.random(in: 0.33..<1.0)
+                // EF-compatible deterministic randomRound: in EFQRCode 7.0.3, randomRound computes
+                // radius = (width / 2.0) * Double.random(in: 0.33..<1.0) using unseeded Swift RNG.
+                // For cross-backend determinism, VeilFrame uses seeded RNG or stable default 0.85f.
                 val factor = rng?.let { it.nextDouble(0.33, 1.0).toFloat() } ?: 0.85f
                 CircleNode(cx = cx, cy = cy, radius = (w / 2f) * factor, fill = fill, fillString = fillString, geometryFill = geometryFill)
             }

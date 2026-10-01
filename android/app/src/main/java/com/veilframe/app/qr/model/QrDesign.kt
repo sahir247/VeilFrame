@@ -186,14 +186,14 @@ data class ModuleStyle(
 )
 
 data class TimingStyle(
-    val shape: ModuleShape = ModuleShape.ROUNDED,
+    val shape: ModuleShape = ModuleShape.SQUARE,
     val color: Int? = null,
     val scale: Float = 1.0f,
     val onlyWhite: Boolean = false
 )
 
 data class AlignmentStyle(
-    val shape: ModuleShape = ModuleShape.ROUNDED,
+    val shape: ModuleShape = ModuleShape.SQUARE,
     val color: Int? = null,
     val scale: Float = 1.0f,
     val onlyWhite: Boolean = false
@@ -498,8 +498,8 @@ data class QrDesign(
     val imageFillMode: Boolean = false,
     val timingColor: Int? = null,
     val alignmentColor: Int? = null,
-    val timingStyle: TimingStyle = if (style == QrStyle.IMAGE_RESAMPLE || style == QrStyle.IMAGE) TimingStyle(shape = ModuleShape.SQUARE, color = timingColor) else TimingStyle(color = timingColor),
-    val alignmentStyle: AlignmentStyle = if (style == QrStyle.IMAGE_RESAMPLE || style == QrStyle.IMAGE) AlignmentStyle(shape = ModuleShape.SQUARE, color = alignmentColor) else AlignmentStyle(color = alignmentColor),
+    val timingStyle: TimingStyle = TimingStyle(color = timingColor),
+    val alignmentStyle: AlignmentStyle = AlignmentStyle(color = alignmentColor),
     val lineStyle: LineStyle = LineStyle(),
     val depthStyle: DepthStyle = DepthStyle(
         depth = effects.dataHeightRatio,

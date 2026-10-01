@@ -146,15 +146,22 @@ object SvgExporter {
                 sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
             }
             if (hasGradient) {
+                val startAlpha = ((design.palette.gradientStart!! ushr 24) and 0xFF) / 255f
+                val endAlpha = ((design.palette.gradientEnd!! ushr 24) and 0xFF) / 255f
+                val startOp = if (startAlpha < 1.0f) String.format(Locale.US, " stop-opacity=\"%.4f\"", startAlpha).trimEnd('0').trimEnd('.') else ""
+                val endOp = if (endAlpha < 1.0f) String.format(Locale.US, " stop-opacity=\"%.4f\"", endAlpha).trimEnd('0').trimEnd('.') else ""
                 if (isRadial) {
-                    sb.append("""    <radialGradient id="qrGrad" cx="50%" cy="50%" r="50%">""").append("\n")
-                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
-                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
+                    val cxStr = formatCoord(totalWidth / 2.0)
+                    val cyStr = formatCoord(totalHeight / 2.0)
+                    val rStr = formatCoord(maxOf(totalWidth, totalHeight) / 2.0)
+                    sb.append("""    <radialGradient id="qrGrad" gradientUnits="userSpaceOnUse" cx="$cxStr" cy="$cyStr" r="$rStr">""").append("\n")
+                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex"$startOp />""").append("\n")
+                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex"$endOp />""").append("\n")
                     sb.append("    </radialGradient>\n")
                 } else {
-                    sb.append("""    <linearGradient id="qrGrad" x1="0%" y1="0%" x2="100%" y2="100%">""").append("\n")
-                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex" />""").append("\n")
-                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex" />""").append("\n")
+                    sb.append("""    <linearGradient id="qrGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="$twStr" y2="$thStr">""").append("\n")
+                    sb.append("""      <stop offset="0%" stop-color="$gradStartHex"$startOp />""").append("\n")
+                    sb.append("""      <stop offset="100%" stop-color="$gradEndHex"$endOp />""").append("\n")
                     sb.append("    </linearGradient>\n")
                 }
             }
