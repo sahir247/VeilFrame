@@ -12,6 +12,8 @@ import com.veilframe.app.qr.AnimatedQrGenerator
 import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrRenderResult
 import com.veilframe.app.qr.error.QrError
+import androidx.annotation.VisibleForTesting
+import com.veilframe.app.qr.model.ImageSource
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrFrame
 import com.veilframe.app.qr.model.QrMatrix
@@ -330,6 +332,27 @@ object QrExporter {
     }
 
     /**
+     * Pure transformation used by the compatibility overloads: injects [sourceArtworkFrames] into
+     * [design] as [ImageSource.Animated] so [QrDesign] remains the single source of truth.
+     *
+     * When [sourceArtworkFrames] is empty the original [design] is returned unchanged.
+     * This function is extracted for testability so unit tests can verify the actual production
+     * transformation rather than reconstructing it manually.
+     */
+    @VisibleForTesting
+    internal fun applyArtworkFramesToDesign(design: QrDesign, sourceArtworkFrames: List<QrFrame>): QrDesign {
+        if (sourceArtworkFrames.isEmpty()) return design
+        return design.copy(
+            imageSource = design.imageSource.copy(
+                source = ImageSource.Animated(
+                    sourceArtworkFrames.map { it.bitmap },
+                    sourceArtworkFrames.map { it.durationMs }
+                )
+            )
+        )
+    }
+
+    /**
      * Compatibility overload routing externally supplied source artwork frames safely
      * into [QrDesign.imageSource] as [ImageSource.Animated] so [design] remains the single source of truth.
      * Prevents pre-rendered QR bitmaps from being nested/double-rendered into SVG vector trees.
@@ -344,19 +367,7 @@ object QrExporter {
         design: QrDesign,
         sourceArtworkFrames: List<QrFrame>
     ): QrOutputResult<Uri> {
-        val safeDesign = if (sourceArtworkFrames.isNotEmpty()) {
-            design.copy(
-                imageSource = design.imageSource.copy(
-                    source = com.veilframe.app.qr.model.ImageSource.Animated(
-                        sourceArtworkFrames.map { it.bitmap },
-                        sourceArtworkFrames.map { it.durationMs }
-                    )
-                )
-            )
-        } else {
-            design
-        }
-        return saveAnimatedSvgTyped(context, matrix, safeDesign)
+        return saveAnimatedSvgTyped(context, matrix, applyArtworkFramesToDesign(design, sourceArtworkFrames))
     }
 
     /**

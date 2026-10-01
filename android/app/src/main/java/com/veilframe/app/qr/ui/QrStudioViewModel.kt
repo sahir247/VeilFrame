@@ -11,6 +11,7 @@ import com.veilframe.app.qr.QrRenderResult
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.validation.AutoRepairEngine
 import com.veilframe.app.qr.validation.ScanabilityReport
+import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.exporter.QrExporter
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.registry.QrStyleRegistry
@@ -978,27 +979,39 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val matrix = QrGenerator.generateMatrix(content, exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign)
                 }
-                if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
-                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                        renderResult.bitmap,
-                        exportDesign,
-                        matrix,
-                        content
-                    )
-                    if (!report.isScanReady && !report.validationSkipped) {
+                val bmp = when (renderResult) {
+                    is QrRenderResult.Success -> renderResult.bitmap
+                    is QrRenderResult.Failure -> {
                         _state.value = _state.value.copy(
-                            saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                            scanabilityReport = report
+                            saveResult = "Save failed: ${renderResult.error}"
                         )
                         return@launch
                     }
                 }
+                if (bmp == null) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                    )
+                    return@launch
+                }
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                    bmp,
+                    exportDesign,
+                    renderResult.matrix,
+                    content
+                )
+                if (!report.isScanReady && !report.validationSkipped) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                    return@launch
+                }
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, exportDesign, QrOutputFormat.Jpeg(quality = 95))
+                    QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.JPEG, 95)
                 }
                 when (exportResult) {
                     is QrOutputResult.Success -> {
@@ -1246,27 +1259,39 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val matrix = QrGenerator.generateMatrix(content, exportDesign)
                 val renderResult = withContext(Dispatchers.Default) {
                     QrGenerator.generateWithResult(content, exportDesign)
                 }
-                if (renderResult is QrRenderResult.Success && renderResult.bitmap != null) {
-                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                        renderResult.bitmap,
-                        exportDesign,
-                        matrix,
-                        content
-                    )
-                    if (!report.isScanReady && !report.validationSkipped) {
+                val bmp = when (renderResult) {
+                    is QrRenderResult.Success -> renderResult.bitmap
+                    is QrRenderResult.Failure -> {
                         _state.value = _state.value.copy(
-                            saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                            scanabilityReport = report
+                            saveResult = "Save failed: ${renderResult.error}"
                         )
                         return@launch
                     }
                 }
+                if (bmp == null) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                    )
+                    return@launch
+                }
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                    bmp,
+                    exportDesign,
+                    renderResult.matrix,
+                    content
+                )
+                if (!report.isScanReady && !report.validationSkipped) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                    return@launch
+                }
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, exportDesign, QrOutputFormat.Png)
+                    QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.PNG, 100)
                 }
                 when (exportResult) {
                     is QrOutputResult.Success -> {
@@ -1341,12 +1366,52 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(isExporting = true)
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, exportDesign, QrOutputFormat.Pdf())
+                val renderResult = withContext(Dispatchers.Default) {
+                    QrGenerator.generateWithResult(content, exportDesign)
                 }
-                _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Printable PDF saved to Downloads" else "PDF export failed: ${exportResult.errorOrNull()?.description}"
+                val bmp = when (renderResult) {
+                    is QrRenderResult.Success -> renderResult.bitmap
+                    is QrRenderResult.Failure -> {
+                        _state.value = _state.value.copy(
+                            saveResult = "PDF export failed: ${renderResult.error}"
+                        )
+                        return@launch
+                    }
+                }
+                if (bmp == null) {
+                    _state.value = _state.value.copy(
+                        saveResult = "PDF export failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                    )
+                    return@launch
+                }
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                    bmp,
+                    exportDesign,
+                    renderResult.matrix,
+                    content
                 )
+                if (!report.isScanReady && !report.validationSkipped) {
+                    _state.value = _state.value.copy(
+                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                    return@launch
+                }
+                val exportResult = withContext(Dispatchers.IO) {
+                    QrExporter.savePdfTyped(getApplication(), bmp)
+                }
+                when (exportResult) {
+                    is QrOutputResult.Success -> {
+                        _state.value = _state.value.copy(
+                            saveResult = "Printable PDF saved to Downloads"
+                        )
+                    }
+                    is QrOutputResult.Failure -> {
+                        _state.value = _state.value.copy(
+                            saveResult = "PDF export failed: ${exportResult.error.description}"
+                        )
+                    }
+                }
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
             }
@@ -1364,13 +1429,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
+            _state.value = _state.value.copy(
+                isExporting = true
+            )
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
                 val frames = if (_state.value.animatedFrames.isNotEmpty()) {
                     _state.value.animatedFrames
                 } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
                     if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
                 }
 
@@ -1412,13 +1479,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
+            _state.value = _state.value.copy(
+                isExporting = true
+            )
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
                 val frames = if (_state.value.animatedFrames.isNotEmpty()) {
                     _state.value.animatedFrames
                 } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
                     if (baseBmp != null) {
                         (0 until 15).map { QrFrame(baseBmp, 66) }
                     } else emptyList()
@@ -1467,13 +1536,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (exportJob?.isActive == true) return
         exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
+            _state.value = _state.value.copy(
+                isExporting = true
+            )
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
                 val frames = if (_state.value.animatedFrames.isNotEmpty()) {
                     _state.value.animatedFrames
                 } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
+                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
                     if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
                 }
 

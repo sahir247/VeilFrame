@@ -2,6 +2,7 @@ package com.veilframe.app.qr
 
 import android.graphics.Bitmap
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.exporter.QrExporter
 import com.veilframe.app.qr.model.ImageSource
 import com.veilframe.app.qr.model.ImageSourceStyle
 import com.veilframe.app.qr.model.QrDesign
@@ -10,6 +11,7 @@ import com.veilframe.app.qr.model.QrMatrix
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.lang.reflect.Method
@@ -101,20 +103,14 @@ class Step5AnimatedSvgApiSanitizationTest {
             QrFrame(bitmap = bmp3, durationMs = 750)
         )
         val originalDesign = QrDesign(style = QrStyle.IMAGE)
-        val safeDesign = originalDesign.copy(
-            imageSource = originalDesign.imageSource.copy(
-                source = ImageSource.Animated(
-                    sourceArtworkFrames.map { it.bitmap },
-                    sourceArtworkFrames.map { it.durationMs }
-                )
-            )
-        )
+        // Call the ACTUAL production function — not a manually reconstructed copy.
+        val safeDesign = QrExporter.applyArtworkFramesToDesign(originalDesign, sourceArtworkFrames)
         assertTrue(
-            "Sanitized imageSource.source must be ImageSource.Animated",
+            "QrExporter.applyArtworkFramesToDesign must inject ImageSource.Animated",
             safeDesign.imageSource.source is ImageSource.Animated
         )
         assertFalse(
-            "Sanitized imageSource.source must NOT be ImageSource.Memory",
+            "QrExporter.applyArtworkFramesToDesign must not produce ImageSource.Memory",
             safeDesign.imageSource.source is ImageSource.Memory
         )
     }
@@ -134,19 +130,13 @@ class Step5AnimatedSvgApiSanitizationTest {
             QrFrame(bitmap = bmp3, durationMs = 750)
         )
         val design = QrDesign(style = QrStyle.IMAGE)
-        val safeDesign = design.copy(
-            imageSource = design.imageSource.copy(
-                source = ImageSource.Animated(
-                    sourceArtworkFrames.map { it.bitmap },
-                    sourceArtworkFrames.map { it.durationMs }
-                )
-            )
-        )
+        // Call the ACTUAL production function — not a manually reconstructed copy.
+        val safeDesign = QrExporter.applyArtworkFramesToDesign(design, sourceArtworkFrames)
         val animatedSource = safeDesign.imageSource.source as ImageSource.Animated
         assertEquals("Frame count must be preserved", 3, animatedSource.frames.size)
-        assertTrue("Frame 0 bitmap identity must be preserved", animatedSource.frames[0] === bmp1)
-        assertTrue("Frame 1 bitmap identity must be preserved", animatedSource.frames[1] === bmp2)
-        assertTrue("Frame 2 bitmap identity must be preserved", animatedSource.frames[2] === bmp3)
+        assertSame("Frame 0 bitmap identity must be preserved", bmp1, animatedSource.frames[0])
+        assertSame("Frame 1 bitmap identity must be preserved", bmp2, animatedSource.frames[1])
+        assertSame("Frame 2 bitmap identity must be preserved", bmp3, animatedSource.frames[2])
     }
 
     @Test
@@ -158,14 +148,8 @@ class Step5AnimatedSvgApiSanitizationTest {
             QrFrame(bitmap = bmp, durationMs = 750)
         )
         val design = QrDesign(style = QrStyle.BASIC)
-        val safeDesign = design.copy(
-            imageSource = design.imageSource.copy(
-                source = ImageSource.Animated(
-                    sourceArtworkFrames.map { it.bitmap },
-                    sourceArtworkFrames.map { it.durationMs }
-                )
-            )
-        )
+        // Call the ACTUAL production function — not a manually reconstructed copy.
+        val safeDesign = QrExporter.applyArtworkFramesToDesign(design, sourceArtworkFrames)
         val animatedSource = safeDesign.imageSource.source as ImageSource.Animated
         assertEquals("3 delays must be preserved", 3, animatedSource.delaysMs.size)
         assertEquals("Frame 0 delay must be 83 ms", 83, animatedSource.delaysMs[0])
@@ -189,16 +173,10 @@ class Step5AnimatedSvgApiSanitizationTest {
             "Original design with no animated frames must not be detected as animated",
             AnimatedQrGenerator.isDesignAnimated(originalDesign)
         )
-        val safeDesign = originalDesign.copy(
-            imageSource = originalDesign.imageSource.copy(
-                source = ImageSource.Animated(
-                    sourceArtworkFrames.map { it.bitmap },
-                    sourceArtworkFrames.map { it.durationMs }
-                )
-            )
-        )
+        // Call the ACTUAL production function — not a manually reconstructed copy.
+        val safeDesign = QrExporter.applyArtworkFramesToDesign(originalDesign, sourceArtworkFrames)
         assertTrue(
-            "Sanitized design with ImageSource.Animated must be detected as animated",
+            "Design produced by applyArtworkFramesToDesign must be detected as animated",
             AnimatedQrGenerator.isDesignAnimated(safeDesign)
         )
     }
@@ -301,19 +279,13 @@ class Step5AnimatedSvgApiSanitizationTest {
     fun testCompatibilityMappingWithEmptyFramesPassesDesignThrough() {
         val originalDesign = QrDesign(style = QrStyle.BASIC)
         val emptyFrames = emptyList<QrFrame>()
-        val safeDesign = if (emptyFrames.isNotEmpty()) {
-            originalDesign.copy(
-                imageSource = originalDesign.imageSource.copy(
-                    source = ImageSource.Animated(
-                        emptyFrames.map { it.bitmap },
-                        emptyFrames.map { it.durationMs }
-                    )
-                )
-            )
-        } else {
-            originalDesign
-        }
-        assertEquals("Empty frames must pass design through unchanged", originalDesign, safeDesign)
+        // Call the ACTUAL production function with an empty list.
+        val safeDesign = QrExporter.applyArtworkFramesToDesign(originalDesign, emptyFrames)
+        assertSame(
+            "applyArtworkFramesToDesign with empty frames must return the original design instance unchanged",
+            originalDesign,
+            safeDesign
+        )
         assertFalse(
             "Non-animated design must not be detected as animated when empty frames are supplied",
             AnimatedQrGenerator.isDesignAnimated(safeDesign)

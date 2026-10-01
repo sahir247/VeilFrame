@@ -9,7 +9,13 @@ import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.ConnectedOrganicRenderer
 import com.veilframe.app.qr.renderer.RandomRectangleRenderer
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -17,7 +23,18 @@ import org.junit.Test
  * like "https://example.com" when the user-provided content is blank, and properly sets
  * user-facing validation error messages.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class QrStudioViewModelExportValidationTest {
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun testExportRejectedWhenContentIsBlank() {
@@ -57,7 +74,12 @@ class QrStudioViewModelExportValidationTest {
         assertEquals("Content is required to export QR code", vm.state.value.saveResult)
         assertFalse(vm.state.value.isLoading)
 
-        // 7. Share
+        // 7. Save PDF
+        vm.savePdf()
+        assertEquals("Content is required to export QR code", vm.state.value.saveResult)
+        assertFalse(vm.state.value.isLoading)
+
+        // 8. Share
         vm.share()
         assertEquals("Content is required to share QR code", vm.state.value.saveResult)
         assertFalse(vm.state.value.isLoading)
@@ -275,6 +297,8 @@ class QrStudioViewModelExportValidationTest {
         vm.saveGif()
         vm.saveVideo()
         vm.saveAnimatedSvg()
+        vm.saveJpeg()
+        vm.savePdf()
         vm.share()
 
         assertFalse(vm.state.value.isExporting)
@@ -796,5 +820,38 @@ class QrStudioViewModelExportValidationTest {
         assertNotNull(design.logo)
         assertTrue(design.logo!!.source is ImageSource.Animated)
         assertEquals(2, (design.logo!!.source as ImageSource.Animated).frames.size)
+    }
+
+    @Test
+    fun testAnimationExportsRejectWhenNoArtworkSourcesProvidedEvenIfPreviewBitmapExists() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateContent("https://veilframe.app")
+
+        // Simulate preview generation having produced a rendered QR bitmap in state
+        val renderedPreviewQr = createTestBitmap()
+        val field = QrStudioViewModel::class.java.getDeclaredField("_state")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val stateFlow = field.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<QrStudioViewModel.UiState>
+        stateFlow.value = stateFlow.value.copy(
+            content = "https://veilframe.app",
+            bitmap = renderedPreviewQr,
+            animatedFrames = emptyList(),
+            sourceImage = null,
+            backgroundImage = null
+        )
+
+        // GIF export must reject because no actual artwork/frames exist (must NOT use preview QR bitmap)
+        vm.saveGif()
+        assertEquals("GIF export requires a photo, background image, or animated frames", vm.state.value.saveResult)
+
+        // Video export must reject because no actual artwork/frames exist (must NOT use preview QR bitmap)
+        vm.saveVideo()
+        assertEquals("Video export requires a photo, background image, or video frames", vm.state.value.saveResult)
+
+        // Animated SVG export must reject because no actual artwork/frames exist (must NOT use preview QR bitmap)
+        vm.saveAnimatedSvg()
+        assertEquals("Animated SVG requires frames", vm.state.value.saveResult)
     }
 }
