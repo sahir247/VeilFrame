@@ -21,7 +21,9 @@ data class RectNode(
     val fillString: String? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
+    val strokeWidthString: String? = null,
     val opacity: Float = 1f,
+    val opacityString: String? = null,
     val alwaysEmitOpacity: Boolean = false,
     val transform: String? = null
 ) : QrGeometryNode
@@ -31,8 +33,10 @@ data class CircleNode(
     val cy: Float,
     val radius: Float,
     val fill: Int? = null,
+    val fillString: String? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
+    val strokeWidthString: String? = null,
     val opacity: Float = 1f,
     val strokeDashArray: String? = null
 ) : QrGeometryNode
@@ -52,6 +56,7 @@ data class PolygonNode(
     val points: String,
     val pointsList: List<Pair<Float, Float>> = emptyList(),
     val fill: Int? = null,
+    val fillString: String? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
     val opacity: Float = 1f,
@@ -62,8 +67,10 @@ data class PathNode(
     val svgPathData: String,
     val androidPath: Path? = null,
     val fill: Int? = null,
+    val fillString: String? = null,
     val stroke: Int? = null,
     val strokeWidth: Float = 0f,
+    val strokeWidthString: String? = null,
     val canvasStrokeWidth: Float = strokeWidth,
     val opacity: Float = 1f,
     val transform: String? = null

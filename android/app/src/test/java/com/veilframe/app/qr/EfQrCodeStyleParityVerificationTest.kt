@@ -1797,7 +1797,7 @@ class EfQrCodeStyleParityVerificationTest {
 
         // 1. Svg must contain quiet-zone background rect covering entire viewBox
         val n = matrix.size
-        val qz = design.effectiveQuietZone
+        val qz = design.effectiveQuietZone(matrix.size)
         val totalSize = n + 2 * qz
         assertTrue("ImageFill SVG must contain full-viewBox background rect", svg.contains("""<rect width="$totalSize" height="$totalSize" fill="#FFFFFF""""))
 
@@ -1914,7 +1914,7 @@ class EfQrCodeStyleParityVerificationTest {
         val svg = SvgExporter.generateSvg(matrix, design)
 
         // Find timing module coordinate (row 6, col 8)
-        val qz = design.effectiveQuietZone
+        val qz = design.effectiveQuietZone(matrix.size)
         val timingModuleX = (8 + qz).toDouble()
         val timingModuleY = (6 + qz).toDouble()
 
@@ -2017,8 +2017,8 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val imageSvg = SvgExporter.generateSvg(matrix, imageDesign)
-        val imgTotalW = matrix.size + imageDesign.effectiveQuietZoneLeft + imageDesign.effectiveQuietZoneRight
-        val imgTotalH = matrix.size + imageDesign.effectiveQuietZoneTop + imageDesign.effectiveQuietZoneBottom
+        val imgTotalW = matrix.size + imageDesign.effectiveQuietZoneLeft(matrix.size) + imageDesign.effectiveQuietZoneRight(matrix.size)
+        val imgTotalH = matrix.size + imageDesign.effectiveQuietZoneTop(matrix.size) + imageDesign.effectiveQuietZoneBottom(matrix.size)
         assertTrue(
             "IMAGE SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
             imageSvg.contains("""<rect width="$imgTotalW" height="$imgTotalH" fill="$redHex"""")
@@ -2032,8 +2032,8 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val fillSvg = SvgExporter.generateSvg(matrix, fillDesign)
-        val fillTotalW = matrix.size + fillDesign.effectiveQuietZoneLeft + fillDesign.effectiveQuietZoneRight
-        val fillTotalH = matrix.size + fillDesign.effectiveQuietZoneTop + fillDesign.effectiveQuietZoneBottom
+        val fillTotalW = matrix.size + fillDesign.effectiveQuietZoneLeft(matrix.size) + fillDesign.effectiveQuietZoneRight(matrix.size)
+        val fillTotalH = matrix.size + fillDesign.effectiveQuietZoneTop(matrix.size) + fillDesign.effectiveQuietZoneBottom(matrix.size)
         assertTrue(
             "IMAGE_FILL SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
             fillSvg.contains("""<rect width="$fillTotalW" height="$fillTotalH" fill="$redHex"""")
@@ -2046,8 +2046,8 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val basicSvg = SvgExporter.generateSvg(matrix, basicDesign)
-        val basicTotalW = matrix.size + basicDesign.effectiveQuietZoneLeft + basicDesign.effectiveQuietZoneRight
-        val basicTotalH = matrix.size + basicDesign.effectiveQuietZoneTop + basicDesign.effectiveQuietZoneBottom
+        val basicTotalW = matrix.size + basicDesign.effectiveQuietZoneLeft(matrix.size) + basicDesign.effectiveQuietZoneRight(matrix.size)
+        val basicTotalH = matrix.size + basicDesign.effectiveQuietZoneTop(matrix.size) + basicDesign.effectiveQuietZoneBottom(matrix.size)
         assertTrue(
             "BASIC SVG outer backdrop rect must specifically have width/height matching canvas and fill matching backdropStyle.color",
             basicSvg.contains("""<rect width="$basicTotalW" height="$basicTotalH" fill="$redHex"""")
@@ -2060,7 +2060,7 @@ class EfQrCodeStyleParityVerificationTest {
             backdropStyle = BackdropStyle(color = Color.RED)
         )
         val lineSvg = SvgExporter.generateSvg(matrix, lineDesign)
-        val lineTotalW = matrix.size + lineDesign.effectiveQuietZoneLeft + lineDesign.effectiveQuietZoneRight
+        val lineTotalW = matrix.size + lineDesign.effectiveQuietZoneLeft(matrix.size) + lineDesign.effectiveQuietZoneRight(matrix.size)
         val lineFormattedW = String.format(Locale.US, "%.4f", lineTotalW.toFloat())
         assertTrue(
             "LINE SVG outer backdrop rect must specifically use backdropStyle.color (RED)",
@@ -2133,8 +2133,8 @@ class EfQrCodeStyleParityVerificationTest {
         )
         val basicSvg = SvgExporter.generateSvg(matrix, basicDesign)
         val yellowHex = String.format(Locale.US, "#%06X", 0xFFFFFF and Color.YELLOW)
-        val basicW = matrix.size + basicDesign.effectiveQuietZoneLeft + basicDesign.effectiveQuietZoneRight
-        val basicH = matrix.size + basicDesign.effectiveQuietZoneTop + basicDesign.effectiveQuietZoneBottom
+        val basicW = matrix.size + basicDesign.effectiveQuietZoneLeft(matrix.size) + basicDesign.effectiveQuietZoneRight(matrix.size)
+        val basicH = matrix.size + basicDesign.effectiveQuietZoneTop(matrix.size) + basicDesign.effectiveQuietZoneBottom(matrix.size)
         assertTrue("BASIC SVG must contain rounded-corners clipPath definition", basicSvg.contains("""<clipPath id="rounded-corners"><rect width="$basicW" height="$basicH" rx="12" ry="12"/></clipPath>"""))
         assertTrue("BASIC SVG must clip main group to rounded-corners", basicSvg.contains("""<g clip-path="url(#rounded-corners)">"""))
         assertTrue("BASIC SVG outer backdrop rect must have fill matching backdropStyle.color", basicSvg.contains("""<rect width="$basicW" height="$basicH" fill="$yellowHex""""))

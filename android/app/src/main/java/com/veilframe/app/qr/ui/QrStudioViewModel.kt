@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -425,14 +426,16 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             renderGeneration.incrementAndGet()
             generateJob?.cancel()
             generateJob = null
-            _state.value = _state.value.copy(
-                bitmap = null,
-                matrix = null,
-                design = null,
-                scanabilityReport = null,
-                isRenderingPreview = false,
-                errorMessage = null
-            )
+            _state.update {
+                it.copy(
+                    bitmap = null,
+                    matrix = null,
+                    design = null,
+                    scanabilityReport = null,
+                    isRenderingPreview = false,
+                    errorMessage = null
+                )
+            }
             return
         }
         val generation = renderGeneration.incrementAndGet()
@@ -445,7 +448,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
-            _state.value = _state.value.copy(isRenderingPreview = true, errorMessage = null)
+            _state.update { it.copy(isRenderingPreview = true, errorMessage = null) }
 
             val design = customDesign ?: buildDesignFromState(_state.value)
             ensureActive()
@@ -460,20 +463,24 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 if (generation != renderGeneration.get()) return@withContext
                 when (renderResult) {
                     is QrRenderResult.Success -> {
-                        _state.value = _state.value.copy(
-                            bitmap = renderResult.bitmap,
-                            matrix = renderResult.matrix,
-                            design = renderResult.design,
-                            scanabilityReport = renderResult.report,
-                            isRenderingPreview = false,
-                            errorMessage = null
-                        )
+                        _state.update {
+                            it.copy(
+                                bitmap = renderResult.bitmap,
+                                matrix = renderResult.matrix,
+                                design = renderResult.design,
+                                scanabilityReport = renderResult.report,
+                                isRenderingPreview = false,
+                                errorMessage = null
+                            )
+                        }
                     }
                     is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            isRenderingPreview = false,
-                            errorMessage = renderResult.error
-                        )
+                        _state.update {
+                            it.copy(
+                                isRenderingPreview = false,
+                                errorMessage = renderResult.error
+                            )
+                        }
                     }
                 }
             }
@@ -787,7 +794,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateLineThickness(thickness: Float) {
-        _state.value = _state.value.copy(lineThickness = thickness.coerceIn(0.1f, 1.0f))
+        _state.update { it.copy(lineThickness = thickness.coerceIn(0.1f, 1.0f)) }
         regenerate(debounceMs = 120)
     }
 

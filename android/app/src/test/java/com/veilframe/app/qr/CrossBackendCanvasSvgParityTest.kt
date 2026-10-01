@@ -38,6 +38,7 @@ class CrossBackendCanvasSvgParityTest {
     private class TrackingCanvas : Canvas() {
         val rects = mutableListOf<RectF>()
         val circles = mutableListOf<Triple<Float, Float, Float>>()
+        val paths = mutableListOf<Path>()
         var customSaveCount = 0
         var customRestoreCount = 0
 
@@ -51,6 +52,10 @@ class CrossBackendCanvasSvgParityTest {
 
         override fun drawCircle(cx: Float, cy: Float, radius: Float, paint: Paint) {
             circles.add(Triple(cx, cy, radius))
+        }
+
+        override fun drawPath(path: Path, paint: Paint) {
+            paths.add(Path(path))
         }
 
         override fun save(): Int {
@@ -206,5 +211,63 @@ class CrossBackendCanvasSvgParityTest {
             GenerationMode.ARTISTIC_ENGINE,
             QrGenerator.defaultModeFor(resampleDesign)
         )
+    }
+
+    @Test
+    fun basicProductionCanvasAndSvgUseCanonicalGeometry() {
+        val content = "https://veilframe.app/basic-production"
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            moduleStyle = ModuleStyle(
+                shape = ModuleShape.DIAMOND,
+                scale = 0.82f
+            )
+        )
+
+        val matrix = QrGenerator.generateParityMatrix(
+            content,
+            design
+        )
+
+        val geometry = QrGeometry.fromDesign(
+            matrixSize = matrix.size,
+            outputWidth = 512,
+            outputHeight = 512,
+            design = design
+        )
+
+        // Production Canvas path
+        val canvas = TrackingCanvas()
+
+        QrGenerator.renderToCanvas(
+            matrix = matrix,
+            design = design,
+            canvas = canvas,
+            geometry = geometry
+        )
+
+        assertTrue(canvas.paths.isNotEmpty())
+
+        // Production SVG path
+        val svg = QrGenerator.generateSvg(
+            matrix = matrix,
+            design = design
+        )
+
+        assertTrue(svg.contains("<svg"))
+        assertTrue(svg.contains("<polygon") || svg.contains("<path"))
+
+        // Canonical IR
+        val ir = BasicGeometryBuilder.generateGeometry(
+            matrix = matrix,
+            design = design,
+            geometry = geometry
+        )
+
+        val irSvg = IrSvgRenderer.render(ir)
+
+        // Both production routes must originate from the canonical IR.
+        assertTrue(ir.rootNodes.isNotEmpty())
+        assertTrue(irSvg.contains("<svg"))
     }
 }

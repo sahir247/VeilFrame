@@ -180,9 +180,9 @@ class VeilQrEncoderParityTest {
 
         val svg = IrSvgRenderer.render(ir)
         assertTrue(svg.contains("<svg"))
-        assertTrue(svg.contains("<rect x=\"10.0000\" y=\"20.0000\" width=\"30.0000\" height=\"40.0000\""))
-        assertTrue(svg.contains("<circle cx=\"50.0000\" cy=\"50.0000\" r=\"15.0000\""))
-        assertTrue(svg.contains("<line x1=\"0.0000\" y1=\"0.0000\" x2=\"100.0000\" y2=\"100.0000\""))
+        assertTrue(svg.contains("<rect x=\"10.0000\" y=\"20.0000\" width=\"30.0000\" height=\"40.0000\"") || svg.contains("<rect x=\"10\" y=\"20\" width=\"30\" height=\"40\""))
+        assertTrue(svg.contains("<circle cx=\"50.0000\" cy=\"50.0000\" r=\"15.0000\"") || svg.contains("<circle cx=\"50\" cy=\"50\" r=\"15\""))
+        assertTrue(svg.contains("<line x1=\"0.0000\" y1=\"0.0000\" x2=\"100.0000\" y2=\"100.0000\"") || svg.contains("<line x1=\"0\" y1=\"0\" x2=\"100\" y2=\"100\""))
         assertTrue(svg.contains("stroke-linecap=\"round\""))
         assertTrue(svg.contains("</svg>"))
     }

@@ -270,38 +270,23 @@ object QrGenerator {
                 design = effectiveDesign
             )
 
-            val bitmap = generateBitmap(matrix, effectiveDesign, geometry)
-
-            val report = if (bitmap != null) {
-                // Validate scanability (Fast validator)
-                runBlocking {
-                    ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
+            when (val bitmapResult = generateBitmapResult(matrix, effectiveDesign, geometry)) {
+                is BitmapRenderResult.Failure -> {
+                    return QrRenderResult.Failure(bitmapResult.error)
                 }
-            } else {
-                // Headless unit testing fallback where android.graphics.Bitmap is not available on JVM
-                com.veilframe.app.qr.validation.ScanabilityReport(
-                    isScanReady = false,
-                    validationSkipped = true,
-                    quietZone = com.veilframe.app.qr.validation.QuietZoneReport(
-                        hasFourModuleMargin = geometry.quietZoneModules >= 4,
-                        quietZoneModules = geometry.quietZoneModules
-                    ),
-                    contrast = com.veilframe.app.qr.validation.ContrastReport(0f, 0f, 1f, 1f, 1f, isContrastAdequate = false),
-                    finders = com.veilframe.app.qr.validation.FinderIntegrityReport(findersIntact = true, separatorsClear = true),
-                    logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
-                    decodeResult = com.veilframe.app.qr.decoder.DecodeResult(success = false, text = null, error = "Bitmap allocation unavailable"),
-                    errorCorrection = matrix.errorCorrection,
-                    warnings = listOf("Bitmap allocation unavailable; visual and decode validation skipped."),
-                    repairSuggestions = emptyList()
-                )
+                is BitmapRenderResult.Success -> {
+                    val bitmap = bitmapResult.bitmap
+                    val report = runBlocking {
+                        ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
+                    }
+                    return QrRenderResult.Success(
+                        bitmap = bitmap,
+                        report = report,
+                        matrix = matrix,
+                        design = effectiveDesign
+                    )
+                }
             }
-
-            return QrRenderResult.Success(
-                bitmap = bitmap,
-                report = report,
-                matrix = matrix,
-                design = effectiveDesign
-            )
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -390,25 +375,62 @@ object QrGenerator {
     }
 
     /**
+     * Typed result for bitmap rendering operations (Audit M-01).
+     */
+    sealed interface BitmapRenderResult {
+        data class Success(val bitmap: Bitmap) : BitmapRenderResult
+        data class Failure(val error: QrError.Rendering) : BitmapRenderResult
+    }
+
+    /**
+     * Authoritative generation method producing typed [BitmapRenderResult].
+     * Explicitly isolates allocation and canvas failures as [BitmapRenderResult.Failure] (Audit M-01).
+     */
+    fun generateBitmapResult(
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
+    ): BitmapRenderResult {
+        val width = geometry.outputWidth
+        val height = geometry.outputHeight
+
+        val bitmap = try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            return BitmapRenderResult.Failure(
+                QrError.Rendering.BitmapAllocationFailed(width = width, height = height, cause = t)
+            )
+        } ?: return BitmapRenderResult.Failure(
+            QrError.Rendering.BitmapAllocationFailed(width = width, height = height)
+        )
+
+        return try {
+            val canvas = Canvas(bitmap)
+            renderToCanvas(matrix, design, canvas, geometry)
+            BitmapRenderResult.Success(bitmap)
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            try { bitmap.recycle() } catch (_: Throwable) {}
+            BitmapRenderResult.Failure(
+                QrError.Rendering.CanvasRenderFailed(stage = "QR bitmap rendering", cause = t)
+            )
+        }
+    }
+
+    /**
      * Directly renders a [QrMatrix] into a styled [Bitmap] according to [design] and [geometry].
-     * Returns null in headless JVM unit testing environments if native Bitmap allocation fails.
+     * Returns null if native Bitmap allocation fails.
      */
     fun generateBitmap(
         matrix: QrMatrix,
         design: QrDesign,
         geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
     ): Bitmap? {
-        val size = geometry.outputWidth
-        val bitmap = try {
-            Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        } catch (t: Throwable) {
-            android.util.Log.w("QrGenerator", "Bitmap allocation failed for ${size}x${size}: ${t.message}", t)
-            null
-        } ?: return null
-
-        val canvas = Canvas(bitmap)
-        renderToCanvas(matrix, design, canvas, geometry)
-        return bitmap
+        return when (val res = generateBitmapResult(matrix, design, geometry)) {
+            is BitmapRenderResult.Success -> res.bitmap
+            is BitmapRenderResult.Failure -> null
+        }
     }
 
     /**
@@ -437,13 +459,14 @@ object QrGenerator {
         } else null
 
         try {
-            // 1. Draw Canvas Background (including Quiet Zone margins)
-            drawBackground(canvas, design, size, context)
-
-            // 2. Obtain renderer
             val renderer: QrRenderer = getRendererForDesign(design)
 
-            // 3. Render QR Code
+            // 1. Draw Canvas Background (including Quiet Zone margins) only if renderer does not own backdrop
+            if (renderer !is com.veilframe.app.qr.renderer.IrBackedQrRenderer || !renderer.ownsBackdrop) {
+                drawBackground(canvas, design, size, context)
+            }
+
+            // 2. Render QR Code
             renderer.render(matrix, design, canvas, geometry, context)
         } finally {
             if (count != null) canvas.restoreToCount(count)

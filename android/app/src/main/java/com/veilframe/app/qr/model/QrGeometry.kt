@@ -130,11 +130,12 @@ class QrGeometry(
         }
 
         @Deprecated(
-            message = "Calling resolveQuietZone without matrixSize assumes V1 (21x21) which produces incorrect fractional margins for larger matrices. Use resolveQuietZone(design, matrixSize) instead.",
+            message = "Matrix size is required. Use resolveQuietZone(design, matrixSize).",
+            level = DeprecationLevel.ERROR,
             replaceWith = ReplaceWith("resolveQuietZone(design, matrixSize)")
         )
         fun resolveQuietZone(design: QrDesign): Int {
-            return resolveQuietZone(design, 21).maxMarginInt
+            error("Use resolveQuietZone(design, matrixSize)")
         }
 
         fun fromDesign(

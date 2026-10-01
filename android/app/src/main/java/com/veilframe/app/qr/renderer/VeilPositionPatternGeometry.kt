@@ -40,30 +40,32 @@ object VeilPositionPatternGeometry {
         offsetY: Float,
         style: FinderStyle,
         size: Float,
-        color: Int
+        color: Int,
+        bgColor: Int = Color.WHITE
     ): List<com.veilframe.app.qr.geometry.QrGeometryNode> {
         val cs = moduleSize
-        val ox = offsetX + x * cs
-        val oy = offsetY + y * cs
-        val cx = ox + cs * 0.5f
-        val cy = oy + cs * 0.5f
+        val fx = offsetX + (x - 3) * cs
+        val fy = offsetY + (y - 3) * cs
+        val cx = fx + 3.5f * cs
+        val cy = fy + 3.5f * cs
 
         val nodes = mutableListOf<com.veilframe.app.qr.geometry.QrGeometryNode>()
         when (style) {
             FinderStyle.CLASSIC -> {
-                val left = ox - cs
-                val top = oy - cs
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(left, top, 3 * cs, 3 * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, stroke = color, strokeWidth = 1f * size * cs))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 2f * cs, fy + 2f * cs, 3f * cs, 3f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 0.5f * cs, fy + 0.5f * cs, 6f * cs, 6f * cs, stroke = color, strokeWidth = 1f * size * cs, fill = null))
             }
             FinderStyle.CIRCLE -> {
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, stroke = color, strokeWidth = 1f * size * cs))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, fill = null, stroke = color, strokeWidth = 1f * size * cs))
             }
             FinderStyle.ROUNDED -> {
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
+                val tx = cx - 3f * cs
+                val ty = cy - 3f * cs
+                val s = 6f * cs / 100f
                 val squirclePath = com.veilframe.app.qr.model.QrVisualGeometry.createSquirclePath(
-                    android.graphics.RectF(ox - 2.5f * cs, oy - 2.5f * cs, ox + 3.5f * cs, oy + 3.5f * cs)
+                    android.graphics.RectF(tx, ty, tx + 6f * cs, ty + 6f * cs)
                 )
                 nodes.add(com.veilframe.app.qr.geometry.PathNode(
                     svgPathData = SQ25_PATH,
@@ -72,34 +74,34 @@ object VeilPositionPatternGeometry {
                     stroke = color,
                     strokeWidth = 100f / 6f * size,
                     canvasStrokeWidth = 1f * size * cs,
-                    transform = "translate(${ox - 2.5f * cs},${oy - 2.5f * cs}) scale(${6f * cs / 100f},${6f * cs / 100f})"
+                    transform = String.format(Locale.US, "translate(%.4f,%.4f) scale(%.6f,%.6f)", tx, ty, s, s)
                 ))
             }
             FinderStyle.PLANETS -> {
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 1.5f * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, stroke = color, strokeWidth = 0.15f * cs))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy, 3.0f * cs, fill = null, stroke = color, strokeWidth = 0.15f * cs, strokeDashArray = "0.5,0.5"))
                 val satR = 0.5f * size * cs
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx + 3f * cs, cy, satR, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx - 3f * cs, cy, satR, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy + 3f * cs, satR, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx + 3f * cs, cy, satR, fill = color))
                 nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy - 3f * cs, satR, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.CircleNode(cx, cy + 3f * cs, satR, fill = color))
             }
             FinderStyle.DSJ -> {
-                val widthValue = (3.0f - (1.0f - size)) * cs
-                val xTempValue = ox + (1.0f - size) / 2.0f * cs
-                val yTempValue = oy + (1.0f - size) / 2.0f * cs
+                val posSize = size
+                val widthVal = (2.0f + posSize) * cs
+                val armDim = posSize * cs
+                val halfW = widthVal / 2.0f
+                val halfArm = armDim / 2.0f
 
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue - cs, widthValue, widthValue, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - 3f * cs, yTempValue - cs, size * cs, widthValue, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue + 3f * cs, yTempValue - cs, size * cs, widthValue, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue - 3f * cs, widthValue, size * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(xTempValue - cs, yTempValue + 3f * cs, widthValue, size * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy - halfW, widthVal, widthVal, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - 3f * cs - halfArm, cy - halfW, armDim, widthVal, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx + 3f * cs - halfArm, cy - halfW, armDim, widthVal, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy - 3f * cs - halfArm, widthVal, armDim, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(cx - halfW, cy + 3f * cs - halfArm, widthVal, armDim, fill = color))
             }
             else -> {
-                val left = ox - cs
-                val top = oy - cs
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(left, top, 3 * cs, 3 * cs, fill = color))
-                nodes.add(com.veilframe.app.qr.geometry.RectNode(ox - 2.5f * cs, oy - 2.5f * cs, 6 * cs, 6 * cs, stroke = color, strokeWidth = 1f * size * cs))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 2f * cs, fy + 2f * cs, 3f * cs, 3f * cs, fill = color))
+                nodes.add(com.veilframe.app.qr.geometry.RectNode(fx + 0.5f * cs, fy + 0.5f * cs, 6f * cs, 6f * cs, stroke = color, strokeWidth = 1f * size * cs, fill = null))
             }
         }
         return nodes

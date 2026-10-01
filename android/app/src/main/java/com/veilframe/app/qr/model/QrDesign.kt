@@ -534,29 +534,29 @@ data class QrDesign(
     val directionalQuietZone: DirectionalInsets? = null
 ) {
     @Deprecated(
-        message = "Evaluating quiet zone without matrix size assumes V1 (21x21). Use resolveQuietZone(matrixSize) with actual QR matrix size.",
+        message = "Matrix size is required. Use resolveQuietZone(matrixSize).",
+        level = DeprecationLevel.ERROR,
         replaceWith = ReplaceWith("resolveQuietZone(matrixSize)")
     )
-    @Suppress("DEPRECATION")
-    val resolvedQuietZone: ResolvedQuietZone get() = QrGeometry.resolveQuietZone(this, 21)
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZone(matrixSize).", ReplaceWith("effectiveQuietZone(matrixSize)"))
-    val effectiveQuietZone: Int get() = resolvedQuietZone.maxMarginInt
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneLeft(matrixSize).", ReplaceWith("effectiveQuietZoneLeft(matrixSize)"))
-    val effectiveQuietZoneLeft: Int get() = resolvedQuietZone.leftInt
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneTop(matrixSize).", ReplaceWith("effectiveQuietZoneTop(matrixSize)"))
-    val effectiveQuietZoneTop: Int get() = resolvedQuietZone.topInt
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneRight(matrixSize).", ReplaceWith("effectiveQuietZoneRight(matrixSize)"))
-    val effectiveQuietZoneRight: Int get() = resolvedQuietZone.rightInt
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneBottom(matrixSize).", ReplaceWith("effectiveQuietZoneBottom(matrixSize)"))
-    val effectiveQuietZoneBottom: Int get() = resolvedQuietZone.bottomInt
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneLeftFloat(matrixSize).", ReplaceWith("effectiveQuietZoneLeftFloat(matrixSize)"))
-    val effectiveQuietZoneLeftFloat: Float get() = resolvedQuietZone.left
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneTopFloat(matrixSize).", ReplaceWith("effectiveQuietZoneTopFloat(matrixSize)"))
-    val effectiveQuietZoneTopFloat: Float get() = resolvedQuietZone.top
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneRightFloat(matrixSize).", ReplaceWith("effectiveQuietZoneRightFloat(matrixSize)"))
-    val effectiveQuietZoneRightFloat: Float get() = resolvedQuietZone.right
-    @Deprecated("Assumes V1 (21x21). Use effectiveQuietZoneBottomFloat(matrixSize).", ReplaceWith("effectiveQuietZoneBottomFloat(matrixSize)"))
-    val effectiveQuietZoneBottomFloat: Float get() = resolvedQuietZone.bottom
+    val resolvedQuietZone: ResolvedQuietZone get() = error("Use resolveQuietZone(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZone(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZone(matrixSize)"))
+    val effectiveQuietZone: Int get() = error("Use effectiveQuietZone(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneLeft(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneLeft(matrixSize)"))
+    val effectiveQuietZoneLeft: Int get() = error("Use effectiveQuietZoneLeft(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneTop(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneTop(matrixSize)"))
+    val effectiveQuietZoneTop: Int get() = error("Use effectiveQuietZoneTop(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneRight(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneRight(matrixSize)"))
+    val effectiveQuietZoneRight: Int get() = error("Use effectiveQuietZoneRight(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneBottom(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneBottom(matrixSize)"))
+    val effectiveQuietZoneBottom: Int get() = error("Use effectiveQuietZoneBottom(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneLeftFloat(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneLeftFloat(matrixSize)"))
+    val effectiveQuietZoneLeftFloat: Float get() = error("Use effectiveQuietZoneLeftFloat(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneTopFloat(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneTopFloat(matrixSize)"))
+    val effectiveQuietZoneTopFloat: Float get() = error("Use effectiveQuietZoneTopFloat(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneRightFloat(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneRightFloat(matrixSize)"))
+    val effectiveQuietZoneRightFloat: Float get() = error("Use effectiveQuietZoneRightFloat(matrixSize)")
+    @Deprecated("Matrix size is required. Use effectiveQuietZoneBottomFloat(matrixSize).", level = DeprecationLevel.ERROR, replaceWith = ReplaceWith("effectiveQuietZoneBottomFloat(matrixSize)"))
+    val effectiveQuietZoneBottomFloat: Float get() = error("Use effectiveQuietZoneBottomFloat(matrixSize)")
 
     fun resolveQuietZone(matrixSize: Int): ResolvedQuietZone = QrGeometry.resolveQuietZone(this, matrixSize)
     fun effectiveQuietZone(matrixSize: Int): Int = resolveQuietZone(matrixSize).maxMarginInt

@@ -102,6 +102,7 @@ object ResampleGeometryBuilder {
                         ry = cornerRadius,
                         fill = tintRgb,
                         opacity = tintAlpha,
+                        opacityString = String.format(java.util.Locale.US, "%.2f", tintAlpha),
                         alwaysEmitOpacity = true
                     )
                 )

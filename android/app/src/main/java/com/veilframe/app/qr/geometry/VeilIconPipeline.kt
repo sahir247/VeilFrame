@@ -98,6 +98,7 @@ object VeilIconPipeline {
                         fill = bdOpaque,
                         stroke = bdOpaque,
                         strokeWidth = borderStroke,
+                        strokeWidthString = String.format(Locale.US, "%.3f", borderStroke),
                         opacity = bdAlpha
                     )
                 )
@@ -109,6 +110,7 @@ object VeilIconPipeline {
                         fill = bdOpaque,
                         stroke = bdOpaque,
                         strokeWidth = borderStroke,
+                        strokeWidthString = String.format(Locale.US, "%.3f", borderStroke),
                         canvasStrokeWidth = borderStroke,
                         opacity = bdAlpha,
                         transform = String.format(

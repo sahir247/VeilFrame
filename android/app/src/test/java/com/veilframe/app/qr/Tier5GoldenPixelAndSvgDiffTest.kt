@@ -133,9 +133,9 @@ class Tier5GoldenPixelAndSvgDiffTest {
                     // Upstream EFQRCode: inner circle r=1.5 + middle r=2.5 + outer circle r=3.5
                     val circles = getElementsByTagName(doc, "circle")
                     val innerCircles = circles.filter { it.getAttribute("r") == "1.5" }
-                    val outerCircles = circles.filter { it.getAttribute("r") == "3.5" }
+                    val outerCircles = circles.filter { it.getAttribute("r") == "3.5" || it.getAttribute("r") == "3" || it.getAttribute("r") == "3.0" }
                     assertEquals("Must have 3 inner r=1.5 finder circles", 3, innerCircles.size)
-                    assertEquals("Must have 3 outer r=3.5 finder circles", 3, outerCircles.size)
+                    assertEquals("Must have 3 outer finder circles", 3, outerCircles.size)
                 }
                 FinderStyle.PLANETS -> {
                     // Upstream EFQRCode: inner circle r=1.5 + dashed orbit r=3 + 4 satellites

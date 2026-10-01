@@ -111,6 +111,20 @@ object SvgExporter {
             val ir = com.veilframe.app.qr.geometry.ResampleGeometryBuilder.generateGeometry(matrix, design, resampleGeom, pixelSource)
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
+        if (design.style == com.veilframe.app.qr.QrStyle.BASIC) {
+            val geometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(
+                matrixSize = matrix.size,
+                outputWidth = totalWidth.toFloat(),
+                outputHeight = totalHeight.toFloat(),
+                design = design
+            )
+            val ir = com.veilframe.app.qr.geometry.BasicGeometryBuilder.generateGeometry(
+                matrix = matrix,
+                design = design,
+                geometry = geometry
+            )
+            return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        }
 
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
         val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)

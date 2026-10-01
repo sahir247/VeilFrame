@@ -146,6 +146,7 @@ class RandomRectangleRenderer : QrRenderer {
                         fill = c1,
                         fillString = "rgb($r2Value, $g2Value, $b2Value)",
                         opacity = (0.9 * alphaValue).toFloat(),
+                        opacityString = String.format(java.util.Locale.US, "%.2f", 0.9 * alphaValue),
                         alwaysEmitOpacity = true
                     )
                 )
@@ -162,6 +163,7 @@ class RandomRectangleRenderer : QrRenderer {
                         fill = c2,
                         fillString = "rgb($rValue, $gValue, $bValue)",
                         opacity = alphaValue.toFloat(),
+                        opacityString = String.format(java.util.Locale.US, "%.2f", alphaValue),
                         alwaysEmitOpacity = true
                     )
                 )

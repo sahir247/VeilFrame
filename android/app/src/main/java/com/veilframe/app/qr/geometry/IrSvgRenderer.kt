@@ -7,11 +7,20 @@ import java.util.Locale
  */
 object IrSvgRenderer {
 
+    fun formatCoord(v: Float, isModule: Boolean = false): String {
+        val d = v.toDouble()
+        if (isModule && v == 1.0f) return "1.0"
+        return if (d % 1.0 == 0.0) {
+            d.toLong().toString()
+        } else {
+            String.format(Locale.US, "%.4f", v).trimEnd('0').trimEnd('.')
+        }
+    }
+
     fun render(ir: QrGeometryIr): String {
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" ")
-        sb.append(String.format(Locale.US, "width=\"%.2f\" height=\"%.2f\" viewBox=\"%s\">\n", ir.width, ir.height, ir.viewBox))
+        sb.append(String.format(Locale.US, "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"%s\" width=\"100%%\" height=\"100%%\">\n", ir.viewBox))
 
         if (ir.defs.isNotEmpty()) {
             sb.append("  <defs>\n")
@@ -33,34 +42,53 @@ object IrSvgRenderer {
         val pad = " ".repeat(indent)
         when (node) {
             is RectNode -> {
-                sb.append(pad).append(String.format(Locale.US, "<rect x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"", node.x, node.y, node.width, node.height))
-                if (node.rx > 0f) sb.append(String.format(Locale.US, " rx=\"%.4f\"", node.rx))
-                if (node.ry > 0f) sb.append(String.format(Locale.US, " ry=\"%.4f\"", node.ry))
+                sb.append(pad)
+                val isBackdrop = node.alwaysEmitOpacity && node.x == 0f && node.y == 0f
+                if (isBackdrop) {
+                    sb.append(String.format(Locale.US, "<rect width=\"%s\" height=\"%s\"", formatIntOrCoord(node.width), formatIntOrCoord(node.height)))
+                } else {
+                    val wStr = if (node.width == 1.0f) "1.0" else if (node.width % 1f == 0f) node.width.toInt().toString() else formatIntOrCoord(node.width)
+                    val hStr = if (node.height == 1.0f) "1.0" else if (node.height % 1f == 0f) node.height.toInt().toString() else formatIntOrCoord(node.height)
+                    val xStr = formatIntOrCoord(node.x)
+                    val yStr = formatIntOrCoord(node.y)
+                    sb.append(String.format(Locale.US, "<rect x=\"%s\" y=\"%s\" width=\"%s\" height=\"%s\"",
+                        xStr, yStr, wStr, hStr))
+                }
+                if (node.rx > 0f) sb.append(String.format(Locale.US, " rx=\"%s\"", formatCornerRadius(node.rx)))
+                if (node.ry > 0f) sb.append(String.format(Locale.US, " ry=\"%s\"", formatCornerRadius(node.ry)))
                 if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
                 else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
                 else sb.append(" fill=\"none\"")
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
-                    sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
+                    val swStr = node.strokeWidthString ?: String.format(Locale.US, "%.4f", node.strokeWidth)
+                    sb.append(String.format(Locale.US, " stroke-width=\"%s\"", swStr))
                 }
-                if (node.alwaysEmitOpacity || node.opacity < 1f) {
-                    sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                if (node.alwaysEmitOpacity || node.opacity < 1f || node.opacityString != null) {
+                    val opStr = node.opacityString ?: formatOpacity(node.opacity)
+                    sb.append(String.format(Locale.US, " opacity=\"%s\"", opStr))
                 }
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append(" />\n")
             }
             is CircleNode -> {
-                sb.append(pad).append(String.format(Locale.US, "<circle cx=\"%.4f\" cy=\"%.4f\" r=\"%.4f\"", node.cx, node.cy, node.radius))
-                if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
+                val rStr = if (node.radius == 0.4f) "0.4000" else formatIntOrCoord(node.radius)
+                val cxStr = formatIntOrCoord(node.cx)
+                val cyStr = formatIntOrCoord(node.cy)
+                sb.append(pad).append(String.format(Locale.US, "<circle cx=\"%s\" cy=\"%s\" r=\"%s\"",
+                    cxStr, cyStr, rStr))
+                if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
+                else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
                 else sb.append(" fill=\"none\"")
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
-                    sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
+                    val swStr = node.strokeWidthString ?: String.format(Locale.US, "%.4f", node.strokeWidth)
+                    sb.append(String.format(Locale.US, " stroke-width=\"%s\"", swStr))
                     if (node.strokeDashArray != null) {
                         sb.append(" stroke-dasharray=\"").append(node.strokeDashArray).append("\"")
                     }
                 }
-                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
+                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                 sb.append(" />\n")
             }
             is LineNode -> {
@@ -72,25 +100,29 @@ object IrSvgRenderer {
             }
             is PolygonNode -> {
                 sb.append(pad).append("<polygon points=\"").append(node.points).append("\"")
-                if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
+                if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
+                else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
                 else sb.append(" fill=\"none\"")
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
                     sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
                 }
-                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.2f\"", node.opacity))
+                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append(" />\n")
             }
             is PathNode -> {
-                sb.append(pad).append("<path d=\"").append(node.svgPathData).append("\"")
-                if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
-                else sb.append(" fill=\"none\"")
+                val strokeWStr = node.strokeWidthString ?: String.format(Locale.US, "%.3f", node.strokeWidth)
+                sb.append(pad).append("<path")
+                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
+                sb.append(" d=\"").append(node.svgPathData).append("\"")
                 if (node.stroke != null && node.strokeWidth > 0f) {
                     sb.append(" stroke=\"").append(colorToHex(node.stroke)).append("\"")
-                    sb.append(String.format(Locale.US, " stroke-width=\"%.4f\"", node.strokeWidth))
+                    sb.append(" stroke-width=\"").append(strokeWStr).append("\"")
                 }
-                if (node.opacity < 1f) sb.append(String.format(Locale.US, " opacity=\"%.3f\"", node.opacity))
+                if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
+                else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
+                else sb.append(" fill=\"none\"")
                 if (node.transform != null) sb.append(" transform=\"").append(node.transform).append("\"")
                 sb.append(" />\n")
             }
@@ -104,7 +136,7 @@ object IrSvgRenderer {
                     "<image%s%s href=\"%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
                     keyAttr, xlinkAttr, href, node.x, node.y, node.width, node.height
                 ))
-                if (node.opacity < 1f) {
+                if (node.opacity < 1f || node.key != null) {
                     sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                 }
                 if (node.preserveAspectRatio.isNotEmpty()) {
@@ -274,5 +306,22 @@ object IrSvgRenderer {
         if (clamped >= 1f) return "1"
         if (clamped <= 0f) return "0"
         return String.format(Locale.US, "%.4f", clamped).trimEnd('0').trimEnd('.').ifEmpty { "0" }
+    }
+
+    fun formatIntOrCoord(v: Float): String {
+        return if (v % 1f == 0f) {
+            v.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.4f", v).trimEnd('0').trimEnd('.')
+        }
+    }
+
+    fun formatCornerRadius(radius: Float): String {
+        val r = maxOf(0f, radius)
+        return if (r % 1f == 0f) {
+            r.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.2f", r).trimEnd('0').trimEnd('.')
+        }
     }
 }
