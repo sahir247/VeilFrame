@@ -344,4 +344,64 @@ class CanvasVsSvgPixelDifferentialTest {
             maxAllowedPctDiff = 2.0
         )
     }
+
+    // =========================================================================
+    // 11. Bubble Style Routing & Geometry
+    // =========================================================================
+
+    @Test
+    fun testCase11_BubbleStyle() {
+        val design = QrDesign(
+            style = QrStyle.BUBBLE,
+            palette = PaletteStyle(foreground = Color.BLACK, background = Color.WHITE)
+        )
+        executeDifferentialCase("11. Bubble Style", design, maxAllowedMae = 1.0, maxAllowedPctDiff = 5.0)
+    }
+
+    // =========================================================================
+    // 12. SVG Rasterizer Image, Mask & Use Elements
+    // =========================================================================
+
+    @Test
+    fun testCase12_SvgRasterizerImageAndMask() {
+        val testPng = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        val testCanvas = Canvas(testPng)
+        testCanvas.drawColor(Color.RED)
+        val b64 = com.veilframe.app.qr.geometry.IrSvgRenderer.bitmapToBase64(testPng)
+
+        val svgString = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100%" height="100%">
+              <defs>
+                <mask id="hole">
+                  <rect width="100" height="100" fill="white" />
+                  <circle cx="50" cy="50" r="20" fill="black" />
+                </mask>
+                <rect id="subPath" width="20" height="20" fill="#00ff00" />
+              </defs>
+              <g mask="url(#hole)">
+                <image href="data:image/png;base64,$b64" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />
+              </g>
+              <use xlink:href="#subPath" x="2" y="2">
+                <animate attributeName="xlink:href" calcMode="discrete" values="#subPath" dur="1s" repeatCount="indefinite" />
+              </use>
+            </svg>
+        """.trimIndent()
+
+        val rasterBmp = DeterministicSvgRasterizer.rasterize(svgString, 100, 100)
+        assertNotNull(rasterBmp)
+        assertEquals(100, rasterBmp.width)
+        assertEquals(100, rasterBmp.height)
+
+        val centerPixel = rasterBmp.getPixel(50, 50)
+        assertEquals("Center masked area must be clipped to transparent", 0, Color.alpha(centerPixel))
+
+        val outsidePixel = rasterBmp.getPixel(90, 90)
+        assertTrue("Outside masked area must be visible", Color.alpha(outsidePixel) > 200)
+        assertEquals("Outside area color red channel must be 255", 255, Color.red(outsidePixel))
+
+        val usePixel = rasterBmp.getPixel(10, 10)
+        assertTrue("Use element must be rendered", Color.alpha(usePixel) > 200)
+        assertEquals("Use element green channel must be 255", 255, Color.green(usePixel))
+    }
 }
