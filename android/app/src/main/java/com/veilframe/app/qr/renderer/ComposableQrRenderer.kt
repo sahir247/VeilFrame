@@ -40,11 +40,20 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                 )
                 val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
                     alpha = (design.resampleStyle.backdropOpacity.coerceIn(0f, 1f) * 255).toInt()
-                    when (design.resampleStyle.backdropBlendMode) {
-                        BackdropBlendMode.NORMAL -> {}
-                        BackdropBlendMode.MULTIPLY -> PaintCompat.setBlendMode(this, BlendModeCompat.MULTIPLY)
-                        BackdropBlendMode.SCREEN -> PaintCompat.setBlendMode(this, BlendModeCompat.SCREEN)
-                        BackdropBlendMode.OVERLAY -> PaintCompat.setBlendMode(this, BlendModeCompat.OVERLAY)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        when (design.resampleStyle.backdropBlendMode) {
+                            BackdropBlendMode.NORMAL -> {}
+                            BackdropBlendMode.MULTIPLY -> PaintCompat.setBlendMode(this, BlendModeCompat.MULTIPLY)
+                            BackdropBlendMode.SCREEN -> PaintCompat.setBlendMode(this, BlendModeCompat.SCREEN)
+                            BackdropBlendMode.OVERLAY -> PaintCompat.setBlendMode(this, BlendModeCompat.OVERLAY)
+                        }
+                    } else {
+                        when (design.resampleStyle.backdropBlendMode) {
+                            BackdropBlendMode.NORMAL -> {}
+                            BackdropBlendMode.MULTIPLY -> xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
+                            BackdropBlendMode.SCREEN -> xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)
+                            BackdropBlendMode.OVERLAY -> xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.OVERLAY)
+                        }
                     }
                 }
                 canvas.drawBitmap(sourceBitmap, srcRect, dstRect, paint)
@@ -156,6 +165,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
 
         val path = context.tempPath4
         val is25D = design.effects.is25D
+        val overallBounds = android.graphics.RectF(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat)
 
         for (col in 0 until n) {
             for (row in 0 until n) {
@@ -186,7 +196,7 @@ open class ComposableQrRenderer : BaseQrRenderer() {
                 ShapeEngine.buildModulePath(module, rect, design, path)
 
                 // 4. Resolve fill color/paint via FillEngine
-                val paint = FillEngine.obtainModulePaint(module, rect, n, design, context)
+                val paint = FillEngine.obtainModulePaint(module, rect, n, design, context, overallBounds)
 
                 // 5. Render to canvas (with rotation transform if non-zero)
                 if (transform.rotationDegrees != 0f) {

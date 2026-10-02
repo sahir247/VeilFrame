@@ -7,13 +7,13 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.android.gms.tasks.Tasks
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.encoder.QrEncoder
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.TimeUnit
 
 /**
  * Android instrumentation test measuring Google ML Kit Barcode Scanning
@@ -29,7 +29,7 @@ class MlKitArtisticQrBenchmarkTest {
     private val scanner = BarcodeScanning.getClient(options)
 
     @Test
-    fun testMlKitOfflineBarcodeDetection() = runTest {
+    fun testMlKitOfflineBarcodeDetection() {
         val testContent = "https://veilframe.app/offline-benchmark"
         val encoded = QrEncoder.encode(testContent, ErrorCorrectionLevel.H)
 
@@ -57,7 +57,7 @@ class MlKitArtisticQrBenchmarkTest {
 
         val inputImage = InputImage.fromBitmap(bitmap, 0)
         val startTime = System.currentTimeMillis()
-        val barcodes = scanner.process(inputImage).await()
+        val barcodes = Tasks.await(scanner.process(inputImage), 10, TimeUnit.SECONDS)
         val latency = System.currentTimeMillis() - startTime
 
         assertFalse("ML Kit should detect barcode offline", barcodes.isEmpty())

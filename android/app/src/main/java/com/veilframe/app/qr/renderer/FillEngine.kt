@@ -60,21 +60,26 @@ object FillEngine {
         rect: RectF,
         matrixSize: Int,
         design: QrDesign,
-        context: RenderContext
+        context: RenderContext,
+        overallBounds: RectF? = null
     ): Paint {
         val color = resolveModuleColor(module, matrixSize, design)
         val paint = context.obtainFill(color)
 
-        // Gradient shader configuration if linear or radial
+        // Gradient shader configuration if linear or radial:
+        // Use overall canvas/matrix bounds if provided to ensure the gradient smoothly spans
+        // across all modules in user-space rather than restarting inside each individual module (H-05 / Issue 5).
+        val bounds = overallBounds ?: rect
         if (design.moduleStyle.fill == ModuleFill.LINEAR_GRADIENT && design.palette.gradientStart != null && design.palette.gradientEnd != null) {
             paint.shader = LinearGradient(
-                rect.left, rect.top, rect.right, rect.bottom,
+                bounds.left, bounds.top, bounds.right, bounds.bottom,
                 design.palette.gradientStart, design.palette.gradientEnd,
                 Shader.TileMode.CLAMP
             )
         } else if (design.moduleStyle.fill == ModuleFill.RADIAL_GRADIENT && design.palette.gradientStart != null && design.palette.gradientEnd != null) {
+            val radius = maxOf(bounds.width(), bounds.height()) / 2f
             paint.shader = RadialGradient(
-                rect.centerX(), rect.centerY(), rect.width() / 2f,
+                bounds.centerX(), bounds.centerY(), radius,
                 design.palette.gradientStart, design.palette.gradientEnd,
                 Shader.TileMode.CLAMP
             )

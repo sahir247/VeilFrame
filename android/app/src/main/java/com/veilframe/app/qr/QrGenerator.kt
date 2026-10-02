@@ -226,12 +226,13 @@ object QrGenerator {
      */
     fun generateSvg(
         matrix: QrMatrix,
-        design: QrDesign
+        design: QrDesign,
+        geometry: com.veilframe.app.qr.model.QrGeometry? = null
     ): String {
         return if (AnimatedQrGenerator.isDesignAnimated(design)) {
             AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
         } else {
-            com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+            com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design, geometry = geometry)
         }
     }
 
@@ -242,11 +243,12 @@ object QrGenerator {
     fun generateSvg(
         content: String,
         design: QrDesign = QrDesign(),
-        mode: GenerationMode = defaultModeFor(design)
+        mode: GenerationMode = defaultModeFor(design),
+        geometry: com.veilframe.app.qr.model.QrGeometry? = null
     ): String {
         val effectiveDesign = effectiveDesignForMode(design, mode)
         val matrix = generateMatrix(content, effectiveDesign, mode)
-        return generateSvg(matrix, effectiveDesign)
+        return generateSvg(matrix, effectiveDesign, geometry = geometry)
     }
 
     /**
@@ -469,26 +471,30 @@ object QrGenerator {
         canvas: Canvas,
         geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
     ) {
-        val size = geometry.outputWidth
+        val width = geometry.outputWidthFloat
+        val height = geometry.outputHeightFloat
         val context = RenderContext()
 
-        // EF generic backdrop contract: corner clipping
-        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * geometry.moduleSize else 0f
+        val renderer: QrRenderer = getRendererForDesign(design)
+        val ownsBackdrop = renderer is com.veilframe.app.qr.renderer.IrBackedQrRenderer && renderer.ownsBackdrop
+
+        // EF generic backdrop contract: corner clipping for renderers that do not manage their own backdrop in IR
+        val crPx = if (!ownsBackdrop && design.backdropStyle.cornerRadius > 0f) {
+            design.backdropStyle.cornerRadius
+        } else 0f
         val count = if (crPx > 0f) {
             val saveCount = canvas.save()
             val clipPath = android.graphics.Path().apply {
-                addRoundRect(0f, 0f, size.toFloat(), size.toFloat(), crPx, crPx, android.graphics.Path.Direction.CW)
+                addRoundRect(0f, 0f, width, height, crPx, crPx, android.graphics.Path.Direction.CW)
             }
             canvas.clipPath(clipPath)
             saveCount
         } else null
 
         try {
-            val renderer: QrRenderer = getRendererForDesign(design)
-
             // 1. Draw Canvas Background (including Quiet Zone margins) only if renderer does not own backdrop
-            if (renderer !is com.veilframe.app.qr.renderer.IrBackedQrRenderer || !renderer.ownsBackdrop) {
-                drawBackground(canvas, design, size, context)
+            if (!ownsBackdrop) {
+                drawBackground(canvas, design, width, height, context)
             }
 
             // 2. Render QR Code
@@ -593,14 +599,19 @@ object QrGenerator {
     private fun drawBackground(
         canvas: Canvas,
         design: QrDesign,
-        size: Int,
+        width: Float,
+        height: Float,
         context: RenderContext
     ) {
         val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
         when (val background = design.background) {
             is BackgroundStyle.Solid -> {
                 val effectiveColor = if (design.backdropStyle.color != null) resolvedBackdropColor else background.color
-                canvas.drawColor(effectiveColor)
+                val paint = context.fillPaint
+                paint.reset()
+                paint.isAntiAlias = true
+                paint.color = effectiveColor
+                canvas.drawRect(0f, 0f, width, height, paint)
             }
             is BackgroundStyle.LinearGradient -> {
                 val paint = context.fillPaint
@@ -609,11 +620,9 @@ object QrGenerator {
                 // Issue 6 fix: use angleDegrees from the model instead of hardcoded diagonal.
                 // GeometryFill.LinearGradient.fromAngle() computes the same endpoints used
                 // by the SVG path, keeping Canvas and SVG mathematically identical.
-                val w = size.toFloat()
-                val h = size.toFloat()
                 val spec = com.veilframe.app.qr.geometry.GeometryFill.LinearGradient.fromAngle(
-                    width = w,
-                    height = h,
+                    width = width,
+                    height = height,
                     startColor = background.startColor,
                     endColor = background.endColor,
                     angleDegrees = background.angleDegrees
@@ -623,28 +632,32 @@ object QrGenerator {
                     background.startColor, background.endColor,
                     Shader.TileMode.CLAMP
                 )
-                canvas.drawRect(0f, 0f, w, h, paint)
+                canvas.drawRect(0f, 0f, width, height, paint)
             }
             is BackgroundStyle.RadialGradient -> {
                 val paint = context.fillPaint
                 paint.reset()
                 paint.isAntiAlias = true
+                val radius = maxOf(width, height) / 2f
                 paint.shader = RadialGradient(
-                    size / 2f, size / 2f, size / 2f,
+                    width / 2f, height / 2f, radius,
                     background.centerColor, background.edgeColor,
                     Shader.TileMode.CLAMP
                 )
-                canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+                canvas.drawRect(0f, 0f, width, height, paint)
             }
             is BackgroundStyle.Image -> {
                 // Clear with configured backdrop background color first, then draw background image with specified alpha
-                canvas.drawColor(resolvedBackdropColor)
+                val clearPaint = context.fillPaint
+                clearPaint.reset()
+                clearPaint.color = resolvedBackdropColor
+                canvas.drawRect(0f, 0f, width, height, clearPaint)
                 val paint = context.tempPaint
                 paint.reset()
                 paint.isAntiAlias = true
                 paint.isFilterBitmap = true
                 paint.alpha = (background.alpha.coerceIn(0f, 1f) * 255).toInt()
-                val targetBounds = android.graphics.RectF(0f, 0f, size.toFloat(), size.toFloat())
+                val targetBounds = android.graphics.RectF(0f, 0f, width, height)
                 val scaleMode = if (background.fitCenter) com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FIT else com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
                 val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
                     background.bitmap.width,
@@ -666,8 +679,8 @@ object QrGenerator {
         if (backdropImg != null && !backdropImg.isRecycled && design.background !is BackgroundStyle.Image && !isDedicatedBackdropRenderer) {
             val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
                 source = backdropImg,
-                canvasWidth = size.toFloat(),
-                canvasHeight = size.toFloat(),
+                canvasWidth = width,
+                canvasHeight = height,
                 mode = design.backdropStyle.imageScaleMode
             )
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -677,7 +690,7 @@ object QrGenerator {
             val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
                 preprocessedBackdrop.width,
                 preprocessedBackdrop.height,
-                android.graphics.RectF(0f, 0f, size.toFloat(), size.toFloat()),
+                android.graphics.RectF(0f, 0f, width, height),
                 com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
             )
             canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)

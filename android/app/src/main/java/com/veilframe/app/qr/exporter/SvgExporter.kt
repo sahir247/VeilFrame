@@ -50,7 +50,8 @@ object SvgExporter {
     fun generateSvg(
         matrix: QrMatrix,
         design: QrDesign,
-        pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null
+        pixelSource: com.veilframe.app.qr.renderer.PixelSource? = null,
+        geometry: com.veilframe.app.qr.model.QrGeometry? = null
     ): String {
         val resolvedQz = com.veilframe.app.qr.model.QrGeometry.resolveQuietZone(design, matrix.size)
         val qzLeft = resolvedQz.left.toDouble()
@@ -58,8 +59,8 @@ object SvgExporter {
         val qzRight = resolvedQz.right.toDouble()
         val qzBottom = resolvedQz.bottom.toDouble()
 
-        val totalWidth = matrix.size + qzLeft + qzRight
-        val totalHeight = matrix.size + qzTop + qzBottom
+        val totalWidth = geometry?.outputWidthFloat?.toDouble() ?: (matrix.size + qzLeft + qzRight)
+        val totalHeight = geometry?.outputHeightFloat?.toDouble() ?: (matrix.size + qzTop + qzBottom)
         val totalSize = maxOf(totalWidth, totalHeight)
         val fgHex = hexColor(design.palette.foreground)
         val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
@@ -112,7 +113,7 @@ object SvgExporter {
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.BASIC) {
-            val geometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(
+            val effGeometry = geometry ?: com.veilframe.app.qr.model.QrGeometry.fromDesign(
                 matrixSize = matrix.size,
                 outputWidth = totalWidth.toFloat(),
                 outputHeight = totalHeight.toFloat(),
@@ -121,7 +122,7 @@ object SvgExporter {
             val ir = com.veilframe.app.qr.geometry.BasicGeometryBuilder.generateGeometry(
                 matrix = matrix,
                 design = design,
-                geometry = geometry,
+                geometry = effGeometry,
                 profile = design.basicProfile
             )
             return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
@@ -148,8 +149,8 @@ object SvgExporter {
             if (hasGradient) {
                 val startAlpha = ((design.palette.gradientStart!! ushr 24) and 0xFF) / 255f
                 val endAlpha = ((design.palette.gradientEnd!! ushr 24) and 0xFF) / 255f
-                val startOp = if (startAlpha < 1.0f) String.format(Locale.US, " stop-opacity=\"%.4f\"", startAlpha).trimEnd('0').trimEnd('.') else ""
-                val endOp = if (endAlpha < 1.0f) String.format(Locale.US, " stop-opacity=\"%.4f\"", endAlpha).trimEnd('0').trimEnd('.') else ""
+                val startOp = if (startAlpha < 1.0f) " stop-opacity=\"${com.veilframe.app.qr.geometry.IrSvgRenderer.formatOpacity(startAlpha)}\"" else ""
+                val endOp = if (endAlpha < 1.0f) " stop-opacity=\"${com.veilframe.app.qr.geometry.IrSvgRenderer.formatOpacity(endAlpha)}\"" else ""
                 if (isRadial) {
                     val cxStr = formatCoord(totalWidth / 2.0)
                     val cyStr = formatCoord(totalHeight / 2.0)
