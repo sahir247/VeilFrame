@@ -2126,8 +2126,7 @@ class VeilStyleParityTest {
                     }
                     if (isTrans) continue
 
-                    // Padding check for ASPECT_FIT
-                    if (preScaled.isPadding(sx, sy)) continue
+                    // Upstream EF getGrayPointList has no padding check; luminance/threshold math naturally controls emission.
 
                     // Skip center subpixel
                     if (sx % 3 == 1 && sy % 3 == 1) continue

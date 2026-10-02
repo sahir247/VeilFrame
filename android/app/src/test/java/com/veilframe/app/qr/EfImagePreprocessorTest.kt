@@ -303,4 +303,16 @@ class EfImagePreprocessorTest {
         assertEquals("Height is expanded to match canvas ratio", 400, result.height)
         assertTrue("Output height > source height (letterbox)", result.height > source.height)
     }
+
+    // TC-M1-14: preprocess with Double and Int canvas dimensions avoids Float precision loss
+    @Test
+    fun `preprocess with Double and Int canvas dimensions matches geometry contract`() {
+        val source = Bitmap.createBitmap(400, 200, Bitmap.Config.ARGB_8888) ?: return
+        val resDouble = EfImagePreprocessor.preprocess(source, 100.0, 100.0, ImageScaleMode.ASPECT_FIT)
+        val resInt = EfImagePreprocessor.preprocess(source, 100, 100, ImageScaleMode.ASPECT_FIT)
+        assertEquals("Width matches source width", 400, resDouble.width)
+        assertEquals("Height is expanded", 400, resDouble.height)
+        assertEquals("Int overload produces identical dimensions", resDouble.width, resInt.width)
+        assertEquals("Int overload produces identical dimensions", resDouble.height, resInt.height)
+    }
 }

@@ -59,14 +59,14 @@ object EfImagePreprocessor {
      */
     fun preprocess(
         source: Bitmap,
-        canvasWidth: Float,
-        canvasHeight: Float,
+        canvasWidth: Double,
+        canvasHeight: Double,
         mode: ImageScaleMode
     ): Bitmap {
         val imageWidth = source.width.toDouble()
         val imageHeight = source.height.toDouble()
-        val canvasW = canvasWidth.toDouble()
-        val canvasH = canvasHeight.toDouble()
+        val canvasW = canvasWidth
+        val canvasH = canvasHeight
 
         if (imageWidth <= 0.0 || imageHeight <= 0.0 || canvasW <= 0.0 || canvasH <= 0.0) {
             return source
@@ -125,6 +125,26 @@ object EfImagePreprocessor {
             }
         }
     }
+
+    /**
+     * Overload for integral canvas dimensions, preventing Float intermediate precision loss.
+     */
+    fun preprocess(
+        source: Bitmap,
+        canvasWidth: Int,
+        canvasHeight: Int,
+        mode: ImageScaleMode
+    ): Bitmap = preprocess(source, canvasWidth.toDouble(), canvasHeight.toDouble(), mode)
+
+    /**
+     * Overload for legacy/Float canvas dimensions.
+     */
+    fun preprocess(
+        source: Bitmap,
+        canvasWidth: Float,
+        canvasHeight: Float,
+        mode: ImageScaleMode
+    ): Bitmap = preprocess(source, canvasWidth.toDouble(), canvasHeight.toDouble(), mode)
 
     // -------------------------------------------------------------------------
     // Intermediate size computations - exact translations of EFImageMode.swift

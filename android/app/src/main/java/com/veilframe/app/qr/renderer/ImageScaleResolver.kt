@@ -26,6 +26,16 @@ class BitmapPixelSource(val bitmap: Bitmap) : PixelSource {
 }
 
 /**
+ * Platform-independent bounding rectangle for image content within a scaled canvas.
+ */
+data class ContentBounds(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
+
+/**
  * Pre-scaled pixel data source with Skia bilinear filtering and explicit padding bounds.
  * Matches canonical pre-rendered 3N x 3N raster context sampling.
  */
@@ -34,8 +44,21 @@ class PreScaledPixelSource(
     val pixels: IntArray? = null,
     val targetWidth: Int = bitmap?.width ?: 0,
     val targetHeight: Int = bitmap?.height ?: 0,
-    val contentBounds: RectF? = null
+    val contentBounds: ContentBounds? = null
 ) : PixelSource {
+    constructor(
+        bitmap: Bitmap?,
+        pixels: IntArray?,
+        targetWidth: Int,
+        targetHeight: Int,
+        rectF: RectF?
+    ) : this(
+        bitmap,
+        pixels,
+        targetWidth,
+        targetHeight,
+        rectF?.let { ContentBounds(it.left, it.top, it.right, it.bottom) }
+    )
     override val width: Int get() = targetWidth
     override val height: Int get() = targetHeight
     override fun getPixel(x: Int, y: Int): Int {
@@ -80,8 +103,9 @@ data class PixelSample(
  * - [ImageScaleMode.CENTER_CROP]: Crops source from center to destination aspect ratio without distortion.
  * - [ImageScaleMode.ASPECT_FILL]: Scales source until destination is completely covered, preserving aspect ratio and cropping overflow.
  * - [ImageScaleMode.ASPECT_FIT]: Scales entire source inside destination, letterboxing/pillarboxing.
- *   Areas outside the fitted image are strictly defined as solid white (RGBA = 255, 255, 255, 255)
- *   and flagged with `isPadding = true` so stochastic dither emission is unconditionally suppressed.
+ *   Areas outside the fitted image are transparent / maximum luminance (RGBA = 0, 0, 0, 0 or 255, 255, 255, 255)
+ *   matching EF CGContext.clear(), naturally producing zero stochastic dots under standard exposure while allowing
+ *   boundary antialiasing/filtering and exposure adjustments to match EFQRCode getGrayPointList().
  * - [ImageScaleMode.STRETCH]: Fits destination bounds directly; aspect ratio may distort.
  */
 object ImageScaleResolver {
@@ -455,18 +479,18 @@ object ImageScaleResolver {
         // EFQRCode 7.0.3 parity: Preprocess source image to intermediate canvas ratio (EFImageMode.imageForContent)
         val preprocessed = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
             source = source,
-            canvasWidth = tw.toFloat(),
-            canvasHeight = th.toFloat(),
+            canvasWidth = tw.toDouble(),
+            canvasHeight = th.toDouble(),
             mode = mode
         )
 
-        val contentBounds: RectF? = if (mode == ImageScaleMode.ASPECT_FIT) {
+        val contentBounds: ContentBounds? = if (mode == ImageScaleMode.ASPECT_FIT) {
             val sw = source.width.toFloat().coerceAtLeast(1f)
             val sh = source.height.toFloat().coerceAtLeast(1f)
             val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
             val dx = (tw.toFloat() - sw * scale) / 2f
             val dy = (th.toFloat() - sh * scale) / 2f
-            RectF(dx, dy, dx + sw * scale, dy + sh * scale)
+            ContentBounds(dx, dy, dx + sw * scale, dy + sh * scale)
         } else {
             null
         }
@@ -509,7 +533,7 @@ object ImageScaleResolver {
             val scale = minOf(tw.toFloat() / sw, th.toFloat() / sh)
             val dx = (tw.toFloat() - sw * scale) / 2f
             val dy = (th.toFloat() - sh * scale) / 2f
-            RectF(dx, dy, dx + sw * scale, dy + sh * scale)
+            ContentBounds(dx, dy, dx + sw * scale, dy + sh * scale)
         } else null
         return PreScaledPixelSource(bitmap = null, pixels = pixels, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }

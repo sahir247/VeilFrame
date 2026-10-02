@@ -11,6 +11,7 @@ import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.geometry.*
 import com.veilframe.app.qr.renderer.*
 import com.veilframe.app.qr.validation.*
+import android.graphics.RectF
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -150,25 +151,25 @@ class ResampleImage3x3Test {
     }
 
     @Test
-    fun testAspectFitExplicitPaddingSuppressionUnderExtremeExposure() {
+    fun testAspectFitPaddingEmissionUnderStandardExposure() {
         val matrix = QrMatrix("HTTPS://VEILFRAME.APP/PADDING-INVARIANT", ErrorCorrectionLevel.H)
         // 2:1 wide pure black image fitted into square matrix
         // Top and bottom 25% are letterbox padding
         val widePixels = createTestPixelSource(200, 100, 0xFF000000.toInt())
 
-        // Use extreme negative exposure and high contrast that would otherwise shift white pixels to dark:
-        // threshold = ((1.0 - 0.8 - 0.5) * 3.0 + 0.5) = -0.9 * 3.0 + 0.5 = -0.4 -> coerced to 0.0
-        // Without explicit padding suppression, pure white pixels (1.0) would yield threshold 0.0,
-        // causing 100% of white padding subpixels to trigger rnd > 0.0 and emit photo dither dots!
-        val extremeStyle = ImageSourceStyle(
+        // Standard exposure (0.0f) and contrast (0.0f):
+        // Padding pixels have grayNorm = 1.0f -> threshold = (1.0 - 0.5) * 1.0 + 0.5 = 1.0f.
+        // Because sampleRandom is in [0, 1), rnd > 1.0f is always false.
+        // Naturally yields ZERO stochastic dots in padding without requiring artificial pre-sampling coordinate masking.
+        val standardStyle = ImageSourceStyle(
             scaleMode = ImageScaleMode.ASPECT_FIT,
-            exposure = -0.8f,
-            contrast = 2.0f
+            exposure = 0.0f,
+            contrast = 0.0f
         )
 
         val paddingSubpixels = mutableListOf<String>()
 
-        ResampleSubpixelEngine.traverseSubpixels(matrix, widePixels, extremeStyle, seed = 42L) { col, row, subX, subY, isCenterAnchor ->
+        ResampleSubpixelEngine.traverseSubpixels(matrix, widePixels, standardStyle, seed = 42L) { col, row, subX, subY, isCenterAnchor ->
             if (isCenterAnchor) return@traverseSubpixels // Center anchor is the QR data bit itself
 
             val v = (subY + 0.5f) / (3 * matrix.size).toFloat()
@@ -179,11 +180,69 @@ class ResampleImage3x3Test {
             }
         }
 
-        // Thanks to explicit isPadding suppression, ZERO stochastic dots are emitted in the padding margins!
         assertEquals(
-            "Explicit ASPECT_FIT padding suppression must yield zero photo dots in margins under extreme exposure/contrast",
+            "Under standard exposure, natural threshold math must yield zero photo dots in padding margins",
             0,
             paddingSubpixels.size
+        )
+    }
+
+    @Test
+    fun testAspectFitBoundaryPixelsSampledLuminanceWithoutCoordinateMask() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/BOUNDARY-PARITY", ErrorCorrectionLevel.M)
+        val targetDim = 3 * matrix.size
+
+        // Create a PreScaledPixelSource with contentBounds (ASPECT_FIT)
+        // Simulate a pixel located outside contentBounds (i.e. in padding according to contentBounds)
+        // but containing an anti-aliased edge pixel (e.g. dark boundary pixel with alpha = 0.5)
+        val pixels = IntArray(targetDim * targetDim) { 0x00000000 } // Transparent padding default
+
+        // Pick a non-functional coordinate (e.g. col=12, row=12, subX=36, subY=36 - not center anchor)
+        val testSubX = 3 * 12 + 0 // col=12, dx=0 -> subX=36
+        val testSubY = 3 * 12 + 0 // row=12, dy=0 -> subY=36
+
+        // Place a dark semi-transparent boundary pixel: ARGB with alpha=128 (0.5), black
+        // Luminance: weightedGray = (0 * 0.5) + (1 - 0.5) * 255 = 127.5 -> grayNorm ~= 0.5
+        // Under exposure=0.0, contrast=0.0: threshold = (0.5 - 0.5) * 1.0 + 0.5 = 0.5
+        pixels[testSubY * targetDim + testSubX] = (128 shl 24) or 0x000000
+
+        // Define contentBounds that would have considered testSubY to be in padding (e.g. content starts at subY = 40)
+        val artificialContentBounds = ContentBounds(0f, 40f, targetDim.toFloat(), (targetDim - 40).toFloat())
+        val preScaled = PreScaledPixelSource(
+            bitmap = null,
+            pixels = pixels,
+            targetWidth = targetDim,
+            targetHeight = targetDim,
+            contentBounds = artificialContentBounds
+        )
+        // Verify that isPadding(testSubX, testSubY) IS true under the contentBounds definition
+        assertTrue("Subpixel is within the padding region of contentBounds", preScaled.isPadding(testSubX, testSubY))
+
+        // When traverseSubpixels runs, with RNG returning 0.8 (> threshold 0.5), the boundary dot MUST be emitted!
+        // Under old VeilFrame behavior with isPadding check, it was unconditionally dropped.
+        // Under EF parity, it is legitimately emitted because EF getGrayPointList has no padding mask.
+        val emittedSubpixels = mutableSetOf<Pair<Int, Int>>()
+        val mockRngPolicy = object : ResamplePolicy {
+            override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean = false
+            override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean = true
+            override fun sampleRandom(subX: Int, subY: Int, seed: Long): Float = 0.8f // 0.8f > threshold 0.5f
+        }
+
+        val style = ImageSourceStyle(scaleMode = ImageScaleMode.ASPECT_FIT, exposure = 0.0f, contrast = 0.0f)
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = preScaled,
+            style = style,
+            seed = 42L,
+            policy = mockRngPolicy,
+            includeCenterAnchors = false
+        ) { _, _, sx, sy, _ ->
+            emittedSubpixels.add(Pair(sx, sy))
+        }
+
+        assertTrue(
+            "Boundary pixel in padding region must be sampled and emitted when rnd > threshold, matching EF getGrayPointList",
+            emittedSubpixels.contains(Pair(testSubX, testSubY))
         )
     }
 

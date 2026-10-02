@@ -142,10 +142,6 @@ object ResampleSubpixelEngine {
 
                                 if (!policy.shouldSample(matrix, sx, sy)) continue
 
-                                if (effectiveSource is PreScaledPixelSource && effectiveSource.isPadding(sx, sy)) {
-                                    continue
-                                }
-
                                 val pixel = effectiveSource.getPixel(sx, sy)
                                 val grayNorm = ImageScaleResolver.calculatePixelLuminance(pixel, efPremultipliedAlpha = true)
 
