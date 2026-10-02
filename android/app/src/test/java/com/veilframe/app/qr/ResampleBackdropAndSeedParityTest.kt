@@ -182,5 +182,49 @@ class ResampleBackdropAndSeedParityTest {
             }
         }
     }
+
+    @Test
+    fun testInjectableRandomProviderInResamplePolicy() {
+        val matrix = QrMatrix("HTTPS://VEILFRAME.APP/ORACLE_INJECT_TEST", ErrorCorrectionLevel.M)
+        val pixelSource = createCheckerPixelSource(64)
+        val style = ImageSourceStyle()
+
+        val capturedWithZeros = mutableListOf<Pair<Int, Int>>()
+        val policyAllZero = object : com.veilframe.app.qr.renderer.ResamplePolicy {
+            override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean = true
+            override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean = false
+            override fun sampleRandom(subX: Int, subY: Int, seed: Long): Float = 0.0f
+        }
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = style,
+            policy = policyAllZero,
+            includeCenterAnchors = false
+        ) { _, _, sx, sy, _ ->
+            capturedWithZeros.add(sx to sy)
+        }
+
+        val capturedWithOnes = mutableListOf<Pair<Int, Int>>()
+        val policyAllOne = object : com.veilframe.app.qr.renderer.ResamplePolicy {
+            override fun shouldSample(matrix: QrMatrix, subX: Int, subY: Int): Boolean = true
+            override fun shouldDrawAnchor(matrix: QrMatrix, col: Int, row: Int): Boolean = false
+            override fun sampleRandom(subX: Int, subY: Int, seed: Long): Float = 1.0f
+        }
+        ResampleSubpixelEngine.traverseSubpixels(
+            matrix = matrix,
+            pixelSource = pixelSource,
+            style = style,
+            policy = policyAllOne,
+            includeCenterAnchors = false
+        ) { _, _, sx, sy, _ ->
+            capturedWithOnes.add(sx to sy)
+        }
+
+        // When random is 1.0f (strictly > threshold), all eligible subpixels are emitted
+        // When random is 0.0f (<= threshold), zero subpixels are emitted
+        assertTrue("Random=1.0f emits dots", capturedWithOnes.isNotEmpty())
+        assertEquals("Random=0.0f emits zero dots", 0, capturedWithZeros.size)
+    }
 }
 

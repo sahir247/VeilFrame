@@ -52,6 +52,16 @@ interface ResamplePolicy {
      * The random number generator strategy to use for stochastic dot emission.
      */
     val rngMode: RngMode get() = RngMode.DETERMINISTIC
+
+    /**
+     * Generates a random float in [0.0f, 1.0f) for the given 3N subpixel coordinate ([subX], [subY]).
+     * By default dispatches based on [rngMode].
+     * Oracle testing suites can override this to inject deterministic oracle random sequences.
+     */
+    fun sampleRandom(subX: Int, subY: Int, seed: Long): Float = when (rngMode) {
+        RngMode.DETERMINISTIC -> ResampleSubpixelEngine.subpixelRandom(seed, subX, subY)
+        RngMode.SYSTEM_UNSEEDED -> kotlin.random.Random.nextFloat()
+    }
 }
 
 /**

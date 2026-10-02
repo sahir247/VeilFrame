@@ -149,10 +149,7 @@ object ResampleSubpixelEngine {
                                 // Exact VeilFrame Art Engine threshold formula with +1.0 contrast multiplier
                                 val threshold = computeThreshold(grayNorm, style.exposure, style.contrast)
 
-                                val rnd = when (policy.rngMode) {
-                                    RngMode.DETERMINISTIC -> subpixelRandom(seed, sx, sy)
-                                    RngMode.SYSTEM_UNSEEDED -> kotlin.random.Random.nextFloat()
-                                }
+                                val rnd = policy.sampleRandom(sx, sy, seed)
                                 if (rnd > threshold) {
                                     sink.emit(col, row, sx, sy, isCenterAnchor = false)
                                 }
