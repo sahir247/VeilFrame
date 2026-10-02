@@ -173,6 +173,20 @@ class EfImagePreprocessorTest {
         assertEquals("originY must be ~7.14285 not truncated to 7.0", 7.14285f, originY, 0.001f)
     }
 
+    @Test
+    fun `64-bit Double arithmetic matches CGFloat precision without 32-bit truncation`() {
+        val (wD, hD) = EfImagePreprocessor.scaleAspectFillSizeD(
+            imageWidth = 301.0, imageHeight = 203.0,
+            canvasW = 99.0, canvasH = 100.0,
+            widthRatio = 301.0 / 99.0, heightRatio = 203.0 / 100.0
+        )
+        assertEquals(200.97, wD, 0.000001)
+        assertEquals(203.0, hD, 0.000001)
+
+        val originX = -(301.0 - wD) / 2.0
+        assertEquals(-50.015, originX, 0.000001)
+    }
+
     // -----------------------------------------------------------------------
     // BEHAVIORAL TESTS — Bitmap-based; null-guarded for headless JVM.
     // These document required M1 behavioral contracts for Layer B oracle execution.

@@ -63,62 +63,64 @@ object EfImagePreprocessor {
         canvasHeight: Float,
         mode: ImageScaleMode
     ): Bitmap {
-        val imageWidth = source.width.toFloat()
-        val imageHeight = source.height.toFloat()
+        val imageWidth = source.width.toDouble()
+        val imageHeight = source.height.toDouble()
+        val canvasW = canvasWidth.toDouble()
+        val canvasH = canvasHeight.toDouble()
 
-        if (imageWidth <= 0f || imageHeight <= 0f || canvasWidth <= 0f || canvasHeight <= 0f) {
+        if (imageWidth <= 0.0 || imageHeight <= 0.0 || canvasW <= 0.0 || canvasH <= 0.0) {
             return source
         }
 
         // EF early-exit: if ratio already matches, return source unchanged.
         // Exact floating-point comparison mirrors EFImageMode.swift line 127.
-        if (imageWidth / imageHeight == canvasWidth / canvasHeight) {
+        if (imageWidth / imageHeight == canvasW / canvasH) {
             return source
         }
 
-        val widthRatio = imageWidth / canvasWidth
-        val heightRatio = imageHeight / canvasHeight
+        val widthRatio = imageWidth / canvasW
+        val heightRatio = imageHeight / canvasH
 
         return when (mode) {
             // scaleToFill (EFImageMode.swift:132-140)
             ImageScaleMode.STRETCH -> {
-                val (newWidthF, newHeightF) = scaleToFillSizeF(
-                    imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
+                val (newWidthD, newHeightD) = scaleToFillSizeD(
+                    imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio
                 )
-                resizeBitmap(source, newWidthF.toInt(), newHeightF.toInt())
+                resizeBitmap(source, newWidthD.toInt(), newHeightD.toInt())
             }
 
             // scaleAspectFit (EFImageMode.swift:141-154)
-            // Computes floating-point newSize and origin, then truncates destination canvas dimensions.
+            // Computes 64-bit Double newSize and origin, then truncates destination canvas dimensions.
             ImageScaleMode.ASPECT_FIT -> {
-                val (newWidthF, newHeightF) = scaleAspectFitSizeF(
-                    imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
+                val (newWidthD, newHeightD) = scaleAspectFitSizeD(
+                    imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio
                 )
-                val originX = -(imageWidth - newWidthF) / 2.0
-                val originY = -(imageHeight - newHeightF) / 2.0
+                val originX = -(imageWidth - newWidthD) / 2.0
+                val originY = -(imageHeight - newHeightD) / 2.0
                 clipAndExpandTransparency(
                     source = source,
-                    rectX = originX.toFloat(),
-                    rectY = originY.toFloat(),
-                    rectW = newWidthF.toInt(),
-                    rectH = newHeightF.toInt()
+                    rectX = originX,
+                    rectY = originY,
+                    rectW = newWidthD.toInt(),
+                    rectH = newHeightD.toInt()
                 )
             }
 
             // scaleAspectFill (EFImageMode.swift:155-168)
-            // Uses EF's clipAndExpandingTransparencyWith(rect: rect) path with floating-point rect
+            // Uses EF's clipAndExpandingTransparencyWith(rect: rect) path with 64-bit Double rect
             ImageScaleMode.ASPECT_FILL, ImageScaleMode.CENTER_CROP -> {
-                val (newWidthF, newHeightF) = scaleAspectFillSizeF(
-                    imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
+                val (newWidthD, newHeightD) = scaleAspectFillSizeD(
+                    imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio
                 )
-                val originX = -(imageWidth - newWidthF) / 2.0
-                val originY = -(imageHeight - newHeightF) / 2.0
+                val originX = -(imageWidth - newWidthD) / 2.0
+                val originY = -(imageHeight - newHeightD) / 2.0
                 clipAndExpandTransparency(
                     source = source,
-                    rectX = originX.toFloat(),
-                    rectY = originY.toFloat(),
-                    rectW = newWidthF.toInt(),
-                    rectH = newHeightF.toInt()
+                    rectX = originX,
+                    rectY = originY,
+                    rectW = newWidthD.toInt(),
+                    rectH = newHeightD.toInt()
                 )
             }
         }
@@ -129,6 +131,21 @@ object EfImagePreprocessor {
     // -------------------------------------------------------------------------
 
     /**
+     * EF scaleToFill newSize as 64-bit CGFloat / Double CGSize (EFImageMode.swift:133-139).
+     */
+    internal fun scaleToFillSizeD(
+        imageWidth: Double, imageHeight: Double,
+        canvasW: Double, canvasH: Double,
+        widthRatio: Double, heightRatio: Double
+    ): Pair<Double, Double> {
+        return if (widthRatio > heightRatio) {
+            Pair(imageHeight / canvasH * canvasW, imageHeight)
+        } else {
+            Pair(imageWidth, imageWidth / canvasW * canvasH)
+        }
+    }
+
+    /**
      * EF scaleToFill newSize as floating-point CGSize (EFImageMode.swift:133-139).
      */
     internal fun scaleToFillSizeF(
@@ -136,11 +153,8 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Float, Float> {
-        return if (widthRatio > heightRatio) {
-            Pair(imageHeight / canvasH * canvasW, imageHeight)
-        } else {
-            Pair(imageWidth, imageWidth / canvasW * canvasH)
-        }
+        val (w, h) = scaleToFillSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
+        return Pair(w.toFloat(), h.toFloat())
     }
 
     /**
@@ -152,8 +166,23 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = scaleToFillSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
+        val (w, h) = scaleToFillSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
         return Pair(w.toInt(), h.toInt())  // Swift: Int(newSize.width) - truncation toward zero
+    }
+
+    /**
+     * EF scaleAspectFit newSize as 64-bit CGFloat / Double CGSize (EFImageMode.swift:142-148).
+     */
+    internal fun scaleAspectFitSizeD(
+        imageWidth: Double, imageHeight: Double,
+        canvasW: Double, canvasH: Double,
+        widthRatio: Double, heightRatio: Double
+    ): Pair<Double, Double> {
+        return if (widthRatio > heightRatio) {
+            Pair(imageWidth, imageWidth / canvasW * canvasH)
+        } else {
+            Pair(imageHeight / canvasH * canvasW, imageHeight)
+        }
     }
 
     /**
@@ -164,11 +193,8 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Float, Float> {
-        return if (widthRatio > heightRatio) {
-            Pair(imageWidth, imageWidth / canvasW * canvasH)
-        } else {
-            Pair(imageHeight / canvasH * canvasW, imageHeight)
-        }
+        val (w, h) = scaleAspectFitSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
+        return Pair(w.toFloat(), h.toFloat())
     }
 
     /**
@@ -180,8 +206,23 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = scaleAspectFitSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
+        val (w, h) = scaleAspectFitSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
         return Pair(w.toInt(), h.toInt())
+    }
+
+    /**
+     * EF scaleAspectFill newSize as 64-bit CGFloat / Double CGSize (EFImageMode.swift:156-162).
+     */
+    internal fun scaleAspectFillSizeD(
+        imageWidth: Double, imageHeight: Double,
+        canvasW: Double, canvasH: Double,
+        widthRatio: Double, heightRatio: Double
+    ): Pair<Double, Double> {
+        return if (widthRatio < heightRatio) {
+            Pair(imageWidth, imageWidth / canvasW * canvasH)
+        } else {
+            Pair(imageHeight / canvasH * canvasW, imageHeight)
+        }
     }
 
     /**
@@ -192,11 +233,8 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Float, Float> {
-        return if (widthRatio < heightRatio) {
-            Pair(imageWidth, imageWidth / canvasW * canvasH)
-        } else {
-            Pair(imageHeight / canvasH * canvasW, imageHeight)
-        }
+        val (w, h) = scaleAspectFillSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
+        return Pair(w.toFloat(), h.toFloat())
     }
 
     /**
@@ -209,7 +247,7 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = scaleAspectFillSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
+        val (w, h) = scaleAspectFillSizeD(imageWidth.toDouble(), imageHeight.toDouble(), canvasW.toDouble(), canvasH.toDouble(), widthRatio.toDouble(), heightRatio.toDouble())
         return Pair(w.toInt(), h.toInt())
     }
 
@@ -237,27 +275,24 @@ object EfImagePreprocessor {
     /**
      * Equivalent to CGImage.clipAndExpandingTransparencyWith(rect:) (CGImage+EFQRCode.swift:151-185).
      *
-     * When rectX/rectY are negative (letterbox/pillarbox), the resulting canvas is
-     * (rectW x rectH) with the source drawn at offset (-rectX, -rectY), and all
-     * non-covered pixels remain fully transparent (RGBA 0,0,0,0) matching context.clear().
-     *
-     * When the rect is entirely within source bounds, falls through to [cropBitmap].
+     * In CoreGraphics, coordinates are 64-bit CGFloat. Destination bitmap dimensions are Int(rect.width/height).
+     * The single unavoidable Double -> Float conversion happens strictly at Skia RectF construction.
      */
     internal fun clipAndExpandTransparency(
         source: Bitmap,
-        rectX: Float, rectY: Float,
+        rectX: Double, rectY: Double,
         rectW: Int, rectH: Int
     ): Bitmap {
-        val imageWidth = source.width
-        val imageHeight = source.height
+        val imageWidth = source.width.toDouble()
+        val imageHeight = source.height.toDouble()
 
         // Fast path: rect exactly covers source unchanged (CGImage+EFQRCode line 155-157)
-        if (rectX == 0f && rectY == 0f && rectW == imageWidth && rectH == imageHeight) {
+        if (rectX == 0.0 && rectY == 0.0 && rectW == source.width && rectH == source.height) {
             return source
         }
 
         // Fast path: rect is entirely within source -> pure crop (CGImage+EFQRCode lines 158-162)
-        if (rectX >= 0f && rectY >= 0f &&
+        if (rectX >= 0.0 && rectY >= 0.0 &&
             (rectX + rectW) <= imageWidth && (rectY + rectH) <= imageHeight
         ) {
             return cropBitmap(source, rectX.toInt(), rectY.toInt(), rectW, rectH)
@@ -271,15 +306,23 @@ object EfImagePreprocessor {
 
         val canvas = Canvas(dst)
         // EF drawRect: CGRect(x: rect.origin.x, y: rect.origin.y, width: imageWidth, height: imageHeight)
-        // In destination space: source drawn at (rectX, rectY) with its natural pixel dimensions.
-        val dstLeft = rectX
-        val dstTop = rectY
-        val srcRect = Rect(0, 0, imageWidth, imageHeight)
-        val dstRectF = RectF(dstLeft, dstTop, dstLeft + imageWidth, dstTop + imageHeight)
+        // Single unavoidable Double -> Float conversion right at the Skia RectF boundary
+        val dstRectF = RectF(
+            rectX.toFloat(),
+            rectY.toFloat(),
+            (rectX + imageWidth).toFloat(),
+            (rectY + imageHeight).toFloat()
+        )
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        canvas.drawBitmap(source, srcRect, dstRectF, paint)
+        canvas.drawBitmap(source, null, dstRectF, paint)
         return dst
     }
+
+    internal fun clipAndExpandTransparency(
+        source: Bitmap,
+        rectX: Float, rectY: Float,
+        rectW: Int, rectH: Int
+    ): Bitmap = clipAndExpandTransparency(source, rectX.toDouble(), rectY.toDouble(), rectW, rectH)
 
     /**
      * Zero-interpolation pixel crop - equivalent to CGImage.cropping(to:).
