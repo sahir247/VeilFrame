@@ -55,6 +55,8 @@ import com.veilframe.app.qr.scanner.QrScanner
 import com.veilframe.app.qr.scanner.action.QrActionExecutor
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
@@ -135,6 +137,8 @@ class QrStudioFragment : Fragment() {
 class QrGenerateTabFragment : Fragment() {
 
     private val vm: QrStudioViewModel by activityViewModels()
+    private var previewAnimJob: kotlinx.coroutines.Job? = null
+    private var activePreviewFrames: List<com.veilframe.app.qr.model.QrFrame>? = null
 
     private val logoPickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -387,6 +391,41 @@ class QrGenerateTabFragment : Fragment() {
         val scanabilityTechContainer = view.findViewById<LinearLayout>(R.id.container_scanability_tech_details)
         val scanabilityTechText = view.findViewById<TextView>(R.id.qr_scanability_tech_text)
         val autoRepairBtn      = view.findViewById<MaterialButton>(R.id.qr_auto_repair_btn)
+        val testWithCameraBtn  = view.findViewById<MaterialButton>(R.id.qr_test_with_camera_btn)
+        val previewAnimationBadge = view.findViewById<View>(R.id.qr_preview_animation_badge)
+
+        testWithCameraBtn?.setOnClickListener {
+            val pager = parentFragment?.view?.findViewById<ViewPager2>(R.id.qr_pager)
+                ?: requireActivity().findViewById<ViewPager2>(R.id.qr_pager)
+            pager?.currentItem = 1
+            Toast.makeText(requireContext(), "Camera scanner active — test your QR code", Toast.LENGTH_SHORT).show()
+        }
+
+        val headerAdvanced = view.findViewById<View>(R.id.qr_header_advanced_settings)
+        val containerAdvanced = view.findViewById<LinearLayout>(R.id.container_advanced_settings_body)
+        val iconToggleAdvanced = view.findViewById<ImageView>(R.id.qr_icon_toggle_advanced)
+        headerAdvanced?.setOnClickListener {
+            val isExpanded = containerAdvanced?.visibility == View.VISIBLE
+            containerAdvanced?.visibility = if (isExpanded) View.GONE else View.VISIBLE
+            iconToggleAdvanced?.setImageResource(if (isExpanded) R.drawable.ic_expand_more else R.drawable.ic_expand_less)
+        }
+
+        // Animation section
+        val animationStatusBanner = view.findViewById<TextView>(R.id.qr_animation_status_banner)
+        val pickAnimWatermarkBtn = view.findViewById<MaterialButton>(R.id.qr_btn_pick_animated_watermark)
+        val pickAnimLogoBtn = view.findViewById<MaterialButton>(R.id.qr_btn_pick_animated_logo)
+        val clearAnimBtn = view.findViewById<MaterialButton>(R.id.qr_btn_clear_animation)
+
+        pickAnimWatermarkBtn?.setOnClickListener {
+            sourceImagePickerLauncher.launch("*/*")
+        }
+        pickAnimLogoBtn?.setOnClickListener {
+            logoPickerLauncher.launch("*/*")
+        }
+        clearAnimBtn?.setOnClickListener {
+            vm.clearAnimation()
+            Toast.makeText(requireContext(), "Animation cleared", Toast.LENGTH_SHORT).show()
+        }
 
         var isTechDetailsExpanded = false
         scanabilityDetailsToggle?.setOnClickListener {
@@ -1905,15 +1944,39 @@ class QrGenerateTabFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.state.collect { state ->
-                    // Empty-state vs preview bitmap
-                    if (state.bitmap != null) {
-                        previewImage.setImageBitmap(state.bitmap)
+                    // Empty-state vs animated preview loop vs static preview bitmap
+                    val animFrames = state.previewAnimatedFrames
+                    if (animFrames.size > 1) {
+                        previewAnimationBadge?.visibility = View.VISIBLE
                         previewImage.visibility = View.VISIBLE
                         previewEmptyState?.visibility = View.GONE
+                        if (activePreviewFrames !== animFrames) {
+                            activePreviewFrames = animFrames
+                            previewAnimJob?.cancel()
+                            previewAnimJob = viewLifecycleOwner.lifecycleScope.launch {
+                                var idx = 0
+                                while (isActive && animFrames.isNotEmpty()) {
+                                    val f = animFrames[idx % animFrames.size]
+                                    previewImage.setImageBitmap(f.bitmap)
+                                    kotlinx.coroutines.delay(f.durationMs.toLong().coerceIn(30L, 1000L))
+                                    idx++
+                                }
+                            }
+                        }
                     } else {
-                        previewImage.setImageBitmap(null)
-                        previewImage.visibility = View.GONE
-                        previewEmptyState?.visibility = View.VISIBLE
+                        activePreviewFrames = null
+                        previewAnimJob?.cancel()
+                        previewAnimJob = null
+                        previewAnimationBadge?.visibility = View.GONE
+                        if (state.bitmap != null) {
+                            previewImage.setImageBitmap(state.bitmap)
+                            previewImage.visibility = View.VISIBLE
+                            previewEmptyState?.visibility = View.GONE
+                        } else {
+                            previewImage.setImageBitmap(null)
+                            previewImage.visibility = View.GONE
+                            previewEmptyState?.visibility = View.VISIBLE
+                        }
                     }
 
                     previewProgress?.visibility = if (state.isRenderingPreview) View.VISIBLE else View.GONE
@@ -1953,6 +2016,7 @@ class QrGenerateTabFragment : Fragment() {
                     saveVideoBtn?.isEnabled = canExport && hasAnimationSource
                     saveAnimatedSvgBtn?.isEnabled = canExport && hasAnimationSource
                     shareBtn.isEnabled = canExport
+                    testWithCameraBtn?.isEnabled = hasContent && state.bitmap != null
 
                     // Contextual photo button label and alpha: Static short label to avoid wrapping
                     val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
@@ -1962,9 +2026,14 @@ class QrGenerateTabFragment : Fragment() {
                     // Clarify animated export helper label based on multi-frame input
                     if (hasAnimationSource) {
                         val frameCount = maxOf(state.animatedFrames.size, state.logoAnimatedFrames.size)
+                        val previewCount = state.previewAnimatedFrames.size
                         animatedExportLabel?.text = "Animation source: $frameCount frames loaded"
+                        animationStatusBanner?.text = "Animation active: $frameCount source frames loaded ($previewCount frames in live preview loop)"
+                        animationStatusBanner?.setTextColor(0xFF16A34A.toInt())
                     } else {
                         animatedExportLabel?.text = "Import a multi-frame GIF, WebP, or video to enable animated export"
+                        animationStatusBanner?.text = "No animation loaded. Import a GIF, WebP, or video to preview and export animated QR codes."
+                        animationStatusBanner?.setTextColor(0xFF6B7280.toInt())
                     }
 
                     // Contextual Style Settings Card
@@ -2150,6 +2219,13 @@ class QrGenerateTabFragment : Fragment() {
                 vm.updateBackground(selectedColor)
             }
         }.show()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        previewAnimJob?.cancel()
+        previewAnimJob = null
+        activePreviewFrames = null
     }
 
     private fun pickColor(
@@ -2548,68 +2624,70 @@ class QrScanTabFragment : Fragment() {
         is QrAction.Raw -> "Copy Content"
     }
 
-    private fun formatActionSummary(action: QrAction, maskWifiPassword: Boolean = true): String = when (action) {
-        is QrAction.Url -> buildString {
-            append(action.uri)
-            if (!action.host.isNullOrBlank()) {
-                append("\nHost: ${action.host}")
+    companion object {
+        internal fun formatActionSummary(action: QrAction, maskWifiPassword: Boolean = true): String = when (action) {
+            is QrAction.Url -> buildString {
+                append(action.uri)
+                if (!action.host.isNullOrBlank()) {
+                    append("\nHost: ${action.host}")
+                }
             }
-        }
-        is QrAction.Wifi -> buildString {
-            append("Network: ${action.ssid}")
-            append("\nSecurity: ${action.type}")
-            if (action.password.isNotBlank()) {
-                val pass = if (maskWifiPassword) "••••••••" else action.password
-                append("\nPassword: $pass")
+            is QrAction.Wifi -> buildString {
+                append("Network: ${action.ssid}")
+                append("\nSecurity: ${action.type}")
+                if (action.password.isNotBlank()) {
+                    val pass = if (maskWifiPassword) "••••••••" else action.password
+                    append("\nPassword: $pass")
+                }
+                if (action.hidden) {
+                    append(" (Hidden)")
+                }
             }
-            if (action.hidden) {
-                append(" (Hidden)")
+            is QrAction.Contact -> buildString {
+                append(action.name ?: "Contact")
+                if (!action.org.isNullOrBlank()) append("\nOrg: ${action.org}")
+                if (action.phones.isNotEmpty()) append("\nPhone: ${action.phones.joinToString(", ")}")
+                if (action.emails.isNotEmpty()) append("\nEmail: ${action.emails.joinToString(", ")}")
             }
-        }
-        is QrAction.Contact -> buildString {
-            append(action.name ?: "Contact")
-            if (!action.org.isNullOrBlank()) append("\nOrg: ${action.org}")
-            if (action.phones.isNotEmpty()) append("\nPhone: ${action.phones.joinToString(", ")}")
-            if (action.emails.isNotEmpty()) append("\nEmail: ${action.emails.joinToString(", ")}")
-        }
-        is QrAction.UpiPayment -> buildString {
-            if (!action.payeeName.isNullOrBlank()) {
-                append("Payee: ${action.payeeName}\n")
+            is QrAction.UpiPayment -> buildString {
+                if (!action.payeeName.isNullOrBlank()) {
+                    append("Payee: ${action.payeeName}\n")
+                }
+                append("VPA: ${action.payeeAddress}")
+                if (action.amount != null) {
+                    append("\nAmount: ₹${action.amount}")
+                }
+                if (!action.note.isNullOrBlank()) {
+                    append("\nNote: ${action.note}")
+                }
             }
-            append("VPA: ${action.payeeAddress}")
-            if (action.amount != null) {
-                append("\nAmount: ₹${action.amount}")
+            is QrAction.Phone -> "Phone: ${action.number}"
+            is QrAction.Sms -> buildString {
+                append("Recipient: ${action.number}")
+                if (!action.message.isNullOrBlank()) append("\nMessage: ${action.message}")
             }
-            if (!action.note.isNullOrBlank()) {
-                append("\nNote: ${action.note}")
+            is QrAction.Email -> buildString {
+                append("To: ${action.address}")
+                if (!action.subject.isNullOrBlank()) append("\nSubject: ${action.subject}")
+                if (!action.body.isNullOrBlank()) append("\nBody: ${action.body}")
             }
+            is QrAction.Geo -> buildString {
+                append("Coordinates: ${action.lat}, ${action.lon}")
+                if (!action.label.isNullOrBlank()) append("\nLabel: ${action.label}")
+            }
+            is QrAction.CalendarEvent -> buildString {
+                append("Event: ${action.title ?: "Calendar entry"}")
+                if (!action.location.isNullOrBlank()) append("\nLocation: ${action.location}")
+                if (!action.dtStart.isNullOrBlank()) append("\nStarts: ${action.dtStart}")
+                if (!action.description.isNullOrBlank()) append("\nDetails: ${action.description}")
+            }
+            is QrAction.OtpAuth -> buildString {
+                val label = listOfNotNull(action.issuer, action.account).joinToString(": ")
+                append("Service: ${if (label.isNotBlank()) label else "Authenticator"}")
+                append("\nType: ${action.type.uppercase(java.util.Locale.ROOT)} (${action.digits} digits)")
+            }
+            is QrAction.Raw -> action.text
         }
-        is QrAction.Phone -> "Phone: ${action.number}"
-        is QrAction.Sms -> buildString {
-            append("Recipient: ${action.number}")
-            if (!action.message.isNullOrBlank()) append("\nMessage: ${action.message}")
-        }
-        is QrAction.Email -> buildString {
-            append("To: ${action.address}")
-            if (!action.subject.isNullOrBlank()) append("\nSubject: ${action.subject}")
-            if (!action.body.isNullOrBlank()) append("\nBody: ${action.body}")
-        }
-        is QrAction.Geo -> buildString {
-            append("Coordinates: ${action.lat}, ${action.lon}")
-            if (!action.label.isNullOrBlank()) append("\nLabel: ${action.label}")
-        }
-        is QrAction.CalendarEvent -> buildString {
-            append("Event: ${action.title ?: "Calendar entry"}")
-            if (!action.location.isNullOrBlank()) append("\nLocation: ${action.location}")
-            if (!action.dtStart.isNullOrBlank()) append("\nStarts: ${action.dtStart}")
-            if (!action.description.isNullOrBlank()) append("\nDetails: ${action.description}")
-        }
-        is QrAction.OtpAuth -> buildString {
-            val label = listOfNotNull(action.issuer, action.account).joinToString(": ")
-            append("Service: ${if (label.isNotBlank()) label else "Authenticator"}")
-            append("\nType: ${action.type.uppercase(java.util.Locale.ROOT)} (${action.digits} digits)")
-        }
-        is QrAction.Raw -> action.text
     }
 
     private fun executeAction(action: QrAction) {

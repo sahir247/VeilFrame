@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.veilframe.app.qr.AnimatedQrGenerator
 import com.veilframe.app.qr.GenerationMode
 import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrRenderResult
@@ -52,6 +53,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val resampleBackdropOpacity: Float = 1.0f,
         val resampleSeed: Long = 42L,
         val animatedFrames: List<QrFrame> = emptyList(),
+        val previewAnimatedFrames: List<QrFrame> = emptyList(),
         val bitmap: Bitmap? = null,
         val matrix: QrMatrix? = null,
         val design: QrDesign? = null,
@@ -391,7 +393,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         if (backdropBmp != null && !backdropBmp.isRecycled && backdropBmp !== srcBmp && backdropBmp !== bgBmp) {
             backdropBmp.recycle()
         }
+        val animFrames = s.previewAnimatedFrames
+        for (f in animFrames) {
+            if (!f.bitmap.isRecycled && f.bitmap !== bmp && f.bitmap !== srcBmp) {
+                f.bitmap.recycle()
+            }
+        }
         _state.value = UiState(content = "")
+    }
+
+    fun clearAnimation() {
+        _state.value = _state.value.copy(
+            animatedFrames = emptyList(),
+            logoAnimatedFrames = emptyList(),
+            previewAnimatedFrames = emptyList(),
+            repairNotice = null
+        )
+        regenerate(debounceMs = 0)
     }
 
     fun canUndoAutoRepair(): Boolean = preRepairSnapshot != null
@@ -483,6 +501,29 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             ensureActive()
             if (generation != renderGeneration.get()) return@launch
 
+            val animPreviewFrames: List<QrFrame> = if (renderResult is QrRenderResult.Success && AnimatedQrGenerator.isDesignAnimated(design)) {
+                try {
+                    val animResult = QrGenerator.generateAnimatedFramesResult(
+                        content = effectiveContent,
+                        design = design,
+                        outputSize = minOf(design.outputSize, 384),
+                        mode = mode,
+                        policy = AnimatedQrGenerator.FrameDropPolicy.SkipFailedFrames
+                    )
+                    if (animResult is QrOutputResult.Success) {
+                        animResult.value.take(24)
+                    } else {
+                        emptyList()
+                    }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            ensureActive()
+            if (generation != renderGeneration.get()) return@launch
+
             withContext(Dispatchers.Main) {
                 if (generation != renderGeneration.get()) return@withContext
                 when (renderResult) {
@@ -490,6 +531,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         _state.update {
                             it.copy(
                                 bitmap = renderResult.bitmap,
+                                previewAnimatedFrames = animPreviewFrames,
                                 matrix = renderResult.matrix,
                                 design = renderResult.design,
                                 scanabilityReport = renderResult.report,
@@ -501,6 +543,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     is QrRenderResult.Failure -> {
                         _state.update {
                             it.copy(
+                                previewAnimatedFrames = emptyList(),
                                 isRenderingPreview = false,
                                 errorMessage = renderResult.error
                             )

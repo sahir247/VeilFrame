@@ -1141,6 +1141,55 @@ class QrStudioViewModelExportValidationTest {
     }
 
     @Test
+    fun testWifiScannedActionSummaryDefaultMaskedAndRevealToggle() {
+        val raw = "WIFI:S:HomeNetwork;T:WPA;P:SuperSecretPass;H:true;;"
+        val action = com.veilframe.app.qr.scanner.PayloadParser.parse(raw)
+        assertTrue(action is com.veilframe.app.qr.scanner.QrAction.Wifi)
+
+        // 1. Default masked presentation: hides password behind bullets
+        val maskedSummary = QrScanTabFragment.formatActionSummary(action, maskWifiPassword = true)
+        assertTrue(maskedSummary.contains("Network: HomeNetwork"))
+        assertTrue(maskedSummary.contains("Security: WPA"))
+        assertTrue(maskedSummary.contains("Password: ••••••••"))
+        assertFalse("Masked summary must never leak plaintext password", maskedSummary.contains("SuperSecretPass"))
+        assertTrue(maskedSummary.contains("(Hidden)"))
+
+        // 2. Explicit reveal presentation: displays plaintext password
+        val revealedSummary = QrScanTabFragment.formatActionSummary(action, maskWifiPassword = false)
+        assertTrue(revealedSummary.contains("Password: SuperSecretPass"))
+        assertFalse(revealedSummary.contains("••••••••"))
+    }
+
+    @Test
+    fun testClearAnimationResetsFramesAndPreview() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        vm.clearAnimation()
+
+        assertTrue(vm.state.value.animatedFrames.isEmpty())
+        assertTrue(vm.state.value.logoAnimatedFrames.isEmpty())
+        assertTrue(vm.state.value.previewAnimatedFrames.isEmpty())
+        assertNull(vm.state.value.repairNotice)
+    }
+
+    @Test
+    fun testAnimatedPreviewFramesGeneratedWhenAnimatedDesignPresent() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        val bmp = createTestBitmap()
+        val frame = QrFrame(bmp, durationMs = 100)
+
+        vm.updateAnimatedFrames(listOf(frame))
+        assertEquals(1, vm.state.value.animatedFrames.size)
+
+        vm.clearAnimation()
+        assertEquals(0, vm.state.value.animatedFrames.size)
+        assertEquals(0, vm.state.value.previewAnimatedFrames.size)
+    }
+
+    @Test
     fun testClearSaveResultResetsLastSavedUri() {
         val app = Application()
         val vm = QrStudioViewModel(app)
