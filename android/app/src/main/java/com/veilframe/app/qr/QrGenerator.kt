@@ -198,11 +198,29 @@ object QrGenerator {
         content: String,
         design: QrDesign,
         outputSize: Int = 512,
-        mode: GenerationMode = defaultModeFor(design)
+        mode: GenerationMode = defaultModeFor(design),
+        policy: AnimatedQrGenerator.FrameDropPolicy = AnimatedQrGenerator.FrameDropPolicy.FailFast
     ): List<com.veilframe.app.qr.model.QrFrame> {
         val effectiveDesign = effectiveDesignForMode(design, mode)
         val matrix = generateMatrix(content, effectiveDesign, mode)
-        return AnimatedQrGenerator.renderDesign(matrix, effectiveDesign, outputSize)
+        return AnimatedQrGenerator.renderDesign(matrix, effectiveDesign, outputSize, policy)
+    }
+
+    /**
+     * Generates a list of [com.veilframe.app.qr.model.QrFrame] items returning typed [QrOutputResult].
+     * Adheres to the specified [policy]: fails fast with typed [QrError] on any frame failure,
+     * or skips failed frames when explicitly configured (GUIDE.txt Issue 11).
+     */
+    fun generateAnimatedFramesResult(
+        content: String,
+        design: QrDesign,
+        outputSize: Int = 512,
+        mode: GenerationMode = defaultModeFor(design),
+        policy: AnimatedQrGenerator.FrameDropPolicy = AnimatedQrGenerator.FrameDropPolicy.FailFast
+    ): QrOutputResult<List<com.veilframe.app.qr.model.QrFrame>> {
+        val effectiveDesign = effectiveDesignForMode(design, mode)
+        val matrix = generateMatrix(content, effectiveDesign, mode)
+        return AnimatedQrGenerator.renderDesignResult(matrix, effectiveDesign, outputSize, policy)
     }
 
     /**

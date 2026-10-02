@@ -189,17 +189,28 @@ object AnimatedQrGenerator {
     }
 
     /**
-     * Renders a single animation frame at the specified [accumulatedMs] point in the timeline.
-     * Accurately selects animated logo and artwork frames for that point in time.
+     * Defines the failure handling contract when individual animation frames encounter allocation
+     * or rendering failures (GUIDE.txt Issue 11).
      */
-    fun renderFrameAt(
+    sealed interface FrameDropPolicy {
+        /** Fail the entire animation immediately if any frame fails to render/allocate. */
+        object FailFast : FrameDropPolicy
+        /** Intentionally skip failed frames and proceed with successful frames; fails only if all frames fail. */
+        object SkipFailedFrames : FrameDropPolicy
+    }
+
+    /**
+     * Renders a single animation frame at the specified [accumulatedMs] point in the timeline,
+     * returning a typed [QrOutputResult].
+     */
+    fun renderFrameResultAt(
         matrix: QrMatrix,
         baseDesign: QrDesign,
         sourceFrame: QrFrame,
         accumulatedMs: Long,
         outputSize: Int = 512,
         geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
-    ): QrFrame? {
+    ): QrOutputResult<QrFrame> {
         val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
         val imgSource = if (hasAnimatedImg) {
             baseDesign.imageSource.copy(
@@ -240,15 +251,35 @@ object AnimatedQrGenerator {
             imageSource = imgSource,
             logo = logoSource
         )
-        val renderedResult = QrGenerator.generateBitmapResult(matrix, frameDesign, geometry)
-        return when (renderedResult) {
-            is QrGenerator.BitmapRenderResult.Success -> QrFrame(bitmap = renderedResult.bitmap, durationMs = sourceFrame.durationMs)
-            is QrGenerator.BitmapRenderResult.Failure -> null
+        return when (val renderedResult = QrGenerator.generateBitmapResult(matrix, frameDesign, geometry)) {
+            is QrGenerator.BitmapRenderResult.Success -> QrOutputResult.Success(
+                QrFrame(bitmap = renderedResult.bitmap, durationMs = sourceFrame.durationMs)
+            )
+            is QrGenerator.BitmapRenderResult.Failure -> QrOutputResult.Failure(renderedResult.error)
         }
     }
 
     /**
-     * Streams rendered QR frames one-by-one to a consumer callback (P2.2).
+     * Renders a single animation frame at the specified [accumulatedMs] point in the timeline.
+     * Accurately selects animated logo and artwork frames for that point in time.
+     * Retained for compatibility; delegates to [renderFrameResultAt].
+     */
+    fun renderFrameAt(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrame: QrFrame,
+        accumulatedMs: Long,
+        outputSize: Int = 512,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
+    ): QrFrame? {
+        return when (val res = renderFrameResultAt(matrix, baseDesign, sourceFrame, accumulatedMs, outputSize, geometry)) {
+            is QrOutputResult.Success -> res.value
+            is QrOutputResult.Failure -> null
+        }
+    }
+
+    /**
+     * Streams rendered QR frames one-by-one to a consumer callback with an explicit [FrameDropPolicy].
      * Enables encoders to write each frame to disk or stream immediately and release/recycle its bitmap,
      * maintaining low memory consumption regardless of frame count or resolution.
      */
@@ -257,17 +288,36 @@ object AnimatedQrGenerator {
         baseDesign: QrDesign,
         sourceFrames: List<QrFrame>,
         outputSize: Int = 512,
+        policy: FrameDropPolicy = FrameDropPolicy.FailFast,
         crossinline onFrameRendered: (index: Int, totalFrames: Int, frame: QrFrame) -> Unit
-    ) {
+    ): QrOutputResult<Unit> {
         require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
         val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
         var accumulatedMs = 0L
+        var successCount = 0
+        var firstError: QrError? = null
+
         for ((idx, frame) in sourceFrames.withIndex()) {
-            val rendered = renderFrameAt(matrix, baseDesign, frame, accumulatedMs, outputSize, geometry)
-            if (rendered != null) {
-                onFrameRendered(idx, sourceFrames.size, rendered)
+            when (val frameRes = renderFrameResultAt(matrix, baseDesign, frame, accumulatedMs, outputSize, geometry)) {
+                is QrOutputResult.Success -> {
+                    successCount++
+                    onFrameRendered(idx, sourceFrames.size, frameRes.value)
+                }
+                is QrOutputResult.Failure -> {
+                    if (firstError == null) firstError = frameRes.error
+                    if (policy == FrameDropPolicy.FailFast) {
+                        return QrOutputResult.Failure(frameRes.error)
+                    }
+                    // For FrameDropPolicy.SkipFailedFrames, proceed with subsequent frames
+                }
             }
             accumulatedMs += frame.durationMs
+        }
+
+        return if (successCount == 0 && firstError != null) {
+            QrOutputResult.Failure(firstError)
+        } else {
+            QrOutputResult.Success(Unit)
         }
     }
 
@@ -279,13 +329,34 @@ object AnimatedQrGenerator {
         matrix: QrMatrix,
         baseDesign: QrDesign,
         sourceFrames: List<QrFrame>,
-        outputSize: Int = 512
+        outputSize: Int = 512,
+        policy: FrameDropPolicy = FrameDropPolicy.FailFast
     ): List<QrFrame> {
         val result = ArrayList<QrFrame>(sourceFrames.size)
-        renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { _, _, frame ->
+        renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize, policy) { _, _, frame ->
             result.add(frame)
         }
         return result
+    }
+
+    /**
+     * Typed result entry point for rendering [sourceFrames].
+     */
+    fun renderFramesResult(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        outputSize: Int = 512,
+        policy: FrameDropPolicy = FrameDropPolicy.FailFast
+    ): QrOutputResult<List<QrFrame>> {
+        val result = ArrayList<QrFrame>(sourceFrames.size)
+        val streamRes = renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize, policy) { _, _, frame ->
+            result.add(frame)
+        }
+        return when (streamRes) {
+            is QrOutputResult.Success -> QrOutputResult.Success(result)
+            is QrOutputResult.Failure -> QrOutputResult.Failure(streamRes.error)
+        }
     }
 
     /**
@@ -316,24 +387,39 @@ object AnimatedQrGenerator {
     }
 
     /**
-     * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps.
-     * Synchronizes timelines when both watermark/image source and logo are animated.
+     * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps,
+     * returning a typed [QrOutputResult].
+     *
+     * In accordance with GUIDE.txt Issue 11:
+     * - [FrameDropPolicy.FailFast]: Fails the entire animation immediately if any frame fails to allocate/render.
+     * - [FrameDropPolicy.SkipFailedFrames]: Explicitly skips failed frames and proceeds; fails only if all frames fail.
      */
-    fun renderDesign(
+    fun renderDesignResult(
         matrix: QrMatrix,
         design: QrDesign,
-        outputSize: Int = 512
-    ): List<QrFrame> {
+        outputSize: Int = 512,
+        policy: FrameDropPolicy = FrameDropPolicy.FailFast
+    ): QrOutputResult<List<QrFrame>> {
         val reconciled = extractReconciledFrames(design)
         if (reconciled.isEmpty()) {
             val single = design.imageSource.bitmap ?: design.logo?.effectiveBitmap
-            return if (single != null) listOf(QrFrame(single, 100)) else emptyList()
+            return if (single != null) {
+                QrOutputResult.Success(listOf(QrFrame(single, 100)))
+            } else {
+                QrOutputResult.Failure(QrError.Animation.EmptyFrames)
+            }
         }
 
         val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, design)
         val renderedFrames = ArrayList<QrFrame>(reconciled.size)
+        var accumulatedMs = 0L
+        var firstError: QrError? = null
 
         for (rf in reconciled) {
+            val sourceFrame = QrFrame(
+                bitmap = rf.imageBitmap ?: rf.logoBitmap ?: design.imageSource.bitmap ?: design.logo?.effectiveBitmap ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
+                durationMs = rf.durationMs
+            )
             val imgSource = if (rf.imageBitmap != null) {
                 design.imageSource.copy(
                     source = com.veilframe.app.qr.model.ImageSource.Memory(rf.imageBitmap)
@@ -356,16 +442,42 @@ object AnimatedQrGenerator {
                 imageSource = imgSource,
                 logo = logoSource
             )
-            when (val renderedResult = QrGenerator.generateBitmapResult(matrix, frameDesign, geometry)) {
-                is QrGenerator.BitmapRenderResult.Success -> {
-                    renderedFrames.add(QrFrame(bitmap = renderedResult.bitmap, durationMs = rf.durationMs))
+            when (val renderedResult = renderFrameResultAt(matrix, frameDesign, sourceFrame, accumulatedMs, outputSize, geometry)) {
+                is QrOutputResult.Success -> {
+                    renderedFrames.add(renderedResult.value)
                 }
-                is QrGenerator.BitmapRenderResult.Failure -> {
-                    // Frame allocation/rendering failed
+                is QrOutputResult.Failure -> {
+                    if (firstError == null) firstError = renderedResult.error
+                    if (policy == FrameDropPolicy.FailFast) {
+                        return QrOutputResult.Failure(renderedResult.error)
+                    }
+                    // For FrameDropPolicy.SkipFailedFrames, explicitly continue
                 }
             }
+            accumulatedMs += rf.durationMs
         }
-        return renderedFrames
+
+        return if (renderedFrames.isEmpty() && firstError != null) {
+            QrOutputResult.Failure(firstError)
+        } else {
+            QrOutputResult.Success(renderedFrames)
+        }
+    }
+
+    /**
+     * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps.
+     * Synchronizes timelines when both watermark/image source and logo are animated.
+     */
+    fun renderDesign(
+        matrix: QrMatrix,
+        design: QrDesign,
+        outputSize: Int = 512,
+        policy: FrameDropPolicy = FrameDropPolicy.FailFast
+    ): List<QrFrame> {
+        return when (val res = renderDesignResult(matrix, design, outputSize, policy)) {
+            is QrOutputResult.Success -> res.value
+            is QrOutputResult.Failure -> emptyList()
+        }
     }
 
     /**
@@ -602,7 +714,7 @@ object AnimatedQrGenerator {
         encoder.start(bos, outputSize, outputSize, loops)
         var renderedCount = 0
         try {
-            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { _, _, frame ->
+            val streamRes = renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { _, _, frame ->
                 renderedCount++
                 try {
                     encoder.addFrame(frame.bitmap, frame.durationMs)
@@ -613,6 +725,9 @@ object AnimatedQrGenerator {
                         }
                     } catch (_: Throwable) {}
                 }
+            }
+            if (streamRes is QrOutputResult.Failure) {
+                return QrOutputResult.Failure(streamRes.error)
             }
             if (renderedCount == 0) {
                 return QrOutputResult.Failure(QrError.Rendering.BitmapAllocationFailed(outputSize, outputSize))
@@ -704,7 +819,7 @@ object AnimatedQrGenerator {
         var renderedCount = 0
 
         try {
-            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
+            val streamRes = renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
                 renderedCount++
                 frameDurations.add(frame.durationMs.coerceAtLeast(1))
                 val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
@@ -724,6 +839,9 @@ object AnimatedQrGenerator {
                 if (!writeSuccess) {
                     throw IllegalStateException("Bitmap compression returned false for frame $idx")
                 }
+            }
+            if (streamRes is QrOutputResult.Failure) {
+                return QrOutputResult.Failure(streamRes.error)
             }
 
             if (renderedCount == 0) {
@@ -938,7 +1056,7 @@ object AnimatedQrGenerator {
         var renderedCount = 0
 
         try {
-            renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
+            val streamRes = renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize) { idx, _, frame ->
                 renderedCount++
                 frameDurations.add(frame.durationMs.coerceAtLeast(1))
                 val frameFile = File(tempDir, String.format(Locale.US, "frame_%04d.png", idx))
@@ -958,6 +1076,9 @@ object AnimatedQrGenerator {
                 if (!writeSuccess) {
                     throw IllegalStateException("Bitmap compression returned false for frame $idx")
                 }
+            }
+            if (streamRes is QrOutputResult.Failure) {
+                return QrOutputResult.Failure(streamRes.error)
             }
 
             if (renderedCount == 0) {
