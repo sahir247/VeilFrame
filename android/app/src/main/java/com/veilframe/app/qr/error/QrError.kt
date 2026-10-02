@@ -209,6 +209,20 @@ sealed class QrError(
     }
 
     /**
+     * Strict scanability and verification errors.
+     */
+    sealed class Validation(description: String, cause: Throwable? = null) : QrError(description, cause) {
+        data class ScanabilityFailed(
+            val reason: String,
+            val warnings: List<String> = emptyList()
+        ) : Validation("QR scanability validation failed: $reason")
+
+        data class VectorRasterizationFailed(
+            val detail: String = "Vector SVG verification failed (rasterization error)"
+        ) : Validation("Vector SVG verification failed: $detail")
+    }
+
+    /**
      * Unclassified internal exceptions.
      */
     data class Internal(

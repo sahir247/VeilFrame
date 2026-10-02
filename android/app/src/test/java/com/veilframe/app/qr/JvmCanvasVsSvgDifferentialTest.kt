@@ -400,4 +400,165 @@ class JvmCanvasVsSvgDifferentialTest {
         assertTrue("Use element must be rendered", Color.alpha(usePixel) > 200)
         assertEquals("Use element green channel must be 255", 255, Color.green(usePixel))
     }
+
+    @Test
+    fun case16_productionEmittedImageFillSvgRasterization() {
+        // C4: Real production emitted SVG with <image>, <mask id="hole">, and <g mask="url(#hole)">
+        val imgBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        val imgCanvas = Canvas(imgBmp)
+        imgCanvas.drawColor(Color.BLACK)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            outputSize = 256,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(imgBmp))
+        )
+        val matrix = QrGenerator.generateMatrix("IMAGE_FILL_PRODUCTION", design)
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+
+        assertTrue("Emitted SVG must contain mask definition", svg.contains("""<mask id="hole">"""))
+        assertTrue("Emitted SVG must contain image element", svg.contains("<image"))
+        assertTrue("Emitted SVG must apply mask to group", svg.contains("""mask="url(#hole)""""))
+
+        val rasterBmp = com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(svg, 256, 256)
+        assertNotNull("Rasterizer must successfully render production emitted IMAGE_FILL SVG", rasterBmp)
+        assertEquals(256, rasterBmp!!.width)
+        assertEquals(256, rasterBmp.height)
+
+        val decoder = com.veilframe.app.qr.decoder.ZxingQrDecoder()
+        val decoded = kotlinx.coroutines.runBlocking { decoder.decode(rasterBmp) }
+        assertTrue("Rasterized production IMAGE_FILL must be scanable: ${decoded.error}", decoded.success)
+        assertEquals("IMAGE_FILL_PRODUCTION", decoded.text)
+    }
+
+    @Test
+    fun case17_strictScanabilityGatingLowContrast() {
+        // C3: Independent contrast separation gate
+        val matrix = QrGenerator.generateMatrix("CONTRAST_GATE_TEST")
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        // Draw very low contrast image: almost identical luminance
+        val canvas = Canvas(bmp)
+        canvas.drawColor(Color.rgb(10, 10, 10))
+
+        val lowContrastDesign = QrDesign(
+            style = QrStyle.BASIC,
+            palette = PaletteStyle(
+                foreground = Color.rgb(12, 12, 12),
+                background = Color.rgb(10, 10, 10)
+            )
+        )
+        val report = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                bmp,
+                lowContrastDesign,
+                matrix,
+                "CONTRAST_GATE_TEST"
+            )
+        }
+        assertFalse("Strict validation must reject QR with inadequate contrast", report.isScanReady)
+        assertTrue("Report must contain contrast warning", report.warnings.any { it.contains("Low luminance separation") })
+    }
+
+    @Test
+    fun case18_strictScanabilityGatingFinderSeparators() {
+        // C3: Independent finder separator integrity gate
+        val matrix = QrGenerator.generateMatrix("FINDER_GATE_TEST")
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        // Corrupt finder separators by filling whole bitmap with dark noise
+        val canvas = Canvas(bmp)
+        canvas.drawColor(Color.BLACK)
+
+        val design = QrDesign(style = QrStyle.BASIC)
+        val report = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                bmp,
+                design,
+                matrix,
+                "FINDER_GATE_TEST"
+            )
+        }
+        assertFalse("Strict validation must reject QR with corrupted finders/separators", report.isScanReady)
+    }
+
+    @Test
+    fun case19_publicSvgExporterFailClosed() {
+        // C4: Public QrExporter APIs must fail closed when SVG violates scanability
+        val app = android.app.Application()
+        val nonCompliantDesign = QrDesign(
+            style = QrStyle.BASIC,
+            palette = PaletteStyle(foreground = Color.WHITE, background = Color.WHITE),
+            outputSize = 256
+        )
+        val matrix = QrGenerator.generateMatrix("FAIL_CLOSED_TEST", nonCompliantDesign)
+
+        // Test saveSvgTyped directly
+        val saveResult = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.exporter.QrExporter.saveSvgTyped(
+                app,
+                matrix,
+                nonCompliantDesign,
+                "FAIL_CLOSED_TEST"
+            )
+        }
+        assertTrue("saveSvgTyped must return Failure on non-scanable SVG", saveResult is QrOutputResult.Failure)
+        assertTrue(
+            "Failure must be ScanabilityFailed: ${saveResult.errorOrNull()}",
+            saveResult.errorOrNull() is com.veilframe.app.qr.error.QrError.Validation.ScanabilityFailed
+        )
+
+        // Test exportTyped directly
+        val exportResult = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.exporter.QrExporter.exportTyped(
+                app,
+                "FAIL_CLOSED_TEST",
+                nonCompliantDesign,
+                QrOutputFormat.Svg
+            )
+        }
+        assertTrue("exportTyped must return Failure on non-scanable SVG", exportResult is QrOutputResult.Failure)
+        assertTrue(
+            "Failure must be ScanabilityFailed: ${exportResult.errorOrNull()}",
+            exportResult.errorOrNull() is com.veilframe.app.qr.error.QrError.Validation.ScanabilityFailed
+        )
+    }
+
+    @Test
+    fun case20_animatedSvgExportMultiFrameFailClosed() {
+        // C4: Animated SVG export must fail closed if ANY animation frame degrades scanability
+        val app = android.app.Application()
+        val validFrameBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(Color.WHITE)
+        }
+        // Degraded frame with zero contrast (solid black, no modules legible)
+        val degradedFrameBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(Color.BLACK)
+        }
+
+        val animatedDesign = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            outputSize = 256,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Animated(
+                    frames = listOf(validFrameBmp, degradedFrameBmp),
+                    delaysMs = listOf(500, 500)
+                )
+            )
+        )
+
+        val exportResult = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.exporter.QrExporter.exportTyped(
+                app,
+                "ANIMATED_MULTI_FRAME_TEST",
+                animatedDesign,
+                QrOutputFormat.Svg
+            )
+        }
+        assertTrue("Animated SVG export must fail closed when a frame degrades scanability", exportResult is QrOutputResult.Failure)
+        val err = exportResult.errorOrNull()
+        assertNotNull(err)
+        assertTrue(
+            "Error must identify degraded animation frame: ${err?.description}",
+            err!!.description.contains("Animation frame") || err.description.contains("scanability")
+        )
+    }
 }

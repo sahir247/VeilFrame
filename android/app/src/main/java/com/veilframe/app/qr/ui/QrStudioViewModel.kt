@@ -1356,56 +1356,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 val matrix = withContext(Dispatchers.Default) {
                     QrGenerator.generateMatrix(content, effectiveExportDesign, mode = mode)
                 }
-                val geometry = QrGeometry.fromDesign(
-                    matrixSize = matrix.size,
-                    outputWidth = effectiveExportDesign.outputSize,
-                    outputHeight = effectiveExportDesign.outputSize,
-                    design = effectiveExportDesign
-                )
-                val svgData = withContext(Dispatchers.Default) {
-                    QrGenerator.generateSvg(matrix, effectiveExportDesign, geometry = geometry)
-                }
-
-                // C4 / P1.4: Validate the actual generated SVG by rasterizing it to a bitmap
-                // and executing strict scanability validation on the true vector rendering
-                val rasterBmp = withContext(Dispatchers.Default) {
-                    try {
-                        com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(
-                            svgData,
-                            effectiveExportDesign.outputSize,
-                            effectiveExportDesign.outputSize
-                        )
-                    } catch (_: Throwable) {
-                        null
-                    }
-                }
-                if (rasterBmp == null) {
-                    _state.value = _state.value.copy(
-                        saveResult = "SVG export rejected: vector verification failed (rasterization error)",
-                        isExporting = false
-                    )
-                    return@launch
-                }
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                    rasterBmp,
-                    effectiveExportDesign,
-                    matrix,
-                    content
-                )
-                rasterBmp.recycle()
-                if (!report.isScanReady && !report.validationSkipped) {
-                    _state.value = _state.value.copy(
-                        saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                        scanabilityReport = report
-                    )
-                    return@launch
-                }
-
                 val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.saveSvgStringTyped(getApplication(), svgData)
+                    QrExporter.saveSvgTyped(getApplication(), matrix, effectiveExportDesign, content)
                 }
                 _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Vector SVG saved to Downloads" else "SVG export failed: ${exportResult.errorOrNull()?.description}"
+                    saveResult = if (exportResult.isSuccess) {
+                        "Vector SVG saved to Downloads"
+                    } else {
+                        "SVG export rejected: ${exportResult.errorOrNull()?.description}"
+                    }
                 )
             } finally {
                 _state.value = _state.value.copy(isExporting = false)

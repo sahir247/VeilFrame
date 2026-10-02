@@ -825,10 +825,23 @@ class GuideIssueRegressionTest {
     @Test
     fun `C5 — Payload whitespace is strictly preserved without trimming`() {
         // C5 / P0.5: Leading and trailing whitespace must not be stripped
-        val spacedContent = "  PRESERVED WHITESPACE PAYLOAD  "
-        val matrix = QrGenerator.generateMatrix(spacedContent)
-        // Matrix size must reflect actual content length (32 chars)
-        assertTrue("Matrix size must accommodate spaced content", matrix.size >= 25)
+        val spacedContent = "  HELLO  "
+        val design = QrDesign()
+        val matrix = QrGenerator.generateMatrix(spacedContent, design)
+        // Matrix size must reflect actual content length
+        assertTrue("Matrix size must accommodate spaced content", matrix.size >= 21)
+
+        // Directly decode the BitMatrix through ZXing's QR Decoder to verify exact preserved payload
+        val bitMatrix = com.google.zxing.common.BitMatrix(matrix.size, matrix.size)
+        for (col in 0 until matrix.size) {
+            for (row in 0 until matrix.size) {
+                if (matrix.isDark(col, row)) {
+                    bitMatrix.set(col, row)
+                }
+            }
+        }
+        val decoderResult = com.google.zxing.qrcode.decoder.Decoder().decode(bitMatrix)
+        assertEquals("Decoded content must preserve exact leading and trailing whitespace", spacedContent, decoderResult.text)
     }
 
     @Test

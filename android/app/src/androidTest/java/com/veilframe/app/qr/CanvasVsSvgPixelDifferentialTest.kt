@@ -404,4 +404,37 @@ class CanvasVsSvgPixelDifferentialTest {
         assertTrue("Use element must be rendered", Color.alpha(usePixel) > 200)
         assertEquals("Use element green channel must be 255", 255, Color.green(usePixel))
     }
+
+    // =========================================================================
+    // 13. Production Emitted SVG ImageFill & Mask Pipeline
+    // =========================================================================
+
+    @Test
+    fun testCase13_ProductionEmittedImageFillSvgRasterization() {
+        val imgBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        val imgCanvas = Canvas(imgBmp)
+        imgCanvas.drawColor(Color.BLACK)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            outputSize = 256,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(imgBmp))
+        )
+        val matrix = QrGenerator.generateMatrix("IMAGE_FILL_PRODUCTION_DEVICE", design)
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+
+        assertTrue("Emitted SVG must contain mask definition", svg.contains("""<mask id="hole">"""))
+        assertTrue("Emitted SVG must contain image element", svg.contains("<image"))
+        assertTrue("Emitted SVG must apply mask to group", svg.contains("""mask="url(#hole)""""))
+
+        val rasterBmp = DeterministicSvgRasterizer.rasterize(svg, 256, 256)
+        assertNotNull("Rasterizer must successfully render production emitted IMAGE_FILL SVG", rasterBmp)
+        assertEquals(256, rasterBmp!!.width)
+        assertEquals(256, rasterBmp.height)
+
+        val decoder = com.veilframe.app.qr.decoder.ZxingQrDecoder()
+        val decoded = kotlinx.coroutines.runBlocking { decoder.decode(rasterBmp) }
+        assertTrue("Rasterized production IMAGE_FILL must be scanable on hardware: ${decoded.error}", decoded.success)
+        assertEquals("IMAGE_FILL_PRODUCTION_DEVICE", decoded.text)
+    }
 }

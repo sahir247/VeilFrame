@@ -226,12 +226,138 @@ object QrExporter {
     }
 
     /**
+     * Strict vector rasterization & scanability validation gate for emitted SVG markup.
+     * Rasterizes [svgData] using [DeterministicSvgRasterizer] and validates quiet zone,
+     * contrast separation, finder separators, and decodability.
+     */
+    internal suspend fun validateSvgScanability(
+        svgData: String,
+        design: QrDesign,
+        matrix: QrMatrix,
+        expectedContent: String?
+    ): QrError? {
+        val rasterBmp = try {
+            com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(
+                svgData,
+                design.outputSize,
+                design.outputSize
+            )
+        } catch (t: Throwable) {
+            return QrError.Validation.VectorRasterizationFailed(t.message ?: "Rasterizer threw exception")
+        } ?: return QrError.Validation.VectorRasterizationFailed("SVG rasterizer returned null")
+
+        val targetContent = if (!expectedContent.isNullOrBlank()) {
+            expectedContent
+        } else {
+            val decoded = try {
+                val intArray = IntArray(rasterBmp.width * rasterBmp.height)
+                rasterBmp.getPixels(intArray, 0, rasterBmp.width, 0, 0, rasterBmp.width, rasterBmp.height)
+                val source = com.google.zxing.RGBLuminanceSource(rasterBmp.width, rasterBmp.height, intArray)
+                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                com.google.zxing.MultiFormatReader().decode(binaryBitmap)?.text ?: ""
+            } catch (_: Throwable) {
+                ""
+            }
+            if (decoded.isEmpty()) {
+                rasterBmp.recycle()
+                return QrError.Validation.ScanabilityFailed("Rasterized vector SVG could not be decoded by barcode reader")
+            }
+            decoded
+        }
+
+        val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+            rasterBmp,
+            design,
+            matrix,
+            targetContent
+        )
+        rasterBmp.recycle()
+
+        return if (!report.isScanReady && !report.validationSkipped) {
+            QrError.Validation.ScanabilityFailed(
+                report.warnings.firstOrNull() ?: "Strict scanability validation failed",
+                report.warnings
+            )
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Validates an animated SVG across every frame in the animation sequence, plus
+     * the final assembled document (at frame 0), ensuring no animation frame degrades scanability.
+     */
+    internal suspend fun validateAnimatedSvgScanability(
+        matrix: QrMatrix,
+        design: QrDesign,
+        expectedContent: String?
+    ): QrError? {
+        val sourceFrames = AnimatedQrGenerator.extractSourceFrames(design)
+        if (sourceFrames.isEmpty()) {
+            val staticSvg = try {
+                SvgExporter.generateSvg(matrix, design)
+            } catch (t: Throwable) {
+                return QrError.Rendering.SvgRenderFailed(t.message ?: "SVG generation failed", t)
+            }
+            return validateSvgScanability(staticSvg, design, matrix, expectedContent)
+        }
+
+        // Validate every frame in the animation sequence to ensure no frame degrades scanability
+        for ((idx, frame) in sourceFrames.withIndex()) {
+            val frameDesign = design.copy(
+                imageSource = design.imageSource.copy(
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
+                )
+            )
+            val frameSvg = try {
+                SvgExporter.generateSvg(matrix, frameDesign)
+            } catch (t: Throwable) {
+                return QrError.Rendering.SvgRenderFailed("Frame $idx SVG generation failed: ${t.message}", t)
+            }
+            val frameErr = validateSvgScanability(frameSvg, frameDesign, matrix, expectedContent)
+            if (frameErr != null) {
+                return if (frameErr is QrError.Validation.ScanabilityFailed) {
+                    QrError.Validation.ScanabilityFailed(
+                        "Animation frame $idx degrades scanability: ${frameErr.reason}",
+                        frameErr.warnings
+                    )
+                } else {
+                    frameErr
+                }
+            }
+        }
+
+        // Validate the assembled animated SVG document
+        val assembledSvg = try {
+            AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+        } catch (t: Throwable) {
+            return QrError.Rendering.SvgRenderFailed(t.message ?: "Animated SVG assembly failed", t)
+        }
+        return validateSvgScanability(assembledSvg, design, matrix, expectedContent)
+    }
+
+    /**
      * Saves true vector SVG markup returning typed [QrOutputResult].
+     * Fails closed if the generated SVG fails rasterization or strict scanability gating.
+     */
+    /**
+     * Canonical overload: saves true vector SVG markup returning typed [QrOutputResult].
      */
     suspend fun saveSvgTyped(
         context: Context,
         matrix: QrMatrix,
         design: QrDesign
+    ): QrOutputResult<Uri> = saveSvgTyped(context, matrix, design, content = null)
+
+    /**
+     * Saves true vector SVG markup returning typed [QrOutputResult].
+     * Fails closed if the generated SVG fails rasterization or strict scanability gating.
+     */
+    suspend fun saveSvgTyped(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign,
+        content: String?
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
         val svgData = try {
             SvgExporter.generateSvg(matrix, design)
@@ -239,6 +365,10 @@ object QrExporter {
             return@withContext QrOutputResult.Failure(
                 QrError.Rendering.SvgRenderFailed(t.message ?: "SVG generation failed", t)
             )
+        }
+        val validationErr = validateSvgScanability(svgData, design, matrix, content)
+        if (validationErr != null) {
+            return@withContext QrOutputResult.Failure(validationErr)
         }
         saveSvgStringTyped(context, svgData)
     }
@@ -332,12 +462,32 @@ object QrExporter {
     /**
      * Saves animated SVG markup returning typed [QrOutputResult].
      * [design] is the authoritative single source of truth for artwork frames and timing.
+     * Fails closed if any frame in the animation sequence degrades scanability.
+     */
+    /**
+     * Canonical overload: saves animated SVG markup returning typed [QrOutputResult].
      */
     suspend fun saveAnimatedSvgTyped(
         context: Context,
         matrix: QrMatrix,
         design: QrDesign
+    ): QrOutputResult<Uri> = saveAnimatedSvgTyped(context, matrix, design, content = null)
+
+    /**
+     * Saves animated SVG markup returning typed [QrOutputResult].
+     * [design] is the authoritative single source of truth for artwork frames and timing.
+     * Fails closed if any frame in the animation sequence degrades scanability.
+     */
+    suspend fun saveAnimatedSvgTyped(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign,
+        content: String?
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
+        val validationErr = validateAnimatedSvgScanability(matrix, design, content)
+        if (validationErr != null) {
+            return@withContext QrOutputResult.Failure(validationErr)
+        }
         val svgData = try {
             AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
         } catch (t: Throwable) {
@@ -694,7 +844,16 @@ object QrExporter {
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
-                val bmp = (renderResult as QrRenderResult.Success).bitmap
+                val success = renderResult as QrRenderResult.Success
+                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                    return QrOutputResult.Failure(
+                        QrError.Validation.ScanabilityFailed(
+                            success.report.warnings.firstOrNull() ?: "Scanability validation failed",
+                            success.report.warnings
+                        )
+                    )
+                }
+                val bmp = success.bitmap
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
                     )
@@ -705,7 +864,16 @@ object QrExporter {
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
-                val bmp = (renderResult as QrRenderResult.Success).bitmap
+                val success = renderResult as QrRenderResult.Success
+                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                    return QrOutputResult.Failure(
+                        QrError.Validation.ScanabilityFailed(
+                            success.report.warnings.firstOrNull() ?: "Scanability validation failed",
+                            success.report.warnings
+                        )
+                    )
+                }
+                val bmp = success.bitmap
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
                     )
@@ -713,6 +881,10 @@ object QrExporter {
             }
             is QrOutputFormat.Svg -> {
                 if (AnimatedQrGenerator.isDesignAnimated(design)) {
+                    val validationErr = validateAnimatedSvgScanability(matrix, design, content)
+                    if (validationErr != null) {
+                        return QrOutputResult.Failure(validationErr)
+                    }
                     val svgData = try {
                         AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
                     } catch (t: Throwable) {
@@ -722,7 +894,7 @@ object QrExporter {
                     }
                     saveSvgStringTyped(context, svgData)
                 } else {
-                    saveSvgTyped(context, matrix, design)
+                    saveSvgTyped(context, matrix, design, content)
                 }
             }
             is QrOutputFormat.Pdf -> {
