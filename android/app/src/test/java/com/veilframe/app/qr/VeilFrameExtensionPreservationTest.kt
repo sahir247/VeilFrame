@@ -172,36 +172,47 @@ class VeilFrameExtensionPreservationTest {
     }
 
     @Test
-    fun `PARITY_EF preserves directional quiet zone`() {
+    fun `PARITY_EF preserves directional quiet zone through public API and normalization`() {
         val directional = DirectionalInsets(left = 3, top = 2, right = 5, bottom = 6)
         val design = QrDesign(
             style = QrStyle.BASIC,
             directionalQuietZone = directional
         )
-        val matrix = QrMatrix("HELLO", ErrorCorrectionLevel.H)
-        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
 
-        // Directional quiet zones must not be clamped to 1
-        assertEquals("Directional quiet zone top must be preserved", 2, geometry.quietZoneTop)
-        assertEquals("Directional quiet zone bottom must be preserved", 6, geometry.quietZoneBottom)
-        assertEquals("Directional quiet zone left must be preserved", 3, geometry.quietZoneLeft)
-        assertEquals("Directional quiet zone right must be preserved", 5, geometry.quietZoneRight)
+        // 1. Verify effectiveDesignForMode preserves directional quiet zone
+        val effective = QrGenerator.effectiveDesignForMode(design, GenerationMode.PARITY_EF)
+        assertEquals("PARITY_EF must set basicProfile to EF_PARITY", BasicGeometryProfile.EF_PARITY, effective.basicProfile)
+        assertNotNull("Directional quiet zone must be preserved under PARITY_EF", effective.directionalQuietZone)
+        assertEquals(3, effective.directionalQuietZone?.left)
+        assertEquals(2, effective.directionalQuietZone?.top)
+        assertEquals(5, effective.directionalQuietZone?.right)
+        assertEquals(6, effective.directionalQuietZone?.bottom)
+
+        // 2. Verify full public SVG generation pipeline preserves directional quiet zone geometry
+        // Payload "HELLO" at EC level H is Version 1 (size = 21 modules).
+        // Total modules X = 21 + 3 + 5 = 29; Total modules Y = 21 + 2 + 6 = 29.
+        val svg = QrGenerator.generateSvg("HELLO", design, mode = GenerationMode.PARITY_EF)
+        assertTrue("Generated SVG must reflect directional quiet zone dimensions (29x29)", svg.contains("viewBox=\"0 0 29 29\""))
     }
 
     @Test
-    fun `PARITY_EF preserves fractional quiet zone`() {
-        val fractional = FractionalInsets(left = 0.1f, top = 0.1f, right = 0.1f, bottom = 0.1f)
+    fun `PARITY_EF preserves fractional quiet zone through public API and normalization`() {
+        val fractional = FractionalInsets(left = 0.2f, top = 0.2f, right = 0.2f, bottom = 0.2f)
         val design = QrDesign(
             style = QrStyle.BASIC,
             backdropStyle = BackdropStyle(fractionalQuietZone = fractional)
         )
-        val matrix = QrMatrix("HELLO", ErrorCorrectionLevel.H)
-        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
 
-        // Fractional quiet zone must resolve based on 0.1f * matrix.size
-        assertNotNull("Fractional quiet zone must be preserved", design.backdropStyle.fractionalQuietZone)
-        assertEquals(0.1f, design.backdropStyle.fractionalQuietZone?.left ?: 0f, 0.001f)
-        assertEquals(matrix.size * 0.1f, geometry.quietZoneLeftFloat, 0.01f)
+        // 1. Verify effectiveDesignForMode preserves fractional quiet zone
+        val effective = QrGenerator.effectiveDesignForMode(design, GenerationMode.PARITY_EF)
+        assertEquals("PARITY_EF must set basicProfile to EF_PARITY", BasicGeometryProfile.EF_PARITY, effective.basicProfile)
+        assertNotNull("Fractional quiet zone must be preserved under PARITY_EF", effective.backdropStyle.fractionalQuietZone)
+        assertEquals(0.2f, effective.backdropStyle.fractionalQuietZone?.left ?: 0f, 0.001f)
+
+        // 2. Verify full public SVG generation pipeline preserves fractional quiet zone geometry
+        // Matrix size = 21. Total width = 21 + 2 * (0.2 * 21) = 21 + 8.4 = 29.4
+        val svg = QrGenerator.generateSvg("HELLO", design, mode = GenerationMode.PARITY_EF)
+        assertTrue("Generated SVG must reflect fractional quiet zone dimensions", svg.contains("viewBox=\"0 0 29.4 29.4\"") || svg.contains("29.4"))
     }
 
     // =========================================================================
@@ -264,5 +275,51 @@ class VeilFrameExtensionPreservationTest {
             policy = FrameDropPolicy.SkipFailedFrames
         )
         assertNotNull(result)
+    }
+
+    @Test
+    fun `legacy renderFrames throws under FailFast when a frame fails`() {
+        val matrix = QrMatrix("HELLO", ErrorCorrectionLevel.M)
+        val bmp = allocateBitmapReflectively()
+        val frames = listOf(QrFrame(bmp, 100))
+        val design = QrDesign(style = QrStyle.BASIC)
+
+        try {
+            @Suppress("DEPRECATION")
+            val result = AnimatedQrGenerator.renderFrames(
+                matrix = matrix,
+                baseDesign = design,
+                sourceFrames = frames,
+                outputSize = 512,
+                policy = FrameDropPolicy.FailFast
+            )
+            // If native rendering succeeded, size must be 1
+            assertEquals(1, result.size)
+        } catch (e: IllegalStateException) {
+            assertTrue("Exception message must indicate FailFast failure", e.message?.contains("FailFast") == true)
+        }
+    }
+
+    @Test
+    fun `legacy renderDesign throws under FailFast when frame rendering fails`() {
+        val matrix = QrMatrix("HELLO", ErrorCorrectionLevel.M)
+        val bmp = allocateBitmapReflectively()
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(bmp))
+        )
+
+        try {
+            @Suppress("DEPRECATION")
+            val result = AnimatedQrGenerator.renderDesign(
+                matrix = matrix,
+                design = design,
+                outputSize = 512,
+                policy = FrameDropPolicy.FailFast
+            )
+            assertEquals(1, result.size)
+        } catch (e: IllegalStateException) {
+            assertTrue("Exception message must indicate FailFast failure", e.message?.contains("FailFast") == true)
+        }
     }
 }

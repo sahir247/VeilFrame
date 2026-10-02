@@ -262,8 +262,14 @@ object AnimatedQrGenerator {
     /**
      * Renders a single animation frame at the specified [accumulatedMs] point in the timeline.
      * Accurately selects animated logo and artwork frames for that point in time.
-     * Retained for compatibility; delegates to [renderFrameResultAt].
+     *
+     * @deprecated Use [renderFrameResultAt] for fail-closed typed error handling. This legacy compatibility
+     * method operates as a best-effort preview API and converts errors to null.
      */
+    @Deprecated(
+        message = "Use renderFrameResultAt for fail-closed typed error handling. This legacy compatibility method operates as a best-effort preview API and converts errors to null.",
+        replaceWith = ReplaceWith("renderFrameResultAt(matrix, baseDesign, sourceFrame, accumulatedMs, outputSize, geometry)")
+    )
     fun renderFrameAt(
         matrix: QrMatrix,
         baseDesign: QrDesign,
@@ -324,7 +330,15 @@ object AnimatedQrGenerator {
     /**
      * Renders each frame in [sourceFrames] into a styled, scan-ready QR code bitmap.
      * Evaluates logo frames based on cumulative timeline playback time rather than naive modulo index.
+     *
+     * @deprecated Use [renderFramesResult] or [renderFramesStreaming] for fail-closed typed error handling.
+     * Under [FrameDropPolicy.FailFast], throws [IllegalStateException] if a frame fails, ensuring no
+     * silently truncated list is returned.
      */
+    @Deprecated(
+        message = "Use renderFramesResult or renderFramesStreaming for fail-closed typed error handling.",
+        replaceWith = ReplaceWith("renderFramesResult(matrix, baseDesign, sourceFrames, outputSize, policy)")
+    )
     fun renderFrames(
         matrix: QrMatrix,
         baseDesign: QrDesign,
@@ -333,8 +347,11 @@ object AnimatedQrGenerator {
         policy: FrameDropPolicy = FrameDropPolicy.FailFast
     ): List<QrFrame> {
         val result = ArrayList<QrFrame>(sourceFrames.size)
-        renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize, policy) { _, _, frame ->
+        val streamRes = renderFramesStreaming(matrix, baseDesign, sourceFrames, outputSize, policy) { _, _, frame ->
             result.add(frame)
+        }
+        if (policy == FrameDropPolicy.FailFast && streamRes is QrOutputResult.Failure) {
+            throw IllegalStateException("renderFrames failed under FailFast: ${streamRes.error}")
         }
         return result
     }
@@ -467,7 +484,15 @@ object AnimatedQrGenerator {
     /**
      * Renders each frame of an animated [QrDesign] into an animated sequence of QR code bitmaps.
      * Synchronizes timelines when both watermark/image source and logo are animated.
+     *
+     * @deprecated Use [renderDesignResult] for fail-closed typed error handling.
+     * Under [FrameDropPolicy.FailFast], throws [IllegalStateException] if frame rendering fails
+     * (except for empty source frames which returns an empty list for backward compatibility).
      */
+    @Deprecated(
+        message = "Use renderDesignResult for fail-closed typed error handling.",
+        replaceWith = ReplaceWith("renderDesignResult(matrix, design, outputSize, policy)")
+    )
     fun renderDesign(
         matrix: QrMatrix,
         design: QrDesign,
@@ -476,7 +501,12 @@ object AnimatedQrGenerator {
     ): List<QrFrame> {
         return when (val res = renderDesignResult(matrix, design, outputSize, policy)) {
             is QrOutputResult.Success -> res.value
-            is QrOutputResult.Failure -> emptyList()
+            is QrOutputResult.Failure -> {
+                if (policy == FrameDropPolicy.FailFast && res.error !is QrError.Animation.EmptyFrames) {
+                    throw IllegalStateException("renderDesign failed under FailFast: ${res.error}")
+                }
+                emptyList()
+            }
         }
     }
 

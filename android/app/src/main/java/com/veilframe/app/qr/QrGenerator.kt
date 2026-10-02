@@ -193,7 +193,13 @@ object QrGenerator {
      *
      * Uses [effectiveDesignForMode] so that PARITY_EF mode applies the EF profile
      * to both matrix encoding AND frame rendering — they cannot diverge.
+     *
+     * @deprecated Use [generateAnimatedFramesResult] for fail-closed typed error handling.
      */
+    @Deprecated(
+        message = "Use generateAnimatedFramesResult for fail-closed typed error handling.",
+        replaceWith = ReplaceWith("generateAnimatedFramesResult(content, design, outputSize, mode, policy)")
+    )
     fun generateAnimatedFrames(
         content: String,
         design: QrDesign,
@@ -598,7 +604,7 @@ object QrGenerator {
      * All entry points (generateWithResult, generateSvg, generateAnimatedSvg,
      * generateAnimatedFrames) must call this and nowhere else.
      */
-    private fun effectiveDesignForMode(
+    internal fun effectiveDesignForMode(
         design: QrDesign,
         mode: GenerationMode
     ): QrDesign = if (mode == GenerationMode.PARITY_EF) {
