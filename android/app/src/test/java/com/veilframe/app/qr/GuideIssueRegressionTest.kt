@@ -572,6 +572,42 @@ class GuideIssueRegressionTest {
         assertNotNull("Paint must be obtained successfully", paint)
     }
 
+    @Test
+    fun `generateSvg propagates non-square geometry to static SVG viewBox`() {
+        val matrix = QrMatrix("NON_SQUARE", ErrorCorrectionLevel.M)
+        val design = QrDesign(style = QrStyle.BASIC)
+        val nonSquareGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 400,
+            outputHeight = 560,
+            quietZoneModules = 4
+        )
+        val svg = QrGenerator.generateSvg(matrix, design, geometry = nonSquareGeometry)
+        assertTrue("SVG must contain opening tag", svg.contains("<svg"))
+        assertTrue("viewBox must reflect non-square dimensions 400 and 560", svg.contains("viewBox=\"0 0 400 560\""))
+    }
+
+    @Test
+    fun `generateSvg propagates non-square geometry to animated SVG viewBox`() {
+        val bmp = allocateBitmapReflectively()
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Animated(listOf(bmp, bmp), listOf(100, 200))
+            )
+        )
+        val matrix = QrMatrix("ANIM_NON_SQUARE", ErrorCorrectionLevel.M)
+        val nonSquareGeometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 400,
+            outputHeight = 560,
+            quietZoneModules = 4
+        )
+        val svg = QrGenerator.generateSvg(matrix, design, geometry = nonSquareGeometry)
+        assertTrue("Animated SVG must contain opening tag", svg.contains("<svg"))
+        assertTrue("Animated SVG viewBox must reflect non-square dimensions 400 and 560", svg.contains("viewBox=\"0 0 400 560\""))
+    }
+
     // =========================================================================
     // ISSUE 7 — Gradient Alpha Parity
     // =========================================================================
@@ -629,7 +665,7 @@ class GuideIssueRegressionTest {
     }
 
     // =========================================================================
-    // ISSUE 9 — EF vs VeilFrame Reference Differential (Corpus of 5 payloads)
+    // ISSUE 9 — EF-Compatible Contract & Geometry Verification (Corpus of 5 payloads)
     // =========================================================================
 
     private val efCorpusPayloads = listOf(
@@ -646,8 +682,21 @@ class GuideIssueRegressionTest {
         return factory.newDocumentBuilder().parse(ByteArrayInputStream(svg.toByteArray(Charsets.UTF_8)))
     }
 
+    /**
+     * VeilFrame Architectural Contract Test across 5 corpus payloads.
+     *
+     * Verifies that [QrGenerator.generateEfCompatibleSvg] strictly satisfies the EFQRCode structural contract:
+     * - Default quiet zone = 1 module (viewBox = 0 0 (matrix.size + 2) (matrix.size + 2))
+     * - Exactly 1 backdrop element
+     * - Exactly 3 inner 3x3 finder rects
+     * - Exactly 3 outer finder borders
+     * - Valid SVG root element and well-formed XML DOM
+     *
+     * Note: This is an internal contract verification ensuring VeilFrame emits the EF-specified geometry,
+     * not an external differential comparison against an upstream EFQRCode binary/oracle.
+     */
     @Test
-    fun `EF reference differential across 5 corpus payloads confirms geometric parity`() {
+    fun `efCompatibleSvg structure matches expected contract across 5 corpus payloads`() {
         for (payload in efCorpusPayloads) {
             val svg = QrGenerator.generateEfCompatibleSvg(payload)
             assertTrue("Generated EF SVG must not be blank", svg.isNotBlank())
@@ -657,11 +706,11 @@ class GuideIssueRegressionTest {
             val root = doc.documentElement
             assertEquals("Root element must be svg", "svg", root.nodeName)
 
-            // 1. Bit-for-bit matrix parity against upstream QR encoder
+            // Contract check against expected matrix size + 2
             val canonicalMatrix = QrMatrix(payload, ErrorCorrectionLevel.H)
             val expectedTotal = canonicalMatrix.size + 2 // 1 module quiet zone on each side
 
-            // 2. ViewBox must equal 0 0 (N+2) (N+2)
+            // ViewBox must equal 0 0 (N+2) (N+2)
             val viewBox = root.getAttribute("viewBox")
             assertEquals(
                 "ViewBox must reflect matrix.size + 2 * 1 for $payload",
@@ -669,7 +718,7 @@ class GuideIssueRegressionTest {
                 viewBox
             )
 
-            // 3. Finders: exactly 3 inner 3x3 finder rects
+            // Finders: exactly 3 inner 3x3 finder rects
             val rectList = doc.getElementsByTagName("rect")
             var innerFinderCount = 0
             var outerFinderCount = 0

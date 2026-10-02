@@ -15,7 +15,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * True Canvas vs. SVG Pixel Differential Test Suite (GUIDE.txt Issue 8 & AGENTS.md §8).
+ * Canvas ↔ VeilFrame-SVG Serialization Differential Test Suite (GUIDE.txt Issue 8 & AGENTS.md §8).
  *
  * Real differential test on physical Android hardware/software pipeline:
  *
@@ -34,7 +34,14 @@ import kotlin.math.abs
  *  - mean absolute error (MAE)
  *  - percentage differing
  *
- * Covers all 10 required test cases:
+ * Scope & Limitations:
+ * Validates consistency between VeilFrame Canvas rasterization and custom rasterization of VeilFrame's
+ * emitted SVG primitives across the tested primitive subset under defined engineering tolerances
+ * (MAE <= 1.0, differing pixels <= 5%). Tests VeilFrame's supported primitive serialization and rendering
+ * consistency, rather than unrestricted general-purpose SVG pixel parity (e.g. arbitrary SVG <image>,
+ * external fonts, CSS, or complex filter graphs).
+ *
+ * Covers 10 core test cases:
  *  1. BASIC square
  *  2. BASIC roundedRectangle
  *  3. BASIC circle

@@ -214,11 +214,12 @@ object QrGenerator {
     fun generateAnimatedSvg(
         content: String,
         design: QrDesign,
-        mode: GenerationMode = defaultModeFor(design)
+        mode: GenerationMode = defaultModeFor(design),
+        geometry: com.veilframe.app.qr.model.QrGeometry? = null
     ): String {
         val effectiveDesign = effectiveDesignForMode(design, mode)
         val matrix = generateMatrix(content, effectiveDesign, mode)
-        return AnimatedQrGenerator.generateAnimatedSvg(matrix, effectiveDesign)
+        return AnimatedQrGenerator.generateAnimatedSvg(matrix, effectiveDesign, geometry = geometry)
     }
 
     /**
@@ -230,7 +231,7 @@ object QrGenerator {
         geometry: com.veilframe.app.qr.model.QrGeometry? = null
     ): String {
         return if (AnimatedQrGenerator.isDesignAnimated(design)) {
-            AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+            AnimatedQrGenerator.generateAnimatedSvg(matrix, design, geometry = geometry)
         } else {
             com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design, geometry = geometry)
         }

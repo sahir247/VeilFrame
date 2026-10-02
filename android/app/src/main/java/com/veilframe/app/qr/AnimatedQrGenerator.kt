@@ -373,7 +373,8 @@ object AnimatedQrGenerator {
      */
     fun generateAnimatedSvg(
         matrix: QrMatrix,
-        design: QrDesign
+        design: QrDesign,
+        geometry: QrGeometry? = null
     ): String {
         // Native EF animated styles: SvgExporter generates static QR structure with animated image source
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE ||
@@ -381,14 +382,14 @@ object AnimatedQrGenerator {
             design.style == com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE
         ) {
             if (isDesignAnimated(design)) {
-                return SvgExporter.generateSvg(matrix, design)
+                return SvgExporter.generateSvg(matrix, design, geometry = geometry)
             }
         }
         val sourceFrames = extractSourceFrames(design)
         if (sourceFrames.isEmpty()) {
-            return SvgExporter.generateSvg(matrix, design)
+            return SvgExporter.generateSvg(matrix, design, geometry = geometry)
         }
-        return generateAnimatedSvg(matrix, design, sourceFrames)
+        return generateAnimatedSvg(matrix, design, sourceFrames, geometry = geometry)
     }
 
     /**
@@ -400,7 +401,8 @@ object AnimatedQrGenerator {
     fun generateAnimatedSvg(
         matrix: QrMatrix,
         baseDesign: QrDesign,
-        sourceFrames: List<QrFrame>
+        sourceFrames: List<QrFrame>,
+        geometry: QrGeometry? = null
     ): String {
         require(sourceFrames.isNotEmpty()) { "sourceFrames cannot be empty" }
 
@@ -416,7 +418,7 @@ object AnimatedQrGenerator {
                     )
                 )
             )
-            return SvgExporter.generateSvg(matrix, animatedDesign)
+            return SvgExporter.generateSvg(matrix, animatedDesign, geometry = geometry)
         }
 
         val totalDurationMs = maxOf(1, sourceFrames.sumOf { it.durationMs })
@@ -445,7 +447,7 @@ object AnimatedQrGenerator {
                 )
             )
 
-            val fullSvg = SvgExporter.generateSvg(matrix, frameDesign)
+            val fullSvg = SvgExporter.generateSvg(matrix, frameDesign, geometry = geometry)
 
             // Extract SVG header and inner body
             val svgTagStart = fullSvg.indexOf("<svg")
