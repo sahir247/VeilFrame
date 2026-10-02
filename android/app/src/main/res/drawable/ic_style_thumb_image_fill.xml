@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Image Fill: Grid aperture modules reflecting image pixels -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M2,2h7v7H2V2zm2,2v3h3V4H4zm11,-2h7v7h-7V2zm2,2v3h3V4h-3zM2,15h7v7H2v-7zm2,2v3h3v-3H4zm9,-3h3v3h-3v-3zm4,0h3v3h-3v-3zm-4,4h3v3h-3v-3zm4,0h3v3h-3v-3z"/>
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M14,14h1v1h-1v-1zm4,0h1v1h-1v-1zm-4,4h1v1h-1v-1zm4,4h1v1h-1v-1zm3,-6h1v1h-1v-1z"/>
+</vector>

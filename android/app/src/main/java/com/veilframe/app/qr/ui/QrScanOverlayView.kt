@@ -38,6 +38,17 @@ class QrScanOverlayView @JvmOverloads constructor(
     private val cornerLen = 28f * density
     private val cornerRadius = 12f * density
 
+    init {
+        contentDescription = "QR code viewfinder area. Align the QR code within this frame to scan."
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.className = "android.view.View"
+        info.contentDescription = "QR code viewfinder area. Align the QR code within this frame to scan."
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         val side = min(w, h) * 0.7f
         val cx = w / 2f; val cy = h / 2f

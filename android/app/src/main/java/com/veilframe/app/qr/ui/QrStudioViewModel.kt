@@ -185,7 +185,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val logoAnimatedFrames: List<Bitmap> = emptyList(),
         val logoFrameDelaysMs: List<Int> = emptyList(),
         val geometryPolicy: com.veilframe.app.qr.model.QrGeometryPolicy = com.veilframe.app.qr.model.QrGeometryPolicy.SafeProduction,
-        val generationMode: GenerationMode = GenerationMode.PARITY_EF
+        val generationMode: GenerationMode = GenerationMode.PARITY_EF,
+        val isAdvancedExpanded: Boolean = false,
+        val isScanDetailsExpanded: Boolean = false,
+        val isLowLight: Boolean = false
     ) {
         val isLoading: Boolean get() = isRenderingPreview || isExporting
     }
@@ -200,6 +203,30 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         regenerate(debounceMs = 0)
+    }
+
+    fun toggleAdvancedExpanded() {
+        _state.update { it.copy(isAdvancedExpanded = !it.isAdvancedExpanded) }
+    }
+
+    fun toggleScanDetailsExpanded() {
+        _state.update { it.copy(isScanDetailsExpanded = !it.isScanDetailsExpanded) }
+    }
+
+    fun updateLowLight(lowLight: Boolean) {
+        if (_state.value.isLowLight != lowLight) {
+            _state.update { it.copy(isLowLight = lowLight) }
+        }
+    }
+
+    fun resolveEffectiveQuietZone(): Int {
+        val s = _state.value
+        if (s.quietZoneChoice != null) return s.quietZoneChoice
+        return when (s.generationMode) {
+            GenerationMode.PARITY_EF -> 1
+            GenerationMode.SAFE -> 4
+            GenerationMode.ARTISTIC_ENGINE -> s.geometryPolicy.defaultQuietZoneModules(s.style)
+        }
     }
 
     fun updateContent(text: String) {
@@ -543,6 +570,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     is QrRenderResult.Failure -> {
                         _state.update {
                             it.copy(
+                                bitmap = null,
+                                matrix = null,
+                                design = null,
+                                scanabilityReport = null,
                                 previewAnimatedFrames = emptyList(),
                                 isRenderingPreview = false,
                                 errorMessage = renderResult.error
@@ -744,7 +775,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             imageFillMaskColor = s.imageFillMaskColor,
             randomRectColor = s.randomRectColor ?: (if (s.style == QrStyle.RANDOM_RECTANGLE && s.foreground == Color.BLACK) 0xFF14AA3C.toInt() else s.foreground),
             imageSource = ImageSourceStyle(
-                source = if (s.sourceImage != null) ImageSource.Memory(s.sourceImage) else null,
+                source = if (s.animatedFrames.size > 1) {
+                    ImageSource.Animated(
+                        frames = s.animatedFrames.map { it.bitmap },
+                        delaysMs = s.animatedFrames.map { it.durationMs }
+                    )
+                } else if (s.sourceImage != null) {
+                    ImageSource.Memory(s.sourceImage)
+                } else null,
                 scaleMode = s.sourceImageScaleMode,
                 opacity = s.sourceImageOpacity,
                 contrast = s.sourceImageContrast,

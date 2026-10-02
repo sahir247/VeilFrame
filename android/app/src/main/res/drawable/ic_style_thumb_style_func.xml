@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Style Function: Concentric ripples and parametric curves -->
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M2,2h7v7H2V2zm2,2v3h3V4H4zm11,-2h7v7h-7V2zm2,2v3h3V4h-3zM2,15h7v7H2v-7zm2,2v3h3v-3H4z"/>
+    <path
+        android:strokeColor="#7C3AED"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M16.5,16.5m-5,0a5,5 0 1,0 10,0a5,5 0 1,0 -10,0 M16.5,16.5m-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0 M16.5,16.5m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0"/>
+</vector>

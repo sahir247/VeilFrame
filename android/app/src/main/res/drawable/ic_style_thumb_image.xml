@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Image Backdrop: Picture frame landscape with QR finder marks -->
+    <path
+        android:fillColor="#9333EA"
+        android:pathData="M2,2h7v7H2V2zm2,2v3h3V4H4zm11,-2h7v7h-7V2zm2,2v3h3V4h-3zM2,15h7v7H2v-7zm2,2v3h3v-3H4z"/>
+    <path
+        android:fillColor="#C084FC"
+        android:pathData="M11,11h11v11H11V11zm2,9h7l-2.5,-3.5 -1.5,2 -1,-1.2L13,20zm5.5,-5.5a1,1 0 1,0 0.001,-2A1,1 0 0,0 18.5,14.5z"/>
+</vector>

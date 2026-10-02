@@ -87,11 +87,11 @@ class QrStudioFragment : Fragment() {
         val pager = view.findViewById<ViewPager2>(R.id.qr_pager)
         val loadingProgress = view.findViewById<ProgressBar>(R.id.qr_loading_progress)
 
-        // Observe loading state to drive the top-level progress bar
+        // Observe loading state to drive the top-level progress bar (only for final export tasks to avoid dual spinner noise)
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.state.collect { state ->
-                    loadingProgress?.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+                    loadingProgress?.visibility = if (state.isExporting) View.VISIBLE else View.GONE
                 }
             }
         }
@@ -405,13 +405,12 @@ class QrGenerateTabFragment : Fragment() {
         val containerAdvanced = view.findViewById<LinearLayout>(R.id.container_advanced_settings_body)
         val iconToggleAdvanced = view.findViewById<ImageView>(R.id.qr_icon_toggle_advanced)
         headerAdvanced?.setOnClickListener {
-            val isExpanded = containerAdvanced?.visibility == View.VISIBLE
-            containerAdvanced?.visibility = if (isExpanded) View.GONE else View.VISIBLE
-            iconToggleAdvanced?.setImageResource(if (isExpanded) R.drawable.ic_expand_more else R.drawable.ic_expand_less)
+            vm.toggleAdvancedExpanded()
         }
 
         // Animation section
         val animationStatusBanner = view.findViewById<TextView>(R.id.qr_animation_status_banner)
+        val containerAnimatedExport = view.findViewById<LinearLayout>(R.id.container_animated_export)
         val pickAnimWatermarkBtn = view.findViewById<MaterialButton>(R.id.qr_btn_pick_animated_watermark)
         val pickAnimLogoBtn = view.findViewById<MaterialButton>(R.id.qr_btn_pick_animated_logo)
         val clearAnimBtn = view.findViewById<MaterialButton>(R.id.qr_btn_clear_animation)
@@ -427,11 +426,8 @@ class QrGenerateTabFragment : Fragment() {
             Toast.makeText(requireContext(), "Animation cleared", Toast.LENGTH_SHORT).show()
         }
 
-        var isTechDetailsExpanded = false
         scanabilityDetailsToggle?.setOnClickListener {
-            isTechDetailsExpanded = !isTechDetailsExpanded
-            scanabilityTechContainer?.visibility = if (isTechDetailsExpanded) View.VISIBLE else View.GONE
-            scanabilityDetailsToggle.text = if (isTechDetailsExpanded) "Hide" else "Details"
+            vm.toggleScanDetailsExpanded()
         }
 
         // Presets Chips & Containers
@@ -532,8 +528,8 @@ class QrGenerateTabFragment : Fragment() {
 
         // Generator Config
         val styleChipGroup     = view.findViewById<ChipGroup>(R.id.qr_style_chip_group)
-        val styleSpinner       = view.findViewById<Spinner>(R.id.qr_style_spinner)
         val resSpinner         = view.findViewById<Spinner>(R.id.qr_resolution_spinner)
+        val resHint            = view.findViewById<TextView>(R.id.qr_resolution_hint)
         val ecSpinner          = view.findViewById<Spinner>(R.id.qr_ec_spinner)
 
         val fgColorBtn         = view.findViewById<MaterialButton>(R.id.qr_fg_color_btn)
@@ -835,12 +831,7 @@ class QrGenerateTabFragment : Fragment() {
         upiChip50000?.setOnClickListener { syncUpiAmount(50000f, updateText = true, updateSlider = true) }
         upiChip1lakh?.setOnClickListener { syncUpiAmount(100000f, updateText = true, updateSlider = true) }
 
-        // 1. Visual Style Selector & Gallery Chips + Spinner Two-Way Sync
-        val styles = QrStyle.values()
-        val styleNames = styles.map { QrStyleRegistry.get(it).displayName }
-        styleSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, styleNames)
-        styleSpinner.setSelection(styles.indexOf(vm.state.value.style).coerceAtLeast(0))
-
+        // 1. Visual Style Selector & Gallery Chips (single source of truth)
         val styleToChipId = mapOf<QrStyle, Int>(
             QrStyle.BASIC to R.id.chip_style_basic,
             QrStyle.BUBBLE to R.id.chip_style_bubble,
@@ -866,23 +857,7 @@ class QrGenerateTabFragment : Fragment() {
             val selectedStyle = chipIdToStyle[checkedId] ?: return@setOnCheckedStateChangeListener
             if (vm.state.value.style != selectedStyle) {
                 vm.updateStyle(selectedStyle)
-                styleSpinner.setSelection(styles.indexOf(selectedStyle).coerceAtLeast(0))
             }
-        }
-
-        styleSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                val selectedStyle = styles[pos]
-                if (vm.state.value.style != selectedStyle) {
-                    vm.updateStyle(selectedStyle)
-                    styleToChipId[selectedStyle]?.let { chipId ->
-                        if (styleChipGroup?.checkedChipId != chipId) {
-                            styleChipGroup?.check(chipId)
-                        }
-                    }
-                }
-            }
-            override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
         // Contextual Style Settings Controls
@@ -1697,14 +1672,15 @@ class QrGenerateTabFragment : Fragment() {
             vm.updateAlignOnlyWhite(isChecked)
         }
 
-        val currentQuietZone = vm.state.value.quietZoneChoice ?: 4
+        val isCustomQuietZone = vm.state.value.quietZoneChoice != null
+        val currentQuietZone = vm.resolveEffectiveQuietZone()
         quietZoneSlider?.value = currentQuietZone.toFloat().coerceIn(0.0f, 10.0f)
-        quietZoneLabel?.text = "Quiet Zone Margin: $currentQuietZone modules"
+        quietZoneLabel?.text = if (isCustomQuietZone) "Quiet Zone Margin: $currentQuietZone modules (Custom)" else "Quiet Zone Margin: $currentQuietZone modules (Default)"
         quietZoneSlider?.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 val qz = value.toInt()
                 vm.updateQuietZone(qz)
-                quietZoneLabel?.text = "Quiet Zone Margin: $qz modules"
+                quietZoneLabel?.text = "Quiet Zone Margin: $qz modules (Custom)"
             }
         }
 
@@ -1984,7 +1960,7 @@ class QrGenerateTabFragment : Fragment() {
                     // Export buttons enabled/disabled state: content must be non-blank, verified scanable, and not actively busy
                     val hasContent = state.content.isNotBlank()
                     val isScanValid = state.scanabilityReport?.isScanReady == true
-                    val isValidating = state.scanabilityReport == null && hasContent
+                    val isValidating = state.scanabilityReport == null && hasContent && state.errorMessage == null
                     val canExport = hasContent && !state.isRenderingPreview && !state.isExporting && isScanValid
                     val hasAnimationSource = state.animatedFrames.size > 1 || state.logoAnimatedFrames.size > 1
 
@@ -1995,19 +1971,26 @@ class QrGenerateTabFragment : Fragment() {
                         exportStatusBanner?.visibility = View.VISIBLE
                         exportStatusBanner?.text = "Exporting file..."
                         exportStatusBanner?.setTextColor(0xFF6B7280.toInt())
+                    } else if (state.errorMessage != null) {
+                        exportStatusBanner?.visibility = View.VISIBLE
+                        exportStatusBanner?.text = "Render failed — ${state.errorMessage}"
+                        exportStatusBanner?.setTextColor(0xFFDC2626.toInt())
                     } else if (isValidating || state.isRenderingPreview) {
                         exportStatusBanner?.visibility = View.VISIBLE
                         exportStatusBanner?.text = "Validating… Checking scan reliability before export"
                         exportStatusBanner?.setTextColor(0xFF6B7280.toInt())
                     } else if (isScanValid) {
                         exportStatusBanner?.visibility = View.VISIBLE
-                        exportStatusBanner?.text = "Ready to export — Verified scanable on-device"
+                        exportStatusBanner?.text = "Preview verified scanable · Final export verified at render time"
                         exportStatusBanner?.setTextColor(0xFF16A34A.toInt())
                     } else {
                         exportStatusBanner?.visibility = View.VISIBLE
                         exportStatusBanner?.text = "Needs adjustment — Adjust contrast or tap Auto-Repair to enable export"
                         exportStatusBanner?.setTextColor(0xFFD97706.toInt())
                     }
+
+                    // Resolution transparency hint
+                    resHint?.text = "Preview rendered at ≤512px · Final export generates at ${state.outputSize}px"
 
                     saveBtn.isEnabled = canExport
                     saveSvgBtn.isEnabled = canExport
@@ -2021,9 +2004,12 @@ class QrGenerateTabFragment : Fragment() {
                     // Contextual photo button label and alpha: Static short label to avoid wrapping
                     val usesSourceImage = (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_FILL || state.style == QrStyle.IMAGE_RESAMPLE)
                     sourceImgBtn.alpha = if (usesSourceImage) 1.0f else 0.55f
-                    sourceImgBtn.text = "Photo"
+                    sourceImgBtn.text = "Source Media"
 
-                    // Clarify animated export helper label based on multi-frame input
+                    // Reveal animation export buttons only when animation source media is present
+                    containerAnimatedExport?.visibility = if (hasAnimationSource) View.VISIBLE else View.GONE
+                    animatedExportLabel?.visibility = if (hasAnimationSource) View.VISIBLE else View.GONE
+
                     if (hasAnimationSource) {
                         val frameCount = maxOf(state.animatedFrames.size, state.logoAnimatedFrames.size)
                         val previewCount = state.previewAnimatedFrames.size
@@ -2031,9 +2017,24 @@ class QrGenerateTabFragment : Fragment() {
                         animationStatusBanner?.text = "Animation active: $frameCount source frames loaded ($previewCount frames in live preview loop)"
                         animationStatusBanner?.setTextColor(0xFF16A34A.toInt())
                     } else {
-                        animatedExportLabel?.text = "Import a multi-frame GIF, WebP, or video to enable animated export"
                         animationStatusBanner?.text = "No animation loaded. Import a GIF, WebP, or video to preview and export animated QR codes."
                         animationStatusBanner?.setTextColor(0xFF6B7280.toInt())
+                    }
+
+                    // Advanced settings expansion state
+                    containerAdvanced?.visibility = if (state.isAdvancedExpanded) View.VISIBLE else View.GONE
+                    iconToggleAdvanced?.setImageResource(if (state.isAdvancedExpanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more)
+
+                    // Scanability details expansion state
+                    scanabilityTechContainer?.visibility = if (state.isScanDetailsExpanded) View.VISIBLE else View.GONE
+                    scanabilityDetailsToggle?.text = if (state.isScanDetailsExpanded) "Hide" else "Details"
+
+                    // Update Quiet Zone label and slider if not custom
+                    val isCustom = state.quietZoneChoice != null
+                    val eff = vm.resolveEffectiveQuietZone()
+                    quietZoneLabel?.text = if (isCustom) "Quiet Zone Margin: ${state.quietZoneChoice} modules (Custom)" else "Quiet Zone Margin: $eff modules (Default)"
+                    if (!isCustom && quietZoneSlider?.value?.toInt() != eff) {
+                        quietZoneSlider?.value = eff.toFloat().coerceIn(0.0f, 10.0f)
                     }
 
                     // Contextual Style Settings Card
@@ -2249,6 +2250,8 @@ class QrGenerateTabFragment : Fragment() {
  */
 class QrScanTabFragment : Fragment() {
 
+    private val vm: QrStudioViewModel by activityViewModels()
+
     private enum class CameraUiState {
         INITIALIZING,
         PERMISSION_REQUIRED,
@@ -2291,7 +2294,11 @@ class QrScanTabFragment : Fragment() {
     private var activeCamera: androidx.camera.core.Camera? = null
     private var activeQrScanner: QrScanner? = null
     private var isScanningPaused: Boolean = false
-    private var hasRequestedPermissionOnce: Boolean = false
+    private var hasRequestedPermissionOnce: Boolean
+        get() = context?.getSharedPreferences("qr_scan_prefs", Context.MODE_PRIVATE)?.getBoolean("has_req_cam", false) ?: false
+        set(value) {
+            context?.getSharedPreferences("qr_scan_prefs", Context.MODE_PRIVATE)?.edit()?.putBoolean("has_req_cam", value)?.apply()
+        }
     private var currentUiState: CameraUiState = CameraUiState.INITIALIZING
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -2550,6 +2557,17 @@ class QrScanTabFragment : Fragment() {
                     val targetZoom = (currentZoom * zoomMultiplier).coerceIn(minZoom, maxZoom)
                     if (targetZoom > currentZoom * 1.05f) {
                         cam.cameraControl.setZoomRatio(targetZoom)
+                    }
+                }
+            },
+            onLowLightDetected = { isLow ->
+                activity?.runOnUiThread {
+                    if (!isAdded) return@runOnUiThread
+                    vm.updateLowLight(isLow)
+                    if (isLow && !isTorchOn && !isScanningPaused) {
+                        guidanceText?.text = "Too dark? Turn on flash"
+                    } else if (!isScanningPaused && guidanceText?.text == "Too dark? Turn on flash") {
+                        guidanceText?.text = "Point camera at a QR code"
                     }
                 }
             }

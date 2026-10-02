@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Basic Style: Crisp square finders and classic square modules -->
+    <path
+        android:fillColor="#18181B"
+        android:pathData="M2,2h8v8H2V2zm2,2v4h4V4H4zm1,1h2v2H5V5zm7,-3h8v8h-8V2zm2,2v4h4V4h-4zm1,1h2v2h-2V5zM2,14h8v8H2v-8zm2,2v4h4v-4H4zm1,1h2v2H5v-2zm8,-2h3v3h-3v-3zm5,0h3v3h-3v-3zm-5,5h3v3h-3v-3zm4,-2h4v2h-4v-2zm1,3h3v2h-3v-2z"/>
+</vector>

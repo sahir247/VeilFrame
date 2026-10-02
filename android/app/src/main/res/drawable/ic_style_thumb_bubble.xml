@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Bubble Style: Circular rings and bubble dots -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M6,2a4,4 0 1,0 0.001,8A4,4 0 0,0 6,2zm0,2a2,2 0 1,1 -0.001,4A2,2 0 0,1 6,4zm0,1a1,1 0 1,0 0.001,2A1,1 0 0,0 6,5zM18,2a4,4 0 1,0 0.001,8A4,4 0 0,0 18,2zm0,2a2,2 0 1,1 -0.001,4A2,2 0 0,1 18,4zm0,1a1,1 0 1,0 0.001,2A1,1 0 0,0 18,5zM6,14a4,4 0 1,0 0.001,8A4,4 0 0,0 6,14zm0,2a2,2 0 1,1 -0.001,4A2,2 0 0,1 6,16zm0,1a1,1 0 1,0 0.001,2A1,1 0 0,0 6,17zm8,-3a1.5,1.5 0 1,0 0.001,3A1.5,1.5 0 0,0 14,14zm4,0a1.5,1.5 0 1,0 0.001,3A1.5,1.5 0 0,0 18,14zm-4,4a1.5,1.5 0 1,0 0.001,3A1.5,1.5 0 0,0 14,18zm4,0a1.5,1.5 0 1,0 0.001,3A1.5,1.5 0 0,0 18,18zm-2,-5a1.2,1.2 0 1,0 0.001,2.4A1.2,1.2 0 0,0 16,13zm0,8a1.2,1.2 0 1,0 0.001,2.4A1.2,1.2 0 0,0 16,21z"/>
+</vector>

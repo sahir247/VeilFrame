@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.AnimatedQrGenerator
+import com.veilframe.app.qr.GenerationMode
 import com.veilframe.app.qr.QrGenerator
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.error.QrError
@@ -1187,6 +1188,99 @@ class QrStudioViewModelExportValidationTest {
         vm.clearAnimation()
         assertEquals(0, vm.state.value.animatedFrames.size)
         assertEquals(0, vm.state.value.previewAnimatedFrames.size)
+    }
+
+    @Test
+    fun testStaleStateClearedOnRenderFailure() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        val initialDesign = QrDesign()
+        val passingReport = com.veilframe.app.qr.validation.ScanabilityReport(
+            isScanReady = true,
+            validationSkipped = false,
+            quietZone = com.veilframe.app.qr.validation.QuietZoneReport(true, 4),
+            contrast = com.veilframe.app.qr.validation.ContrastReport(1f, 1f, 0f, 0f, 1f, true),
+            finders = com.veilframe.app.qr.validation.FinderIntegrityReport(true, true),
+            logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(true, "test"),
+            errorCorrection = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+            warnings = emptyList(),
+            repairSuggestions = emptyList()
+        )
+        vm.setScanabilityReportForTesting(passingReport, initialDesign)
+        assertNotNull(vm.state.value.scanabilityReport)
+        assertTrue(vm.state.value.scanabilityReport!!.isScanReady)
+
+        // Blank content triggers clear in regenerate
+        vm.updateContent("")
+        assertNull(vm.state.value.bitmap)
+        assertNull(vm.state.value.matrix)
+        assertNull(vm.state.value.design)
+        assertNull(vm.state.value.scanabilityReport)
+        assertFalse(vm.state.value.scanabilityReport?.isScanReady == true)
+    }
+
+    @Test
+    fun testAnimatedSourceFramesWiredIntoQrDesign() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        val bmp1 = createTestBitmap()
+        val bmp2 = createTestBitmap()
+        val frames = listOf(QrFrame(bmp1, 100), QrFrame(bmp2, 100))
+
+        vm.updateAnimatedFrames(frames)
+        val design = vm.buildDesignFromState(vm.state.value)
+
+        assertTrue(design.imageSource.isAnimated)
+        assertEquals(2, design.imageSource.animatedFrames?.size)
+        assertTrue(AnimatedQrGenerator.isDesignAnimated(design))
+    }
+
+    @Test
+    fun testEffectiveQuietZoneResolutionDefaults() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        // Default PARITY_EF mode with no explicit override -> 1
+        vm.updateGenerationMode(GenerationMode.PARITY_EF)
+        assertEquals(1, vm.resolveEffectiveQuietZone())
+
+        // SAFE mode with no explicit override -> 4
+        vm.updateGenerationMode(GenerationMode.SAFE)
+        assertEquals(4, vm.resolveEffectiveQuietZone())
+
+        // ARTISTIC_ENGINE mode D25 -> 0, IMAGE -> 1, BASIC -> 4
+        vm.updateGenerationMode(GenerationMode.ARTISTIC_ENGINE)
+        vm.updateStyle(QrStyle.D25)
+        assertEquals(0, vm.resolveEffectiveQuietZone())
+        vm.updateStyle(QrStyle.IMAGE)
+        assertEquals(1, vm.resolveEffectiveQuietZone())
+        vm.updateStyle(QrStyle.BASIC)
+        assertEquals(4, vm.resolveEffectiveQuietZone())
+
+        // Explicit user override takes precedence over mode defaults
+        vm.updateQuietZone(6)
+        assertEquals(6, vm.resolveEffectiveQuietZone())
+    }
+
+    @Test
+    fun testExpansionStateTogglesPersistInState() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        assertFalse(vm.state.value.isAdvancedExpanded)
+        vm.toggleAdvancedExpanded()
+        assertTrue(vm.state.value.isAdvancedExpanded)
+        vm.toggleAdvancedExpanded()
+        assertFalse(vm.state.value.isAdvancedExpanded)
+
+        assertFalse(vm.state.value.isScanDetailsExpanded)
+        vm.toggleScanDetailsExpanded()
+        assertTrue(vm.state.value.isScanDetailsExpanded)
+        vm.toggleScanDetailsExpanded()
+        assertFalse(vm.state.value.isScanDetailsExpanded)
     }
 
     @Test

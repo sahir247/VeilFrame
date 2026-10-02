@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit
 class QrScanner(
     private val controller: ScannerController = ScannerController(),
     var onZoomSuggestion: ((zoomMultiplier: Float) -> Unit)? = null,
+    var onLowLightDetected: ((isLowLight: Boolean) -> Unit)? = null,
     private val onResult: (String) -> Unit
 ) : ImageAnalysis.Analyzer, java.io.Closeable {
 
@@ -106,6 +107,35 @@ class QrScanner(
         }
 
         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+
+        // Low-light ambient luminance check (Y-plane subsampling)
+        if (onLowLightDetected != null && mediaImage.planes.isNotEmpty()) {
+            try {
+                val yPlane = mediaImage.planes[0]
+                val yBuf = yPlane.buffer
+                val rowStride = yPlane.rowStride
+                val pixelStride = yPlane.pixelStride
+                val w = mediaImage.width
+                val h = mediaImage.height
+                var sumLum = 0L
+                var samples = 0
+                val stepX = (w / 8).coerceAtLeast(1)
+                val stepY = (h / 8).coerceAtLeast(1)
+                for (y in 0 until h step stepY) {
+                    for (x in 0 until w step stepX) {
+                        val pos = y * rowStride + x * pixelStride
+                        if (pos < yBuf.limit()) {
+                            sumLum += (yBuf.get(pos).toInt() and 0xFF)
+                            samples++
+                        }
+                    }
+                }
+                if (samples > 0) {
+                    val avgLum = sumLum / samples
+                    onLowLightDetected?.invoke(avgLum < 40)
+                }
+            } catch (_: Throwable) {}
+        }
 
         // 2. Primary Path: Bundled ML Kit processing mediaImage directly
         try {

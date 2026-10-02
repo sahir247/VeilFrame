@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Random Rect: Jittered varied dimension rectangle blocks -->
+    <path
+        android:fillColor="#16A34A"
+        android:pathData="M2,2h7v7H2V2zm2,2v3h3V4H4zm11,-2h7v7h-7V2zm2,2v3h3V4h-3zM2,15h7v7H2v-7zm2,2v3h3v-3H4zm9,-3h4v2h-4v-2zm5,-1h4v4h-4v-4zm-4,4h3v5h-3v-5zm4,2h5v2h-5v-2zm1,3h4v3h-4v-3z"/>
+</vector>

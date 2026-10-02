@@ -100,9 +100,10 @@
                             android:background="@drawable/bg_pill_accent" />
 
                         <TextView
+                            android:id="@+id/qr_preview_animation_badge_text"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="GIF PLAYING"
+                            android:text="ANIMATED PREVIEW"
                             android:textStyle="bold"
                             android:textSize="10sp"
                             android:textColor="?attr/colorOnPrimaryContainer" />
@@ -942,7 +943,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:checked="true"
-                    app:chipIcon="@drawable/ic_tool_qr"
+                    app:chipIcon="@drawable/ic_style_thumb_basic"
+                    app:chipIconSize="28dp"
                     android:text="Basic" />
 
                 <com.google.android.material.chip.Chip
@@ -950,7 +952,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_color_filter"
+                    app:chipIcon="@drawable/ic_style_thumb_bubble"
+                    app:chipIconSize="28dp"
                     android:text="Bubble" />
 
                 <com.google.android.material.chip.Chip
@@ -958,7 +961,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_tab_video"
+                    app:chipIcon="@drawable/ic_style_thumb_d25"
+                    app:chipIconSize="28dp"
                     android:text="2.5D Isometric" />
 
                 <com.google.android.material.chip.Chip
@@ -966,7 +970,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_crop"
+                    app:chipIcon="@drawable/ic_style_thumb_dsj"
+                    app:chipIconSize="28dp"
                     android:text="DSJ Cross" />
 
                 <com.google.android.material.chip.Chip
@@ -974,7 +979,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_crop"
+                    app:chipIcon="@drawable/ic_style_thumb_line"
+                    app:chipIconSize="28dp"
                     android:text="Line Stripes" />
 
                 <com.google.android.material.chip.Chip
@@ -982,7 +988,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_reset"
+                    app:chipIcon="@drawable/ic_style_thumb_random_rect"
+                    app:chipIconSize="28dp"
                     android:text="Random Rect" />
 
                 <com.google.android.material.chip.Chip
@@ -990,7 +997,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_tab_image"
+                    app:chipIcon="@drawable/ic_style_thumb_image"
+                    app:chipIconSize="28dp"
                     android:text="Image Backdrop" />
 
                 <com.google.android.material.chip.Chip
@@ -998,7 +1006,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_tab_image"
+                    app:chipIcon="@drawable/ic_style_thumb_image_fill"
+                    app:chipIconSize="28dp"
                     android:text="Image Fill" />
 
                 <com.google.android.material.chip.Chip
@@ -1006,7 +1015,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_tab_image"
+                    app:chipIcon="@drawable/ic_style_thumb_image_resample"
+                    app:chipIconSize="28dp"
                     android:text="Image Resample" />
 
                 <com.google.android.material.chip.Chip
@@ -1014,7 +1024,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_reset"
+                    app:chipIcon="@drawable/ic_style_thumb_func"
+                    app:chipIconSize="28dp"
                     android:text="Function Wave" />
 
                 <com.google.android.material.chip.Chip
@@ -1022,7 +1033,8 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_reset"
+                    app:chipIcon="@drawable/ic_style_thumb_style_func"
+                    app:chipIconSize="28dp"
                     android:text="Style Function" />
 
                 <com.google.android.material.chip.Chip
@@ -1030,17 +1042,11 @@
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:chipIcon="@drawable/ic_check_circle"
+                    app:chipIcon="@drawable/ic_style_thumb_composite"
+                    app:chipIconSize="28dp"
                     android:text="Connected Organic" />
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
-
-        <Spinner
-            android:id="@+id/qr_style_spinner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/spinner_border_bg"
-            android:padding="8dp" />
 
 
 
@@ -1162,7 +1168,7 @@
                 android:paddingHorizontal="4dp"
                 app:iconPadding="4dp"
                 app:icon="@drawable/ic_tab_image"
-                android:text="Photo" />
+                android:text="Source Media" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/qr_bg_image_btn"
@@ -1174,7 +1180,7 @@
                 android:ellipsize="end"
                 android:paddingHorizontal="4dp"
                 app:iconPadding="4dp"
-                app:icon="@drawable/ic_tab_video"
+                app:icon="@drawable/ic_tab_image"
                 android:text="Background" />
         </LinearLayout>
 
@@ -1377,7 +1383,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Timing Pattern Shape &amp; Color"
+                    android:text="Timing Pattern (Grid Synchronization)"
                     android:textAppearance="?attr/textAppearanceLabelSmall" />
 
                 <Spinner
@@ -1428,7 +1434,7 @@
                         android:id="@+id/qr_timing_only_white_switch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Only White" />
+                        android:text="White Background Only" />
                 </LinearLayout>
 
                 <!-- Alignment Pattern Shape, Size, Color, OnlyWhite -->
@@ -1436,7 +1442,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Alignment Pattern Shape &amp; Color"
+                    android:text="Alignment Pattern (Perspective Correction)"
                     android:textAppearance="?attr/textAppearanceLabelSmall" />
 
                 <Spinner
@@ -1487,7 +1493,7 @@
                         android:id="@+id/qr_align_only_white_switch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Only White" />
+                        android:text="White Background Only" />
                 </LinearLayout>
 
                 <!-- Quiet Zone Slider -->
@@ -1520,7 +1526,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Asymmetric Quiet Zone (EF Insets)"
+                        android:text="Directional Margins (Top / Bottom / Left / Right)"
                         android:textAppearance="?attr/textAppearanceBodySmall" />
 
                     <com.google.android.material.materialswitch.MaterialSwitch
@@ -3564,8 +3570,8 @@
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
-                        app:icon="@drawable/ic_tab_video"
-                        android:text="Watermark" />
+                        app:icon="@drawable/ic_tab_image"
+                        android:text="Source Media" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_btn_pick_animated_logo"
@@ -3712,6 +3718,15 @@
                     android:layout_height="wrap_content"
                     android:background="@drawable/spinner_border_bg"
                     android:padding="8dp" />
+
+                <TextView
+                    android:id="@+id/qr_resolution_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Preview optimized at ≤512px · Final export generates at selected size"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <View android:layout_height="8dp" android:layout_width="match_parent" />
 
