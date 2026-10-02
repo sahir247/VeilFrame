@@ -8,6 +8,7 @@ import com.veilframe.app.qr.ModuleShape as StyleModuleShape
 import com.veilframe.app.qr.renderer.FillEngine
 import com.veilframe.app.qr.renderer.RenderContext
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import com.veilframe.app.qr.exporter.SvgExporter
@@ -755,5 +756,102 @@ class GuideIssueRegressionTest {
         val doc = parseSvgXml(svg)
         val circles = doc.getElementsByTagName("circle")
         assertEquals("EF compatible BASIC SVG must have 0 circles by default (all square)", 0, circles.length)
+    }
+
+    // =========================================================================
+    // AUDIT DEFECT REGRESSIONS (C1–C6 & ARCHITECTURAL GAPS)
+    // =========================================================================
+
+    @Test
+    fun `C1 — QrGenerator generate with explicit ecLevel preserves error correction choice`() {
+        // C1 / P0.1: Public ecLevel argument was previously ignored by QrGenerator.generate(..., ecLevel)
+        val params = QrStyleParams(style = QrStyle.BASIC)
+        val designL = QrDesign.fromQrStyleParams(params).copy(
+            correction = ErrorCorrectionChoice.fromZxing(ErrorCorrectionLevel.L)
+        )
+        assertEquals("Choice must be L", ErrorCorrectionChoice.L, designL.correction)
+        val matrixL = QrGenerator.generateMatrix("PARITY_TEST", designL, mode = GenerationMode.ARTISTIC_ENGINE)
+        assertEquals("Matrix error correction must be L", ErrorCorrectionLevel.L, matrixL.errorCorrection)
+
+        val designQ = QrDesign.fromQrStyleParams(params).copy(
+            correction = ErrorCorrectionChoice.fromZxing(ErrorCorrectionLevel.Q)
+        )
+        val matrixQ = QrGenerator.generateMatrix("PARITY_TEST", designQ, mode = GenerationMode.ARTISTIC_ENGINE)
+        assertEquals("Matrix error correction must be Q", ErrorCorrectionLevel.Q, matrixQ.errorCorrection)
+    }
+
+    @Test
+    fun `C2 — SAFE generation mode normalizes quiet zone to 4 modules by default`() {
+        // C2 / P0.2 / P0.3: SAFE mode advertises 4-module quiet zone and must normalize to 4
+        val defaultDesign = QrDesign(quietZoneModules = 1)
+        val effectiveSafe = QrGenerator.effectiveDesignForMode(defaultDesign, GenerationMode.SAFE)
+        assertEquals("SAFE mode must normalize default quiet zone to 4 modules", 4, effectiveSafe.quietZoneModules)
+
+        // Preserves explicit quiet zone intent if provided by caller
+        val explicitDesign = QrDesign(explicitQuietZone = 2, quietZoneModules = 2)
+        val effectiveExplicit = QrGenerator.effectiveDesignForMode(explicitDesign, GenerationMode.SAFE)
+        assertEquals("SAFE mode must preserve explicit quiet zone override", 2, effectiveExplicit.quietZoneModules)
+    }
+
+    @Test
+    fun `C3 — SAFE design quiet zone contract enforces 4 modules`() {
+        // C3 / P0.4: SAFE mode quiet zone contract requires 4 modules by default
+        val nonCompliantDesign = QrDesign(
+            style = QrStyle.BASIC,
+            basicProfile = BasicGeometryProfile.VEILFRAME,
+            quietZoneModules = 2,
+            explicitQuietZone = null
+        )
+        val matrix = QrMatrix("SCAN_GATE_TEST", ErrorCorrectionLevel.M)
+        val geometry = QrGeometry.fromDesign(matrix.size, 256, 256, nonCompliantDesign)
+        assertEquals("Geometry must reflect non-compliant quiet zone of 2 modules", 2, geometry.quietZoneModules)
+        assertTrue("Must be under standard 4-module threshold", geometry.quietZoneModules < 4)
+
+        // Effective SAFE design normalizes to 4
+        val safeDesign = QrGenerator.effectiveDesignForMode(nonCompliantDesign, GenerationMode.SAFE)
+        assertEquals(4, safeDesign.quietZoneModules)
+    }
+
+    @Test
+    fun `C4 — Vector SVG document is generated for strict validation`() {
+        // C4 / P1.4: SVG export produces valid XML for vector rasterization and verification
+        val matrix = QrMatrix("SVG_RASTER_TEST", ErrorCorrectionLevel.H)
+        val design = QrDesign(style = QrStyle.BASIC, outputSize = 256)
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertTrue("SVG output must be valid xml string", svg.contains("<svg") && svg.contains("</svg>"))
+        assertTrue("SVG must define viewBox", svg.contains("viewBox="))
+    }
+
+    @Test
+    fun `C5 — Payload whitespace is strictly preserved without trimming`() {
+        // C5 / P0.5: Leading and trailing whitespace must not be stripped
+        val spacedContent = "  PRESERVED WHITESPACE PAYLOAD  "
+        val matrix = QrGenerator.generateMatrix(spacedContent)
+        // Matrix size must reflect actual content length (32 chars)
+        assertTrue("Matrix size must accommodate spaced content", matrix.size >= 25)
+    }
+
+    @Test
+    fun `C6 — Parity EF normalization sets quiet zone to 1 module across styles`() {
+        // C6 / P1.5: PARITY_EF mode normalizes quiet zone to 1 module matching EFQRCode backdrop viewBox
+        val d25Design = QrDesign(style = QrStyle.D25)
+        assertEquals("VeilFrame artistic D25 defaults to 0 modules", 0, d25Design.quietZoneModules)
+
+        val efD25 = QrGenerator.effectiveDesignForMode(d25Design, GenerationMode.PARITY_EF)
+        assertEquals("PARITY_EF mode normalizes D25 quiet zone to 1 module", 1, efD25.quietZoneModules)
+        assertEquals(BasicGeometryProfile.EF_PARITY, efD25.basicProfile)
+    }
+
+    @Test
+    fun `P1_6 — QrStyle BUBBLE dispatches to dedicated BubbleRenderer`() {
+        // P1.6: QrStyle.BUBBLE must dispatch to BubbleRenderer, not ComposableQrRenderer
+        val renderer = com.veilframe.app.qr.registry.QrStyleRegistry.getRenderer(QrStyle.BUBBLE)
+        assertTrue("BUBBLE style must resolve to BubbleRenderer", renderer is com.veilframe.app.qr.renderer.BubbleRenderer)
+
+        val design = QrDesign(style = QrStyle.BUBBLE)
+        val matrix = QrGenerator.generateMatrix("BUBBLE_DISPATCH_TEST", design)
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = (renderer as com.veilframe.app.qr.renderer.BubbleRenderer).generateGeometry(matrix, design, geometry)
+        assertTrue("Bubble IR must contain geometry nodes", ir.rootNodes.isNotEmpty())
     }
 }

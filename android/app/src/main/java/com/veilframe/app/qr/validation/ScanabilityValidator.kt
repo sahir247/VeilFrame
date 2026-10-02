@@ -6,6 +6,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.decoder.DecodeResult
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
+import com.veilframe.app.qr.model.BasicGeometryProfile
 import com.veilframe.app.qr.model.FunctionPatternType
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
@@ -107,7 +108,15 @@ object ScanabilityValidator {
         val quietZone = geometry.quietZoneModules
 
         // 1. Quiet Zone Check
-        val quietZoneOk = quietZone >= 4 || (design.explicitQuietZone != null && design.explicitQuietZone >= 0) || design.style == QrStyle.IMAGE_RESAMPLE || design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL
+        val quietZoneOk = quietZone >= 4 ||
+            (design.explicitQuietZone != null && design.explicitQuietZone >= 0) ||
+            design.directionalQuietZone != null ||
+            design.backdropStyle.fractionalQuietZone != null ||
+            design.style == QrStyle.D25 ||
+            ((design.basicProfile == BasicGeometryProfile.EF_PARITY ||
+              design.style == QrStyle.IMAGE_RESAMPLE ||
+              design.style == QrStyle.IMAGE ||
+              design.style == QrStyle.IMAGE_FILL) && quietZone >= 1)
         val quietZoneReport = QuietZoneReport(
             hasFourModuleMargin = quietZone >= 4,
             quietZoneModules = quietZone
@@ -227,8 +236,14 @@ object ScanabilityValidator {
         }
 
         val isScanReady = if (decodeMatches) {
-            // Decoded and verified by scanner engine! Only block if physical logo completely exceeds ECC recovery
-            !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
+            val logoOk = !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
+            if (isStrict) {
+                // In strict validation mode (e.g. export or standard production checks),
+                // hard-gate quiet zone compliance, contrast separation, and separator clearance (AUDIT C-03 / P0.4)
+                logoOk && quietZoneOk && contrastReport.isContrastAdequate && finderReport.separatorsClear
+            } else {
+                logoOk
+            }
         } else {
             false
         }

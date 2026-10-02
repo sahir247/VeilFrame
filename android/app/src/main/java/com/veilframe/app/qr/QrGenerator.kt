@@ -543,7 +543,8 @@ object QrGenerator {
     ): Bitmap {
         require(content.isNotBlank()) { "QR content must not be blank" }
 
-        val design = QrDesign.fromQrStyleParams(params)
+        val baseDesign = QrDesign.fromQrStyleParams(params)
+        val design = baseDesign.copy(correction = ErrorCorrectionChoice.fromZxing(ecLevel))
         val result = generateWithResult(content, design)
         return when (result) {
             is QrRenderResult.Success -> result.bitmap ?: throw IllegalStateException("Bitmap creation failed")
@@ -561,9 +562,10 @@ object QrGenerator {
     fun generatePng(
         content: String,
         params: QrStyleParams = QrStyleParams(),
-        quality: Int = 100
+        quality: Int = 100,
+        ecLevel: ErrorCorrectionLevel = if (params.logo != null) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
     ): ByteArray {
-        val bmp = generate(content, params)
+        val bmp = generate(content, params, ecLevel)
         val baos = java.io.ByteArrayOutputStream()
         bmp.compress(Bitmap.CompressFormat.PNG, quality, baos)
         bmp.recycle()
@@ -580,9 +582,10 @@ object QrGenerator {
     fun generateJpeg(
         content: String,
         params: QrStyleParams = QrStyleParams(),
-        quality: Int = 90
+        quality: Int = 90,
+        ecLevel: ErrorCorrectionLevel = if (params.logo != null) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
     ): ByteArray {
-        val bmp = generate(content, params)
+        val bmp = generate(content, params, ecLevel)
         val baos = java.io.ByteArrayOutputStream()
         bmp.compress(Bitmap.CompressFormat.JPEG, quality, baos)
         bmp.recycle()
@@ -590,7 +593,7 @@ object QrGenerator {
     }
 
     /**
-     * Authoritative parity-normalization helper (GUIDE.txt Issue 2 / AGENTS.md §4).
+     * Authoritative generation and parity normalization helper (GUIDE.txt Issue 2 / AGENTS.md §4 / AUDIT C-02).
      *
      * For [GenerationMode.PARITY_EF]:
      *   - Sets [QrDesign.basicProfile] to [BasicGeometryProfile.EF_PARITY].
@@ -598,27 +601,43 @@ object QrGenerator {
      *     fractional quiet-zone override is present.
      *   - Preserves all other design fields unchanged.
      *
-     * For [GenerationMode.SAFE] and [GenerationMode.ARTISTIC_ENGINE]: returns [design] as-is.
+     * For [GenerationMode.SAFE]:
+     *   - Sets quiet zone to standard ISO/IEC 18004 margin (4 modules) only when no
+     *     explicit, directional, or fractional quiet-zone override is present.
+     *   - Preserves explicit quiet-zone intent and all other design fields unchanged.
      *
-     * This is the single location that performs parity normalization.
+     * For [GenerationMode.ARTISTIC_ENGINE]: returns [design] as-is.
+     *
+     * This is the single location that performs mode normalization.
      * All entry points (generateWithResult, generateSvg, generateAnimatedSvg,
      * generateAnimatedFrames) must call this and nowhere else.
      */
     internal fun effectiveDesignForMode(
         design: QrDesign,
         mode: GenerationMode
-    ): QrDesign = if (mode == GenerationMode.PARITY_EF) {
-        val qz = if (
-            design.explicitQuietZone == null &&
-            design.directionalQuietZone == null &&
-            design.backdropStyle.fractionalQuietZone == null
-        ) 1 else design.quietZoneModules
-        design.copy(
-            basicProfile = BasicGeometryProfile.EF_PARITY,
-            quietZoneModules = qz
-        )
-    } else {
-        design
+    ): QrDesign = when (mode) {
+        GenerationMode.PARITY_EF -> {
+            val qz = if (
+                design.explicitQuietZone == null &&
+                design.directionalQuietZone == null &&
+                design.backdropStyle.fractionalQuietZone == null
+            ) 1 else design.quietZoneModules
+            design.copy(
+                basicProfile = BasicGeometryProfile.EF_PARITY,
+                quietZoneModules = qz
+            )
+        }
+        GenerationMode.SAFE -> {
+            val qz = if (
+                design.explicitQuietZone == null &&
+                design.directionalQuietZone == null &&
+                design.backdropStyle.fractionalQuietZone == null
+            ) 4 else design.quietZoneModules
+            design.copy(
+                quietZoneModules = qz
+            )
+        }
+        GenerationMode.ARTISTIC_ENGINE -> design
     }
 
     private fun drawBackground(
@@ -725,8 +744,10 @@ object QrGenerator {
     private fun getRendererForDesign(design: QrDesign): QrRenderer {
         return if (design.style == QrStyle.IMAGE_FILL) {
             ImageFillRenderer()
+        } else if (design.style == QrStyle.BUBBLE) {
+            BubbleRenderer()
         } else if (design.moduleStyle.fill == ModuleFill.IMAGE_MASKED ||
-            design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER
+            (design.style == QrStyle.BASIC && design.moduleStyle.shape == ModuleShape.BUBBLE_CLUSTER)
         ) {
             ComposableQrRenderer()
         } else {

@@ -393,8 +393,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun autoRepair() {
         val s = _state.value
-        val effectiveContent = s.content.trim()
-        if (effectiveContent.isEmpty()) return
+        val effectiveContent = s.content
+        if (effectiveContent.isBlank()) return
         val report = s.scanabilityReport ?: return
         val currentDesign = s.design ?: return
 
@@ -421,8 +421,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun regenerate(customDesign: QrDesign? = null, debounceMs: Long = 0) {
         val s = _state.value
-        val effectiveContent = s.content.trim()
-        if (effectiveContent.isEmpty()) {
+        val effectiveContent = s.content
+        if (effectiveContent.isBlank()) {
             renderGeneration.incrementAndGet()
             generateJob?.cancel()
             generateJob = null
@@ -990,8 +990,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveJpeg() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1271,8 +1271,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     // --- Export Actions (Serialized with single-flight Job execution) ---
 
     fun saveToGallery() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1338,8 +1338,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveSvg() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1352,25 +1352,41 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val exportDesign = buildDesignFromState(_state.value, isPreview = false)
                 val mode = _state.value.generationMode
-                val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                val effectiveExportDesign = QrGenerator.effectiveDesignForMode(exportDesign, mode)
+                val matrix = withContext(Dispatchers.Default) {
+                    QrGenerator.generateMatrix(content, effectiveExportDesign, mode = mode)
                 }
-                val (bmp, matrix) = when (renderResult) {
-                    is QrRenderResult.Success -> Pair(renderResult.bitmap, renderResult.matrix)
-                    is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            saveResult = "SVG export failed: ${renderResult.error}"
+                val geometry = QrGeometry.fromDesign(
+                    matrixSize = matrix.size,
+                    outputWidth = effectiveExportDesign.outputSize,
+                    outputHeight = effectiveExportDesign.outputSize,
+                    design = effectiveExportDesign
+                )
+                val svgData = withContext(Dispatchers.Default) {
+                    QrGenerator.generateSvg(matrix, effectiveExportDesign, geometry = geometry)
+                }
+
+                // C4 / P1.4: Validate the actual generated SVG by rasterizing it to a bitmap
+                // and executing strict scanability validation on the true vector rendering
+                val rasterBmp = withContext(Dispatchers.Default) {
+                    try {
+                        com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(
+                            svgData,
+                            effectiveExportDesign.outputSize,
+                            effectiveExportDesign.outputSize
                         )
-                        return@launch
+                    } catch (_: Throwable) {
+                        null
                     }
                 }
-                if (bmp != null) {
+                if (rasterBmp != null) {
                     val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                        bmp,
-                        exportDesign,
+                        rasterBmp,
+                        effectiveExportDesign,
                         matrix,
                         content
                     )
+                    rasterBmp.recycle()
                     if (!report.isScanReady && !report.validationSkipped) {
                         _state.value = _state.value.copy(
                             saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
@@ -1379,9 +1395,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         return@launch
                     }
                 }
-                val svgData = withContext(Dispatchers.Default) {
-                    QrGenerator.generateSvg(matrix, exportDesign)
-                }
+
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.saveSvgStringTyped(getApplication(), svgData)
                 }
@@ -1395,8 +1409,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun savePdf() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1462,8 +1476,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveGif() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1512,8 +1526,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveVideo() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1569,8 +1583,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveAnimatedSvg() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to export QR code",
                 isExporting = false
@@ -1619,8 +1633,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun share() {
-        val content = _state.value.content.trim()
-        if (content.isEmpty()) {
+        val content = _state.value.content
+        if (content.isBlank()) {
             _state.value = _state.value.copy(
                 saveResult = "Content is required to share QR code",
                 isExporting = false

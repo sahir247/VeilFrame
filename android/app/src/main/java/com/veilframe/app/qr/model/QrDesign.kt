@@ -28,6 +28,15 @@ enum class ErrorCorrectionChoice {
             }
         }
     }
+
+    companion object {
+        fun fromZxing(level: ErrorCorrectionLevel): ErrorCorrectionChoice = when (level) {
+            ErrorCorrectionLevel.L -> L
+            ErrorCorrectionLevel.M -> M
+            ErrorCorrectionLevel.Q -> Q
+            ErrorCorrectionLevel.H -> H
+        }
+    }
 }
 
 enum class ModuleShape {

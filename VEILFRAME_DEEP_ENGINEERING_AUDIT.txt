@@ -1,419 +1,2225 @@
-Deep Engineering Audit -- VeilFrame QR vs EFQRCode
-==================================================
-
-AUDIT BASIS
------------
-EFQRCode: 7.0.3  tag: 07ff9e2e83a4bbd384e5a8e33b47f389c9aac762
-Bundled QR dependency: swift_qrcodejs 2.3.1  rev: d1605333f7edac39b4518538ef4f2638fdd2e4d6
-VeilFrame audit baseline: sahir247/VeilFrame  bf1a10d9b346a2aba6d8b8fb82905c1344696e39
-Current remediation revision: c4c1b7437711f20487ef46ec78d65847eac489cb
-Android QR implementation: android/app/src/main/java/com/veilframe/app/qr/
-
-METHODOLOGY: Source and committed test/oracle corpus were inspected; Android Gradle test suite,
-Swift package, macOS CoreGraphics reference renderer, and physical Android camera/scanner were NOT
-executed. CONFIRMED = confirmed from source/static evidence or committed oracle tests.
-
-1. EXECUTIVE SUMMARY
-====================
-Verdict: PARTIAL PARITY
-
-QR byte-mode encoder           | Strong (matched by committed oracle corpus)
-QR matrix topology             | Strong
-V1-V40 / L-M-Q-H coverage     | Strong in test corpus
-UTF-8 / multilingual           | Strong in oracle corpus
-Basic geometry concepts        | Mostly matched
-Quiet-zone semantics           | Intentional VeilFrame divergence in normal UI/API paths
-Artistic style algorithms      | Partial / approximate across several styles
-Image preprocessing            | Close, but not independently pixel-proven
-Image resampling               | Substantial effort, but stochastic/renderer differences remain
-Canvas vs SVG                  | Architecturally controlled, not proven pixel-equivalent
-Logo                           | Close structurally; API/default differences remain
-Animation architecture         | Good framework, confirmed wrong-source export path exists
-Public API safety              | Mixed; legacy/compatibility escape hatches remain
-UI state mapping               | Generally well structured
-Export flow                    | Static: functionally reasonable but inefficient (double-render) and not yet parity-proven; Animation fallback: architecture bug (see C-01)
-Low-RAM behavior               | Preview path capped; export peak memory still high
-Scanability validation         | Much stronger than EFs minimal generator layer
-Test quality                   | Encoder oracle excellent; renderer tests much less independent
-
-STRONGEST POSITIVE FINDING:
-VeilFrames custom encoder is not merely ZXing-compatible.
-Tier4UpstreamMatrixOracleTest checks bit-for-bit equality against pinned QRCodeSwift 2.3.1 across
-V1-V40, L/M/Q/H, Bengali/Chinese/Japanese/emoji, all 8 natural masks, V40 stress, forced masks.
-191 vectors, every matrix module compared. That is the strongest part.
-
-MOST IMPORTANT NEGATIVE FINDING:
-The animation export path can take the already-rendered QR preview bitmap and treat it as
-ImageSource.Animated artwork: rendered QR -> source artwork -> QR rendered again around it.
-This is a genuine architecture bug. Confidence: CONFIRMED
-
-2. CRITICAL BUGS
-================
-
-C-01 PRE-RENDERED QR CAN BECOME ANIMATION SOURCE
-Severity: P0 / Confidence: CONFIRMED
-File: android/app/src/main/java/com/veilframe/app/qr/ui/QrStudioViewModel.kt
-Functions: saveGif(), saveVideo(), saveAnimatedSvg()
-
-Fallback source selection:
-  val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage ?: _state.value.bitmap
-  _state.value.bitmap is the already-rendered QR preview.
-Then: ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
-placed back into QrDesign.imageSource.
-
-Data flow: User design -> regenerate() -> generateWithResult() -> _state.bitmap = rendered QR
-          -> saveGif/saveVideo/saveAnimatedSvg -> fallback to _state.bitmap
-          -> ImageSource.Animated(QR bitmap) -> AnimatedQrGenerator -> re-render QR around QR
-
-Reproduction: Enter URL. Select any static QR style. Do NOT import an image/video.
-Generate preview. Press GIF/animated SVG/video export.
-Expected: No animation source -> reject animated export, or use only actual source media.
-Actual:   No animation source -> use rendered QR bitmap -> re-render QR around QR.
-
-Fix: Remove _state.value.bitmap from all source-artwork fallbacks.
-Never use rendered preview bitmap as an input ImageSource.
-The compatibility API in QrExporter already recognizes and documents protection against this.
-The ViewModel currently bypasses that safety boundary.
-Status: RESOLVED (2026-10-01) - Removed _state.value.bitmap from saveGif, saveVideo, saveAnimatedSvg fallback chains. When artwork is absent, export is cleanly rejected with user guidance. Verified with unit test testAnimationExportsRejectWhenNoArtworkSourcesProvidedEvenIfPreviewBitmapExists.
-
-C-02 NORMAL UI GENERATION IS NOT EFQRCode ENCODER PARITY FOR BASIC
-Severity: P1 / Confidence: CONFIRMED
-File: QrGenerator.kt / Function: defaultModeFor()
-
-SAFE uses QrEncoder.encode() (ZXing) rather than VeilQrEncoder.encode().
-SAFE also uses AUTO -> M; EFQRCode default is H.
-Result: EFQRCode-compatible encoder != default BASIC UI encoder.
-Fix: Separate EF parity API -> VeilQrEncoder -> EF defaults
-     from  Safe QR API  -> ZXing -> safety-oriented defaults.
-Status: RESOLVED (2026-10-01) - Canonical generateEfCompatible() and generateSafe() entry points established. QrGenerator.defaultModeFor() and QrStudioViewModel.UiState.generationMode strictly default to GenerationMode.PARITY_EF (VeilQrEncoder with EC Level H and 1-module margin default), delivering true EFQRCode 7.0.3 encoder parity for basic QR codes out-of-the-box. Safe production mode remains selectable via GenerationMode.SAFE or generateSafe().
-
-C-03 UI BUILDS AN EXPLICIT 4-MODULE QUIET ZONE WHERE EF DEFAULTS TO 1
-Severity: P1 / Confidence: CONFIRMED
-File: QrStudioViewModel.kt / Function: buildDesignFromState()
-
-EF basic default ~1 module margin vs VeilFrame QR Studio default 4 modules for most styles.
-explicitQuietZone was explicitly populated even when quietZoneChoice was null, preventing PARITY_EF from restoring EF defaults.
-Fix: Separate EF default geometry (qz=1) from safe geometry (qz=4) via explicit policy objects.
-Status: RESOLVED (2026-10-01) - Introduced QrGeometryPolicy (EfParity with 1-module margin vs SafeProduction with 4-module margin). explicitQuietZone is now strictly null unless explicitly chosen by the user, allowing EF parity mode to apply 1-module margins unhindered.
-
-C-04 GENERATION CAN REPORT SUCCESS WITH A FAILED SCANABILITY REPORT
-Severity: P1 / Confidence: CONFIRMED
-File: QrGenerator.kt / Function: generateWithResult()
-
-Returns QrRenderResult.Success(...) even if report.isScanReady == false.
-Callers can receive Success + QR that failed scanability validation.
-Fix: Introduce Success.Unverified / Success.Verified / Failure typed states.
-Status: RESOLVED (2026-10-01) - Introduced Success.Verified and Success.Unverified typed states with isVerified property and backwards-compatible companion invoke.
-
-3. HIGH / MEDIUM / LOW ISSUES
-==============================
-
-HIGH
-H-01 UI default BASIC uses SAFE/ZXing rather than EF parity      QrGenerator.defaultModeFor()         RESOLVED (2026-10-01) - Default mode for BASIC is strictly PARITY_EF in UI & generator
-H-02 UI default quiet zone is 4 for most styles                   QrStudioViewModel.buildDesignFromState RESOLVED (2026-10-01)
-H-03 Animated export can consume _state.bitmap as source artwork   saveGif/saveVideo/saveAnimatedSvg()   RESOLVED (2026-10-01)
-H-04 Validation and actual export are separate render passes
-     PNG/JPEG/PDF: RESOLVED (2026-10-01) - Single-render Bitmap validation & direct export
-     SVG: Option B applied (matrix reused, direct saveSvgStringTyped); vector-level rasterization validation tracked under H-05
-H-05 Canvas and SVG independently implemented; pixel parity unproven QrGenerator vs SvgExporter          RESOLVED (2026-10-01) - Unified IR (BasicGeometryBuilder) & CrossBackendCanvasSvgParityTest
-H-06 EF random styles are stochastic; deterministic Veil is diff   random/bubble/line/resample           CONFIRMED / INTENTIONAL (Deterministic seed mode guarantees testability)
-
-MEDIUM
-M-01 generateBitmap() swallows allocation Throwable, returns null  QrGenerator.generateBitmap()          RESOLVED (2026-10-01)
-M-02 SVG resample preprocessing falls back to raw bitmap on Throwable SvgExporter.generateSvg()          RESOLVED (2026-10-01)
-M-03 Design-level quiet-zone resolver has matrixSize=21 default     QrGeometry.resolveQuietZone()        RESOLVED (2026-10-01)
-M-04 Preview clamped to 512 while export may be 4096               buildDesignFromState()                RESOLVED (2026-10-01)
-M-05 PNG/JPEG/PDF paths can retain one full render while saving another ViewModel + exporter             RESOLVED (2026-10-01)
-M-06 PDF path lacks same strict scanability gate as PNG/SVG/JPEG   QrStudioViewModel.savePdf()           RESOLVED (2026-10-01)
-M-07 Share fallback can use _state.bitmap after failed generation   QrStudioViewModel.share()             RESOLVED (2026-10-01)
-M-08 ViewModel accepts logo fractions up to 35%; EF caps at 33%    ViewModel + EF writeIcon()            RESOLVED (2026-10-01)
-
-LOW
-L-01 Different RNG; exact visual reproducibility against EF impossible random styles                      CONFIRMED
-L-02 Multiple geometry/parameter representations create drift potential QrStyleParams/QrDesign/QrGeometry LIKELY
-L-03 Some tests assert literal SVG tags not rendered geometry/pixels Tier 5 tests                         CONFIRMED
-L-04 Several parity comments are contracts not measurements          renderer/source docs                  CONFIRMED
-
-4. EFQRCode -> VEILFRAME FEATURE MATRIX
-========================================
-Basic                  | BasicRenderer                                | PARTIAL
-Bubble                 | BubbleClusterEngine / BubbleRenderer         | PARTIAL
-2.5D                   | Renderer25D                                  | PARTIAL
-DSJ                    | DsjRenderer                                  | PARTIAL
-Function               | FunctionRenderer                             | PARTIAL
-Image                  | ImageRenderer                                | PARTIAL / CLOSE
-Image Fill             | ImageFillRenderer                            | PARTIAL / CLOSE
-Line                   | LineTopologyBuilder / LineRenderer           | PARTIAL
-Random Rectangle       | RandomRectangleRenderer                      | PARTIAL
-Resample Image         | ResampleSubpixelEngine / ResampleGeometry    | PARTIAL / HIGH EFFORT
-Style Function         | StyleFunctionRenderer                        | VeilFrame extension
-Connected Organic      | ConnectedOrganicRenderer                     | VeilFrame extension
-
-All 10 EF styles implemented plus two VeilFrame-only styles.
-Feature exists: TRUE.  Feature is behaviorally identical: NOT YET PROVEN.
-
-5. ENCODER PARITY
-==================
-Assessment: Strong parity / Confidence: CONFIRMED from committed upstream oracle test corpus
-
-EF pipeline:  String -> QR8bitByte -> UTF-8 bytes -> QRCodeModel -> version -> RS blocks
-              -> mask candidates 0-7 -> lost-point scoring -> best mask -> format info -> matrix
-Veil pipeline: String -> Charsets.UTF_8 -> VeilQrEncoder -> QRCodeModel (Kotlin port)
-               -> RS blocks -> mask scoring -> function-pattern placement -> QrMatrix
-Coordinate translation: model.isDark(row,col) -> matrix.isDark(col,row) [expected]
-
-Encoding conclusion:
-  Byte mode / UTF-8 / Unicode bytes / Version selection / RS blocks / Mask scoring: MATCH
-  Natural masks / Forced masks / V40 / Matrix orientation / Structure: MATCH / STRONG
-
-Remaining caveat: oracle is pre-generated; fresh EFQRCode vs fresh VeilFrame not executed here.
-
-6. GEOMETRY PARITY
-===================
-Overall: PARTIAL / structurally strong
-
-Good: QrGeometry is correctly matrix-aware; supports square/non-square, asymmetric/fractional
-quiet zones, centering, directional insets, different output sizes, content-relative logo centering.
-
-Important problem: QrGeometry.resolveQuietZone(design, matrixSize=21) is semantically dangerous.
-Calling without the actual QR matrix returns a V1-sized assumption for a V40 design.
-Confirmed API hazard; runtime impact UNVERIFIED.
-
-D25: VeilFrame has analytical D25 projection and explicit tests; exact pixel equivalence unverified.
-
-7. ARTISTIC STYLE PARITY
-=========================
-All styles: PARTIAL or PARTIAL/CLOSE or PARTIAL/HIGH EFFORT.
-None fully proven by independent pixel oracle.
-
-BUBBLE: EF uses unseeded Double.random; VeilFrame uses deterministic hash-derived randomness.
-  Excellent for reproducibility but not exact EF visual reproduction.
-LINE: EF uses availability graph + directional runs. VeilFrame adds circuit bridges, accent rings.
-  EF mode should be kept separate from Veil enhanced mode.
-RANDOM RECTANGLE: Same two-rectangle model, but VeilFrame uses split seeded RNG streams
-  (shuffleRng, scaleRng, colorRng, offsetRng) while EF uses system randomness.
-  Assessment: APPROXIMATE PARITY
-RESAMPLE IMAGE: VeilFrame recreated 3x3 subpixel domain, gamma/luminance processing, role-aware
-  exclusions, center anchors, backdrop separation, stochastic sampling, deterministic mode, IR/SVG.
-  Missing proof: independent pixel comparison across real source images and platform rasterizers.
-  Assessment: HIGH-EFFORT PARTIAL PARITY
-
-8. IMAGE PIPELINE PARITY
-=========================
-EfImagePreprocessor.kt models: scaleToFill, scaleAspectFit, scaleAspectFill, integer truncation,
-transparent expansion, crop semantics, bilinear resize.
-
-  mathematical scaling semantics: LIKELY CLOSE
-  integer truncation:             CONFIRMED from code
-  crop model:                     LIKELY CLOSE
-  transparent expansion:          LIKELY CLOSE
-  exact resampling kernels:       UNVERIFIED
-  exact pixels:                   UNVERIFIED
-
-Android Canvas + Paint.FILTER_BITMAP_FLAG is not mathematically identical to CoreGraphics/CGContext
-for every fractional transformation.
-
-9. CANVAS vs SVG PARITY
-========================
-Canvas path: QrGenerator.renderToCanvas() -> QrRenderer -> Android Canvas
-SVG path:    SvgExporter.generateSvg() -> style-specific SVG/IR -> SVG string
-These are not universally the same renderer.
-
-Good: IMAGE_RESAMPLE increasingly uses ResampleGeometryBuilder -> QrGeometry IR -> Canvas/SVG.
-Weak: Several normal styles have independent Canvas and SVG implementations.
-Missing: A real gold pipeline (EF SVG vs Veil SVG vs Veil Canvas with pixel diff).
-Assessment: PARTIAL
-
-10. LOGO / MASK / CLIPPING PARITY
-==================================
-EF: icon percentage capped at 0.33, centered against QR matrix, border path, squircle mask,
-image rect expanded by 2.4%, SVG mask, animated image support.
-VeilFrame: content-relative logo geometry (correct). But updateLogoFraction() allows
-coerceIn(0.10f, 0.35f) while EF caps at 0.33.
-Assessment: PARTIAL / STRONG STRUCTURAL PARITY
-
-11. ANIMATION / EXPORT PARITY
-==============================
-Framework: AnimatedQrGenerator has sophisticated LCM-based timeline model.  Assessment: STRONG
-
-Problems:
-  (a) ViewModel can inject rendered QR preview as source artwork, overriding correct architecture.
-  (b) PNG export can hold two full-size renders simultaneously (bitmap A validate, bitmap B save).
-  (c) saveVideo() can synthesize 15 copies x 66ms from fallback bitmap -- a static video, not animation.
-
-Assessment: Framework STRONG / current end-to-end correctness PARTIAL
-
-12. PUBLIC API / ESCAPE-HATCH AUDIT
-====================================
-Multiple semantic routes: SAFE, ARTISTIC_ENGINE, PARITY_EF, legacy generate(), legacy PNG/JPEG.
-Legacy QrGenerator.generate() routes BASIC -> SAFE (ZXing), not the EF parity engine.
-Recommendation: Explicitly separate generateSafe(), generateArtistic(), generateEfCompatible().
-
-13. UI AUDIT
-=============
-State synchronization:
-  AtomicLong renderGeneration + cancel previous Job + generation check.
-  Solid defense against slider storms, style switching, stale preview races.
-
-Preview/export consistency:
-  Intentional difference: preview <= 512px, export = requested size.
-  BUT semantic rendering algorithm changes more than resolution:
-    BASIC uses SAFE, UI qz defaults differ, animated source handling differs, export validation differs.
-  PREVIEW == EXPORT is NOT universally guaranteed at behavioral level.
-
-14. MEMORY / PERFORMANCE / LOW-RAM AUDIT
-=========================================
-Preview capped at minOf(outputSize, 512) -- GOOD
-
-Export peak:
-  4096x4096 ARGB_8888 = 64 MiB per bitmap.
-  Two full-size renders during static export ~= 128 MiB before buffers.
-  15 animation frames at full resolution ~= 960 MiB -- NOT ACCEPTABLE as default retained in-memory.
-  SVG: base64 expansion increases binary size by ~4/3.
-
-Recommended architecture:
-  Preview: 512px max
-  Static export: render once -> validate same bitmap -> encode/save -> release bitmap
-  Animated export: streaming frame renderer -> encode frame -> release frame -> next frame (At most one rendered QR frame bitmap is intentionally retained by the streaming renderer at a time)
-
-Assessment: Preview GOOD / Export memory RESOLVED for static single-render and streaming animation frame pipelines
-
-15. SCANNABILITY AUDIT
-=======================
-ScanabilityValidator checks: quiet zone, contrast, finder integrity, logo occlusion,
-decoder result, expected payload match, multi-resolution fallback. Uses ML Kit + ZXing fallback.
-
-4 modules is a QR best-practice margin, not a hard decoder limit. The validator correctly
-differentiates practical decode from standard-margin reporting.
-
-Missing: Large-scale physical-device matrix (every style x 256/512/1024/2048 x JPEG x camera x phones).
-Assessment: Validation architecture STRONG / empirical scanability coverage PARTIAL
-
-16. TEST QUALITY AUDIT
-=======================
-A. Encoder tests -- EXCELLENT
-   Tier4UpstreamMatrixOracleTest: VeilFrame vs precomputed upstream oracle (not vs itself).
-   Genuine differential testing.
-
-B. Artistic renderer tests -- MUCH WEAKER
-   Many Tier 5 tests assert literal SVG tags/formulas. These can pass if both implementation and
-   expected formula share the same incorrect assumption.
-   WWF golden test: stronger (external reference), but one case, not the entire style matrix.
-
-Biggest gap: No complete automated test of EF SVG vs Veil SVG vs Veil Canvas with pixel diff.
-
-Test quality summary:
-  Matrix oracle / UTF-8 / Version / Mask coverage  | Excellent
-  Basic geometry formulas                           | Good
-  SVG structural checks / Cross-backend structural  | Good
-  Independent artistic pixel oracle                 | Insufficient
-  Full scanability matrix / UI end-to-end parity    | Partial
-  Animation source semantics                        | Missing regression test for confirmed bug
-
-17. UNVERIFIED AREAS
-=====================
-UNVERIFIED-01: Fresh runtime execution of all 191 upstream matrix oracle vectors.
-UNVERIFIED-02: Pixel-perfect equivalence between EF CoreGraphics and Android Canvas for every style.
-UNVERIFIED-03: Pixel-perfect equivalence between EF SVG rasterized independently and VeilFrame SVG.
-UNVERIFIED-04: Exact CoreGraphics-vs-Android interpolation for all fractional image transforms.
-UNVERIFIED-05: Physical scanner success rate across multiple real Android devices/cameras.
-UNVERIFIED-06: All minor helper types not expanded into line-by-line semantic equivalence proof.
-UNVERIFIED-07: Exact committed-oracle generation provenance (Swift vs JavaScript generator).
-UNVERIFIED-08: Whether every legacy overload ultimately reaches the canonical rendering path.
-
-18. REQUIRED FIX ORDER
-=======================
-
-P0 -- correctness/blocking
-  P0.1: Remove rendered QR bitmap as animation source in saveGif(), saveVideo(), saveAnimatedSvg().
-        Add regression test asserting EmptyFrames/missing source when no actual source image exists.
-
-P1 -- major behavioral mismatch
-  - [x] P1.1: Make parity encoder an explicit canonical path; UI explicitly chooses EF-compatible encoding (RESOLVED - PARITY_EF is canonical default).
-  - [x] P1.2: Separate EF default geometry (qz=1) from safe geometry (qz=4) via explicit policy objects (RESOLVED - QrGeometryPolicy).
-  - [x] P1.3: Fix Success semantics: Success.Unverified / Success.Verified / Failure typed states (RESOLVED - QrRenderResult).
-
-P2 -- robustness/parity
-  - [x] P2.1: Export validation must operate on the same bitmap that is actually written.
-  - [x] P2.2: Stream animation frames instead of retaining all full-resolution bitmaps.
-  - [x] P2.3: Stop swallowing Throwable in low-level render functions unless converted to structured failure.
-  - [x] P2.4: Eliminate default matrixSize=21 geometry assumptions from production-facing APIs.
-  - [x] P2.5: Create one authoritative geometry/quiet-zone resolver; forbid duplicated derived calculations.
-
-P3 -- quality/cleanup
-  - [x] P3.1: Reduce legacy API surface (RESOLVED - @Deprecated with ReplaceWith on untyped QrGenerator & QrExporter overloads).
-  - [x] P3.2: Unify Canvas/SVG through IR where possible (RESOLVED - BasicGeometryBuilder, ResampleGeometryBuilder, DsjRenderer, LineRenderer, BubbleRenderer, RandomRectangleRenderer).
-  - [x] P3.3: Document intentional VeilFrame-only styles separately from EF parity styles (RESOLVED - QrStyle taxonomy KDoc & isEfParityStyle/isVeilFrameExtension).
-  - [x] P3.4: Rename comments claiming exact parity where evidence is only mathematical or structural (RESOLVED - Calibrated to structural/mathematical parity).
-
-19. GOLDEN TEST PLAN
-=====================
-
-Tier A -- encoder:
-  For every V1,V2,V5,V10,V20,V30,V40 x L,M,Q,H: compare Veil matrix == EF/QRCodeSwift oracle (bit-for-bit).
-  Include: ASCII, Bengali, Japanese, Chinese, emoji, URLs, Wi-Fi, vCard, mixed Unicode, long payloads.
-
-Tier B -- style geometry:
-  For each of 10 EF styles x (default/custom qz/fractional qz/asymmetric qz/logo/no logo):
-  Capture normalized geometry (finder/module/timing/alignment/logo/canvas bounds, viewBox, clip/mask).
-  Compare against an EF-generated SVG parsed by an independent harness.
-
-Tier C -- pixel:
-  For every style: EF SVG -> reference rasterizer / Veil SVG -> same rasterizer / Veil Canvas -> bitmap.
-  Compare: geometry coverage, mask alpha, edge positions, pixel colors.
-  Strict thresholds separately for geometry, rasterization, and color mismatch (not one SSIM score).
-
-Tier D -- image:
-  Fixed fixtures: square/portrait/landscape/transparent/high-contrast/low-contrast/large/tiny.
-  Run: aspect fit/fill/crop/stretch at 256/512/1024/2048.
-
-Tier E -- stochastic styles:
-  EF: capture exact output once.
-  VeilFrame SYSTEM_UNSEEDED: compare structural topology, range distributions, module occupancy,
-  geometric bounds, color distribution (not exact pixels).
-  Deterministic Veil mode: same seed + same design + same payload -> byte-identical SVG,
-  pixel-identical Canvas (subject only to platform rasterization).
-
-Tier F -- animation source isolation:
-  Permanent regression: source artwork bitmap != rendered QR bitmap.
-  Structural fix:
-    sealed interface Artwork { data class SourceMedia(...); data class RenderedQr(...) }
-  Make type system prevent RenderedQr from entering an image-source API.
-
-Tier G -- UI state propagation:
-  For every control: UI field -> UiState -> QrDesign -> Renderer -> Preview -> Export.
-  Controls: qz, EC, shape, finder, timing, alignment, colors, logo, image scale mode,
-  contrast/exposure, image opacity, random seed, RNG mode, animation delay, output size.
-
-20. FINAL VERDICT
-==================
-PARTIAL PARITY
-
-Confirmed strong areas:
-  1. QR encoding: Real behavioral parity via pinned QRCodeSwift oracle, V1-V40, all EC levels,
-     multilingual, mask coverage, module-by-module verification.
-  2. Architecture: Correctly separated QrDesign/QrMatrix/QrGeometry/renderer IR/Canvas/SVG/export/UI.
-  3. Image resampling: Credible attempt to reproduce EFs actual 3x3 stochastic subpixel model.
-  4. Scanability: Real decoder/quality validation beyond just rendering an artistic QR.
-
-Why not stronger than PARTIAL PARITY:
-  1. [RESOLVED 2026-10-01] Default UI/API behavior now defaults to PARITY_EF (VeilQrEncoder, EC Level H, 1-module margin; safe mode explicitly selectable via SAFE).
-  2. Canvas/SVG pixel parity is structurally aligned via QrGeometryIr but not independently proven via pixel oracle.
-  3. [RESOLVED 2026-10-01] Animation export rendered-QR-as-source bug (C-01 / H-03).
-
-Completed milestones:
-  - [x] P0 animation source isolation (C-01 / H-03)
-  - [x] P1.1 / P1.2 / P1.3 behavioral parity & typed verification: C-02 canonical EF-mode entry points (PARITY_EF default in UI & generator), C-03 QrGeometryPolicy separation, C-04 Success.Verified / Success.Unverified typed states
-  - [x] P2.1 static export single-render refactoring (PNG/JPEG/PDF resolved, SVG Option B direct write) & PDF strict validation gate (H-04, M-05, M-06)
-  - [x] P2.2 animation frame streaming (GIF/APNG/Video streaming renderer retains at most one rendered output frame bitmap at a time, eliminating concurrent frame buffering)
-  - [x] P2.3 / P2.4 / P2.5 robustness fixes: M-01 allocation logging, M-02 SVG resample warning logging & array fallback, M-03 quiet zone matrixSize default removal, M-04 sanitized resolution tiering, M-07 share fallback removal, M-08 logo fraction 33% cap
-  - [x] P3.1 / P3.2 / P3.3 / P3.4 quality & cleanup: legacy API surface reduction via @Deprecated, Canvas/SVG IR unification (BasicGeometryBuilder), QrStyle EF parity vs extension taxonomy, and parity comment calibration (H-05, P3.1, P3.2, P3.3, P3.4)
-
-Next correctness milestone:
-  + independent EF-vs-Veil SVG/Canvas pixel differential testing (Tier C/D/E)
-
-==================================================
-END OF AUDIT
-EFQRCode 7.0.3 (07ff9e2e) vs VeilFrame (audit baseline: bf1a10d9 / current: c4c1b74)
-Generated: 2026-10-01
-==================================================
+# 1. EXECUTIVE SUMMARY
+
+I audited the relevant VeilFrame QR implementation against the EFQRCode source tree requested in the brief, following the requested pipeline from encoding through UI/export rather than treating passing tests or API similarity as proof of parity. The requested report structure and evidence requirements are explicit in the supplied audit brief.
+
+### Audited snapshots
+
+| Repository        | Audited revision                                            | Status                            |
+| ----------------- | ----------------------------------------------------------- | --------------------------------- |
+| VeilFrame         | `a679d7053052000bc3776ab0529a63f0ec7a3146`                  | current `main` snapshot inspected |
+| EFQRCode          | `3897298e0aac08f8e3d38378afdb419ab66efee8`                  | current `main` snapshot inspected |
+| EF QR dependency  | `swift_qrcodejs` `d1605333f7edac39b4518538ef4f2638fdd2e4d6` | 2.3.1                             |
+| EF SVG dependency | SwiftDraw `a19594794cdcdee5135caad3bc119096c50c92c2`        | 0.22.0                            |
+
+[VeilFrame audited commit](https://github.com/sahir247/VeilFrame/commit/a679d7053052000bc3776ab0529a63f0ec7a3146?utm_source=chatgpt.com)
+[EFQRCode audited commit](https://github.com/EFPrefix/EFQRCode/commit/3897298e0aac08f8e3d38378afdb419ab66efee8?utm_source=chatgpt.com)
+[swift_qrcodejs audited revision](https://github.com/EFPrefix/swift_qrcodejs/tree/d1605333f7edac39b4518538ef4f2638fdd2e4d6?utm_source=chatgpt.com)
+
+EFQRCode's public documentation identifies 7.0.3 as the current packaged release and documents SVG/PDF/PNG/JPEG plus APNG/GIF/MOV/MP4/M4V generation. ([GitHub][1])
+
+**Important scope qualification:** I did not receive an actual local EFQRCode checkout directory containing `.git`; the supplied attachment contained the audit specification, not repository bytes. Therefore I can pin and audit the GitHub snapshot above, but I cannot independently prove that some separate local directory on your machine has exactly that commit. Local-checkout metadata is **UNVERIFIED**.
+
+### Bottom line
+
+VeilFrame has achieved **substantial algorithmic parity**, especially in its QR matrix encoder and several geometry/image primitives. However, it does **not** currently achieve EFQRCode-level behavioral parity across the entire requested scope.
+
+The biggest reasons are:
+
+1. the EF stochastic styles are not sequence-identical because VeilFrame deliberately introduces deterministic seeded PRNGs;
+2. the default D25 quiet-zone behavior differs from EFQRCode;
+3. the public legacy `QrGenerator.generate(..., ecLevel)` API ignores its supplied EC level;
+4. the advertised SAFE path does not actually normalize to the documented 4-module quiet zone;
+5. scanability validation can report a QR as scan-ready despite a non-standard quiet-zone warning;
+6. SVG export is validated against the Canvas bitmap rather than against the actual SVG after independent rasterization;
+7. the UI deliberately uses a different preview resolution from export;
+8. UI input is `.trim()`ed before encoding;
+9. some UI style paths are dispatched through VeilFrame's generalized compositional renderer rather than the dedicated EF-compatible renderer;
+10. the animation/SVG implementation is structurally different from EF's image-animation semantics;
+11. the existing tests are overwhelmingly **self-consistency tests**, not independent EFQRCode oracle tests.
+
+So the appropriate current verdict is:
+
+# **PARTIAL PARITY**
+
+---
+
+# 2. CRITICAL BUGS
+
+## C1 — Public `ecLevel` argument is ignored
+
+**Severity:** P0 — correctness/blocking
+**Confidence:** **CONFIRMED**
+
+**File**
+
+`android/app/src/main/java/com/veilframe/app/qr/QrGenerator.kt`
+
+**Function**
+
+`generate(content, params, ecLevel)`
+
+**Relevant region**
+
+Around the legacy API near line 539.
+
+The function accepts:
+
+```text
+ecLevel: ErrorCorrectionLevel = ...
+```
+
+but then does:
+
+```text
+val design = QrDesign.fromQrStyleParams(params)
+val result = generateWithResult(content, design)
+```
+
+The supplied `ecLevel` is never copied into `design.correction`.
+
+The eventual encoder therefore uses the design's correction setting rather than the caller's argument.
+
+### Reproduction
+
+Conceptually:
+
+```kotlin
+QrGenerator.generate(
+    "HELLO",
+    QrStyleParams(),
+    ErrorCorrectionLevel.L
+)
+```
+
+does **not** guarantee EC-L.
+
+The `QrDesign` created from the params starts with AUTO semantics, and `generateMatrix()` resolves AUTO to H for artistic/parity modes.
+
+### Expected
+
+Passing `L` must produce EC-L.
+
+### Actual
+
+The argument can be ignored.
+
+### Fix
+
+Either remove the legacy argument entirely or make it authoritative:
+
+```text
+params → design
+design.correction = explicit ecLevel
+→ generation
+```
+
+There must be exactly one EC source of truth.
+
+---
+
+## C2 — SAFE mode advertises a 4-module quiet zone but does not enforce it
+
+**Severity:** P0
+**Confidence:** **CONFIRMED**
+
+**Files**
+
+`android/app/src/main/java/com/veilframe/app/qr/QrGenerator.kt`
+
+`android/app/src/main/java/com/veilframe/app/qr/model/QrDesign.kt`
+
+`android/app/src/main/java/com/veilframe/app/qr/model/QrGeometry.kt`
+
+### Data flow
+
+`generateSafe()`
+
+→ `generateWithResult(..., GenerationMode.SAFE)`
+
+→ `effectiveDesignForMode()`
+
+→ geometry
+
+But `effectiveDesignForMode()` only performs special normalization for `PARITY_EF`.
+
+For SAFE it returns the supplied design unchanged.
+
+`QrDesign()` defaults to 1 module, while `generateSafe()`'s documentation says it provides the standard 4-module quiet zone.
+
+### Result
+
+The implementation and its public contract disagree.
+
+The problem is aggravated by `ScanabilityValidator` because the validator can warn about `<4` modules without making quiet-zone adequacy part of `isScanReady`.
+
+### Fix
+
+Create a canonical `SAFE` normalization:
+
+```text
+SAFE:
+  EC = policy-resolved
+  QZ >= 4 unless caller explicitly opts out
+  validation must require the same policy
+```
+
+---
+
+## C3 — Scanability gate does not actually gate the quiet-zone requirement
+
+**Severity:** P0/P1
+**Confidence:** **CONFIRMED**
+
+**File**
+
+`android/app/src/main/java/com/veilframe/app/qr/validation/ScanabilityValidator.kt`
+
+**Function**
+
+`performValidation()`
+
+The validator computes:
+
+```text
+quietZoneReport.hasFourModuleMargin
+```
+
+and emits:
+
+```text
+"Quiet zone is less than the standard 4 modules margin."
+```
+
+but `isScanReady` ultimately depends primarily on successful decode plus logo constraints:
+
+```text
+decodeMatches
+&& !logoReport.hasProtectedOverlap
+&& logoReport.isWithinErrorCorrectionCapacity
+```
+
+The quiet-zone result is not itself a hard requirement for scan readiness.
+
+Therefore a QR can conceptually be:
+
+```text
+quietZone warning = FAIL
+decode = PASS
+isScanReady = true
+```
+
+### Why this matters
+
+Your stated safety contract is not merely “ZXing happened to decode this bitmap.” It is a structural production-safe QR contract.
+
+### Fix
+
+Make policy explicit:
+
+```text
+ScanabilityPolicy.standard:
+    quietZone >= 4
+    contrast >= threshold
+    finder integrity
+    decoder pass
+    logo budget
+```
+
+Then use that same policy for `SAFE`, preview diagnostics, and export.
+
+---
+
+## C4 — SVG export is validated through the bitmap path, not through the SVG output
+
+**Severity:** P1
+**Confidence:** **CONFIRMED**
+
+**File**
+
+`android/app/src/main/java/com/veilframe/app/qr/ui/QrStudioViewModel.kt`
+
+**Function**
+
+`saveSvg()`
+
+The flow is:
+
+```text
+QrGenerator.generateWithResult()
+        ↓
+Canvas Bitmap
+        ↓
+ScanabilityValidator.validateStrict(bitmap)
+        ↓
+QrGenerator.generateSvg()
+        ↓
+save SVG
+```
+
+The SVG itself is never rasterized and decoded before being accepted.
+
+That is directly contrary to the required Canvas/SVG audit condition in the supplied specification.
+
+### Failure mode
+
+A bitmap renderer can be correct while SVG differs in:
+
+* masks
+* embedded image scale
+* gradient coordinates
+* clip paths
+* SVG transform offsets
+* ID references
+* fractional coordinates
+* alpha
+* image `preserveAspectRatio`
+* animation references
+
+The existing test suite recognizes the distinction, but the production export path does not close that loop.
+
+### Fix
+
+For SVG:
+
+```text
+generate SVG
+→ rasterize with an independent SVG renderer
+→ scanability validation
+→ optionally compare with canonical Canvas geometry
+→ save
+```
+
+---
+
+## C5 — UI silently removes payload whitespace
+
+**Severity:** P1
+**Confidence:** **CONFIRMED**
+
+**File**
+
+`android/app/src/main/java/com/veilframe/app/qr/ui/QrStudioViewModel.kt`
+
+**Functions**
+
+`regenerate()`, `saveToGallery()`, `saveSvg()`, etc.
+
+The UI repeatedly uses:
+
+```text
+s.content.trim()
+```
+
+before encoding.
+
+That means:
+
+```text
+" abc "
+```
+
+becomes:
+
+```text
+"abc"
+```
+
+This changes the QR payload.
+
+EFQRCode's QR generator does not define this as a preprocessing semantic.
+
+### Fix
+
+Do not trim payload data.
+
+Use:
+
+```text
+isBlank() → validation only
+original content → encoder
+```
+
+---
+
+## C6 — Default D25 quiet zone does not match EFQRCode
+
+**Severity:** P1
+**Confidence:** **CONFIRMED**
+
+EFQRCode:
+
+`Source/Styles/EFQRCodeStyle25D.swift`
+
+uses:
+
+```text
+EFStyleParamBackdrop()
+```
+
+and EF's default backdrop `viewBox()` returns:
+
+```text
+x = -1
+y = -1
+width = moduleCount + 2
+height = moduleCount + 2
+```
+
+when no explicit quietzone is provided.
+
+Therefore D25's default is still one module around the QR.
+
+VeilFrame:
+
+`android/app/src/main/java/com/veilframe/app/qr/model/QrGeometry.kt`
+
+contains:
+
+```text
+resolveDefaultQuietZone(...)
+    D25 -> 0
+    else -> 1
+```
+
+That is a concrete reference-behavior mismatch.
+
+The local test `testArtisticDefaultQuietZoneSemantics()` actually locks in the VeilFrame rule rather than testing it against an EFQRCode-generated oracle.
+
+### Fix
+
+Default D25 to one module in EF parity mode.
+
+If VeilFrame intentionally wants zero-QZ D25 as an extension, that should be an explicit VeilFrame profile, not the EF parity default.
+
+---
+
+# 3. HIGH / MEDIUM / LOW ISSUES
+
+| Severity | Issue                                                                         | Evidence                                                                                               | Confidence                  |
+| -------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------- |
+| P1       | Bubble stochastic sequence differs from EF                                    | `BubbleClusterEngine.kt` uses deterministic seeded channel RNG; EF `Bubble.swift` uses `Double.random` | CONFIRMED                   |
+| P1       | RandomRectangle random sequence differs from EF                               | `RandomRectangleRenderer.kt` seeded RNG vs EF `Double.random`                                          | CONFIRMED                   |
+| P1       | Line randomization is not EF's random sequence                                | `LineRenderer.kt` / `LineTopologyBuilder.kt`                                                           | CONFIRMED                   |
+| P1       | Default resample UI RNG is `SYSTEM_UNSEEDED`                                  | `QrStudioViewModel.UiState.resampleRngMode`                                                            | CONFIRMED                   |
+| P1       | SAFE generation contract and validation contract disagree                     | `QrGenerator.kt`, `ScanabilityValidator.kt`                                                            | CONFIRMED                   |
+| P1       | SVG production validation does not validate actual SVG                        | `saveSvg()`                                                                                            | CONFIRMED                   |
+| P1       | Generic SVG animation materializes complete SVG per frame                     | `AnimatedQrGenerator.generateAnimatedSvg(...)`                                                         | CONFIRMED                   |
+| P2       | Preview output is capped at 512 while export uses selected 256–4096           | `buildDesignFromState()`                                                                               | CONFIRMED                   |
+| P2       | `generateWithResult()` is synchronous and uses `runBlocking`                  | `QrGenerator.kt`                                                                                       | CONFIRMED                   |
+| P2       | UI BUBBLE dispatch can bypass the dedicated BUBBLE renderer                   | `getRendererForDesign()`                                                                               | CONFIRMED                   |
+| P2       | Backdrop preprocessing can be followed by another scaling operation           | `QrGenerator.drawBackground()`                                                                         | LIKELY                      |
+| P2       | Logo/Occlusion budgets are stricter than their comments imply                 | `ScanabilityValidator.analyzeLogoOcclusion()`                                                          | CONFIRMED                   |
+| P2       | `renderFramesStreaming()` does not itself define bitmap ownership/release     | `AnimatedQrGenerator.kt`                                                                               | CONFIRMED architectural gap |
+| P2       | Replacing UI source images does not automatically dispose the previous Bitmap | `QrStudioViewModel`                                                                                    | LIKELY                      |
+| P3       | Several legacy methods expose raw Bitmap/PNG APIs alongside typed APIs        | `QrGenerator.kt`, `QrExporter.kt`                                                                      | CONFIRMED                   |
+| P3       | Some error paths collapse rich exceptions into strings                        | legacy APIs                                                                                            | CONFIRMED                   |
+| P3       | Large embedded SVG images create expensive Base64/String copies               | `SvgExporter.kt`                                                                                       | CONFIRMED                   |
+
+---
+
+# 4. EFQRCode → VEILFRAME FEATURE MATRIX
+
+| EFQRCode feature    | EF source                                   | VeilFrame                                | Match                                        |
+| ------------------- | ------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| QR byte encoding    | `swift_qrcodejs/QRCodeModel.swift`          | `VeilQrEncoder` / `QRCodeModel`          | **STRONG**                                   |
+| UTF-8 byte encoding | `QR8bitByte.swift`                          | UTF-8 in `VeilQrEncoder`                 | **STRONG**                                   |
+| Numeric mode        | enum only, not used by EF generator         | not independently segmented              | **PARITY**                                   |
+| Alphanumeric mode   | enum only, not used by EF generator         | not independently segmented              | **PARITY**                                   |
+| Kanji               | enum exists, generator still uses byte mode | byte mode                                | **PARITY**                                   |
+| ECI                 | no corresponding EF generation path         | none                                     | **PARITY**                                   |
+| EC L/M/Q/H          | supported                                   | supported                                | **STRONG**                                   |
+| default EC H        | EF default                                  | parity mode H                            | **STRONG**                                   |
+| mask selection      | QRCodeSwift lost-point loop                 | ported implementation                    | **STRONG**                                   |
+| finder patterns     | QRCodeModel                                 | Veil QR model                            | **STRONG**                                   |
+| timing              | QRCodeModel                                 | Veil QR model                            | **STRONG**                                   |
+| alignment           | QRPatternLocator                            | Veil QRPatternLocator                    | **STRONG**                                   |
+| format/version      | QRCodeModel/BCH                             | Veil BCH/model                           | **STRONG**                                   |
+| BASIC               | `EFQRCodeStyleBasic`                        | `BasicGeometryBuilder`                   | **STRONG/PARTIAL**                           |
+| Bubble              | `EFQRCodeStyleBubble`                       | `BubbleClusterEngine` / `BubbleRenderer` | **PARTIAL**                                  |
+| 2.5D                | EF D25                                      | `Renderer25D`                            | **PARTIAL**                                  |
+| DSJ                 | EF DSJ                                      | `DsjRenderer`                            | **PARTIAL–STRONG**                           |
+| Function            | EF Function                                 | `FunctionRenderer`                       | **STRONG algorithmically**                   |
+| Image               | EF Image                                    | `ImageRenderer`                          | **PARTIAL**                                  |
+| ImageFill           | EF ImageFill                                | `ImageFillRenderer`                      | **STRONG structural**                        |
+| Line                | EF Line                                     | `LineRenderer`                           | **PARTIAL**                                  |
+| RandomRectangle     | EF RandomRectangle                          | `RandomRectangleRenderer`                | **PARTIAL**                                  |
+| ResampleImage       | EF ResampleImage                            | `ResampleSubpixelEngine`                 | **STRONG algorithmic core**                  |
+| static backdrop     | `EFStyleParamBackdrop`                      | `BackdropStyle`                          | **PARTIAL**                                  |
+| icon/logo           | `EFStyleParamIcon`                          | `LogoStyle`                              | **PARTIAL**                                  |
+| animated image      | EF animated image source                    | `ImageSource.Animated`                   | **PARTIAL**                                  |
+| animated SVG        | EF SVG image animation                      | Veil generic frame `<use>` animation     | **PARTIAL**                                  |
+| APNG/GIF/video      | EF exporters                                | Veil exporters                           | **SUPPORTED, independent parity unverified** |
+| deterministic RNG   | EF does not seed stochastic styles          | Veil supports seeds                      | **INTENTIONAL DIFFERENCE**                   |
+| Veil extensions     | none                                        | STYLE_FUNCTION, CONNECTED_ORGANIC        | **INTENTIONAL ADDITION**                     |
+
+---
+
+# 5. ENCODER PARITY
+
+## Architecture
+
+### EFQRCode
+
+```text
+String / Data
+      ↓
+QRCode
+      ↓
+QRCodeModel
+      ↓
+QR8bitByte
+      ↓
+typeNumber
+      ↓
+createData()
+      ↓
+Reed-Solomon
+      ↓
+8 mask candidates
+      ↓
+lostPoint()
+      ↓
+best mask
+      ↓
+makeImpl()
+      ↓
+finder / alignment / timing / format / version / data
+```
+
+### VeilFrame
+
+```text
+String
+ ↓
+VeilQrEncoder
+ ↓
+UTF-8 bytes
+ ↓
+QRCodeModel
+ ↓
+type/version selection
+ ↓
+createData()
+ ↓
+RS generation/interleave
+ ↓
+mask search
+ ↓
+matrix
+ ↓
+QrMatrix + FunctionPatternMask/type table
+```
+
+This portion is very close.
+
+### CONFIRMED parity
+
+EF's actual generator uses byte mode:
+
+`Source/QRCodeSwift/QRCodeModel.swift`
+
+constructs `QR8bitByte(data)` rather than dynamically segmenting numeric/alphanumeric/Kanji data.
+
+VeilFrame's:
+
+`android/app/src/main/java/com/veilframe/app/qr/encoder/engine/VeilQrEncoder.kt`
+
+does the same conceptual operation with UTF-8 bytes.
+
+Both implement the qrcode.js family of:
+
+* BCH
+* GF(256)
+* RS polynomial
+* RS block tables
+* format bits
+* version bits
+* mask penalties
+* data placement.
+
+The `VeilQrEncoderParityTest` and `VeilGoldenCorpusTest` exercise V1 through V40 boundaries and decode matrices using ZXing.
+
+### Important limitation
+
+The tests are **not an independent EF oracle**.
+
+For example, `VeilGoldenCorpusTest` records an expected version in VeilFrame test data and then verifies VeilFrame against that expected number. It never loads an EF-generated matrix and diffs the matrices.
+
+Therefore:
+
+> Source-level algorithm parity: **CONFIRMED**
+> Empirical bit-for-bit parity against EF-generated vectors: **UNVERIFIED**
+
+### Unicode
+
+For default UTF-8 text:
+
+```text
+ASCII
+Hindi/Bengali
+Japanese
+Chinese
+emoji
+mixed Unicode
+```
+
+the encoder architecture is compatible.
+
+But EF exposes a String/Data encoding API while Veil's primary String API hardcodes UTF-8.
+
+That is:
+
+**Default UTF-8 parity: CONFIRMED**
+
+**All EF encoding-input semantics: PARTIAL**
+
+### Mask parity
+
+The lost-point implementation is clearly derived from the qrcode.js algorithm used by the reference dependency.
+
+The mask-selection algorithm therefore looks correct.
+
+Again, however, no permanent test compares:
+
+```text
+EF selected mask
+vs
+Veil selected mask
+```
+
+for the same byte stream over the full matrix corpus.
+
+---
+
+# 6. GEOMETRY PARITY
+
+## Canonical Veil geometry
+
+`android/app/src/main/java/com/veilframe/app/qr/model/QrGeometry.kt`
+
+uses:
+
+```text
+totalModulesX =
+    matrixSize + leftQZ + rightQZ
+
+totalModulesY =
+    matrixSize + topQZ + bottomQZ
+
+moduleSize =
+    min(moduleWidth,moduleHeight)
+```
+
+and centers the QR inside non-square output.
+
+The central module conversion:
+
+```text
+x = offsetX + col * moduleSize
+y = offsetY + row * moduleSize
+```
+
+is coherent.
+
+### Strength
+
+VeilFrame correctly avoids a hard-coded Version-1 matrix assumption.
+
+That is important for V2/V5/V10/V20/V30/V40.
+
+### Quiet-zone resolver
+
+Veil does have an authoritative resolver:
+
+`QrGeometry.resolveQuietZone(design, matrixSize)`
+
+with:
+
+```text
+fractional
+→ directional
+→ explicit
+→ design default
+```
+
+This is architecturally better than having every renderer independently calculate the margin.
+
+But the D25 default differs from EF as described above.
+
+### Fractional/asymmetric margins
+
+Veil supports more expressive geometry than the EF default API.
+
+That is an intentional VeilFrame innovation.
+
+The issue is not the existence of the feature; the issue is ensuring that:
+
+```text
+Canvas
+SVG
+logo
+background
+image sampling
+animation
+validation
+```
+
+all consume the same resolved floating-point geometry.
+
+The core geometry object does this well; several renderer-specific paths still perform their own coordinate conversions.
+
+### Main geometry risk
+
+There are multiple geometry systems:
+
+```text
+QrGeometry
+BasicGeometryBuilder
+QrGeometryIr
+style-specific geometry
+D25 geometry
+ResampleGeometryBuilder
+SvgExporter manual geometry
+VeilPositionPatternGeometry
+```
+
+This is manageable, but it means the invariant “one canonical coordinate space” is not yet fully enforced architecturally.
+
+---
+
+# 7. ARTISTIC STYLE PARITY
+
+## BASIC
+
+**Status: STRONG PARITY for the canonical geometry path.**
+
+`BasicGeometryBuilder` → IR → Canvas/SVG is the most mature architecture in VeilFrame.
+
+The current tests do exercise:
+
+* square
+* rounded
+* circle
+* diamond
+* gradients
+* finder variants
+* QZ
+* non-square output.
+
+But this is still mostly cross-backend self-consistency rather than comparison to EF's pixels.
+
+---
+
+## BUBBLE
+
+**Status: PARTIAL PARITY**
+
+EF implementation:
+
+`Source/Styles/EFQRCodeStyleBubble.swift`
+
+uses `Double.random`.
+
+It explicitly randomizes:
+
+* cross stroke
+* cross center
+* 2×2 stroke
+* pair radius
+* pair stroke
+* singleton radius
+* ambient bubble probability/radius/stroke.
+
+Veil:
+
+`BubbleClusterEngine.kt`
+
+uses deterministic channel-separated seeded hashing.
+
+That gives a very nice deterministic engine, but it cannot reproduce EF's random sequence.
+
+There is also a concrete range discrepancy for some pair/singleton values.
+
+So:
+
+```text
+topological concept:       strong
+geometry family:           strong
+random process:            not equivalent
+determinism:               Veil improvement
+exact EF pixel sequence:   no
+```
+
+**Intentional difference, not a regression.**
+
+---
+
+## D25
+
+**Status: PARTIAL**
+
+Veil's `Renderer25D` captures the intended isometric/depth concept and default colors/depth parameters.
+
+The implementation is not proven pixel-identical to:
+
+`EFQRCodeStyle25D.swift`
+
+and its default QZ differs.
+
+Therefore:
+
+**Algorithm family: likely**
+
+**Exact geometry parity: unverified**
+
+---
+
+## DSJ
+
+**Status: PARTIAL–STRONG**
+
+The parameter defaults and basic line/X semantics are carefully ported.
+
+The dedicated Veil DSJ implementation also has an internal model that separates:
+
+* horizontal
+* vertical
+* X.
+
+The remaining gap is independent pixel-level verification against EF's SVG.
+
+---
+
+## FUNCTION
+
+**Status: STRONG algorithmic parity**
+
+The Fade formula has been explicitly reproduced:
+
+```text
+(1 - cos(π × distance)) / 6 + 1/5
+```
+
+and the circle-band behavior also matches the EF formula.
+
+The test suite directly checks those formulas.
+
+What is missing is a reference-rendered pixel corpus.
+
+---
+
+## IMAGE
+
+**Status: PARTIAL**
+
+Veil correctly reproduces many important semantics:
+
+* source image
+* finder preservation
+* 8×8 finder protection
+* aspect fit/fill
+* transparency
+* foreground/background
+* alpha
+* logo.
+
+But Canvas and SVG each have separate image handling paths, and there is no full reference-image differential corpus.
+
+---
+
+## IMAGE_FILL
+
+**Status: STRONG structural parity**
+
+EF's source explicitly builds:
+
+```text
+<mask id="hole">
+  black background
+  white 1.02x dark module rectangles
+</mask>
+```
+
+Veil reproduces that anti-gap mask concept.
+
+This is one of the better parity implementations.
+
+---
+
+## LINE
+
+**Status: PARTIAL**
+
+Veil supports all seven directions tested:
+
+```text
+HORIZONTAL
+VERTICAL
+CROSS
+LOOPBACK
+↘
+↙
+X
+```
+
+and adds topology extensions such as circuit bridges and accent rings.
+
+That is a useful VeilFrame enhancement.
+
+But EF's random/stroke generation is not sequence-identical, and there is no actual EF→Veil line-segment golden corpus.
+
+---
+
+## RANDOM_RECTANGLE
+
+**Status: PARTIAL**
+
+Veil reproduces the major EF idea:
+
+```text
+random module permutation
++
+random scale
++
+randomized color
++
+shadow/inner rectangle
+```
+
+and deliberately decouples RNG channels.
+
+That is a strong deterministic design.
+
+It is nevertheless not the same stochastic sequence as EF.
+
+---
+
+## IMAGE_RESAMPLE
+
+**Status: STRONG algorithmic parity with an important determinism caveat**
+
+This is one of the most technically mature areas.
+
+Veil implements:
+
+```text
+3×3 subpixel traversal
++
+finder/separator exclusion
++
+center-anchor preservation
++
+luminance sampling
++
+contrast/exposure
++
+aspect-fit padding
++
+deterministic/unseeded RNG modes
+```
+
+The tests also check subpixel coordinate parity between Canvas and SVG.
+
+However, the UI's default is:
+
+```text
+RngMode.SYSTEM_UNSEEDED
+```
+
+Therefore the overall application does not currently guarantee deterministic output by default.
+
+---
+
+# 8. IMAGE PIPELINE PARITY
+
+## EF reference
+
+`Source/Type/EFImageMode.swift` defines:
+
+* `scaleToFill`
+* `scaleAspectFit`
+* `scaleAspectFill`
+
+including image preprocessing before SVG insertion.
+
+Veil:
+
+`android/app/src/main/java/com/veilframe/app/qr/image/EfImagePreprocessor.kt`
+
+and:
+
+`ImageScaleResolver.kt`
+
+implement equivalent concepts.
+
+### ASPECT_FIT
+
+Veil explicitly models letterboxing as white padding.
+
+This is good and well-tested.
+
+### Resample
+
+The intended pipeline is:
+
+```text
+source image
+→ aspect mode
+→ pre-scale to 3N × 3N
+→ subpixel sampling
+→ QR functional mask
+→ threshold
+→ stochastic dots
+```
+
+This is structurally very close to EF's `getGrayPointList()` route.
+
+### Major caveat
+
+In generic background drawing:
+
+`QrGenerator.drawBackground()`
+
+preprocesses a backdrop and then passes the preprocessed bitmap through another `resolveSrcDst(... ASPECT_FILL)` stage.
+
+That introduces a potential second crop/rescale.
+
+**Confidence: LIKELY**
+
+This needs a source-image coordinate test using deliberately asymmetric images such as:
+
+```text
+400×100
+100×400
+```
+
+with visible red/green/blue corner markers.
+
+### Backdrop/source separation
+
+Veil is better architecturally than a naïve port because it explicitly separates:
+
+```text
+imageSource
+backgroundLayer
+resample backdrop
+backdropStyle
+logo
+```
+
+That is a legitimate VeilFrame improvement.
+
+---
+
+# 9. CANVAS vs SVG PARITY
+
+This is currently one of the biggest audit gaps.
+
+### What is good
+
+Veil introduced a common IR:
+
+```text
+QrGeometryIr
+QrGeometryNode
+IrCanvasRenderer
+IrSvgRenderer
+```
+
+That is the right architectural direction.
+
+The `Basic` path makes substantial use of it.
+
+`JvmCanvasVsSvgDifferentialTest` also actually rasterizes SVG and compares pixels.
+
+### What is not sufficient
+
+The strongest JVM test covers primarily:
+
+* basic square
+* rounded
+* circle
+* diamond
+* finder variants
+* gradient
+* corner radius
+* quiet zone
+* non-square dimensions.
+
+It does **not** establish full EF parity across:
+
+* Bubble
+* D25
+* DSJ
+* Image
+* ImageFill
+* Line
+* RandomRectangle
+* Resample
+* animated SVG
+* logos
+* embedded image cropping
+* full mask composition.
+
+And its SVG oracle is still VeilFrame's own `DeterministicSvgRasterizer`.
+
+So:
+
+```text
+Canvas vs Veil SVG self-consistency: STRONG
+Canvas vs EF SVG behavior: UNVERIFIED
+Canvas vs independent browser/CoreGraphics rendering: UNVERIFIED
+```
+
+### Known architectural divergence
+
+`SvgExporter.generateSvg()` contains style-specific manual generation functions:
+
+```text
+generateImageFillSvg
+generateImageSvg
+generate25DSvg
+generateBubbleSvg
+generateDsjSvg
+generateFunctionSvg
+generateLineSvg
+generateRandomRectangleSvg
+```
+
+while Canvas frequently goes through different renderer classes.
+
+That means:
+
+> “Both use the same QrDesign” does not imply “both use the same rendering algorithm.”
+
+This is precisely the failure mode the supplied audit brief asked to look for.
+
+---
+
+# 10. LOGO / MASK / CLIPPING PARITY
+
+## Strengths
+
+`QrGeometry.computeLogoRect()` anchors the logo to the QR content region rather than the full canvas.
+
+That is the right coordinate system for asymmetric quiet zones.
+
+Veil also has explicit:
+
+* logo shape
+* scale
+* border
+* alpha
+* image scale mode.
+
+## Risk
+
+`ScanabilityValidator.mapPixelRectToModules()` maps logo rectangles back into module coordinates using integer truncation.
+
+That means boundary-touching cases are sensitive to:
+
+```text
+left/right exact integer boundary
+fractional QZ
+fractional module size
+```
+
+This needs differential tests for:
+
+```text
+logo exactly on a module edge
+logo ±0.01 module
+QZ 0 / 1 / 4 / 4.5
+non-square canvas
+```
+
+### Finder overlap
+
+Veil deliberately rejects logo overlap with protected patterns.
+
+That is safer than blindly drawing.
+
+But EF's logo/icon behavior should be compared geometrically, not merely by whether both reject/accept.
+
+---
+
+# 11. ANIMATION / EXPORT PARITY
+
+## Static image animation
+
+Veil has a strong source-frame abstraction:
+
+```text
+QrFrame(bitmap,durationMs)
+```
+
+and a timeline-based selector.
+
+`renderFrameResultAt()` handles:
+
+* animated source
+* animated logo
+* cumulative timing.
+
+That is good.
+
+## Streaming
+
+`renderFramesStreaming()` is a substantial improvement over retaining every rendered frame.
+
+This is useful for 6–16 GB devices.
+
+But the bitmap ownership contract should be explicit:
+
+```text
+onFrameRendered(...)
+→ callback owns frame
+→ callback MUST recycle/release
+```
+
+or better, the streaming abstraction should enforce it.
+
+---
+
+## Animated SVG
+
+This is a larger parity issue.
+
+The generic implementation does:
+
+```text
+for each frame:
+    generate complete SVG
+    extract inner SVG
+    put it in <defs><g id=frame_n>
+```
+
+then:
+
+```xml
+<use ...>
+  <animate attributeName="xlink:href"
+           values="..."
+           keyTimes="..."
+           calcMode="discrete" />
+</use>
+```
+
+This is not the same strategy as EF's image-source animation.
+
+For EF's image-style animation, the reference keeps the QR structure/static layers outside the image animation and changes the image source.
+
+Veil's generic path can duplicate substantially more structure.
+
+### Additional issue
+
+`generateAnimatedSvg()` builds all frame SVG strings before returning.
+
+For large images/frames:
+
+```text
+memory ≈ Σ(frame SVG size)
+```
+
+rather than streaming.
+
+This is a significant low-RAM risk.
+
+---
+
+## Already-rendered QR treated as source artwork?
+
+I did **not** find a source-backed proof that the main production path takes `renderResult.bitmap` and re-renders a second QR on top of it.
+
+The normal animation paths use source images / source frames.
+
+Therefore this specific defect remains:
+
+**UNVERIFIED**
+
+and should not be declared a bug without a targeted end-to-end regression test.
+
+---
+
+# 12. PUBLIC API / ESCAPE-HATCH AUDIT
+
+The API surface now contains several overlapping concepts:
+
+```text
+QrDesign
+QrStyleParams
+QrFrame
+Bitmap
+QrMatrix
+ImageSource
+ImageSourceStyle
+QrOutputFormat
+GenerationMode
+```
+
+This is powerful but creates bypass opportunities.
+
+### Safe/canonical APIs
+
+The best current path is approximately:
+
+```text
+QrGenerator.generateWithResult()
+QrGenerator.generateSvg()
+QrExporter.exportTyped()
+```
+
+### Risky legacy APIs
+
+Examples:
+
+```text
+QrGenerator.generate()
+generatePng()
+generateJpeg()
+AnimatedQrGenerator.renderFrameAt()
+AnimatedQrGenerator.renderFrames()
+```
+
+These frequently:
+
+* return nullable/raw values
+* convert errors to exceptions
+* bypass newer typed contracts
+* expose renderer-specific behavior.
+
+The ignored `ecLevel` argument in `generate()` is the clearest example of a dangerous compatibility API.
+
+### Recommendation
+
+Make all legacy APIs explicit adapters:
+
+```text
+legacy API
+→ canonical QrDesign
+→ canonical GenerationMode
+→ canonical generator
+```
+
+No legacy API should contain independent QR semantics.
+
+---
+
+# 13. UI AUDIT
+
+## State → Design mapping
+
+`QrStudioViewModel.buildDesignFromState()` is comprehensive and maps a very large amount of state into `QrDesign`.
+
+That is good.
+
+The mapping includes:
+
+* EC
+* colors
+* shapes
+* finder style
+* timing/alignment
+* logo
+* D25
+* Line
+* DSJ
+* Function
+* RandomRectangle
+* Bubble
+* Image
+* Resample
+* QZ
+* backdrop
+* RNG.
+
+### Stale generation mode
+
+`regenerate()` snapshots:
+
+```text
+val s = _state.value
+```
+
+and later builds the design from current state but obtains:
+
+```text
+val mode = s.generationMode
+```
+
+from the earlier snapshot.
+
+A rapid state change can therefore give:
+
+```text
+current design
++
+previous generation mode
+```
+
+within one render generation.
+
+**Confidence: CONFIRMED architectural race**
+
+Even though generation counters prevent stale commits, they do not eliminate this internal snapshot inconsistency.
+
+---
+
+## Preview vs export
+
+Preview:
+
+```text
+effectiveSize = min(userSize, 512)
+```
+
+Export:
+
+```text
+effectiveSize = userSize
+```
+
+So:
+
+```text
+same UI state
+→ preview design != export design
+```
+
+This is intentional for performance, but it means PREVIEW ≠ EXPORT literally.
+
+The correct parity requirement should instead be:
+
+```text
+normalize(preview geometry)
+==
+normalize(export geometry)
+```
+
+for identical style state.
+
+That needs explicit tests.
+
+---
+
+## Rapid controls
+
+The cancellation/generation-token pattern is reasonably strong:
+
+```text
+cancel previous
++
+generation ID
++
+ensureActive()
++
+generation comparison before UI commit
+```
+
+This is much safer than simply launching a coroutine for every slider movement.
+
+---
+
+## Input payload handling
+
+As noted earlier:
+
+```text
+s.content.trim()
+```
+
+is a correctness issue.
+
+---
+
+## Export concurrency
+
+The single-flight:
+
+```text
+exportJob?.isActive == true
+```
+
+is good.
+
+But a stronger state machine would explicitly represent:
+
+```text
+Idle
+Rendering
+Validating
+Writing
+Completed
+Cancelled
+Failed
+```
+
+instead of many loosely related flags.
+
+---
+
+# 14. MEMORY / PERFORMANCE / LOW-RAM AUDIT
+
+## 4096² bitmap
+
+A single:
+
+```text
+4096 × 4096 × 4
+```
+
+ARGB_8888 bitmap is approximately:
+
+```text
+67,108,864 bytes ≈ 64 MiB
+```
+
+A real export can simultaneously involve:
+
+```text
+source bitmap
++
+render bitmap
++
+temporary scaled/preprocessed bitmap
++
+SVG/Base64 buffers
++
+PNG byte arrays
++
+decoder buffers
+```
+
+so peak usage can become much larger than the final image alone.
+
+## Strong positives
+
+VeilFrame already contains:
+
+* 512px interactive preview cap
+* streaming animation rendering
+* temporary-file APNG/video handling
+* bitmap allocation failure handling
+* typed export errors
+* some explicit recycling.
+
+These are good architectural decisions for 6–16 GB devices.
+
+## High-risk path: animated SVG
+
+`AnimatedQrGenerator.generateAnimatedSvg()` stores each complete frame SVG in a `StringBuilder`.
+
+When each frame includes Base64 images, memory grows approximately with:
+
+```text
+frameCount × encodedImageSize
+```
+
+This is exactly the sort of workload that can hurt a low-RAM user.
+
+### Safer architecture
+
+For animated SVG:
+
+```text
+static SVG structure
++
+single image geometry
++
+N image href references
++
+animation metadata
+```
+
+rather than N full SVG documents.
+
+---
+
+## SVG Base64
+
+`SvgExporter.bitmapToBase64()` creates image bytes and Base64 strings.
+
+That creates multiple representations:
+
+```text
+Bitmap
+→ compressed byte[]
+→ Base64 byte/string
+→ larger SVG String
+```
+
+For large embedded art this is a major transient allocation.
+
+---
+
+## Preview memory
+
+The 512 cap is a good idea.
+
+But preview state still simultaneously retains source/background/logo/result bitmaps.
+
+Bitmaps should have an explicit ownership policy:
+
+```text
+UI-owned
+source-owned
+renderer-owned
+export-owned
+```
+
+rather than relying on `recycle()` from the ViewModel.
+
+---
+
+## `runBlocking`
+
+`QrGenerator.generateWithResult()` is a synchronous API and invokes scan validation through `runBlocking`.
+
+This is dangerous for arbitrary callers:
+
+```text
+Main thread caller
+→ generateWithResult()
+→ runBlocking
+→ decoder
+```
+
+The ViewModel mostly protects itself with `Dispatchers.Default`, but the public API remains unsafe.
+
+---
+
+# 15. SCANNABILITY AUDIT
+
+VeilFrame has a substantially better validation architecture than a basic QR renderer.
+
+It checks:
+
+* actual decoder result
+* expected payload
+* contrast
+* finder integrity
+* logo overlap
+* multiple resolution fallback
+* ZXing fallback
+* ML Kit primary decoder.
+
+That is good.
+
+### But it does not satisfy the complete requested matrix
+
+The user-requested audit calls for:
+
+```text
+multiple scales
+Canvas
+SVG rasterization
+PNG
+JPEG
+high resolution
+low resolution
+every style
+```
+
+The current validation architecture does not comprehensively execute all of those.
+
+### Major inconsistency
+
+Quiet-zone warning ≠ scan readiness.
+
+This should be corrected.
+
+### Finder verification
+
+The validator samples representative pixels rather than structurally comparing the intended finder geometry to the rendered result.
+
+This can produce false confidence.
+
+### Logo recovery budget
+
+The comments state approximate QR loss capacity of:
+
+```text
+L ~7%
+M ~15%
+Q ~25%
+H ~30%
+```
+
+but the implementation uses:
+
+```text
+L = .05
+M = .12
+Q = .20
+H = .25
+```
+
+That is a deliberate conservative budget, not an exact QR theoretical capacity.
+
+It is fine as a safety policy, but should be labeled as:
+
+```text
+VeilFrame conservative logo policy
+```
+
+rather than implied to be the QR specification itself.
+
+---
+
+# 16. TEST QUALITY AUDIT
+
+This is one of the most important findings.
+
+## Strong tests
+
+`ResampleImage3x3Test.kt`
+
+is genuinely detailed.
+
+It verifies:
+
+* 3×3 traversal
+* center anchors
+* functional exclusions
+* contrast/exposure
+* AspectFit
+* padding suppression
+* Canvas/SVG coordinate correspondence
+* deterministic seeds
+* ZXing decode.
+
+That is good engineering.
+
+`JvmCanvasVsSvgDifferentialTest.kt` is also substantially stronger than structural XML tests because it actually rasterizes and compares pixels.
+
+## Weakness: self-oracle problem
+
+Most parity tests compare:
+
+```text
+Veil implementation
+vs
+Veil expectation
+```
+
+rather than:
+
+```text
+Veil
+vs
+EFQRCode-generated reference
+```
+
+For example:
+
+`VeilQrEncoderParityTest`
+
+tests the expected QR mathematics but doesn't ingest EF's actual output.
+
+`EfQrCodeStyleParityVerificationTest`
+
+checks values such as:
+
+```text
+Bubble color = #8ED1FC
+DSJ defaults
+Function formula
+Image mask structure
+```
+
+but these are derived assertions, not generated-artifact comparisons.
+
+### Consequence
+
+A systematic porting mistake could pass all those tests if both the implementation and the expected assertions share the same mistake.
+
+---
+
+## What is missing
+
+There is no permanent golden corpus such as:
+
+```text
+EFQRCode 7.0.3
+payload
+EC
+version
+style
+parameters
+EF SVG
+EF raster
+Veil SVG
+Veil raster
+pixel diff
+geometry diff
+decode result
+```
+
+That is the single biggest test-quality gap.
+
+---
+
+# 17. UNKNOWN / UNVERIFIED AREAS
+
+These should not be promoted to bugs until tested.
+
+### UNVERIFIED 1 — Exact EF vs Veil matrix identity
+
+Source review strongly indicates parity.
+
+Actual empirical comparison of every requested payload/version/EC combination against the EF implementation has not been executed.
+
+### UNVERIFIED 2 — Exact D25 pixel geometry
+
+The geometry families clearly correspond, but no reference raster diff was run.
+
+### UNVERIFIED 3 — Exact DSJ output
+
+The implementation is structurally similar; independent rendered-artifact comparison is missing.
+
+### UNVERIFIED 4 — Exact Image output
+
+Image preprocessing appears carefully ported, but reference image corpus comparison is missing.
+
+### UNVERIFIED 5 — Exact Line output
+
+Topology is implemented, but random/stroke rendering is not sequence-identical.
+
+### UNVERIFIED 6 — Exact SVG browser rendering
+
+The project has its own rasterizer test path, but the result has not been validated against a standards-compliant browser/Skia SVG implementation across the entire style surface.
+
+### UNVERIFIED 7 — Physical-device scanning
+
+The audit source shows software decoding tests, but not a complete physical-device matrix across cameras/scales/JPEG/low-light conditions.
+
+### UNVERIFIED 8 — Full UI XML/Compose control mapping
+
+`QrStudioViewModel` was deeply inspected, but not every individual UI control in the 2,493-line fragment was independently traced to an export artifact.
+
+### UNVERIFIED 9 — Animation double-render path
+
+No confirmed evidence was found that an already-rendered QR bitmap is subsequently treated as new source artwork in the main path.
+
+---
+
+# 18. REQUIRED FIX ORDER
+
+## P0 — correctness/blocking
+
+### P0.1
+
+Fix `QrGenerator.generate(..., ecLevel)` so the supplied EC level cannot disappear.
+
+### P0.2
+
+Create one canonical generation-policy resolver:
+
+```text
+GenerationMode
+→ EC policy
+→ quiet-zone policy
+→ validation policy
+→ renderer profile
+```
+
+### P0.3
+
+Make SAFE's 4-module requirement an actual invariant.
+
+### P0.4
+
+Make `ScanabilityValidator` enforce the policy that the generator claims to enforce.
+
+### P0.5
+
+Remove payload `.trim()` from encoding paths.
+
+---
+
+## P1 — major behavioral mismatch
+
+### P1.1
+
+Build a real EFQRCode golden corpus.
+
+### P1.2
+
+Diff all 10 EF styles against EF-generated references.
+
+### P1.3
+
+Decide explicitly whether stochastic styles are:
+
+```text
+EF-compatible stochastic
+```
+
+or:
+
+```text
+deterministic VeilFrame variant
+```
+
+Do not call both “exact parity.”
+
+### P1.4
+
+Make SVG validation operate on the actual SVG artifact.
+
+### P1.5
+
+Resolve D25 default QZ to EF parity semantics.
+
+### P1.6
+
+Make the BUBBLE public path use a documented parity renderer rather than silently switching architecture.
+
+---
+
+## P2 — robustness/parity
+
+### P2.1
+
+Replace `runBlocking` inside public generation.
+
+### P2.2
+
+Formalize bitmap ownership/release.
+
+### P2.3
+
+Streaming animated SVG instead of storing complete frame SVGs.
+
+### P2.4
+
+Eliminate redundant image preprocessing/scaling.
+
+### P2.5
+
+Test preview/export normalized geometry equivalence.
+
+### P2.6
+
+Expand scannability matrix.
+
+---
+
+## P3 — quality/cleanup
+
+### P3.1
+
+Collapse legacy APIs into canonical adapters.
+
+### P3.2
+
+Remove duplicated renderer-specific geometry where IR can become canonical.
+
+### P3.3
+
+Add richer error-stage metadata to legacy paths.
+
+---
+
+# 19. GOLDEN TEST PLAN
+
+The permanent regression suite should be based on **actual artifacts generated by the pinned EF revision**, not manually recreated expectations.
+
+## Encoder corpus
+
+For each:
+
+```text
+V1 / V2 / V5 / V10 / V20 / V30 / V40
+```
+
+and:
+
+```text
+L / M / Q / H
+```
+
+capture from EF:
+
+```text
+version
+moduleCount
+EC
+mask
+full binary matrix
+type table
+```
+
+Payload corpus:
+
+```text
+HELLO
+ASCII URL
+Hindi
+Bengali
+Japanese
+Chinese
+emoji
+long URL
+Wi-Fi
+vCard
+mixed Unicode
+```
+
+Then assert:
+
+```text
+EF matrix == Veil matrix
+```
+
+exactly.
+
+---
+
+## Style corpus
+
+For every EF style:
+
+```text
+BASIC
+BUBBLE
+D25
+DSJ
+IMAGE_FILL
+IMAGE
+IMAGE_RESAMPLE
+LINE
+RANDOM_RECTANGLE
+FUNCTION
+```
+
+generate:
+
+```text
+512×512 PNG
+1024×1024 PNG
+SVG
+```
+
+with a deterministic fixed source-image corpus.
+
+Compare:
+
+```text
+module geometry
+finder geometry
+image crop
+mask geometry
+logo geometry
+SVG normalized DOM
+raster pixels
+decoder result
+```
+
+---
+
+## Canvas/SVG corpus
+
+For every style:
+
+```text
+Canvas
+SVG → independent rasterizer
+```
+
+then calculate:
+
+```text
+MAE
+max channel error
+different-pixel %
+bounding-box delta
+module-center delta
+```
+
+Do not rely only on a 5% difference threshold.
+
+For vector geometry, exact normalized coordinates should be tested before allowing raster tolerances.
+
+---
+
+## Quiet-zone corpus
+
+Test:
+
+```text
+0
+1
+2
+4
+4.5
+8
+
+left/right asymmetric
+top/bottom asymmetric
+non-square output
+```
+
+across:
+
+```text
+V1
+V10
+V40
+```
+
+and verify:
+
+```text
+Canvas
+SVG
+logo
+backdrop
+image
+validation
+```
+
+all resolve the same values.
+
+---
+
+## Determinism corpus
+
+For every random style:
+
+```text
+render twice with identical seed
+render twice with different seed
+Canvas vs SVG
+preview vs export
+animation frame 0/1/2
+```
+
+Expected:
+
+```text
+same seed → byte-identical or normalized-geometry-identical
+different seed → intentionally different
+```
+
+For EF parity mode, separately test whether exact EF stochastic reproduction is even claimed.
+
+---
+
+## Animation corpus
+
+Test:
+
+```text
+1 frame
+2 frames
+3 frames
+uniform timing
+variable timing
+animated source
+animated logo
+animated source + animated logo
+```
+
+Verify:
+
+```text
+frame count
+duration
+keyTimes
+repeatCount
+image selection
+QR matrix consistency
+SVG structure
+GIF/APNG/video output
+```
+
+---
+
+## Physical scan corpus
+
+At minimum:
+
+```text
+256
+384
+512
+1024
+2048
+4096
+```
+
+then:
+
+```text
+PNG
+JPEG quality 90
+JPEG quality 70
+JPEG quality 50
+```
+
+for every major style.
+
+Test using at least:
+
+```text
+ZXing
+ML Kit
+physical Android camera
+```
+
+where available.
+
+---
+
+# 20. FINAL VERDICT
+
+# **PARTIAL PARITY**
+
+VeilFrame is **not** a superficial reimplementation. The QR encoder, matrix model, function classification, shared geometry infrastructure, image preprocessing, 3×3 resampling engine, typed error model, streaming animation work, and scanability infrastructure demonstrate a serious parity effort.
+
+The QR encoding layer is especially strong: the architecture is clearly derived from EFQRCode's `QRCodeSwift`/qrcode.js behavior, including byte mode, version selection, RS coding, BCH, mask selection and matrix construction.
+
+The problem is that **EFQRCode-level parity has not yet been demonstrated at the rendered-artifact level**, and several concrete differences are already proven:
+
+* D25 default quiet-zone mismatch.
+* Legacy EC argument ignored.
+* SAFE quiet-zone contract mismatch.
+* scanability quiet-zone warning does not hard-gate readiness.
+* UI trims payload content.
+* stochastic style random sequences differ.
+* deterministic rendering is not the default for resampling in the UI.
+* Canvas and SVG still have independent style paths.
+* SVG export is not validated as an SVG artifact.
+* animation SVG materializes substantially different structure and can have materially higher memory cost.
+* several existing “parity” tests validate VeilFrame against its own assumptions rather than against an actual EFQRCode oracle.
+
+So VeilFrame currently sits in this state:
+
+```text
+QR ENCODING              STRONG PARITY
+FUNCTION CLASSIFICATION  STRONG PARITY
+CANONICAL GEOMETRY       STRONG FOUNDATION
+BASIC STYLE              STRONG / NEAR PARITY
+FUNCTION STYLE           STRONG ALGORITHMIC PARITY
+IMAGE_RESAMPLE CORE      STRONG ALGORITHMIC PARITY
+IMAGE_FILL               STRONG STRUCTURAL PARITY
+
+BUBBLE                   PARTIAL
+D25                      PARTIAL
+DSJ                      PARTIAL–STRONG
+IMAGE                    PARTIAL
+LINE                     PARTIAL
+RANDOM_RECTANGLE         PARTIAL
+ANIMATED SVG             PARTIAL
+
+CANVAS ↔ SVG             STRONGER, BUT NOT FULL-SCOPE PROVEN
+EF ↔ VEIL PIXEL PARITY   NOT PROVEN
+SAFE GENERATION          CONTRACT BUGS
+LOW-RAM                  GOOD DIRECTION, IMPORTANT HOTSPOTS
+UI INTEGRATION           GOOD FOUNDATION, CORRECTNESS GAPS
+```
+
+The most important architectural next step is **not adding more QR styles**. It is establishing a real EFQRCode golden-oracle corpus and making every rendering backend consume one canonical resolved geometry/compositing representation. Once that exists, the remaining mismatches become measurable rather than subjective.
+
+[1]: https://github.com/EFPrefix/EFQRCode?utm_source=chatgpt.com "GitHub - EFPrefix/EFQRCode: A better way to operate QRCode in Swift, support iOS, macOS, watchOS, tvOS, and/or visionOS. · GitHub"

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.veilframe.app.qr.model.BasicGeometryProfile
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.ModuleShape as DesignModuleShape
 import com.veilframe.app.qr.model.*
@@ -278,5 +279,51 @@ class JvmCanvasVsSvgDifferentialTest {
             width = 400,
             height = 560
         )
+    }
+
+    @Test
+    fun case11_strictScanabilityGatingQuietZone() {
+        // C3 / P0.4: validateStrict must hard-gate quiet zone compliance
+        val matrix = QrGenerator.generateMatrix("SCAN_GATE_TEST")
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val nonCompliantDesign = QrDesign(
+            style = QrStyle.BASIC,
+            basicProfile = BasicGeometryProfile.VEILFRAME,
+            quietZoneModules = 2,
+            explicitQuietZone = null
+        )
+        val report = kotlinx.coroutines.runBlocking {
+            com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                bmp,
+                nonCompliantDesign,
+                matrix,
+                "SCAN_GATE_TEST"
+            )
+        }
+        assertFalse("Strict validation must reject QR when quiet zone is non-compliant", report.isScanReady)
+        assertTrue("Report must contain quiet zone warning", report.warnings.any { it.contains("Quiet zone") })
+    }
+
+    @Test
+    fun case12_productionDeterministicSvgRasterizerExecution() {
+        // C4 / P1.4: Production SvgRasterizer rasterizes vector SVG into Bitmap
+        val matrix = QrMatrix("SVG_RASTER_TEST", ErrorCorrectionLevel.H)
+        val design = QrDesign(style = QrStyle.BASIC, outputSize = 256)
+        val svg = com.veilframe.app.qr.exporter.SvgExporter.generateSvg(matrix, design)
+
+        val rasterBmp = com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(svg, 256, 256)
+        assertNotNull("DeterministicSvgRasterizer must successfully rasterize vector SVG", rasterBmp)
+        assertEquals(256, rasterBmp!!.width)
+        assertEquals(256, rasterBmp.height)
+    }
+
+    @Test
+    fun case13_bubbleCanvasVsSvgDifferential() {
+        // P1.6: Dedicated BubbleRenderer produces consistent geometry between Canvas and SVG
+        val design = QrDesign(
+            style = QrStyle.BUBBLE,
+            palette = PaletteStyle(foreground = Color.BLACK, background = Color.WHITE)
+        )
+        executeDifferentialCase("13_bubble_style", design)
     }
 }

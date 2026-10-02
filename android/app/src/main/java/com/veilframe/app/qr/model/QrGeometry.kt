@@ -99,7 +99,7 @@ class QrGeometry(
          * 2. [QrDesign.directionalQuietZone] (asymmetric float insets)
          * 3. [QrDesign.explicitQuietZone] (explicit integer override)
          * 4. [QrDesign.quietZoneModules] (design-level module count override)
-         * 5. Style default (e.g. D25 defaults to 0, other styles default to 1)
+         * 5. Style default (defaults to 1 module margin matching EFQRCode)
          */
         fun resolveQuietZone(design: QrDesign, matrixSize: Int): ResolvedQuietZone {
             val fracQz = design.backdropStyle.fractionalQuietZone
