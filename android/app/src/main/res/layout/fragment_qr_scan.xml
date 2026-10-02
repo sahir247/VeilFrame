@@ -17,6 +17,38 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Dynamic guidance text below targeting reticle -->
+    <TextView
+        android:id="@+id/qr_scan_guidance_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="116dp"
+        android:background="@drawable/bg_pill_accent"
+        android:backgroundTint="#99000000"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:text="Point camera at a QR code"
+        android:textColor="#FFFFFF"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:visibility="gone" />
+
+    <!-- Torch / Flashlight Toggle Button -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/qr_torch_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="20dp"
+        app:fabSize="mini"
+        android:contentDescription="Toggle flashlight"
+        app:srcCompat="@drawable/ic_flash_off"
+        app:tint="#FFFFFF"
+        android:backgroundTint="#66000000"
+        app:borderWidth="0dp"
+        android:visibility="gone" />
+
     <!-- Permission-denied State Overlay -->
     <LinearLayout
         android:id="@+id/container_camera_permission_denied"
@@ -195,8 +227,23 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="end"
+                    android:gravity="center_vertical"
                     android:layout_marginTop="8dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_result_toggle_pwd_btn"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        app:icon="@drawable/ic_visibility"
+                        app:iconPadding="4dp"
+                        android:text="Show"
+                        android:visibility="gone" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_scan_another_btn"

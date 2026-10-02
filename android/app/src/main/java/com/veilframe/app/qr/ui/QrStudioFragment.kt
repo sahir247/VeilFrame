@@ -37,6 +37,7 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
@@ -183,8 +184,12 @@ class QrGenerateTabFragment : Fragment() {
                 null
             }
             withContext(Dispatchers.Main) {
-                if (isAdded && bmp != null) {
-                    vm.updateLogo(bmp)
+                if (isAdded) {
+                    if (bmp != null) {
+                        vm.updateLogo(bmp)
+                    } else {
+                        Toast.makeText(requireContext(), "Could not load logo: unsupported or corrupt file", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -210,8 +215,12 @@ class QrGenerateTabFragment : Fragment() {
                 null
             }
             withContext(Dispatchers.Main) {
-                if (isAdded && bmp != null) {
-                    vm.updateBackgroundImage(bmp)
+                if (isAdded) {
+                    if (bmp != null) {
+                        vm.updateBackgroundImage(bmp)
+                    } else {
+                        Toast.makeText(requireContext(), "Could not load background: unsupported or corrupt file", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -237,8 +246,12 @@ class QrGenerateTabFragment : Fragment() {
                 null
             }
             withContext(Dispatchers.Main) {
-                if (isAdded && bmp != null) {
-                    vm.updateBackdropImage(bmp)
+                if (isAdded) {
+                    if (bmp != null) {
+                        vm.updateBackdropImage(bmp)
+                    } else {
+                        Toast.makeText(requireContext(), "Could not load backdrop: unsupported or corrupt file", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -264,8 +277,12 @@ class QrGenerateTabFragment : Fragment() {
                 null
             }
             withContext(Dispatchers.Main) {
-                if (isAdded && bmp != null) {
-                    vm.updateResampleBackdropImage(bmp)
+                if (isAdded) {
+                    if (bmp != null) {
+                        vm.updateResampleBackdropImage(bmp)
+                    } else {
+                        Toast.makeText(requireContext(), "Could not load image: unsupported or corrupt file", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -313,8 +330,12 @@ class QrGenerateTabFragment : Fragment() {
                 null
             }
             withContext(Dispatchers.Main) {
-                if (isAdded && bmp != null) {
-                    vm.updateSourceImage(bmp)
+                if (isAdded) {
+                    if (bmp != null) {
+                        vm.updateSourceImage(bmp)
+                    } else {
+                        Toast.makeText(requireContext(), "Could not load media: unsupported or corrupt file", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -522,6 +543,7 @@ class QrGenerateTabFragment : Fragment() {
         val saveVideoBtn       = view.findViewById<MaterialButton>(R.id.qr_save_video_btn)
         val saveAnimatedSvgBtn = view.findViewById<MaterialButton>(R.id.qr_save_animated_svg_btn)
         val shareBtn           = view.findViewById<MaterialButton>(R.id.qr_share_btn)
+        val exportStatusBanner = view.findViewById<TextView>(R.id.qr_export_status_banner)
 
         // Setup Source Scale Spinner & Restore State from ViewModel
         val scaleOptions = arrayOf("Aspect Fill", "Aspect Fit", "Center Crop", "Stretch")
@@ -1210,8 +1232,14 @@ class QrGenerateTabFragment : Fragment() {
         }
 
         // 2. Resolution Spinner
-        val resLabels = arrayOf("512 x 512", "1024 x 1024", "2048 x 2048")
-        val resValues = intArrayOf(512, 1024, 2048)
+        val resLabels = arrayOf(
+            "256 × 256 — Fast / Small",
+            "512 × 512 — Standard / Social",
+            "1024 × 1024 — High Quality",
+            "2048 × 2048 — Print Quality",
+            "4096 × 4096 — Large Format"
+        )
+        val resValues = intArrayOf(256, 512, 1024, 2048, 4096)
         resSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, resLabels)
         val currentResIdx = resValues.indexOf(vm.state.value.outputSize).coerceAtLeast(0)
         resSpinner.setSelection(currentResIdx)
@@ -1890,14 +1918,40 @@ class QrGenerateTabFragment : Fragment() {
 
                     previewProgress?.visibility = if (state.isRenderingPreview) View.VISIBLE else View.GONE
 
-                    // Export buttons enabled/disabled state: content must be non-blank and not actively busy
-                    val canExport = state.content.isNotBlank() && !state.isRenderingPreview && !state.isExporting
+                    // Export buttons enabled/disabled state: content must be non-blank, verified scanable, and not actively busy
+                    val hasContent = state.content.isNotBlank()
+                    val isScanValid = state.scanabilityReport?.isScanReady == true
+                    val isValidating = state.scanabilityReport == null && hasContent
+                    val canExport = hasContent && !state.isRenderingPreview && !state.isExporting && isScanValid
+                    val hasAnimationSource = state.animatedFrames.size > 1 || state.logoAnimatedFrames.size > 1
+
+                    // State-aware 3-stage export discoverability: Validating… → Ready → Needs adjustment
+                    if (!hasContent) {
+                        exportStatusBanner?.visibility = View.GONE
+                    } else if (state.isExporting) {
+                        exportStatusBanner?.visibility = View.VISIBLE
+                        exportStatusBanner?.text = "Exporting file..."
+                        exportStatusBanner?.setTextColor(0xFF6B7280.toInt())
+                    } else if (isValidating || state.isRenderingPreview) {
+                        exportStatusBanner?.visibility = View.VISIBLE
+                        exportStatusBanner?.text = "Validating… Checking scan reliability before export"
+                        exportStatusBanner?.setTextColor(0xFF6B7280.toInt())
+                    } else if (isScanValid) {
+                        exportStatusBanner?.visibility = View.VISIBLE
+                        exportStatusBanner?.text = "Ready to export — Verified scanable on-device"
+                        exportStatusBanner?.setTextColor(0xFF16A34A.toInt())
+                    } else {
+                        exportStatusBanner?.visibility = View.VISIBLE
+                        exportStatusBanner?.text = "Needs adjustment — Adjust contrast or tap Auto-Repair to enable export"
+                        exportStatusBanner?.setTextColor(0xFFD97706.toInt())
+                    }
+
                     saveBtn.isEnabled = canExport
                     saveSvgBtn.isEnabled = canExport
                     saveJpegBtn?.isEnabled = canExport
-                    saveGifBtn?.isEnabled = canExport
-                    saveVideoBtn?.isEnabled = canExport
-                    saveAnimatedSvgBtn?.isEnabled = canExport
+                    saveGifBtn?.isEnabled = canExport && hasAnimationSource
+                    saveVideoBtn?.isEnabled = canExport && hasAnimationSource
+                    saveAnimatedSvgBtn?.isEnabled = canExport && hasAnimationSource
                     shareBtn.isEnabled = canExport
 
                     // Contextual photo button label and alpha: Static short label to avoid wrapping
@@ -1905,11 +1959,12 @@ class QrGenerateTabFragment : Fragment() {
                     sourceImgBtn.alpha = if (usesSourceImage) 1.0f else 0.55f
                     sourceImgBtn.text = "Photo"
 
-                    // Clarify animated export helper label based on input
-                    if (state.animatedFrames.isNotEmpty()) {
-                        animatedExportLabel?.text = "Animation source: ${state.animatedFrames.size} frames"
+                    // Clarify animated export helper label based on multi-frame input
+                    if (hasAnimationSource) {
+                        val frameCount = maxOf(state.animatedFrames.size, state.logoAnimatedFrames.size)
+                        animatedExportLabel?.text = "Animation source: $frameCount frames loaded"
                     } else {
-                        animatedExportLabel?.text = "Generate looping animation from current QR artwork"
+                        animatedExportLabel?.text = "Import a multi-frame GIF, WebP, or video to enable animated export"
                     }
 
                     // Contextual Style Settings Card
@@ -2041,12 +2096,35 @@ class QrGenerateTabFragment : Fragment() {
                     }
 
                     state.repairNotice?.let { notice ->
-                        view?.let { v -> Snackbar.make(v, "Auto-Repair: $notice", Snackbar.LENGTH_LONG).show() }
+                        view?.let { v ->
+                            Snackbar.make(v, "Auto-Repair: $notice", Snackbar.LENGTH_LONG)
+                                .setAction("Undo") {
+                                    vm.undoAutoRepair()
+                                }
+                                .show()
+                        }
                         vm.clearRepairNotice()
                     }
 
                     state.saveResult?.let { msg ->
-                        view?.let { v -> Snackbar.make(v, msg, Snackbar.LENGTH_SHORT).show() }
+                        view?.let { v ->
+                            val snackbar = Snackbar.make(v, msg, Snackbar.LENGTH_LONG)
+                            val uriToView = state.lastSavedUri
+                            if (uriToView != null) {
+                                snackbar.setAction("View") {
+                                    try {
+                                        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uriToView, requireContext().contentResolver.getType(uriToView) ?: "image/*")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        startActivity(viewIntent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(requireContext(), "No application found to view file", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            snackbar.show()
+                        }
                         vm.clearSaveResult()
                     }
                     state.errorMessage?.let { msg ->
@@ -2106,11 +2184,19 @@ class QrScanTabFragment : Fragment() {
 
     private var previewView: PreviewView? = null
     private var scanOverlay: View? = null
+    private var guidanceText: TextView? = null
+    private var torchBtn: FloatingActionButton? = null
+    private var isTorchOn: Boolean = false
+
     private var resultCard: MaterialCardView? = null
     private var resultType: TextView? = null
     private var resultText: TextView? = null
+    private var togglePwdBtn: MaterialButton? = null
     private var resultActionBtn: Button? = null
     private var scanAnotherBtn: Button? = null
+
+    private var currentScannedAction: QrAction? = null
+    private var isPasswordMasked: Boolean = true
 
     private var containerBottomControls: View? = null
     private var scanGalleryBtn: Button? = null
@@ -2208,9 +2294,13 @@ class QrScanTabFragment : Fragment() {
 
         previewView               = view.findViewById(R.id.qr_camera_preview)
         scanOverlay               = view.findViewById(R.id.qr_scan_overlay)
+        guidanceText              = view.findViewById(R.id.qr_scan_guidance_text)
+        torchBtn                  = view.findViewById(R.id.qr_torch_btn)
+
         resultCard                = view.findViewById(R.id.qr_result_card)
         resultType                = view.findViewById(R.id.qr_result_type)
         resultText                = view.findViewById(R.id.qr_result_text)
+        togglePwdBtn              = view.findViewById(R.id.qr_result_toggle_pwd_btn)
         resultActionBtn           = view.findViewById(R.id.qr_result_action_btn)
         scanAnotherBtn            = view.findViewById(R.id.qr_scan_another_btn)
 
@@ -2225,6 +2315,18 @@ class QrScanTabFragment : Fragment() {
 
         containerCameraError      = view.findViewById(R.id.container_camera_error)
         cameraErrorText           = view.findViewById(R.id.qr_camera_error_text)
+
+        torchBtn?.setOnClickListener {
+            toggleTorch()
+        }
+
+        togglePwdBtn?.setOnClickListener {
+            isPasswordMasked = !isPasswordMasked
+            togglePwdBtn?.text = if (isPasswordMasked) "Show" else "Hide"
+            currentScannedAction?.let { action ->
+                resultText?.text = formatActionSummary(action, isPasswordMasked)
+            }
+        }
 
         scanGalleryBtn?.setOnClickListener {
             qrDecodePickerLauncher.launch("image/*")
@@ -2250,6 +2352,7 @@ class QrScanTabFragment : Fragment() {
 
         scanAnotherBtn?.setOnClickListener {
             isScanningPaused = false
+            guidanceText?.text = "Point camera at a QR code"
             activeQrScanner?.resumeAnalysis()
             updateCameraUiState(CameraUiState.READY)
         }
@@ -2272,6 +2375,8 @@ class QrScanTabFragment : Fragment() {
         val isError = (state == CameraUiState.ERROR)
 
         scanOverlay?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
+        guidanceText?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
+        torchBtn?.visibility = if (isCameraReady && activeCamera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.GONE
         resultCard?.visibility = if (isResult) View.VISIBLE else View.GONE
         containerPermissionDenied?.visibility = if (isPerm) View.VISIBLE else View.GONE
         containerCameraError?.visibility = if (isError) View.VISIBLE else View.GONE
@@ -2279,6 +2384,26 @@ class QrScanTabFragment : Fragment() {
         // Mutually exclusive: Bottom controls only visible when camera is ready or showing result
         containerBottomControls?.visibility = if (isCameraReady || isResult) View.VISIBLE else View.GONE
         scanGalleryBtn?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
+
+        if (!isCameraReady && isTorchOn) {
+            setTorch(false)
+        }
+    }
+
+    private fun toggleTorch() {
+        val cam = activeCamera ?: return
+        if (cam.cameraInfo.hasFlashUnit()) {
+            setTorch(!isTorchOn)
+        }
+    }
+
+    private fun setTorch(on: Boolean) {
+        val cam = activeCamera ?: return
+        if (cam.cameraInfo.hasFlashUnit()) {
+            isTorchOn = on
+            cam.cameraControl.enableTorch(on)
+            torchBtn?.setImageResource(if (on) R.drawable.ic_flash_on else R.drawable.ic_flash_off)
+        }
     }
 
     private fun checkPermissionState() {
@@ -2295,14 +2420,20 @@ class QrScanTabFragment : Fragment() {
                 !ActivityCompat.shouldShowRequestPermissionRationale(requireActivity(), Manifest.permission.CAMERA)
 
             if (isPermanent) {
-                permTitle?.text = "Camera Permission Disabled"
-                permDesc?.text = "Camera access is disabled. Enable camera access from Android Settings to scan QR codes."
+                permTitle?.text = "Camera Access Blocked"
+                permDesc?.text = "Camera permission is blocked in system settings. Tap below to open App Info and enable Camera access for VeilFrame."
                 allowCameraBtn?.visibility = View.GONE
                 openSettingsBtn?.visibility = View.VISIBLE
                 updateCameraUiState(CameraUiState.PERMISSION_DENIED)
+            } else if (hasRequestedPermissionOnce) {
+                permTitle?.text = "Camera Permission Needed"
+                permDesc?.text = "Camera access was denied. To scan QR codes directly with your device, grant camera permission to continue."
+                allowCameraBtn?.visibility = View.VISIBLE
+                openSettingsBtn?.visibility = View.GONE
+                updateCameraUiState(CameraUiState.PERMISSION_REQUIRED)
             } else {
-                permTitle?.text = "Camera access is disabled"
-                permDesc?.text = "VeilFrame needs camera access to scan QR codes with your device."
+                permTitle?.text = "Camera Access Required"
+                permDesc?.text = "VeilFrame scans QR codes locally on your device. Camera access is used solely for live viewfinder scanning."
                 allowCameraBtn?.visibility = View.VISIBLE
                 openSettingsBtn?.visibility = View.GONE
                 updateCameraUiState(CameraUiState.PERMISSION_REQUIRED)
@@ -2334,6 +2465,7 @@ class QrScanTabFragment : Fragment() {
             onZoomSuggestion = { zoomMultiplier ->
                 activity?.runOnUiThread {
                     if (!isAdded) return@runOnUiThread
+                    guidanceText?.text = "Move closer or zoom in"
                     val cam = activeCamera ?: return@runOnUiThread
                     val zoomState = cam.cameraInfo.zoomState.value ?: return@runOnUiThread
                     val currentZoom = zoomState.zoomRatio
@@ -2367,6 +2499,8 @@ class QrScanTabFragment : Fragment() {
                 preview,
                 analysis
             )
+            val hasFlash = activeCamera?.cameraInfo?.hasFlashUnit() == true
+            torchBtn?.visibility = if (hasFlash) View.VISIBLE else View.GONE
             updateCameraUiState(CameraUiState.READY)
         } catch (e: Exception) {
             if (isAdded) {
@@ -2380,9 +2514,19 @@ class QrScanTabFragment : Fragment() {
         isScanningPaused = true
         activeQrScanner?.pauseAnalysis()
         val action = PayloadParser.parse(raw)
+        currentScannedAction = action
+        isPasswordMasked = true
+
         resultType?.text = "Detected: ${action::class.simpleName ?: "QR Code"}"
-        resultText?.text = formatActionSummary(action)
+        resultText?.text = formatActionSummary(action, isPasswordMasked)
         resultActionBtn?.text = formatActionCta(action)
+
+        if (action is QrAction.Wifi && action.password.isNotBlank()) {
+            togglePwdBtn?.visibility = View.VISIBLE
+            togglePwdBtn?.text = "Show"
+        } else {
+            togglePwdBtn?.visibility = View.GONE
+        }
 
         resultActionBtn?.setOnClickListener {
             executeAction(action)
@@ -2404,7 +2548,7 @@ class QrScanTabFragment : Fragment() {
         is QrAction.Raw -> "Copy Content"
     }
 
-    private fun formatActionSummary(action: QrAction): String = when (action) {
+    private fun formatActionSummary(action: QrAction, maskWifiPassword: Boolean = true): String = when (action) {
         is QrAction.Url -> buildString {
             append(action.uri)
             if (!action.host.isNullOrBlank()) {
@@ -2415,7 +2559,8 @@ class QrScanTabFragment : Fragment() {
             append("Network: ${action.ssid}")
             append("\nSecurity: ${action.type}")
             if (action.password.isNotBlank()) {
-                append("\nPassword: ${action.password}")
+                val pass = if (maskWifiPassword) "••••••••" else action.password
+                append("\nPassword: $pass")
             }
             if (action.hidden) {
                 append(" (Hidden)")
@@ -2479,6 +2624,7 @@ class QrScanTabFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        setTorch(false)
         cameraProvider?.unbindAll()
         activeCamera = null
         activeQrScanner?.close()

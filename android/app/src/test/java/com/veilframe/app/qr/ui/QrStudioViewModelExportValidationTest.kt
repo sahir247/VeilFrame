@@ -1084,5 +1084,69 @@ class QrStudioViewModelExportValidationTest {
         assertEquals(true, vm.state.value.saveResult?.contains("SVG export rejected:") == true)
         assertFalse(vm.state.value.isExporting)
     }
+
+    @Test
+    fun testAutoRepairWithUndoRestoresSnapshotState() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateContent("https://veilframe.app/undo-test")
+        // Initial state before repair
+        val originalFg = android.graphics.Color.YELLOW
+        val originalBg = android.graphics.Color.YELLOW
+        vm.updateForeground(originalFg)
+        vm.updateBackground(originalBg)
+
+        val initialDesign = vm.buildDesignFromState(vm.state.value)
+        val testReport = com.veilframe.app.qr.validation.ScanabilityReport(
+            isScanReady = false,
+            validationSkipped = false,
+            quietZone = com.veilframe.app.qr.validation.QuietZoneReport(true, 4),
+            contrast = com.veilframe.app.qr.validation.ContrastReport(1f, 1f, 0f, 0f, 1f, false),
+            finders = com.veilframe.app.qr.validation.FinderIntegrityReport(true, true),
+            logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(false, null),
+            errorCorrection = com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+            warnings = listOf("Low contrast"),
+            repairSuggestions = listOf(com.veilframe.app.qr.validation.RepairReason.INCREASE_CONTRAST)
+        )
+        vm.setScanabilityReportForTesting(testReport, initialDesign)
+
+        assertFalse(vm.canUndoAutoRepair())
+
+        // Run autoRepair with suggestion
+        vm.autoRepair()
+
+        assertTrue(vm.canUndoAutoRepair())
+        assertNotNull(vm.state.value.repairNotice)
+        assertEquals(android.graphics.Color.BLACK, vm.state.value.foreground)
+
+        // Undo autoRepair
+        vm.undoAutoRepair()
+
+        assertEquals(originalFg, vm.state.value.foreground)
+        assertEquals(originalBg, vm.state.value.background)
+        assertFalse(vm.canUndoAutoRepair())
+    }
+
+    @Test
+    fun testWifiPayloadParsingAndAction() {
+        val raw = "WIFI:S:HomeNetwork;T:WPA;P:SuperSecretPass;H:true;;"
+        val action = com.veilframe.app.qr.scanner.PayloadParser.parse(raw)
+        assertTrue(action is com.veilframe.app.qr.scanner.QrAction.Wifi)
+        val wifi = action as com.veilframe.app.qr.scanner.QrAction.Wifi
+        assertEquals("HomeNetwork", wifi.ssid)
+        assertEquals("WPA", wifi.type)
+        assertEquals("SuperSecretPass", wifi.password)
+        assertTrue(wifi.hidden)
+    }
+
+    @Test
+    fun testClearSaveResultResetsLastSavedUri() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.clearSaveResult()
+        assertNull(vm.state.value.saveResult)
+        assertNull(vm.state.value.lastSavedUri)
+    }
 }
 

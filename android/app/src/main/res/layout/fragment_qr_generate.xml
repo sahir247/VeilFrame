@@ -3379,6 +3379,20 @@
 
         <View android:layout_height="16dp" android:layout_width="match_parent" />
 
+        <!-- Export State & Guidance Banner -->
+        <TextView
+            android:id="@+id/qr_export_status_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:background="@drawable/bg_pill_accent"
+            android:backgroundTint="?attr/colorSurfaceVariant"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:text="Enter content to export QR code" />
+
         <!-- Save / Share Row (Material 3 Expressive Action Row) -->
         <LinearLayout
             android:layout_width="match_parent"

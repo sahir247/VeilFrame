@@ -972,18 +972,40 @@ object QrExporter {
     }
 
     /**
-     * Opens system share sheet for [bitmap].
+     * Opens system share sheet for [bitmap] using temporary cache file.
+     * Prevents side-effect of permanently polluting the user's Pictures gallery.
      */
-    suspend fun share(context: Context, bitmap: Bitmap) {
-        val uri = saveToGallery(context, bitmap) ?: return
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    suspend fun share(context: Context, bitmap: Bitmap) = withContext(Dispatchers.IO) {
+        if (bitmap.isRecycled) return@withContext
+        val cacheShareDir = File(context.cacheDir, "share")
+        if (!cacheShareDir.exists()) {
+            cacheShareDir.mkdirs()
         }
-        val chooser = Intent.createChooser(intent, "Share QR Code").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val shareFile = File(cacheShareDir, "qr_share.png")
+        try {
+            FileOutputStream(shareFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            val uri = try {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.provider",
+                    shareFile
+                )
+            } catch (_: Exception) {
+                Uri.fromFile(shareFile)
+            }
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(intent, "Share QR Code").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (_: Throwable) {
+            // Non-fatal if share intent dispatch cannot be completed
         }
-        context.startActivity(chooser)
     }
 }

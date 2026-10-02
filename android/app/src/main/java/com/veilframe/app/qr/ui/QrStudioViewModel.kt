@@ -3,6 +3,7 @@ package com.veilframe.app.qr.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.veilframe.app.qr.GenerationMode
@@ -59,6 +60,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val isExporting: Boolean = false,
         val exportProgress: Float? = null,
         val saveResult: String? = null,
+        val lastSavedUri: Uri? = null,
         val errorMessage: String? = null,
         val repairNotice: String? = null,
 
@@ -189,9 +191,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
-    private var generateJob: Job? = null
+    internal var generateJob: Job? = null
     internal var exportJob: Job? = null
     private val renderGeneration = java.util.concurrent.atomic.AtomicLong(0)
+    private var preRepairSnapshot: UiState? = null
 
     init {
         regenerate(debounceMs = 0)
@@ -391,6 +394,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = UiState(content = "")
     }
 
+    fun canUndoAutoRepair(): Boolean = preRepairSnapshot != null
+
+    fun undoAutoRepair() {
+        val snapshot = preRepairSnapshot ?: return
+        preRepairSnapshot = null
+        _state.value = snapshot.copy(
+            repairNotice = "Auto-Repair undone"
+        )
+        regenerate(customDesign = snapshot.design, debounceMs = 0)
+    }
+
     fun autoRepair() {
         val s = _state.value
         val effectiveContent = s.content
@@ -399,12 +413,15 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val currentDesign = s.design ?: return
 
         val repairResult = AutoRepairEngine.repair(currentDesign, report, effectiveContent)
-        val notice = if (repairResult.changesApplied.isNotEmpty()) {
-            repairResult.changesApplied.joinToString("; ")
-        } else {
-            "No adjustments needed"
+        if (repairResult.changesApplied.isEmpty()) {
+            _state.value = s.copy(repairNotice = "No adjustments needed")
+            return
         }
 
+        // Store pre-repair snapshot for Undo
+        preRepairSnapshot = s
+
+        val notice = repairResult.changesApplied.joinToString("; ")
         val repaired = repairResult.repairedDesign
         _state.value = s.copy(
             ecChoice = repaired.correction,
@@ -417,6 +434,13 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             repairNotice = notice
         )
         regenerate(customDesign = repaired, debounceMs = 0)
+    }
+
+    internal fun setScanabilityReportForTesting(report: ScanabilityReport, design: QrDesign) {
+        _state.value = _state.value.copy(
+            scanabilityReport = report,
+            design = design
+        )
     }
 
     fun regenerate(customDesign: QrDesign? = null, debounceMs: Long = 0) {
@@ -1041,12 +1065,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 when (exportResult) {
                     is QrOutputResult.Success -> {
                         _state.value = _state.value.copy(
-                            saveResult = "JPEG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})"
+                            saveResult = "JPEG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})",
+                            lastSavedUri = exportResult.value
                         )
                     }
                     is QrOutputResult.Failure -> {
                         _state.value = _state.value.copy(
-                            saveResult = "Save failed: ${exportResult.error.description}"
+                            saveResult = "Save failed: ${exportResult.error.description}",
+                            lastSavedUri = null
                         )
                     }
                 }
@@ -1322,12 +1348,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 when (exportResult) {
                     is QrOutputResult.Success -> {
                         _state.value = _state.value.copy(
-                            saveResult = "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})"
+                            saveResult = "PNG saved to Gallery (${exportDesign.outputSize}x${exportDesign.outputSize})",
+                            lastSavedUri = exportResult.value
                         )
                     }
                     is QrOutputResult.Failure -> {
                         _state.value = _state.value.copy(
-                            saveResult = "Save failed: ${exportResult.error.description}"
+                            saveResult = "Save failed: ${exportResult.error.description}",
+                            lastSavedUri = null
                         )
                     }
                 }
@@ -1364,7 +1392,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         "Vector SVG saved to Downloads"
                     } else {
                         "SVG export rejected: ${exportResult.errorOrNull()?.description}"
-                    }
+                    },
+                    lastSavedUri = exportResult.getOrNull()
                 )
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
@@ -1424,12 +1453,14 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 when (exportResult) {
                     is QrOutputResult.Success -> {
                         _state.value = _state.value.copy(
-                            saveResult = "Printable PDF saved to Downloads"
+                            saveResult = "Printable PDF saved to Downloads",
+                            lastSavedUri = exportResult.value
                         )
                     }
                     is QrOutputResult.Failure -> {
                         _state.value = _state.value.copy(
-                            saveResult = "PDF export failed: ${exportResult.error.description}"
+                            saveResult = "PDF export failed: ${exportResult.error.description}",
+                            lastSavedUri = null
                         )
                     }
                 }
@@ -1481,7 +1512,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Gif())
                 }
                 _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Animated GIF saved to Gallery (${frames.size} frames)" else "GIF export failed: ${exportResult.errorOrNull()?.description}"
+                    saveResult = if (exportResult.isSuccess) "Animated GIF saved to Gallery (${frames.size} frames)" else "GIF export failed: ${exportResult.errorOrNull()?.description}",
+                    lastSavedUri = exportResult.getOrNull()
                 )
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
@@ -1538,7 +1570,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "MP4 Video saved to Movies" else "Video export failed: ${exportResult.errorOrNull()?.description}"
+                    saveResult = if (exportResult.isSuccess) "MP4 Video saved to Movies" else "Video export failed: ${exportResult.errorOrNull()?.description}",
+                    lastSavedUri = exportResult.getOrNull()
                 )
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
@@ -1588,7 +1621,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Svg)
                 }
                 _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Animated SVG saved to Downloads" else "Animated SVG export failed: ${exportResult.errorOrNull()?.description}"
+                    saveResult = if (exportResult.isSuccess) "Animated SVG saved to Downloads" else "Animated SVG export failed: ${exportResult.errorOrNull()?.description}",
+                    lastSavedUri = exportResult.getOrNull()
                 )
             } finally {
                 _state.value = _state.value.copy(isExporting = false)
@@ -1650,7 +1684,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearSaveResult() {
-        _state.value = _state.value.copy(saveResult = null)
+        _state.value = _state.value.copy(saveResult = null, lastSavedUri = null)
     }
 
     fun clearRepairNotice() {
