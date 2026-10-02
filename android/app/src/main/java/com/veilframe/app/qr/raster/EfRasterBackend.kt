@@ -36,14 +36,29 @@ interface EfRasterBackend {
     ): Bitmap
 
     /**
-     * Performs a zero-interpolation pixel slice of [source] within integer bounds.
-     * Equivalent to CGImage.cropping(to:).
+     * Performs a crop with CoreGraphics CGRectIntegral semantics:
+     * - minX = floor(rect.left)
+     * - minY = floor(rect.top)
+     * - maxX = ceil(rect.right)
+     * - maxY = ceil(rect.bottom)
+     * - width = maxX - minX
+     * - height = maxY - minY
+     *
+     * Equivalent to CGImage.cropping(to:) which applies CGRectIntegral prior to slicing.
      */
     fun crop(
         source: Bitmap,
-        x: Int,
-        y: Int,
-        width: Int,
-        height: Int
+        rect: RectF
+    ): Bitmap
+
+    /**
+     * Performs a crop with 64-bit Double coordinates applying CoreGraphics CGRectIntegral semantics.
+     */
+    fun crop(
+        source: Bitmap,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
     ): Bitmap
 }

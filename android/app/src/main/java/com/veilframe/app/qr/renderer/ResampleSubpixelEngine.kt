@@ -106,14 +106,8 @@ object ResampleSubpixelEngine {
             pixelSource is PreScaledPixelSource -> pixelSource
             pixelSource.width == targetDim && pixelSource.height == targetDim -> pixelSource
             pixelSource is BitmapPixelSource -> {
-                try {
-                    preScaledAuto = ImageScaleResolver.createPreScaledSource(pixelSource.bitmap, targetDim, targetDim, style.scaleMode)
-                    preScaledAuto
-                } catch (t: Throwable) {
-                    android.util.Log.w("ResampleSubpixelEngine", "Bitmap scaling failed, falling back to array source: ${t.message}", t)
-                    preScaledAuto = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, style.scaleMode)
-                    preScaledAuto
-                }
+                preScaledAuto = ImageScaleResolver.createPreScaledSource(pixelSource.bitmap, targetDim, targetDim, style.scaleMode)
+                preScaledAuto
             }
             else -> {
                 preScaledAuto = ImageScaleResolver.createPreScaledArraySource(pixelSource, targetDim, targetDim, style.scaleMode)
@@ -181,19 +175,8 @@ object ResampleSubpixelEngine {
         var preScaledSource: PreScaledPixelSource? = null
 
         val pixelSource: PixelSource? = if (source != null && !source.isRecycled) {
-            try {
-                preScaledSource = ImageScaleResolver.createPreScaledSource(source, targetDim, targetDim, style.scaleMode)
-                preScaledSource
-            } catch (t: Throwable) {
-                android.util.Log.w("ResampleSubpixelEngine", "Bitmap scaling failed, falling back to array source: ${t.message}", t)
-                try {
-                    preScaledSource = ImageScaleResolver.createPreScaledArraySource(BitmapPixelSource(source), targetDim, targetDim, style.scaleMode)
-                    preScaledSource
-                } catch (t2: Throwable) {
-                    android.util.Log.w("ResampleSubpixelEngine", "Array source fallback also failed: ${t2.message}", t2)
-                    BitmapPixelSource(source)
-                }
-            }
+            preScaledSource = ImageScaleResolver.createPreScaledSource(source, targetDim, targetDim, style.scaleMode)
+            preScaledSource
         } else null
 
         try {

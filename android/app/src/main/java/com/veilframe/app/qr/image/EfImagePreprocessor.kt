@@ -312,11 +312,11 @@ object EfImagePreprocessor {
             return source
         }
 
-        // Fast path: rect is entirely within source -> pure crop (CGImage+EFQRCode lines 158-162)
+        // Fast path: rect is entirely within source -> pure crop with CGRectIntegral (CGImage+EFQRCode lines 158-162)
         if (rectX >= 0.0 && rectY >= 0.0 &&
             (rectX + rectW) <= imageWidth && (rectY + rectH) <= imageHeight
         ) {
-            return cropBitmap(source, rectX.toInt(), rectY.toInt(), rectW, rectH)
+            return backend.crop(source, rectX, rectY, rectW.toDouble(), rectH.toDouble())
         }
 
         // General case: transparent canvas with offset draw (CGImage+EFQRCode lines 165-184)
@@ -338,12 +338,13 @@ object EfImagePreprocessor {
     ): Bitmap = clipAndExpandTransparency(source, rectX.toDouble(), rectY.toDouble(), rectW, rectH)
 
     /**
-     * Zero-interpolation pixel crop - equivalent to CGImage.cropping(to:).
-     *
-     * Uses backend.crop(source, x, y, width, height) which performs an exact
-     * pixel-copy without any scaling or interpolation, matching CoreGraphics cropping().
+     * Zero-interpolation pixel crop with CoreGraphics CGRectIntegral - equivalent to CGImage.cropping(to:).
      */
-    internal fun cropBitmap(source: Bitmap, x: Int, y: Int, width: Int, height: Int): Bitmap {
+    internal fun cropBitmap(source: Bitmap, x: Double, y: Double, width: Double, height: Double): Bitmap {
         return backend.crop(source, x, y, width, height)
+    }
+
+    internal fun cropBitmap(source: Bitmap, x: Int, y: Int, width: Int, height: Int): Bitmap {
+        return backend.crop(source, x.toDouble(), y.toDouble(), width.toDouble(), height.toDouble())
     }
 }

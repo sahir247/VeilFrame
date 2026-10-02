@@ -473,9 +473,6 @@ object ImageScaleResolver {
         val tw = targetWidth.coerceAtLeast(1)
         val th = targetHeight.coerceAtLeast(1)
 
-        val output = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output)
-
         // EFQRCode 7.0.3 parity: Preprocess source image to intermediate canvas ratio (EFImageMode.imageForContent)
         val preprocessed = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
             source = source,
@@ -483,6 +480,15 @@ object ImageScaleResolver {
             canvasHeight = th.toDouble(),
             mode = mode
         )
+
+        // Reproduce EFQRCode 7.0.3 getGrayPointList():
+        // Single draw into 3N x 3N context. If preprocessed already matches 3N x 3N, use directly
+        // without redundant 3N -> 3N allocation and Canvas draw pass.
+        val targetBitmap = if (preprocessed.width == tw && preprocessed.height == th) {
+            preprocessed
+        } else {
+            com.veilframe.app.qr.image.EfImagePreprocessor.backend.resize(preprocessed, tw, th)
+        }
 
         val contentBounds: ContentBounds? = if (mode == ImageScaleMode.ASPECT_FIT) {
             val sw = source.width.toFloat().coerceAtLeast(1f)
@@ -495,15 +501,7 @@ object ImageScaleResolver {
             null
         }
 
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
-            isFilterBitmap = true
-            isDither = false
-        }
-        val srcRect = android.graphics.Rect(0, 0, preprocessed.width, preprocessed.height)
-        val dstRect = RectF(0f, 0f, tw.toFloat(), th.toFloat())
-        canvas.drawBitmap(preprocessed, srcRect, dstRect, paint)
-
-        return PreScaledPixelSource(bitmap = output, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
+        return PreScaledPixelSource(bitmap = targetBitmap, targetWidth = tw, targetHeight = th, contentBounds = contentBounds)
     }
 
     /**

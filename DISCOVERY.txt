@@ -1481,3 +1481,640 @@ And that distinction is exactly what your current parity work needs.
 [13]: https://github.com/EFPrefix/EFQRCode/issues/21?utm_source=chatgpt.com "Generated QR Code not match with CIImage generated · Issue #21 · EFPrefix/EFQRCode · GitHub"
 [14]: https://github.com/swhitty/SwiftDraw/issues/49?utm_source=chatgpt.com "Rasterized SVG is empty · Issue #49 · swhitty/SwiftDraw · GitHub"
 [15]: https://developer.apple.com/documentation/coregraphics/cgimage/cropping%28to%3A%29?utm_source=chatgpt.com "cropping(to:) | Apple Developer Documentation"
+
+
+I went looking specifically for the stuff that tends to live in maintainer comments, old issue threads, source-code TODOs, renderer internals, and “we discovered this the hard way” answers rather than polished documentation.
+
+And I found several pieces that materially change how I would design VeilFrame's parity layer.
+
+1. The biggest hidden fact: EF is a two-raster pipeline
+
+This is the most important discovery.
+
+EFQRCode 7.0.3 does:
+
+raw source image
+      ↓
+EFImageMode.imageForContent()
+      ↓
+CoreGraphics rasterization
+      ↓
+preprocessed CGImage
+      ↓
+PNG encode
+      ↓
+SVG <image href="data:image/png;base64,...">
+      ↓
+SwiftDraw 0.22.0
+      ↓
+PNG decode back to CGImage
+      ↓
+CoreGraphics draw(CGImage, in:)
+      ↓
+final image
+
+I verified this directly against the pinned EF 7.0.3 source and its pinned SwiftDraw dependency.
+
+The EF source's EFStyleParamImage.write() first calls imageForContent(), PNG-encodes the result, and emits an <image> with explicit width/height; SwiftDraw 0.22 then decodes that PNG and issues ctx.draw(image, in:).
+
+That means there are two distinct raster contracts:
+
+Contract A:
+CoreGraphics → preprocessing bitmap
+
+Contract B:
+preprocessed PNG → SwiftDraw/CoreGraphics → final bitmap
+
+This completely changes the way we should test parity.
+
+Consequence for RESAMPLE
+
+For IMAGE_RESAMPLE, EF reads the 3N×3N intermediate bitmap before SVG final rasterization.
+
+So RESAMPLE parity should terminate at:
+
+source
+→ EF preprocessing
+→ 3N×3N bitmap
+→ grayscale/threshold/subpixels
+
+It should not include the final SwiftDraw pass.
+
+Consequence for IMAGE / IMAGE_FILL
+
+Final-pixel parity must include the second pass because that's what EF actually does.
+
+That means the earlier simplistic idea of “preprocess once and never rasterize again” is not correct as a model of EF final output.
+
+The correct rule is:
+
+Reproduce EF's two-pass behavior, not “one pass because one pass is cleaner.”
+
+2. SwiftDraw itself contains a dirty little secret
+
+SwiftDraw 0.22.0's Core Graphics provider literally contains:
+
+//TODO: replace with CG implementation
+
+for decoding an embedded image.
+
+Its implementation is effectively:
+
+iOS:
+    UIImage(data: png)?.cgImage
+
+macOS:
+    NSImage(data: png)
+        → cgImage(forProposedRect:)
+
+So the second raster pass isn't just:
+
+PNG → raw CGImage
+
+with an unquestionably identical decode path.
+
+It goes through UIKit/AppKit image decoding semantics first.
+
+That's a very important hidden dependency for pixel parity.
+
+And EFQRCode 7.0.3 pins SwiftDraw exactly at 0.22.0 (a19594794cdcdee5135caad3bc119096c50c92c2), so we should treat that implementation—not modern SwiftDraw—as part of the EF oracle.
+
+3. SwiftDraw has real image-raster bugs in the wild
+
+This isn't theoretical.
+
+A SwiftDraw user reported that base64-embedded images were being clipped when rasterized, even though most SVGs rendered correctly. The reproducer specifically used svg.rasterize(with:).
+
+Another user reported an SVG that parsed but produced an empty rasterized image under SwiftDraw.
+
+And SwiftDraw currently has an open issue where nested SVG width/height decimal values can be truncated, causing mis-scaling and mis-positioning.
+
+The interesting lesson isn't “SwiftDraw is bad.”
+
+It's this:
+
+The SVG-to-final-pixels step is itself an implementation-specific behavioral layer.
+
+So reproducing the SVG structure is not enough.
+
+4. Even the SwiftDraw version is part of the pixel contract
+
+This is a very strong reason to pin the oracle.
+
+A current SwiftDraw regression was reported where SVG ex/em root dimensions worked in 0.20.1 but failed in 0.28.0. The report explicitly says pinning back to 0.20.1 restored rendering.
+
+So:
+
+SwiftDraw 0.20
+SwiftDraw 0.22
+SwiftDraw 0.28
+
+cannot be treated as interchangeable SVG engines.
+
+For our work:
+
+EFQRCode 7.0.3
+        +
+SwiftDraw 0.22.0
+        +
+revision a195947...
+
+is the actual final-rendering oracle.
+
+5. Here's a subtle Core Graphics misconception we need to kill
+
+Your current VeilFrame comments lean toward:
+
+premultipliedLast
+→ CoreGraphics premultiplies RGB
+→ gamma applies alpha again
+→ alpha is effectively squared
+
+That is not justified merely from the context flag.
+
+A very old but highly regarded Core Graphics answer by Peter Hosey explains the distinction precisely:
+
+kCGImageAlphaPremultipliedLast describes the destination context format. The source CGImage has its own alpha representation; Quartz converts the source into the destination format appropriately.
+
+That's a huge nuance.
+
+So:
+
+context = premultipliedLast
+
+does not itself prove:
+
+source RGB → multiply by A again
+
+The source CGImage's own alpha type and color representation matter.
+
+Therefore
+
+The current VeilFrame:
+
+calculatePixelLuminance(... efPremultipliedAlpha = true)
+
+may still be the correct empirical model for EF's actual raster bytes.
+
+But the justification must be:
+
+CoreGraphics oracle pixels prove it
+
+not:
+
+the context flag obviously means alpha is squared
+
+That is exactly the kind of obscure expert correction you were asking for.
+
+6. The right alpha experiment is now obvious
+
+Don't test only:
+
+opaque red
+opaque green
+opaque blue
+
+Use source pixels with controlled alpha:
+
+(255,   0,   0, 255)
+(255,   0,   0, 128)
+(255,   0,   0,  64)
+
+(  0, 255,   0, 128)
+( 20,  40,  60, 128)
+
+(255, 0, 0, 0)
+(  0, 0, 0, 0)
+
+Then dump the actual bytes from the Core Graphics intermediate buffer.
+
+That immediately tells us whether VeilFrame's interpretation is:
+
+straight → premultiply once
+
+or
+
+some other conversion
+
+instead of guessing from API names.
+
+Community developers repeatedly warn about exactly this class of bug: changing alpha while leaving premultiplied RGB untouched produces visibly wrong results, and correct alpha manipulation requires unpremultiply/repremultiply when modifying stored pixels.
+
+7. Core Graphics interpolation is less deterministic than “bilinear”
+
+Apple's own documentation says interpolation quality is a hint; not every graphics context supports every quality level.
+
+And there is another obscure property many people overlook:
+
+CGImage.shouldInterpolate
+
+is itself part of the image's sampling behavior. Apple documents it as controlling whether interpolation is applied when the image is drawn.
+
+So the actual parity state is more like:
+
+source CGImage
+ + alpha type
+ + color space
+ + shouldInterpolate
+ + CGContext interpolationQuality
+ + CTM
+ + destination color space
+ + destination pixel format
+
+—not merely:
+
+"bilinear"
+
+EFQRCode doesn't explicitly set interpolation quality in the preprocessing functions.
+
+Therefore the correct engineering move is:
+
+Empirically characterize the Core Graphics environment rather than assigning a mathematical kernel name prematurely.
+
+8. Skia has hidden half-pixel rules that matter
+
+This one is particularly valuable.
+
+Skia's own source contains comments explaining its image sampling coordinate model:
+
+destination pixel center
+→ inverse transform
+→ half-pixel adjustment
+→ bilerp bias
+
+The internal code literally starts mapping with:
+
+x + 0.5
+y + 0.5
+
+and then applies a filtering bias.
+
+Skia also has special handling for images mapped 1:1 with a half-pixel offset; its source explicitly discusses when integer sample locations should be snapped so each source pixel is selected once.
+
+This is why an innocuous-looking case such as:
+
+100×100 → 100×100
+
+can be a different sampling regime from:
+
+100×100 → 101×101
+
+or:
+
+100×100 → 50×50
+
+even though all are “linear filtering.”
+
+9. Another Skia trap: source-rectangle constraints
+
+Skia has explicit SrcRectConstraint semantics.
+
+The distinction is essentially:
+
+STRICT
+    filtered samples stay constrained to the source rect
+
+FAST / BLEED
+    filtering may sample outside the source rect
+
+The SkCanvas documentation explains that filtered sampling can otherwise bleed from neighboring pixels outside the source rectangle.
+
+That is extremely important for IMAGE / IMAGE_FILL crop parity.
+
+A source image like:
+
+red red red | BLUE BLUE BLUE
+
+cropped exactly at the boundary can produce different pixels if the sampling kernel is allowed to read across that boundary.
+
+This is exactly the sort of one-pixel discrepancy that destroys byte parity while being invisible in normal screenshots.
+
+10. Skia's premultiplied sampling is also explicit
+
+Skia's shader machinery works in premultiplied color.
+
+Its documentation/internal source states that sampling an unpremultiplied image results in:
+
+[R*A, G*A, B*A, A]
+
+before subsequent color processing.
+
+So for the parity backend we should make this explicit rather than relying on whichever Android Bitmap/Canvas path happens to be selected.
+
+11. Final iOS pixel format is another hidden variable
+
+SwiftDraw 0.22's iOS rasterizer uses:
+
+UIGraphicsImageRendererFormat.preferred()
+preferredRange = .automatic
+opaque = false
+
+Apple says preferredRange affects the pixel format, and .automatic means the system selects the pixel format based on the content.
+
+That means the final EF UIImage is not guaranteed by API contract to be one fixed pixel representation across every device/environment.
+
+This is a major distinction:
+
+EF intermediate raster parity
+
+can potentially be made deterministic.
+
+But:
+
+EF final UIImage byte parity
+
+may require pinning:
+
+OS
+device class
+renderer format
+color range
+scale
+
+or deliberately extracting/re-rendering into a canonical reference bitmap.
+
+That's another reason we should make the oracle produce an explicit canonical CGImage/RGBA fixture instead of comparing arbitrary PNG files emitted by different devices.
+
+12. The EF community itself already demonstrated how easy parity can fail
+
+EFQRCode issue #21 is a fantastic example.
+
+A generated QR didn't match Core Image's QR output. The eventual fix involved changing indexing from:
+
+codes[indexY][indexX]
+
+to:
+
+codes[indexX][indexY]
+
+in multiple places.
+
+That's not a fancy rendering problem.
+
+It's a one-line coordinate convention.
+
+The takeaway:
+
+Never validate parity through visual appearance alone.
+
+A coordinate transpose can still produce something that looks like a completely valid QR.
+
+13. EF's own architecture discussion points toward the solution
+
+The old EFQRCode V7 architecture discussion is surprisingly relevant.
+
+The maintainer proposal was:
+
+CodePointGenerator
+        ↓
+2D QR representation
+        ↓
+CodePointRenderer
+        ↓
+CGContext / SwiftUI / other canvas
+
+with helpers exposing point types and locations.
+
+That's basically the same architectural pressure we're seeing in VeilFrame:
+
+QR semantics
+    ↓
+canonical geometry / image semantics
+    ↓
+raster backend
+
+So your IR direction is not overengineering; it attacks the same architectural problem EF's maintainers recognized.
+
+14. This changes one current VeilFrame decision
+
+There are two different places where “second rasterization” exists.
+
+RESAMPLE
+
+Current VeilFrame effectively does:
+
+source
+ ↓
+EfImagePreprocessor
+ ↓
+3N bitmap
+ ↓
+draw that bitmap again into 3N bitmap
+ ↓
+sample pixels
+
+That second 3N→3N operation is not part of EF's RESAMPLE pipeline.
+
+This should be eliminated.
+
+Also:
+
+isDither = true
+
+should not be part of the EF-compatible 3N raster stage unless an oracle demonstrates that EF's output includes equivalent dithering.
+
+This is a real parity blocker.
+IMAGE / IMAGE_FILL final output
+
+Here:
+
+preprocess
+ ↓
+PNG
+ ↓
+SwiftDraw decode
+ ↓
+CoreGraphics draw
+
+does exist in EF.
+
+Therefore the final-pixel parity implementation must reproduce that second stage.
+
+But VeilFrame must not implement it as:
+
+preprocess
+ ↓
+resolveSrcDst(... ASPECT_FILL)
+ ↓
+crop/reinterpret image mode AGAIN
+
+Instead it should conceptually be:
+
+preprocess exactly as EF
+ ↓
+encode/decode equivalently
+ ↓
+draw the resulting bitmap
+directly into the explicit SVG image rect
+
+That is a much more precise distinction.
+
+15. So I would now split the parity system into three oracles
+Oracle A — CoreGraphics preprocessing
+raw image
+→ EFImageMode
+→ intermediate bitmap
+
+Used by:
+
+IMAGE
+IMAGE_FILL
+RESAMPLE
+ICON
+BACKDROP
+Oracle B — RESAMPLE algorithm
+3N bitmap
+→ RGBA
+→ gamma
+→ threshold
+→ selected coordinates
+
+This ends before SVG rasterization.
+
+Oracle C — final EF renderer
+EF SVG
+→ SwiftDraw 0.22.0
+→ CoreGraphics
+→ final bitmap
+
+This is used for:
+
+IMAGE
+IMAGE_FILL
+ICON
+animated image
+masks
+backdrops
+
+That separation will make debugging dramatically easier.
+
+16. The test corpus should deliberately attack the weird cases
+
+Not photographs.
+
+Use:
+
+1×1
+2×2
+3×3
+5×7
+7×5
+17×13
+31×19
+137×91
+
+plus:
+
+single-pixel impulse
+1px checkerboard
+2px checkerboard
+horizontal ramp
+vertical ramp
+alpha ramp
+red/transparent edge
+opaque/translucent edge
+
+And especially:
+
+pixel 0 = opaque RED
+pixel 1 = fully transparent BLUE
+
+because straight-vs-premultiplied interpolation errors become painfully obvious there.
+
+17. The golden fixtures should contain more than PNGs
+
+Each fixture should include:
+
+source.png
+
+preprocessed.rgba
+preprocessed.json
+
+resample_3n.rgba
+subpixels.bin
+
+final.rgba
+final.json
+
+with metadata:
+
+EF version
+EF commit
+SwiftDraw version
+SwiftDraw commit
+OS
+device
+renderer format
+image dimensions
+image mode
+alpha representation
+color space
+interpolation settings
+scale
+
+That way a future macOS/iOS update doesn't silently invalidate the oracle.
+
+18. One more subtle lesson from SwiftDraw
+
+SwiftDraw's current documentation itself says it can render SVG to UIKit/AppKit and that transformations can be applied before rasterization.
+
+The implementation underneath uses a command generator, then Core Graphics commands, including explicit transforms and image draws.
+
+That means:
+
+SVG textual similarity
+
+is insufficient.
+
+Two SVGs that look semantically equivalent can generate different Core Graphics command sequences because of:
+
+transform placement
+image rect
+mask placement
+opacity layer
+scale order
+
+And Core Graphics operations are not commutative.
+
+This is exactly why the VeilFrame IR is useful — but the IR must preserve operation order, not just final geometry.
+
+19. My updated parity hierarchy
+
+After this deeper research, I would define the project as:
+
+LEVEL 0
+QR matrix parity
+
+LEVEL 1
+SVG/IR semantic parity
+
+LEVEL 2
+EF preprocessing raster parity
+        CoreGraphics ↔ Skia
+
+LEVEL 3
+RESAMPLE algorithm parity
+        3N pixels → subpixel decisions
+
+LEVEL 4
+EF final renderer parity
+        SwiftDraw 0.22 + CoreGraphics
+
+LEVEL 5
+canonical final RGBA parity
+
+And each level has its own oracle.
+
+20. The three highest-priority changes I would make now
+
+First: remove the extra 3N → 3N raster pass in createPreScaledSource() for RESAMPLE and eliminate implicit dithering there.
+
+Second: change IMAGE/IMAGE_FILL Canvas handling so its final second rasterization models SwiftDraw's direct image draw, rather than applying ASPECT_FILL a second time.
+
+Third: build the CoreGraphics oracle around actual output bytes, because the community evidence shows that neither premultipliedLast, bilinear, nor UIImage semantics can safely be inferred from their names alone.
+
+The biggest conceptual upgrade is:
+
+We're no longer trying to make Skia “look like CoreGraphics.” We're trying to reconstruct an empirically observed EF 7.0.3 rendering protocol, where CoreGraphics and SwiftDraw are two separate reference stages.
+
+That is a substantially stronger parity architecture than the one we had before.

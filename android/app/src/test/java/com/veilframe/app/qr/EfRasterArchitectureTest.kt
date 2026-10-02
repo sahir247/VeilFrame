@@ -26,14 +26,17 @@ class EfRasterArchitectureTest {
 
     @Test
     fun testEfRasterProfileContract() {
-        val profile = EfRasterProfile.EF_7_0_3
+        val profile = EfRasterProfile.EF_RASTER_7_0_3_SRGB8
+        assertEquals("EF-RASTER-7.0.3-SRGB8", profile.profileName)
         assertEquals("7.0.3", profile.version)
         assertEquals("07ff9e2e83a4bbd384e5a8e33b47f389c9aac762", profile.referenceCommit)
-        assertEquals("RGBA8_sRGB", profile.sourceFormat)
+        assertEquals("a19594794cdcdee5135caad3bc119096c50c92c2", profile.pinnedSwiftDrawCommit)
+        assertEquals("RGBA8_sRGB_NON_HDR", profile.sourceFormat)
         assertEquals("premultipliedLast", profile.alphaMode)
         assertEquals("DeviceRGB", profile.colorSpace)
         assertEquals("CG_REFERENCE_KERNEL", profile.sampling)
         assertFalse("Dither must be disabled in EF 7.0.3 profile", profile.dither)
+        assertEquals("ONE EF PREPROCESSING RASTER + ONE EF FINAL IMAGE-DRAW RASTER + NO EXTRA MODE/FIT RASTER", profile.invariantDescription)
     }
 
     @Test
@@ -52,10 +55,34 @@ class EfRasterArchitectureTest {
         assertEquals(150, expanded.width)
         assertEquals(100, expanded.height)
 
-        // 3. Crop
-        val cropped = backend.crop(source, 10, 10, 30, 20)
+        // 3. Crop with Double coordinates
+        val cropped = backend.crop(source, 10.0, 10.0, 30.0, 20.0)
         assertEquals(30, cropped.width)
         assertEquals(20, cropped.height)
+    }
+
+    @Test
+    fun testCGRectIntegralCroppingSemantics() {
+        val backend = SkiaEfRasterBackend
+        val source = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888) ?: return
+
+        // Apple CoreGraphics CGRectIntegral:
+        // Returns the smallest rectangle with integer coordinates that contains the source rectangle:
+        // x = floor(10.2) = 10, maxX = ceil(10.2 + 20.2 = 30.4) = 31 => width = 21 (NOT 20 from simple toInt)
+        // y = floor(5.7) = 5, maxY = ceil(5.7 + 15.1 = 20.8) = 21 => height = 16 (NOT 15 from simple toInt)
+        val croppedFractional = backend.crop(source, 10.2, 5.7, 20.2, 15.1)
+        assertEquals("CGRectIntegral width must expand to cover floating rect", 21, croppedFractional.width)
+        assertEquals("CGRectIntegral height must expand to cover floating rect", 16, croppedFractional.height)
+
+        // Integer coordinates remain exact
+        val croppedIntegral = backend.crop(source, 10.0, 5.0, 20.0, 15.0)
+        assertEquals(20, croppedIntegral.width)
+        assertEquals(15, croppedIntegral.height)
+
+        // RectF overload delegates to identical CGRectIntegral logic
+        val croppedRectF = backend.crop(source, RectF(10.2f, 5.7f, 30.4f, 20.8f))
+        assertEquals(21, croppedRectF.width)
+        assertEquals(16, croppedRectF.height)
     }
 
     @Test
@@ -75,7 +102,12 @@ class EfRasterArchitectureTest {
                 return source
             }
 
-            override fun crop(source: Bitmap, x: Int, y: Int, width: Int, height: Int): Bitmap {
+            override fun crop(source: Bitmap, rect: RectF): Bitmap {
+                cropCalled = true
+                return source
+            }
+
+            override fun crop(source: Bitmap, x: Double, y: Double, width: Double, height: Double): Bitmap {
                 cropCalled = true
                 return source
             }
@@ -100,6 +132,20 @@ class EfRasterArchitectureTest {
         } finally {
             EfImagePreprocessor.backend = originalBackend
         }
+    }
+
+    @Test
+    fun testCreatePreScaledSourceEliminatesDoubleRaster() {
+        val sourceBmp = Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888) ?: return
+        // In STRETCH mode to 60x60, EfImagePreprocessor resizes to exactly 60x60.
+        // ImageScaleResolver must reuse that preprocessed bitmap directly instead of performing
+        // an additional 3N -> 3N Canvas draw pass.
+        val preScaled = ImageScaleResolver.createPreScaledSource(sourceBmp, 60, 60, ImageScaleMode.STRETCH)
+        assertEquals(60, preScaled.width)
+        assertEquals(60, preScaled.height)
+        assertNotNull(preScaled.bitmap)
+        assertEquals(60, preScaled.bitmap!!.width)
+        assertEquals(60, preScaled.bitmap!!.height)
     }
 
     @Test
@@ -134,6 +180,30 @@ class EfRasterArchitectureTest {
         assertEquals(4, diffResult.mismatchBoundingBox?.maxX)
         assertEquals(5, diffResult.mismatchBoundingBox?.maxY)
         assertTrue("PSNR must be finite and positive", diffResult.psnr > 0.0 && !diffResult.psnr.isInfinite())
+    }
+
+    @Test
+    fun testAdversarialAlphaCorpusDifferentialMetrics() {
+        // Deliberately constructed alpha corpus exposing rounding and premultiplication boundaries:
+        // (255,0,0,255), (255,0,0,128), (255,0,0,127), (255,0,0,64), (20,40,60,128), (255,0,0,0), (0,0,255,0)
+        val testColors = intArrayOf(
+            Color.argb(255, 255, 0, 0),
+            Color.argb(128, 255, 0, 0),
+            Color.argb(127, 255, 0, 0),
+            Color.argb(64, 255, 0, 0),
+            Color.argb(128, 20, 40, 60),
+            Color.argb(0, 255, 0, 0),
+            Color.argb(0, 0, 0, 255)
+        )
+        val w = testColors.size
+        val h = 1
+        val buf1 = RasterBuffer(w, h, testColors.copyOf())
+        val buf2 = RasterBuffer(w, h, testColors.copyOf())
+
+        val result = PixelComparator.compare(buf1, buf2)
+        assertTrue("Identical adversarial alpha fixtures must match exactly", result.exactMatch)
+        assertEquals(0, result.mismatchCount)
+        assertEquals(0, result.maxChannelDelta)
     }
 
     @Test
