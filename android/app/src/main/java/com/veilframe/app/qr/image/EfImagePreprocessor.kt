@@ -82,42 +82,44 @@ object EfImagePreprocessor {
         return when (mode) {
             // scaleToFill (EFImageMode.swift:132-140)
             ImageScaleMode.STRETCH -> {
-                val (newWidth, newHeight) = scaleToFillSize(
+                val (newWidthF, newHeightF) = scaleToFillSizeF(
                     imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
                 )
-                resizeBitmap(source, newWidth, newHeight)
+                resizeBitmap(source, newWidthF.toInt(), newHeightF.toInt())
             }
 
             // scaleAspectFit (EFImageMode.swift:141-154)
+            // Computes floating-point newSize and origin, then truncates destination canvas dimensions.
             ImageScaleMode.ASPECT_FIT -> {
-                val (newWidth, newHeight) = scaleAspectFitSize(
+                val (newWidthF, newHeightF) = scaleAspectFitSizeF(
                     imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
                 )
-                val originX = -(imageWidth - newWidth) / 2.0
-                val originY = -(imageHeight - newHeight) / 2.0
+                val originX = -(imageWidth - newWidthF) / 2.0
+                val originY = -(imageHeight - newHeightF) / 2.0
                 clipAndExpandTransparency(
                     source = source,
                     rectX = originX.toFloat(),
                     rectY = originY.toFloat(),
-                    rectW = newWidth,
-                    rectH = newHeight
+                    rectW = newWidthF.toInt(),
+                    rectH = newHeightF.toInt()
                 )
             }
 
             // scaleAspectFill (EFImageMode.swift:155-168)
+            // Computes floating-point newSize and origin, then slices source within bounds.
             ImageScaleMode.ASPECT_FILL, ImageScaleMode.CENTER_CROP -> {
-                val (newWidth, newHeight) = scaleAspectFillSize(
+                val (newWidthF, newHeightF) = scaleAspectFillSizeF(
                     imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
                 )
-                val originX = -(imageWidth - newWidth) / 2.0
-                val originY = -(imageHeight - newHeight) / 2.0
+                val originX = -(imageWidth - newWidthF) / 2.0
+                val originY = -(imageHeight - newHeightF) / 2.0
                 // rect is wholly inside source bounds -> zero-interpolation crop
                 cropBitmap(
                     source = source,
                     x = (-originX).toInt(),
                     y = (-originY).toInt(),
-                    width = newWidth,
-                    height = newHeight
+                    width = newWidthF.toInt(),
+                    height = newHeightF.toInt()
                 )
             }
         }
@@ -128,6 +130,21 @@ object EfImagePreprocessor {
     // -------------------------------------------------------------------------
 
     /**
+     * EF scaleToFill newSize as floating-point CGSize (EFImageMode.swift:133-139).
+     */
+    internal fun scaleToFillSizeF(
+        imageWidth: Float, imageHeight: Float,
+        canvasW: Float, canvasH: Float,
+        widthRatio: Float, heightRatio: Float
+    ): Pair<Float, Float> {
+        return if (widthRatio > heightRatio) {
+            Pair(imageHeight / canvasH * canvasW, imageHeight)
+        } else {
+            Pair(imageWidth, imageWidth / canvasW * canvasH)
+        }
+    }
+
+    /**
      * EF scaleToFill newSize (EFImageMode.swift:133-139).
      * Returns (Int-truncated newWidth, Int-truncated newHeight).
      */
@@ -136,14 +153,23 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = if (widthRatio > heightRatio) {
-            // anchor height, derive width from canvas ratio
-            Pair(imageHeight / canvasH * canvasW, imageHeight)
-        } else {
-            // anchor width, derive height from canvas ratio
-            Pair(imageWidth, imageWidth / canvasW * canvasH)
-        }
+        val (w, h) = scaleToFillSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
         return Pair(w.toInt(), h.toInt())  // Swift: Int(newSize.width) - truncation toward zero
+    }
+
+    /**
+     * EF scaleAspectFit newSize as floating-point CGSize (EFImageMode.swift:142-148).
+     */
+    internal fun scaleAspectFitSizeF(
+        imageWidth: Float, imageHeight: Float,
+        canvasW: Float, canvasH: Float,
+        widthRatio: Float, heightRatio: Float
+    ): Pair<Float, Float> {
+        return if (widthRatio > heightRatio) {
+            Pair(imageWidth, imageWidth / canvasW * canvasH)
+        } else {
+            Pair(imageHeight / canvasH * canvasW, imageHeight)
+        }
     }
 
     /**
@@ -155,14 +181,23 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = if (widthRatio > heightRatio) {
-            // anchor width, expand height to canvas ratio (height > imageHeight = letterbox)
+        val (w, h) = scaleAspectFitSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
+        return Pair(w.toInt(), h.toInt())
+    }
+
+    /**
+     * EF scaleAspectFill newSize as floating-point CGSize (EFImageMode.swift:156-162).
+     */
+    internal fun scaleAspectFillSizeF(
+        imageWidth: Float, imageHeight: Float,
+        canvasW: Float, canvasH: Float,
+        widthRatio: Float, heightRatio: Float
+    ): Pair<Float, Float> {
+        return if (widthRatio < heightRatio) {
             Pair(imageWidth, imageWidth / canvasW * canvasH)
         } else {
-            // anchor height, expand width to canvas ratio (width > imageWidth = pillarbox)
             Pair(imageHeight / canvasH * canvasW, imageHeight)
         }
-        return Pair(w.toInt(), h.toInt())
     }
 
     /**
@@ -175,11 +210,7 @@ object EfImagePreprocessor {
         canvasW: Float, canvasH: Float,
         widthRatio: Float, heightRatio: Float
     ): Pair<Int, Int> {
-        val (w, h) = if (widthRatio < heightRatio) {
-            Pair(imageWidth, imageWidth / canvasW * canvasH)
-        } else {
-            Pair(imageHeight / canvasH * canvasW, imageHeight)
-        }
+        val (w, h) = scaleAspectFillSizeF(imageWidth, imageHeight, canvasW, canvasH, widthRatio, heightRatio)
         return Pair(w.toInt(), h.toInt())
     }
 

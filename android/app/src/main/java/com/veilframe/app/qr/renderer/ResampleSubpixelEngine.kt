@@ -34,13 +34,16 @@ fun interface SubpixelSink {
  *
  * Architecture & Design Contract:
  * 1. Source image is scaled to (3N) x (3N) subpixels via [ImageScaleResolver].
- * 2. Protected functional modules are strictly excluded via [QrMatrix.isProtected]:
- *    - Follows the complete [QrModuleRole.isProtected] specification: Finders (inner/outer),
- *      Separators, Timing tracks (Row 6 / Column 6), Alignment patterns (center & border),
- *      Format information, Version information, and Quiet Zones.
- *    - This deliberate architectural separation guarantees barcode structural integrity and
- *      flawless camera scanability, while confining artistic dither strictly to data modules.
- * 3. For every dark DATA module, the center subpixel (dx=1, dy=1) is strictly reserved as the QR anchor bit.
+ * 2. Functional pattern participation is governed selectively by [ResamplePolicy]
+ *    (defaulting to [ArtisticResamplePolicy] matching EFQRCode's getGrayPointList()):
+ *    - Finder areas: 8x8 module regions (24x24 subpixels) at corners are strictly suppressed.
+ *    - Format & Version information: Participate in stochastic dither matching EF parity.
+ *    - Timing patterns (Row 6 / Column 6): Dark timing modules participate in stochastic dither;
+ *      light timing modules are conditionally suppressed based on timingStyle.shape.
+ *    - Alignment patterns: Dark alignment modules participate in stochastic dither;
+ *      light alignment modules are conditionally suppressed based on alignmentStyle.shape.
+ * 3. For every dark module permitted by [policy.shouldDrawAnchor], the center subpixel (dx=1, dy=1)
+ *    is strictly reserved as the QR anchor bit.
  * 4. The surrounding 8 subpixels carry stochastic halftone dithering:
  *    - Gamma luminance: Y = 0.2126*R + 0.7152*G + 0.0722*B
  *    - VeilFrame Art Engine threshold: ((grayNorm + exposure - 0.5) * (contrast + 1.0) + 0.5).coerceIn(0, 1)

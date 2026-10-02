@@ -154,6 +154,25 @@ class EfImagePreprocessorTest {
         assertEquals("Height unchanged", 200, h)
     }
 
+    @Test
+    fun `floating-point newSize and origin precision preserved for aspect fit and fill`() {
+        // source: 300x200, canvas: 7x5
+        // widthRatio = 300/7 ~= 42.857 > heightRatio = 200/5 = 40.0
+        // in EF scaleAspectFit:
+        // newSize = (imageWidth, imageWidth / canvasW * canvasH) = (300.0, 300.0 / 7.0 * 5.0) = (300.0, 214.2857)
+        val (wF, hF) = EfImagePreprocessor.scaleAspectFitSizeF(
+            imageWidth = 300f, imageHeight = 200f,
+            canvasW = 7f, canvasH = 5f,
+            widthRatio = 300f / 7f, heightRatio = 40f
+        )
+        assertEquals(300.0f, wF, 0.001f)
+        assertEquals(214.2857f, hF, 0.001f)
+
+        // originY = -(imageHeight - newHeightF) / 2.0 = -(200 - 214.2857) / 2.0 = 7.14285f
+        val originY = -(200f - hF) / 2f
+        assertEquals("originY must be ~7.14285 not truncated to 7.0", 7.14285f, originY, 0.001f)
+    }
+
     // -----------------------------------------------------------------------
     // BEHAVIORAL TESTS — Bitmap-based; null-guarded for headless JVM.
     // These document required M1 behavioral contracts for Layer B oracle execution.
