@@ -218,32 +218,37 @@ class EfImagePreprocessorTest {
         assertEquals("Top margin pixel alpha must be 0 (fully transparent, not white)", 0, topLeftAlpha)
     }
 
-    // TC-M1-08: ASPECT_FILL uses zero-interpolation crop — numbered-pixel validation
-    // Source: EFImageMode.swift:163 -> self.cropping(to: rect)
+    // TC-M1-08: ASPECT_FILL fractional-offset contract — matches EF clipAndExpandingTransparencyWith
+    // Source: EFImageMode.swift:155-168 -> self.clipAndExpandingTransparencyWith(rect: rect)
     @Test
-    fun `ASPECT_FILL crop returns exact source pixels without interpolation`() {
-        // source: 400x200 (2:1), canvas: 100x100 (square)
-        // scaleAspectFillSize: anchor height -> (200, 200)
-        // origin: x = -(400-200)/2 = -100, y = 0  ->  crop from x=100, y=0
+    fun `ASPECT_FILL fractional-offset contract matches EF clipAndExpandingTransparencyWith`() {
+        // source: 301x203, canvas: 99x100
+        // widthRatio = 301/99 ~= 3.0404, heightRatio = 203/100 = 2.03 -> widthRatio < heightRatio is FALSE
+        // anchor height: (imageH/canvasH * canvasW, imageH) = (203/100*99, 203) = (200.97, 203.0)
+        val (wF, hF) = EfImagePreprocessor.scaleAspectFillSizeF(
+            imageWidth = 301f, imageHeight = 203f,
+            canvasW = 99f, canvasH = 100f,
+            widthRatio = 301f / 99f, heightRatio = 203f / 100f
+        )
+        assertEquals(200.97f, wF, 0.01f)
+        assertEquals(203.0f, hF, 0.01f)
+
+        // originX = -(imageWidth - newWidthF) / 2.0 = -(301 - 200.97) / 2.0 = -50.015f
+        val originX = -(301f - wF) / 2f
+        assertEquals(-50.015f, originX, 0.01f)
+        // originY = -(203 - 203) / 2.0 = 0.0f
+        val originY = -(203f - hF) / 2f
+        assertEquals(0.0f, originY, 0.01f)
+    }
+
+    @Test
+    fun `ASPECT_FILL produces intermediate canvas dimensions via clipAndExpandTransparency`() {
         val srcW = 400; val srcH = 200
         val source = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888) ?: return
-        for (row in 0 until srcH) {
-            for (col in 0 until srcW) {
-                source.setPixel(col, row, Color.argb(255, col and 0xFF, row and 0xFF, 0))
-            }
-        }
+        source.eraseColor(Color.BLUE)
         val result = EfImagePreprocessor.preprocess(source, 100f, 100f, ImageScaleMode.ASPECT_FILL)
-        assertEquals("Crop width", 200, result.width)
-        assertEquals("Crop height", 200, result.height)
-        // Output (0,0) must equal source (100, 0) — exact pixel copy, no blending
-        val expected = source.getPixel(100, 0)
-        val actual = result.getPixel(0, 0)
-        assertEquals("Crop origin R", Color.red(expected), Color.red(actual))
-        assertEquals("Crop origin G", Color.green(expected), Color.green(actual))
-        val expectedInterior = source.getPixel(150, 50)
-        val actualInterior = result.getPixel(50, 50)
-        assertEquals("Interior R no interpolation", Color.red(expectedInterior), Color.red(actualInterior))
-        assertEquals("Interior G no interpolation", Color.green(expectedInterior), Color.green(actualInterior))
+        assertEquals("Output width matches newWidth truncated", 200, result.width)
+        assertEquals("Output height matches newHeight truncated", 200, result.height)
     }
 
     // TC-M1-09: resizeBitmap — same instance returned when dimensions match

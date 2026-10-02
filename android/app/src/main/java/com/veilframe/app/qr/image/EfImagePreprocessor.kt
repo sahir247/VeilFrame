@@ -106,20 +106,19 @@ object EfImagePreprocessor {
             }
 
             // scaleAspectFill (EFImageMode.swift:155-168)
-            // Computes floating-point newSize and origin, then slices source within bounds.
+            // Uses EF's clipAndExpandingTransparencyWith(rect: rect) path with floating-point rect
             ImageScaleMode.ASPECT_FILL, ImageScaleMode.CENTER_CROP -> {
                 val (newWidthF, newHeightF) = scaleAspectFillSizeF(
                     imageWidth, imageHeight, canvasWidth, canvasHeight, widthRatio, heightRatio
                 )
                 val originX = -(imageWidth - newWidthF) / 2.0
                 val originY = -(imageHeight - newHeightF) / 2.0
-                // rect is wholly inside source bounds -> zero-interpolation crop
-                cropBitmap(
+                clipAndExpandTransparency(
                     source = source,
-                    x = (-originX).toInt(),
-                    y = (-originY).toInt(),
-                    width = newWidthF.toInt(),
-                    height = newHeightF.toInt()
+                    rectX = originX.toFloat(),
+                    rectY = originY.toFloat(),
+                    rectW = newWidthF.toInt(),
+                    rectH = newHeightF.toInt()
                 )
             }
         }
@@ -272,9 +271,9 @@ object EfImagePreprocessor {
 
         val canvas = Canvas(dst)
         // EF drawRect: CGRect(x: rect.origin.x, y: rect.origin.y, width: imageWidth, height: imageHeight)
-        // In destination space: source drawn at (-rectX, -rectY) with its natural pixel dimensions.
-        val dstLeft = -rectX
-        val dstTop = -rectY
+        // In destination space: source drawn at (rectX, rectY) with its natural pixel dimensions.
+        val dstLeft = rectX
+        val dstTop = rectY
         val srcRect = Rect(0, 0, imageWidth, imageHeight)
         val dstRectF = RectF(dstLeft, dstTop, dstLeft + imageWidth, dstTop + imageHeight)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
