@@ -845,13 +845,16 @@ class GuideIssueRegressionTest {
     @Test
     fun `P1_6 — QrStyle BUBBLE dispatches to dedicated BubbleRenderer`() {
         // P1.6: QrStyle.BUBBLE must dispatch to BubbleRenderer, not ComposableQrRenderer
-        val renderer = com.veilframe.app.qr.registry.QrStyleRegistry.getRenderer(QrStyle.BUBBLE)
-        assertTrue("BUBBLE style must resolve to BubbleRenderer", renderer is com.veilframe.app.qr.renderer.BubbleRenderer)
+        val registryRenderer = com.veilframe.app.qr.registry.QrStyleRegistry.getRenderer(QrStyle.BUBBLE)
+        assertTrue("BUBBLE style must resolve to BubbleRenderer in registry", registryRenderer is com.veilframe.app.qr.renderer.BubbleRenderer)
 
         val design = QrDesign(style = QrStyle.BUBBLE)
+        val directRenderer = QrGenerator.getRendererForDesign(design)
+        assertTrue("QrGenerator.getRendererForDesign must route QrStyle.BUBBLE directly to BubbleRenderer", directRenderer is com.veilframe.app.qr.renderer.BubbleRenderer)
+
         val matrix = QrGenerator.generateMatrix("BUBBLE_DISPATCH_TEST", design)
         val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
-        val ir = (renderer as com.veilframe.app.qr.renderer.BubbleRenderer).generateGeometry(matrix, design, geometry)
+        val ir = (directRenderer as com.veilframe.app.qr.renderer.BubbleRenderer).generateGeometry(matrix, design, geometry)
         assertTrue("Bubble IR must contain geometry nodes", ir.rootNodes.isNotEmpty())
     }
 }

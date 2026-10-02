@@ -190,7 +190,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
 
     private var generateJob: Job? = null
-    private var exportJob: Job? = null
+    internal var exportJob: Job? = null
     private val renderGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     init {
@@ -1379,21 +1379,26 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         null
                     }
                 }
-                if (rasterBmp != null) {
-                    val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                        rasterBmp,
-                        effectiveExportDesign,
-                        matrix,
-                        content
+                if (rasterBmp == null) {
+                    _state.value = _state.value.copy(
+                        saveResult = "SVG export rejected: vector verification failed (rasterization error)",
+                        isExporting = false
                     )
-                    rasterBmp.recycle()
-                    if (!report.isScanReady && !report.validationSkipped) {
-                        _state.value = _state.value.copy(
-                            saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
-                            scanabilityReport = report
-                        )
-                        return@launch
-                    }
+                    return@launch
+                }
+                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
+                    rasterBmp,
+                    effectiveExportDesign,
+                    matrix,
+                    content
+                )
+                rasterBmp.recycle()
+                if (!report.isScanReady && !report.validationSkipped) {
+                    _state.value = _state.value.copy(
+                        saveResult = "SVG export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        scanabilityReport = report
+                    )
+                    return@launch
                 }
 
                 val exportResult = withContext(Dispatchers.IO) {

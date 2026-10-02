@@ -326,4 +326,78 @@ class JvmCanvasVsSvgDifferentialTest {
         )
         executeDifferentialCase("13_bubble_style", design)
     }
+
+    @Test
+    fun case14_directLegacyApiEcLevelPropagation() {
+        // C1 / P0.1 direct legacy API verification:
+        // Calling QrGenerator.generate(..., ecLevel = L/H) directly and verifying bitmap generation and decode
+        val params = QrStyleParams(style = QrStyle.BASIC)
+        val bitmapL = QrGenerator.generate(
+            content = "HELLO_LEGACY_EC_L",
+            params = params,
+            ecLevel = ErrorCorrectionLevel.L
+        )
+        assertNotNull("QrGenerator.generate with ecLevel=L must return non-null Bitmap", bitmapL)
+        val decoder = com.veilframe.app.qr.decoder.ZxingQrDecoder()
+        val resultL = kotlinx.coroutines.runBlocking { decoder.decode(bitmapL!!) }
+        assertTrue("Decoded text must match payload for EC L: ${resultL.error}", resultL.success)
+        assertEquals("HELLO_LEGACY_EC_L", resultL.text)
+
+        val bitmapH = QrGenerator.generate(
+            content = "HELLO_LEGACY_EC_H",
+            params = params,
+            ecLevel = ErrorCorrectionLevel.H
+        )
+        assertNotNull("QrGenerator.generate with ecLevel=H must return non-null Bitmap", bitmapH)
+        val resultH = kotlinx.coroutines.runBlocking { decoder.decode(bitmapH!!) }
+        assertTrue("Decoded text must match payload for EC H: ${resultH.error}", resultH.success)
+        assertEquals("HELLO_LEGACY_EC_H", resultH.text)
+    }
+
+    @Test
+    fun case15_svgRasterizerImageAndMaskSupport() {
+        // C4 / P1.4: Verify that DeterministicSvgRasterizer handles <image>, <mask id="...">, and <use>
+        val testPng = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        val testCanvas = Canvas(testPng)
+        testCanvas.drawColor(Color.RED)
+        val b64 = com.veilframe.app.qr.geometry.IrSvgRenderer.bitmapToBase64(testPng)
+
+        val svgString = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100%" height="100%">
+              <defs>
+                <mask id="hole">
+                  <rect width="100" height="100" fill="white" />
+                  <circle cx="50" cy="50" r="20" fill="black" />
+                </mask>
+                <rect id="subPath" width="20" height="20" fill="#00ff00" />
+              </defs>
+              <g mask="url(#hole)">
+                <image href="data:image/png;base64,$b64" x="0" y="0" width="100" height="100" preserveAspectRatio="none" />
+              </g>
+              <use xlink:href="#subPath" x="2" y="2">
+                <animate attributeName="xlink:href" calcMode="discrete" values="#subPath" dur="1s" repeatCount="indefinite" />
+              </use>
+            </svg>
+        """.trimIndent()
+
+        val rasterBmp = com.veilframe.app.qr.raster.DeterministicSvgRasterizer.rasterize(svgString, 100, 100)
+        assertNotNull(rasterBmp)
+        assertEquals(100, rasterBmp.width)
+        assertEquals(100, rasterBmp.height)
+
+        // Inside the circle (cx=50, cy=50), the mask filled with black -> clipped to transparent (alpha == 0)
+        val centerPixel = rasterBmp.getPixel(50, 50)
+        assertEquals("Center masked area must be clipped to transparent", 0, Color.alpha(centerPixel))
+
+        // Outside the mask hole and outside the green rect (e.g. at 90, 90), mask was white -> image was red
+        val outsidePixel = rasterBmp.getPixel(90, 90)
+        assertTrue("Outside masked area must be visible", Color.alpha(outsidePixel) > 200)
+        assertEquals("Outside area color red channel must be 255", 255, Color.red(outsidePixel))
+
+        // At (10, 10), <use> rendered the green rect (#00ff00)
+        val usePixel = rasterBmp.getPixel(10, 10)
+        assertTrue("Use element must be rendered", Color.alpha(usePixel) > 200)
+        assertEquals("Use element green channel must be 255", 255, Color.green(usePixel))
+    }
 }

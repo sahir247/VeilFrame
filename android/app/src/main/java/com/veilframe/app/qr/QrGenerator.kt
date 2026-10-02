@@ -741,7 +741,7 @@ object QrGenerator {
         }
     }
 
-    private fun getRendererForDesign(design: QrDesign): QrRenderer {
+    internal fun getRendererForDesign(design: QrDesign): QrRenderer {
         return if (design.style == QrStyle.IMAGE_FILL) {
             ImageFillRenderer()
         } else if (design.style == QrStyle.BUBBLE) {

@@ -1067,5 +1067,22 @@ class QrStudioViewModelExportValidationTest {
         assertTrue(apngResult is QrOutputResult.Failure)
         assertEquals(QrError.Animation.EmptyFrames, (apngResult as QrOutputResult.Failure).error)
     }
+
+    @Test
+    fun testSaveSvgFailClosedOnStrictValidationFailure() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+        vm.updateContent("https://veilframe.app/strict-fail-closed")
+        // Set identical foreground and background colors to force strict validation failure
+        vm.updateForeground(android.graphics.Color.WHITE)
+        vm.updateBackground(android.graphics.Color.WHITE)
+
+        vm.saveSvg()
+        kotlinx.coroutines.runBlocking { vm.exportJob?.join() }
+
+        // Fail-closed verification: must reject export and set rejection message
+        assertEquals(true, vm.state.value.saveResult?.contains("SVG export rejected:") == true)
+        assertFalse(vm.state.value.isExporting)
+    }
 }
 
