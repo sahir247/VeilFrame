@@ -1,0 +1,1483 @@
+Yes. I did the research pass first rather than jumping straight to a Skia wrapper.
+
+The important conclusion is that **“CoreGraphics ≈ Skia bilinear” is not a valid parity specification**. VeilFrame can be engineered toward deterministic CoreGraphics-compatible raster output, but exact pixel parity requires a pinned oracle, a defined color/alpha contract, and differential tests. There are also two concrete VeilFrame paths that currently undermine final parity.
+
+# 1. What I researched
+
+I treated the problem as four separate layers:
+
+1. **EFQRCode 7.0.3 source** — pinned to release commit `07ff9e2e83a4bbd384e5a8e33b47f389c9aac762`.
+2. **VeilFrame current `main`** — including the recent `cd089a8…` changes.
+3. **Apple Core Graphics documentation and raster semantics**.
+4. **Android/Skia implementation/documentation plus community evidence**, including SwiftDraw because EF's final `toImage()` path uses it.
+
+I also checked the existing VeilFrame parity guide and attached audit instead of assuming the documentation was correct. Your audit itself explicitly says the actual EF source outranks the audit; that matters here. 
+
+---
+
+# 2. The first major finding: there are actually two different “EF parity” targets
+
+This is the most important architectural distinction.
+
+## Target A — EF's **image preprocessing raster**
+
+EFQRCode 7.0.3 does this with Core Graphics:
+
+```text
+source CGImage
+   ↓
+EFImageMode.imageForContent()
+   ↓
+Core Graphics bitmap context
+   ↓
+DeviceRGB + premultipliedLast
+   ↓
+CGContext.draw(...)
+   ↓
+preprocessed CGImage
+```
+
+The relevant EF 7.0.3 files are:
+
+```text
+Source/Type/EFImageMode.swift
+Source/Extension/CGImage+EFQRCode.swift
+Source/Styles/EFQRCodeStyleResampleImage.swift
+```
+
+That is the part where **Core Graphics ↔ Skia raster equivalence** matters.
+
+## Target B — EF's **final `toImage()` raster**
+
+This is different.
+
+EFQRCode's 7.0.3 `Generator.toImage()` does not simply take the generated SVG and call a raw `CGContextDrawImage`. It serializes the SVG and sends it through **SwiftDraw's SVG rasterizer**.
+
+The 7.0.3 generator path is effectively:
+
+```text
+EFQRCode style generation
+        ↓
+SVG
+        ↓
+SwiftDraw SVG
+        ↓
+rasterize(...)
+        ↓
+UIImage / NSImage
+```
+
+SwiftDraw is itself a native Swift SVG parser/renderer, and its documentation describes SVG rasterization to UIKit/AppKit images. ([GitHub][1])
+
+So:
+
+> **Pixel parity with EF's final `toImage()` is not the same problem as CoreGraphics-to-Skia image preprocessing parity.**
+
+That distinction needs to be built into the architecture.
+
+---
+
+# 3. What EFQRCode 7.0.3 actually does
+
+## 3.1 `scaleToFill`
+
+EF calculates a **floating-point intermediate size**, then its `resize(to:)` function converts that size to integer dimensions and draws the original image into a new bitmap context.
+
+The 7.0.3 implementation explicitly creates:
+
+```text
+8-bit
+4 bytes / pixel
+CGColorSpaceCreateDeviceRGB()
+kCGImageAlphaPremultipliedLast
+```
+
+and calls `context.draw(...)`.
+
+That is not simply:
+
+```text
+stretch image somehow
+```
+
+It is an actual raster operation.
+
+Apple documents `CGContextDrawImage` as scaling the image to the supplied rectangle, and Core Graphics exposes interpolation quality as graphics-state behavior. ([Apple Developer][2])
+
+---
+
+## 3.2 `scaleAspectFit`
+
+EF calculates a floating rectangle and passes that into:
+
+```swift
+clipAndExpandingTransparencyWith(rect:)
+```
+
+If the rectangle requires expansion, EF:
+
+1. allocates a new bitmap context,
+2. clears it,
+3. draws the original image at a fractional origin,
+4. returns the resulting bitmap.
+
+This is important because **the transparent margins are produced during rasterization**, rather than being deferred to SVG `preserveAspectRatio`.
+
+Your current VeilFrame direction here is correct conceptually.
+
+---
+
+## 3.3 `scaleAspectFill`
+
+Same story: EF calculates a floating rectangle, potentially with a fractional negative origin, and rasterizes into the target bitmap.
+
+So the parity contract is not:
+
+> “use center crop.”
+
+It is:
+
+> **reproduce the exact Core Graphics draw into the transparent/padded target bitmap.**
+
+---
+
+# 4. Core Graphics itself is not a fully specified “bilinear kernel”
+
+This is where a lot of implementations go wrong.
+
+Apple's documentation says interpolation quality is a **hint** and explicitly says not every context supports every interpolation quality level. EFQRCode does **not** explicitly call `CGContextSetInterpolationQuality`. ([Apple Developer][3])
+
+So the statement:
+
+> “EF uses bilinear, therefore Skia linear = exact”
+
+is unsupported.
+
+We can infer that the operation is image interpolation, but Apple does not give us a public contract saying:
+
+```text
+CoreGraphics default =
+specific mathematical bilinear kernel +
+specific fractional coordinate convention +
+specific rounding
+```
+
+Therefore the only defensible way to achieve byte parity is **empirical oracle characterization**.
+
+---
+
+# 5. Skia is more explicit
+
+Skia's current `SkSamplingOptions` defines `kLinear` as interpolation between `2×2` samples. ([skia.googlesource.com][4])
+
+And the actual Skia raster pipeline documents the sampling model:
+
+```text
+sample center = (cx, cy)
+
+fx = fract(cx + 0.5)
+fy = fract(cy + 0.5)
+
+four samples at ±0.5
+weights proportional to area
+```
+
+with edge coordinates clamped to the image bounds. ([skia.googlesource.com][5])
+
+This is extremely useful.
+
+It means we can make Skia deterministic and well-defined, but it also demonstrates why we **must compare it to the Core Graphics oracle rather than merely declaring them equivalent**.
+
+---
+
+# 6. Android `FILTER_BITMAP_FLAG` is a candidate, not a parity guarantee
+
+Android explicitly documents `Paint.FILTER_BITMAP_FLAG` as enabling bilinear sampling on scaled bitmaps. ([Android Developers][6])
+
+That makes your use of it reasonable.
+
+But there are caveats:
+
+* Android hardware/software paths can differ.
+* Android's Canvas is version-dependent.
+* Skia contains optimized implementations and low-precision paths.
+* The exact rounding/precision can differ by backend/build.
+
+So:
+
+```kotlin
+Paint(Paint.FILTER_BITMAP_FLAG)
+```
+
+is **not** an “EF parity switch.”
+
+---
+
+# 7. Premultiplied alpha is critical
+
+Both pipelines care about premultiplication.
+
+EF explicitly creates:
+
+```text
+premultipliedLast
+```
+
+Apple describes this representation as RGB already multiplied by alpha. ([Apple Developer][7])
+
+Android Canvas also requires premultiplied bitmaps for drawing; Android documents that only premultiplied bitmaps may be drawn by Canvas/view rendering. ([Android Developers][8])
+
+Skia likewise operates with premultiplied shader results. ([Skia][9])
+
+So the broad representation is compatible.
+
+But this does **not** prove byte parity.
+
+### Why?
+
+Suppose:
+
+```text
+R = 255
+A = 128
+```
+
+The reference bitmap may contain approximately:
+
+```text
+Rpremul = 128
+```
+
+but the exact conversion, rounding and subsequent resampling behavior matters.
+
+Your current VeilFrame luminance compatibility path explicitly performs a premultiplication simulation:
+
+```kotlin
+val rPremul = (r * a).toInt()
+```
+
+and then applies alpha again in the EF gamma calculation.
+
+That is a plausible reconstruction of the observed EF behavior, but it is **not yet an oracle-proven byte-for-byte reproduction**. The exact Core Graphics integerization needs to be tested with deliberately chosen semi-transparent pixels.
+
+This is one of the highest-value tests in the entire project.
+
+---
+
+# 8. Color space is another hard boundary
+
+EF explicitly creates a device-dependent RGB color space:
+
+```swift
+CGColorSpaceCreateDeviceRGB()
+```
+
+Apple documents that as a **device-dependent RGB space** and specifically warns that device color spaces are not ideal when color preservation is important. ([Apple Developer][10])
+
+Android's normal `Bitmap.createBitmap(... ARGB_8888 ...)` produces an sRGB bitmap unless a specific color space is supplied. ([Android Developers][11])
+
+So this is not automatically:
+
+```text
+CoreGraphics DeviceRGB == Android sRGB
+```
+
+for every possible source.
+
+For a controlled parity corpus using ordinary 8-bit sRGB input, this may become practically identical. But for:
+
+* Display P3
+* ICC tagged images
+* wide gamut
+* unusual source color spaces
+
+exact parity cannot be assumed.
+
+### Therefore:
+
+The parity contract must explicitly define the supported source color domain.
+
+For the first production parity target I recommend:
+
+```text
+INPUT:
+8-bit RGBA
+sRGB-class source
+no HDR
+no floating-point image
+no wide-gamut source
+
+REFERENCE:
+EF 7.0.3 CoreGraphics bitmap output
+
+CANDIDATE:
+Skia RGBA_8888 premultiplied raster
+```
+
+Then expand the contract later.
+
+---
+
+# 9. There is a real current VeilFrame problem: second rasterization
+
+This is more important than theoretical color-space issues because it is already visible in the current source.
+
+Current `ImageFillRenderer` does:
+
+```text
+source image
+   ↓
+EfImagePreprocessor.preprocess(...)
+   ↓
+resolveSrcDst(... ASPECT_FILL ...)
+   ↓
+canvas.drawBitmap(...)
+```
+
+That means the image is potentially:
+
+```text
+rasterized once
+      ↓
+then cropped/scaled again
+```
+
+The IR/SVG path, however, deliberately stores a preprocessed image and uses an empty `preserveAspectRatio`, meaning no downstream image fitting should occur.
+
+So the two paths are architecturally inconsistent.
+
+The same pattern exists for the backdrop path in `ImageFillRenderer`.
+
+This is a genuine parity blocker.
+
+### Correct design
+
+For the EF-compatible path:
+
+```text
+raw source
+   ↓
+EfImagePreprocessor
+   ↓
+final preprocessed bitmap
+   ↓
+draw 1:1 into intended bounds
+```
+
+Not:
+
+```text
+raw source
+   ↓
+preprocess
+   ↓
+second crop
+   ↓
+second scale
+```
+
+This needs to be removed from the parity renderer.
+
+---
+
+# 10. Another current issue: `isDither = true`
+
+Your current `ImageScaleResolver.createPreScaledSource()` uses:
+
+```kotlin
+Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+    isFilterBitmap = true
+    isDither = true
+}
+```
+
+EF's Core Graphics contexts don't specify an equivalent explicit dithering operation.
+
+For a byte-parity backend, I would **not allow dither to be an implicit platform default**.
+
+The compatibility raster profile should make it explicit:
+
+```text
+interpolation = reference-matched
+dither = OFF
+```
+
+unless the Core Graphics oracle demonstrates that dithering is actually part of the observed output.
+
+This is exactly why a dedicated parity backend is better than sprinkling `Paint` flags through the normal renderer.
+
+---
+
+# 11. Current `ASPECT_FIT` direction is now correct
+
+The recent VeilFrame change was important.
+
+The old architectural idea of:
+
+```text
+ASPECT_FIT padding
+→ don't sample those coordinates
+```
+
+was incorrect relative to EF 7.0.3.
+
+EF simply creates transparent padding via the raster operation. Its resampling stage then examines the resulting `3N × 3N` bitmap.
+
+There is no source-level “skip all aspect-fit padding” rule in EF's `getGrayPointList`.
+
+The current removal of that suppression in `ResampleSubpixelEngine` is therefore the right direction.
+
+Your `cd089a8…` commit is real and present on GitHub, and the EF 7.0.3 source confirms the absence of explicit padding suppression.
+
+---
+
+# 12. Another important distinction: RESAMPLE is a raster algorithm, not just a geometry style
+
+The EF 7.0.3 resample path is:
+
+```text
+source image
+    ↓
+EFImageMode preprocessing
+    ↓
+3N × 3N Core Graphics bitmap
+    ↓
+RGBA bytes
+    ↓
+gamma()
+    ↓
+exposure
+    ↓
+contrast
+    ↓
+random threshold
+    ↓
+3×3 subpixel SVG geometry
+```
+
+The source formula is:
+
+```text
+gray = 0.2126R + 0.7152G + 0.0722B
+
+weightedGray =
+    gray * alpha
+    + (1-alpha) * 255
+
+random >
+    ((gray/255) + exposure - 0.5)
+    * (contrast + 1)
+    + 0.5
+```
+
+and the production RNG is Swift's:
+
+```swift
+Double.random(in: 0..<1)
+```
+
+not the `arc4random_uniform()` description in the older audit.
+
+Likewise, the older audit's power-of-two contrast description is not what the current 7.0.3 source implements.
+
+So the actual source must remain the oracle.
+
+---
+
+# 13. Your current Skia sampling math is useful, but the architecture is in the wrong place
+
+The current project has three overlapping ideas:
+
+```text
+EfImagePreprocessor
+ImageScaleResolver
+createPreScaledArraySource
+```
+
+That risks having multiple definitions of “what EF rasterization means.”
+
+The parity architecture should instead have **one raster contract**.
+
+---
+
+# 14. Proposed architecture
+
+I would build this as a dedicated compatibility layer.
+
+```text
+                    ┌─────────────────────────┐
+                    │   EFQRCode 7.0.3 spec   │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                     ┌──────────────────────┐
+                     │ EfRasterContract     │
+                     └──────────┬───────────┘
+                                │
+                ┌───────────────┴────────────────┐
+                │                                │
+                ▼                                ▼
+      ┌──────────────────┐             ┌──────────────────┐
+      │ CoreGraphics     │             │ Skia             │
+      │ Oracle           │             │ Compatibility    │
+      │ macOS / Swift    │             │ Android          │
+      └────────┬─────────┘             └────────┬─────────┘
+               │                                │
+               ▼                                ▼
+         RGBA8 reference                   RGBA8 candidate
+               │                                │
+               └──────────────┬─────────────────┘
+                              ▼
+                   ┌─────────────────────┐
+                   │ Pixel Differential  │
+                   │ Engine              │
+                   └─────────────────────┘
+```
+
+---
+
+# 15. The contract should be explicit
+
+Something like:
+
+```kotlin
+data class EfRasterProfile(
+    val sourceFormat: SourceFormat,
+    val alphaMode: AlphaMode,
+    val colorSpace: ColorSpaceMode,
+    val sampling: SamplingMode,
+    val coordinateModel: CoordinateModel,
+    val rounding: RoundingMode,
+    val edgeMode: EdgeMode,
+    val dither: Boolean
+)
+```
+
+But I would make it even stricter.
+
+```text
+EfRasterProfile 7.0.3
+
+Input:
+    RGBA8
+    sRGB-compatible
+
+Intermediate:
+    RGBA8
+    premultiplied
+    DeviceRGB reference semantics
+
+Sampling:
+    CG reference kernel
+
+Coordinates:
+    pixel-center convention determined by oracle
+
+Quantization:
+    oracle-determined
+
+Edges:
+    transparent for expanded canvas
+    source-bound behavior explicitly tested
+
+Dither:
+    disabled unless oracle proves otherwise
+```
+
+The phrase **“CG reference kernel”** is intentional.
+
+Do not name it `BilinearCoreGraphics`.
+
+Until the oracle proves the mathematical kernel, that name would be false precision.
+
+---
+
+# 16. `EfRasterBackend`
+
+This becomes the only component allowed to implement image preprocessing.
+
+```kotlin
+interface EfRasterBackend {
+
+    fun resize(
+        source: Bitmap,
+        width: Int,
+        height: Int
+    ): Bitmap
+
+    fun drawInto(
+        source: Bitmap,
+        destinationWidth: Int,
+        destinationHeight: Int,
+        dstRect: RectF
+    ): Bitmap
+
+    fun crop(
+        source: Bitmap,
+        rect: RectF
+    ): Bitmap
+}
+```
+
+Then:
+
+```text
+EfImagePreprocessor
+        ↓
+EfRasterBackend
+```
+
+not:
+
+```text
+EfImagePreprocessor
+        ↓
+sometimes Canvas
+sometimes Matrix
+sometimes array bilinear
+sometimes resolveSrcDst
+```
+
+---
+
+# 17. Production and parity backends should be separate
+
+## Production backend
+
+```text
+SkiaEfRasterBackend
+```
+
+using the Android/Skia pipeline.
+
+## Oracle backend
+
+```text
+CoreGraphicsEfRasterOracle
+```
+
+implemented as a small Swift command-line tool.
+
+This does not ship with the Android app.
+
+It generates the authoritative fixture.
+
+---
+
+# 18. Do NOT attempt to run Core Graphics on Android
+
+That would be the wrong architecture.
+
+The purpose of Core Graphics is:
+
+```text
+reference oracle
+```
+
+not:
+
+```text
+runtime dependency
+```
+
+Android should remain Skia.
+
+The engineering goal is:
+
+```text
+Core Graphics behavior
+            ↓
+characterized empirically
+            ↓
+Skia implementation matching the characterized behavior
+```
+
+---
+
+# 19. The oracle needs to expose intermediate rasters
+
+This is critical.
+
+Don't compare only final QR PNGs.
+
+The Swift oracle should output:
+
+```text
+fixture.json
+source.png
+preprocess_scaleToFill.rgba
+preprocess_aspectFit.rgba
+preprocess_aspectFill.rgba
+resample_3n.rgba
+metadata.json
+```
+
+For each fixture:
+
+```json
+{
+  "efVersion": "7.0.3",
+  "commit": "07ff9e2e...",
+  "sourceWidth": 137,
+  "sourceHeight": 91,
+  "targetWidth": 123,
+  "targetHeight": 123,
+  "mode": "scaleAspectFill",
+  "alpha": "premultipliedLast",
+  "colorSpace": "DeviceRGB"
+}
+```
+
+Now Android can compare the **actual bitmap bytes**.
+
+---
+
+# 20. The synthetic image corpus is more important than photographic examples
+
+A normal photograph is terrible for reverse-engineering interpolation because too many neighboring pixels are similar.
+
+Use deliberately adversarial fixtures.
+
+### Fixture family A — geometry
+
+```text
+1×1
+2×2
+3×3
+4×4
+5×7
+7×5
+17×13
+31×19
+137×91
+```
+
+### Fixture family B — impulses
+
+One single non-zero pixel at:
+
+```text
+top-left
+center
+bottom-right
+fractionally shifted cases
+```
+
+### Fixture family C — ramps
+
+```text
+R horizontal ramp
+G vertical ramp
+B diagonal ramp
+A alpha ramp
+```
+
+### Fixture family D — edges
+
+```text
+black | white
+red | transparent
+opaque red | translucent blue
+```
+
+### Fixture family E — checkerboards
+
+```text
+1px checker
+2px checker
+high-frequency checker
+```
+
+### Fixture family F — transparent RGB traps
+
+For example:
+
+```text
+pixel = (255,0,0,0)
+neighbor = (0,0,0,255)
+```
+
+This is essential for detecting premultiplied vs straight-alpha behavior.
+
+---
+
+# 21. The oracle experiment that will probably determine the kernel
+
+Use a one-pixel impulse.
+
+Example:
+
+```text
+source = 3×3
+all pixels = black
+center = white
+```
+
+Render into dozens of destination sizes:
+
+```text
+4×4
+5×5
+6×6
+7×7
+8×8
+11×11
+```
+
+and with fractional placements.
+
+From the resulting Core Graphics pixel weights we can infer:
+
+```text
+sample center convention
+kernel support
+edge behavior
+normalization
+rounding
+alpha interpolation
+```
+
+Then compare those weights directly with Skia.
+
+This is far more informative than comparing QR screenshots.
+
+---
+
+# 22. Final pixel comparator
+
+I would make this a first-class tool.
+
+For two RGBA buffers:
+
+```text
+exactEqual
+mismatchCount
+maxAbsChannelDelta
+meanAbsChannelDelta
+alphaMismatchCount
+per-channel histogram
+mismatchBoundingBox
+PSNR
+SSIM
+```
+
+But the ranking matters.
+
+## Exact gate
+
+```text
+if parity profile == EXACT:
+    mismatchCount == 0
+```
+
+## Diagnostic gate
+
+If not exact:
+
+```text
+max delta
+where it occurs
+which channel
+which stage
+```
+
+PSNR and SSIM are diagnostics.
+
+They are **not substitutes for pixel parity**.
+
+A QR can have excellent SSIM while still containing hundreds of incorrect threshold decisions.
+
+---
+
+# 23. RESAMPLE needs one extra metric
+
+For RESAMPLE, compare not just final bitmap pixels.
+
+Compare:
+
+```text
+CoreGraphics 3N bitmap
+        ↓
+luminance value
+        ↓
+threshold
+        ↓
+selected subpixel coordinates
+```
+
+So each fixture should produce:
+
+```text
+raster hash
+luminance dump
+threshold dump
+active-coordinate bitmap
+```
+
+This lets us identify:
+
+```text
+raster mismatch
+```
+
+versus
+
+```text
+algorithm mismatch
+```
+
+versus
+
+```text
+RNG mismatch
+```
+
+---
+
+# 24. RNG must be isolated from raster parity
+
+Production EF uses an unseeded Swift random source.
+
+Therefore you can't demand:
+
+```text
+EF production run == VeilFrame production run
+```
+
+at the individual subpixel level.
+
+The correct architecture has two test modes.
+
+### Oracle mode
+
+Use EF's real RNG and validate statistical characteristics.
+
+### Deterministic conformance mode
+
+Instrument both implementations:
+
+```text
+seed
++
+coordinate
+→
+random value
+```
+
+Then exact subpixel parity becomes possible.
+
+The production generator can retain its native randomness.
+
+---
+
+# 25. Important: traversal order must not define RNG parity
+
+Your current `ResampleSubpixelEngine` traverses:
+
+```text
+module
+   ↓
+subX
+   ↓
+subY
+```
+
+EF scans:
+
+```text
+x
+↓
+y
+```
+
+If your deterministic RNG is coordinate-addressed:
+
+```text
+random(seed, x, y)
+```
+
+then traversal order doesn't matter.
+
+If it is sequential:
+
+```text
+nextRandom()
+nextRandom()
+nextRandom()
+```
+
+then traversal order becomes part of the RNG contract.
+
+For the parity backend:
+
+> **Use coordinate-addressed deterministic RNG.**
+
+That removes an entire class of accidental divergences.
+
+---
+
+# 26. IMAGE_FILL needs a proper compositing contract
+
+EF's SVG topology is:
+
+```text
+mask
+  black full canvas
+  white dark modules
+       ↓
+masked group
+    background
+    image
+    tint
+```
+
+Your IR representation is sensible.
+
+The problem is that Canvas currently implements this through:
+
+```text
+saveLayer
+SRC_IN
+```
+
+while SVG uses a luminance mask.
+
+Those can be geometrically equivalent, but not necessarily byte-equivalent at anti-aliased boundaries.
+
+Therefore `IMAGE_FILL` requires a dedicated compositor test.
+
+Test:
+
+```text
+module edge
+1.02 expansion
+semi-transparent image
+semi-transparent maskColor
+anti-aliased boundary
+```
+
+and compare the resulting pixels.
+
+---
+
+# 27. The final renderer should not rely on generic SVG behavior for parity
+
+Your existing `DeterministicSvgRasterizer` is useful for internal cross-backend testing.
+
+But it is not an EF oracle.
+
+The current VeilFrame architecture itself recognizes this problem: the internal SVG rasterizer is effectively a second implementation of SVG.
+
+That gives you:
+
+```text
+Canvas
+vs
+VeilFrame SVG rasterizer
+```
+
+but not:
+
+```text
+Canvas
+vs
+EF reference
+```
+
+So don't let:
+
+```text
+Canvas == deterministic SVG
+```
+
+become:
+
+```text
+therefore Canvas == EF.
+```
+
+That is circular verification.
+
+---
+
+# 28. Community research reinforces this
+
+EFQRCode's own community history is useful here.
+
+Its V7 roadmap explicitly discussed separating:
+
+```text
+CodePointGenerator
++
+CodePointRenderer
+```
+
+and described renderer targets such as `CGContext` and SwiftUI canvas. ([GitHub][12])
+
+That is conceptually aligned with what VeilFrame needs now: **separate the QR semantics from the raster backend**.
+
+There is also historical evidence that output mismatches can arise from surprisingly low-level implementation details. For example, EFQRCode issue #21 reported generated QR output not matching a Core Image-generated QR and traced it to coordinate indexing. ([GitHub][13])
+
+So the project's own history supports an adversarial parity strategy rather than “looks the same.”
+
+SwiftDraw has also had real-world raster/parsing issues involving clipping, image embedding, and unsupported SVG semantics. ([GitHub][14])
+
+That reinforces the decision to separate:
+
+```text
+EF SVG semantics
+```
+
+from:
+
+```text
+CoreGraphics image preprocessing
+```
+
+and from:
+
+```text
+final SVG rasterization
+```
+
+---
+
+# 29. Proposed VeilFrame architecture
+
+I would refactor toward this:
+
+```text
+qr/
+ ├── core/
+ │    ├── QrMatrix
+ │    ├── QrRoles
+ │    ├── QrGeometry
+ │    └── QrDesign
+ │
+ ├── geometry/
+ │    ├── QrGeometryIr
+ │    ├── ImageGeometryBuilder
+ │    ├── ImageFillGeometryBuilder
+ │    └── ResampleGeometryBuilder
+ │
+ ├── raster/
+ │    ├── EfRasterProfile.kt
+ │    ├── EfRasterBackend.kt
+ │    ├── SkiaEfRasterBackend.kt
+ │    ├── RasterBuffer.kt
+ │    ├── PixelComparator.kt
+ │    └── RasterDiagnostics.kt
+ │
+ ├── image/
+ │    └── EfImagePreprocessor.kt
+ │
+ └── render/
+      ├── IrCanvasRenderer.kt
+      └── IrSvgRenderer.kt
+```
+
+And outside Android production:
+
+```text
+tools/
+ └── ef-raster-oracle/
+      ├── Package.swift
+      ├── Sources/
+      │    └── Oracle/
+      └── fixtures/
+```
+
+---
+
+# 30. The key design rule
+
+`EfImagePreprocessor` must become **backend-neutral**.
+
+Instead of:
+
+```text
+EfImagePreprocessor
+    └── Canvas
+```
+
+do:
+
+```text
+EfImagePreprocessor
+    └── EfRasterBackend
+            ├── SkiaEfRasterBackend
+            └── CoreGraphicsOracle
+```
+
+That means the algorithm becomes:
+
+```text
+calculate rectangle
+        ↓
+request exact raster operation
+        ↓
+receive RGBA bitmap
+```
+
+not:
+
+```text
+calculate rectangle
+        ↓
+guess how Android should paint it
+```
+
+---
+
+# 31. First production invariant
+
+For every EF-compatible image operation:
+
+```text
+ONE source transform
+ONE intended rasterization
+ONE final bitmap
+```
+
+No hidden second scaling.
+
+No hidden `preserveAspectRatio`.
+
+No accidental `resolveSrcDst()` after preprocessing.
+
+No implicit density scaling.
+
+No renderer-specific fit logic.
+
+---
+
+# 32. Exact parity tiers
+
+I would formalize four levels.
+
+| Tier                       | Meaning                                     |
+| -------------------------- | ------------------------------------------- |
+| Geometry parity            | same coordinates/topology                   |
+| Intermediate raster parity | same preprocessed bytes                     |
+| Algorithmic parity         | same luminance/threshold/selected subpixels |
+| Final pixel parity         | final RGBA buffer byte-equal                |
+
+This avoids the usual situation where someone says “parity is done” because the QR looks visually identical.
+
+---
+
+# 33. What I believe is achievable
+
+### CoreGraphics preprocessing ↔ pinned Skia
+
+**Yes, very likely achievable for a defined supported image domain.**
+
+But it requires:
+
+```text
+reference fixtures
++
+empirical kernel characterization
++
+explicit alpha/color-space rules
++
+fixed raster backend
++
+byte-level regression tests
+```
+
+### Arbitrary CoreGraphics ↔ arbitrary Android Canvas
+
+**No.**
+
+There are too many implementation/environment variables.
+
+### EFQRCode `toImage()` ↔ VeilFrame final PNG
+
+**Potentially achievable for the supported EF 7.0.3 feature set, but this is a separate renderer-conformance project**, because EF's final rasterization passes through SwiftDraw.
+
+---
+
+# 34. What is currently proven vs not
+
+### Reference-verified
+
+* EF 7.0.3 is the correct pinned reference.
+* EF uses Core Graphics for image preprocessing.
+* EF's bitmap contexts are DeviceRGB + premultipliedLast.
+* EF does not explicitly specify interpolation quality.
+* `CGImage.cropping(to:)` integralizes its crop rectangle. ([Apple Developer][15])
+* Skia linear sampling is explicitly a 2×2 interpolation mechanism. ([skia.googlesource.com][4])
+* Android `FILTER_BITMAP_FLAG` requests bilinear filtering. ([Android Developers][6])
+* EF's final `toImage()` uses SwiftDraw rasterization.
+* Current EF RESAMPLE has no explicit AspectFit-padding suppression.
+* Current VeilFrame removed that suppression.
+
+### Implementation-verified
+
+* VeilFrame now exposes Double preprocessing inputs.
+* The recent resample suppression removal is in GitHub `main`.
+* Current image/IMAGE_FILL/RESAMPLE pipelines have an IR abstraction shared with SVG/Canvas.
+
+### Unverified
+
+* exact CoreGraphics default interpolation kernel
+* exact CoreGraphics ↔ Skia rounding equivalence
+* exact fractional coordinate mapping
+* exact premultiplied byte rounding
+* exact color-space conversion equivalence
+* exact `IMAGE_FILL` compositing equality
+* full final pixel parity
+
+### Divergent / needs fixing
+
+The biggest currently demonstrated architecture problem is:
+
+```text
+IMAGE_FILL Canvas:
+preprocess → resolveSrcDst → draw again
+```
+
+That introduces a second rasterization stage.
+
+I would fix that **before** trying to calibrate the CoreGraphics/Skia kernel, because otherwise the oracle will be polluted by an avoidable second transform.
+
+---
+
+# 35. The implementation order I recommend
+
+### Phase 1 — freeze the reference
+
+```text
+EFQRCode = 7.0.3
+commit = 07ff9e2...
+SwiftDraw = 0.22.x-compatible dependency
+```
+
+Never use current EF `main` as the parity oracle.
+
+### Phase 2 — build CoreGraphics oracle
+
+Expose:
+
+```text
+scaleToFill
+scaleAspectFit
+scaleAspectFill
+3N resample preprocessing
+```
+
+and dump raw RGBA.
+
+### Phase 3 — replace VeilFrame raster decisions with `EfRasterBackend`
+
+Eliminate:
+
+```text
+second crop
+second resize
+hidden preserveAspectRatio
+implicit dither
+```
+
+### Phase 4 — calibrate Skia
+
+Use:
+
+```text
+software bitmap Canvas
+```
+
+first.
+
+If the Android framework Skia build cannot achieve byte parity consistently, move parity-critical rasterization to a **pinned bundled Skia native backend**.
+
+### Phase 5 — lock the corpus
+
+Every supported raster case becomes a golden fixture.
+
+### Phase 6 — only then claim final pixel parity
+
+The final gate should literally be:
+
+```text
+RGBA bytes == RGBA bytes
+```
+
+for the defined profile.
+
+---
+
+# 36. The architecture I would ultimately ship
+
+```text
+                     ┌───────────────────┐
+                     │ EFQRCode 7.0.3    │
+                     │ behavioral oracle │
+                     └─────────┬─────────┘
+                               │
+                     ┌─────────▼─────────┐
+                     │ EfRasterContract  │
+                     │ versioned         │
+                     └─────────┬─────────┘
+                               │
+             ┌─────────────────┴─────────────────┐
+             │                                   │
+     ┌───────▼────────┐                 ┌────────▼───────┐
+     │ CoreGraphics   │                 │ Skia            │
+     │ oracle runner  │                 │ production      │
+     └───────┬────────┘                 └────────┬────────┘
+             │                                   │
+             │             RGBA8                 │
+             └────────────────┬──────────────────┘
+                              ▼
+                   ┌────────────────────┐
+                   │ Pixel Differential │
+                   └────────────────────┘
+                              │
+              ┌───────────────┼────────────────┐
+              ▼               ▼                ▼
+          exact bytes     diagnostics      regression
+```
+
+Then the QR renderer itself sits **above** this layer:
+
+```text
+QrMatrix
+   ↓
+Geometry IR
+   ↓
+Image preprocessing
+   ↓
+Skia bitmap
+   ↓
+Canvas composition
+   ↓
+final RGBA
+```
+
+That is the architecture that gives you a real chance of saying:
+
+> “For EFQRCode 7.0.3, under this pinned raster profile, VeilFrame's image preprocessing is byte-for-byte equivalent.”
+
+rather than:
+
+> “The images look the same.”
+
+And that distinction is exactly what your current parity work needs.
+
+[1]: https://github.com/swhitty/SwiftDraw?utm_source=chatgpt.com "GitHub - swhitty/SwiftDraw: Native SVG parser and renderer for SwiftUI, UIKit and AppKit, with tools for PNG, PDF, SF Symbols and Swift source. · GitHub"
+[2]: https://developer.apple.com/documentation/coregraphics/cgcontextdrawimage?utm_source=chatgpt.com "CGContextDrawImage | Apple Developer Documentation"
+[3]: https://developer.apple.com/documentation/coregraphics/cgcontextsetinterpolationquality?utm_source=chatgpt.com "CGContextSetInterpolationQuality | Apple Developer Documentation"
+[4]: https://skia.googlesource.com/skia/%2B/refs/heads/main/include/core/SkSamplingOptions.h?utm_source=chatgpt.com "include/core/SkSamplingOptions.h - skia - Git at Google"
+[5]: https://skia.googlesource.com/skia/%2B/9540beb7057b6672ebb761c1d11e3cecb34daa33/src/opts/SkRasterPipeline_opts.h?utm_source=chatgpt.com "src/opts/SkRasterPipeline_opts.h - skia - Git at Google"
+[6]: https://developer.android.com/reference/android/graphics/Paint?utm_source=chatgpt.com "Paint  |  API reference  |  Android Developers"
+[7]: https://developer.apple.com/documentation/coregraphics/cgimagealphainfo/premultipliedlast?utm_source=chatgpt.com "CGImageAlphaInfo.premultipliedLast | Apple Developer Documentation"
+[8]: https://developer.android.com/reference/android/graphics/Bitmap.html?utm_source=chatgpt.com "Bitmap  |  API reference  |  Android Developers"
+[9]: https://docs.skia.org/docs/user/sksl/?utm_source=chatgpt.com "SkSL & Runtime Effects | Skia"
+[10]: https://developer.apple.com/documentation/coregraphics/cgcolorspacecreatedevicergb%28%29?changes=_9&utm_source=chatgpt.com "CGColorSpaceCreateDeviceRGB() | Apple Developer Documentation"
+[11]: https://developer.android.com/reference/kotlin/android/graphics/Bitmap?utm_source=chatgpt.com "Bitmap  |  API reference  |  Android Developers"
+[12]: https://github.com/EFPrefix/EFQRCode/discussions/117?utm_source=chatgpt.com "V7 Roadmap · EFPrefix EFQRCode · Discussion #117 · GitHub"
+[13]: https://github.com/EFPrefix/EFQRCode/issues/21?utm_source=chatgpt.com "Generated QR Code not match with CIImage generated · Issue #21 · EFPrefix/EFQRCode · GitHub"
+[14]: https://github.com/swhitty/SwiftDraw/issues/49?utm_source=chatgpt.com "Rasterized SVG is empty · Issue #49 · swhitty/SwiftDraw · GitHub"
+[15]: https://developer.apple.com/documentation/coregraphics/cgimage/cropping%28to%3A%29?utm_source=chatgpt.com "cropping(to:) | Apple Developer Documentation"

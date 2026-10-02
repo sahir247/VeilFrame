@@ -729,15 +729,11 @@ object QrGenerator {
             )
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 isFilterBitmap = true
+                isDither = false
                 alpha = (design.backdropStyle.imageAlpha.coerceIn(0f, 1f) * 255).toInt()
             }
-            val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
-                preprocessedBackdrop.width,
-                preprocessedBackdrop.height,
-                android.graphics.RectF(0f, 0f, width, height),
-                com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-            )
-            canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)
+            // Preprocessed backdrop matches canvas aspect ratio; draw 1:1 without second crop/scale pass.
+            canvas.drawBitmap(preprocessedBackdrop, null, android.graphics.RectF(0f, 0f, width, height), paint)
         }
     }
 

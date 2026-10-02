@@ -249,15 +249,12 @@ class ImageFillRenderer : QrRenderer {
                 )
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     isFilterBitmap = true
+                    isDither = false
                     alpha = (design.backdropStyle.imageAlpha.coerceIn(0f, 1f) * 255).toInt()
                 }
-                val (srcRect, dstRect) = ImageScaleResolver.resolveSrcDst(
-                    preprocessedBackdrop.width,
-                    preprocessedBackdrop.height,
-                    RectF(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat),
-                    com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-                )
-                canvas.drawBitmap(preprocessedBackdrop, srcRect, dstRect, paint)
+                // Preprocessed backdrop matches canvas aspect ratio; draw 1:1 without second crop/scale pass.
+                val dstBounds = RectF(0f, 0f, geometry.outputWidthFloat, geometry.outputHeightFloat)
+                canvas.drawBitmap(preprocessedBackdrop, null, dstBounds, paint)
             }
 
             val isAnimated = design.imageSource.isAnimated && !design.imageSource.animatedFrames.isNullOrEmpty()
@@ -317,17 +314,13 @@ class ImageFillRenderer : QrRenderer {
                     canvasHeight = dataBounds.height(),
                     mode = imageMode
                 )
-                val (srcRect, resolvedDst) = ImageScaleResolver.resolveSrcDst(
-                    preprocessed.width,
-                    preprocessed.height,
-                    dataBounds,
-                    com.veilframe.app.qr.model.ImageScaleMode.ASPECT_FILL
-                )
                 val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     isFilterBitmap = true
+                    isDither = false
                     alpha = (imageAlpha * 255).toInt().coerceIn(0, 255)
                 }
-                canvas.drawBitmap(preprocessed, srcRect, resolvedDst, imgPaint)
+                // Preprocessed image matches dataBounds aspect ratio; draw 1:1 without second crop/scale pass.
+                canvas.drawBitmap(preprocessed, null, dataBounds, imgPaint)
             }
 
             // 3c. Solid maskColor tint overlay across QR area

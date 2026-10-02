@@ -6,6 +6,8 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import com.veilframe.app.qr.model.ImageScaleMode
+import com.veilframe.app.qr.raster.EfRasterBackend
+import com.veilframe.app.qr.raster.SkiaEfRasterBackend
 
 /**
  * EF parity image pre-processor: reproduces EFImageMode.imageForContent(ofImage:inCanvasOfRatio:)
@@ -44,6 +46,12 @@ import com.veilframe.app.qr.model.ImageScaleMode
  * Evidence status: UNVERIFIED (implementation written against source; awaiting Layer B oracle execution).
  */
 object EfImagePreprocessor {
+
+    /**
+     * Active rasterization backend for pixel operations.
+     * Defaults to [SkiaEfRasterBackend] for Android runtime execution.
+     */
+    var backend: EfRasterBackend = SkiaEfRasterBackend
 
     /**
      * Pre-processes [source] to the aspect ratio described by [canvasWidth] x [canvasHeight],
@@ -272,24 +280,17 @@ object EfImagePreprocessor {
     }
 
     // -------------------------------------------------------------------------
-    // Pixel operations - Android equivalents of CoreGraphics operations
+    // Pixel operations - Delegated to EfRasterBackend (Skia / Oracle)
     // -------------------------------------------------------------------------
 
     /**
      * Equivalent to CGImage.resize(to:) (CGImage+EFQRCode.swift:197-218).
      *
      * Creates a new ARGB_8888 Bitmap at (newWidth x newHeight) and draws the source
-     * into the full rectangle using a bilinear-filtered Paint.
+     * into the full rectangle using a bilinear-filtered Paint without dither.
      */
     internal fun resizeBitmap(source: Bitmap, newWidth: Int, newHeight: Int): Bitmap {
-        if (newWidth == source.width && newHeight == source.height) return source
-        val w = newWidth.coerceAtLeast(1)
-        val h = newHeight.coerceAtLeast(1)
-        val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(dst)
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        canvas.drawBitmap(source, null, RectF(0f, 0f, w.toFloat(), h.toFloat()), paint)
-        return dst
+        return backend.resize(source, newWidth, newHeight)
     }
 
     /**
@@ -319,12 +320,6 @@ object EfImagePreprocessor {
         }
 
         // General case: transparent canvas with offset draw (CGImage+EFQRCode lines 165-184)
-        val w = rectW.coerceAtLeast(1)
-        val h = rectH.coerceAtLeast(1)
-        val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        // createBitmap zeroes pixels to 0x00000000 = fully transparent, matching context.clear().
-
-        val canvas = Canvas(dst)
         // EF drawRect: CGRect(x: rect.origin.x, y: rect.origin.y, width: imageWidth, height: imageHeight)
         // Single unavoidable Double -> Float conversion right at the Skia RectF boundary
         val dstRectF = RectF(
@@ -333,9 +328,7 @@ object EfImagePreprocessor {
             (rectX + imageWidth).toFloat(),
             (rectY + imageHeight).toFloat()
         )
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        canvas.drawBitmap(source, null, dstRectF, paint)
-        return dst
+        return backend.drawInto(source, rectW, rectH, dstRectF)
     }
 
     internal fun clipAndExpandTransparency(
@@ -347,16 +340,10 @@ object EfImagePreprocessor {
     /**
      * Zero-interpolation pixel crop - equivalent to CGImage.cropping(to:).
      *
-     * Uses Bitmap.createBitmap(source, x, y, width, height) which performs an exact
+     * Uses backend.crop(source, x, y, width, height) which performs an exact
      * pixel-copy without any scaling or interpolation, matching CoreGraphics cropping().
-     *
-     * Coordinates are clamped to source bounds to prevent crashes on integer truncation edge cases.
      */
     internal fun cropBitmap(source: Bitmap, x: Int, y: Int, width: Int, height: Int): Bitmap {
-        val safeX = x.coerceIn(0, (source.width - 1).coerceAtLeast(0))
-        val safeY = y.coerceIn(0, (source.height - 1).coerceAtLeast(0))
-        val safeW = width.coerceIn(1, (source.width - safeX).coerceAtLeast(1))
-        val safeH = height.coerceIn(1, (source.height - safeY).coerceAtLeast(1))
-        return Bitmap.createBitmap(source, safeX, safeY, safeW, safeH)
+        return backend.crop(source, x, y, width, height)
     }
 }

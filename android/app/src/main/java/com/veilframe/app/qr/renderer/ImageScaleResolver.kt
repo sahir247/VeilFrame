@@ -410,7 +410,7 @@ object ImageScaleResolver {
 
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
             isFilterBitmap = true
-            isDither = true
+            isDither = false
         }
         canvas.drawBitmap(source, matrix, paint)
 
@@ -497,7 +497,7 @@ object ImageScaleResolver {
 
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
             isFilterBitmap = true
-            isDither = true
+            isDither = false
         }
         val srcRect = android.graphics.Rect(0, 0, preprocessed.width, preprocessed.height)
         val dstRect = RectF(0f, 0f, tw.toFloat(), th.toFloat())

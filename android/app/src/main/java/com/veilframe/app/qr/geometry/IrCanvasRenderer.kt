@@ -201,7 +201,7 @@ object IrCanvasRenderer {
                     }
                     paint.style = Paint.Style.FILL
                     paint.isFilterBitmap = true
-                    paint.isDither = true
+                    paint.isDither = false
                     paint.alpha = (node.opacity.coerceIn(0f, 1f) * 255).toInt()
                     val dstBounds = RectF(node.x, node.y, node.x + node.width, node.y + node.height)
                     if (node.preserveAspectRatio.isEmpty()) {
@@ -246,7 +246,7 @@ object IrCanvasRenderer {
                     }
                     paint.style = Paint.Style.FILL
                     paint.isFilterBitmap = true
-                    paint.isDither = true
+                    paint.isDither = false
                     paint.alpha = (node.opacity.coerceIn(0f, 1f) * 255).toInt()
                     val dstBounds = RectF(node.x, node.y, node.x + node.width, node.y + node.height)
                     if (node.preserveAspectRatio.isEmpty()) {
