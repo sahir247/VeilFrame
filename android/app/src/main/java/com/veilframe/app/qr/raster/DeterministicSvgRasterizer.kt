@@ -1,5 +1,6 @@
 package com.veilframe.app.qr.raster
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -38,6 +39,7 @@ import javax.xml.parsers.DocumentBuilderFactory
  * - References: <use xlink:href="#..."> resolving definitions with coordinate transforms and fill cascades
  * - Animation tags: <animate> safely parsed for deterministic static frame-0 rendering
  */
+@SuppressLint("RestrictedApi")
 object DeterministicSvgRasterizer {
 
     private data class LinearGradientDef(

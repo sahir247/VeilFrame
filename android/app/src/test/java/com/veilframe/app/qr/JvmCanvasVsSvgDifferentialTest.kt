@@ -561,4 +561,22 @@ class JvmCanvasVsSvgDifferentialTest {
             err!!.description.contains("Animation frame") || err.description.contains("scanability")
         )
     }
+
+    @Test
+    fun case21_basicWithLogoDifferential() {
+        val logoBmp = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(Color.BLUE)
+        }
+        val design = QrDesign(
+            style = QrStyle.BASIC,
+            moduleStyle = ModuleStyle(shape = DesignModuleShape.SQUARE),
+            palette = PaletteStyle(foreground = Color.BLACK, background = Color.WHITE),
+            logo = LogoStyle(
+                bitmap = logoBmp,
+                shape = LogoShape.SQUARE,
+                scaleFraction = 0.20f
+            )
+        )
+        executeDifferentialCase("21_basic_with_logo", design)
+    }
 }

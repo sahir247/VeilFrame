@@ -102,6 +102,7 @@ class GuideIssueRegressionTest {
         assertEquals("Default alignmentStyle.shape must be SQUARE", DesignModuleShape.SQUARE, design.alignmentStyle.shape)
         assertEquals("Default moduleStyle.shape must be SQUARE", DesignModuleShape.SQUARE, design.moduleStyle.shape)
         assertEquals("Default moduleStyle.scale must be 1.0", 1.0f, design.moduleStyle.scale, 0.001f)
+        assertEquals("Default quietZoneModules must be 1", 1, design.quietZoneModules)
     }
 
     @Test
@@ -115,6 +116,36 @@ class GuideIssueRegressionTest {
         )
         assertEquals("Explicit ROUND timing must map to CIRCLE", DesignModuleShape.CIRCLE, design.timingStyle.shape)
         assertEquals("Explicit ROUNDED_RECTANGLE alignment must map to ROUNDED", DesignModuleShape.ROUNDED, design.alignmentStyle.shape)
+    }
+
+    @Test
+    fun `fromQrStyleParams explicit dataShape ROUND maps to CIRCLE`() {
+        val design = QrDesign.fromQrStyleParams(
+            QrStyleParams(
+                style = QrStyle.BASIC,
+                dataShape = StyleModuleShape.ROUND
+            )
+        )
+        assertEquals("Explicit ROUND dataShape must map to CIRCLE", DesignModuleShape.CIRCLE, design.moduleStyle.shape)
+    }
+
+    @Test
+    fun `fromQrStyleParams explicit positionShape ROUND and ROUNDED_RECTANGLE survive`() {
+        val circleDesign = QrDesign.fromQrStyleParams(
+            QrStyleParams(
+                style = QrStyle.BASIC,
+                positionShape = StyleModuleShape.ROUND
+            )
+        )
+        assertEquals("Explicit ROUND positionShape must map to FinderStyle.CIRCLE", FinderStyle.CIRCLE, circleDesign.eyeStyle.style)
+
+        val roundedDesign = QrDesign.fromQrStyleParams(
+            QrStyleParams(
+                style = QrStyle.BASIC,
+                positionShape = StyleModuleShape.ROUNDED_RECTANGLE
+            )
+        )
+        assertEquals("Explicit ROUNDED_RECTANGLE positionShape must map to FinderStyle.ROUNDED", FinderStyle.ROUNDED, roundedDesign.eyeStyle.style)
     }
 
     // =========================================================================

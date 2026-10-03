@@ -594,7 +594,7 @@ data class QrDesign(
 
             val moduleShape = if (params.style == QrStyle.BASIC) {
                 when (params.dataShape) {
-                    com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.ROUNDED
+                    com.veilframe.app.qr.ModuleShape.ROUND -> ModuleShape.CIRCLE
                     com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> ModuleShape.ROUNDED
                     com.veilframe.app.qr.ModuleShape.RANDOM_ROUND -> ModuleShape.ORGANIC
                     else -> def.defaultModuleShape
@@ -603,10 +603,13 @@ data class QrDesign(
                 def.defaultModuleShape
             }
 
-            val finderStyle = if (params.style == QrStyle.BASIC && isRound) {
-                FinderStyle.ROUNDED
-            } else {
-                def.defaultFinderStyle
+            val finderStyle = when (params.positionShape) {
+                com.veilframe.app.qr.ModuleShape.ROUND -> FinderStyle.CIRCLE
+                com.veilframe.app.qr.ModuleShape.ROUNDED_RECTANGLE -> FinderStyle.ROUNDED
+                com.veilframe.app.qr.ModuleShape.PLANETS -> FinderStyle.PLANETS
+                com.veilframe.app.qr.ModuleShape.DSJ -> FinderStyle.DSJ
+                com.veilframe.app.qr.ModuleShape.RECTANGLE -> if (params.style == QrStyle.BASIC && isRound) FinderStyle.ROUNDED else def.defaultFinderStyle
+                else -> def.defaultFinderStyle
             }
 
             val is25D = def.is25D
