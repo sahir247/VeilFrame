@@ -148,6 +148,32 @@ class GuideIssueRegressionTest {
         assertEquals("Explicit ROUNDED_RECTANGLE positionShape must map to FinderStyle.ROUNDED", FinderStyle.ROUNDED, roundedDesign.eyeStyle.style)
     }
 
+    @Test
+    fun `fromQrStyleParams positionShape matrix matches EF semantics across styles`() {
+        // EFQRCodeStyleBasic: position parameter supports .round, .roundedRectangle, .planets, .dsj
+        assertEquals(FinderStyle.CIRCLE, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, positionShape = StyleModuleShape.ROUND)).eyeStyle.style)
+        assertEquals(FinderStyle.ROUNDED, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, positionShape = StyleModuleShape.ROUNDED_RECTANGLE)).eyeStyle.style)
+        assertEquals(FinderStyle.PLANETS, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, positionShape = StyleModuleShape.PLANETS)).eyeStyle.style)
+        assertEquals(FinderStyle.DSJ, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, positionShape = StyleModuleShape.DSJ)).eyeStyle.style)
+
+        // EFQRCodeStyleImage: position parameter supports .round, .roundedRectangle, .planets, .dsj
+        assertEquals(FinderStyle.CIRCLE, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE, positionShape = StyleModuleShape.ROUND)).eyeStyle.style)
+        assertEquals(FinderStyle.ROUNDED, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE, positionShape = StyleModuleShape.ROUNDED_RECTANGLE)).eyeStyle.style)
+        assertEquals(FinderStyle.PLANETS, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE, positionShape = StyleModuleShape.PLANETS)).eyeStyle.style)
+        assertEquals(FinderStyle.DSJ, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE, positionShape = StyleModuleShape.DSJ)).eyeStyle.style)
+
+        // EFQRCodeStyleResampleImage: position parameter supports .round, .roundedRectangle, .planets, .dsj
+        assertEquals(FinderStyle.CIRCLE, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE_RESAMPLE, positionShape = StyleModuleShape.ROUND)).eyeStyle.style)
+        assertEquals(FinderStyle.ROUNDED, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE_RESAMPLE, positionShape = StyleModuleShape.ROUNDED_RECTANGLE)).eyeStyle.style)
+        assertEquals(FinderStyle.PLANETS, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE_RESAMPLE, positionShape = StyleModuleShape.PLANETS)).eyeStyle.style)
+        assertEquals(FinderStyle.DSJ, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.IMAGE_RESAMPLE, positionShape = StyleModuleShape.DSJ)).eyeStyle.style)
+
+        // EFStyleParamIcon with BASIC style: icon is a subparameter on EFStyleParams, not a style itself
+        val bmp = allocateBitmapReflectively()
+        assertEquals(FinderStyle.CIRCLE, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, logo = bmp, positionShape = StyleModuleShape.ROUND)).eyeStyle.style)
+        assertEquals(FinderStyle.ROUNDED, QrDesign.fromQrStyleParams(QrStyleParams(style = QrStyle.BASIC, logo = bmp, positionShape = StyleModuleShape.ROUNDED_RECTANGLE)).eyeStyle.style)
+    }
+
     // =========================================================================
     // ISSUE 2 — Animated SVG and AnimatedFrames use effectiveDesignForMode
     // =========================================================================
