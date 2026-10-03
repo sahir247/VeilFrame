@@ -89,24 +89,32 @@ class EfImageStyleParityTest {
     }
 
     @Test
-    fun `EF Image style reference configuration builds valid Geometry IR`() {
+    fun `EF Image style standard defaults matches EFQRCode library configuration`() {
+        val photo = createTestPhoto(400, 400)
+        val design = QrDesign.efImage(photo = photo)
+
+        assertEquals("Style must be IMAGE", QrStyle.IMAGE, design.style)
+        assertEquals("Standard EF default data scale must be 1.0", 1.0f, design.imageDataScale ?: 0f, 0.001f)
+        assertEquals("Standard EF default dark color must be black", Color.BLACK, design.dataColorDark)
+        assertEquals("Standard EF default light color must be white", Color.WHITE, design.dataColorLight)
+        assertEquals(255, Color.alpha(design.dataColorLight))
+        assertFalse("Standard EF default allowTransparent must be false", design.allowTransparent)
+        assertEquals("Standard EF default finder dark must be black", Color.BLACK, design.positionDarkColor)
+        assertEquals("Standard EF default finder backing must be white", Color.WHITE, design.positionLightColor)
+    }
+
+    @Test
+    fun `EF Image style reference preset configuration builds valid Geometry IR`() {
         val content = "https://veilframe.app/ef-image-parity"
         val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
         val photo = createTestPhoto(600, 600)
 
-        val design = QrDesign.efImage(
-            photo = photo,
-            darkColor = 0xFF39C5BC.toInt(), // EF cyan from reference image
-            lightColor = Color.TRANSPARENT,
-            dataScale = 0.35f,
-            allowTransparent = true,
-            finderColor = 0xFF39C5BC.toInt(),
-            finderBackingColor = Color.WHITE
-        )
+        val design = QrDesign.efImagePresetReference(photo = photo)
 
         assertEquals("Style must be IMAGE", QrStyle.IMAGE, design.style)
-        assertEquals("Data scale must be 0.35", 0.35f, design.imageDataScale ?: 0f, 0.001f)
-        assertEquals("Light module color must be transparent", Color.TRANSPARENT, design.dataColorLight)
+        assertEquals("Reference preset data scale must be 0.35", 0.35f, design.imageDataScale ?: 0f, 0.001f)
+        assertEquals("Reference preset dark color must be cyan #39C5BC", 0xFF39C5BC.toInt(), design.dataColorDark)
+        assertEquals("Reference preset light module color must be transparent", Color.TRANSPARENT, design.dataColorLight)
         assertEquals(0, Color.alpha(design.dataColorLight))
         assertTrue("allowTransparent must be true", design.allowTransparent)
 
@@ -145,13 +153,7 @@ class EfImageStyleParityTest {
         val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
         val photo = createTestPhoto(600, 600)
 
-        val design = QrDesign.efImage(
-            photo = photo,
-            darkColor = 0xFF39C5BC.toInt(),
-            lightColor = Color.TRANSPARENT,
-            dataScale = 0.35f,
-            allowTransparent = true
-        )
+        val design = QrDesign.efImagePresetReference(photo = photo)
 
         val result = QrGenerator.generateBitmapResult(matrix, design)
         assertTrue("Bitmap generation must succeed", result is QrGenerator.BitmapRenderResult.Success)
@@ -193,13 +195,7 @@ class EfImageStyleParityTest {
         val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
         val photo = createTestPhoto(400, 400)
 
-        val design = QrDesign.efImage(
-            photo = photo,
-            darkColor = 0xFF39C5BC.toInt(),
-            lightColor = Color.TRANSPARENT,
-            dataScale = 0.35f,
-            allowTransparent = true
-        )
+        val design = QrDesign.efImagePresetReference(photo = photo)
 
         val svg = SvgExporter.generateSvg(matrix, design)
         assertTrue("SVG must start with XML declaration", svg.startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
@@ -215,6 +211,32 @@ class EfImageStyleParityTest {
         // In the top layer (data modules on top of image), transparent light modules must not be emitted
         // (colorAlphaInt == 0 check skips them)
         assertFalse("SVG must not contain transparent rectangles with opacity 0.00", svg.contains("""opacity="0.00""""))
+    }
+
+    @Test
+    fun `EF Image style SVG finder geometry matches EF canonical 8x8 backing 3x3 inner and 6x6 stroked ring`() {
+        val content = "https://veilframe.app/svg-finder-parity"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(400, 400)
+
+        val design = QrDesign.efImagePresetReference(photo = photo)
+        val svg = SvgExporter.generateSvg(matrix, design)
+
+        // 1. Must contain 8x8 backing rectangles
+        assertTrue("SVG must contain 8x8 finder backing rects", svg.contains("""width="8" height="8""""))
+
+        // 2. Must contain 3x3 filled inner center rects
+        assertTrue("SVG must contain 3x3 inner finder rects", svg.contains("""width="3" height="3""""))
+
+        // 3. Must contain 6x6 stroked outer ring with stroke-width 1
+        assertTrue(
+            "SVG must contain 6x6 stroked outer ring with stroke-width 1",
+            svg.contains("""fill="none" stroke-width="1"""") && svg.contains("""width="6" height="6"""")
+        )
+
+        // 4. Must NOT emit generic concentric 7x7 outer or 5x5 background cutout rects
+        assertFalse("SVG must not contain generic 7x7 outer filled rect", svg.contains("""width="7" height="7""""))
+        assertFalse("SVG must not contain generic 5x5 background cutout rect", svg.contains("""width="5" height="5""""))
     }
 
     @Test
@@ -286,5 +308,37 @@ class EfImageStyleParityTest {
         vm.updateImageDataLightTransparent(false)
         assertEquals(Color.WHITE, vm.state.value.imageDataLightColor)
         assertEquals(255, Color.alpha(vm.state.value.imageDataLightColor))
+    }
+
+    @Test
+    fun `ViewModel applyImageReferencePreset applies reference sample configuration`() {
+        val vm = QrStudioViewModel(Application())
+
+        vm.applyImageReferencePreset()
+
+        val state = vm.state.value
+        assertEquals("Data module scale must be 35%", 0.35f, state.imageDataScale, 0.001f)
+        assertEquals("Dark color must be cyan #39C5BC", 0xFF39C5BC.toInt(), state.imageDataDarkColor)
+        assertEquals("Light color must be transparent", Color.TRANSPARENT, state.imageDataLightColor)
+        assertTrue("allowTransparent must be true", state.imageAllowTransparent)
+        assertEquals("Position dark color must be cyan #39C5BC", 0xFF39C5BC.toInt(), state.imagePositionDarkColor)
+        assertEquals("Position light color must be white", Color.WHITE, state.imagePositionLightColor)
+    }
+
+    @Test
+    fun `ViewModel applyImageStandardEfDefaults applies EF library defaults`() {
+        val vm = QrStudioViewModel(Application())
+
+        // First apply preset, then restore EF defaults
+        vm.applyImageReferencePreset()
+        vm.applyImageStandardEfDefaults()
+
+        val state = vm.state.value
+        assertEquals("Data module scale must be 1.0", 1.0f, state.imageDataScale, 0.001f)
+        assertEquals("Dark color must be black", Color.BLACK, state.imageDataDarkColor)
+        assertEquals("Light color must be white", Color.WHITE, state.imageDataLightColor)
+        assertFalse("allowTransparent must be false", state.imageAllowTransparent)
+        assertEquals("Position dark color must be black", Color.BLACK, state.imagePositionDarkColor)
+        assertEquals("Position light color must be white", Color.WHITE, state.imagePositionLightColor)
     }
 }

@@ -940,7 +940,7 @@ object SvgExporter {
 
         val eyeOuterHex = design.eyeStyle.outerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
         val eyeInnerHex = design.eyeStyle.innerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
-        appendFinders(sb, design, qzLeft, qzTop, n, eyeOuterHex, bgHex, eyeOuterHex, eyeInnerHex)
+        appendImageFinders(sb, design, qzLeft, qzTop, n, eyeOuterHex, eyeInnerHex)
 
         // 5. Timing modules
         val timingShape = design.timingStyle.shape
@@ -1450,6 +1450,76 @@ object SvgExporter {
             sb.toString()
         } else {
             svg
+        }
+    }
+
+    private fun appendImageFinders(
+        sb: StringBuilder,
+        design: QrDesign,
+        qzLeft: Double,
+        qzTop: Double,
+        matrixSize: Int,
+        eyeOuterHex: String,
+        eyeInnerHex: String
+    ) {
+        val finders = listOf(
+            Pair(qzLeft + 3.5, qzTop + 3.5),
+            Pair(qzLeft + matrixSize - 3.5, qzTop + 3.5),
+            Pair(qzLeft + 3.5, qzTop + matrixSize - 3.5)
+        )
+        val darkOp = colorAlpha(design.positionDarkColor)
+        val opAttr = if (darkOp < 1f) """opacity="${formatOpacity(darkOp)}" """ else ""
+        val posSize = design.positionSize.toDouble()
+        val strokeW = formatCoord(1.0 * posSize)
+
+        for ((cx, cy) in finders) {
+            val cxStr = formatCoord(cx)
+            val cyStr = formatCoord(cy)
+
+            when (design.eyeStyle.style) {
+                FinderStyle.CIRCLE -> {
+                    sb.append("""  <circle ${opAttr}cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <circle ${opAttr}fill="none" stroke-width="$strokeW" stroke="$eyeOuterHex" cx="$cxStr" cy="$cyStr" r="3" />""").append("\n")
+                }
+                FinderStyle.ROUNDED -> {
+                    val strokeWPath = formatCoord(100.0 / 6.0 * posSize)
+                    val tx = formatCoord(cx - 3.0)
+                    val ty = formatCoord(cy - 3.0)
+                    sb.append("""  <circle ${opAttr}cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <path ${opAttr}d="${VeilPositionPatternGeometry.SQ25_PATH}" stroke="$eyeOuterHex" stroke-width="$strokeWPath" fill="none" transform="translate($tx,$ty) scale(0.06,0.06)" />""").append("\n")
+                }
+                FinderStyle.PLANETS -> {
+                    sb.append("""  <circle ${opAttr}cx="$cxStr" cy="$cyStr" r="1.5" fill="$eyeInnerHex" />""").append("\n")
+                    sb.append("""  <circle ${opAttr}fill="none" stroke-width="0.15" stroke-dasharray="0.5,0.5" stroke="$eyeOuterHex" cx="$cxStr" cy="$cyStr" r="3" />""").append("\n")
+                    val planetRadius = formatCoord(0.5 * posSize)
+                    sb.append("""  <circle ${opAttr}cx="${formatCoord(cx - 3.0)}" cy="$cyStr" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle ${opAttr}cx="${formatCoord(cx + 3.0)}" cy="$cyStr" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle ${opAttr}cx="$cxStr" cy="${formatCoord(cy - 3.0)}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                    sb.append("""  <circle ${opAttr}cx="$cxStr" cy="${formatCoord(cy + 3.0)}" r="$planetRadius" fill="$eyeOuterHex" />""").append("\n")
+                }
+                FinderStyle.DSJ -> {
+                    val widthValue = 3.0 - (1.0 - posSize)
+                    val xTempValue = (cx - 0.5) + (1.0 - posSize) / 2.0
+                    val yTempValue = (cy - 0.5) + (1.0 - posSize) / 2.0
+                    val wStr = formatCoord(widthValue)
+                    val aStr = formatCoord(posSize)
+                    val xTempStr = formatCoord(xTempValue - 1.0)
+                    val yTempStr = formatCoord(yTempValue - 1.0)
+                    sb.append("""  <rect ${opAttr}width="$wStr" height="$wStr" fill="$eyeInnerHex" x="$xTempStr" y="$yTempStr" />""").append("\n")
+                    sb.append("""  <rect ${opAttr}width="$aStr" height="$wStr" fill="$eyeOuterHex" x="${formatCoord(xTempValue - 3.0)}" y="$yTempStr" />""").append("\n")
+                    sb.append("""  <rect ${opAttr}width="$aStr" height="$wStr" fill="$eyeOuterHex" x="${formatCoord(xTempValue + 3.0)}" y="$yTempStr" />""").append("\n")
+                    sb.append("""  <rect ${opAttr}width="$wStr" height="$aStr" fill="$eyeOuterHex" x="$xTempStr" y="${formatCoord(yTempValue - 3.0)}" />""").append("\n")
+                    sb.append("""  <rect ${opAttr}width="$wStr" height="$aStr" fill="$eyeOuterHex" x="$xTempStr" y="${formatCoord(yTempValue + 3.0)}" />""").append("\n")
+                }
+                else -> {
+                    val innerX = formatCoord(cx - 1.5)
+                    val innerY = formatCoord(cy - 1.5)
+                    val outerX = formatCoord(cx - 3.0)
+                    val outerY = formatCoord(cy - 3.0)
+                    sb.append("""  <rect ${opAttr}width="3" height="3" fill="$eyeInnerHex" x="$innerX" y="$innerY" />""").append("\n")
+                    sb.append("""  <rect ${opAttr}fill="none" stroke-width="$strokeW" stroke="$eyeOuterHex" x="$outerX" y="$outerY" width="6" height="6" />""").append("\n")
+                }
+            }
         }
     }
 

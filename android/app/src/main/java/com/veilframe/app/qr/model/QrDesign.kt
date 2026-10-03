@@ -588,19 +588,17 @@ data class QrDesign(
 
     companion object {
         /**
-         * Creates an authoritative EFQRCode 7.0.3 EFStyleImage configuration.
+         * Creates an EFQRCode 7.0.3 EFStyleImage configuration with standard EF library defaults.
          *
-         * Embeds [photo] behind the QR code (masked out of finder areas),
-         * renders scaled dark modules ([dataScale], defaulting to 0.35f),
-         * and makes light modules transparent ([lightColor], defaulting to [Color.TRANSPARENT])
-         * so the underlying photo shows through between modules while maintaining scannability.
+         * EFQRCode defaults use full module scale ([dataScale] = 1.0f), solid black dark modules,
+         * solid white light modules, and [allowTransparent] = false.
          */
         fun efImage(
             photo: Bitmap,
-            darkColor: Int = 0xFF39C5BC.toInt(),
-            lightColor: Int = Color.TRANSPARENT,
-            dataScale: Float = 0.35f,
-            allowTransparent: Boolean = true,
+            darkColor: Int = Color.BLACK,
+            lightColor: Int = Color.WHITE,
+            dataScale: Float = 1.0f,
+            allowTransparent: Boolean = false,
             finderColor: Int = darkColor,
             finderBackingColor: Int = Color.WHITE,
             timingColor: Int = darkColor,
@@ -631,6 +629,40 @@ data class QrDesign(
                 opacity = 1.0f,
                 allowTransparent = allowTransparent
             )
+        )
+
+        /**
+         * Creates a VeilFrame preset reproducing the observed EFQRCode Image reference sample.
+         *
+         * Replicates the Hatsune Miku screenshot parameters: 35% data module scale ([dataScale] = 0.35f),
+         * cyan dark modules ([darkColor] = 0xFF39C5BC), transparent light modules ([lightColor] = [Color.TRANSPARENT]),
+         * and [allowTransparent] = true so the underlying artwork is revealed between modules while keeping
+         * finders protected by 8x8 backing rectangles.
+         */
+        fun efImagePresetReference(
+            photo: Bitmap,
+            darkColor: Int = 0xFF39C5BC.toInt(),
+            lightColor: Int = Color.TRANSPARENT,
+            dataScale: Float = 0.35f,
+            allowTransparent: Boolean = true,
+            finderColor: Int = darkColor,
+            finderBackingColor: Int = Color.WHITE,
+            timingColor: Int = darkColor,
+            alignColor: Int = darkColor,
+            outputSize: Int = maxOf(photo.width, photo.height).coerceAtLeast(512),
+            quietZoneModules: Int = 1
+        ): QrDesign = efImage(
+            photo = photo,
+            darkColor = darkColor,
+            lightColor = lightColor,
+            dataScale = dataScale,
+            allowTransparent = allowTransparent,
+            finderColor = finderColor,
+            finderBackingColor = finderBackingColor,
+            timingColor = timingColor,
+            alignColor = alignColor,
+            outputSize = outputSize,
+            quietZoneModules = quietZoneModules
         )
 
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {

@@ -571,6 +571,7 @@ class QrGenerateTabFragment : Fragment() {
         val imageDataScaleLabel       = view.findViewById<TextView>(R.id.qr_image_data_scale_label)
         val imageDataLightColorBtn    = view.findViewById<MaterialButton>(R.id.qr_image_data_light_color_btn)
         val imageTransparentLightBtn  = view.findViewById<MaterialButton>(R.id.qr_image_data_transparent_light_btn)
+        val imageApplySamplePresetBtn = view.findViewById<MaterialButton>(R.id.qr_image_apply_sample_preset_btn)
         val animatedExportLabel       = view.findViewById<TextView>(R.id.qr_animated_export_label)
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
@@ -1391,6 +1392,10 @@ class QrGenerateTabFragment : Fragment() {
         imageTransparentLightBtn?.setOnClickListener {
             val isCurrentlyTransparent = Color.alpha(vm.state.value.imageDataLightColor) == 0
             vm.updateImageDataLightTransparent(!isCurrentlyTransparent)
+        }
+        imageApplySamplePresetBtn?.setOnClickListener {
+            vm.applyImageReferencePreset()
+            Toast.makeText(requireContext(), "Applied EF Image Sample Preset (Cyan 35% + Transparent)", Toast.LENGTH_SHORT).show()
         }
 
         imagePosSizeSlider?.value = vm.state.value.imagePositionSize.coerceIn(0.5f, 2.0f)

@@ -2844,6 +2844,14 @@
                         android:layout_marginTop="4dp"
                         android:text="Make Light Modules Transparent" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/qr_image_apply_sample_preset_btn"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Apply Sample Preset (Cyan 35% + Transparent)" />
+
                     <!-- Finder / Position Controls -->
                     <TextView
                         android:id="@+id/qr_image_pos_size_label"

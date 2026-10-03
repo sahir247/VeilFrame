@@ -1290,6 +1290,40 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
+    fun applyImageReferencePreset() {
+        _state.value = _state.value.copy(
+            imageDataScale = 0.35f,
+            imageDataDarkColor = 0xFF39C5BC.toInt(),
+            imageDataLightColor = Color.TRANSPARENT,
+            imageAllowTransparent = true,
+            imagePositionDarkColor = 0xFF39C5BC.toInt(),
+            imagePositionLightColor = Color.WHITE,
+            imageTimingDarkColor = 0xFF39C5BC.toInt(),
+            imageTimingLightColor = Color.TRANSPARENT,
+            imageAlignDarkColor = 0xFF39C5BC.toInt(),
+            imageAlignLightColor = Color.TRANSPARENT,
+            repairNotice = null
+        )
+        regenerate(debounceMs = 0)
+    }
+
+    fun applyImageStandardEfDefaults() {
+        _state.value = _state.value.copy(
+            imageDataScale = 1.0f,
+            imageDataDarkColor = Color.BLACK,
+            imageDataLightColor = Color.WHITE,
+            imageAllowTransparent = false,
+            imagePositionDarkColor = Color.BLACK,
+            imagePositionLightColor = Color.WHITE,
+            imageTimingDarkColor = Color.BLACK,
+            imageTimingLightColor = Color.WHITE,
+            imageAlignDarkColor = Color.BLACK,
+            imageAlignLightColor = Color.WHITE,
+            repairNotice = null
+        )
+        regenerate(debounceMs = 0)
+    }
+
     fun updateResampleAdvanced(
         scaleMode: ImageScaleMode,
         tint: Int?,
