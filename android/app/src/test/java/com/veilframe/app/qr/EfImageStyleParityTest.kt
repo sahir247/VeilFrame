@@ -9,7 +9,11 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.exporter.SvgExporter
+import com.veilframe.app.qr.geometry.AnimatedImageNode
+import com.veilframe.app.qr.geometry.CircleNode
+import com.veilframe.app.qr.geometry.ImageGeometryBuilder
 import com.veilframe.app.qr.geometry.ImageNode
+import com.veilframe.app.qr.geometry.IrSvgRenderer
 import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.model.ModuleShape
@@ -466,5 +470,109 @@ class EfImageStyleParityTest {
         assertEquals("Node 8 must be TR 6x6 ring", 6 * mSize, finderNodes[8].width, 0.01f)
         assertEquals(ox + (n - 6.5f) * mSize, finderNodes[8].x, 0.01f)
         assertEquals(oy + 0.5f * mSize, finderNodes[8].y, 0.01f)
+    }
+
+    @Test
+    fun `EF Image style without image suppresses prepass hole mask and image nodes across IR and SVG`() {
+        val content = "https://veilframe.app/no-image-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        // allowTransparent is true, but NO static image and NO animated frames
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            allowTransparent = true,
+            imageDataScale = 0.35f,
+            imageSource = ImageSourceStyle(source = null)
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+
+        // 1. Verify Geometry IR
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+        assertFalse("IR defs must not contain hole mask when hasImage is false", ir.defs.any { it.contains("""mask id="hole"""") })
+        assertFalse("IR masks map must not contain hole mask when hasImage is false", ir.masks.containsKey("hole"))
+        assertFalse("IR rootNodes must not contain ImageNode when hasImage is false", ir.rootNodes.any { it is ImageNode || it is AnimatedImageNode })
+
+        // Prepass full-size 1x1 data modules must NOT be present before finders
+        val mSize = geometry.moduleSize
+        val firstFinderIdx = ir.rootNodes.indexOfFirst { it is RectNode && it.width == 8 * mSize }
+        assertTrue("Finder backing rect must be present", firstFinderIdx >= 0)
+        val nodesBeforeFinders = ir.rootNodes.subList(0, firstFinderIdx)
+        val prepassNodes = nodesBeforeFinders.filter { it is RectNode && it.width <= mSize }
+        assertTrue("No prepass nodes before finders when hasImage is false", prepassNodes.isEmpty())
+
+        // 2. Verify Direct SVG Exporter
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertFalse("SVG must not contain #hole mask when hasImage is false", svg.contains("""<mask id="hole">"""))
+        assertFalse("SVG must not reference mask=\"url(#hole)\" when hasImage is false", svg.contains("""mask="url(#hole)""""))
+        assertFalse("SVG must not contain <image elements when hasImage is false", svg.contains("<image"))
+    }
+
+    @Test
+    fun `EF Image style scaled module finder stroke width matches Canvas and SVG`() {
+        val content = "https://veilframe.app/scaled-stroke-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val mSize = 10f
+        val posSize = 0.8f
+
+        // Test standard rectangular ring
+        val squareDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            positionSize = posSize,
+            eyeStyle = EyeStyle(style = FinderStyle.CLASSIC)
+        )
+        val squareGeom = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = (matrix.size * mSize).toInt(),
+            outputHeight = (matrix.size * mSize).toInt(),
+            quietZoneModules = 0
+        )
+        val squareIr = ImageGeometryBuilder.generateGeometry(matrix, squareDesign, squareGeom)
+        val squareRing = squareIr.rootNodes.filterIsInstance<RectNode>().first { it.width == 6 * mSize && it.stroke != null }
+        val expectedSw = 1.0f * posSize * mSize
+        assertEquals("Rect ring strokeWidth must scale by mSize", expectedSw, squareRing.strokeWidth ?: 0f, 0.01f)
+        val expectedSwStr = SvgExporter.formatCoord(expectedSw.toDouble())
+        assertEquals("Rect ring strokeWidthString must match scaled stroke", expectedSwStr, squareRing.strokeWidthString)
+
+        val squareSvg = IrSvgRenderer.render(squareIr)
+        assertTrue("SVG must emit stroke-width=\"$expectedSwStr\"", squareSvg.contains("""stroke-width="$expectedSwStr""""))
+
+        // Test CIRCLE finder ring
+        val circleDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            positionSize = posSize,
+            eyeStyle = EyeStyle(style = FinderStyle.CIRCLE)
+        )
+        val circleIr = ImageGeometryBuilder.generateGeometry(matrix, circleDesign, squareGeom)
+        val circleRing = circleIr.rootNodes.filterIsInstance<CircleNode>().first { it.radius == 3.0f * mSize && it.stroke != null }
+        assertEquals("Circle ring strokeWidth must scale by mSize", expectedSw, circleRing.strokeWidth ?: 0f, 0.01f)
+        assertEquals("Circle ring strokeWidthString must match scaled stroke", expectedSwStr, circleRing.strokeWidthString)
+
+        val circleSvg = IrSvgRenderer.render(circleIr)
+        assertTrue("Circle SVG must emit stroke-width=\"$expectedSwStr\"", circleSvg.contains("""stroke-width="$expectedSwStr""""))
+    }
+
+    @Test
+    fun `EF Image style animated frames generate AnimatedImageNode with hole mask`() {
+        val content = "https://veilframe.app/animated-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val frame1 = createTestPhoto(200, 200)
+        val frame2 = createTestPhoto(200, 200)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Animated(
+                    frames = listOf(frame1, frame2),
+                    delaysMs = listOf(150, 150)
+                )
+            )
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        assertTrue("IR defs must contain hole mask", ir.defs.any { it.contains("""mask id="hole"""") })
+        assertTrue("IR masks map must contain hole mask", ir.masks.containsKey("hole"))
+        val animNode = ir.rootNodes.filterIsInstance<AnimatedImageNode>().firstOrNull()
+        assertNotNull("AnimatedImageNode must be emitted", animNode)
+        assertEquals("AnimatedImageNode must reference hole mask", "hole", animNode!!.maskId)
+        assertEquals(2, animNode.frames.size)
     }
 }

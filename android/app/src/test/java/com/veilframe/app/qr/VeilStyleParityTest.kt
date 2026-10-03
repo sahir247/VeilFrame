@@ -48,8 +48,10 @@ class VeilStyleParityTest {
         val matrix = QrMatrix("https://veilframe.app/veil-art-image-parity", ErrorCorrectionLevel.H)
         val n = matrix.size
 
+        val testImage = createDummyBitmap()
         val params = QrStyleParams(
             style = QrStyle.IMAGE,
+            sourceImage = testImage,
             imageAllowTransparent = true,
             imageDataDarkColor = 0xFF112233.toInt(),
             imageDataLightColor = 0x80EEEEEE.toInt(),
@@ -685,9 +687,10 @@ class VeilStyleParityTest {
     @Test
     fun testUnifiedGeometryIrImageAndResampleParity() {
         val matrix = QrMatrix("https://veilframe.app/veil-art-unified-ir", ErrorCorrectionLevel.H)
+        val testImage = createDummyBitmap()
         val designImage = QrDesign(
             style = QrStyle.IMAGE,
-            imageSource = ImageSourceStyle(source = ImageSource.Resource(123))
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(testImage))
         )
         val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
 
@@ -754,9 +757,10 @@ class VeilStyleParityTest {
     fun testImageRendererPreservesFormatModulesInIrAndSvg() {
         val matrix = QrGenerator.generateMatrix("https://veilframe.app/format-test", QrDesign())
         val geometry = QrGeometry(matrixSize = matrix.size, outputWidth = 512, outputHeight = 512, quietZoneModules = 4)
+        val testBmp = createDummyBitmap()
         val design = QrDesign(
             style = QrStyle.IMAGE,
-            imageSource = ImageSourceStyle(source = ImageSource.Resource(123)),
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(testBmp)),
             allowTransparent = false,
             explicitQuietZone = 4
         )
@@ -1687,11 +1691,12 @@ class VeilStyleParityTest {
         val n = matrix.size
         val insets = DirectionalInsets(left = 1, top = 2, right = 3, bottom = 4)
 
+        val testImage = createDummyBitmap()
         // 1. IMAGE style with directional quiet zone
         val designImage = QrDesign(
             style = QrStyle.IMAGE,
             directionalQuietZone = insets,
-            imageSource = ImageSourceStyle(source = ImageSource.Resource(123))
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(testImage))
         )
         val svgImage = SvgExporter.generateSvg(matrix, designImage)
         val expectedW = n + 1 + 3
@@ -3986,9 +3991,11 @@ class VeilStyleParityTest {
         val mSize = geom.moduleSize
         val renderer = ImageRenderer()
 
+        val testImage = createDummyBitmap()
         // 1. allowTransparent = false (EF default)
         val paramsEf = QrStyleParams(
             style = QrStyle.IMAGE,
+            sourceImage = testImage,
             imageDataScale = 1.0f,
             imageAllowTransparent = false,
             imagePositionDarkColor = 0xFF000000.toInt(),
@@ -4042,6 +4049,7 @@ class VeilStyleParityTest {
         // When allowTransparent = true: transparent pre-pass emits full-scale modules before ImageNode
         val paramsTrans = QrStyleParams(
             style = QrStyle.IMAGE,
+            sourceImage = testImage,
             imageDataScale = 0.8f,
             imageAllowTransparent = true
         )

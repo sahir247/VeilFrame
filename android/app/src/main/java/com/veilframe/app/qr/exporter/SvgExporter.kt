@@ -783,14 +783,19 @@ object SvgExporter {
         val qzTopStr = formatCoord(qzTop)
 
         val sourceBmp = design.imageSource.bitmap
-        val preprocessedStatic = sourceBmp?.let {
+        val hasStaticImage = sourceBmp != null && !sourceBmp.isRecycled
+        val animatedFrames = design.imageSource.animatedFrames
+        val hasAnimatedFrames = !animatedFrames.isNullOrEmpty()
+        val hasImage = hasStaticImage || hasAnimatedFrames
+
+        val preprocessedStatic = if (hasStaticImage) {
             com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
-                source = it,
+                source = sourceBmp!!,
                 canvasWidth = matrix.size.toFloat(),
                 canvasHeight = matrix.size.toFloat(),
                 mode = design.imageSource.scaleMode
             )
-        }
+        } else null
         val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
         val imageAlpha = formatOpacity(design.imageSource.opacity)
         val n = matrix.size
@@ -806,17 +811,22 @@ object SvgExporter {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
-        sb.append("  <defs>\n")
-        if (hasCornerClip) {
-            sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+        val hasDefs = hasCornerClip || hasImage
+        if (hasDefs) {
+            sb.append("  <defs>\n")
+            if (hasCornerClip) {
+                sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
+            }
+            if (hasImage) {
+                sb.append("""    <mask id="hole">""").append("\n")
+                sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" fill="white"/>""").append("\n")
+                sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
+                sb.append("""      <rect x="${formatCoord(n - 8 + qzLeft)}" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
+                sb.append("""      <rect x="$qzLeftStr" y="${formatCoord(n - 8 + qzTop)}" width="8" height="8" fill="black"/>""").append("\n")
+                sb.append("    </mask>\n")
+            }
+            sb.append("  </defs>\n")
         }
-        sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" fill="white"/>""").append("\n")
-        sb.append("""      <rect x="$qzLeftStr" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="${formatCoord(n - 8 + qzLeft)}" y="$qzTopStr" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("""      <rect x="$qzLeftStr" y="${formatCoord(n - 8 + qzTop)}" width="8" height="8" fill="black"/>""").append("\n")
-        sb.append("    </mask>\n")
-        sb.append("  </defs>\n")
 
         if (hasCornerClip) {
             sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
@@ -836,8 +846,8 @@ object SvgExporter {
             sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
 
-        // 2. Transparent pre-pass (EFQRCodeStyleImage.swift:635-660: when timing or alignment shape is NONE, fallback to data shape)
-        if (design.allowTransparent) {
+        // 2. Transparent pre-pass (EFQRCodeStyleImage.swift:635-660: ONLY executed when hasImage && allowTransparent)
+        if (hasImage && design.allowTransparent) {
             val timingShape = design.timingStyle.shape
             val alignShape = design.alignmentStyle.shape
             for (col in 0 until n) {
@@ -869,60 +879,61 @@ object SvgExporter {
             }
         }
 
-        // 3. Image layer with #hole mask (EF parity: no second preserveAspectRatio on preprocessed bitmap)
-        sb.append("""  <g x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" mask="url(#hole)">""").append("\n")
-        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
-        val animatedFrames = design.imageSource.animatedFrames
-        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
+        // 3. Image layer with #hole mask (EF parity: only emitted when hasImage is true)
+        if (hasImage) {
+            sb.append("""  <g x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" mask="url(#hole)">""").append("\n")
+            val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
+            val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
 
-        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
-            val preprocessedFrames = animatedFrames.map { frame ->
-                com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
-                    source = frame,
-                    canvasWidth = n.toFloat(),
-                    canvasHeight = n.toFloat(),
-                    mode = design.imageSource.scaleMode
-                )
+            if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
+                val preprocessedFrames = animatedFrames.map { frame ->
+                    com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
+                        source = frame,
+                        canvasWidth = n.toFloat(),
+                        canvasHeight = n.toFloat(),
+                        mode = design.imageSource.scaleMode
+                    )
+                }
+                val base64Frames = preprocessedFrames.map { bitmapToBase64(it) }
+                val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
+                val totalDurationMs = maxOf(1, delaysMs.sum())
+                val totalDurationSec = totalDurationMs / 1000.0
+                val framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
+
+                sb.append("    <g>\n")
+                sb.append("      <defs>\n")
+                for ((idx, b64) in base64Frames.withIndex()) {
+                    sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
+                }
+                sb.append("      </defs>\n")
+
+                var accumulatedMs = 0
+                val keyTimes = mutableListOf<String>()
+                for (delay in delaysMs) {
+                    val fraction = accumulatedMs.toDouble() / totalDurationMs
+                    keyTimes.add(String.format(Locale.US, "%.3f", fraction))
+                    accumulatedMs += delay
+                }
+                val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
+                val keyTimesStr = keyTimes.joinToString(";")
+                val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
+
+                sb.append("""      <use xlink:href="#${framePrefix}0">""").append("\n")
+                sb.append("        <animate\n")
+                sb.append("""          attributeName="xlink:href"""").append("\n")
+                sb.append("""          values="$valuesStr"""").append("\n")
+                sb.append("""          keyTimes="$keyTimesStr"""").append("\n")
+                sb.append("""          dur="${durStr}s"""").append("\n")
+                sb.append("""          repeatCount="indefinite"""").append("\n")
+                sb.append("""          calcMode="discrete"""").append("\n")
+                sb.append("        />\n")
+                sb.append("      </use>\n")
+                sb.append("    </g>\n")
+            } else if (imageBase64.isNotEmpty()) {
+                sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
             }
-            val base64Frames = preprocessedFrames.map { bitmapToBase64(it) }
-            val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
-            val totalDurationMs = maxOf(1, delaysMs.sum())
-            val totalDurationSec = totalDurationMs / 1000.0
-            val framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
-
-            sb.append("    <g>\n")
-            sb.append("      <defs>\n")
-            for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
-            }
-            sb.append("      </defs>\n")
-
-            var accumulatedMs = 0
-            val keyTimes = mutableListOf<String>()
-            for (delay in delaysMs) {
-                val fraction = accumulatedMs.toDouble() / totalDurationMs
-                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
-                accumulatedMs += delay
-            }
-            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
-            val keyTimesStr = keyTimes.joinToString(";")
-            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
-
-            sb.append("""      <use xlink:href="#${framePrefix}0">""").append("\n")
-            sb.append("        <animate\n")
-            sb.append("""          attributeName="xlink:href"""").append("\n")
-            sb.append("""          values="$valuesStr"""").append("\n")
-            sb.append("""          keyTimes="$keyTimesStr"""").append("\n")
-            sb.append("""          dur="${durStr}s"""").append("\n")
-            sb.append("""          repeatCount="indefinite"""").append("\n")
-            sb.append("""          calcMode="discrete"""").append("\n")
-            sb.append("        />\n")
-            sb.append("      </use>\n")
-            sb.append("    </g>\n")
-        } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeftStr" y="$qzTopStr" width="$n" height="$n" opacity="$imageAlpha"/>""").append("\n")
+            sb.append("  </g>\n")
         }
-        sb.append("  </g>\n")
 
         // 4. Finders (with 8x8 posLightColor backing, ordered TL -> BL -> TR per EFQRCode column-major traversal)
         val eyeOuterHex = design.eyeStyle.outerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
