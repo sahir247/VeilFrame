@@ -4,6 +4,11 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 
 /**
+ * Dedicated exception thrown on fail-closed rasterization failure in [EfRasterBackend].
+ */
+class EfRasterException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
  * Authoritative interface for EFQRCode-compatible rasterization primitives.
  *
  * Decouples image preprocessing geometry calculations from the underlying graphics engine,

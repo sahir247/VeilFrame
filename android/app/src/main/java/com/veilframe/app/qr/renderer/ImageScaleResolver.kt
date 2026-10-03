@@ -473,6 +473,17 @@ object ImageScaleResolver {
         val tw = targetWidth.coerceAtLeast(1)
         val th = targetHeight.coerceAtLeast(1)
 
+        // Headless test or uninitialized dummy bitmap guard:
+        // A reflectively allocated or zero-sized stub has no valid pixels or dimension.
+        if (source.width <= 0 || source.height <= 0) {
+            return PreScaledPixelSource(
+                bitmap = source,
+                targetWidth = tw,
+                targetHeight = th,
+                contentBounds = null
+            )
+        }
+
         // EFQRCode 7.0.3 parity: Preprocess source image to intermediate canvas ratio (EFImageMode.imageForContent)
         val preprocessed = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
             source = source,
@@ -481,14 +492,15 @@ object ImageScaleResolver {
             mode = mode
         )
 
-        // Reproduce EFQRCode 7.0.3 getGrayPointList():
-        // Single draw into 3N x 3N context. If preprocessed already matches 3N x 3N, use directly
-        // without redundant 3N -> 3N allocation and Canvas draw pass.
-        val targetBitmap = if (preprocessed.width == tw && preprocessed.height == th) {
-            preprocessed
-        } else {
-            com.veilframe.app.qr.image.EfImagePreprocessor.backend.resize(preprocessed, tw, th)
-        }
+        // Reproduce EFQRCode 7.0.3 getGrayPointList() lines 795-810:
+        // Always draw preprocessed image into a fresh targetWidth x targetHeight (3N x 3N) sampling context
+        // regardless of whether preprocessed dimensions already match target dimensions.
+        val targetBitmap = com.veilframe.app.qr.image.EfImagePreprocessor.backend.drawInto(
+            source = preprocessed,
+            destinationWidth = tw,
+            destinationHeight = th,
+            dstRect = RectF(0f, 0f, tw.toFloat(), th.toFloat())
+        )
 
         val contentBounds: ContentBounds? = if (mode == ImageScaleMode.ASPECT_FIT) {
             val sw = source.width.toFloat().coerceAtLeast(1f)

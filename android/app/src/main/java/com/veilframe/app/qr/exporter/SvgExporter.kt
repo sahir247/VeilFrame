@@ -301,29 +301,13 @@ object SvgExporter {
         var preScaledSource: com.veilframe.app.qr.renderer.PreScaledPixelSource? = null
 
         val resolvedResampleSource = pixelSource ?: if (isResample && design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
-            try {
-                preScaledSource = com.veilframe.app.qr.renderer.ImageScaleResolver.createPreScaledSource(
-                    design.imageSource.bitmap!!,
-                    3 * matrix.size,
-                    3 * matrix.size,
-                    design.imageSource.scaleMode
-                )
-                preScaledSource
-            } catch (t: Throwable) {
-                android.util.Log.w("SvgExporter", "Bitmap pre-scaling for SVG resample failed, attempting array source fallback: ${t.message}", t)
-                try {
-                    preScaledSource = com.veilframe.app.qr.renderer.ImageScaleResolver.createPreScaledArraySource(
-                        com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!),
-                        3 * matrix.size,
-                        3 * matrix.size,
-                        design.imageSource.scaleMode
-                    )
-                    preScaledSource
-                } catch (t2: Throwable) {
-                    android.util.Log.w("SvgExporter", "Array-based pre-scaling also failed: ${t2.message}", t2)
-                    com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!)
-                }
-            }
+            preScaledSource = com.veilframe.app.qr.renderer.ImageScaleResolver.createPreScaledSource(
+                design.imageSource.bitmap!!,
+                3 * matrix.size,
+                3 * matrix.size,
+                design.imageSource.scaleMode
+            )
+            preScaledSource
         } else if (design.imageSource.bitmap != null && !design.imageSource.bitmap!!.isRecycled) {
             com.veilframe.app.qr.renderer.BitmapPixelSource(design.imageSource.bitmap!!)
         } else null

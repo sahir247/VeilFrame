@@ -13,6 +13,10 @@ import com.veilframe.app.qr.renderer.ImageScaleResolver
 import com.veilframe.app.qr.renderer.RenderContext
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * Unit and differential tests verifying the EFQRCode 7.0.3 rasterization architecture:
@@ -22,6 +26,9 @@ import org.junit.Test
  * 4. Verification that dither is disabled across parity paths (DISCOVERY.txt Section 10).
  * 5. [PixelComparator] and [RasterBuffer] differential measurement engine.
  */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [33])
 class EfRasterArchitectureTest {
 
     @Test
@@ -36,13 +43,13 @@ class EfRasterArchitectureTest {
         assertEquals("DeviceRGB", profile.colorSpace)
         assertEquals("CG_REFERENCE_KERNEL", profile.sampling)
         assertFalse("Dither must be disabled in EF 7.0.3 profile", profile.dither)
-        assertEquals("ONE EF PREPROCESSING RASTER + ONE EF FINAL IMAGE-DRAW RASTER + NO EXTRA MODE/FIT RASTER", profile.invariantDescription)
+        assertEquals("IMAGE/IMAGE_FILL: Preprocess -> PNG/SVG -> SwiftDraw/CoreGraphics draw; RESAMPLE: Preprocess -> 3N sampling-context draw -> RGBA bytes", profile.invariantDescription)
     }
 
     @Test
     fun testSkiaEfRasterBackendPrimitives() {
         val backend = SkiaEfRasterBackend
-        val source = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888) ?: return
+        val source = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888)
 
         // 1. Resize
         val resized = backend.resize(source, 200, 100)
@@ -62,9 +69,38 @@ class EfRasterArchitectureTest {
     }
 
     @Test
+    fun testSkiaEfRasterBackendFailsClosedOnAllocationFailure() {
+        val backend = SkiaEfRasterBackend
+        // A recycled bitmap will cause Canvas draw operations to throw
+        val recycledSource = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888).apply { recycle() }
+
+        try {
+            backend.resize(recycledSource, 20, 20)
+            fail("Expected EfRasterException when bitmap is recycled in resize")
+        } catch (e: EfRasterException) {
+            // Success: fail-closed exception thrown
+            assertTrue(e.message?.contains("resize") == true)
+        }
+
+        try {
+            backend.drawInto(recycledSource, 20, 20, RectF(0f, 0f, 20f, 20f))
+            fail("Expected EfRasterException when bitmap is recycled in drawInto")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("drawInto") == true)
+        }
+
+        try {
+            backend.crop(recycledSource, 0.0, 0.0, 5.0, 5.0)
+            fail("Expected EfRasterException when bitmap is recycled in crop")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("crop") == true)
+        }
+    }
+
+    @Test
     fun testCGRectIntegralCroppingSemantics() {
         val backend = SkiaEfRasterBackend
-        val source = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888) ?: return
+        val source = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
 
         // Apple CoreGraphics CGRectIntegral:
         // Returns the smallest rectangle with integer coordinates that contains the source rectangle:
@@ -116,7 +152,7 @@ class EfRasterArchitectureTest {
         val originalBackend = EfImagePreprocessor.backend
         try {
             EfImagePreprocessor.backend = mockBackend
-            val src = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888) ?: return
+            val src = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888)
 
             // STRETCH calls resize
             EfImagePreprocessor.preprocess(src, 50.0, 50.0, ImageScaleMode.STRETCH)
@@ -135,17 +171,43 @@ class EfRasterArchitectureTest {
     }
 
     @Test
-    fun testCreatePreScaledSourceEliminatesDoubleRaster() {
-        val sourceBmp = Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888) ?: return
-        // In STRETCH mode to 60x60, EfImagePreprocessor resizes to exactly 60x60.
-        // ImageScaleResolver must reuse that preprocessed bitmap directly instead of performing
-        // an additional 3N -> 3N Canvas draw pass.
-        val preScaled = ImageScaleResolver.createPreScaledSource(sourceBmp, 60, 60, ImageScaleMode.STRETCH)
-        assertEquals(60, preScaled.width)
-        assertEquals(60, preScaled.height)
-        assertNotNull(preScaled.bitmap)
-        assertEquals(60, preScaled.bitmap!!.width)
-        assertEquals(60, preScaled.bitmap!!.height)
+    fun testResampleAlwaysPerformsSamplingContextDrawEvenWhenDimensionsMatch() {
+        var drawIntoCalled = false
+        var capturedDestW = 0
+        var capturedDestH = 0
+        var capturedDstRect: RectF? = null
+
+        val sampleDestBmp = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888)
+        val mockBackend = object : EfRasterBackend {
+            override fun resize(source: Bitmap, width: Int, height: Int): Bitmap = source
+            override fun drawInto(source: Bitmap, destinationWidth: Int, destinationHeight: Int, dstRect: RectF): Bitmap {
+                drawIntoCalled = true
+                capturedDestW = destinationWidth
+                capturedDestH = destinationHeight
+                capturedDstRect = dstRect
+                return sampleDestBmp
+            }
+            override fun crop(source: Bitmap, rect: RectF): Bitmap = source
+            override fun crop(source: Bitmap, x: Double, y: Double, width: Double, height: Double): Bitmap = source
+        }
+
+        val originalBackend = EfImagePreprocessor.backend
+        try {
+            EfImagePreprocessor.backend = mockBackend
+            val sourceBmp = Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888)
+
+            // Input is already 60x60, target is 60x60.
+            // EFQRCode 7.0.3 getGrayPointList() (lines 795-810) always draws into a fresh 3N x 3N context.
+            // ImageScaleResolver must NOT skip this draw even though dimensions match!
+            val preScaled = ImageScaleResolver.createPreScaledSource(sourceBmp, 60, 60, ImageScaleMode.STRETCH)
+            assertTrue("RESAMPLE must always execute the 3N sampling-context draw", drawIntoCalled)
+            assertEquals(60, capturedDestW)
+            assertEquals(60, capturedDestH)
+            assertEquals(RectF(0f, 0f, 60f, 60f), capturedDstRect)
+            assertSame("Must return the bitmap from drawInto (sampling context)", sampleDestBmp, preScaled.bitmap)
+        } finally {
+            EfImagePreprocessor.backend = originalBackend
+        }
     }
 
     @Test
@@ -183,9 +245,11 @@ class EfRasterArchitectureTest {
     }
 
     @Test
-    fun testAdversarialAlphaCorpusDifferentialMetrics() {
+    fun testPixelComparatorAdversarialCorpusIntegrity() {
         // Deliberately constructed alpha corpus exposing rounding and premultiplication boundaries:
         // (255,0,0,255), (255,0,0,128), (255,0,0,127), (255,0,0,64), (20,40,60,128), (255,0,0,0), (0,0,255,0)
+        // Note: Verifies comparator measurement integrity. CoreGraphics vs Skia alpha byte parity remains
+        // NOT VERIFIED awaiting offline CoreGraphics reference fixtures.
         val testColors = intArrayOf(
             Color.argb(255, 255, 0, 0),
             Color.argb(128, 255, 0, 0),
@@ -201,9 +265,30 @@ class EfRasterArchitectureTest {
         val buf2 = RasterBuffer(w, h, testColors.copyOf())
 
         val result = PixelComparator.compare(buf1, buf2)
-        assertTrue("Identical adversarial alpha fixtures must match exactly", result.exactMatch)
+        assertTrue("Identical adversarial alpha fixtures must report exactMatch = true", result.exactMatch)
         assertEquals(0, result.mismatchCount)
         assertEquals(0, result.maxChannelDelta)
+    }
+
+    @Test
+    fun testAdversarialAlphaCorpusLuminanceCalculations() {
+        // Validates calculateLuminance behavior with both single-alpha and EF CoreGraphics double-alpha models
+        // Opaque red: (255, 0, 0, 255) -> gray = 0.2126 * 255 = 54.213 -> normalized ~ 0.2126
+        val redOpaqueLum = ImageScaleResolver.calculateLuminance(255, 0, 0, 1.0f, efPremultipliedAlpha = true)
+        assertEquals(0.2126f, redOpaqueLum, 0.001f)
+
+        // Fully transparent: (255, 0, 0, 0) -> weighted by (1 - alpha)*255 = 255 -> normalized = 1.0 (white)
+        val transparentLum = ImageScaleResolver.calculateLuminance(255, 0, 0, 0.0f, efPremultipliedAlpha = true)
+        assertEquals(1.0f, transparentLum, 0.001f)
+
+        // Boundary rounding case: alpha = 127/255 (~0.498)
+        val alpha127 = 127f / 255f
+        val standardLum = ImageScaleResolver.calculateLuminance(255, 0, 0, alpha127, efPremultipliedAlpha = false)
+        val efLum = ImageScaleResolver.calculateLuminance(255, 0, 0, alpha127, efPremultipliedAlpha = true)
+        // EF applies alpha twice (a^2): efLum has lower luminance score due to double-alpha attenuation on red channel
+        assertTrue("EF CoreGraphics double-alpha produces lower red luminance (0.555 vs 0.608) due to a^2 attenuation", efLum < standardLum)
+        assertEquals(0.5547f, efLum, 0.005f)
+        assertEquals(0.6078f, standardLum, 0.005f)
     }
 
     @Test
@@ -213,7 +298,7 @@ class EfRasterArchitectureTest {
         val geom = QrGeometry(n, 300, 300, 0)
         val renderer = ImageFillRenderer()
 
-        val sourceBmp = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888) ?: return
+        val sourceBmp = Bitmap.createBitmap(100, 50, Bitmap.Config.ARGB_8888)
         val design = QrDesign(
             style = QrStyle.IMAGE_FILL,
             imageSource = ImageSourceStyle(
@@ -223,7 +308,7 @@ class EfRasterArchitectureTest {
         )
 
         // When render is executed into a Canvas, preprocessed bitmap should draw directly without throwing or failing
-        val outputBmp = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888) ?: return
+        val outputBmp = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outputBmp)
         val renderContext = RenderContext()
 

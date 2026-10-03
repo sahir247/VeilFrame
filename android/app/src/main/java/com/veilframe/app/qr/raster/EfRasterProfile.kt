@@ -6,8 +6,13 @@ package com.veilframe.app.qr.raster
  * Grounded in EFQRCode 7.0.3 source (pinned commit 07ff9e2e83a4bbd384e5a8e33b47f389c9aac762)
  * and pinned SwiftDraw dependency (0.22.0, commit a19594794cdcdee5135caad3bc119096c50c92c2):
  *
- * Invariant:
- * ONE EF PREPROCESSING RASTER + ONE EF FINAL IMAGE-DRAW RASTER + NO EXTRA MODE/FIT RASTER
+ * Invariants:
+ *
+ * IMAGE / IMAGE_FILL:
+ * raw source -> EF preprocessing raster -> PNG/SVG image embedding -> SwiftDraw/CoreGraphics final image draw
+ *
+ * RESAMPLE:
+ * raw source -> EF preprocessing raster -> 3N x 3N CoreGraphics sampling-context draw -> RGBA bytes -> gamma / threshold / RNG
  *
  * Profile: EF-RASTER-7.0.3-SRGB8
  * - Input domain: 8-bit RGBA, sRGB-compatible, non-HDR, non-wide-gamut.
@@ -27,7 +32,7 @@ data class EfRasterProfile(
     val version: String = "7.0.3",
     val referenceCommit: String = "07ff9e2e83a4bbd384e5a8e33b47f389c9aac762",
     val pinnedSwiftDrawCommit: String = "a19594794cdcdee5135caad3bc119096c50c92c2",
-    val invariantDescription: String = "ONE EF PREPROCESSING RASTER + ONE EF FINAL IMAGE-DRAW RASTER + NO EXTRA MODE/FIT RASTER"
+    val invariantDescription: String = "IMAGE/IMAGE_FILL: Preprocess -> PNG/SVG -> SwiftDraw/CoreGraphics draw; RESAMPLE: Preprocess -> 3N sampling-context draw -> RGBA bytes"
 ) {
     companion object {
         val EF_RASTER_7_0_3_SRGB8 = EfRasterProfile()
