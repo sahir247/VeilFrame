@@ -207,10 +207,10 @@ class ImageRenderer : QrRenderer {
             )
         }
 
-        // 4. Finder Patterns (with 8x8 posLightColor backing)
+        // 4. Finder Patterns (with 8x8 posLightColor backing, ordered TL -> BL -> TR matching EFQRCode column-major traversal)
         appendFinderIrNodes(nodes, x0, y0, 3.5f, 3.5f, 0, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
-        appendFinderIrNodes(nodes, x0, y0, n - 3.5f, 3.5f, n - 8, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
         appendFinderIrNodes(nodes, x0, y0, 3.5f, n - 3.5f, 0, n - 8, mSize, posStyle, posDarkColor, posLightColor, posSize)
+        appendFinderIrNodes(nodes, x0, y0, n - 3.5f, 3.5f, n - 8, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
 
         // 5. Timing Tracks (skips entirely if timingShape is NONE)
         if (timingShape != ModuleShape.NONE) {

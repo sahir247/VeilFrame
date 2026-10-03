@@ -214,29 +214,92 @@ class EfImageStyleParityTest {
     }
 
     @Test
-    fun `EF Image style SVG finder geometry matches EF canonical 8x8 backing 3x3 inner and 6x6 stroked ring`() {
-        val content = "https://veilframe.app/svg-finder-parity"
+    fun `EF Image style SVG finder geometry matches EF canonical 8x8 backing 3x3 inner and 6x6 stroked ring with TL BL TR order`() {
+        val content = "https://veilframe.app/svg-finder-forensic-parity"
         val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val n = matrix.size
         val photo = createTestPhoto(400, 400)
+        val qz = 1 // default EF quiet zone
 
-        val design = QrDesign.efImagePresetReference(photo = photo)
+        val design = QrDesign.efImagePresetReference(photo = photo, quietZoneModules = qz)
         val svg = SvgExporter.generateSvg(matrix, design)
 
-        // 1. Must contain 8x8 backing rectangles
-        assertTrue("SVG must contain 8x8 finder backing rects", svg.contains("""width="8" height="8""""))
+        // Split SVG into defs and body (outside defs) to ensure hole-mask rects are not confused with finders
+        val defsEnd = svg.indexOf("</defs>")
+        assertTrue("SVG must contain defs closing tag", defsEnd > 0)
+        val bodySvg = svg.substring(defsEnd)
 
-        // 2. Must contain 3x3 filled inner center rects
-        assertTrue("SVG must contain 3x3 inner finder rects", svg.contains("""width="3" height="3""""))
+        // 1. Extract all rect elements outside defs
+        val rectRegex = Regex("""<rect\s+([^>]+)/>""")
+        val bodyRects = rectRegex.findAll(bodySvg).map { it.value }.toList()
 
-        // 3. Must contain 6x6 stroked outer ring with stroke-width 1
-        assertTrue(
-            "SVG must contain 6x6 stroked outer ring with stroke-width 1",
-            svg.contains("""fill="none" stroke-width="1"""") && svg.contains("""width="6" height="6"""")
-        )
+        // 2. Forensically verify exactly 3 8x8 finder backing rects with exact coordinates
+        val backing8x8 = bodyRects.filter { it.contains("""width="8"""") && it.contains("""height="8"""") }
+        assertEquals("Must contain exactly 3 8x8 finder backing rectangles", 3, backing8x8.size)
 
-        // 4. Must NOT emit generic concentric 7x7 outer or 5x5 background cutout rects
-        assertFalse("SVG must not contain generic 7x7 outer filled rect", svg.contains("""width="7" height="7""""))
-        assertFalse("SVG must not contain generic 5x5 background cutout rect", svg.contains("""width="5" height="5""""))
+        val blY = n - 7
+        val trX = n - 7
+        // TL backing: x="1" y="1" (with qz=1)
+        assertTrue("1st backing must be TL at x=\"$qz\" y=\"$qz\"", backing8x8[0].contains("""x="$qz"""") && backing8x8[0].contains("""y="$qz""""))
+        // BL backing: x="1" y="${blY}"
+        assertTrue("2nd backing must be BL at x=\"$qz\" y=\"$blY\"", backing8x8[1].contains("""x="$qz"""") && backing8x8[1].contains("""y="$blY""""))
+        // TR backing: x="${trX}" y="1"
+        assertTrue("3rd backing must be TR at x=\"$trX\" y=\"$qz\"", backing8x8[2].contains("""x="$trX"""") && backing8x8[2].contains("""y="$qz""""))
+
+        // 3. Forensically verify exactly 3 3x3 inner center rects with exact coordinates
+        val center3x3 = bodyRects.filter { it.contains("""width="3"""") && it.contains("""height="3"""") }
+        assertEquals("Must contain exactly 3 3x3 finder center rectangles", 3, center3x3.size)
+
+        val tlCenterCoord = qz + 2
+        val blCenterY = n - 4
+        val trCenterX = n - 4
+        // TL center: x="${tlCenterCoord}" y="${tlCenterCoord}"
+        assertTrue("1st center must be TL at x=\"$tlCenterCoord\" y=\"$tlCenterCoord\"", center3x3[0].contains("""x="$tlCenterCoord"""") && center3x3[0].contains("""y="$tlCenterCoord""""))
+        // BL center: x="${tlCenterCoord}" y="${blCenterY}"
+        assertTrue("2nd center must be BL at x=\"$tlCenterCoord\" y=\"$blCenterY\"", center3x3[1].contains("""x="$tlCenterCoord"""") && center3x3[1].contains("""y="$blCenterY""""))
+        // TR center: x="${trCenterX}" y="${tlCenterCoord}"
+        assertTrue("3rd center must be TR at x=\"$trCenterX\" y=\"$tlCenterCoord\"", center3x3[2].contains("""x="$trCenterX"""") && center3x3[2].contains("""y="$tlCenterCoord""""))
+
+        // 4. Forensically verify exactly 3 6x6 stroked outer ring rects with exact coordinates
+        val ring6x6 = bodyRects.filter { it.contains("""width="6"""") && it.contains("""height="6"""") && it.contains("""fill="none"""") && it.contains("""stroke-width="1"""") }
+        assertEquals("Must contain exactly 3 6x6 stroked outer ring rectangles", 3, ring6x6.size)
+
+        val tlRingCoord = SvgExporter.formatCoord(qz + 0.5)
+        val blRingY = SvgExporter.formatCoord(n - 5.5)
+        val trRingX = SvgExporter.formatCoord(n - 5.5)
+        // TL ring: x="${tlRingCoord}" y="${tlRingCoord}"
+        assertTrue("1st ring must be TL at x=\"$tlRingCoord\" y=\"$tlRingCoord\"", ring6x6[0].contains("""x="$tlRingCoord"""") && ring6x6[0].contains("""y="$tlRingCoord""""))
+        // BL ring: x="${tlRingCoord}" y="${blRingY}"
+        assertTrue("2nd ring must be BL at x=\"$tlRingCoord\" y=\"$blRingY\"", ring6x6[1].contains("""x="$tlRingCoord"""") && ring6x6[1].contains("""y="$blRingY""""))
+        // TR ring: x="${trRingX}" y="${tlRingCoord}"
+        assertTrue("3rd ring must be TR at x=\"$trRingX\" y=\"$tlRingCoord\"", ring6x6[2].contains("""x="$trRingX"""") && ring6x6[2].contains("""y="$tlRingCoord""""))
+
+        // 5. Forensically verify element sequence & grouping in body SVG:
+        // TL (bg -> center -> ring) -> BL (bg -> center -> ring) -> TR (bg -> center -> ring)
+        val idxTlBg = bodySvg.indexOf(backing8x8[0])
+        val idxTlCenter = bodySvg.indexOf(center3x3[0])
+        val idxTlRing = bodySvg.indexOf(ring6x6[0])
+
+        val idxBlBg = bodySvg.indexOf(backing8x8[1])
+        val idxBlCenter = bodySvg.indexOf(center3x3[1])
+        val idxBlRing = bodySvg.indexOf(ring6x6[1])
+
+        val idxTrBg = bodySvg.indexOf(backing8x8[2])
+        val idxTrCenter = bodySvg.indexOf(center3x3[2])
+        val idxTrRing = bodySvg.indexOf(ring6x6[2])
+
+        assertTrue("TL backing must precede TL center", idxTlBg < idxTlCenter)
+        assertTrue("TL center must precede TL ring", idxTlCenter < idxTlRing)
+        assertTrue("TL ring must precede BL backing", idxTlRing < idxBlBg)
+        assertTrue("BL backing must precede BL center", idxBlBg < idxBlCenter)
+        assertTrue("BL center must precede BL ring", idxBlCenter < idxBlRing)
+        assertTrue("BL ring must precede TR backing", idxBlRing < idxTrBg)
+        assertTrue("TR backing must precede TR center", idxTrBg < idxTrCenter)
+        assertTrue("TR center must precede TR ring", idxTrCenter < idxTrRing)
+
+        // 6. Must NOT emit generic concentric 7x7 outer or 5x5 background cutout rects
+        assertFalse("SVG must not contain generic 7x7 outer filled rect", bodySvg.contains("""width="7" height="7""""))
+        assertFalse("SVG must not contain generic 5x5 background cutout rect", bodySvg.contains("""width="5" height="5""""))
     }
 
     @Test
@@ -340,5 +403,68 @@ class EfImageStyleParityTest {
         assertFalse("allowTransparent must be false", state.imageAllowTransparent)
         assertEquals("Position dark color must be black", Color.BLACK, state.imagePositionDarkColor)
         assertEquals("Position light color must be white", Color.WHITE, state.imagePositionLightColor)
+    }
+
+    @Test
+    fun `Canvas IR finder geometry matches EF canonical 8x8 backing 3x3 inner and 6x6 stroked ring with TL BL TR order`() {
+        val content = "https://veilframe.app/canvas-ir-finder-parity"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val photo = createTestPhoto(400, 400)
+        val qz = 1
+
+        val design = QrDesign.efImagePresetReference(photo = photo, quietZoneModules = qz)
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageRenderer().generateGeometry(matrix, design, geometry)
+
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+
+        // Filter all finder rect nodes: 8x8 backings, 3x3 centers, and 6x6 rings
+        val rectNodes = ir.rootNodes.filterIsInstance<RectNode>()
+        val finderNodes = rectNodes.filter {
+            it.width == 8 * mSize || it.width == 3 * mSize || it.width == 6 * mSize
+        }
+        assertEquals("Must contain exactly 9 finder rect nodes (3 per finder)", 9, finderNodes.size)
+
+        // 1. Verify TL finder (backing -> center -> ring)
+        assertEquals("Node 0 must be TL 8x8 backing", 8 * mSize, finderNodes[0].width, 0.01f)
+        assertEquals(ox, finderNodes[0].x, 0.01f)
+        assertEquals(oy, finderNodes[0].y, 0.01f)
+
+        assertEquals("Node 1 must be TL 3x3 center", 3 * mSize, finderNodes[1].width, 0.01f)
+        assertEquals(ox + 2 * mSize, finderNodes[1].x, 0.01f)
+        assertEquals(oy + 2 * mSize, finderNodes[1].y, 0.01f)
+
+        assertEquals("Node 2 must be TL 6x6 ring", 6 * mSize, finderNodes[2].width, 0.01f)
+        assertEquals(ox + 0.5f * mSize, finderNodes[2].x, 0.01f)
+        assertEquals(oy + 0.5f * mSize, finderNodes[2].y, 0.01f)
+
+        // 2. Verify BL finder (backing -> center -> ring)
+        assertEquals("Node 3 must be BL 8x8 backing", 8 * mSize, finderNodes[3].width, 0.01f)
+        assertEquals(ox, finderNodes[3].x, 0.01f)
+        assertEquals(oy + (n - 8) * mSize, finderNodes[3].y, 0.01f)
+
+        assertEquals("Node 4 must be BL 3x3 center", 3 * mSize, finderNodes[4].width, 0.01f)
+        assertEquals(ox + 2 * mSize, finderNodes[4].x, 0.01f)
+        assertEquals(oy + (n - 5) * mSize, finderNodes[4].y, 0.01f)
+
+        assertEquals("Node 5 must be BL 6x6 ring", 6 * mSize, finderNodes[5].width, 0.01f)
+        assertEquals(ox + 0.5f * mSize, finderNodes[5].x, 0.01f)
+        assertEquals(oy + (n - 6.5f) * mSize, finderNodes[5].y, 0.01f)
+
+        // 3. Verify TR finder (backing -> center -> ring)
+        assertEquals("Node 6 must be TR 8x8 backing", 8 * mSize, finderNodes[6].width, 0.01f)
+        assertEquals(ox + (n - 8) * mSize, finderNodes[6].x, 0.01f)
+        assertEquals(oy, finderNodes[6].y, 0.01f)
+
+        assertEquals("Node 7 must be TR 3x3 center", 3 * mSize, finderNodes[7].width, 0.01f)
+        assertEquals(ox + (n - 5) * mSize, finderNodes[7].x, 0.01f)
+        assertEquals(oy + 2 * mSize, finderNodes[7].y, 0.01f)
+
+        assertEquals("Node 8 must be TR 6x6 ring", 6 * mSize, finderNodes[8].width, 0.01f)
+        assertEquals(ox + (n - 6.5f) * mSize, finderNodes[8].x, 0.01f)
+        assertEquals(oy + 0.5f * mSize, finderNodes[8].y, 0.01f)
     }
 }

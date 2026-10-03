@@ -924,20 +924,7 @@ object SvgExporter {
         }
         sb.append("  </g>\n")
 
-        // 4. Finders (with 8x8 posLightColor backing)
-        val posLightHex = toSvgColor(design.positionLightColor).hex
-        val posLightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.positionLightColor))
-        val finderBgs = listOf(
-            Pair(qzLeft, qzTop),
-            Pair(qzLeft + n - 8, qzTop),
-            Pair(qzLeft, qzTop + n - 8)
-        )
-        for ((bx, by) in finderBgs) {
-            val bxStr = formatCoord(bx)
-            val byStr = formatCoord(by)
-            sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bxStr" y="$byStr" fill="$posLightHex"/>""").append("\n")
-        }
-
+        // 4. Finders (with 8x8 posLightColor backing, ordered TL -> BL -> TR per EFQRCode column-major traversal)
         val eyeOuterHex = design.eyeStyle.outerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
         val eyeInnerHex = design.eyeStyle.innerColor?.let { toSvgColor(it).hex } ?: toSvgColor(design.positionDarkColor).hex
         appendImageFinders(sb, design, qzLeft, qzTop, n, eyeOuterHex, eyeInnerHex)
@@ -1462,17 +1449,34 @@ object SvgExporter {
         eyeOuterHex: String,
         eyeInnerHex: String
     ) {
+        // EFQRCode 7.0.3 traversal order (for x in 0..<n, for y in 0..<n):
+        // col 3, row 3 -> TL
+        // col 3, row n-4 -> BL
+        // col n-4, row 3 -> TR
+        // For each finder, EFQRCodeStyleImage.swift:760-815 emits:
+        // 1. 8x8 posLightColor backing rectangle
+        // 2. 3x3 posDarkColor center rectangle
+        // 3. 6x6 posDarkColor stroked outer ring (stroke-width = 1.0 * posSize)
         val finders = listOf(
-            Pair(qzLeft + 3.5, qzTop + 3.5),
-            Pair(qzLeft + matrixSize - 3.5, qzTop + 3.5),
-            Pair(qzLeft + 3.5, qzTop + matrixSize - 3.5)
+            // TL: center (3.5, 3.5), bg (0, 0)
+            Triple(qzLeft + 3.5, qzTop + 3.5, Pair(qzLeft, qzTop)),
+            // BL: center (3.5, n - 3.5), bg (0, n - 8)
+            Triple(qzLeft + 3.5, qzTop + matrixSize - 3.5, Pair(qzLeft, qzTop + matrixSize - 8)),
+            // TR: center (n - 3.5, 3.5), bg (n - 8, 0)
+            Triple(qzLeft + matrixSize - 3.5, qzTop + 3.5, Pair(qzLeft + matrixSize - 8, qzTop))
         )
+        val posLightHex = toSvgColor(design.positionLightColor).hex
+        val posLightAlpha = String.format(Locale.US, "%.2f", colorAlpha(design.positionLightColor))
         val darkOp = colorAlpha(design.positionDarkColor)
         val opAttr = if (darkOp < 1f) """opacity="${formatOpacity(darkOp)}" """ else ""
         val posSize = design.positionSize.toDouble()
         val strokeW = formatCoord(1.0 * posSize)
 
-        for ((cx, cy) in finders) {
+        for ((cx, cy, bg) in finders) {
+            val bxStr = formatCoord(bg.first)
+            val byStr = formatCoord(bg.second)
+            sb.append("""  <rect opacity="$posLightAlpha" width="8" height="8" x="$bxStr" y="$byStr" fill="$posLightHex"/>""").append("\n")
+
             val cxStr = formatCoord(cx)
             val cyStr = formatCoord(cy)
 
