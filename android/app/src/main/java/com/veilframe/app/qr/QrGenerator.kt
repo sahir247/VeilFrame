@@ -617,11 +617,12 @@ object QrGenerator {
         mode: GenerationMode
     ): QrDesign = when (mode) {
         GenerationMode.PARITY_EF -> {
+            val defaultQz = QrGeometry.resolveDefaultQuietZone(design.style, defaultFallback = 1)
             val qz = if (
                 design.explicitQuietZone == null &&
                 design.directionalQuietZone == null &&
                 design.backdropStyle.fractionalQuietZone == null
-            ) 1 else design.quietZoneModules
+            ) defaultQz else design.quietZoneModules
             design.copy(
                 basicProfile = BasicGeometryProfile.EF_PARITY,
                 quietZoneModules = qz

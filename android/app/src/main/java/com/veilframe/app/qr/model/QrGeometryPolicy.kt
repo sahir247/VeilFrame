@@ -11,10 +11,13 @@ sealed interface QrGeometryPolicy {
 
     /**
      * EFQRCode exact behavioral parity policy:
-     * - Defaults to 1 quiet-zone module across all styles (matching EFQRCode's default quietzone = nil -> 1 module).
+     * - Defaults to 1 quiet-zone module for styles matching EFQRCode's default (quietzone = nil -> 1 module).
+     * - D25 uses 0 additional quiet zone modules because EFQRCode Style25D viewBox natively
+     *   provides an isometric 2n x 2n bounding canvas (EFQRCodeStyle25D.swift L317-L328).
      */
     object EfParity : QrGeometryPolicy {
-        override fun defaultQuietZoneModules(style: QrStyle): Int = 1
+        override fun defaultQuietZoneModules(style: QrStyle): Int =
+            QrGeometry.resolveDefaultQuietZone(style, defaultFallback = 1)
     }
 
     /**

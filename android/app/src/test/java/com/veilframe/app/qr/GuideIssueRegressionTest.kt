@@ -902,14 +902,36 @@ class GuideIssueRegressionTest {
     }
 
     @Test
-    fun `C6 — Parity EF normalization sets quiet zone to 1 module across styles`() {
-        // C6 / P1.5: PARITY_EF mode normalizes quiet zone to 1 module matching EFQRCode backdrop viewBox
+    fun `C6 — Parity EF normalization preserves D25 0-module quiet zone and sets 1 module for other styles`() {
+        // C6 / P1.5: PARITY_EF mode normalizes quiet zone matching EFQRCode backdrop viewBox:
+        // D25 uses 0 additional quiet zone modules because EFQRCode Style25D viewBox natively
+        // provides an isometric 2n x 2n bounding canvas (EFQRCodeStyle25D.swift L317-L328).
+        // Other styles (e.g. BASIC) normalize to 1 module.
         val d25Design = QrDesign(style = QrStyle.D25)
         assertEquals("VeilFrame artistic D25 defaults to 0 modules", 0, d25Design.quietZoneModules)
 
         val efD25 = QrGenerator.effectiveDesignForMode(d25Design, GenerationMode.PARITY_EF)
-        assertEquals("PARITY_EF mode normalizes D25 quiet zone to 1 module", 1, efD25.quietZoneModules)
+        assertEquals("PARITY_EF mode preserves D25 native 0-module quiet zone (EF 2n x 2n isometric viewBox)", 0, efD25.quietZoneModules)
         assertEquals(BasicGeometryProfile.EF_PARITY, efD25.basicProfile)
+
+        val basicDesign = QrDesign(style = QrStyle.BASIC)
+        val efBasic = QrGenerator.effectiveDesignForMode(basicDesign, GenerationMode.PARITY_EF)
+        assertEquals("PARITY_EF mode normalizes BASIC quiet zone to 1 module", 1, efBasic.quietZoneModules)
+        assertEquals(BasicGeometryProfile.EF_PARITY, efBasic.basicProfile)
+
+        val explicitD25 = QrDesign(style = QrStyle.D25, explicitQuietZone = 3, quietZoneModules = 3)
+        val efExplicitD25 = QrGenerator.effectiveDesignForMode(explicitD25, GenerationMode.PARITY_EF)
+        assertEquals("PARITY_EF mode preserves explicit quiet zone override on D25", 3, efExplicitD25.quietZoneModules)
+    }
+
+    @Test
+    fun `D25 — PARITY_EF SVG generation produces exact EF canonical 2n x 2n viewBox without extra margin`() {
+        val matrix = QrGenerator.generateMatrix("HTTPS://VEILFRAME.APP/D25-PARITY", QrDesign(style = QrStyle.D25))
+        val n = matrix.size
+        val d25Design = QrDesign(style = QrStyle.D25)
+        val svg = QrGenerator.generateSvg("HTTPS://VEILFRAME.APP/D25-PARITY", d25Design, mode = GenerationMode.PARITY_EF)
+        val expectedVb = "viewBox=\"-$n -${n / 2.0} ${(2 * n).toDouble()} ${(2 * n).toDouble()}\""
+        assertTrue("D25 SVG export in PARITY_EF mode must contain exact EF viewBox $expectedVb, but was:\n$svg", svg.contains(expectedVb))
     }
 
     @Test
