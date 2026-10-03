@@ -18,11 +18,13 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Material 3 Expressive Color Picker Dialog.
- * Provides interactive Hue/Saturation/Brightness spectrum sliders, live dual swatch preview,
- * direct Hex code editing, accessibility contrast feedback, and curated quick swatches.
+ * Provides interactive Hue/Saturation/Brightness spectrum sliders, Opacity/Alpha slider,
+ * live dual swatch preview, direct Hex code editing (RGB and ARGB), accessibility contrast feedback,
+ * and curated quick swatches including Transparent.
  */
 class QrColorPickerDialog(
     private val context: Context,
@@ -35,6 +37,7 @@ class QrColorPickerDialog(
     private var activeHue = 0f
     private var activeSat = 1f
     private var activeVal = 1f
+    private var activeAlpha = 255
     private var isUpdatingFromInput = false
 
     fun show(): AlertDialog {
@@ -55,10 +58,12 @@ class QrColorPickerDialog(
         val hueSlider       = view.findViewById<SeekBar>(R.id.seekbar_hue)
         val satSlider       = view.findViewById<SeekBar>(R.id.seekbar_saturation)
         val valSlider       = view.findViewById<SeekBar>(R.id.seekbar_brightness)
+        val alphaSlider     = view.findViewById<SeekBar>(R.id.seekbar_alpha)
 
         val hueLabel        = view.findViewById<TextView>(R.id.label_hue_val)
         val satLabel        = view.findViewById<TextView>(R.id.label_sat_val)
         val valLabel        = view.findViewById<TextView>(R.id.label_val_val)
+        val alphaLabel      = view.findViewById<TextView>(R.id.label_alpha_val)
 
         val swatchContainer = view.findViewById<LinearLayout>(R.id.container_preset_swatches)
         val applyBtn        = view.findViewById<MaterialButton>(R.id.picker_apply_btn)
@@ -68,15 +73,16 @@ class QrColorPickerDialog(
         subtitleView.text = if (isForeground) {
             "Choose a dark or vibrant color for QR patterns"
         } else {
-            "Choose a light or high-contrast backdrop for QR modules"
+            "Choose a light, transparent, or high-contrast backdrop for QR modules"
         }
 
-        // Initialize HSV components
+        // Initialize HSV and Alpha components
         val hsv = FloatArray(3)
         Color.colorToHSV(initialColor, hsv)
         activeHue = hsv[0]
         activeSat = hsv[1]
         activeVal = hsv[2]
+        activeAlpha = Color.alpha(initialColor)
 
         // Style the initial swatches
         setSwatchColor(currentSwatch, initialColor)
@@ -90,7 +96,10 @@ class QrColorPickerDialog(
         }
         hueSlider.background = hueTrack
 
-        fun getSelectedColor(): Int = Color.HSVToColor(floatArrayOf(activeHue, activeSat, activeVal))
+        fun getSelectedColor(): Int {
+            val rgb = Color.HSVToColor(floatArrayOf(activeHue, activeSat, activeVal))
+            return (rgb and 0x00FFFFFF) or (activeAlpha shl 24)
+        }
 
         fun updateSatGradient() {
             val satStart = Color.HSVToColor(floatArrayOf(activeHue, 0f, activeVal))
@@ -110,6 +119,16 @@ class QrColorPickerDialog(
             valSlider.background = valTrack
         }
 
+        fun updateAlphaGradient() {
+            val rgb = Color.HSVToColor(floatArrayOf(activeHue, activeSat, activeVal))
+            val alphaStart = rgb and 0x00FFFFFF
+            val alphaEnd = rgb or (0xFF shl 24)
+            val alphaTrack = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(alphaStart, alphaEnd)).apply {
+                cornerRadius = 16f
+            }
+            alphaSlider.background = alphaTrack
+        }
+
         fun updateUi(updateSliders: Boolean = true, updateHex: Boolean = true) {
             val selected = getSelectedColor()
             setSwatchColor(newSwatch, selected)
@@ -117,51 +136,67 @@ class QrColorPickerDialog(
             hueLabel.text = "${activeHue.toInt()}°"
             satLabel.text = "${(activeSat * 100).toInt()}%"
             valLabel.text = "${(activeVal * 100).toInt()}%"
+            val alphaPct = (activeAlpha * 100f / 255f).roundToInt()
+            alphaLabel.text = if (activeAlpha == 0) "0% (Transparent)" else "$alphaPct%"
 
             if (updateSliders) {
                 hueSlider.progress = activeHue.toInt()
                 satSlider.progress = (activeSat * 100).toInt()
                 valSlider.progress = (activeVal * 100).toInt()
+                alphaSlider.progress = alphaPct
             }
 
             updateSatGradient()
             updateValGradient()
+            updateAlphaGradient()
 
             if (updateHex) {
                 isUpdatingFromInput = true
-                val hexStr = String.format(Locale.US, "%06X", 0xFFFFFF and selected)
+                val hexStr = if (activeAlpha < 255) {
+                    String.format(Locale.US, "%08X", selected)
+                } else {
+                    String.format(Locale.US, "%06X", 0xFFFFFF and selected)
+                }
                 hexInput.setText(hexStr)
                 hexInput.setSelection(hexStr.length)
                 isUpdatingFromInput = false
             }
 
             // Calculate Contrast Ratio
-            val ratio = calculateContrastRatio(selected, contrastAgainstColor)
-            val formattedRatio = String.format(Locale.US, "%.1f", ratio)
-            if (ratio >= 7.0f) {
-                contrastText.text = "Contrast ratio: $formattedRatio:1 (Excellent for scanning)"
-                contrastText.setTextColor(0xFF16A34A.toInt()) // Green
-                contrastCard.setCardBackgroundColor(0x1816A34A)
-                contrastIcon?.setImageResource(R.drawable.ic_check_circle)
-                contrastIcon?.setColorFilter(0xFF16A34A.toInt())
-            } else if (ratio >= 4.5f) {
-                contrastText.text = "Contrast ratio: $formattedRatio:1 (Good)"
+            if (activeAlpha == 0) {
+                contrastText.text = "Transparent (Allows underlying photo / backdrop to show through)"
                 contrastText.setTextColor(0xFF2563EB.toInt()) // Blue
                 contrastCard.setCardBackgroundColor(0x182563EB)
                 contrastIcon?.setImageResource(R.drawable.ic_check_circle)
                 contrastIcon?.setColorFilter(0xFF2563EB.toInt())
-            } else if (ratio >= 3.0f) {
-                contrastText.text = "Contrast ratio: $formattedRatio:1 (Acceptable)"
-                contrastText.setTextColor(0xFFD97706.toInt()) // Amber
-                contrastCard.setCardBackgroundColor(0x18D97706)
-                contrastIcon?.setImageResource(R.drawable.ic_info_outline)
-                contrastIcon?.setColorFilter(0xFFD97706.toInt())
             } else {
-                contrastText.text = "Low contrast: $formattedRatio:1 (May be difficult to scan)"
-                contrastText.setTextColor(0xFFDC2626.toInt()) // Red
-                contrastCard.setCardBackgroundColor(0x18DC2626)
-                contrastIcon?.setImageResource(R.drawable.ic_info_outline)
-                contrastIcon?.setColorFilter(0xFFDC2626.toInt())
+                val ratio = calculateContrastRatio(selected, contrastAgainstColor)
+                val formattedRatio = String.format(Locale.US, "%.1f", ratio)
+                if (ratio >= 7.0f) {
+                    contrastText.text = "Contrast ratio: $formattedRatio:1 (Excellent for scanning)"
+                    contrastText.setTextColor(0xFF16A34A.toInt()) // Green
+                    contrastCard.setCardBackgroundColor(0x1816A34A)
+                    contrastIcon?.setImageResource(R.drawable.ic_check_circle)
+                    contrastIcon?.setColorFilter(0xFF16A34A.toInt())
+                } else if (ratio >= 4.5f) {
+                    contrastText.text = "Contrast ratio: $formattedRatio:1 (Good)"
+                    contrastText.setTextColor(0xFF2563EB.toInt()) // Blue
+                    contrastCard.setCardBackgroundColor(0x182563EB)
+                    contrastIcon?.setImageResource(R.drawable.ic_check_circle)
+                    contrastIcon?.setColorFilter(0xFF2563EB.toInt())
+                } else if (ratio >= 3.0f) {
+                    contrastText.text = "Contrast ratio: $formattedRatio:1 (Acceptable)"
+                    contrastText.setTextColor(0xFFD97706.toInt()) // Amber
+                    contrastCard.setCardBackgroundColor(0x18D97706)
+                    contrastIcon?.setImageResource(R.drawable.ic_info_outline)
+                    contrastIcon?.setColorFilter(0xFFD97706.toInt())
+                } else {
+                    contrastText.text = "Low contrast: $formattedRatio:1 (May be difficult to scan)"
+                    contrastText.setTextColor(0xFFDC2626.toInt()) // Red
+                    contrastCard.setCardBackgroundColor(0x18DC2626)
+                    contrastIcon?.setImageResource(R.drawable.ic_info_outline)
+                    contrastIcon?.setColorFilter(0xFFDC2626.toInt())
+                }
             }
         }
 
@@ -199,7 +234,18 @@ class QrColorPickerDialog(
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
-        // Hex Input TextWatcher
+        alphaSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    activeAlpha = (p * 255f / 100f).roundToInt().coerceIn(0, 255)
+                    updateUi(updateSliders = false, updateHex = true)
+                }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
+        // Hex Input TextWatcher (supports #RRGGBB and #AARRGGBB)
         hexInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -216,12 +262,25 @@ class QrColorPickerDialog(
                         activeVal = newHsv[2]
                         updateUi(updateSliders = true, updateHex = false)
                     } catch (_: Exception) {}
+                } else if (text.length == 8) {
+                    try {
+                        val parsed = Color.parseColor("#$text")
+                        val newHsv = FloatArray(3)
+                        Color.colorToHSV(parsed, newHsv)
+                        activeHue = newHsv[0]
+                        activeSat = newHsv[1]
+                        activeVal = newHsv[2]
+                        activeAlpha = Color.alpha(parsed)
+                        updateUi(updateSliders = true, updateHex = false)
+                    } catch (_: Exception) {}
                 }
             }
         })
 
-        // Curated Presets
+        // Curated Presets (Transparent, EF Cyan, Black, White, etc.)
         val presets = intArrayOf(
+            Color.TRANSPARENT,
+            0xFF39C5BC.toInt(), // EF Parity Cyan
             Color.BLACK,
             Color.WHITE,
             0xFF18181B.toInt(), // Slate
@@ -256,6 +315,7 @@ class QrColorPickerDialog(
                     activeHue = newHsv[0]
                     activeSat = newHsv[1]
                     activeVal = newHsv[2]
+                    activeAlpha = Color.alpha(presetColor)
                     updateUi(updateSliders = true, updateHex = true)
                 }
             }
@@ -279,7 +339,14 @@ class QrColorPickerDialog(
     }
 
     private fun setSwatchColor(view: View, color: Int) {
-        val strokeColor = if (isColorVeryDark(color)) 0x40FFFFFF.toInt() else 0x30000000
+        val alpha = Color.alpha(color)
+        val strokeColor = if (alpha == 0) {
+            0xFF94A3B8.toInt()
+        } else if (isColorVeryDark(color)) {
+            0x40FFFFFF.toInt()
+        } else {
+            0x30000000
+        }
         val drawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 14 * context.resources.displayMetrics.density

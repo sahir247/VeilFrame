@@ -94,9 +94,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val finderStyle: FinderStyle = FinderStyle.CLASSIC,
         val finderOuterColor: Int? = null,
         val finderInnerColor: Int? = null,
-        val timingShape: ModuleShape = ModuleShape.ROUNDED,
+        val timingShape: ModuleShape = ModuleShape.SQUARE,
         val timingColor: Int? = null,
-        val alignShape: ModuleShape = ModuleShape.ROUNDED,
+        val alignShape: ModuleShape = ModuleShape.SQUARE,
         val alignmentColor: Int? = null,
 
         // Style-Specific Customization Parameters
@@ -1249,6 +1249,17 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateImageDataColors(darkColor: Int, lightColor: Int) {
         _state.value = _state.value.copy(imageDataDarkColor = darkColor, imageDataLightColor = lightColor)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateImageDataLightTransparent(transparent: Boolean) {
+        val lightColor = if (transparent) Color.TRANSPARENT else Color.WHITE
+        val allowTrans = if (transparent) true else _state.value.imageAllowTransparent
+        _state.value = _state.value.copy(
+            imageDataLightColor = lightColor,
+            imageAllowTransparent = allowTrans,
+            repairNotice = null
+        )
         regenerate(debounceMs = 0)
     }
 

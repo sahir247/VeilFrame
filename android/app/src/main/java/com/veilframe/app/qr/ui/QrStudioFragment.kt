@@ -569,6 +569,8 @@ class QrGenerateTabFragment : Fragment() {
         val imageAllowTransparentSwitch = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.qr_image_allow_transparent_switch)
         val imageDataScaleSlider      = view.findViewById<Slider>(R.id.qr_image_data_scale_slider)
         val imageDataScaleLabel       = view.findViewById<TextView>(R.id.qr_image_data_scale_label)
+        val imageDataLightColorBtn    = view.findViewById<MaterialButton>(R.id.qr_image_data_light_color_btn)
+        val imageTransparentLightBtn  = view.findViewById<MaterialButton>(R.id.qr_image_data_transparent_light_btn)
         val animatedExportLabel       = view.findViewById<TextView>(R.id.qr_animated_export_label)
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
@@ -1360,7 +1362,6 @@ class QrGenerateTabFragment : Fragment() {
 
         // IMAGE Specific Controls (Colors & Component Sizes)
         val imageDataDarkColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_data_dark_color_btn)
-        val imageDataLightColorBtn = view.findViewById<MaterialButton>(R.id.qr_image_data_light_color_btn)
 
         val imagePosSizeLabel = view.findViewById<TextView>(R.id.qr_image_pos_size_label)
         val imagePosSizeSlider = view.findViewById<Slider>(R.id.qr_image_pos_size_slider)
@@ -1386,6 +1387,10 @@ class QrGenerateTabFragment : Fragment() {
             pickColor(vm.state.value.imageDataLightColor) {
                 vm.updateImageDataColors(darkColor = vm.state.value.imageDataDarkColor, lightColor = it)
             }
+        }
+        imageTransparentLightBtn?.setOnClickListener {
+            val isCurrentlyTransparent = Color.alpha(vm.state.value.imageDataLightColor) == 0
+            vm.updateImageDataLightTransparent(!isCurrentlyTransparent)
         }
 
         imagePosSizeSlider?.value = vm.state.value.imagePositionSize.coerceIn(0.5f, 2.0f)
@@ -2101,6 +2106,17 @@ class QrGenerateTabFragment : Fragment() {
                         val dataScalePct = (state.imageDataScale * 100f).toInt().coerceIn(5, 100)
                         imageDataScaleSlider?.value = dataScalePct.toFloat()
                         imageDataScaleLabel?.text = "Data Module Scale: $dataScalePct%"
+
+                        val isLightTransparent = Color.alpha(state.imageDataLightColor) == 0
+                        if (isLightTransparent) {
+                            imageTransparentLightBtn?.text = "Light Modules: Transparent (Active)"
+                            imageTransparentLightBtn?.setIconResource(R.drawable.ic_check_circle)
+                            imageDataLightColorBtn?.text = "Light: Transparent"
+                        } else {
+                            imageTransparentLightBtn?.text = "Make Light Modules Transparent"
+                            imageTransparentLightBtn?.setIconResource(0)
+                            imageDataLightColorBtn?.text = "Data Light"
+                        }
 
                         // Contextual RESAMPLE controls: only show when IMAGE_RESAMPLE is active
                         containerResampleControls?.visibility = if (isResample) View.VISIBLE else View.GONE

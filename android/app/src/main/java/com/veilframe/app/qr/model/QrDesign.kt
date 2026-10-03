@@ -587,6 +587,52 @@ data class QrDesign(
     val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.PARITY_EF
 
     companion object {
+        /**
+         * Creates an authoritative EFQRCode 7.0.3 EFStyleImage configuration.
+         *
+         * Embeds [photo] behind the QR code (masked out of finder areas),
+         * renders scaled dark modules ([dataScale], defaulting to 0.35f),
+         * and makes light modules transparent ([lightColor], defaulting to [Color.TRANSPARENT])
+         * so the underlying photo shows through between modules while maintaining scannability.
+         */
+        fun efImage(
+            photo: Bitmap,
+            darkColor: Int = 0xFF39C5BC.toInt(),
+            lightColor: Int = Color.TRANSPARENT,
+            dataScale: Float = 0.35f,
+            allowTransparent: Boolean = true,
+            finderColor: Int = darkColor,
+            finderBackingColor: Int = Color.WHITE,
+            timingColor: Int = darkColor,
+            alignColor: Int = darkColor,
+            outputSize: Int = maxOf(photo.width, photo.height).coerceAtLeast(512),
+            quietZoneModules: Int = 1
+        ): QrDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = outputSize,
+            quietZoneModules = quietZoneModules,
+            imageDataScale = dataScale.coerceIn(0.05f, 1.0f),
+            dataColorDark = darkColor,
+            dataColorLight = lightColor,
+            allowTransparent = allowTransparent,
+            positionDarkColor = finderColor,
+            positionLightColor = finderBackingColor,
+            positionSize = 1.0f,
+            timingDarkColor = timingColor,
+            timingLightColor = lightColor,
+            timingSize = 1.0f,
+            alignDarkColor = alignColor,
+            alignLightColor = lightColor,
+            alignSize = 1.0f,
+            palette = PaletteStyle(foreground = darkColor, background = Color.WHITE),
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Memory(photo),
+                scaleMode = ImageScaleMode.ASPECT_FILL,
+                opacity = 1.0f,
+                allowTransparent = allowTransparent
+            )
+        )
+
         fun fromQrStyleParams(params: QrStyleParams): QrDesign {
             val def = QrStyleRegistry.get(params.style)
             val isRound = params.dataShape == com.veilframe.app.qr.ModuleShape.ROUND ||

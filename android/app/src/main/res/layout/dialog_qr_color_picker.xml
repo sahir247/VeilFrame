@@ -110,7 +110,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textCapCharacters|textNoSuggestions"
-                    android:maxLength="6"
+                    android:maxLength="8"
                     android:fontFamily="monospace"
                     android:imeOptions="actionDone" />
             </com.google.android.material.textfield.TextInputLayout>
@@ -248,6 +248,41 @@
 
         <SeekBar
             android:id="@+id/seekbar_brightness"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:max="100"
+            android:progress="100"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Opacity / Alpha Slider -->
+        <LinearLayout
+            android:id="@+id/layout_alpha_slider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Opacity / Alpha"
+                android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+            <TextView
+                android:id="@+id/label_alpha_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:fontFamily="monospace"
+                android:textAppearance="?attr/textAppearanceLabelSmall" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/seekbar_alpha"
             android:layout_width="match_parent"
             android:layout_height="32dp"
             android:max="100"
