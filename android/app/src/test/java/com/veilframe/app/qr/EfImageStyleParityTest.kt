@@ -836,4 +836,104 @@ class EfImageStyleParityTest {
         assertFalse("Canonical allowTransparent must be false", design.allowTransparent)
         assertEquals("Canonical quiet zone must be 1", 1, design.quietZoneModules)
     }
+
+    @Test
+    fun `ImageFillRenderer generates canonical IR with hole mask, backdrop, and rounded corners`() {
+        val matrix = QrMatrix("https://veilframe.app/parity-test", ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(100, 100)
+        val backdrop = createTestPhoto(200, 200)
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo), opacity = 0.85f),
+            imageFillBackgroundColor = Color.YELLOW,
+            imageFillMaskColor = 0x33000000,
+            backdropStyle = BackdropStyle(
+                color = Color.BLUE,
+                image = backdrop,
+                imageAlpha = 0.7f,
+                cornerRadius = 2.5f
+            ),
+            palette = PaletteStyle(background = Color.WHITE)
+        )
+        val geometry = QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 400,
+            outputHeight = 400,
+            quietZoneModules = 1
+        )
+
+        val renderer = com.veilframe.app.qr.renderer.ImageFillRenderer()
+        val ir = renderer.generateGeometry(matrix, design, geometry)
+
+        // 1. Verify defs contain #hole mask and #rounded-corners clipPath
+        assertTrue("IR defs must contain rounded-corners clipPath", ir.defs.any { it.contains("""id="rounded-corners"""") })
+        assertTrue("IR defs must contain hole mask", ir.defs.any { it.contains("""id="hole"""") })
+        assertTrue("IR masks map must contain rounded-corners", ir.masks.containsKey("rounded-corners"))
+        assertTrue("IR masks map must contain hole", ir.masks.containsKey("hole"))
+
+        // 2. Verify root nodes ordering:
+        // node 0: backdrop RectNode
+        // node 1: backdrop ImageNode with key="bi"
+        // node 2: GroupNode with maskId="hole"
+        assertTrue("Root node 0 must be backdrop RectNode", ir.rootNodes[0] is RectNode)
+        val bgRect = ir.rootNodes[0] as RectNode
+        assertEquals("Backdrop rect fill must be Color.BLUE", Color.BLUE, bgRect.fill)
+        assertTrue("Backdrop rect must set alwaysEmitOpacity", bgRect.alwaysEmitOpacity)
+
+        assertTrue("Root node 1 must be backdrop ImageNode", ir.rootNodes[1] is ImageNode)
+        val bgImg = ir.rootNodes[1] as ImageNode
+        assertEquals("Backdrop image must have key='bi'", "bi", bgImg.key)
+        assertEquals("Backdrop image opacity must match", 0.7f, bgImg.opacity, 0.01f)
+
+        assertTrue("Root node 2 must be GroupNode", ir.rootNodes[2] is com.veilframe.app.qr.geometry.GroupNode)
+        val group = ir.rootNodes[2] as com.veilframe.app.qr.geometry.GroupNode
+        assertEquals("GroupNode maskId must be hole", "hole", group.maskId)
+
+        // 3. Verify GroupNode children ordering: background -> image -> tint
+        assertEquals("GroupNode must have exactly 3 children", 3, group.children.size)
+        assertTrue("Child 0 must be RectNode (background)", group.children[0] is RectNode)
+        assertEquals("Child 0 fill must be YELLOW", Color.YELLOW, (group.children[0] as RectNode).fill)
+
+        assertTrue("Child 1 must be ImageNode (source image)", group.children[1] is ImageNode)
+        val srcNode = group.children[1] as ImageNode
+        assertEquals("Child 1 opacity must be 0.85f", 0.85f, srcNode.opacity, 0.01f)
+
+        assertTrue("Child 2 must be RectNode (tint overlay)", group.children[2] is RectNode)
+        assertEquals("Child 2 fill must be maskColor", 0x33000000, (group.children[2] as RectNode).fill)
+
+        // 4. Verify IrSvgRenderer DOM output
+        val svg = IrSvgRenderer.render(ir)
+        assertTrue("SVG must have rounded-corners clipPath", svg.contains("""<clipPath id="rounded-corners">"""))
+        assertTrue("SVG must wrap in rounded-corners group", svg.contains("""<g clip-path="url(#rounded-corners)">"""))
+        assertTrue("SVG must contain #hole mask", svg.contains("""<mask id="hole">"""))
+        assertTrue("SVG must contain backdrop image with key='bi'", svg.contains("""key="bi""""))
+        assertTrue("SVG must contain masked group", svg.contains("""mask="url(#hole)""""))
+
+        // 5. Verify IrCanvasRenderer executes without error
+        val canvasBmp = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(canvasBmp)
+        com.veilframe.app.qr.geometry.IrCanvasRenderer.render(ir, canvas)
+        assertNotNull(canvasBmp)
+    }
+
+    @Test
+    fun `ImageFill SvgExporter routes through canonical IR without backdrop`() {
+        val matrix = QrMatrix("https://veilframe.app/parity-test-no-bg", ErrorCorrectionLevel.M)
+        val photo = createTestPhoto(80, 80)
+        val design = QrDesign(
+            style = QrStyle.IMAGE_FILL,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo)),
+            imageFillBackgroundColor = Color.WHITE,
+            imageFillMaskColor = 0x1A000000,
+            backdropStyle = BackdropStyle(color = Color.TRANSPARENT, image = null, cornerRadius = 0f),
+            palette = PaletteStyle(background = Color.TRANSPARENT)
+        )
+
+        val svg = SvgExporter.generateSvg(matrix, design)
+        assertFalse("SVG must not contain rounded-corners when cornerRadius=0", svg.contains("""id="rounded-corners""""))
+        assertFalse("SVG must not contain key='bi' when no backdrop image", svg.contains("""key="bi""""))
+        assertTrue("SVG must contain mask #hole", svg.contains("""<mask id="hole">"""))
+        assertTrue("SVG must contain mask='url(#hole)'", svg.contains("""mask="url(#hole)""""))
+        assertTrue("SVG must contain 1.02 anti-gap rects", svg.contains("""width="1.02" height="1.02""""))
+    }
 }
