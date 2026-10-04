@@ -84,7 +84,18 @@ object SvgExporter {
         val dataFill = if (hasGradient) "url(#qrGrad)" else fgHex
 
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE_FILL) {
-            return generateImageFillSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
+            val effGeometry = geometry ?: com.veilframe.app.qr.model.QrGeometry.fromDesign(
+                matrixSize = matrix.size,
+                outputWidth = totalWidth.toFloat(),
+                outputHeight = totalHeight.toFloat(),
+                design = design
+            )
+            val ir = com.veilframe.app.qr.renderer.ImageFillRenderer().generateGeometry(
+                matrix = matrix,
+                design = design,
+                geometry = effGeometry
+            )
+            return com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.IMAGE) {
             val effGeometry = geometry ?: com.veilframe.app.qr.model.QrGeometry.fromDesign(
@@ -634,149 +645,6 @@ object SvgExporter {
         }
     }
 
-    private fun generateImageFillSvg(
-        matrix: QrMatrix,
-        design: QrDesign,
-        qzLeft: Double,
-        qzTop: Double,
-        qzRight: Double,
-        qzBottom: Double
-    ): String {
-        val totalWidth = matrix.size + qzLeft + qzRight
-        val totalHeight = matrix.size + qzTop + qzBottom
-        val twStr = formatCoord(totalWidth)
-        val thStr = formatCoord(totalHeight)
-        val qzLeftStr = formatCoord(qzLeft)
-        val qzTopStr = formatCoord(qzTop)
-
-        val sourceBmp = design.imageSource.bitmap
-        val preprocessedStatic = sourceBmp?.let {
-            com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
-                source = it,
-                canvasWidth = matrix.size.toFloat(),
-                canvasHeight = matrix.size.toFloat(),
-                mode = design.imageSource.scaleMode
-            )
-        }
-        val imageBase64 = preprocessedStatic?.let { bitmapToBase64(it) } ?: ""
-        val bgHex = toSvgColor(design.imageFillBackgroundColor).hex
-        val bgAlpha = formatOpacity(colorAlpha(design.imageFillBackgroundColor))
-        val maskHex = toSvgColor(design.imageFillMaskColor).hex
-        val maskAlpha = formatOpacity(colorAlpha(design.imageFillMaskColor))
-        val imageAlpha = formatOpacity(design.imageSource.opacity)
-
-        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
-        val crStr = formatCornerRadius(design.backdropStyle.cornerRadius)
-        val hasBackdropImg = design.backdropStyle.image != null
-
-        val sb = StringBuilder()
-        sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 $twStr $thStr" width="100%" height="100%">""").append("\n")
-        sb.append("  <defs>\n")
-        if (hasCornerClip) {
-            sb.append("""    <clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""").append("\n")
-        }
-        sb.append("""    <mask id="hole">""").append("\n")
-        sb.append("""      <rect x="0" y="0" width="$twStr" height="$thStr" fill="black"/>""").append("\n")
-        for (col in 0 until matrix.size) {
-            for (row in 0 until matrix.size) {
-                if (matrix.isDark(col, row)) {
-                    val mx = String.format(Locale.US, "%.2f", col + qzLeft - 0.01)
-                    val my = String.format(Locale.US, "%.2f", row + qzTop - 0.01)
-                    sb.append("""      <rect x="$mx" y="$my" width="1.02" height="1.02" fill="white"/>""").append("\n")
-                }
-            }
-        }
-        sb.append("    </mask>\n")
-        sb.append("  </defs>\n")
-
-        if (hasCornerClip) {
-            sb.append("""  <g clip-path="url(#rounded-corners)">""").append("\n")
-        }
-
-        // Quiet-zone background (paints entire viewBox per EFQRCode backdrop contract)
-        val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
-        val canvasBgAlpha = colorAlpha(resolvedBackdropColor)
-        val canvasBgHex = toSvgColor(resolvedBackdropColor).hex
-        val alphaStr = formatOpacity(canvasBgAlpha)
-        sb.append("""  <rect width="$twStr" height="$thStr" fill="$canvasBgHex" opacity="$alphaStr"/>""").append("\n")
-        if (hasBackdropImg) {
-            val preprocessedBackdrop = com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
-                source = design.backdropStyle.image!!,
-                canvasWidth = totalWidth.toFloat(),
-                canvasHeight = totalHeight.toFloat(),
-                mode = design.backdropStyle.imageScaleMode
-            )
-            val biB64 = bitmapToBase64(preprocessedBackdrop)
-            val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
-            sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
-        }
-
-        sb.append("""  <g x="0" y="0" width="$twStr" height="$thStr" mask="url(#hole)">""").append("\n")
-        sb.append("""    <rect x="0" y="0" width="$twStr" height="$thStr" fill="$bgHex" opacity="$bgAlpha"/>""").append("\n")
-
-        val isAnimated = design.imageSource.isAnimated || (design.imageSource.animatedFrames?.isNotEmpty() == true)
-        val animatedFrames = design.imageSource.animatedFrames
-        val frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList()
-
-        if (isAnimated && animatedFrames != null && animatedFrames.isNotEmpty()) {
-            val preprocessedFrames = animatedFrames.map { frame ->
-                com.veilframe.app.qr.image.EfImagePreprocessor.preprocess(
-                    source = frame,
-                    canvasWidth = matrix.size.toFloat(),
-                    canvasHeight = matrix.size.toFloat(),
-                    mode = design.imageSource.scaleMode
-                )
-            }
-            val base64Frames = preprocessedFrames.map { bitmapToBase64(it) }
-            val delaysMs = if (frameDelaysMs.isNotEmpty()) frameDelaysMs else List(base64Frames.size) { 100 }
-            val totalDurationMs = maxOf(1, delaysMs.sum())
-            val totalDurationSec = totalDurationMs / 1000.0
-            val framePrefix = "${com.veilframe.app.qr.geometry.VeilIconPipeline.nextUniqueMark()}fm"
-
-            sb.append("    <g>\n")
-            sb.append("      <defs>\n")
-            for ((idx, b64) in base64Frames.withIndex()) {
-                sb.append("""        <image id="$framePrefix$idx" xlink:href="data:image/png;base64,$b64" x="$qzLeftStr" y="$qzTopStr" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
-            }
-            sb.append("      </defs>\n")
-
-            var accumulatedMs = 0
-            val keyTimes = mutableListOf<String>()
-            for (delay in delaysMs) {
-                val fraction = accumulatedMs.toDouble() / totalDurationMs
-                keyTimes.add(String.format(Locale.US, "%.3f", fraction))
-                accumulatedMs += delay
-            }
-            val valuesStr = base64Frames.indices.joinToString(";") { "#$framePrefix$it" }
-            val keyTimesStr = keyTimes.joinToString(";")
-            val durStr = String.format(Locale.US, "%.3f", totalDurationSec)
-
-            sb.append("""      <use xlink:href="#${framePrefix}0">""").append("\n")
-            sb.append("        <animate\n")
-            sb.append("""          attributeName="xlink:href"""").append("\n")
-            sb.append("""          values="$valuesStr"""").append("\n")
-            sb.append("""          keyTimes="$keyTimesStr"""").append("\n")
-            sb.append("""          dur="${durStr}s"""").append("\n")
-            sb.append("""          repeatCount="indefinite"""").append("\n")
-            sb.append("""          calcMode="discrete"""").append("\n")
-            sb.append("        />\n")
-            sb.append("      </use>\n")
-            sb.append("    </g>\n")
-        } else if (imageBase64.isNotEmpty()) {
-            sb.append("""    <image href="data:image/png;base64,$imageBase64" x="$qzLeftStr" y="$qzTopStr" width="${matrix.size}" height="${matrix.size}" opacity="$imageAlpha"/>""").append("\n")
-        }
-        sb.append("""    <rect x="0" y="0" width="$twStr" height="$thStr" fill="$maskHex" opacity="$maskAlpha"/>""").append("\n")
-        sb.append("  </g>\n")
-
-        if (hasCornerClip) {
-            sb.append("  </g>\n")
-        }
-
-        appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
-        sb.append("</svg>")
-        return sb.toString()
-    }
 
     private fun generate25DSvg(
         matrix: QrMatrix,

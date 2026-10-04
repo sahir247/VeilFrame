@@ -153,10 +153,14 @@ object IrSvgRenderer {
                 val href = if (base64.startsWith("#")) base64 else "data:image/png;base64,$base64"
                 val keyAttr = if (node.key != null) " key=\"${node.key}\"" else ""
                 val xlinkAttr = if (node.key != null) " xlink:href=\"$href\"" else ""
+                val xStr = formatIntOrCoord(node.x)
+                val yStr = formatIntOrCoord(node.y)
+                val wStr = formatIntOrCoord(node.width)
+                val hStr = formatIntOrCoord(node.height)
                 sb.append(pad).append(String.format(
                     Locale.US,
-                    "<image%s%s href=\"%s\" x=\"%.4f\" y=\"%.4f\" width=\"%.4f\" height=\"%.4f\"",
-                    keyAttr, xlinkAttr, href, node.x, node.y, node.width, node.height
+                    "<image%s%s href=\"%s\" x=\"%s\" y=\"%s\" width=\"%s\" height=\"%s\"",
+                    keyAttr, xlinkAttr, href, xStr, yStr, wStr, hStr
                 ))
                 if (node.opacity < 1f || node.key != null) {
                     sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
@@ -214,7 +218,11 @@ object IrSvgRenderer {
                     for ((idx, base64) in base64List.withIndex()) {
                         val href = if (base64.startsWith("#") || base64.startsWith("data:")) base64 else "data:image/png;base64,$base64"
                         sb.append(pad).append("    <image id=\"").append(framePrefix).append(idx).append("\" xlink:href=\"").append(href).append("\"")
-                        sb.append(String.format(Locale.US, " width=\"%.4f\" height=\"%.4f\" x=\"%.4f\" y=\"%.4f\"", node.width, node.height, node.x, node.y))
+                        val wStr = formatIntOrCoord(node.width)
+                        val hStr = formatIntOrCoord(node.height)
+                        val xStr = formatIntOrCoord(node.x)
+                        val yStr = formatIntOrCoord(node.y)
+                        sb.append(String.format(Locale.US, " width=\"%s\" height=\"%s\" x=\"%s\" y=\"%s\"", wStr, hStr, xStr, yStr))
                         if (node.opacity < 1f) {
                             sb.append(String.format(Locale.US, " opacity=\"%s\"", formatOpacity(node.opacity)))
                         }

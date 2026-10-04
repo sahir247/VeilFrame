@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
+import java.util.Locale
 import com.veilframe.app.qr.QrStyleParams
 import com.veilframe.app.qr.geometry.AnimatedImageNode
 import com.veilframe.app.qr.geometry.GroupNode
@@ -49,6 +50,8 @@ class ImageFillRenderer : IrBackedQrRenderer {
         val width = geometry.outputWidthFloat
         val height = geometry.outputHeightFloat
         val nodes = mutableListOf<QrGeometryNode>()
+        val defs = mutableListOf<String>()
+        val masks = mutableMapOf<String, QrMaskDefinition>()
 
         val sourceBmp = design.imageSource.bitmap
         val bgColor = design.imageFillBackgroundColor
@@ -58,9 +61,25 @@ class ImageFillRenderer : IrBackedQrRenderer {
         // 1. Base canvas background & Backdrop (EF generic backdrop contract)
         val resolvedBackdropColor = design.backdropStyle.color ?: design.palette.background
         val bgAlpha = (resolvedBackdropColor ushr 24) and 0xFF
-        val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * mSize else 0f
+        val bgAlphaFloat = bgAlpha / 255f
+        val bgHex = String.format(Locale.US, "#%02X%02X%02X", (resolvedBackdropColor ushr 16) and 0xFF, (resolvedBackdropColor ushr 8) and 0xFF, resolvedBackdropColor and 0xFF)
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        val crPx = if (hasCornerClip) design.backdropStyle.cornerRadius * mSize else 0f
         if (bgAlpha > 0) {
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = crPx, ry = crPx, fill = resolvedBackdropColor))
+            nodes.add(
+                RectNode(
+                    x = 0f,
+                    y = 0f,
+                    width = width,
+                    height = height,
+                    rx = crPx,
+                    ry = crPx,
+                    fill = resolvedBackdropColor,
+                    fillString = bgHex,
+                    opacity = bgAlphaFloat,
+                    alwaysEmitOpacity = true
+                )
+            )
         }
 
         val backdropImg = design.backdropStyle.image
@@ -81,12 +100,26 @@ class ImageFillRenderer : IrBackedQrRenderer {
                     bitmap = preprocessedBackdrop,
                     base64Data = base64,
                     opacity = design.backdropStyle.imageAlpha,
-                    preserveAspectRatio = ""
+                    preserveAspectRatio = "",
+                    key = "bi"
                 )
             )
         }
 
+        if (hasCornerClip) {
+            val crStr = IrSvgRenderer.formatCoord(crPx)
+            val twStr = IrSvgRenderer.formatCoord(width)
+            val thStr = IrSvgRenderer.formatCoord(height)
+            defs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
+            val cornerPath = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, width, height, crPx, crPx, android.graphics.Path.Direction.CW)
+            }
+            masks["rounded-corners"] = QrMaskDefinition("rounded-corners", clipPath = cornerPath)
+        }
+
         val antiGap = 0.01f * mSize
+        val w = mSize + 2 * antiGap
+        val h = mSize + 2 * antiGap
         // 2. Continuous masked group with hole mask
         val maskDef = buildString {
             append("""<mask id="hole">""")
@@ -96,18 +129,29 @@ class ImageFillRenderer : IrBackedQrRenderer {
                     if (matrix.isDark(col, row)) {
                         val left = ox + col * mSize - antiGap
                         val top = oy + row * mSize - antiGap
-                        val w = mSize + 2 * antiGap
-                        val h = mSize + 2 * antiGap
                         append("""<rect x="$left" y="$top" width="$w" height="$h" fill="white"/>""")
                     }
                 }
             }
             append("""</mask>""")
         }
+        defs.add(maskDef)
 
         val groupChildren = mutableListOf<QrGeometryNode>()
         // 2a. Background inside dark modules
-        groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = bgColor))
+        val fillBgAlphaFloat = ((bgColor ushr 24) and 0xFF) / 255f
+        val fillBgHex = String.format(Locale.US, "#%02X%02X%02X", (bgColor ushr 16) and 0xFF, (bgColor ushr 8) and 0xFF, bgColor and 0xFF)
+        groupChildren.add(
+            RectNode(
+                x = ox,
+                y = oy,
+                width = n * mSize,
+                height = n * mSize,
+                fill = bgColor,
+                fillString = fillBgHex,
+                opacity = fillBgAlphaFloat
+            )
+        )
 
         // 2b. Scaled source image (preprocessed via EfImagePreprocessor matching EFQRCodeStyle.swift:269)
         // EF parity: preprocessed image already matches canvas ratio; preserveAspectRatio is omitted/empty.
@@ -169,7 +213,19 @@ class ImageFillRenderer : IrBackedQrRenderer {
         }
 
         // 2c. Overlay mask tint
-        groupChildren.add(RectNode(x = ox, y = oy, width = n * mSize, height = n * mSize, fill = maskColor))
+        val fillMaskAlphaFloat = ((maskColor ushr 24) and 0xFF) / 255f
+        val fillMaskHex = String.format(Locale.US, "#%02X%02X%02X", (maskColor ushr 16) and 0xFF, (maskColor ushr 8) and 0xFF, maskColor and 0xFF)
+        groupChildren.add(
+            RectNode(
+                x = ox,
+                y = oy,
+                width = canvasW,
+                height = canvasH,
+                fill = maskColor,
+                fillString = fillMaskHex,
+                opacity = fillMaskAlphaFloat
+            )
+        )
 
         val stencilPath = android.graphics.Path().apply {
             for (col in 0 until n) {
@@ -187,10 +243,7 @@ class ImageFillRenderer : IrBackedQrRenderer {
 
         nodes.add(GroupNode(children = groupChildren, maskId = "hole", clipPath = stencilPath))
 
-        val defs = mutableListOf(maskDef)
-        val masks = mutableMapOf<String, QrMaskDefinition>(
-            "hole" to QrMaskDefinition(id = "hole", clipPath = stencilPath)
-        )
+        masks["hole"] = QrMaskDefinition(id = "hole", clipPath = stencilPath)
 
         // 3. Center Logo (EFQRCodeStyleImageFill.swift:263-276 writeIcon parity)
         com.veilframe.app.qr.geometry.VeilIconPipeline.appendIconNodes(
