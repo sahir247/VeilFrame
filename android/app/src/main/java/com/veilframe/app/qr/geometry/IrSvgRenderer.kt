@@ -198,8 +198,11 @@ object IrSvgRenderer {
                 }
                 if (base64List.isNotEmpty()) {
                     val framePrefix = node.framePrefix
-                    val delaysMs = if (node.frameDelaysMs.isNotEmpty()) node.frameDelaysMs else List(base64List.size) { 100 }
-                    val totalDurationMs = maxOf(1, delaysMs.sum())
+                    val numFrames = base64List.size
+                    val normalizedDelaysMs = List(numFrames) { i ->
+                        maxOf(10, node.frameDelaysMs.getOrNull(i) ?: 100)
+                    }
+                    val totalDurationMs = maxOf(1, normalizedDelaysMs.sum())
                     val totalDurationSec = totalDurationMs / 1000.0
 
                     val maskAttr = if (node.maskId != null) " mask=\"url(#${node.maskId})\"" else ""
@@ -224,7 +227,7 @@ object IrSvgRenderer {
 
                     var accumulatedMs = 0
                     val keyTimes = mutableListOf<String>()
-                    for (delay in delaysMs) {
+                    for (delay in normalizedDelaysMs) {
                         val fraction = accumulatedMs.toDouble() / totalDurationMs
                         keyTimes.add(String.format(Locale.US, "%.3f", fraction))
                         accumulatedMs += delay
@@ -249,7 +252,11 @@ object IrSvgRenderer {
             is AnimatedGroupNode -> {
                 if (node.frameNodes.isNotEmpty()) {
                     val framePrefix = node.framePrefix
-                    val totalDurationMs = maxOf(1, node.frameDelaysMs.sum())
+                    val numFrames = node.frameNodes.size
+                    val normalizedDelaysMs = List(numFrames) { i ->
+                        maxOf(10, node.frameDelaysMs.getOrNull(i) ?: 100)
+                    }
+                    val totalDurationMs = maxOf(1, normalizedDelaysMs.sum())
                     val totalDurationSec = totalDurationMs / 1000.0
 
                     sb.append(pad).append("<g>\n")
@@ -267,7 +274,7 @@ object IrSvgRenderer {
                     val valuesStr = frameIds.joinToString(";")
                     var accumulatedMs = 0
                     val keyTimes = mutableListOf<String>()
-                    for ((idx, delay) in node.frameDelaysMs.withIndex()) {
+                    for (delay in normalizedDelaysMs) {
                         val fraction = accumulatedMs.toDouble() / totalDurationMs
                         keyTimes.add(String.format(Locale.US, "%.3f", fraction))
                         accumulatedMs += delay

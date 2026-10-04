@@ -27,9 +27,12 @@ import com.veilframe.app.qr.QrStyleParams
  *    colors, shapes, and scale.
  * 8. Center Logo: Rendered centered on top if present.
  */
-class ImageRenderer : QrRenderer {
+class ImageRenderer : IrBackedQrRenderer {
 
-    fun generateGeometry(
+    override val ownsBackdrop: Boolean
+        get() = true
+
+    override fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
         geometry: QrGeometry

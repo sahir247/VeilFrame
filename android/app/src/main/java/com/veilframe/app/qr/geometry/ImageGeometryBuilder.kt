@@ -3,7 +3,6 @@ package com.veilframe.app.qr.geometry
 import android.graphics.Color
 import android.graphics.RectF
 import java.util.Locale
-import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
@@ -81,7 +80,6 @@ object ImageGeometryBuilder {
                 canvasHeight = height,
                 mode = design.backdropStyle.imageScaleMode
             )
-            val base64 = IrSvgRenderer.bitmapToBase64(preprocessedBackdrop)
             nodes.add(
                 ImageNode(
                     x = 0f,
@@ -89,7 +87,6 @@ object ImageGeometryBuilder {
                     width = width,
                     height = height,
                     bitmap = preprocessedBackdrop,
-                    base64Data = base64,
                     opacity = design.backdropStyle.imageAlpha,
                     preserveAspectRatio = "",
                     key = "bi"
@@ -153,12 +150,20 @@ object ImageGeometryBuilder {
             val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize)
             val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize)
 
+            val x0Str = IrSvgRenderer.formatCoord(x0)
+            val y0Str = IrSvgRenderer.formatCoord(y0)
+            val canvasWStr = IrSvgRenderer.formatCoord(canvasW)
+            val canvasHStr = IrSvgRenderer.formatCoord(canvasH)
+            val finder8Str = IrSvgRenderer.formatCoord(8 * mSize)
+            val trXStr = IrSvgRenderer.formatCoord(x0 + (n - 8) * mSize)
+            val blYStr = IrSvgRenderer.formatCoord(y0 + (n - 8) * mSize)
+
             defs.add(
                 """<mask id="hole">
-    <rect x="${SvgExporter.formatCoord(x0.toDouble())}" y="${SvgExporter.formatCoord(y0.toDouble())}" width="${SvgExporter.formatCoord(canvasW.toDouble())}" height="${SvgExporter.formatCoord(canvasH.toDouble())}" fill="white"/>
-    <rect x="${SvgExporter.formatCoord(x0.toDouble())}" y="${SvgExporter.formatCoord(y0.toDouble())}" width="${SvgExporter.formatCoord((8 * mSize).toDouble())}" height="${SvgExporter.formatCoord((8 * mSize).toDouble())}" fill="black"/>
-    <rect x="${SvgExporter.formatCoord((x0 + (n - 8) * mSize).toDouble())}" y="${SvgExporter.formatCoord(y0.toDouble())}" width="${SvgExporter.formatCoord((8 * mSize).toDouble())}" height="${SvgExporter.formatCoord((8 * mSize).toDouble())}" fill="black"/>
-    <rect x="${SvgExporter.formatCoord(x0.toDouble())}" y="${SvgExporter.formatCoord((y0 + (n - 8) * mSize).toDouble())}" width="${SvgExporter.formatCoord((8 * mSize).toDouble())}" height="${SvgExporter.formatCoord((8 * mSize).toDouble())}" fill="black"/>
+    <rect x="$x0Str" y="$y0Str" width="$canvasWStr" height="$canvasHStr" fill="white"/>
+    <rect x="$x0Str" y="$y0Str" width="$finder8Str" height="$finder8Str" fill="black"/>
+    <rect x="$trXStr" y="$y0Str" width="$finder8Str" height="$finder8Str" fill="black"/>
+    <rect x="$x0Str" y="$blYStr" width="$finder8Str" height="$finder8Str" fill="black"/>
   </mask>"""
             )
             masks["hole"] = QrMaskDefinition(
@@ -175,7 +180,6 @@ object ImageGeometryBuilder {
                         mode = design.imageSource.scaleMode
                     )
                 }
-                val base64Frames = preprocessedFrames.map { IrSvgRenderer.bitmapToBase64(it) }
                 nodes.add(
                     AnimatedImageNode(
                         x = x0,
@@ -183,7 +187,6 @@ object ImageGeometryBuilder {
                         width = canvasW,
                         height = canvasH,
                         frames = preprocessedFrames,
-                        base64Frames = base64Frames,
                         frameDelaysMs = design.imageSource.frameDelaysMs ?: emptyList(),
                         opacity = imageAlpha,
                         preserveAspectRatio = "",
@@ -296,10 +299,15 @@ object ImageGeometryBuilder {
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
         if (hasCornerClip) {
             val crPx = design.backdropStyle.cornerRadius * mSize
-            val crStr = SvgExporter.formatCornerRadius(crPx)
-            val twStr = SvgExporter.formatCoord(width.toDouble())
-            val thStr = SvgExporter.formatCoord(height.toDouble())
+            val crStr = IrSvgRenderer.formatCoord(crPx)
+            val twStr = IrSvgRenderer.formatCoord(width)
+            val thStr = IrSvgRenderer.formatCoord(height)
             defs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
+
+            val cornerPath = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, width, height, crPx, crPx, android.graphics.Path.Direction.CW)
+            }
+            masks["rounded-corners"] = QrMaskDefinition("rounded-corners", clipPath = cornerPath)
         }
 
         return QrGeometryIr(
@@ -356,7 +364,7 @@ object ImageGeometryBuilder {
             FinderStyle.CIRCLE -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 1.0f * sizeFactor * mSize
-                val swStr = SvgExporter.formatCoord(sw.toDouble())
+                val swStr = IrSvgRenderer.formatCoord(sw)
                 nodes.add(
                     CircleNode(
                         cx = centerPx,
@@ -392,8 +400,8 @@ object ImageGeometryBuilder {
             FinderStyle.PLANETS -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 0.15f * mSize
-                val swStr = SvgExporter.formatCoord(sw.toDouble())
-                val dash = SvgExporter.formatCoord((0.5f * mSize).toDouble())
+                val swStr = IrSvgRenderer.formatCoord(sw)
+                val dash = IrSvgRenderer.formatCoord(0.5f * mSize)
                 nodes.add(
                     CircleNode(
                         cx = centerPx,
@@ -427,7 +435,7 @@ object ImageGeometryBuilder {
             else -> {
                 nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 1.0f * sizeFactor * mSize
-                val swStr = SvgExporter.formatCoord(sw.toDouble())
+                val swStr = IrSvgRenderer.formatCoord(sw)
                 nodes.add(
                     RectNode(
                         x = centerPx - 3.0f * mSize,

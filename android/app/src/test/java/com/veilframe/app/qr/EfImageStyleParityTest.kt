@@ -14,6 +14,7 @@ import com.veilframe.app.qr.geometry.CircleNode
 import com.veilframe.app.qr.geometry.ImageGeometryBuilder
 import com.veilframe.app.qr.geometry.ImageNode
 import com.veilframe.app.qr.geometry.IrSvgRenderer
+import com.veilframe.app.qr.geometry.QrGeometryIr
 import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.model.ModuleShape
@@ -601,26 +602,193 @@ class EfImageStyleParityTest {
 
         val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
 
-        // 1. In EF's single x-major / y-minor traversal:
-        // TR Finder center is at col = n - 4, row = 3.
-        // Therefore, ALL modules from col 0 up to n - 5 must appear in ir.rootNodes BEFORE TR finder!
-        val trFinderBacking = ir.rootNodes.filterIsInstance<RectNode>().firstOrNull {
+        // 1. Single EF x-major / y-minor traversal verification (proof against split-loop regression):
+        // Data modules are scaled to 0.5 * mSize; finders are 8x8, 6x6, and 3x3.
+        val dataScale = 0.5f
+        val dataModuleSize = dataScale * mSize
+        val dataOffset = (1f - dataScale) / 2f * mSize
+
+        // Find TL finder 8x8 backing (emitted at col = 3, row = 3)
+        val tlFinderBacking = ir.rootNodes.filterIsInstance<RectNode>().first {
+            Math.abs(it.width - 8 * mSize) < 0.01f && Math.abs(it.x - ox) < 0.01f && Math.abs(it.y - oy) < 0.01f
+        }
+        val tlIdx = ir.rootNodes.indexOf(tlFinderBacking)
+
+        // Under old split-loop implementation (TL -> BL -> TR -> timing -> align -> data),
+        // all finders were emitted in step 1, so NO data modules preceded the TL finder.
+        // In EF's single column-major traversal, dark data/format modules from col 0, 1, 2
+        // MUST precede the TL finder center at (col=3, row=3).
+        val dataModulesBeforeTl = ir.rootNodes.subList(0, tlIdx)
+            .filterIsInstance<RectNode>()
+            .filter { Math.abs(it.width - dataModuleSize) < 0.01f }
+        assertTrue("Data modules from col < 3 must appear before TL finder in single column-major traversal", dataModulesBeforeTl.isNotEmpty())
+
+        // Find TR finder 8x8 backing (emitted at col = n - 4, row = 3)
+        val trFinderBacking = ir.rootNodes.filterIsInstance<RectNode>().first {
             Math.abs(it.width - 8 * mSize) < 0.01f && Math.abs(it.x - (ox + (n - 8) * mSize)) < 0.01f && Math.abs(it.y - oy) < 0.01f
         }
-        val trIdx = ir.rootNodes.indexOf(trFinderBacking!!)
+        val trIdx = ir.rootNodes.indexOf(trFinderBacking)
 
-        // Ensure nodes prior to TR finder include modules from earlier columns (col < n - 4)
-        val nodesBeforeTr = ir.rootNodes.subList(0, trIdx)
-        val earlyColNodes = nodesBeforeTr.filterIsInstance<RectNode>().filter {
-            val col = Math.round((it.x - ox) / mSize)
-            col in 0 until (n - 4)
+        val dataModulesBeforeTr = ir.rootNodes.subList(0, trIdx)
+            .filterIsInstance<RectNode>()
+            .filter { Math.abs(it.width - dataModuleSize) < 0.01f }
+        val colsBeforeTr = dataModulesBeforeTr.map {
+            Math.round((it.x - (ox + dataOffset)) / mSize)
+        }.toSet()
+        assertTrue("Data modules from columns 0..2 must precede TR finder", colsBeforeTr.any { it in 0..2 })
+        assertTrue("Data modules from central columns (4..n-5) must precede TR finder", colsBeforeTr.any { it in 4 until (n - 4) })
+
+        // Verify full x-major / y-minor coordinate monotonicity across all data modules
+        val allDataModules = ir.rootNodes
+            .filterIsInstance<RectNode>()
+            .filter { Math.abs(it.width - dataModuleSize) < 0.01f }
+        val coords = allDataModules.map {
+            val c = Math.round((it.x - (ox + dataOffset)) / mSize)
+            val r = Math.round((it.y - (oy + dataOffset)) / mSize)
+            c to r
         }
-        assertTrue("Earlier column modules must precede TR finder in single column-major traversal", earlyColNodes.isNotEmpty())
+        for (i in 0 until coords.size - 1) {
+            val (c1, r1) = coords[i]
+            val (c2, r2) = coords[i + 1]
+            assertTrue("Data module traversal must be x-major (col non-decreasing: $c1 -> $c2)", c2 >= c1)
+            if (c1 == c2) {
+                assertTrue("Data module traversal must be y-minor (row increasing in col $c1: $r1 -> $r2)", r2 > r1)
+            }
+        }
 
         // 2. Canonical IR unification:
         // SvgExporter must generate SVG identical to IrSvgRenderer.render(ImageGeometryBuilder.generateGeometry)
         val directSvg = SvgExporter.generateSvg(matrix, design, geometry = geometry)
         val irSvg = IrSvgRenderer.render(ir)
         assertEquals("SvgExporter and IrSvgRenderer must produce identical SVG for Image style", irSvg, directSvg)
+    }
+
+    @Test
+    fun `ImageRenderer ownsBackdrop contract prevents double-compositing and ensures unified corner clipping`() {
+        val renderer = ImageRenderer()
+        assertTrue("ImageRenderer must implement IrBackedQrRenderer", renderer is com.veilframe.app.qr.renderer.IrBackedQrRenderer)
+        assertTrue("ImageRenderer must declare ownsBackdrop = true", renderer.ownsBackdrop)
+
+        val content = "https://veilframe.app/backdrop-ownership-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.M)
+        val translucentColor = 0x80FF0000.toInt() // 50% red
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            palette = PaletteStyle(background = translucentColor),
+            backdropStyle = BackdropStyle(
+                color = translucentColor,
+                cornerRadius = 6f
+            )
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = renderer.generateGeometry(matrix, design, geometry)
+
+        // Backdrop must be emitted once in IR with correct scaled corner radius
+        val bgRects = ir.rootNodes.filterIsInstance<RectNode>().filter { it.alwaysEmitOpacity && it.x == 0f && it.y == 0f }
+        assertEquals("IR must contain exactly one document backdrop RectNode", 1, bgRects.size)
+        assertEquals("Backdrop rx must equal cornerRadius * moduleSize", 6f * geometry.moduleSize, bgRects[0].rx, 0.01f)
+
+        // IR masks must carry the rounded-corners definition
+        assertTrue("IR masks must contain rounded-corners clip definition", ir.masks.containsKey("rounded-corners"))
+        assertNotNull(ir.masks["rounded-corners"]?.clipPath)
+    }
+
+    @Test
+    fun `Animation SMIL normalization guarantees keyTimes values count identity and positive durations`() {
+        val baseBmp = createTestPhoto(100, 100)
+        // Mismatched delays: 1 delay provided for 3 frames
+        val animNode = AnimatedImageNode(
+            x = 0f,
+            y = 0f,
+            width = 100f,
+            height = 100f,
+            frames = listOf(baseBmp, baseBmp, baseBmp),
+            frameDelaysMs = listOf(0), // non-positive delay and length mismatch (1 vs 3)
+            maskId = "hole"
+        )
+        val ir = QrGeometryIr(
+            width = 100f,
+            height = 100f,
+            defs = listOf("""<mask id="hole"><rect width="100" height="100" fill="white"/></mask>"""),
+            rootNodes = listOf(animNode)
+        )
+        val svg = IrSvgRenderer.render(ir)
+
+        // Parse keyTimes and values
+        val valuesMatch = Regex("""values="([^"]+)"""").find(svg)
+        val keyTimesMatch = Regex("""keyTimes="([^"]+)"""").find(svg)
+        val durMatch = Regex("""dur="([^"]+)"""").find(svg)
+
+        assertNotNull("SVG must include values attribute in <animate>", valuesMatch)
+        assertNotNull("SVG must include keyTimes attribute in <animate>", keyTimesMatch)
+        assertNotNull("SVG must include dur attribute in <animate>", durMatch)
+
+        val valuesCount = valuesMatch!!.groupValues[1].split(";").size
+        val keyTimesCount = keyTimesMatch!!.groupValues[1].split(";").size
+
+        assertEquals("keyTimes count must strictly match values count (3 frames)", 3, valuesCount)
+        assertEquals("keyTimes count must equal values count for W3C SMIL validity", valuesCount, keyTimesCount)
+        assertTrue("Duration must be strictly positive", durMatch!!.groupValues[1].replace("s", "").toDouble() > 0.0)
+    }
+
+    @Test
+    fun `EF Image style generates canonical XML DOM matching EFQRCode structural specification`() {
+        val content = "https://veilframe.app/ef-dom-golden"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val photo = createTestPhoto(400, 400)
+        val design = QrDesign.efImagePresetReference(photo = photo)
+        val geometry = QrGeometry.fromDesign(n, 600, 600, design)
+
+        val svg = SvgExporter.generateSvg(matrix, design, geometry = geometry)
+
+        // Independent XML DOM parsing
+        val docBuilder = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+        }.newDocumentBuilder()
+        val doc = docBuilder.parse(java.io.ByteArrayInputStream(svg.toByteArray(Charsets.UTF_8)))
+        val root = doc.documentElement
+
+        assertEquals("svg", root.nodeName)
+        assertEquals("0 0 600 600", root.getAttribute("viewBox"))
+
+        // 1. Check <mask id="hole"> with 3 8x8 black cutouts
+        val maskList = doc.getElementsByTagName("mask")
+        var holeMaskElem: org.w3c.dom.Element? = null
+        for (i in 0 until maskList.length) {
+            val el = maskList.item(i) as org.w3c.dom.Element
+            if (el.getAttribute("id") == "hole") {
+                holeMaskElem = el
+                break
+            }
+        }
+        assertNotNull("<mask id=\"hole\"> must exist in SVG DOM", holeMaskElem)
+
+        val maskRects = holeMaskElem!!.getElementsByTagName("rect")
+        var blackCutouts = 0
+        for (i in 0 until maskRects.length) {
+            val r = maskRects.item(i) as org.w3c.dom.Element
+            if (r.getAttribute("fill") == "black") blackCutouts++
+        }
+        assertEquals("Hole mask must contain exactly 3 black cutout rectangles", 3, blackCutouts)
+
+        // 2. Check <image> referencing mask="url(#hole)"
+        val imgList = doc.getElementsByTagName("image")
+        assertTrue("Must contain <image> element", imgList.length > 0)
+        val mainImage = imgList.item(0) as org.w3c.dom.Element
+        assertEquals("url(#hole)", mainImage.getAttribute("mask"))
+
+        // 3. Check scaled data modules exist with width ~0.35 * moduleSize
+        val expectedDataWidth = 0.35f * geometry.moduleSize
+        val allRects = doc.getElementsByTagName("rect")
+        var scaledDataCount = 0
+        for (i in 0 until allRects.length) {
+            val r = allRects.item(i) as org.w3c.dom.Element
+            val w = r.getAttribute("width").toFloatOrNull() ?: continue
+            if (Math.abs(w - expectedDataWidth) < 0.1f) {
+                scaledDataCount++
+            }
+        }
+        assertTrue("Scaled data modules (~0.35x) must be present in DOM", scaledDataCount > 0)
     }
 }

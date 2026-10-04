@@ -98,6 +98,43 @@ class EfRasterArchitectureTest {
     }
 
     @Test
+    fun testSkiaEfRasterBackendFailsClosedOnNonPositiveDimensions() {
+        val backend = SkiaEfRasterBackend
+        val source = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
+
+        // 1. Resize with zero or negative width/height
+        try {
+            backend.resize(source, 0, 10)
+            fail("Expected EfRasterException for zero width in resize")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("dimensions must be positive") == true)
+        }
+
+        try {
+            backend.resize(source, 10, -5)
+            fail("Expected EfRasterException for negative height in resize")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("dimensions must be positive") == true)
+        }
+
+        // 2. DrawInto with zero or negative width/height
+        val dstRect = RectF(0f, 0f, 10f, 10f)
+        try {
+            backend.drawInto(source, 0, 10, dstRect)
+            fail("Expected EfRasterException for zero destination width in drawInto")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("dimensions must be positive") == true)
+        }
+
+        try {
+            backend.drawInto(source, 10, -1, dstRect)
+            fail("Expected EfRasterException for negative destination height in drawInto")
+        } catch (e: EfRasterException) {
+            assertTrue(e.message?.contains("dimensions must be positive") == true)
+        }
+    }
+
+    @Test
     fun testCGRectIntegralCroppingSemantics() {
         val backend = SkiaEfRasterBackend
         val source = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)

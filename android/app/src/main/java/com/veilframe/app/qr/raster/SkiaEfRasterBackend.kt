@@ -25,21 +25,22 @@ object SkiaEfRasterBackend : EfRasterBackend {
     }
 
     override fun resize(source: Bitmap, width: Int, height: Int): Bitmap {
+        if (width <= 0 || height <= 0) {
+            throw EfRasterException("Invalid raster dimensions ($width x $height): dimensions must be positive")
+        }
         if (width == source.width && height == source.height) return source
-        val w = width.coerceAtLeast(1)
-        val h = height.coerceAtLeast(1)
         val dst: Bitmap = try {
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         } catch (t: Throwable) {
-            throw EfRasterException("Failed to allocate destination bitmap ($w x $h) in SkiaEfRasterBackend.resize", t)
+            throw EfRasterException("Failed to allocate destination bitmap ($width x $height) in SkiaEfRasterBackend.resize", t)
         } ?: throw EfRasterException("Bitmap.createBitmap returned null in SkiaEfRasterBackend.resize (headless JVM stub or unavailable graphics driver)")
 
         try {
             val canvas = Canvas(dst)
-            canvas.drawBitmap(source, null, RectF(0f, 0f, w.toFloat(), h.toFloat()), filterPaint)
+            canvas.drawBitmap(source, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), filterPaint)
             return dst
         } catch (t: Throwable) {
-            throw EfRasterException("Failed to draw into destination bitmap ($w x $h) in SkiaEfRasterBackend.resize", t)
+            throw EfRasterException("Failed to draw into destination bitmap ($width x $height) in SkiaEfRasterBackend.resize", t)
         }
     }
 
@@ -49,12 +50,13 @@ object SkiaEfRasterBackend : EfRasterBackend {
         destinationHeight: Int,
         dstRect: RectF
     ): Bitmap {
-        val w = destinationWidth.coerceAtLeast(1)
-        val h = destinationHeight.coerceAtLeast(1)
+        if (destinationWidth <= 0 || destinationHeight <= 0) {
+            throw EfRasterException("Invalid destination dimensions ($destinationWidth x $destinationHeight): dimensions must be positive")
+        }
         val dst: Bitmap = try {
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(destinationWidth, destinationHeight, Bitmap.Config.ARGB_8888)
         } catch (t: Throwable) {
-            throw EfRasterException("Failed to allocate destination bitmap ($w x $h) in SkiaEfRasterBackend.drawInto", t)
+            throw EfRasterException("Failed to allocate destination bitmap ($destinationWidth x $destinationHeight) in SkiaEfRasterBackend.drawInto", t)
         } ?: throw EfRasterException("Bitmap.createBitmap returned null in SkiaEfRasterBackend.drawInto (headless JVM stub or unavailable graphics driver)")
 
         // createBitmap zeroes memory to 0x00000000, matching CoreGraphics transparent context clear
@@ -63,7 +65,7 @@ object SkiaEfRasterBackend : EfRasterBackend {
             canvas.drawBitmap(source, null, dstRect, filterPaint)
             return dst
         } catch (t: Throwable) {
-            throw EfRasterException("Failed to draw into destination bitmap ($w x $h) in SkiaEfRasterBackend.drawInto", t)
+            throw EfRasterException("Failed to draw into destination bitmap ($destinationWidth x $destinationHeight) in SkiaEfRasterBackend.drawInto", t)
         }
     }
 
