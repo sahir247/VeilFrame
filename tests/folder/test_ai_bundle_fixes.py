@@ -287,6 +287,182 @@ class TestAIBundleFixes(unittest.TestCase):
             redacted, _ = redact_inline_secrets(code_snippet, filename)
             self.assertEqual(redacted, code_snippet, f"Unwanted redaction on negative test: {code_snippet}")
 
+    def test_ai_program_lister_progress_safety(self):
+        """Verify _on_bundle_progress safely handles NoneType dialog and trailing callbacks."""
+        from tests.conftest import get_or_create_test_qapp
+        from PySide6.QtWidgets import QProgressDialog
+        from veilframe.gui.folder.ai_program_lister_panel import AIProgramListerPanel
+
+        app = get_or_create_test_qapp()
+        panel = AIProgramListerPanel()
+
+        # 1. Dialog active: normal update
+        panel._bundle_progress_dlg = QProgressDialog("Initial", "Cancel", 0, 100, panel)
+        panel._on_bundle_progress(50, 100, "Halfway...")
+        self.assertEqual(panel._bundle_progress_dlg.value(), 50)
+        self.assertEqual(panel._bundle_progress_dlg.labelText(), "Halfway...")
+
+        # 2. Simulate re-entrant dismissal where dialog becomes None
+        panel._bundle_progress_dlg.close()
+        panel._bundle_progress_dlg = None
+
+        # 3. Trailing progress callback arriving after completion MUST NOT raise AttributeError
+        try:
+            panel._on_bundle_progress(100, 100, "AI Bundle complete!")
+        except AttributeError as e:
+            self.fail(f"_on_bundle_progress raised AttributeError when dialog was None: {e}")
+
+        # 4. Cancellation handler cleans up safely
+        panel._bundle_progress_dlg = QProgressDialog("Testing cancel", "Cancel", 0, 100, panel)
+        panel._on_bundle_canceled()
+        self.assertIsNone(panel._bundle_progress_dlg)
+        panel.deleteLater()
+
+    def test_json_and_yaml_classification(self):
+        """Verify that JSON and YAML/YML files are properly classified as CONFIG, CI_CD, or MANIFEST instead of UNKNOWN."""
+        from veilframe.folder.classification.classifier import Classifier
+
+        classifier = Classifier()
+
+        cases = [
+            ("config.json", FileCategory.CONFIG, AIAction.INCLUDE),
+            ("settings.jsonc", FileCategory.CONFIG, AIAction.INCLUDE),
+            ("data.json5", FileCategory.CONFIG, AIAction.INCLUDE),
+            ("app.yaml", FileCategory.CONFIG, AIAction.INCLUDE),
+            ("values.yml", FileCategory.CONFIG, AIAction.INCLUDE),
+            (".github/workflows/deploy.yml", FileCategory.CI_CD, AIAction.INCLUDE),
+            (".github/workflows/test.yaml", FileCategory.CI_CD, AIAction.INCLUDE),
+            ("pubspec.yml", FileCategory.MANIFEST, AIAction.INCLUDE),
+            ("deno.json", FileCategory.MANIFEST, AIAction.INCLUDE),
+            ("package-lock.json", FileCategory.DEPENDENCY, AIAction.EXCLUDE),
+            ("pnpm-lock.yaml", FileCategory.DEPENDENCY, AIAction.EXCLUDE),
+            ("pnpm-lock.yml", FileCategory.DEPENDENCY, AIAction.EXCLUDE),
+        ]
+
+        for rel_p, expected_cat, expected_act in cases:
+            rec = FileRecord(
+                id=1,
+                name=os.path.basename(rel_p),
+                path=f"/fake/{rel_p}",
+                relative_path=rel_p,
+                extension=os.path.splitext(rel_p)[1],
+                size=100,
+            )
+            res = classifier.classify_file(rec, active_ecosystems=set())
+            self.assertEqual(res.category, expected_cat, f"Mismatch category for {rel_p}: got {res.category}, expected {expected_cat}")
+            self.assertEqual(res.action, expected_act, f"Mismatch action for {rel_p}: got {res.action}, expected {expected_act}")
+
+    def test_json_yaml_config_filtering(self):
+        """Ensure unchecking include_configs correctly filters out JSON and YAML configuration files."""
+        files = [
+            FileRecord(id=1, name="main.py", path="/p/main.py", relative_path="main.py",
+                       classification=ClassificationResult(category=FileCategory.SOURCE, action=AIAction.INCLUDE)),
+            FileRecord(id=2, name="settings.json", path="/p/settings.json", relative_path="settings.json",
+                       classification=ClassificationResult(category=FileCategory.CONFIG, action=AIAction.INCLUDE)),
+            FileRecord(id=3, name="deploy.yml", path="/p/deploy.yml", relative_path="deploy.yml",
+                       classification=ClassificationResult(category=FileCategory.CONFIG, action=AIAction.INCLUDE)),
+        ]
+
+        # 1. include_configs = True -> all included
+        cfg_inc = BundleConfig(target_tokens=None, include_configs=True)
+        selector_inc = FileSelector(cfg_inc)
+        inc, exc, _ = selector_inc.select_files(files)
+        self.assertEqual(len(inc), 3)
+
+        # 2. include_configs = False -> settings.json and deploy.yml excluded
+        cfg_exc = BundleConfig(target_tokens=None, include_configs=False)
+        selector_exc = FileSelector(cfg_exc)
+        inc2, exc2, _ = selector_exc.select_files(files)
+        self.assertEqual(len(inc2), 1)
+        self.assertEqual(inc2[0].name, "main.py")
+        exc_names = [f.name for f, _ in exc2]
+        self.assertIn("settings.json", exc_names)
+        self.assertIn("deploy.yml", exc_names)
+
+    def test_unlimited_token_preserves_full_content_and_never_cuts(self):
+        """Under unlimited token budget, ensure lockfiles and large files are NEVER truncated or cut midway."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            lockfile_path = os.path.join(tmp_dir, "package-lock.json")
+            # Generate 5,000 bytes of realistic lockfile content
+            packages = {f"pkg-{i}": {"version": f"1.0.{i}", "resolved": "https://registry.npmjs.org/..."} for i in range(120)}
+            import json as _json
+            full_lock_content = _json.dumps({"name": "test-pkg", "lockfileVersion": 3, "packages": packages}, indent=2)
+            with open(lockfile_path, "w", encoding="utf-8") as f:
+                f.write(full_lock_content)
+
+            f_rec = FileRecord(
+                id=1,
+                name="package-lock.json",
+                path=lockfile_path,
+                relative_path="package-lock.json",
+                size=len(full_lock_content),
+                classification=ClassificationResult(category=FileCategory.DEPENDENCY, action=AIAction.INCLUDE),
+            )
+
+            # Unlimited tokens configuration
+            unlimited_cfg = BundleConfig(target_tokens=None, max_single_file_tokens=None, truncate_oversized=True, compress_context=True)
+            builder = AIBundleBuilder(unlimited_cfg)
+            scan_res = ScanResult(config=None, root_path=tmp_dir, files=[f_rec], stats=ScanStats(root_path=tmp_dir, total_files=1))
+            res = builder.build(scan_res)
+
+            # In native bundle, full content MUST be present and not summarized to "LOCKFILE DEPENDENCY SUMMARY"
+            bundle_str = res.content if isinstance(res.content, str) else res.content.decode("utf-8")
+            self.assertNotIn("LOCKFILE DEPENDENCY SUMMARY", bundle_str)
+            self.assertNotIn("... [TRUNCATED", bundle_str)
+            self.assertIn('"pkg-119"', bundle_str)
+            self.assertIn('"lockfileVersion": 3', bundle_str)
+
+    def test_markdown_code_fence_escapes_inner_backticks(self):
+        """Ensure markdown files containing triple backticks do not close the markdown fence early."""
+        from veilframe.folder.ai_bundle.formats.markdown import render_markdown_bundle
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            readme_content = "# Project Readme\n\n```python\nprint('hello world')\n```\n\nMore docs after code block."
+            f_rec = FileRecord(
+                id=1,
+                name="README.md",
+                path=os.path.join(tmp_dir, "README.md"),
+                relative_path="README.md",
+                size=len(readme_content),
+                language="Markdown",
+                classification=ClassificationResult(category=FileCategory.DOCUMENTATION, action=AIAction.INCLUDE),
+            )
+            scan_res = ScanResult(config=None, root_path=tmp_dir, files=[f_rec], stats=ScanStats(root_path=tmp_dir, total_files=1))
+            cfg = BundleConfig(format=BundleFormat.MARKDOWN)
+            md_output = render_markdown_bundle(scan_res, cfg, [(f_rec, readme_content, 50)], [], 50)
+
+            # The fence must use 4 backticks (````) so that the inner ```python ... ``` does not terminate the block
+            self.assertIn("````markdown", md_output)
+            self.assertIn("More docs after code block.", md_output)
+            # Must end with 4 backticks closing
+            self.assertIn("````\n", md_output)
+
+    def test_manifest_parser_supports_pubspec_yml_and_deno(self):
+        """Verify parse_manifest handles pubspec.yml and deno.json."""
+        from veilframe.folder.project_context.manifest_parser import parse_manifest
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # 1. pubspec.yml
+            pub_path = os.path.join(tmp_dir, "pubspec.yml")
+            with open(pub_path, "w", encoding="utf-8") as f:
+                f.write("name: my_app\nversion: 2.1.0\ndependencies:\n  flutter:\n    sdk: flutter\n  provider: ^6.0.0\n")
+            parsed_pub = parse_manifest(pub_path)
+            self.assertIsNotNone(parsed_pub)
+            self.assertEqual(parsed_pub.project_name, "my_app")
+            self.assertEqual(parsed_pub.version, "2.1.0")
+            self.assertIn("provider", parsed_pub.dependencies)
+
+            # 2. deno.json
+            deno_path = os.path.join(tmp_dir, "deno.json")
+            with open(deno_path, "w", encoding="utf-8") as f:
+                f.write('{"name": "@scope/pkg", "version": "0.5.0", "imports": {"std/": "https://deno.land/std@0.200.0/"}, "tasks": {"start": "deno run main.ts"}}')
+            parsed_deno = parse_manifest(deno_path)
+            self.assertIsNotNone(parsed_deno)
+            self.assertEqual(parsed_deno.project_name, "@scope/pkg")
+            self.assertEqual(parsed_deno.version, "0.5.0")
+            self.assertIn("std/", parsed_deno.dependencies)
+            self.assertIn("start", parsed_deno.scripts)
+
 
 if __name__ == "__main__":
     unittest.main()

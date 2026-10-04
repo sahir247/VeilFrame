@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 import datetime
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from veilframe.folder.ai_bundle.bundle_config import BundleConfig
@@ -258,6 +259,9 @@ def render_native_aibundle(
 
         file_header = f'@FILE id="{fid}" path="{rel_p}" type="{role}" language="{lang}"'
         clean_content = content.strip()
+        # Protect against verbatim content closing the @FILE section prematurely
+        if "\n>>>\n" in clean_content or clean_content.startswith(">>>\n") or clean_content.endswith("\n>>>") or clean_content == ">>>":
+            clean_content = re.sub(r"(?m)^>>>$", ">>> ", clean_content)
         files_blocks.append(f"{file_header}\n<<<\n{clean_content}\n>>>")
 
     sections.append("\n\n".join(files_blocks))

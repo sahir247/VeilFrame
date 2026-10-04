@@ -88,11 +88,17 @@ class AIBundleBuilder:
                 rel_disp = f.relative_path.replace("\\", "/")
                 progress_callback(pct, 100, f"Preparing ({idx}/{total_to_prep}): {rel_disp}")
 
+            is_unlimited = self.config.target_tokens is None
+            effective_max_tokens = None if is_unlimited else self.config.max_single_file_tokens
+            effective_truncate = False if is_unlimited else getattr(self.config, "truncate_oversized", False)
+            effective_compress = False if is_unlimited else self.config.compress_context
+
             content, tokens = prepare_file_content(
                 f,
-                max_tokens=self.config.max_single_file_tokens,
+                max_tokens=effective_max_tokens,
                 redact_secrets=self.config.redact_secrets,
-                truncate_oversized=getattr(self.config, "truncate_oversized", False),
+                truncate_oversized=effective_truncate,
+                compress_context=effective_compress,
             )
             prepared_files.append((f, content, tokens))
             total_tokens += tokens

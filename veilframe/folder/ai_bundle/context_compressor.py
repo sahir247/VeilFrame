@@ -361,6 +361,7 @@ def prepare_file_content(
     max_tokens: Optional[int] = None,
     redact_secrets: bool = True,
     truncate_oversized: bool = False,
+    compress_context: bool = False,
 ) -> Tuple[str, int]:
     """
     Read and prepare file content for inclusion in an AI bundle.
@@ -393,12 +394,13 @@ def prepare_file_content(
         return raw_content, estimate_tokens(raw_content, "text")
 
     # 3b. Summarize massive lockfiles (dependencies and versions without hashes)
+    # ONLY when compression is explicitly enabled and a budget/token ceiling is enforced (NOT unlimited)
     base_lower = file_rec.name.lower()
     is_lockfile = (
-        base_lower in ("uv.lock", "package-lock.json", "poetry.lock", "cargo.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "gemfile.lock")
-        or base_lower.endswith(("-lock.json", "-lock.yaml"))
+        base_lower in ("uv.lock", "package-lock.json", "poetry.lock", "cargo.lock", "yarn.lock", "pnpm-lock.yaml", "pnpm-lock.yml", "composer.lock", "gemfile.lock")
+        or base_lower.endswith(("-lock.json", "-lock.yaml", "-lock.yml"))
     )
-    if is_lockfile and len(raw_content) > 3_000:
+    if is_lockfile and compress_context and max_tokens is not None and len(raw_content) > 3_000:
         summary = summarize_lockfile(file_rec.name, raw_content)
         tokens = estimate_tokens(summary, "text")
         return summary, tokens

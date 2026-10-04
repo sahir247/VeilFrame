@@ -30,6 +30,7 @@ MARKER_ECOSYSTEM_MAP: Dict[str, List[str]] = {
     "build.gradle.kts": ["kotlin", "java", "jvm", "gradle"],
     "settings.gradle": ["java", "jvm", "gradle"],
     "pubspec.yaml": ["dart", "flutter"],
+    "pubspec.yml": ["dart", "flutter"],
     "package.swift": ["swift", "xcode", "apple"],
     "composer.json": ["php", "composer"],
     "gemfile": ["ruby", "bundler"],
@@ -41,7 +42,14 @@ MARKER_ECOSYSTEM_MAP: Dict[str, List[str]] = {
     "makefile": ["c", "cpp"],
     "dockerfile": ["docker", "container", "infrastructure"],
     "docker-compose.yml": ["docker", "container", "infrastructure"],
+    "docker-compose.yaml": ["docker", "container", "infrastructure"],
     "compose.yml": ["docker", "container", "infrastructure"],
+    "compose.yaml": ["docker", "container", "infrastructure"],
+    "pnpm-lock.yml": ["javascript", "node", "pnpm"],
+    "pnpm-workspace.yaml": ["javascript", "node", "pnpm"],
+    "pnpm-workspace.yml": ["javascript", "node", "pnpm"],
+    "deno.json": ["typescript", "javascript", "deno"],
+    "deno.jsonc": ["typescript", "javascript", "deno"],
     "project.godot": ["godot", "game"],
 }
 

@@ -19,6 +19,7 @@ rules:
       - ".github/workflows/"
       - ".github/CODEOWNERS"
       - ".github/dependabot.yml"
+      - ".github/dependabot.yaml"
       - ".github/ISSUE_TEMPLATE/"
       - ".github/PULL_REQUEST_TEMPLATE/"
     classification: "CI_CD"

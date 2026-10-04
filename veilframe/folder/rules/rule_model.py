@@ -81,10 +81,14 @@ class Rule:
 
             # Directory pattern check: matches if any directory segment equals the pattern
             if is_dir_pat:
-                if is_dir and any(segment == pat_str for segment in path_segments):
-                    return True
-                if not is_dir and any(segment == pat_str for segment in path_segments[:-1]):
-                    return True
+                if is_dir:
+                    if norm_path == pat_str or any(segment == pat_str for segment in path_segments):
+                        return True
+                else:
+                    if norm_path.startswith(pat_str + "/") or f"/{pat_str}/" in f"/{norm_path}/":
+                        return True
+                    if any(segment == pat_str for segment in path_segments[:-1]):
+                        return True
 
             # Standard glob match against full path or basename
             if fnmatch.fnmatch(norm_path, pat_str):

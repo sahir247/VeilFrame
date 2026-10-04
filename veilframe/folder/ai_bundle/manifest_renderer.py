@@ -16,9 +16,10 @@ def render_manifest_summaries(files: List[FileRecord]) -> str:
     """Find all manifest files and render a structured dependency overview."""
     manifest_files = [
         f for f in files
-        if f.effective_category == FileCategory.MANIFEST or f.name in (
-            "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml",
-            "build.gradle", "requirements.txt", "Gemfile", "composer.json", "pubspec.yaml"
+        if f.effective_category == FileCategory.MANIFEST or f.name.lower() in (
+            "package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml",
+            "build.gradle", "build.gradle.kts", "requirements.txt", "gemfile", "composer.json",
+            "pubspec.yaml", "pubspec.yml", "deno.json", "deno.jsonc"
         )
     ]
 

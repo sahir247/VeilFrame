@@ -87,13 +87,13 @@ class FileSelector:
         for f in eligible:
             # Machine-generated lockfiles should not bypass the budget as mandatory manifests
             is_lockfile = (
-                f.name.lower().endswith((".lock", "-lock.json", "-lock.yaml"))
-                or f.name.lower() in ("cargo.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "gemfile.lock")
+                f.name.lower().endswith((".lock", "-lock.json", "-lock.yaml", "-lock.yml"))
+                or f.name.lower() in ("cargo.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "pnpm-lock.yml", "composer.lock", "gemfile.lock")
             )
 
             file_tokens = f.token_count or max(1, f.size // 4)
-            if is_lockfile:
-                # Lockfiles are summarized into concise dependency lists (~300-500 tokens)
+            if is_lockfile and budget is not None and self.config.compress_context:
+                # Lockfiles are summarized into concise dependency lists (~300-500 tokens) only when compressed
                 file_tokens = min(file_tokens, 500)
 
             # Mandatory / core files: Entry points, primary root manifests, root README, architecture docs, and build specs

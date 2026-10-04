@@ -5,6 +5,7 @@ veilframe.gui.folder.ai_program_lister_panel — Dedicated AI Program Lister & C
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
+import warnings
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QFont
@@ -356,8 +357,8 @@ class AIProgramListerPanel(QWidget):
         self._bundle_progress_dlg.setWindowModality(Qt.WindowModal)
         self._bundle_progress_dlg.setMinimumDuration(0)
         self._bundle_progress_dlg.setValue(0)
-        self._bundle_progress_dlg.setAutoClose(True)
-        self._bundle_progress_dlg.setAutoReset(True)
+        self._bundle_progress_dlg.setAutoClose(False)
+        self._bundle_progress_dlg.setAutoReset(False)
         self._bundle_progress_dlg.setStyleSheet(
             "QProgressDialog { background-color: #1e1e1e; color: #e0e0e0; } "
             "QLabel { color: #e0e0e0; font-size: 12px; } "
@@ -370,26 +371,68 @@ class AIProgramListerPanel(QWidget):
         self._bundle_worker.progress.connect(self._on_bundle_progress)
         self._bundle_worker.finished.connect(self._on_bundle_success)
         self._bundle_worker.failed.connect(self._on_bundle_failed)
-        self._bundle_progress_dlg.canceled.connect(self._bundle_worker.cancel)
+        self._bundle_progress_dlg.canceled.connect(self._on_bundle_canceled)
 
         self._bundle_worker.start()
 
+    def _cleanup_bundle_worker(self) -> None:
+        worker = self._bundle_worker
+        self._bundle_worker = None
+        if worker is not None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*Failed to disconnect.*")
+                try:
+                    worker.progress.disconnect(self._on_bundle_progress)
+                except (RuntimeError, TypeError):
+                    pass
+                try:
+                    worker.finished.disconnect(self._on_bundle_success)
+                except (RuntimeError, TypeError):
+                    pass
+                try:
+                    worker.failed.disconnect(self._on_bundle_failed)
+                except (RuntimeError, TypeError):
+                    pass
+
+    def _close_bundle_progress_dlg(self) -> None:
+        dlg = self._bundle_progress_dlg
+        self._bundle_progress_dlg = None
+        if dlg is not None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*Failed to disconnect.*")
+                try:
+                    dlg.canceled.disconnect(self._on_bundle_canceled)
+                except (RuntimeError, TypeError):
+                    pass
+            dlg.close()
+
     def _on_bundle_progress(self, cur: int, tot: int, msg: str) -> None:
-        if self._bundle_progress_dlg and not self._bundle_progress_dlg.wasCanceled():
-            self._bundle_progress_dlg.setValue(cur)
-            self._bundle_progress_dlg.setLabelText(msg)
+        dlg = self._bundle_progress_dlg
+        if dlg is None or dlg.wasCanceled():
+            return
+        if tot > 0 and dlg.maximum() != tot:
+            dlg.setMaximum(tot)
+        dlg.setLabelText(msg)
+        # Note: setValue() can trigger processEvents() internally, which may execute
+        # the finished signal and clear self._bundle_progress_dlg re-entrantly.
+        dlg.setValue(cur)
 
     def _on_bundle_success(self, result: Any) -> None:
-        if self._bundle_progress_dlg:
-            self._bundle_progress_dlg.close()
-            self._bundle_progress_dlg = None
+        self._cleanup_bundle_worker()
+        self._close_bundle_progress_dlg()
 
         dlg = BundlePreviewDialog(result, parent=self)
         dlg.exec_()
 
     def _on_bundle_failed(self, err_msg: str) -> None:
-        if self._bundle_progress_dlg:
-            self._bundle_progress_dlg.close()
-            self._bundle_progress_dlg = None
+        self._cleanup_bundle_worker()
+        self._close_bundle_progress_dlg()
 
         QMessageBox.critical(self, "Bundle Generation Failed", f"Failed to generate AI bundle:\n{err_msg}")
+
+    def _on_bundle_canceled(self) -> None:
+        worker = self._bundle_worker
+        if worker is not None:
+            worker.cancel()
+        self._cleanup_bundle_worker()
+        self._close_bundle_progress_dlg()

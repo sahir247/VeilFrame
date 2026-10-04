@@ -138,6 +138,126 @@ class Classifier:
                     priority=RulePriority.FILE_TYPE,
                 )
             )
+        else:
+            base_name = os.path.basename(rel_path).lower()
+            norm_rel_path = rel_path.replace("\\", "/").lower()
+            ext = (record.extension or "").lower()
+            if not ext and "." in base_name:
+                ext = f".{base_name.rsplit('.', 1)[1]}"
+
+            # 6a. JSON formats (.json, .jsonc, .json5)
+            if ext in (".json", ".jsonc", ".json5"):
+                if base_name in ("package-lock.json", "composer.lock") or base_name.endswith("-lock.json"):
+                    cat = FileCategory.DEPENDENCY
+                    act = AIAction.EXCLUDE
+                    reason = "JSON package lockfile"
+                elif base_name in ("package.json", "composer.json", "deno.json", "deno.jsonc", "tsconfig.json") or base_name.startswith("tsconfig."):
+                    cat = FileCategory.MANIFEST
+                    act = AIAction.INCLUDE
+                    reason = "JSON project manifest or configuration"
+                else:
+                    cat = FileCategory.CONFIG
+                    act = AIAction.INCLUDE
+                    reason = "JSON structured configuration or data file"
+                candidates.append(
+                    ClassificationResult(
+                        category=cat,
+                        action=act,
+                        confidence=0.85,
+                        reason=reason,
+                        rule_id="filetype.json",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
+
+            # 6b. YAML formats (.yaml, .yml)
+            elif ext in (".yaml", ".yml"):
+                if base_name in ("pnpm-lock.yaml", "pnpm-lock.yml") or base_name.endswith(("-lock.yaml", "-lock.yml")):
+                    cat = FileCategory.DEPENDENCY
+                    act = AIAction.EXCLUDE
+                    reason = "YAML package lockfile"
+                elif ".github/workflows" in norm_rel_path or base_name in (".gitlab-ci.yml", ".gitlab-ci.yaml", "azure-pipelines.yml", "azure-pipelines.yaml"):
+                    cat = FileCategory.CI_CD
+                    act = AIAction.INCLUDE
+                    reason = "YAML CI/CD workflow specification"
+                elif base_name in ("pubspec.yaml", "pubspec.yml", "pnpm-workspace.yaml", "pnpm-workspace.yml", "environment.yml", "environment.yaml"):
+                    cat = FileCategory.MANIFEST
+                    act = AIAction.INCLUDE
+                    reason = "YAML project manifest"
+                else:
+                    cat = FileCategory.CONFIG
+                    act = AIAction.INCLUDE
+                    reason = "YAML structured configuration file"
+                candidates.append(
+                    ClassificationResult(
+                        category=cat,
+                        action=act,
+                        confidence=0.85,
+                        reason=reason,
+                        rule_id="filetype.yaml",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
+
+            # 6c. Other structured config files (.toml, .ini, .cfg, .conf, .properties, .env templates)
+            elif ext in (".toml", ".ini", ".cfg", ".conf", ".properties") or base_name.startswith((".env.", ".editorconfig")):
+                candidates.append(
+                    ClassificationResult(
+                        category=FileCategory.CONFIG,
+                        action=AIAction.INCLUDE,
+                        confidence=0.85,
+                        reason=f"Structured configuration ({ext or base_name})",
+                        rule_id="filetype.config",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
+
+            # 6d. Documentation files (.md, .markdown, .rst, .adoc, .txt)
+            elif ext in (".md", ".markdown", ".rst", ".adoc", ".txt"):
+                candidates.append(
+                    ClassificationResult(
+                        category=FileCategory.DOCUMENTATION,
+                        action=AIAction.INCLUDE,
+                        confidence=0.80,
+                        reason=f"Documentation file ({ext})",
+                        rule_id="filetype.documentation",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
+
+            # 6e. Shell / Script files (.sh, .bash, .zsh, .fish, .ps1, .bat, .cmd)
+            elif ext in (".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd"):
+                candidates.append(
+                    ClassificationResult(
+                        category=FileCategory.SCRIPT,
+                        action=AIAction.INCLUDE,
+                        confidence=0.80,
+                        reason=f"Shell / automation script ({ext})",
+                        rule_id="filetype.script",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
+
+            # 6f. Programming language source files
+            elif (
+                (record.language and record.language.lower() not in ("unknown", "text", "binary"))
+                or ext in (
+                    ".py", ".pyw", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+                    ".rs", ".go", ".java", ".kt", ".kts", ".scala", ".c", ".h", ".cpp",
+                    ".hpp", ".cc", ".cxx", ".cs", ".swift", ".dart", ".rb", ".php",
+                    ".lua", ".sql", ".html", ".htm", ".css", ".scss", ".sass", ".vue", ".svelte"
+                )
+            ):
+                candidates.append(
+                    ClassificationResult(
+                        category=FileCategory.SOURCE,
+                        action=AIAction.INCLUDE,
+                        confidence=0.80,
+                        reason=f"{record.language or 'Source'} code file",
+                        rule_id="filetype.source",
+                        priority=RulePriority.FILE_TYPE,
+                    )
+                )
 
         # Resolve candidate with highest precedence
         final_result = resolve_highest_precedence(candidates)

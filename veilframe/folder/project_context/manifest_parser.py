@@ -64,9 +64,9 @@ def parse_package_json(path: str) -> Optional[ParsedManifest]:
     name = data.get("name")
     version = data.get("version")
     description = data.get("description")
-    deps = data.get("dependencies", {})
+    deps = data.get("dependencies") or data.get("imports", {})
     dev_deps = data.get("devDependencies", {})
-    scripts = data.get("scripts", {})
+    scripts = data.get("scripts") or data.get("tasks", {})
 
     entry_points: List[str] = []
     main_entry = data.get("main")
@@ -81,7 +81,7 @@ def parse_package_json(path: str) -> Optional[ParsedManifest]:
 
     return ParsedManifest(
         file_path=path,
-        manifest_type="package.json",
+        manifest_type=os.path.basename(path).lower(),
         project_name=name,
         version=version,
         description=description,
@@ -281,7 +281,7 @@ def parse_pubspec_yaml(path: str) -> Optional[ParsedManifest]:
 
     return ParsedManifest(
         file_path=path,
-        manifest_type="pubspec.yaml",
+        manifest_type=os.path.basename(path).lower(),
         project_name=name,
         version=version,
         description=desc,
@@ -423,8 +423,10 @@ def parse_manifest(path: str) -> Optional[ParsedManifest]:
         return parse_cargo_toml(path)
     elif base == "go.mod":
         return parse_go_mod(path)
-    elif base == "pubspec.yaml":
+    elif base in ("pubspec.yaml", "pubspec.yml"):
         return parse_pubspec_yaml(path)
+    elif base in ("deno.json", "deno.jsonc"):
+        return parse_package_json(path)
     elif base == "composer.json":
         return parse_composer_json(path)
     elif base in ("build.gradle", "build.gradle.kts"):

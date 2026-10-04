@@ -43,13 +43,35 @@ def _lang_to_fence(lang: str) -> str:
         "bash": "bash",
         "powershell": "powershell",
         "yaml": "yaml",
+        "yml": "yaml",
         "json": "json",
+        "jsonc": "json",
+        "json5": "json",
         "markdown": "markdown",
         "sql": "sql",
         "html": "html",
         "css": "css",
     }
     return mapping.get(l, l)
+
+
+def _make_code_fence(content: str, fence_lang: str = "") -> Tuple[str, str]:
+    """
+    Generate opening and closing code fences with enough backticks so that any
+    backtick sequences inside content do not prematurely close the code block.
+    """
+    max_ticks = 0
+    cur_ticks = 0
+    for ch in content:
+        if ch == "`":
+            cur_ticks += 1
+            if cur_ticks > max_ticks:
+                max_ticks = cur_ticks
+        else:
+            cur_ticks = 0
+    fence_len = max(3, max_ticks + 1)
+    fence_str = "`" * fence_len
+    return f"{fence_str}{fence_lang}", fence_str
 
 
 def render_markdown_bundle(
@@ -119,11 +141,12 @@ def render_markdown_bundle(
     parts.append("## Project Files\n")
     for f, content, tokens in included_files:
         fence = _lang_to_fence(f.language or "")
+        open_fence, close_fence = _make_code_fence(content, fence)
         parts.append(f"### `{f.relative_path}`")
         parts.append(f"*Category: {f.effective_category.value} | Language: {f.language or 'Text'} | Tokens: ~{tokens:,}*\n")
-        parts.append(f"```{fence}")
-        parts.append(content.strip())
-        parts.append("```\n")
+        parts.append(open_fence)
+        parts.append(content.rstrip())
+        parts.append(f"{close_fence}\n")
 
     # Excluded files section
     if config.include_excluded_list and excluded_files:
