@@ -1934,13 +1934,20 @@ class QrGenerateTabFragment : Fragment() {
         // 6. Observe ViewModel State
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var lastAnnouncedScanReady: Boolean? = null
+                exportStatusBanner?.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                previewProgress?.contentDescription = "Rendering QR code preview"
+                autoRepairBtn.contentDescription = "Auto-Repair QR code contrast and error correction to ensure scanability"
+
                 vm.state.collect { state ->
                     // Empty-state vs animated preview loop vs static preview bitmap
                     val animFrames = state.previewAnimatedFrames
+                    val isScanValid = state.scanabilityReport?.isScanReady == true
                     if (animFrames.size > 1) {
                         previewAnimationBadge?.visibility = View.VISIBLE
                         previewImage.visibility = View.VISIBLE
                         previewEmptyState?.visibility = View.GONE
+                        previewImage.contentDescription = "Animated QR code preview with ${animFrames.size} frames for content: ${state.content}. ${if (isScanValid) "Verified scannable" else "Needs adjustment"}"
                         if (activePreviewFrames !== animFrames) {
                             activePreviewFrames = animFrames
                             previewAnimJob?.cancel()
@@ -1963,10 +1970,12 @@ class QrGenerateTabFragment : Fragment() {
                             previewImage.setImageBitmap(state.bitmap)
                             previewImage.visibility = View.VISIBLE
                             previewEmptyState?.visibility = View.GONE
+                            previewImage.contentDescription = "QR code preview for: ${state.content}, style ${state.style.name}. ${if (isScanValid) "Verified scannable" else "Needs adjustment"}"
                         } else {
                             previewImage.setImageBitmap(null)
                             previewImage.visibility = View.GONE
                             previewEmptyState?.visibility = View.VISIBLE
+                            previewImage.contentDescription = "Empty QR code preview. Enter content to generate."
                         }
                     }
 
@@ -1974,7 +1983,6 @@ class QrGenerateTabFragment : Fragment() {
 
                     // Export buttons enabled/disabled state: content must be non-blank, verified scanable, and not actively busy
                     val hasContent = state.content.isNotBlank()
-                    val isScanValid = state.scanabilityReport?.isScanReady == true
                     val isValidating = state.scanabilityReport == null && hasContent && state.errorMessage == null
                     val canExport = hasContent && !state.isRenderingPreview && !state.isExporting && isScanValid
                     val hasAnimationSource = state.animatedFrames.size > 1 || state.logoAnimatedFrames.size > 1
@@ -2166,6 +2174,10 @@ class QrGenerateTabFragment : Fragment() {
                             val qz = state.design?.quietZoneModules ?: if (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_RESAMPLE || state.style == QrStyle.IMAGE_FILL) 1 else 4
                             scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: $qz module${if (qz == 1) "" else "s"}"
                             autoRepairBtn.visibility = View.GONE
+                            if (lastAnnouncedScanReady != true) {
+                                lastAnnouncedScanReady = true
+                                view?.announceForAccessibility("QR code preview passed on-device scanability validation. Ready for export.")
+                            }
                         } else {
                             scanabilityCard?.setCardBackgroundColor(0x18D97706)
                             scanabilityCard?.strokeColor = 0x50D97706
@@ -2178,7 +2190,13 @@ class QrGenerateTabFragment : Fragment() {
                             val warningText = if (report.warnings.isNotEmpty()) " | Warnings: " + report.warnings.joinToString("; ") else ""
                             scanabilityTechText?.text = "Diagnostic: $errorMsg$warningText"
                             autoRepairBtn.visibility = if (report.repairSuggestions.isNotEmpty()) View.VISIBLE else View.GONE
+                            if (lastAnnouncedScanReady != false) {
+                                lastAnnouncedScanReady = false
+                                val warn = report.warnings.firstOrNull() ?: "Contrast or patterns unverified"
+                                view?.announceForAccessibility("QR code preview needs adjustment: $warn. Auto-Repair is available.")
+                            }
                         }
+                        scanabilityCard?.contentDescription = "Scanability status: ${scanabilityStatus.text}. ${scanabilityDetails.text}"
                     } ?: run {
                         scanabilityCard?.setCardBackgroundColor(0x00000000)
                         scanabilityCard?.strokeColor = 0x20888888
@@ -2189,10 +2207,12 @@ class QrGenerateTabFragment : Fragment() {
                         scanabilityDetails.text = "Running on-device barcode validator..."
                         scanabilityTechText?.text = "Validating barcode scanability on device..."
                         autoRepairBtn.visibility = View.GONE
+                        scanabilityCard?.contentDescription = "Scanability status: Validating barcode scanability on device."
                     }
 
                     state.repairNotice?.let { notice ->
                         view?.let { v ->
+                            v.announceForAccessibility("Auto-Repair applied: $notice")
                             Snackbar.make(v, "Auto-Repair: $notice", Snackbar.LENGTH_LONG)
                                 .setAction("Undo") {
                                     vm.undoAutoRepair()
@@ -2204,6 +2224,7 @@ class QrGenerateTabFragment : Fragment() {
 
                     state.saveResult?.let { msg ->
                         view?.let { v ->
+                            v.announceForAccessibility(msg)
                             val snackbar = Snackbar.make(v, msg, Snackbar.LENGTH_LONG)
                             val uriToView = state.lastSavedUri
                             if (uriToView != null) {
@@ -2224,7 +2245,10 @@ class QrGenerateTabFragment : Fragment() {
                         vm.clearSaveResult()
                     }
                     state.errorMessage?.let { msg ->
-                        view?.let { v -> Snackbar.make(v, msg, Snackbar.LENGTH_SHORT).show() }
+                        view?.let { v ->
+                            v.announceForAccessibility("Error: $msg")
+                            Snackbar.make(v, msg, Snackbar.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
