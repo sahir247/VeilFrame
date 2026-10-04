@@ -1996,16 +1996,16 @@ class QrGenerateTabFragment : Fragment() {
                         exportStatusBanner?.setTextColor(0xFF6B7280.toInt())
                     } else if (isScanValid) {
                         exportStatusBanner?.visibility = View.VISIBLE
-                        exportStatusBanner?.text = "Preview verified scanable · Final export verified at render time"
+                        exportStatusBanner?.text = "Preview verified scannable (≤512px) · High-resolution export verified at render time"
                         exportStatusBanner?.setTextColor(0xFF16A34A.toInt())
                     } else {
                         exportStatusBanner?.visibility = View.VISIBLE
-                        exportStatusBanner?.text = "Needs adjustment — Adjust contrast or tap Auto-Repair to enable export"
+                        exportStatusBanner?.text = "Needs adjustment — Preview unverified; adjust contrast or tap Auto-Repair before export"
                         exportStatusBanner?.setTextColor(0xFFD97706.toInt())
                     }
 
                     // Resolution transparency hint
-                    resHint?.text = "Preview rendered at ≤512px · Final export generates at ${state.outputSize}px"
+                    resHint?.text = "Preview rendered at ≤512px for responsive editing · Final export generates at ${state.outputSize}px with strict decoder verification"
 
                     saveBtn.isEnabled = canExport
                     saveSvgBtn.isEnabled = canExport
@@ -2159,9 +2159,9 @@ class QrGenerateTabFragment : Fragment() {
                             scanabilityCard?.strokeColor = 0x4016A34A
                             scanabilityIcon?.setImageResource(R.drawable.ic_check_circle)
                             scanabilityIcon?.setColorFilter(0xFF16A34A.toInt())
-                            scanabilityStatus.text = "Scanability Check Passed"
+                            scanabilityStatus.text = "Preview Scanability: Verified"
                             scanabilityStatus.setTextColor(0xFF16A34A.toInt())
-                            scanabilityDetails.text = "Passed on-device QR validation"
+                            scanabilityDetails.text = "Passed on-device QR validation at preview scale. High-res export will undergo full strict verification."
                             val engine = if (report.decodeResult.decoderId.contains("ML Kit", ignoreCase = true) || report.decodeResult.decoderId.contains("mlkit", ignoreCase = true)) "Google ML Kit" else "ZXing"
                             val qz = state.design?.quietZoneModules ?: if (state.style == QrStyle.IMAGE || state.style == QrStyle.IMAGE_RESAMPLE || state.style == QrStyle.IMAGE_FILL) 1 else 4
                             scanabilityTechText?.text = "Engine: $engine | Latency: ${report.decodeResult.latencyMs}ms | Quiet zone: $qz module${if (qz == 1) "" else "s"}"
@@ -2171,9 +2171,9 @@ class QrGenerateTabFragment : Fragment() {
                             scanabilityCard?.strokeColor = 0x50D97706
                             scanabilityIcon?.setImageResource(R.drawable.ic_info_outline)
                             scanabilityIcon?.setColorFilter(0xFFD97706.toInt())
-                            scanabilityStatus.text = "QR Verification Notice"
+                            scanabilityStatus.text = "Preview Scanability: Unverified"
                             scanabilityStatus.setTextColor(0xFFD97706.toInt())
-                            scanabilityDetails.text = "We couldn't verify this QR code automatically. Try Auto-Repair or adjust contrast."
+                            scanabilityDetails.text = "Preview could not be verified on-device. Export requires strict verification; adjust contrast or try Auto-Repair."
                             val errorMsg = report.decodeResult.error ?: "Decoder could not resolve patterns"
                             val warningText = if (report.warnings.isNotEmpty()) " | Warnings: " + report.warnings.joinToString("; ") else ""
                             scanabilityTechText?.text = "Diagnostic: $errorMsg$warningText"

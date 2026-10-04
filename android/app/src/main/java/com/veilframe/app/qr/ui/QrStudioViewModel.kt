@@ -1337,29 +1337,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode
-                val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
-                }
-                val bmp = when (renderResult) {
-                    is QrRenderResult.Success -> renderResult.bitmap
-                    is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            saveResult = "Save failed: ${renderResult.error}"
-                        )
-                        return@launch
-                    }
-                }
-                if (bmp == null) {
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val mode = _state.value.generationMode
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+            }
+            val bmp = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap
+                is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
-                        saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                        saveResult = "Save failed: ${renderResult.error}"
                     )
-                    return@launch
+                    return@launchExportJob
                 }
+            }
+            if (bmp == null) {
+                _state.value = _state.value.copy(
+                    saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                )
+                return@launchExportJob
+            }
+            try {
                 val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
                     bmp,
                     exportDesign,
@@ -1368,10 +1367,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
                     )
-                    return@launch
+                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.JPEG, 95)
@@ -1391,7 +1390,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } finally {
-                _state.value = _state.value.copy(isExporting = false)
+                if (bmp !== _state.value.bitmap && bmp !== preRepairSnapshot?.bitmap) {
+                    bmp.recycle()
+                }
             }
         }
     }
@@ -1695,7 +1696,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
                     )
                     return@launchExportJob
@@ -1796,7 +1797,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
                     )
                     return@launchExportJob
@@ -2005,7 +2006,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
-                        saveResult = "Share rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
+                        saveResult = "Share rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
                     )
                     return@launchExportJob
