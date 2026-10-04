@@ -201,6 +201,124 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     private val renderGeneration = java.util.concurrent.atomic.AtomicLong(0)
     private var preRepairSnapshot: UiState? = null
 
+    enum class BitmapOwnership {
+        VIEW_MODEL,
+        USER_SUPPLIED
+    }
+
+    internal data class SupersededBitmap(
+        val bitmap: Bitmap,
+        val generation: Long,
+        val ownership: BitmapOwnership = BitmapOwnership.VIEW_MODEL
+    )
+
+    private val activeRenderGenerations = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    private val activeExportCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private val supersededBitmaps = java.util.concurrent.ConcurrentLinkedQueue<SupersededBitmap>()
+
+    internal fun getSupersededBitmapsCount(): Int = supersededBitmaps.size
+    internal fun getActiveRenderGenerations(): Set<Long> = activeRenderGenerations.toSet()
+    internal fun getActiveExportCount(): Int = activeExportCount.get()
+    internal fun isBitmapQueuedForRetirement(bitmap: Bitmap): Boolean = supersededBitmaps.any { it.bitmap === bitmap }
+    internal fun registerActiveRenderGeneration(gen: Long) {
+        activeRenderGenerations.add(gen)
+    }
+    internal fun unregisterActiveRenderGeneration(gen: Long) {
+        activeRenderGenerations.remove(gen)
+        drainSupersededBitmaps()
+    }
+    internal fun incrementActiveExportCount(): Int = activeExportCount.incrementAndGet()
+    internal fun decrementActiveExportCount(): Int {
+        val count = activeExportCount.decrementAndGet()
+        drainSupersededBitmaps()
+        return count
+    }
+
+    internal fun retireBitmap(
+        bitmap: Bitmap?,
+        generation: Long,
+        ownership: BitmapOwnership = BitmapOwnership.VIEW_MODEL
+    ) {
+        if (bitmap == null || bitmap.isRecycled) return
+        if (supersededBitmaps.none { it.bitmap === bitmap }) {
+            supersededBitmaps.add(SupersededBitmap(bitmap, generation, ownership))
+        }
+        drainSupersededBitmaps()
+    }
+
+    internal fun drainSupersededBitmaps() {
+        val iterator = supersededBitmaps.iterator()
+        val currentState = _state.value
+        val snapshot = preRepairSnapshot
+        val activeExports = activeExportCount.get()
+
+        while (iterator.hasNext()) {
+            val item = iterator.next()
+            val bmp = item.bitmap
+
+            if (bmp.isRecycled) {
+                iterator.remove()
+                continue
+            }
+
+            // Never recycle while an export is active (exports read state snapshots)
+            if (activeExports > 0) {
+                continue
+            }
+
+            // Never recycle while any active render began at or before this bitmap was superseded
+            val hasActiveReferencingRender = activeRenderGenerations.any { it <= item.generation }
+            if (hasActiveReferencingRender) {
+                continue
+            }
+
+            // Never recycle if currently held in UI state or undo snapshot
+            val isCurrentInState = currentState.bitmap === bmp ||
+                currentState.sourceImage === bmp ||
+                currentState.backgroundImage === bmp ||
+                currentState.logo === bmp ||
+                currentState.resampleBackdropImage === bmp ||
+                currentState.backdropImage === bmp ||
+                currentState.previewAnimatedFrames.any { it.bitmap === bmp } ||
+                currentState.animatedFrames.any { it.bitmap === bmp } ||
+                currentState.logoAnimatedFrames.any { it === bmp } ||
+                snapshot?.bitmap === bmp ||
+                snapshot?.sourceImage === bmp ||
+                snapshot?.backgroundImage === bmp ||
+                snapshot?.logo === bmp ||
+                snapshot?.resampleBackdropImage === bmp ||
+                snapshot?.backdropImage === bmp ||
+                snapshot?.previewAnimatedFrames?.any { it.bitmap === bmp } == true ||
+                snapshot?.animatedFrames?.any { it.bitmap === bmp } == true ||
+                snapshot?.logoAnimatedFrames?.any { it === bmp } == true
+
+            if (isCurrentInState) {
+                continue
+            }
+
+            iterator.remove()
+            try {
+                bmp.recycle()
+            } catch (_: Throwable) {
+                // Ignore concurrent recycle errors
+            }
+        }
+    }
+
+    internal fun launchExportJob(block: suspend () -> Unit): Job {
+        return viewModelScope.launch {
+            activeExportCount.incrementAndGet()
+            _state.value = _state.value.copy(isExporting = true)
+            try {
+                block()
+            } finally {
+                _state.value = _state.value.copy(isExporting = false)
+                activeExportCount.decrementAndGet()
+                drainSupersededBitmaps()
+            }
+        }
+    }
+
     init {
         regenerate(debounceMs = 0)
     }
@@ -272,18 +390,34 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 0)
     }
 
-    fun updateLogo(bmp: Bitmap?) {
+    fun updateLogo(bmp: Bitmap?, autoRecycleSuperseded: Boolean = true) {
+        val oldLogo = _state.value.logo
         _state.value = _state.value.copy(logo = bmp, repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldLogo != null && oldLogo !== bmp) {
+            retireBitmap(oldLogo, gen, BitmapOwnership.USER_SUPPLIED)
+        }
         regenerate(debounceMs = 0)
     }
 
-    fun removeLogo() {
+    fun removeLogo(autoRecycleSuperseded: Boolean = true) {
+        val oldLogo = _state.value.logo
+        val oldFrames = _state.value.logoAnimatedFrames
         _state.value = _state.value.copy(
             logo = null,
             logoAnimatedFrames = emptyList(),
             logoFrameDelaysMs = emptyList(),
             repairNotice = null
         )
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldLogo != null) {
+            retireBitmap(oldLogo, gen, BitmapOwnership.USER_SUPPLIED)
+        }
+        if (autoRecycleSuperseded) {
+            for (f in oldFrames) {
+                retireBitmap(f, gen, BitmapOwnership.USER_SUPPLIED)
+            }
+        }
         regenerate(debounceMs = 0)
     }
 
@@ -292,13 +426,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
-    fun updateBackgroundImage(bmp: Bitmap?) {
+    fun updateBackgroundImage(bmp: Bitmap?, autoRecycleSuperseded: Boolean = true) {
+        val oldBg = _state.value.backgroundImage
         _state.value = _state.value.copy(backgroundImage = bmp, repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldBg != null && oldBg !== bmp) {
+            retireBitmap(oldBg, gen, BitmapOwnership.USER_SUPPLIED)
+        }
         regenerate(debounceMs = 0)
     }
 
-    fun removeBackgroundImage() {
+    fun removeBackgroundImage(autoRecycleSuperseded: Boolean = true) {
+        val oldBg = _state.value.backgroundImage
         _state.value = _state.value.copy(backgroundImage = null, repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldBg != null) {
+            retireBitmap(oldBg, gen, BitmapOwnership.USER_SUPPLIED)
+        }
         regenerate(debounceMs = 0)
     }
 
@@ -307,23 +451,60 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
-    fun updateSourceImage(bmp: Bitmap?) {
+    fun updateSourceImage(bmp: Bitmap?, autoRecycleSuperseded: Boolean = true) {
+        val oldSrc = _state.value.sourceImage
+        val oldFrames = _state.value.animatedFrames
         _state.value = _state.value.copy(sourceImage = bmp, animatedFrames = emptyList(), repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldSrc != null && oldSrc !== bmp) {
+            retireBitmap(oldSrc, gen, BitmapOwnership.USER_SUPPLIED)
+        }
+        if (autoRecycleSuperseded) {
+            for (f in oldFrames) {
+                if (f.bitmap !== bmp) {
+                    retireBitmap(f.bitmap, gen, BitmapOwnership.USER_SUPPLIED)
+                }
+            }
+        }
         regenerate(debounceMs = 0)
     }
 
-    fun updateAnimatedFrames(frames: List<QrFrame>) {
+    fun updateAnimatedFrames(frames: List<QrFrame>, autoRecycleSuperseded: Boolean = true) {
         val firstBmp = frames.firstOrNull()?.bitmap
+        val oldSrc = _state.value.sourceImage
+        val oldFrames = _state.value.animatedFrames
         _state.value = _state.value.copy(
             sourceImage = firstBmp ?: _state.value.sourceImage,
             animatedFrames = frames,
             repairNotice = null
         )
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldSrc != null && oldSrc !== firstBmp && frames.none { it.bitmap === oldSrc }) {
+            retireBitmap(oldSrc, gen, BitmapOwnership.USER_SUPPLIED)
+        }
+        if (autoRecycleSuperseded) {
+            for (f in oldFrames) {
+                if (f.bitmap !== firstBmp && frames.none { it.bitmap === f.bitmap }) {
+                    retireBitmap(f.bitmap, gen, BitmapOwnership.USER_SUPPLIED)
+                }
+            }
+        }
         regenerate(debounceMs = 0)
     }
 
-    fun removeSourceImage() {
+    fun removeSourceImage(autoRecycleSuperseded: Boolean = true) {
+        val oldSrc = _state.value.sourceImage
+        val oldFrames = _state.value.animatedFrames
         _state.value = _state.value.copy(sourceImage = null, animatedFrames = emptyList(), repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldSrc != null) {
+            retireBitmap(oldSrc, gen, BitmapOwnership.USER_SUPPLIED)
+        }
+        if (autoRecycleSuperseded) {
+            for (f in oldFrames) {
+                retireBitmap(f.bitmap, gen, BitmapOwnership.USER_SUPPLIED)
+            }
+        }
         regenerate(debounceMs = 0)
     }
 
@@ -367,13 +548,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 120)
     }
 
-    fun updateResampleBackdropImage(bmp: Bitmap?) {
+    fun updateResampleBackdropImage(bmp: Bitmap?, autoRecycleSuperseded: Boolean = true) {
+        val oldBmp = _state.value.resampleBackdropImage
         _state.value = _state.value.copy(resampleBackdropImage = bmp, repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldBmp != null && oldBmp !== bmp) {
+            retireBitmap(oldBmp, gen, BitmapOwnership.USER_SUPPLIED)
+        }
         regenerate(debounceMs = 0)
     }
 
-    fun removeResampleBackdropImage() {
+    fun removeResampleBackdropImage(autoRecycleSuperseded: Boolean = true) {
+        val oldBmp = _state.value.resampleBackdropImage
         _state.value = _state.value.copy(resampleBackdropImage = null, repairNotice = null)
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded && oldBmp != null) {
+            retireBitmap(oldBmp, gen, BitmapOwnership.USER_SUPPLIED)
+        }
         regenerate(debounceMs = 0)
     }
 
@@ -394,48 +585,60 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun terminateSession() {
-        renderGeneration.incrementAndGet()
+        val currentGen = renderGeneration.incrementAndGet()
         generateJob?.cancel()
         generateJob = null
         exportJob?.cancel()
         exportJob = null
+
         val s = _state.value
-        val bmp = s.bitmap
-        if (bmp != null && !bmp.isRecycled) {
-            bmp.recycle()
+        val candidates = listOfNotNull(
+            s.bitmap,
+            s.logo,
+            s.backgroundImage,
+            s.sourceImage,
+            s.resampleBackdropImage,
+            s.backdropImage
+        ) + s.previewAnimatedFrames.map { it.bitmap } + s.animatedFrames.map { it.bitmap } + s.logoAnimatedFrames
+
+        val distinctBitmaps = candidates.distinct()
+        for (b in distinctBitmaps) {
+            retireBitmap(b, currentGen, BitmapOwnership.VIEW_MODEL)
         }
-        val logo = s.logo
-        if (logo != null && !logo.isRecycled) {
-            logo.recycle()
-        }
-        val bgBmp = s.backgroundImage
-        if (bgBmp != null && !bgBmp.isRecycled) {
-            bgBmp.recycle()
-        }
-        val srcBmp = s.sourceImage
-        if (srcBmp != null && !srcBmp.isRecycled) {
-            srcBmp.recycle()
-        }
-        val backdropBmp = s.resampleBackdropImage
-        if (backdropBmp != null && !backdropBmp.isRecycled && backdropBmp !== srcBmp && backdropBmp !== bgBmp) {
-            backdropBmp.recycle()
-        }
-        val animFrames = s.previewAnimatedFrames
-        for (f in animFrames) {
-            if (!f.bitmap.isRecycled && f.bitmap !== bmp && f.bitmap !== srcBmp) {
-                f.bitmap.recycle()
-            }
-        }
+
         _state.value = UiState(content = "")
+        preRepairSnapshot = null
+        drainSupersededBitmaps()
     }
 
-    fun clearAnimation() {
+    fun clearAnimation(autoRecycleSuperseded: Boolean = true) {
+        val oldAnimated = _state.value.animatedFrames
+        val oldLogoAnimated = _state.value.logoAnimatedFrames
+        val oldPreviewFrames = _state.value.previewAnimatedFrames
+        val currentSrc = _state.value.sourceImage
+        val currentBmp = _state.value.bitmap
         _state.value = _state.value.copy(
             animatedFrames = emptyList(),
             logoAnimatedFrames = emptyList(),
             previewAnimatedFrames = emptyList(),
             repairNotice = null
         )
+        val gen = renderGeneration.get()
+        if (autoRecycleSuperseded) {
+            for (f in oldAnimated) {
+                if (f.bitmap !== currentSrc && f.bitmap !== currentBmp) {
+                    retireBitmap(f.bitmap, gen, BitmapOwnership.USER_SUPPLIED)
+                }
+            }
+            for (f in oldLogoAnimated) {
+                retireBitmap(f, gen, BitmapOwnership.USER_SUPPLIED)
+            }
+            for (f in oldPreviewFrames) {
+                if (f.bitmap !== currentSrc && f.bitmap !== currentBmp) {
+                    retireBitmap(f.bitmap, gen, BitmapOwnership.VIEW_MODEL)
+                }
+            }
+        }
         regenerate(debounceMs = 0)
     }
 
@@ -492,95 +695,125 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val effectiveContent = s.content
         if (effectiveContent.isBlank()) {
-            renderGeneration.incrementAndGet()
+            val gen = renderGeneration.incrementAndGet()
             generateJob?.cancel()
             generateJob = null
+            val oldPreview = _state.value.bitmap
+            val oldFrames = _state.value.previewAnimatedFrames
             _state.update {
                 it.copy(
                     bitmap = null,
                     matrix = null,
                     design = null,
                     scanabilityReport = null,
+                    previewAnimatedFrames = emptyList(),
                     isRenderingPreview = false,
                     errorMessage = null
                 )
             }
+            if (oldPreview != null) retireBitmap(oldPreview, gen, BitmapOwnership.VIEW_MODEL)
+            for (f in oldFrames) retireBitmap(f.bitmap, gen, BitmapOwnership.VIEW_MODEL)
+            drainSupersededBitmaps()
             return
         }
         val generation = renderGeneration.incrementAndGet()
+        activeRenderGenerations.add(generation)
 
         generateJob?.cancel()
         generateJob = viewModelScope.launch(Dispatchers.Default) {
-            if (debounceMs > 0) {
-                delay(debounceMs)
-            }
-            ensureActive()
-            if (generation != renderGeneration.get()) return@launch
+            try {
+                if (debounceMs > 0) {
+                    delay(debounceMs)
+                }
+                ensureActive()
+                if (generation != renderGeneration.get()) return@launch
 
-            _state.update { it.copy(isRenderingPreview = true, errorMessage = null) }
+                _state.update { it.copy(isRenderingPreview = true, errorMessage = null) }
 
-            val design = customDesign ?: buildDesignFromState(_state.value)
-            ensureActive()
-            if (generation != renderGeneration.get()) return@launch
+                val design = customDesign ?: buildDesignFromState(_state.value)
+                ensureActive()
+                if (generation != renderGeneration.get()) return@launch
 
-            val mode = s.generationMode
-            val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
-            ensureActive()
-            if (generation != renderGeneration.get()) return@launch
+                val mode = s.generationMode
+                val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
+                ensureActive()
+                if (generation != renderGeneration.get()) return@launch
 
-            val animPreviewFrames: List<QrFrame> = if (renderResult is QrRenderResult.Success && AnimatedQrGenerator.isDesignAnimated(design)) {
-                try {
-                    val animResult = QrGenerator.generateAnimatedFramesResult(
-                        content = effectiveContent,
-                        design = design,
-                        outputSize = minOf(design.outputSize, 384),
-                        mode = mode,
-                        policy = AnimatedQrGenerator.FrameDropPolicy.SkipFailedFrames
-                    )
-                    if (animResult is QrOutputResult.Success) {
-                        animResult.value.take(24)
-                    } else {
+                val animPreviewFrames: List<QrFrame> = if (renderResult is QrRenderResult.Success && AnimatedQrGenerator.isDesignAnimated(design)) {
+                    try {
+                        val animResult = QrGenerator.generateAnimatedFramesResult(
+                            content = effectiveContent,
+                            design = design,
+                            outputSize = minOf(design.outputSize, 384),
+                            mode = mode,
+                            policy = AnimatedQrGenerator.FrameDropPolicy.SkipFailedFrames
+                        )
+                        if (animResult is QrOutputResult.Success) {
+                            animResult.value.take(24)
+                        } else {
+                            emptyList()
+                        }
+                    } catch (_: Exception) {
                         emptyList()
                     }
-                } catch (_: Exception) {
+                } else {
                     emptyList()
                 }
-            } else {
-                emptyList()
-            }
-            ensureActive()
-            if (generation != renderGeneration.get()) return@launch
+                ensureActive()
+                if (generation != renderGeneration.get()) return@launch
 
-            withContext(Dispatchers.Main) {
-                if (generation != renderGeneration.get()) return@withContext
-                when (renderResult) {
-                    is QrRenderResult.Success -> {
-                        _state.update {
-                            it.copy(
-                                bitmap = renderResult.bitmap,
-                                previewAnimatedFrames = animPreviewFrames,
-                                matrix = renderResult.matrix,
-                                design = renderResult.design,
-                                scanabilityReport = renderResult.report,
-                                isRenderingPreview = false,
-                                errorMessage = null
-                            )
+                withContext(Dispatchers.Main) {
+                    if (generation != renderGeneration.get()) return@withContext
+                    when (renderResult) {
+                        is QrRenderResult.Success -> {
+                            val oldPreview = _state.value.bitmap
+                            val oldFrames = _state.value.previewAnimatedFrames
+                            _state.update {
+                                it.copy(
+                                    bitmap = renderResult.bitmap,
+                                    previewAnimatedFrames = animPreviewFrames,
+                                    matrix = renderResult.matrix,
+                                    design = renderResult.design,
+                                    scanabilityReport = renderResult.report,
+                                    isRenderingPreview = false,
+                                    errorMessage = null
+                                )
+                            }
+                            if (oldPreview != null && oldPreview !== renderResult.bitmap) {
+                                retireBitmap(oldPreview, generation, BitmapOwnership.VIEW_MODEL)
+                            }
+                            for (f in oldFrames) {
+                                if (f.bitmap !== renderResult.bitmap && animPreviewFrames.none { it.bitmap === f.bitmap }) {
+                                    retireBitmap(f.bitmap, generation, BitmapOwnership.VIEW_MODEL)
+                                }
+                            }
                         }
-                    }
-                    is QrRenderResult.Failure -> {
-                        _state.update {
-                            it.copy(
-                                bitmap = null,
-                                matrix = null,
-                                design = null,
-                                scanabilityReport = null,
-                                previewAnimatedFrames = emptyList(),
-                                isRenderingPreview = false,
-                                errorMessage = renderResult.error
-                            )
+                        is QrRenderResult.Failure -> {
+                            val oldPreview = _state.value.bitmap
+                            val oldFrames = _state.value.previewAnimatedFrames
+                            _state.update {
+                                it.copy(
+                                    bitmap = null,
+                                    matrix = null,
+                                    design = null,
+                                    scanabilityReport = null,
+                                    previewAnimatedFrames = emptyList(),
+                                    isRenderingPreview = false,
+                                    errorMessage = renderResult.error
+                                )
+                            }
+                            if (oldPreview != null) {
+                                retireBitmap(oldPreview, generation, BitmapOwnership.VIEW_MODEL)
+                            }
+                            for (f in oldFrames) {
+                                retireBitmap(f.bitmap, generation, BitmapOwnership.VIEW_MODEL)
+                            }
                         }
                     }
                 }
+            } finally {
+                activeRenderGenerations.remove(generation)
+                drainSupersededBitmaps()
             }
         }
     }
@@ -1432,29 +1665,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode
-                val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
-                }
-                val bmp = when (renderResult) {
-                    is QrRenderResult.Success -> renderResult.bitmap
-                    is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            saveResult = "Save failed: ${renderResult.error}"
-                        )
-                        return@launch
-                    }
-                }
-                if (bmp == null) {
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val mode = _state.value.generationMode
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+            }
+            val bmp = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap
+                is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
-                        saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                        saveResult = "Save failed: ${renderResult.error}"
                     )
-                    return@launch
+                    return@launchExportJob
                 }
+            }
+            if (bmp == null) {
+                _state.value = _state.value.copy(
+                    saveResult = "Save failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                )
+                return@launchExportJob
+            }
+            try {
                 val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
                     bmp,
                     exportDesign,
@@ -1466,7 +1698,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                         scanabilityReport = report
                     )
-                    return@launch
+                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.PNG, 100)
@@ -1486,7 +1718,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } finally {
-                _state.value = _state.value.copy(isExporting = false)
+                if (bmp !== _state.value.bitmap && bmp !== preRepairSnapshot?.bitmap) {
+                    bmp.recycle()
+                }
             }
         }
     }
@@ -1501,29 +1735,24 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode
-                val effectiveExportDesign = QrGenerator.effectiveDesignForMode(exportDesign, mode)
-                val matrix = withContext(Dispatchers.Default) {
-                    QrGenerator.generateMatrix(content, effectiveExportDesign, mode = mode)
-                }
-                val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.saveSvgTyped(getApplication(), matrix, effectiveExportDesign, content)
-                }
-                _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) {
-                        "Vector SVG saved to Downloads"
-                    } else {
-                        "SVG export rejected: ${exportResult.errorOrNull()?.description}"
-                    },
-                    lastSavedUri = exportResult.getOrNull()
-                )
-            } finally {
-                _state.value = _state.value.copy(isExporting = false)
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val mode = _state.value.generationMode
+            val effectiveExportDesign = QrGenerator.effectiveDesignForMode(exportDesign, mode)
+            val matrix = withContext(Dispatchers.Default) {
+                QrGenerator.generateMatrix(content, effectiveExportDesign, mode = mode)
             }
+            val exportResult = withContext(Dispatchers.IO) {
+                QrExporter.saveSvgTyped(getApplication(), matrix, effectiveExportDesign, content)
+            }
+            _state.value = _state.value.copy(
+                saveResult = if (exportResult.isSuccess) {
+                    "Vector SVG saved to Downloads"
+                } else {
+                    "SVG export rejected: ${exportResult.errorOrNull()?.description}"
+                },
+                lastSavedUri = exportResult.getOrNull()
+            )
         }
     }
 
@@ -1537,29 +1766,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode
-                val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
-                }
-                val bmp = when (renderResult) {
-                    is QrRenderResult.Success -> renderResult.bitmap
-                    is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            saveResult = "PDF export failed: ${renderResult.error}"
-                        )
-                        return@launch
-                    }
-                }
-                if (bmp == null) {
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val mode = _state.value.generationMode
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+            }
+            val bmp = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap
+                is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
-                        saveResult = "PDF export failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                        saveResult = "PDF export failed: ${renderResult.error}"
                     )
-                    return@launch
+                    return@launchExportJob
                 }
+            }
+            if (bmp == null) {
+                _state.value = _state.value.copy(
+                    saveResult = "PDF export failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                )
+                return@launchExportJob
+            }
+            try {
                 val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
                     bmp,
                     exportDesign,
@@ -1571,7 +1799,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         saveResult = "Export rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                         scanabilityReport = report
                     )
-                    return@launch
+                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.savePdfTyped(getApplication(), bmp)
@@ -1591,7 +1819,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } finally {
-                _state.value = _state.value.copy(isExporting = false)
+                if (bmp !== _state.value.bitmap && bmp !== preRepairSnapshot?.bitmap) {
+                    bmp.recycle()
+                }
             }
         }
     }
@@ -1606,44 +1836,37 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isExporting = true
-            )
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                    _state.value.animatedFrames
-                } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
-                }
-
-                if (frames.isEmpty()) {
-                    _state.value = _state.value.copy(
-                        saveResult = "GIF export requires a photo, background image, or animated frames"
-                    )
-                    return@launch
-                }
-
-                val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
-                    exportDesign.copy(
-                        imageSource = exportDesign.imageSource.copy(
-                            source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
-                        )
-                    )
-                } else exportDesign
-
-                val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Gif())
-                }
-                _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Animated GIF saved to Gallery (${frames.size} frames)" else "GIF export failed: ${exportResult.errorOrNull()?.description}",
-                    lastSavedUri = exportResult.getOrNull()
-                )
-            } finally {
-                _state.value = _state.value.copy(isExporting = false)
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
+                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
             }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "GIF export requires a photo, background image, or animated frames"
+                )
+                return@launchExportJob
+            }
+
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+                exportDesign.copy(
+                    imageSource = exportDesign.imageSource.copy(
+                        source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
+                    )
+                )
+            } else exportDesign
+
+            val exportResult = withContext(Dispatchers.IO) {
+                QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Gif())
+            }
+            _state.value = _state.value.copy(
+                saveResult = if (exportResult.isSuccess) "Animated GIF saved to Gallery (${frames.size} frames)" else "GIF export failed: ${exportResult.errorOrNull()?.description}",
+                lastSavedUri = exportResult.getOrNull()
+            )
         }
     }
 
@@ -1657,51 +1880,44 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isExporting = true
-            )
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                    _state.value.animatedFrames
-                } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                    if (baseBmp != null) {
-                        (0 until 15).map { QrFrame(baseBmp, 66) }
-                    } else emptyList()
-                }
-
-                if (frames.isEmpty()) {
-                    _state.value = _state.value.copy(
-                        saveResult = "Video export requires a photo, background image, or video frames"
-                    )
-                    return@launch
-                }
-
-                val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
-                    exportDesign.copy(
-                        imageSource = exportDesign.imageSource.copy(
-                            source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
-                        )
-                    )
-                } else exportDesign
-
-                val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(
-                        getApplication(),
-                        content,
-                        designWithFrames,
-                        QrOutputFormat.Video(fps = 15, container = QrOutputFormat.VideoContainer.MP4)
-                    )
-                }
-                _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "MP4 Video saved to Movies" else "Video export failed: ${exportResult.errorOrNull()?.description}",
-                    lastSavedUri = exportResult.getOrNull()
-                )
-            } finally {
-                _state.value = _state.value.copy(isExporting = false)
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
+                if (baseBmp != null) {
+                    (0 until 15).map { QrFrame(baseBmp, 66) }
+                } else emptyList()
             }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "Video export requires a photo, background image, or video frames"
+                )
+                return@launchExportJob
+            }
+
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+                exportDesign.copy(
+                    imageSource = exportDesign.imageSource.copy(
+                        source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
+                    )
+                )
+            } else exportDesign
+
+            val exportResult = withContext(Dispatchers.IO) {
+                QrExporter.exportTyped(
+                    getApplication(),
+                    content,
+                    designWithFrames,
+                    QrOutputFormat.Video(fps = 15, container = QrOutputFormat.VideoContainer.MP4)
+                )
+            }
+            _state.value = _state.value.copy(
+                saveResult = if (exportResult.isSuccess) "MP4 Video saved to Movies" else "Video export failed: ${exportResult.errorOrNull()?.description}",
+                lastSavedUri = exportResult.getOrNull()
+            )
         }
     }
 
@@ -1715,44 +1931,37 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(
-                isExporting = true
-            )
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val frames = if (_state.value.animatedFrames.isNotEmpty()) {
-                    _state.value.animatedFrames
-                } else {
-                    val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
-                    if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
-                }
-
-                if (frames.isEmpty()) {
-                    _state.value = _state.value.copy(
-                        saveResult = "Animated SVG requires frames"
-                    )
-                    return@launch
-                }
-
-                val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
-                    exportDesign.copy(
-                        imageSource = exportDesign.imageSource.copy(
-                            source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
-                        )
-                    )
-                } else exportDesign
-
-                val exportResult = withContext(Dispatchers.IO) {
-                    QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Svg)
-                }
-                _state.value = _state.value.copy(
-                    saveResult = if (exportResult.isSuccess) "Animated SVG saved to Downloads" else "Animated SVG export failed: ${exportResult.errorOrNull()?.description}",
-                    lastSavedUri = exportResult.getOrNull()
-                )
-            } finally {
-                _state.value = _state.value.copy(isExporting = false)
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val frames = if (_state.value.animatedFrames.isNotEmpty()) {
+                _state.value.animatedFrames
+            } else {
+                val baseBmp = _state.value.sourceImage ?: _state.value.backgroundImage
+                if (baseBmp != null) listOf(QrFrame(baseBmp, 100)) else emptyList()
             }
+
+            if (frames.isEmpty()) {
+                _state.value = _state.value.copy(
+                    saveResult = "Animated SVG requires frames"
+                )
+                return@launchExportJob
+            }
+
+            val designWithFrames = if (exportDesign.imageSource.source !is ImageSource.Animated && frames.isNotEmpty()) {
+                exportDesign.copy(
+                    imageSource = exportDesign.imageSource.copy(
+                        source = ImageSource.Animated(frames.map { it.bitmap }, frames.map { it.durationMs })
+                    )
+                )
+            } else exportDesign
+
+            val exportResult = withContext(Dispatchers.IO) {
+                QrExporter.exportTyped(getApplication(), content, designWithFrames, QrOutputFormat.Svg)
+            }
+            _state.value = _state.value.copy(
+                saveResult = if (exportResult.isSuccess) "Animated SVG saved to Downloads" else "Animated SVG export failed: ${exportResult.errorOrNull()?.description}",
+                lastSavedUri = exportResult.getOrNull()
+            )
         }
     }
 
@@ -1766,29 +1975,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (exportJob?.isActive == true) return
-        exportJob = viewModelScope.launch {
-            _state.value = _state.value.copy(isExporting = true)
-            try {
-                val exportDesign = buildDesignFromState(_state.value, isPreview = false)
-                val mode = _state.value.generationMode
-                val renderResult = withContext(Dispatchers.Default) {
-                    QrGenerator.generateWithResult(content, exportDesign, mode = mode)
-                }
-                val bmp = when (renderResult) {
-                    is QrRenderResult.Success -> renderResult.bitmap
-                    is QrRenderResult.Failure -> {
-                        _state.value = _state.value.copy(
-                            saveResult = "Share failed: ${renderResult.error}"
-                        )
-                        return@launch
-                    }
-                }
-                if (bmp == null) {
+        exportJob = launchExportJob {
+            val exportDesign = buildDesignFromState(_state.value, isPreview = false)
+            val mode = _state.value.generationMode
+            val renderResult = withContext(Dispatchers.Default) {
+                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+            }
+            val bmp = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap
+                is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
-                        saveResult = "Share failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                        saveResult = "Share failed: ${renderResult.error}"
                     )
-                    return@launch
+                    return@launchExportJob
                 }
+            }
+            if (bmp == null) {
+                _state.value = _state.value.copy(
+                    saveResult = "Share failed: ${QrError.Rendering.BitmapAllocationFailed(exportDesign.outputSize, exportDesign.outputSize).description}"
+                )
+                return@launchExportJob
+            }
+            try {
                 val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
                     bmp,
                     exportDesign,
@@ -1800,11 +2008,13 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                         saveResult = "Share rejected: verification failed (${report.warnings.firstOrNull() ?: "Unreadable"})",
                         scanabilityReport = report
                     )
-                    return@launch
+                    return@launchExportJob
                 }
                 QrExporter.share(getApplication(), bmp)
             } finally {
-                _state.value = _state.value.copy(isExporting = false)
+                if (bmp !== _state.value.bitmap && bmp !== preRepairSnapshot?.bitmap) {
+                    bmp.recycle()
+                }
             }
         }
     }
