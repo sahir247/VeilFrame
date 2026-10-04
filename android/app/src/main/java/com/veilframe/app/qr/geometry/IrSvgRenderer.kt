@@ -30,8 +30,19 @@ object IrSvgRenderer {
             sb.append("  </defs>\n")
         }
 
+        val hasRoundedCornersDef = ir.defs.any { it.contains("""id="rounded-corners"""") }
+        val needsGroupWrap = hasRoundedCornersDef && ir.rootNodes.none { it is GroupNode && it.clipPathId == "rounded-corners" }
+
+        if (needsGroupWrap) {
+            sb.append("  <g clip-path=\"url(#rounded-corners)\">\n")
+        }
+
         for (node in ir.rootNodes) {
-            renderNode(node, sb, indent = 2)
+            renderNode(node, sb, indent = if (needsGroupWrap) 4 else 2)
+        }
+
+        if (needsGroupWrap) {
+            sb.append("  </g>\n")
         }
 
         sb.append("</svg>")
@@ -46,11 +57,19 @@ object IrSvgRenderer {
                 val isBackdrop = node.alwaysEmitOpacity && node.x == 0f && node.y == 0f
                 if (isBackdrop) {
                     sb.append(String.format(Locale.US, "<rect width=\"%s\" height=\"%s\"", formatIntOrCoord(node.width), formatIntOrCoord(node.height)))
+                } else if (node.alwaysEmitOpacity && node.opacityString != null) {
+                    // Finder 8x8 backing rect formatting matching EF parity contract
+                    val wStr = formatIntOrCoord(node.width)
+                    val hStr = formatIntOrCoord(node.height)
+                    val xStr = formatIntOrCoord(node.x)
+                    val yStr = formatIntOrCoord(node.y)
+                    sb.append(String.format(Locale.US, "<rect opacity=\"%s\" width=\"%s\" height=\"%s\" x=\"%s\" y=\"%s\"",
+                        node.opacityString, wStr, hStr, xStr, yStr))
                 } else {
                     val wStr = if (node.width == 1.0f) "1.0" else if (node.width % 1f == 0f) node.width.toInt().toString() else formatIntOrCoord(node.width)
                     val hStr = if (node.height == 1.0f) "1.0" else if (node.height % 1f == 0f) node.height.toInt().toString() else formatIntOrCoord(node.height)
-                    val xStr = formatIntOrCoord(node.x)
-                    val yStr = formatIntOrCoord(node.y)
+                    val xStr = if (node.width <= 1.0f && node.x % 1f == 0f) "${node.x.toInt()}.0" else formatIntOrCoord(node.x)
+                    val yStr = if (node.height <= 1.0f && node.y % 1f == 0f) "${node.y.toInt()}.0" else formatIntOrCoord(node.y)
                     sb.append(String.format(Locale.US, "<rect x=\"%s\" y=\"%s\" width=\"%s\" height=\"%s\"",
                         xStr, yStr, wStr, hStr))
                 }
@@ -64,7 +83,10 @@ object IrSvgRenderer {
                     val swStr = node.strokeWidthString ?: String.format(Locale.US, "%.4f", node.strokeWidth)
                     sb.append(String.format(Locale.US, " stroke-width=\"%s\"", swStr))
                 }
-                if (node.alwaysEmitOpacity || node.opacity < 1f || node.opacityString != null) {
+                if (!node.alwaysEmitOpacity && (node.opacity < 1f || node.opacityString != null)) {
+                    val opStr = node.opacityString ?: formatOpacity(node.opacity)
+                    sb.append(String.format(Locale.US, " opacity=\"%s\"", opStr))
+                } else if (isBackdrop && node.alwaysEmitOpacity) {
                     val opStr = node.opacityString ?: formatOpacity(node.opacity)
                     sb.append(String.format(Locale.US, " opacity=\"%s\"", opStr))
                 }

@@ -2,6 +2,7 @@ package com.veilframe.app.qr.geometry
 
 import android.graphics.Color
 import android.graphics.RectF
+import java.util.Locale
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.model.*
@@ -54,7 +55,22 @@ object ImageGeometryBuilder {
         val bgAlpha = colorAlpha(resolvedBackdropColor)
         if (bgAlpha > 0) {
             val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * mSize else 0f
-            nodes.add(RectNode(x = 0f, y = 0f, width = width, height = height, rx = crPx, ry = crPx, fill = resolvedBackdropColor))
+            val bgAlphaFloat = ((resolvedBackdropColor ushr 24) and 0xFF) / 255f
+            val bgHex = IrSvgRenderer.colorToHex(resolvedBackdropColor)
+            nodes.add(
+                RectNode(
+                    x = 0f,
+                    y = 0f,
+                    width = width,
+                    height = height,
+                    rx = crPx,
+                    ry = crPx,
+                    fill = resolvedBackdropColor,
+                    fillString = bgHex,
+                    opacity = bgAlphaFloat,
+                    alwaysEmitOpacity = true
+                )
+            )
         }
 
         val backdropImg = design.backdropStyle.image
@@ -75,7 +91,8 @@ object ImageGeometryBuilder {
                     bitmap = preprocessedBackdrop,
                     base64Data = base64,
                     opacity = design.backdropStyle.imageAlpha,
-                    preserveAspectRatio = ""
+                    preserveAspectRatio = "",
+                    key = "bi"
                 )
             )
         }
@@ -107,14 +124,22 @@ object ImageGeometryBuilder {
         if (hasImage && allowTransparent) {
             for (col in 0 until n) {
                 for (row in 0 until n) {
-                    val role = matrix.roleAt(col, row)
-                    val isTimingNone = role == QrModuleRole.TIMING && timingShape == ModuleShape.NONE
-                    val isAlignNone = (role == QrModuleRole.ALIGNMENT_CENTER || role == QrModuleRole.ALIGNMENT_BORDER) && alignShape == ModuleShape.NONE
-                    if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION && !isTimingNone && !isAlignNone) continue
-                    val isDark = matrix.isDark(col, row)
-                    val color = if (isDark) dataDarkColor else dataLightColor
-                    if (colorAlpha(color) == 0) continue
-                    createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color)?.let { nodes.add(it) }
+                    val type = matrix.typeAt(col, row)
+                    val isTimingNone = type == ModuleType.TIMING && timingShape == ModuleShape.NONE
+                    val isAlignNone = (type == ModuleType.ALIGN_CENTER || type == ModuleType.ALIGN_OTHER) && alignShape == ModuleShape.NONE
+                    if (type == ModuleType.POS_CENTER || type == ModuleType.POS_OTHER) {
+                        // Skip finder modules in pre-pass
+                    } else if (type == ModuleType.TIMING && !isTimingNone) {
+                        // Skip active timing modules in pre-pass
+                    } else if ((type == ModuleType.ALIGN_CENTER || type == ModuleType.ALIGN_OTHER) && !isAlignNone) {
+                        // Skip active alignment modules in pre-pass
+                    } else {
+                        val isDark = matrix.isDark(col, row)
+                        val color = if (isDark) dataDarkColor else dataLightColor
+                        if (colorAlpha(color) > 0) {
+                            createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color)?.let { nodes.add(it) }
+                        }
+                    }
                 }
             }
         }
@@ -190,60 +215,74 @@ object ImageGeometryBuilder {
             }
         }
 
-        // 4. Finder Patterns (with 8x8 posLightColor backing, ordered TL -> BL -> TR matching EFQRCode column-major traversal)
-        appendFinderIrNodes(nodes, x0, y0, 3.5f, 3.5f, 0, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
-        appendFinderIrNodes(nodes, x0, y0, 3.5f, n - 3.5f, 0, n - 8, mSize, posStyle, posDarkColor, posLightColor, posSize)
-        appendFinderIrNodes(nodes, x0, y0, n - 3.5f, 3.5f, n - 8, 0, mSize, posStyle, posDarkColor, posLightColor, posSize)
-
-        // 5. Timing Tracks (skips entirely if timingShape is NONE)
-        if (timingShape != ModuleShape.NONE) {
-            val timingOffset = (1.0f - timingSize) / 2.0f
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    if (matrix.roleAt(col, row) != QrModuleRole.TIMING) continue
-                    val isDark = matrix.isDark(col, row)
-                    val color = if (isDark) timingDarkColor else timingLightColor
-                    if (colorAlpha(color) == 0) continue
-                    val tx = x0 + (col + timingOffset) * mSize
-                    val ty = y0 + (row + timingOffset) * mSize
-                    createModuleShapeNode(tx, ty, timingSize * mSize, timingShape, color)?.let { nodes.add(it) }
-                }
-            }
-        }
-
-        // 6. Alignment Patterns (skips entirely if alignShape is NONE)
-        if (alignShape != ModuleShape.NONE) {
-            val alignOffset = (1.0f - alignSize) / 2.0f
-            for (col in 0 until n) {
-                for (row in 0 until n) {
-                    val role = matrix.roleAt(col, row)
-                    if (role != QrModuleRole.ALIGNMENT_CENTER && role != QrModuleRole.ALIGNMENT_BORDER) continue
-                    val isDark = matrix.isDark(col, row)
-                    val color = if (isDark) alignDarkColor else alignLightColor
-                    if (colorAlpha(color) == 0) continue
-                    val ax = x0 + (col + alignOffset) * mSize
-                    val ay = y0 + (row + alignOffset) * mSize
-                    createModuleShapeNode(ax, ay, alignSize * mSize, alignShape, color)?.let { nodes.add(it) }
-                }
-            }
-        }
-
-        // 7. Data, Format & Version Modules on top of Image
+        // 4. Single Canonical EFQRCode Traversal: x-major / y-minor (col in 0 until n, row in 0 until n)
+        // Traversal priority per EFQRCodeStyleImage.swift:690-850:
+        // ALIGN -> TIMING -> POS_CENTER -> POS_OTHER (skip) -> DATA
+        val alignOffset = (1.0f - alignSize) / 2.0f
+        val timingOffset = (1.0f - timingSize) / 2.0f
         val dataOffset = (1.0f - dataScale) / 2.0f
+
         for (col in 0 until n) {
             for (row in 0 until n) {
-                val role = matrix.roleAt(col, row)
-                if (role != QrModuleRole.DATA && role != QrModuleRole.FORMAT && role != QrModuleRole.VERSION) continue
                 val isDark = matrix.isDark(col, row)
-                val color = if (isDark) dataDarkColor else dataLightColor
-                if (colorAlpha(color) == 0) continue
-                val dx = x0 + (col + dataOffset) * mSize
-                val dy = y0 + (row + dataOffset) * mSize
-                createModuleShapeNode(dx, dy, dataScale * mSize, dataShape, color)?.let { nodes.add(it) }
+                val type = matrix.typeAt(col, row)
+
+                if (type == ModuleType.ALIGN_CENTER || type == ModuleType.ALIGN_OTHER) {
+                    if (alignShape != ModuleShape.NONE) {
+                        val color = if (isDark) alignDarkColor else alignLightColor
+                        if (colorAlpha(color) > 0) {
+                            val ax = x0 + (col + alignOffset) * mSize
+                            val ay = y0 + (row + alignOffset) * mSize
+                            createModuleShapeNode(ax, ay, alignSize * mSize, alignShape, color)?.let { nodes.add(it) }
+                        }
+                    }
+                } else if (type == ModuleType.TIMING) {
+                    if (timingShape != ModuleShape.NONE) {
+                        val color = if (isDark) timingDarkColor else timingLightColor
+                        if (colorAlpha(color) > 0) {
+                            val tx = x0 + (col + timingOffset) * mSize
+                            val ty = y0 + (row + timingOffset) * mSize
+                            createModuleShapeNode(tx, ty, timingSize * mSize, timingShape, color)?.let { nodes.add(it) }
+                        }
+                    }
+                } else if (type == ModuleType.POS_CENTER) {
+                    val markArr = when {
+                        col > row -> floatArrayOf(0f, -1f)
+                        col < row -> floatArrayOf(-1f, 0f)
+                        else -> floatArrayOf(-1f, -1f)
+                    }
+                    val bgCol = col - 4 - markArr[0].toInt()
+                    val bgRow = row - 4 - markArr[1].toInt()
+                    appendFinderIrNodes(
+                        nodes = nodes,
+                        x0 = x0,
+                        y0 = y0,
+                        cx = col + 0.5f,
+                        cy = row + 0.5f,
+                        bgCol = bgCol,
+                        bgRow = bgRow,
+                        mSize = mSize,
+                        style = posStyle,
+                        darkColor = posDarkColor,
+                        lightColor = posLightColor,
+                        sizeFactor = posSize
+                    )
+                } else if (type == ModuleType.POS_OTHER) {
+                    continue
+                } else {
+                    if (dataShape != ModuleShape.NONE) {
+                        val color = if (isDark) dataDarkColor else dataLightColor
+                        if (colorAlpha(color) > 0) {
+                            val dx = x0 + (col + dataOffset) * mSize
+                            val dy = y0 + (row + dataOffset) * mSize
+                            createModuleShapeNode(dx, dy, dataScale * mSize, dataShape, color)?.let { nodes.add(it) }
+                        }
+                    }
+                }
             }
         }
 
-        // 8. Center Logo
+        // 5. Center Logo
         VeilIconPipeline.appendIconNodes(
             nodes = nodes,
             defs = defs,
@@ -253,6 +292,15 @@ object ImageGeometryBuilder {
             qrPixelSize = matrix.size * geometry.moduleSize,
             masks = masks
         )
+
+        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
+        if (hasCornerClip) {
+            val crPx = design.backdropStyle.cornerRadius * mSize
+            val crStr = SvgExporter.formatCornerRadius(crPx)
+            val twStr = SvgExporter.formatCoord(width.toDouble())
+            val thStr = SvgExporter.formatCoord(height.toDouble())
+            defs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
+        }
 
         return QrGeometryIr(
             width = width,
@@ -282,6 +330,7 @@ object ImageGeometryBuilder {
         val lightAlpha = colorAlpha(lightColor)
         val lightOp = lightAlpha / 255f
         val lightOpaque = (lightColor and 0x00FFFFFF) or (0xFF shl 24)
+        val lightHex = IrSvgRenderer.colorToHex(lightOpaque)
         nodes.add(
             RectNode(
                 x = x0 + bgCol * mSize,
@@ -289,7 +338,10 @@ object ImageGeometryBuilder {
                 width = 8 * mSize,
                 height = 8 * mSize,
                 fill = lightOpaque,
-                opacity = lightOp
+                fillString = lightHex,
+                opacity = lightOp,
+                opacityString = String.format(Locale.US, "%.2f", lightOp),
+                alwaysEmitOpacity = true
             )
         )
 

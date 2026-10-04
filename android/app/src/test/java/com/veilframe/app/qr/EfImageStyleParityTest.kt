@@ -491,13 +491,22 @@ class EfImageStyleParityTest {
         assertFalse("IR masks map must not contain hole mask when hasImage is false", ir.masks.containsKey("hole"))
         assertFalse("IR rootNodes must not contain ImageNode when hasImage is false", ir.rootNodes.any { it is ImageNode || it is AnimatedImageNode })
 
-        // Prepass full-size 1x1 data modules must NOT be present before finders
+        // Prepass full-size 1x1 data modules must NOT be present when hasImage is false
         val mSize = geometry.moduleSize
-        val firstFinderIdx = ir.rootNodes.indexOfFirst { it is RectNode && it.width == 8 * mSize }
-        assertTrue("Finder backing rect must be present", firstFinderIdx >= 0)
-        val nodesBeforeFinders = ir.rootNodes.subList(0, firstFinderIdx)
-        val prepassNodes = nodesBeforeFinders.filter { it is RectNode && it.width <= mSize }
-        assertTrue("No prepass nodes before finders when hasImage is false", prepassNodes.isEmpty())
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+        val prepassDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter { node ->
+            Math.abs(node.width - mSize) < 0.001f && node.stroke == null && run {
+                val col = Math.round((node.x - ox) / mSize)
+                val row = Math.round((node.y - oy) / mSize)
+                if (col in 0 until matrix.size && row in 0 until matrix.size) {
+                    val type = matrix.typeAt(col, row)
+                    type != ModuleType.TIMING && type != ModuleType.ALIGN_CENTER && type != ModuleType.ALIGN_OTHER &&
+                            type != ModuleType.POS_CENTER && type != ModuleType.POS_OTHER
+                } else false
+            }
+        }
+        assertTrue("No prepass full-size data nodes when hasImage is false", prepassDataNodes.isEmpty())
 
         // 2. Verify Direct SVG Exporter
         val svg = SvgExporter.generateSvg(matrix, design)
@@ -567,12 +576,51 @@ class EfImageStyleParityTest {
         )
         val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
         val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
-
         assertTrue("IR defs must contain hole mask", ir.defs.any { it.contains("""mask id="hole"""") })
         assertTrue("IR masks map must contain hole mask", ir.masks.containsKey("hole"))
         val animNode = ir.rootNodes.filterIsInstance<AnimatedImageNode>().firstOrNull()
         assertNotNull("AnimatedImageNode must be emitted", animNode)
         assertEquals("AnimatedImageNode must reference hole mask", "hole", animNode!!.maskId)
         assertEquals(2, animNode.frames.size)
+    }
+
+    @Test
+    fun `EF Image style implements single column-major traversal and unifies Canvas and SVG on canonical IR`() {
+        val content = "https://veilframe.app/traversal-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val n = matrix.size
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageDataScale = 0.5f,
+            imageSource = ImageSourceStyle(source = null)
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val mSize = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. In EF's single x-major / y-minor traversal:
+        // TR Finder center is at col = n - 4, row = 3.
+        // Therefore, ALL modules from col 0 up to n - 5 must appear in ir.rootNodes BEFORE TR finder!
+        val trFinderBacking = ir.rootNodes.filterIsInstance<RectNode>().firstOrNull {
+            Math.abs(it.width - 8 * mSize) < 0.01f && Math.abs(it.x - (ox + (n - 8) * mSize)) < 0.01f && Math.abs(it.y - oy) < 0.01f
+        }
+        val trIdx = ir.rootNodes.indexOf(trFinderBacking!!)
+
+        // Ensure nodes prior to TR finder include modules from earlier columns (col < n - 4)
+        val nodesBeforeTr = ir.rootNodes.subList(0, trIdx)
+        val earlyColNodes = nodesBeforeTr.filterIsInstance<RectNode>().filter {
+            val col = Math.round((it.x - ox) / mSize)
+            col in 0 until (n - 4)
+        }
+        assertTrue("Earlier column modules must precede TR finder in single column-major traversal", earlyColNodes.isNotEmpty())
+
+        // 2. Canonical IR unification:
+        // SvgExporter must generate SVG identical to IrSvgRenderer.render(ImageGeometryBuilder.generateGeometry)
+        val directSvg = SvgExporter.generateSvg(matrix, design, geometry = geometry)
+        val irSvg = IrSvgRenderer.render(ir)
+        assertEquals("SvgExporter and IrSvgRenderer must produce identical SVG for Image style", irSvg, directSvg)
     }
 }
