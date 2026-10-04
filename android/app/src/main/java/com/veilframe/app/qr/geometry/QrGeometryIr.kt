@@ -183,25 +183,79 @@ data class GroupNode(
 
 /**
  * Backend-neutral mask and clipping definition.
- * Holds canonical vector paths and bounding exclusion rectangles for Canvas and SVG parity.
+ * Holds canonical vector paths, bounding exclusion rectangles, and geometry nodes for Canvas and SVG parity.
  */
 data class QrMaskDefinition(
     val id: String,
     val clipPath: Path? = null,
-    val clipOutRects: List<RectF> = emptyList()
+    val clipOutRects: List<RectF> = emptyList(),
+    val bounds: RectF? = null,
+    val maskNodes: List<QrGeometryNode> = emptyList(),
+    val isClipPath: Boolean = false,
+    val rx: Float = 0f,
+    val ry: Float = 0f
 )
 
 /**
  * Complete document-level geometry definition for a QR code.
  */
-data class QrGeometryIr(
+class QrGeometryIr(
     val width: Float,
     val height: Float,
     val viewBox: String = defaultViewBox(width, height),
-    val defs: List<String> = emptyList(),
+    defs: List<String> = emptyList(),
     val masks: Map<String, QrMaskDefinition> = emptyMap(),
     val rootNodes: List<QrGeometryNode> = emptyList()
 ) {
+    val defs: List<String> = if (masks.isNotEmpty()) {
+        val list = ArrayList<String>(defs.size + masks.size)
+        list.addAll(defs)
+        for ((id, mask) in masks) {
+            if (defs.none { it.contains("id=\"$id\"") }) {
+                val rendered = IrSvgRenderer.renderMaskDefinition(mask)
+                if (rendered.isNotEmpty()) list.add(rendered)
+            }
+        }
+        list
+    } else {
+        defs
+    }
+
+    fun copy(
+        width: Float = this.width,
+        height: Float = this.height,
+        viewBox: String = this.viewBox,
+        defs: List<String> = this.defs,
+        masks: Map<String, QrMaskDefinition> = this.masks,
+        rootNodes: List<QrGeometryNode> = this.rootNodes
+    ): QrGeometryIr = QrGeometryIr(width, height, viewBox, defs, masks, rootNodes)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as QrGeometryIr
+        return width == other.width &&
+                height == other.height &&
+                viewBox == other.viewBox &&
+                defs == other.defs &&
+                masks == other.masks &&
+                rootNodes == other.rootNodes
+    }
+
+    override fun hashCode(): Int {
+        var result = width.hashCode()
+        result = 31 * result + height.hashCode()
+        result = 31 * result + viewBox.hashCode()
+        result = 31 * result + defs.hashCode()
+        result = 31 * result + masks.hashCode()
+        result = 31 * result + rootNodes.hashCode()
+        return result
+    }
+
+    override fun toString(): String {
+        return "QrGeometryIr(width=$width, height=$height, viewBox='$viewBox', defs=$defs, masks=$masks, rootNodes=$rootNodes)"
+    }
+
     companion object {
         fun defaultViewBox(w: Float, h: Float): String {
             val wStr = if (w % 1f == 0f) w.toInt().toString() else String.format(java.util.Locale.US, "%.4f", w).trimEnd('0').trimEnd('.')

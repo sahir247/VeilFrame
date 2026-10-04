@@ -361,4 +361,33 @@ object IrSvgRenderer {
             String.format(Locale.US, "%.2f", r).trimEnd('0').trimEnd('.')
         }
     }
+
+    fun renderMaskDefinition(maskDef: QrMaskDefinition): String {
+        if (maskDef.isClipPath) {
+            val bounds = maskDef.bounds
+            val bW = if (bounds != null) bounds.right - bounds.left else 0f
+            val bH = if (bounds != null) bounds.bottom - bounds.top else 0f
+            val wStr = if (bW > 0f) formatCoord(bW) else "100%"
+            val hStr = if (bH > 0f) formatCoord(bH) else "100%"
+            val rxStr = if (maskDef.rx > 0f) String.format(Locale.US, " rx=\"%s\"", formatCornerRadius(maskDef.rx)) else ""
+            val ryStr = if (maskDef.ry > 0f) String.format(Locale.US, " ry=\"%s\"", formatCornerRadius(maskDef.ry)) else ""
+            return "<clipPath id=\"${maskDef.id}\"><rect width=\"$wStr\" height=\"$hStr\"$rxStr$ryStr/></clipPath>"
+        }
+
+        val sb = StringBuilder()
+        sb.append("<mask id=\"").append(maskDef.id).append("\">\n")
+        if (maskDef.maskNodes.isNotEmpty()) {
+            for (node in maskDef.maskNodes) {
+                renderNode(node, sb, indent = 4)
+            }
+        } else if (maskDef.clipOutRects.isNotEmpty() && maskDef.bounds != null) {
+            val b = maskDef.bounds
+            renderNode(RectNode(x = b.left, y = b.top, width = b.right - b.left, height = b.bottom - b.top, fill = 0xFFFFFFFF.toInt(), fillString = "white"), sb, indent = 4)
+            for (cutout in maskDef.clipOutRects) {
+                renderNode(RectNode(x = cutout.left, y = cutout.top, width = cutout.right - cutout.left, height = cutout.bottom - cutout.top, fill = 0xFF000000.toInt(), fillString = "black"), sb, indent = 4)
+            }
+        }
+        sb.append("  </mask>")
+        return sb.toString()
+    }
 }

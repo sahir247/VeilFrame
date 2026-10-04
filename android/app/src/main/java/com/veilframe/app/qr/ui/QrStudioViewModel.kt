@@ -534,7 +534,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateImageDataScale(scale: Float) {
-        _state.value = _state.value.copy(imageDataScale = scale.coerceIn(0.05f, 1.0f), repairNotice = null)
+        _state.value = _state.value.copy(imageDataScale = maxOf(0f, scale), repairNotice = null)
         regenerate(debounceMs = 120)
     }
 
@@ -1268,25 +1268,28 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updatePositionSize(size: Float) {
+        val nonNegative = maxOf(0f, size)
         _state.value = _state.value.copy(
-            positionSize = size.coerceIn(0.2f, 2.0f),
-            imagePositionSize = size.coerceIn(0.2f, 2.0f)
+            positionSize = nonNegative,
+            imagePositionSize = nonNegative
         )
         regenerate(debounceMs = 120)
     }
 
     fun updateTimingSize(size: Float) {
+        val nonNegative = maxOf(0f, size)
         _state.value = _state.value.copy(
-            timingSize = size.coerceIn(0.2f, 2.0f),
-            imageTimingSize = size.coerceIn(0.2f, 2.0f)
+            timingSize = nonNegative,
+            imageTimingSize = nonNegative
         )
         regenerate(debounceMs = 120)
     }
 
     fun updateAlignSize(size: Float) {
+        val nonNegative = maxOf(0f, size)
         _state.value = _state.value.copy(
-            alignSize = size.coerceIn(0.2f, 2.0f),
-            imageAlignSize = size.coerceIn(0.2f, 2.0f)
+            alignSize = nonNegative,
+            imageAlignSize = nonNegative
         )
         regenerate(debounceMs = 120)
     }
@@ -1501,7 +1504,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             imagePositionDarkColor = darkColor,
             imagePositionLightColor = lightColor,
-            imagePositionSize = size.coerceIn(0.5f, 2.0f)
+            imagePositionSize = maxOf(0f, size)
         )
         regenerate(debounceMs = 120)
     }
@@ -1510,7 +1513,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             imageTimingDarkColor = darkColor,
             imageTimingLightColor = lightColor,
-            imageTimingSize = size.coerceIn(0.5f, 2.0f)
+            imageTimingSize = maxOf(0f, size)
         )
         regenerate(debounceMs = 120)
     }
@@ -1519,7 +1522,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             imageAlignDarkColor = darkColor,
             imageAlignLightColor = lightColor,
-            imageAlignSize = size.coerceIn(0.5f, 2.0f)
+            imageAlignSize = maxOf(0f, size)
         )
         regenerate(debounceMs = 120)
     }

@@ -55,7 +55,6 @@ object ImageGeometryBuilder {
         if (bgAlpha > 0) {
             val crPx = if (design.backdropStyle.cornerRadius > 0f) design.backdropStyle.cornerRadius * mSize else 0f
             val bgAlphaFloat = ((resolvedBackdropColor ushr 24) and 0xFF) / 255f
-            val bgHex = IrSvgRenderer.colorToHex(resolvedBackdropColor)
             nodes.add(
                 RectNode(
                     x = 0f,
@@ -65,7 +64,6 @@ object ImageGeometryBuilder {
                     rx = crPx,
                     ry = crPx,
                     fill = resolvedBackdropColor,
-                    fillString = bgHex,
                     opacity = bgAlphaFloat,
                     alwaysEmitOpacity = true
                 )
@@ -146,29 +144,21 @@ object ImageGeometryBuilder {
         val canvasH = n * mSize
 
         if (hasImage) {
-            val tlFinderRect = RectF(x0, y0, x0 + 8 * mSize, y0 + 8 * mSize)
-            val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + 8 * mSize)
-            val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + 8 * mSize, y0 + n * mSize)
+            val finderW = 8 * mSize
+            val tlFinderRect = RectF(x0, y0, x0 + finderW, y0 + finderW)
+            val trFinderRect = RectF(x0 + (n - 8) * mSize, y0, x0 + n * mSize, y0 + finderW)
+            val blFinderRect = RectF(x0, y0 + (n - 8) * mSize, x0 + finderW, y0 + n * mSize)
 
-            val x0Str = IrSvgRenderer.formatCoord(x0)
-            val y0Str = IrSvgRenderer.formatCoord(y0)
-            val canvasWStr = IrSvgRenderer.formatCoord(canvasW)
-            val canvasHStr = IrSvgRenderer.formatCoord(canvasH)
-            val finder8Str = IrSvgRenderer.formatCoord(8 * mSize)
-            val trXStr = IrSvgRenderer.formatCoord(x0 + (n - 8) * mSize)
-            val blYStr = IrSvgRenderer.formatCoord(y0 + (n - 8) * mSize)
-
-            defs.add(
-                """<mask id="hole">
-    <rect x="$x0Str" y="$y0Str" width="$canvasWStr" height="$canvasHStr" fill="white"/>
-    <rect x="$x0Str" y="$y0Str" width="$finder8Str" height="$finder8Str" fill="black"/>
-    <rect x="$trXStr" y="$y0Str" width="$finder8Str" height="$finder8Str" fill="black"/>
-    <rect x="$x0Str" y="$blYStr" width="$finder8Str" height="$finder8Str" fill="black"/>
-  </mask>"""
-            )
             masks["hole"] = QrMaskDefinition(
                 id = "hole",
-                clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect)
+                bounds = RectF(x0, y0, x0 + canvasW, y0 + canvasH),
+                clipOutRects = listOf(tlFinderRect, trFinderRect, blFinderRect),
+                maskNodes = listOf(
+                    RectNode(x = x0, y = y0, width = canvasW, height = canvasH, fill = 0xFFFFFFFF.toInt(), fillString = "white"),
+                    RectNode(x = x0, y = y0, width = finderW, height = finderW, fill = 0xFF000000.toInt(), fillString = "black"),
+                    RectNode(x = x0 + (n - 8) * mSize, y = y0, width = finderW, height = finderW, fill = 0xFF000000.toInt(), fillString = "black"),
+                    RectNode(x = x0, y = y0 + (n - 8) * mSize, width = finderW, height = finderW, fill = 0xFF000000.toInt(), fillString = "black")
+                )
             )
 
             if (animatedFrames != null && animatedFrames.isNotEmpty()) {
@@ -299,15 +289,17 @@ object ImageGeometryBuilder {
         val hasCornerClip = design.backdropStyle.cornerRadius > 0f
         if (hasCornerClip) {
             val crPx = design.backdropStyle.cornerRadius * mSize
-            val crStr = IrSvgRenderer.formatCoord(crPx)
-            val twStr = IrSvgRenderer.formatCoord(width)
-            val thStr = IrSvgRenderer.formatCoord(height)
-            defs.add("""<clipPath id="rounded-corners"><rect width="$twStr" height="$thStr" rx="$crStr" ry="$crStr"/></clipPath>""")
-
             val cornerPath = android.graphics.Path().apply {
                 addRoundRect(0f, 0f, width, height, crPx, crPx, android.graphics.Path.Direction.CW)
             }
-            masks["rounded-corners"] = QrMaskDefinition("rounded-corners", clipPath = cornerPath)
+            masks["rounded-corners"] = QrMaskDefinition(
+                id = "rounded-corners",
+                clipPath = cornerPath,
+                bounds = RectF(0f, 0f, width, height),
+                isClipPath = true,
+                rx = crPx,
+                ry = crPx
+            )
         }
 
         return QrGeometryIr(
@@ -338,7 +330,6 @@ object ImageGeometryBuilder {
         val lightAlpha = colorAlpha(lightColor)
         val lightOp = lightAlpha / 255f
         val lightOpaque = (lightColor and 0x00FFFFFF) or (0xFF shl 24)
-        val lightHex = IrSvgRenderer.colorToHex(lightOpaque)
         nodes.add(
             RectNode(
                 x = x0 + bgCol * mSize,
@@ -346,7 +337,6 @@ object ImageGeometryBuilder {
                 width = 8 * mSize,
                 height = 8 * mSize,
                 fill = lightOpaque,
-                fillString = lightHex,
                 opacity = lightOp,
                 opacityString = String.format(Locale.US, "%.2f", lightOp),
                 alwaysEmitOpacity = true
@@ -364,7 +354,7 @@ object ImageGeometryBuilder {
             FinderStyle.CIRCLE -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 1.0f * sizeFactor * mSize
-                val swStr = IrSvgRenderer.formatCoord(sw)
+                val swStr = if (sw % 1f == 0f) sw.toInt().toString() else String.format(Locale.US, "%.4f", sw).trimEnd('0').trimEnd('.')
                 nodes.add(
                     CircleNode(
                         cx = centerPx,
@@ -400,8 +390,8 @@ object ImageGeometryBuilder {
             FinderStyle.PLANETS -> {
                 nodes.add(CircleNode(centerPx, centerPy, 1.5f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 0.15f * mSize
-                val swStr = IrSvgRenderer.formatCoord(sw)
-                val dash = IrSvgRenderer.formatCoord(0.5f * mSize)
+                val swStr = if (sw % 1f == 0f) sw.toInt().toString() else String.format(Locale.US, "%.4f", sw).trimEnd('0').trimEnd('.')
+                val dash = String.format(Locale.US, "%.4f", 0.5f * mSize).trimEnd('0').trimEnd('.')
                 nodes.add(
                     CircleNode(
                         cx = centerPx,
@@ -435,7 +425,7 @@ object ImageGeometryBuilder {
             else -> {
                 nodes.add(RectNode(centerPx - 1.5f * mSize, centerPy - 1.5f * mSize, 3f * mSize, 3f * mSize, fill = darkOpaque, opacity = darkOp))
                 val sw = 1.0f * sizeFactor * mSize
-                val swStr = IrSvgRenderer.formatCoord(sw)
+                val swStr = if (sw % 1f == 0f) sw.toInt().toString() else String.format(Locale.US, "%.4f", sw).trimEnd('0').trimEnd('.')
                 nodes.add(
                     RectNode(
                         x = centerPx - 3.0f * mSize,

@@ -936,4 +936,154 @@ class EfImageStyleParityTest {
         assertTrue("SVG must contain mask='url(#hole)'", svg.contains("""mask="url(#hole)""""))
         assertTrue("SVG must contain 1.02 anti-gap rects", svg.contains("""width="1.02" height="1.02""""))
     }
+
+    @Test
+    fun `EF Image style parameter domains are unclamped for full EF parameter parity`() {
+        val vm = QrStudioViewModel(Application())
+
+        // 1. Data module scale: unconstrained down to 0f without 0.05 lower clamp
+        vm.updateImageDataScale(0.02f)
+        assertEquals("Data scale 0.02 must be preserved", 0.02f, vm.state.value.imageDataScale, 0.0001f)
+
+        vm.updateImageDataScale(0.0f)
+        assertEquals("Data scale 0.0 must be preserved", 0.0f, vm.state.value.imageDataScale, 0.0001f)
+
+        // 2. Position size: unconstrained without 0.2/0.5 lower clamp
+        vm.updatePositionSize(0.1f)
+        assertEquals("Position size 0.1 must be preserved", 0.1f, vm.state.value.positionSize, 0.0001f)
+        assertEquals("Image position size 0.1 must be preserved", 0.1f, vm.state.value.imagePositionSize, 0.0001f)
+
+        vm.updateImagePositionParams(Color.BLACK, Color.WHITE, 0.08f)
+        assertEquals("Image position size 0.08 must be preserved", 0.08f, vm.state.value.imagePositionSize, 0.0001f)
+
+        // 3. Timing and align sizes: unconstrained without 0.2/0.5 lower clamp
+        vm.updateTimingSize(0.05f)
+        assertEquals("Timing size 0.05 must be preserved", 0.05f, vm.state.value.timingSize, 0.0001f)
+        assertEquals("Image timing size 0.05 must be preserved", 0.05f, vm.state.value.imageTimingSize, 0.0001f)
+
+        vm.updateAlignSize(0.07f)
+        assertEquals("Align size 0.07 must be preserved", 0.07f, vm.state.value.alignSize, 0.0001f)
+        assertEquals("Image align size 0.07 must be preserved", 0.07f, vm.state.value.imageAlignSize, 0.0001f)
+
+        // 4. Verify QrDesign.fromQrStyleParams parameter normalization contract and renderer unclamped domain
+        val params = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageDataScale = 0.02f,
+            imagePositionSize = 0.1f,
+            imageTimingSize = 0.05f,
+            imageAlignSize = 0.07f
+        )
+        val designFromParams = QrDesign.fromQrStyleParams(params)
+        assertEquals("fromQrStyleParams clamps imageDataScale to 0.05 per normalization contract", 0.05f, designFromParams.imageDataScale ?: 0f, 0.0001f)
+        assertEquals(0.1f, designFromParams.positionSize, 0.0001f)
+        assertEquals(0.05f, designFromParams.timingSize, 0.0001f)
+        assertEquals(0.07f, designFromParams.alignSize, 0.0001f)
+
+        // Direct QrDesign and ImageGeometryBuilder accept any scale >= 0f (full EF parameter domain)
+        val directDesign = QrDesign(
+            style = QrStyle.IMAGE,
+            imageDataScale = 0.02f
+        )
+        val matrix = QrMatrix("https://veilframe.app/unclamped-scale", ErrorCorrectionLevel.M)
+        val geom = QrGeometry(matrix.size, 250, 250, 0)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, directDesign, geom)
+        val expectedDataW = 0.02f * geom.moduleSize
+        val dataModule = ir.rootNodes.filterIsInstance<RectNode>().first { Math.abs(it.width - expectedDataW) < 0.01f }
+        assertEquals("Renderer scales data module by unclamped scale 0.02f", expectedDataW, dataModule.width, 0.01f)
+    }
+
+    @Test
+    fun `ImageGeometryBuilder emits decoupled backend-neutral IR with structured QrMaskDefinition`() {
+        val matrix = QrMatrix("https://veilframe.app/decoupled-ir-test", ErrorCorrectionLevel.M)
+        val photo = createTestPhoto(200, 200)
+        val design = QrDesign.efImage(photo = photo)
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. Verify structured mask definition in IR masks
+        assertTrue("IR must contain structured 'hole' mask in masks map", ir.masks.containsKey("hole"))
+        val holeMask = ir.masks["hole"]!!
+        assertEquals("hole", holeMask.id)
+        assertFalse("Hole mask is a mask, not a clipPath", holeMask.isClipPath)
+        assertNotNull("Hole mask must define bounding rectangle", holeMask.bounds)
+        assertEquals("Clip out rects must contain exactly 3 finder exclusion areas", 3, holeMask.clipOutRects.size)
+
+        // 2. Verify maskNodes are structured geometry nodes (1 bounds rect + 3 cutout rects)
+        assertEquals("Mask must contain exactly 4 structured geometry nodes", 4, holeMask.maskNodes.size)
+        val whiteBounds = holeMask.maskNodes[0] as RectNode
+        assertEquals("White bounds fill", Color.WHITE, whiteBounds.fill)
+        assertEquals("White bounds fillString", "white", whiteBounds.fillString)
+
+        for (i in 1..3) {
+            val cutout = holeMask.maskNodes[i] as RectNode
+            assertEquals("Cutout fill", Color.BLACK, cutout.fill)
+            assertEquals("Cutout fillString", "black", cutout.fillString)
+        }
+
+        // 3. Verify defs synthesis and SVG output
+        val svg = IrSvgRenderer.render(ir)
+        assertTrue("SVG must contain <mask id=\"hole\">", svg.contains("""<mask id="hole">"""))
+        assertTrue("SVG must contain fill=\"white\"", svg.contains("""fill="white""""))
+        assertTrue("SVG must contain fill=\"black\"", svg.contains("""fill="black""""))
+        assertTrue("SVG must attach mask to image", svg.contains("""mask="url(#hole)""""))
+    }
+
+    @Test
+    fun `Generic EF Image composition reproduces arbitrary image parameters with valid scan decoding`() {
+        val content = "https://veilframe.app/generic-arbitrary-composition"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(320, 320)
+
+        // Arbitrary configuration different from any preset
+        val customScale = 0.60f
+        val customDarkColor = 0xFF6200EE.toInt() // Purple
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 640,
+            quietZoneModules = 2,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo), scaleMode = ImageScaleMode.ASPECT_FILL),
+            imageDataScale = customScale,
+            dataColorDark = customDarkColor,
+            dataColorLight = Color.TRANSPARENT,
+            allowTransparent = true,
+            positionDarkColor = customDarkColor,
+            positionLightColor = Color.WHITE,
+            positionSize = 1.0f,
+            timingDarkColor = customDarkColor,
+            timingLightColor = Color.TRANSPARENT,
+            timingSize = 1.0f,
+            alignDarkColor = customDarkColor,
+            alignLightColor = Color.TRANSPARENT,
+            alignSize = 1.0f,
+            palette = PaletteStyle(foreground = customDarkColor, background = Color.WHITE)
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 640, 640, design)
+        val mSize = geometry.moduleSize
+
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. Verify pre-pass: modules have full 1.0 scale (mSize), NOT 0.60 * mSize
+        val prePassRects = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.width == mSize && it.height == mSize && it.fill == customDarkColor
+        }
+        assertTrue("Pre-pass full-scale modules must exist before watermark image", prePassRects.isNotEmpty())
+
+        // 2. Verify top data overlay: modules have exact 0.60 * mSize scale
+        val expectedDataSize = customScale * mSize
+        val dataOverlayRects = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f && Math.abs(it.height - expectedDataSize) < 0.05f
+        }
+        assertTrue("Data overlay modules with scale 0.60 must exist", dataOverlayRects.isNotEmpty())
+
+        // 3. Render bitmap and verify ZXing decodability
+        val result = QrGenerator.generateBitmapResult(matrix, design)
+        assertTrue("Bitmap render must succeed", result is QrGenerator.BitmapRenderResult.Success)
+        val bitmap = (result as QrGenerator.BitmapRenderResult.Success).bitmap
+        assertNotNull("Rendered bitmap must not be null", bitmap)
+
+        val decoded = decodeBitmap(bitmap)
+        assertEquals("Rendered QR code with arbitrary image parameters must decode cleanly", content, decoded)
+    }
 }
