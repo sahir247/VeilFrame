@@ -584,7 +584,7 @@ data class QrDesign(
     fun effectiveQuietZoneRightFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).right
     fun effectiveQuietZoneBottomFloat(matrixSize: Int): Float = resolveQuietZone(matrixSize).bottom
 
-    val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC) GenerationMode.ARTISTIC_ENGINE else GenerationMode.PARITY_EF
+    val recommendedGenerationMode: GenerationMode get() = if (style != QrStyle.BASIC && style != QrStyle.IMAGE && style != QrStyle.IMAGE_FILL) GenerationMode.ARTISTIC_ENGINE else GenerationMode.PARITY_EF
 
     companion object {
         /**
@@ -629,6 +629,36 @@ data class QrDesign(
                 opacity = 1.0f,
                 allowTransparent = allowTransparent
             )
+        )
+
+        /**
+         * Creates an EFQRCode 7.0.3 canonical image preset with 100% module scale ([dataScale] = 1.0f),
+         * solid black dark modules, solid white light modules, and [allowTransparent] = false.
+         */
+        fun efImagePresetCanonical(
+            photo: Bitmap,
+            darkColor: Int = Color.BLACK,
+            lightColor: Int = Color.WHITE,
+            dataScale: Float = 1.0f,
+            allowTransparent: Boolean = false,
+            finderColor: Int = darkColor,
+            finderBackingColor: Int = Color.WHITE,
+            timingColor: Int = darkColor,
+            alignColor: Int = darkColor,
+            outputSize: Int = maxOf(photo.width, photo.height).coerceAtLeast(512),
+            quietZoneModules: Int = 1
+        ): QrDesign = efImage(
+            photo = photo,
+            darkColor = darkColor,
+            lightColor = lightColor,
+            dataScale = dataScale,
+            allowTransparent = allowTransparent,
+            finderColor = finderColor,
+            finderBackingColor = finderBackingColor,
+            timingColor = timingColor,
+            alignColor = alignColor,
+            outputSize = outputSize,
+            quietZoneModules = quietZoneModules
         )
 
         /**

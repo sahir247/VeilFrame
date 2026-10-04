@@ -791,4 +791,49 @@ class EfImageStyleParityTest {
         }
         assertTrue("Scaled data modules (~0.35x) must be present in DOM", scaledDataCount > 0)
     }
+
+    @Test
+    fun `Image and ImageFill styles route to PARITY_EF by default`() {
+        val imageDesign = QrDesign(style = QrStyle.IMAGE)
+        val imageFillDesign = QrDesign(style = QrStyle.IMAGE_FILL)
+        val basicDesign = QrDesign(style = QrStyle.BASIC)
+
+        assertEquals("IMAGE must default to PARITY_EF", GenerationMode.PARITY_EF, QrGenerator.defaultModeFor(imageDesign))
+        assertEquals("IMAGE_FILL must default to PARITY_EF", GenerationMode.PARITY_EF, QrGenerator.defaultModeFor(imageFillDesign))
+        assertEquals("BASIC must default to PARITY_EF", GenerationMode.PARITY_EF, QrGenerator.defaultModeFor(basicDesign))
+
+        assertEquals("IMAGE recommended mode must be PARITY_EF", GenerationMode.PARITY_EF, imageDesign.recommendedGenerationMode)
+        assertEquals("IMAGE_FILL recommended mode must be PARITY_EF", GenerationMode.PARITY_EF, imageFillDesign.recommendedGenerationMode)
+        assertEquals("BASIC recommended mode must be PARITY_EF", GenerationMode.PARITY_EF, basicDesign.recommendedGenerationMode)
+    }
+
+    @Test
+    fun `effectiveDesignForMode normalizes IMAGE style quiet zone and imageDataScale`() {
+        val design = QrDesign(style = QrStyle.IMAGE, imageDataScale = null)
+        val normalized = QrGenerator.effectiveDesignForMode(design, GenerationMode.PARITY_EF)
+
+        assertEquals("basicProfile must be EF_PARITY", BasicGeometryProfile.EF_PARITY, normalized.basicProfile)
+        assertEquals("Default quiet zone must be 1 module", 1, normalized.quietZoneModules)
+        assertEquals("imageDataScale must default to 1.0f", 1.0f, normalized.imageDataScale ?: 0f, 0.001f)
+    }
+
+    @Test
+    fun `ImageFillRenderer implements IrBackedQrRenderer and declares ownsBackdrop`() {
+        val renderer = com.veilframe.app.qr.renderer.ImageFillRenderer()
+        assertTrue("ImageFillRenderer must implement IrBackedQrRenderer", renderer is com.veilframe.app.qr.renderer.IrBackedQrRenderer)
+        assertTrue("ImageFillRenderer must own backdrop", renderer.ownsBackdrop)
+    }
+
+    @Test
+    fun `efImagePresetCanonical applies canonical EF 100 percent scale opaque defaults`() {
+        val dummyBmp = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
+        val design = QrDesign.efImagePresetCanonical(dummyBmp)
+
+        assertEquals("Canonical preset style must be IMAGE", QrStyle.IMAGE, design.style)
+        assertEquals("Canonical dataScale must be 1.0f", 1.0f, design.imageDataScale ?: 0f, 0.001f)
+        assertEquals("Canonical dataColorDark must be BLACK", android.graphics.Color.BLACK, design.dataColorDark)
+        assertEquals("Canonical dataColorLight must be WHITE", android.graphics.Color.WHITE, design.dataColorLight)
+        assertFalse("Canonical allowTransparent must be false", design.allowTransparent)
+        assertEquals("Canonical quiet zone must be 1", 1, design.quietZoneModules)
+    }
 }

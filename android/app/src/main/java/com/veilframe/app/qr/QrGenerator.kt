@@ -126,12 +126,12 @@ object QrGenerator {
      * can explicitly specify [GenerationMode.SAFE] or call [generateSafe].
      */
     fun defaultModeFor(design: QrDesign, preferSafe: Boolean = false): GenerationMode =
-        if (design.style != QrStyle.BASIC) {
-            GenerationMode.ARTISTIC_ENGINE
-        } else if (preferSafe) {
+        if (preferSafe) {
             GenerationMode.SAFE
-        } else {
+        } else if (design.style == QrStyle.BASIC || design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL) {
             GenerationMode.PARITY_EF
+        } else {
+            GenerationMode.ARTISTIC_ENGINE
         }
 
     /**
@@ -539,7 +539,7 @@ object QrGenerator {
     fun generate(
         content: String,
         params: QrStyleParams = QrStyleParams(),
-        ecLevel: ErrorCorrectionLevel = if (params.logo != null) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
+        ecLevel: ErrorCorrectionLevel = if (params.logo != null || params.style == QrStyle.BASIC || params.style == QrStyle.IMAGE || params.style == QrStyle.IMAGE_FILL) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
     ): Bitmap {
         require(content.isNotBlank()) { "QR content must not be blank" }
 
@@ -623,9 +623,11 @@ object QrGenerator {
                 design.directionalQuietZone == null &&
                 design.backdropStyle.fractionalQuietZone == null
             ) defaultQz else design.quietZoneModules
+            val effImgScale = if (design.style == QrStyle.IMAGE && design.imageDataScale == null) 1.0f else design.imageDataScale
             design.copy(
                 basicProfile = BasicGeometryProfile.EF_PARITY,
-                quietZoneModules = qz
+                quietZoneModules = qz,
+                imageDataScale = effImgScale
             )
         }
         GenerationMode.SAFE -> {

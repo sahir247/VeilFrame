@@ -32,9 +32,12 @@ import com.veilframe.app.qr.model.QrMatrix
  * The source image is continuous across the QR code area and revealed strictly through
  * the dark-module stencil mask, combined with a base [backgroundColor] and an overlay [maskColor] tint.
  */
-class ImageFillRenderer : QrRenderer {
+class ImageFillRenderer : IrBackedQrRenderer {
 
-    fun generateGeometry(
+    override val ownsBackdrop: Boolean
+        get() = true
+
+    override fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
         geometry: QrGeometry
