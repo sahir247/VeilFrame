@@ -1,6 +1,8 @@
 package com.veilframe.app.qr
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.veilframe.app.qr.exporter.GifEncoder
@@ -1193,11 +1195,15 @@ object AnimatedQrGenerator {
     )
 
     /**
-     * Validates that every individual frame of an animated QR code satisfies strict scanability requirements
-     * (Audit Item 6 & 16: True all-frame scanability validation contract).
+     * Validates that every individual reconstructed/generated frame of an animated QR code satisfies
+     * strict scanability requirements (Audit Item 6 & 16: True all-generated-frame scanability validation contract).
      *
      * Evaluates decode success, contrast distribution, finder integrity, and quiet-zone compliance
-     * for every frame in the animated sequence.
+     * for every generated frame in the animated sequence prior to container encoding.
+     *
+     * Note: This strictly validates the engine's reconstructed bitmap frames. Validation of the exact final
+     * encoded container artifact (e.g. decoding an exported GIF/MP4/WebP file and extracting its lossy frames)
+     * is a post-export container verification step performed via [validateExportedArtifactStrict].
      */
     suspend fun validateAnimatedFramesStrict(
         matrix: QrMatrix,
@@ -1259,5 +1265,20 @@ object AnimatedQrGenerator {
             worstQuietZoneMargin = worstMargin,
             failureReasons = failureReasons
         )
+    }
+
+    /**
+     * Validates the exact decoded frames of an exported container artifact (GIF, WebP, MP4) from its [uri].
+     * Extracts frames via [AnimatedMediaHelper] and evaluates each decoded frame against strict scanability standards.
+     */
+    suspend fun validateExportedArtifactStrict(
+        context: Context,
+        uri: Uri,
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        expectedContent: String
+    ): AnimatedScanabilityReport {
+        val extracted = AnimatedMediaHelper.extractFrames(context, uri)
+        return validateAnimatedFramesStrict(matrix, baseDesign, extracted, expectedContent, baseDesign.outputSize)
     }
 }

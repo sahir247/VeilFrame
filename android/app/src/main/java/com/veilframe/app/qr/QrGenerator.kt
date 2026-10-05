@@ -1,5 +1,6 @@
 package com.veilframe.app.qr
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -386,6 +387,32 @@ object QrGenerator {
     ): QrRenderResult = generateWithResult(content, design, mode = mode, strictValidation = true)
 
     /**
+     * Context-aware overload that safely materializes any [com.veilframe.app.qr.model.ImageSource.Uri] or
+     * [com.veilframe.app.qr.model.ImageSource.Resource] via [com.veilframe.app.qr.image.ImageSourceLoader]
+     * before generating the QR code.
+     */
+    fun generateWithResult(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design),
+        strictValidation: Boolean = false
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateWithResult(content, materialized, mode, strictValidation)
+    }
+
+    /**
+     * Context-aware overload that safely materializes unmaterialized image sources and executes strict validation.
+     */
+    fun generateStrictWithResult(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design)
+    ): QrRenderResult = generateWithResult(context, content, design, mode = mode, strictValidation = true)
+
+    /**
      * Convenience entry point for generating deterministic, exact VeilFrame artistic QR codes.
      */
     fun generateArtistic(
@@ -471,6 +498,20 @@ object QrGenerator {
     sealed interface BitmapRenderResult {
         data class Success(val bitmap: Bitmap) : BitmapRenderResult
         data class Failure(val error: QrError) : BitmapRenderResult
+    }
+
+    /**
+     * Context-aware overload that safely materializes unmaterialized image sources via [com.veilframe.app.qr.image.ImageSourceLoader]
+     * before rendering native bitmap.
+     */
+    fun generateBitmapResult(
+        context: Context,
+        matrix: QrMatrix,
+        design: QrDesign,
+        geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, design.outputSize, design.outputSize, design)
+    ): BitmapRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateBitmapResult(matrix, materialized, geometry)
     }
 
     /**

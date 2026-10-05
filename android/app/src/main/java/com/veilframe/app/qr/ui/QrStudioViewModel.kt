@@ -15,6 +15,7 @@ import com.veilframe.app.qr.validation.AutoRepairEngine
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.exporter.QrExporter
+import com.veilframe.app.qr.image.ImageSourceLoader
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.registry.QrStyleRegistry
 import com.veilframe.app.qr.renderer.RngMode
@@ -507,6 +508,33 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         regenerate(debounceMs = 0)
+    }
+
+    fun updateSourceImageUri(uri: Uri?) {
+        if (uri == null) {
+            updateSourceImage(null)
+            return
+        }
+        val loaded = ImageSourceLoader.loadBitmap(getApplication(), ImageSource.Uri(uri.toString()), 1024, 1024)
+        updateSourceImage(loaded)
+    }
+
+    fun updateLogoUri(uri: Uri?) {
+        if (uri == null) {
+            updateLogo(null)
+            return
+        }
+        val loaded = ImageSourceLoader.loadBitmap(getApplication(), ImageSource.Uri(uri.toString()), 512, 512)
+        updateLogo(loaded)
+    }
+
+    fun updateBackgroundImageUri(uri: Uri?) {
+        if (uri == null) {
+            updateBackgroundImage(null)
+            return
+        }
+        val loaded = ImageSourceLoader.loadBitmap(getApplication(), ImageSource.Uri(uri.toString()), 1024, 1024)
+        updateBackgroundImage(loaded)
     }
 
     fun updateSourceImageScaleMode(mode: ImageScaleMode) {
@@ -1346,10 +1374,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val mode = _state.value.generationMode
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateStrictWithResult(getApplication(), content, exportDesign, mode = mode)
             }
-            val bmp = when (renderResult) {
-                is QrRenderResult.Success -> renderResult.bitmap
+            val (bmp, report) = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap to renderResult.report
                 is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
                         saveResult = "Save failed: ${renderResult.error}"
@@ -1364,12 +1392,6 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                    bmp,
-                    exportDesign,
-                    renderResult.matrix,
-                    content
-                )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
@@ -1703,10 +1725,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val mode = _state.value.generationMode
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateStrictWithResult(getApplication(), content, exportDesign, mode = mode)
             }
-            val bmp = when (renderResult) {
-                is QrRenderResult.Success -> renderResult.bitmap
+            val (bmp, report) = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap to renderResult.report
                 is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
                         saveResult = "Save failed: ${renderResult.error}"
@@ -1721,12 +1743,6 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                    bmp,
-                    exportDesign,
-                    renderResult.matrix,
-                    content
-                )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
@@ -1804,10 +1820,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val mode = _state.value.generationMode
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateStrictWithResult(getApplication(), content, exportDesign, mode = mode)
             }
-            val bmp = when (renderResult) {
-                is QrRenderResult.Success -> renderResult.bitmap
+            val (bmp, report) = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap to renderResult.report
                 is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
                         saveResult = "PDF export failed: ${renderResult.error}"
@@ -1822,12 +1838,6 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                    bmp,
-                    exportDesign,
-                    renderResult.matrix,
-                    content
-                )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
@@ -2013,10 +2023,10 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val mode = _state.value.generationMode
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateWithResult(content, exportDesign, mode = mode)
+                QrGenerator.generateStrictWithResult(getApplication(), content, exportDesign, mode = mode)
             }
-            val bmp = when (renderResult) {
-                is QrRenderResult.Success -> renderResult.bitmap
+            val (bmp, report) = when (renderResult) {
+                is QrRenderResult.Success -> renderResult.bitmap to renderResult.report
                 is QrRenderResult.Failure -> {
                     _state.value = _state.value.copy(
                         saveResult = "Share failed: ${renderResult.error}"
@@ -2031,12 +2041,6 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
-                    bmp,
-                    exportDesign,
-                    renderResult.matrix,
-                    content
-                )
                 if (!report.isScanReady && !report.validationSkipped) {
                     _state.value = _state.value.copy(
                         saveResult = "Share rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",

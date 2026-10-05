@@ -226,8 +226,10 @@ object ImageGeometryBuilder {
         }
 
         // Cache per-render joint optimization results keyed by quantized background signature (Audit Item 10 & Item 2).
-        // Stabilizes spatial palette cohesion between adjacent modules and eliminates redundant Cartesian evaluations.
-        val jointOptimizationCache = HashMap<Long, JointColorOptimizationResult>()
+        // For single-frame designs, keys by (qP90, qP10) in 0.02 luminance buckets.
+        // For multi-frame animated designs, keys by the full temporal vector of per-frame (qP90, qP10) buckets,
+        // preserving worst-case temporal guarantees without conflating different dynamic distributions.
+        val jointOptimizationCache = HashMap<AdaptiveCacheKey, JointColorOptimizationResult>()
 
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
@@ -256,12 +258,22 @@ object ImageGeometryBuilder {
                 // Pass complete spatial context directly into the optimizer
                 val spatialContext = SpatialModuleContext(distributions, SamplingObjective.PERCENTILE_90_10)
 
-                // Quantize primary distribution p90/p10 into 50 buckets (0.02 step)
-                val avgP90 = distributions.map { it.p90 }.average().toFloat()
-                val avgP10 = distributions.map { it.p10 }.average().toFloat()
-                val qP90 = (avgP90 * 50f).toInt().coerceIn(0, 50)
-                val qP10 = (avgP10 * 50f).toInt().coerceIn(0, 50)
-                val cacheKey = (qP90.toLong() shl 16) or (qP10.toLong() and 0xFFFFL)
+                // Quantize distribution p90/p10 into 50 buckets (0.02 step) per frame to preserve temporal dynamics
+                val cacheKey: AdaptiveCacheKey = if (distributions.size == 1) {
+                    val d0 = distributions[0]
+                    val qP90 = (d0.p90 * 50f).toInt().coerceIn(0, 50)
+                    val qP10 = (d0.p10 * 50f).toInt().coerceIn(0, 50)
+                    AdaptiveCacheKey.Single(qP90, qP10)
+                } else {
+                    val buckets = IntArray(distributions.size)
+                    for (i in distributions.indices) {
+                        val di = distributions[i]
+                        val qP90 = (di.p90 * 50f).toInt().coerceIn(0, 50)
+                        val qP10 = (di.p10 * 50f).toInt().coerceIn(0, 50)
+                        buckets[i] = (qP90 shl 8) or (qP10 and 0xFF)
+                    }
+                    AdaptiveCacheKey.Multi(buckets)
+                }
 
                 val joint = jointOptimizationCache.getOrPut(cacheKey) {
                     AdaptiveColorOptimizer.optimizeJointWithSpatialContext(
@@ -667,5 +679,22 @@ object ImageGeometryBuilder {
                 )
             }
         }
+    }
+}
+
+/**
+ * Quantized cache key for adaptive color optimization.
+ * Distinguishes single-frame static backgrounds from multi-frame animated sequences,
+ * preventing temporal conflation across varying frame dynamics.
+ */
+sealed interface AdaptiveCacheKey {
+    data class Single(val qP90: Int, val qP10: Int) : AdaptiveCacheKey
+    data class Multi(val frameBuckets: IntArray) : AdaptiveCacheKey {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Multi) return false
+            return frameBuckets.contentEquals(other.frameBuckets)
+        }
+        override fun hashCode(): Int = frameBuckets.contentHashCode()
     }
 }

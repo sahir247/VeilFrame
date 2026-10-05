@@ -140,6 +140,8 @@ object ScanabilityValidator {
             design.style == QrStyle.IMAGE_RESAMPLE ||
             design.style == QrStyle.IMAGE ||
             design.style == QrStyle.IMAGE_FILL -> 1.0f
+            design.style != QrStyle.BASIC -> 1.0f
+            design.explicitQuietZone != null && design.explicitQuietZone > 0 -> minOf(4.0f, design.explicitQuietZone.toFloat())
             else -> 4.0f
         }
 

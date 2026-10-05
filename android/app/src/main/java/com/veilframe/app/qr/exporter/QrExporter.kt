@@ -155,7 +155,9 @@ object QrExporter {
         format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
         quality: Int = 100
     ): Pair<Uri?, com.veilframe.app.qr.validation.ScanabilityReport> {
-        val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bitmap, design, matrix, content)
+        val mode = QrGenerator.defaultModeFor(design)
+        val effectiveDesign = QrGenerator.effectiveDesignForMode(design, mode)
+        val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
         if (!report.isScanReady) {
             return Pair(null, report)
         }
@@ -359,14 +361,16 @@ object QrExporter {
         design: QrDesign,
         content: String?
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
+        val mode = QrGenerator.defaultModeFor(design)
+        val effectiveDesign = QrGenerator.effectiveDesignForMode(design, mode)
         val svgData = try {
-            SvgExporter.generateSvg(matrix, design)
+            SvgExporter.generateSvg(matrix, effectiveDesign)
         } catch (t: Throwable) {
             return@withContext QrOutputResult.Failure(
                 QrError.Rendering.SvgRenderFailed(t.message ?: "SVG generation failed", t)
             )
         }
-        val validationErr = validateSvgScanability(svgData, design, matrix, content)
+        val validationErr = validateSvgScanability(svgData, effectiveDesign, matrix, content)
         if (validationErr != null) {
             return@withContext QrOutputResult.Failure(validationErr)
         }
@@ -832,15 +836,19 @@ object QrExporter {
             return QrOutputResult.Failure(QrError.Input.EmptyContent)
         }
 
+        val materializedDesign = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        val mode = QrGenerator.defaultModeFor(materializedDesign)
+        val effectiveDesign = QrGenerator.effectiveDesignForMode(materializedDesign, mode)
+
         val matrix = try {
-            QrGenerator.generateMatrix(content, design)
+            QrGenerator.generateMatrix(content, effectiveDesign, mode)
         } catch (t: Throwable) {
             return QrOutputResult.Failure(QrError.fromThrowable(t))
         }
 
         return when (format) {
             is QrOutputFormat.Png -> {
-                val renderResult = QrGenerator.generateWithResult(content, design)
+                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
@@ -855,12 +863,12 @@ object QrExporter {
                 }
                 val bmp = success.bitmap
                     ?: return QrOutputResult.Failure(
-                        QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
+                        QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
                 saveBitmapTyped(context, bmp, Bitmap.CompressFormat.PNG, 100)
             }
             is QrOutputFormat.Jpeg -> {
-                val renderResult = QrGenerator.generateWithResult(content, design)
+                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
@@ -875,18 +883,18 @@ object QrExporter {
                 }
                 val bmp = success.bitmap
                     ?: return QrOutputResult.Failure(
-                        QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
+                        QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
                 saveBitmapTyped(context, bmp, Bitmap.CompressFormat.JPEG, format.quality)
             }
             is QrOutputFormat.Svg -> {
-                if (AnimatedQrGenerator.isDesignAnimated(design)) {
-                    val validationErr = validateAnimatedSvgScanability(matrix, design, content)
+                if (AnimatedQrGenerator.isDesignAnimated(effectiveDesign)) {
+                    val validationErr = validateAnimatedSvgScanability(matrix, effectiveDesign, content)
                     if (validationErr != null) {
                         return QrOutputResult.Failure(validationErr)
                     }
                     val svgData = try {
-                        AnimatedQrGenerator.generateAnimatedSvg(matrix, design)
+                        AnimatedQrGenerator.generateAnimatedSvg(matrix, effectiveDesign)
                     } catch (t: Throwable) {
                         return QrOutputResult.Failure(
                             QrError.Rendering.SvgRenderFailed(t.message ?: "Animated SVG generation failed", t)
@@ -894,26 +902,26 @@ object QrExporter {
                     }
                     saveSvgStringTyped(context, svgData)
                 } else {
-                    saveSvgTyped(context, matrix, design, content)
+                    saveSvgTyped(context, matrix, effectiveDesign, content)
                 }
             }
             is QrOutputFormat.Pdf -> {
-                val renderResult = QrGenerator.generateWithResult(content, design)
+                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
                 val bmp = (renderResult as QrRenderResult.Success).bitmap
                     ?: return QrOutputResult.Failure(
-                        QrError.Rendering.BitmapAllocationFailed(design.outputSize, design.outputSize)
+                        QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
                 savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints)
             }
             is QrOutputFormat.Gif -> {
-                val frames = AnimatedQrGenerator.extractSourceFrames(design)
+                val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
-                val gifResult = AnimatedQrGenerator.encodeToGifStreaming(matrix, design, frames, design.outputSize, format.loopCount)
+                val gifResult = AnimatedQrGenerator.encodeToGifStreaming(matrix, effectiveDesign, frames, effectiveDesign.outputSize, format.loopCount)
                 if (gifResult is QrOutputResult.Failure) {
                     return QrOutputResult.Failure(gifResult.error)
                 }
@@ -921,7 +929,7 @@ object QrExporter {
                 saveGifTyped(context, gifBytes)
             }
             is QrOutputFormat.Apng -> {
-                val frames = AnimatedQrGenerator.extractSourceFrames(design)
+                val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
@@ -929,12 +937,12 @@ object QrExporter {
                 try {
                     val apngResult = AnimatedQrGenerator.encodeToApngStreaming(
                         matrix = matrix,
-                        baseDesign = design,
+                        baseDesign = effectiveDesign,
                         sourceFrames = frames,
                         outputFile = tempFile,
                         fps = format.fps,
                         loops = format.loopCount,
-                        outputSize = design.outputSize
+                        outputSize = effectiveDesign.outputSize
                     )
                     if (apngResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(apngResult.error)
@@ -945,7 +953,7 @@ object QrExporter {
                 }
             }
             is QrOutputFormat.Video -> {
-                val frames = AnimatedQrGenerator.extractSourceFrames(design)
+                val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)
                 if (frames.isEmpty()) {
                     return QrOutputResult.Failure(QrError.Animation.EmptyFrames)
                 }
@@ -954,11 +962,11 @@ object QrExporter {
                 try {
                     val vidResult = AnimatedQrGenerator.encodeToVideoStreaming(
                         matrix = matrix,
-                        baseDesign = design,
+                        baseDesign = effectiveDesign,
                         sourceFrames = frames,
                         outputFile = tempFile,
                         fps = format.fps,
-                        outputSize = design.outputSize
+                        outputSize = effectiveDesign.outputSize
                     )
                     if (vidResult is QrOutputResult.Failure) {
                         return QrOutputResult.Failure(vidResult.error)
