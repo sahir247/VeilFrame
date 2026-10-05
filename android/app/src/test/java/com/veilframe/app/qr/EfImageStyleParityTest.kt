@@ -1086,4 +1086,135 @@ class EfImageStyleParityTest {
         val decoded = decodeBitmap(bitmap)
         assertEquals("Rendered QR code with arbitrary image parameters must decode cleanly", content, decoded)
     }
+
+    @Test
+    fun `EF Image style transparent light module semantics - Color TRANSPARENT emits no light module geometry`() {
+        val content = "https://veilframe.app/transparent-light-semantics"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(400, 400)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 400,
+            quietZoneModules = 1,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo)),
+            imageDataScale = 0.35f,
+            dataColorDark = 0xFF39C5BC.toInt(),
+            dataColorLight = Color.TRANSPARENT,
+            allowTransparent = true,
+            positionDarkColor = 0xFF39C5BC.toInt(),
+            positionLightColor = Color.WHITE
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 400, 400, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        val expectedDataSize = 0.35f * geometry.moduleSize
+        val topDataModules = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f && Math.abs(it.height - expectedDataSize) < 0.05f
+        }
+
+        assertTrue("Cyan dark modules must be emitted", topDataModules.isNotEmpty())
+        for (node in topDataModules) {
+            assertEquals("All emitted data modules must have cyan fill", 0xFF39C5BC.toInt(), node.fill)
+            assertTrue("Emitted data modules must be opaque", Color.alpha(node.fill ?: 0) > 0)
+        }
+
+        // Verify zero light modules (transparent rectangles) are emitted in top layer
+        val transparentDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f &&
+            (Color.alpha(it.fill ?: 0) == 0 || it.fill == Color.TRANSPARENT)
+        }
+        assertEquals("No transparent light module geometry nodes should be emitted", 0, transparentDataNodes.size)
+    }
+
+    @Test
+    fun `EF Image style opaque light module semantics - Color WHITE emits visible light module geometry`() {
+        val content = "https://veilframe.app/opaque-light-semantics"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(400, 400)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 400,
+            quietZoneModules = 1,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo)),
+            imageDataScale = 0.35f,
+            dataColorDark = 0xFF39C5BC.toInt(),
+            dataColorLight = Color.WHITE,
+            allowTransparent = true,
+            positionDarkColor = 0xFF39C5BC.toInt(),
+            positionLightColor = Color.WHITE
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 400, 400, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        val expectedDataSize = 0.35f * geometry.moduleSize
+        val topDataModules = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f && Math.abs(it.height - expectedDataSize) < 0.05f
+        }
+
+        val cyanDataNodes = topDataModules.filter { it.fill == 0xFF39C5BC.toInt() }
+        val whiteDataNodes = topDataModules.filter { it.fill == Color.WHITE }
+
+        assertTrue("Cyan dark data nodes must be present", cyanDataNodes.isNotEmpty())
+        assertTrue("White light data nodes must be present", whiteDataNodes.isNotEmpty())
+        assertEquals("Total top data modules must equal cyan + white nodes", topDataModules.size, cyanDataNodes.size + whiteDataNodes.size)
+
+        for (node in whiteDataNodes) {
+            assertEquals("White data node fill must be Color.WHITE", Color.WHITE, node.fill)
+            assertEquals("White data node alpha must be 255", 255, Color.alpha(node.fill ?: 0))
+            assertTrue("White data node opacity must be positive", node.opacity > 0f)
+        }
+    }
+
+    @Test
+    fun `EF Image architectural separation - allowTransparent true does not imply transparent light QR modules`() {
+        val content = "https://veilframe.app/separation-test"
+        val matrix = QrMatrix(content, ErrorCorrectionLevel.H)
+        val photo = createTestPhoto(400, 400)
+
+        // Configuration with allowTransparent = true (image backdrop transparency enabled)
+        // and dataColorLight = Color.WHITE (opaque white QR light modules)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 400,
+            quietZoneModules = 1,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(photo)),
+            imageDataScale = 0.35f,
+            dataColorDark = 0xFF39C5BC.toInt(),
+            dataColorLight = Color.WHITE,
+            allowTransparent = true,
+            positionDarkColor = 0xFF39C5BC.toInt(),
+            positionLightColor = Color.WHITE
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 400, 400, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. Verify ImageNode exists with hole mask (image transparency active)
+        val imageNode = ir.rootNodes.filterIsInstance<ImageNode>().firstOrNull { it.maskId == "hole" }
+        assertNotNull("Underlying image layer with hole mask must exist when allowTransparent = true", imageNode)
+
+        // 2. Verify pre-pass full-scale rects include both dark and light fills
+        val prePassRects = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.width == geometry.moduleSize && it.height == geometry.moduleSize
+        }
+        val prePassCyan = prePassRects.filter { it.fill == 0xFF39C5BC.toInt() }
+        val prePassWhite = prePassRects.filter { it.fill == Color.WHITE }
+        assertTrue("Pre-pass must contain cyan modules", prePassCyan.isNotEmpty())
+        assertTrue("Pre-pass must contain white backing modules", prePassWhite.isNotEmpty())
+
+        // 3. Verify top overlay contains opaque white data modules
+        val expectedDataSize = 0.35f * geometry.moduleSize
+        val topDataModules = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f
+        }
+        val topWhite = topDataModules.filter { it.fill == Color.WHITE }
+        assertTrue("Top overlay must contain opaque white data modules even when allowTransparent is true", topWhite.isNotEmpty())
+        for (w in topWhite) {
+            assertTrue("White module alpha must be > 0", Color.alpha(w.fill ?: 0) > 0)
+        }
+    }
 }
