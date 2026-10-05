@@ -573,6 +573,9 @@ class QrGenerateTabFragment : Fragment() {
         val imageTransparentLightBtn  = view.findViewById<MaterialButton>(R.id.qr_image_data_transparent_light_btn)
         val imageApplySamplePresetBtn = view.findViewById<MaterialButton>(R.id.qr_image_apply_sample_preset_btn)
         val imageApplyStandardEfBtn   = view.findViewById<MaterialButton>(R.id.qr_image_apply_standard_ef_btn)
+        val imageStrategyFixedBtn    = view.findViewById<MaterialButton>(R.id.qr_image_strategy_fixed_btn)
+        val imageStrategyPaletteBtn  = view.findViewById<MaterialButton>(R.id.qr_image_strategy_palette_btn)
+        val imageStrategyContrastBtn = view.findViewById<MaterialButton>(R.id.qr_image_strategy_contrast_btn)
         val animatedExportLabel       = view.findViewById<TextView>(R.id.qr_animated_export_label)
 
         val saveBtn            = view.findViewById<MaterialButton>(R.id.qr_save_btn)
@@ -1402,6 +1405,18 @@ class QrGenerateTabFragment : Fragment() {
             vm.applyImageStandardEfDefaults()
             Toast.makeText(requireContext(), "Reset to EF Defaults (100% + Opaque White)", Toast.LENGTH_SHORT).show()
         }
+        imageStrategyFixedBtn?.setOnClickListener {
+            vm.updateImageColorStrategy(ImageColorStrategy.FIXED)
+            Toast.makeText(requireContext(), "Color Strategy: Fixed", Toast.LENGTH_SHORT).show()
+        }
+        imageStrategyPaletteBtn?.setOnClickListener {
+            vm.updateImageColorStrategy(ImageColorStrategy.ADAPTIVE_PALETTE)
+            Toast.makeText(requireContext(), "Color Strategy: Adaptive Palette", Toast.LENGTH_SHORT).show()
+        }
+        imageStrategyContrastBtn?.setOnClickListener {
+            vm.updateImageColorStrategy(ImageColorStrategy.ADAPTIVE_CONTRAST)
+            Toast.makeText(requireContext(), "Color Strategy: Adaptive Contrast", Toast.LENGTH_SHORT).show()
+        }
 
         imagePosSizeSlider?.value = vm.state.value.imagePositionSize.coerceIn(0.5f, 2.0f)
         imagePosSizeLabel?.text = String.format(Locale.US, "Position / Finder Size: %.2fx", vm.state.value.imagePositionSize)
@@ -2135,6 +2150,11 @@ class QrGenerateTabFragment : Fragment() {
                             imageTransparentLightBtn?.setIconResource(0)
                             imageDataLightColorBtn?.text = "Data Light"
                         }
+
+                        val currentStrategy = state.imageColorStrategy
+                        imageStrategyFixedBtn?.text = if (currentStrategy == ImageColorStrategy.FIXED) "✓ Fixed" else "Fixed"
+                        imageStrategyPaletteBtn?.text = if (currentStrategy == ImageColorStrategy.ADAPTIVE_PALETTE) "✓ Palette" else "Palette"
+                        imageStrategyContrastBtn?.text = if (currentStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST) "✓ Contrast" else "Contrast"
 
                         // Contextual RESAMPLE controls: only show when IMAGE_RESAMPLE is active
                         containerResampleControls?.visibility = if (isResample) View.VISIBLE else View.GONE

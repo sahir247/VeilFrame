@@ -2836,6 +2836,57 @@
                             android:text="Data Light" />
                     </LinearLayout>
 
+                    <!-- Image Color Strategy -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Image Color Strategy"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_image_strategy_fixed_btn"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="2dp"
+                            android:paddingHorizontal="2dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:text="Fixed" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_image_strategy_palette_btn"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="2dp"
+                            android:paddingHorizontal="2dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:text="Palette" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_image_strategy_contrast_btn"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="2dp"
+                            android:paddingHorizontal="2dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:text="Contrast" />
+                    </LinearLayout>
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_image_data_transparent_light_btn"
                         style="@style/Widget.Material3.Button.TonalButton"
