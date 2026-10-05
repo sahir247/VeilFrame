@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.graphics.RectF
 import java.util.Locale
 import com.veilframe.app.qr.image.EfImagePreprocessor
+import com.veilframe.app.qr.image.ImageColorAnalyzer
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
 
@@ -94,8 +95,14 @@ object ImageGeometryBuilder {
 
         val dataShape = design.moduleStyle.shape
         val dataScale = maxOf(0f, (design.imageDataScale ?: design.moduleStyle.scale))
-        val dataDarkColor = design.dataColorDark
-        val dataLightColor = design.dataColorLight
+        val adaptiveColors = if (design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_PALETTE) {
+            val candidate = sourceImage ?: animatedFrames?.firstOrNull()
+            if (candidate != null && !candidate.isRecycled) {
+                ImageColorAnalyzer.analyze(candidate)
+            } else null
+        } else null
+        val dataDarkColor = adaptiveColors?.darkColor ?: design.dataColorDark
+        val dataLightColor = adaptiveColors?.lightColor ?: design.dataColorLight
         val allowTransparent = design.allowTransparent
 
         val posStyle = design.eyeStyle.style

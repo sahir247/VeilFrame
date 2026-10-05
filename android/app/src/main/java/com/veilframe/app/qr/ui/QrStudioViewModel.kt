@@ -1491,8 +1491,21 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         regenerate(debounceMs = 0)
     }
 
+    fun analyzeImageColors(bitmap: Bitmap? = state.value.sourceImage): com.veilframe.app.qr.image.ResolvedImageColors {
+        return com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(bitmap)
+    }
+
     fun updateImageColorStrategy(strategy: ImageColorStrategy) {
-        _state.value = _state.value.copy(imageColorStrategy = strategy)
+        val nextColors = if (strategy == ImageColorStrategy.ADAPTIVE_PALETTE && _state.value.sourceImage != null) {
+            val resolved = com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(_state.value.sourceImage)
+            Pair(resolved.darkColor, resolved.lightColor)
+        } else null
+
+        _state.value = _state.value.copy(
+            imageColorStrategy = strategy,
+            imageDataDarkColor = nextColors?.first ?: _state.value.imageDataDarkColor,
+            imageDataLightColor = nextColors?.second ?: _state.value.imageDataLightColor
+        )
         regenerate(debounceMs = 0)
     }
 
