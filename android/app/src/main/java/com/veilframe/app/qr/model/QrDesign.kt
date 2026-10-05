@@ -144,16 +144,17 @@ data class ImageSourceStyle(
     val exposure: Float = 0.0f,
     val maskColor: Int = 0x1A000000,
     val maskAlpha: Float = 0.1f,
-    val allowTransparent: Boolean = false
+    val allowTransparent: Boolean = false,
+    val overrideAnimatedFrames: List<Bitmap>? = null
 ) {
     val bitmap: Bitmap? get() = when (source) {
         is ImageSource.Memory -> source.bitmap
         is ImageSource.Animated -> source.frames.firstOrNull()
         else -> null
     }
-    val animatedFrames: List<Bitmap>? get() = (source as? ImageSource.Animated)?.frames
+    val animatedFrames: List<Bitmap>? get() = overrideAnimatedFrames ?: (source as? ImageSource.Animated)?.frames
     val frameDelaysMs: List<Int>? get() = (source as? ImageSource.Animated)?.delaysMs
-    val isAnimated: Boolean get() = source is ImageSource.Animated
+    val isAnimated: Boolean get() = overrideAnimatedFrames != null || source is ImageSource.Animated
 }
 
 data class BubbleClusterStyle(

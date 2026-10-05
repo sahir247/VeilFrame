@@ -361,16 +361,21 @@ object ImageColorAnalyzer {
     /**
      * Resolves the optimized module color for a data module across frame background luminances [frameLums].
      *
-     * Guarantees:
-     * 1. Hard Contrast Contract: Evaluates worst-case contrast across all frames:
-     *    min_k(CR(candidate, frameLums[k])) >= 3.0:1.
+     * Optimization Contract:
+     * 1. Target Contrast Evaluation: Evaluates worst-case contrast across all frames:
+     *    min_k(CR(candidate, frameLums[k])). If a candidate achieves CR >= 3.0:1, it is selected.
      * 2. Palette Candidate Search: Searches extracted image palette for candidate colors
      *    matching target contrast before falling back to anchors.
      * 3. Visual Polarity Inversion: If standard polarity cannot achieve 3.0:1 against extreme
      *    backgrounds (e.g. L_bg = 0.02 where all L <= 0.45 colors have CR < 3.0), evaluates
      *    contrast-safe inverted marks (L >= 0.55 / Color.WHITE) to prevent invisible black-on-black.
-     * 4. Temporal Stability: Calculates worst-case frame contrast rather than misleading averages.
-     * 5. EF Parity: Transparent light modules (alpha == 0) are strictly preserved as transparent.
+     * 4. Temporal Worst-Case: Calculates worst-case frame contrast rather than misleading averages.
+     * 5. Minimax Fallback: For extreme multi-frame animations (e.g. flashing between 0.0 and 1.0)
+     *    where no static color can mathematically satisfy CR >= 3.0:1, returns the candidate
+     *    with the highest achievable minimum contrast ratio (minimax optimal).
+     * 6. EF Parity: Transparent light modules (alpha == 0) are strictly preserved as transparent.
+     * 7. Transparent Colors: Transparent reference colors (alpha == 0) do not participate in
+     *    luminance constraint clamping.
      */
     fun resolveAdaptiveContrastColor(
         isDark: Boolean,
@@ -391,8 +396,13 @@ object ImageColorAnalyzer {
         val midLumAnchor = 0xFF7D7D7D.toInt()
 
         if (isDark) {
-            // 1. Primary candidates (standard dark polarity: L <= 0.45 or <= lumLight - 0.25)
-            val maxAllowedLum = min(0.45f, lumLight - MIN_LUMINANCE_DELTA)
+            // 1. Primary candidates (standard dark polarity: L <= 0.45)
+            // Transparent light colors must not participate in luminance constraints (check alpha first)
+            val maxAllowedLum = if (Color.alpha(defaultLight) > 0 && lumLight > 0.45f) {
+                min(0.45f, lumLight - MIN_LUMINANCE_DELTA)
+            } else {
+                0.45f
+            }
             val primaryCandidates = mutableListOf<Int>()
             if (lumDark <= maxAllowedLum) primaryCandidates.add(defaultDark)
             for (c in palette) {
@@ -402,7 +412,7 @@ object ImageColorAnalyzer {
             }
             if (Color.BLACK !in primaryCandidates) primaryCandidates.add(Color.BLACK)
 
-            // Check if any primary candidate achieves guaranteed worst-case CR >= 3.0:1
+            // Check if any primary candidate achieves target worst-case CR >= 3.0:1
             val viablePrimary = primaryCandidates.filter { minContrastRatio(it, frameLums) >= MIN_CONTRAST_RATIO }
             if (viablePrimary.isNotEmpty()) {
                 return viablePrimary.first()
@@ -429,13 +439,18 @@ object ImageColorAnalyzer {
                 return midLumAnchor
             }
 
-            // Absolute maximum contrast candidate across all pools
+            // Fallback: Return best achievable contrast candidate across all pools (minimax optimization)
             val allCandidates = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
             return allCandidates.maxByOrNull { minContrastRatio(it, frameLums) } ?: Color.WHITE
 
         } else {
             // Light module:
-            val minAllowedLum = max(0.55f, lumDark + MIN_LUMINANCE_DELTA)
+            // Transparent dark colors must not participate in luminance constraints (check alpha first)
+            val minAllowedLum = if (Color.alpha(defaultDark) > 0 && lumDark < 0.55f) {
+                max(0.55f, lumDark + MIN_LUMINANCE_DELTA)
+            } else {
+                0.55f
+            }
             val primaryCandidates = mutableListOf<Int>()
             if (lumLight >= minAllowedLum) primaryCandidates.add(defaultLight)
             for (c in palette) {
@@ -468,6 +483,7 @@ object ImageColorAnalyzer {
                 return midLumAnchor
             }
 
+            // Fallback: Return best achievable contrast candidate across all pools (minimax optimization)
             val allCandidates = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
             return allCandidates.maxByOrNull { minContrastRatio(it, frameLums) } ?: Color.BLACK
         }

@@ -214,7 +214,8 @@ object AnimatedQrGenerator {
         val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
         val imgSource = if (hasAnimatedImg) {
             baseDesign.imageSource.copy(
-                source = com.veilframe.app.qr.model.ImageSource.Memory(sourceFrame.bitmap)
+                source = com.veilframe.app.qr.model.ImageSource.Memory(sourceFrame.bitmap),
+                overrideAnimatedFrames = baseDesign.imageSource.animatedFrames
             )
         } else {
             baseDesign.imageSource
@@ -439,7 +440,8 @@ object AnimatedQrGenerator {
             )
             val imgSource = if (rf.imageBitmap != null) {
                 design.imageSource.copy(
-                    source = com.veilframe.app.qr.model.ImageSource.Memory(rf.imageBitmap)
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(rf.imageBitmap),
+                    overrideAnimatedFrames = design.imageSource.animatedFrames
                 )
             } else {
                 design.imageSource
@@ -585,7 +587,8 @@ object AnimatedQrGenerator {
 
             val frameDesign = baseDesign.copy(
                 imageSource = baseDesign.imageSource.copy(
-                    source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap)
+                    source = com.veilframe.app.qr.model.ImageSource.Memory(frame.bitmap),
+                    overrideAnimatedFrames = baseDesign.imageSource.animatedFrames ?: sourceFrames.map { it.bitmap }
                 )
             )
 

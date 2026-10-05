@@ -422,4 +422,38 @@ class ImageColorAnalyzerTest {
         assertEquals("Light module must be the ~0.75 color", color75, result.lightColor)
         assertEquals("Dark module must be Color.BLACK to satisfy CR >= 3.0:1", Color.BLACK, result.darkColor)
     }
+
+    @Test
+    fun `Test E - resolveAdaptiveContrastColor preserves non-black dark candidate when defaultLight is transparent`() {
+        val cyan = 0xFF39C5BC.toInt() // relative luminance ~0.42
+        val lumCyan = ImageColorAnalyzer.relativeLuminance(cyan)
+        assertTrue("Cyan luminance is between 0.35 and 0.45", lumCyan in 0.35f..0.45f)
+
+        // When defaultLight is transparent (alpha = 0), its luminance (0.0) must NOT constrain
+        // maxAllowedLum to -0.25f. Dark candidate pool must keep cyan!
+        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            localLum = 0.02f, // near-black background
+            defaultDark = cyan,
+            defaultLight = Color.TRANSPARENT,
+            palette = emptyList()
+        )
+
+        assertEquals("Cyan must be preserved as primary dark candidate, not rejected due to transparent light", cyan, resolved)
+    }
+
+    @Test
+    fun `Test F - resolveAdaptiveContrastColor preserves non-white light candidate when defaultDark is transparent`() {
+        val paleCyan = 0xFF80E5FF.toInt() // relative luminance ~0.70
+        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = false,
+            localLum = 0.98f, // near-white background
+            defaultDark = Color.TRANSPARENT,
+            defaultLight = paleCyan,
+            palette = emptyList()
+        )
+        // When defaultDark is transparent, minAllowedLum must not be clamped by transparent dark
+        // On near-white background (0.98), paleCyan (0.70) has CR < 3, so it inverts to Black
+        assertEquals("On near-white background, light module inverts to Black to achieve contrast", Color.BLACK, resolved)
+    }
 }

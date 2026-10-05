@@ -73,13 +73,15 @@ object ImageGeometryBuilder {
         }
 
         val backdropImg = design.backdropStyle.image
-        if (backdropImg != null && !backdropImg.isRecycled) {
-            val preprocessedBackdrop = EfImagePreprocessor.preprocess(
+        val preprocessedBackdrop: Bitmap? = if (backdropImg != null && !backdropImg.isRecycled) {
+            EfImagePreprocessor.preprocess(
                 source = backdropImg,
                 canvasWidth = width,
                 canvasHeight = height,
                 mode = design.backdropStyle.imageScaleMode
             )
+        } else null
+        if (preprocessedBackdrop != null) {
             nodes.add(
                 ImageNode(
                     x = 0f,
@@ -161,21 +163,73 @@ object ImageGeometryBuilder {
         val isAdaptiveContrast = design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST && (sampleFrames?.isNotEmpty() == true || (sampleBitmap != null && !sampleBitmap.isRecycled))
         val candidatePalette = adaptiveColors?.palette ?: emptyList()
 
+        val sampleEffectiveLuminance: (Bitmap, Float, Float) -> Float = { frame, normU, normV ->
+            val cx = x0 + normU * canvasW
+            val cy = y0 + normV * canvasH
+
+            // 1. Solid canvas backdrop
+            val bg = if (colorAlpha(resolvedBackdropColor) > 0) resolvedBackdropColor else Color.WHITE
+            var r = Color.red(bg)
+            var g = Color.green(bg)
+            var b = Color.blue(bg)
+
+            // 2. Composite backdrop image if present
+            if (preprocessedBackdrop != null && !preprocessedBackdrop.isRecycled && width > 0f && height > 0f) {
+                val bx = ((cx / width) * preprocessedBackdrop.width).toInt().coerceIn(0, preprocessedBackdrop.width - 1)
+                val by = ((cy / height) * preprocessedBackdrop.height).toInt().coerceIn(0, preprocessedBackdrop.height - 1)
+                val bPixel = preprocessedBackdrop.getPixel(bx, by)
+                val bAlpha = (Color.alpha(bPixel) / 255.0f) * design.backdropStyle.imageAlpha.coerceIn(0f, 1f)
+                if (bAlpha > 0f) {
+                    r = (Color.red(bPixel) * bAlpha + r * (1f - bAlpha)).toInt()
+                    g = (Color.green(bPixel) * bAlpha + g * (1f - bAlpha)).toInt()
+                    b = (Color.blue(bPixel) * bAlpha + b * (1f - bAlpha)).toInt()
+                }
+            }
+
+            // 3. Composite watermark image frame pixel over backdrop
+            val fx = (normU * frame.width).toInt().coerceIn(0, frame.width - 1)
+            val fy = (normV * frame.height).toInt().coerceIn(0, frame.height - 1)
+            val fPixel = frame.getPixel(fx, fy)
+            val fAlpha = (Color.alpha(fPixel) / 255.0f) * imageAlpha
+            if (fAlpha > 0f) {
+                r = (Color.red(fPixel) * fAlpha + r * (1f - fAlpha)).toInt()
+                g = (Color.green(fPixel) * fAlpha + g * (1f - fAlpha)).toInt()
+                b = (Color.blue(fPixel) * fAlpha + b * (1f - fAlpha)).toInt()
+            }
+
+            ImageColorAnalyzer.relativeLuminance(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
+        }
+
+        val sampleFootprintLuminance: (Bitmap, Int, Int, Boolean) -> Float = { frame, col, row, isDark ->
+            val uCenter = (col + 0.5f) / n
+            val vCenter = (row + 0.5f) / n
+            val halfU = (dataScale * 0.5f) / n
+            val halfV = (dataScale * 0.5f) / n
+
+            // Sample 5 points within the actual visible mark footprint
+            val lCenter = sampleEffectiveLuminance(frame, uCenter, vCenter)
+            val lLeft = sampleEffectiveLuminance(frame, (uCenter - 0.5f * halfU).coerceIn(0f, 1f), vCenter)
+            val lRight = sampleEffectiveLuminance(frame, (uCenter + 0.5f * halfU).coerceIn(0f, 1f), vCenter)
+            val lTop = sampleEffectiveLuminance(frame, uCenter, (vCenter - 0.5f * halfV).coerceIn(0f, 1f))
+            val lBottom = sampleEffectiveLuminance(frame, uCenter, (vCenter + 0.5f * halfV).coerceIn(0f, 1f))
+
+            if (isDark) {
+                // For dark modules: worst-case background is the brightest pixel in mark footprint
+                maxOf(lCenter, lLeft, lRight, lTop, lBottom)
+            } else {
+                // For light modules: worst-case background is the darkest pixel in mark footprint
+                minOf(lCenter, lLeft, lRight, lTop, lBottom)
+            }
+        }
+
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
+                val frameLums = if (sampleFrames != null && sampleFrames.size > 1) {
+                    sampleFrames.map { frame -> sampleFootprintLuminance(frame, col, row, isDark) }
+                } else {
+                    listOf(sampleFootprintLuminance(sampleBitmap!!, col, row, isDark))
+                }
                 if (isDark) {
-                    val frameLums = if (sampleFrames != null && sampleFrames.size > 1) {
-                        sampleFrames.map { frame ->
-                            val px = ((col + 0.5f) / n * frame.width).toInt().coerceIn(0, frame.width - 1)
-                            val py = ((row + 0.5f) / n * frame.height).toInt().coerceIn(0, frame.height - 1)
-                            ImageColorAnalyzer.relativeLuminance(frame.getPixel(px, py))
-                        }
-                    } else {
-                        val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
-                        val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
-                        val localPixel = sampleBitmap.getPixel(px, py)
-                        listOf(ImageColorAnalyzer.relativeLuminance(localPixel))
-                    }
                     ImageColorAnalyzer.resolveAdaptiveContrastColor(
                         isDark = true,
                         frameLums = frameLums,
@@ -206,7 +260,7 @@ object ImageGeometryBuilder {
                         // Skip active alignment modules in pre-pass
                     } else {
                         val isDark = matrix.isDark(col, row)
-                        val color = resolveDataColor(col, row, isDark)
+                        val color = if (isDark) dataDarkColor else dataLightColor
                         if (colorAlpha(color) > 0) {
                             createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color)?.let { nodes.add(it) }
                         }

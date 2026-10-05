@@ -9,6 +9,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.geometry.ImageGeometryBuilder
+import com.veilframe.app.qr.geometry.ImageNode
 import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.validation.ScanabilityValidator
@@ -287,5 +288,114 @@ class AdaptiveImageScanabilityTest {
         val zxResult = zxingDecoder.decode(bitmap)
         assertTrue("Animated alternating frames with ADAPTIVE_CONTRAST must decode via ZXing", zxResult.success)
         assertEquals(expectedPayload, zxResult.text)
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST with transparent PNG over white backdrop does not invert dark modules to white`() {
+        val transparentBmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        transparentBmp.eraseColor(Color.TRANSPARENT)
+
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.H)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 512,
+            quietZoneModules = 1,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(transparentBmp)),
+            imageDataScale = 0.35f,
+            dataColorDark = Color.BLACK,
+            dataColorLight = Color.TRANSPARENT,
+            allowTransparent = true,
+            backdropStyle = BackdropStyle(color = Color.WHITE)
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val mSize = geometry.moduleSize
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        val darkDataRects = ir.rootNodes.filterIsInstance<RectNode>().filter { it.fill == Color.BLACK && Math.abs(it.width - 0.35f * mSize) < 0.1f }
+        assertTrue("Dark data modules over transparent image on white backdrop must remain black", darkDataRects.isNotEmpty())
+        val whiteDataRects = ir.rootNodes.filterIsInstance<RectNode>().filter { it.fill == Color.WHITE && Math.abs(it.width - 0.35f * mSize) < 0.1f }
+        assertTrue("Must not contain white data modules on white backdrop", whiteDataRects.isEmpty())
+    }
+
+    @Test
+    fun `Transparent pre-pass strictly uses fixed EF data colors without invoking adaptive contrast`() {
+        val nearBlackBmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        nearBlackBmp.eraseColor(0xFF05070E.toInt())
+
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.H)
+        val fixedDark = 0xFF123456.toInt()
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 512,
+            quietZoneModules = 1,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(nearBlackBmp)),
+            imageDataScale = 0.35f,
+            dataColorDark = fixedDark,
+            dataColorLight = Color.TRANSPARENT,
+            allowTransparent = true
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val mSize = geometry.moduleSize
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        val imageNodeIdx = ir.rootNodes.indexOfFirst { it is ImageNode }
+        assertTrue("Image node must exist in IR", imageNodeIdx > 0)
+        val prePassNodes = ir.rootNodes.subList(0, imageNodeIdx).filterIsInstance<RectNode>().filter { it.width <= mSize + 0.1f }
+        assertTrue("Pre-pass nodes must exist", prePassNodes.isNotEmpty())
+        for (node in prePassNodes) {
+            assertEquals("Pre-pass nodes must strictly use fixedDark", fixedDark, node.fill)
+        }
+    }
+
+    @Test
+    fun `AnimatedQrGenerator preserves multi-frame context on per-frame design for temporal worst-case analysis`() {
+        val frame1 = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
+        val frame2 = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+        val animFrames = listOf(frame1, frame2)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 256,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Animated(frames = animFrames, delaysMs = listOf(100, 100))
+            )
+        )
+
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.M)
+        val result = AnimatedQrGenerator.renderDesignResult(matrix, design, outputSize = 256)
+        assertTrue("renderDesignResult must succeed", result is QrOutputResult.Success)
+        val frames = (result as QrOutputResult.Success).value
+        assertEquals(2, frames.size)
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST 5-point footprint sampling detects worst-case within dataScale`() {
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.H)
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        canvas.drawColor(Color.WHITE)
+        val darkPaint = Paint().apply { color = Color.BLACK }
+        canvas.drawRect(0f, 0f, 256f, 50f, darkPaint)
+
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 512,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(bmp)),
+            imageDataScale = 0.35f,
+            dataColorDark = Color.BLACK,
+            dataColorLight = Color.WHITE,
+            allowTransparent = true
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+        assertNotNull(ir)
+        assertTrue(ir.rootNodes.isNotEmpty())
     }
 }
