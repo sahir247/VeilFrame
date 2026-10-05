@@ -163,27 +163,29 @@ object ImageGeometryBuilder {
 
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
-                val localLum = if (sampleFrames != null && sampleFrames.size > 1) {
-                    var sumLum = 0f
-                    for (frame in sampleFrames) {
-                        val px = ((col + 0.5f) / n * frame.width).toInt().coerceIn(0, frame.width - 1)
-                        val py = ((row + 0.5f) / n * frame.height).toInt().coerceIn(0, frame.height - 1)
-                        sumLum += ImageColorAnalyzer.relativeLuminance(frame.getPixel(px, py))
+                if (isDark) {
+                    val frameLums = if (sampleFrames != null && sampleFrames.size > 1) {
+                        sampleFrames.map { frame ->
+                            val px = ((col + 0.5f) / n * frame.width).toInt().coerceIn(0, frame.width - 1)
+                            val py = ((row + 0.5f) / n * frame.height).toInt().coerceIn(0, frame.height - 1)
+                            ImageColorAnalyzer.relativeLuminance(frame.getPixel(px, py))
+                        }
+                    } else {
+                        val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
+                        val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
+                        val localPixel = sampleBitmap.getPixel(px, py)
+                        listOf(ImageColorAnalyzer.relativeLuminance(localPixel))
                     }
-                    sumLum / sampleFrames.size
+                    ImageColorAnalyzer.resolveAdaptiveContrastColor(
+                        isDark = true,
+                        frameLums = frameLums,
+                        defaultDark = dataDarkColor,
+                        defaultLight = dataLightColor,
+                        palette = candidatePalette
+                    )
                 } else {
-                    val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
-                    val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
-                    val localPixel = sampleBitmap.getPixel(px, py)
-                    ImageColorAnalyzer.relativeLuminance(localPixel)
+                    dataLightColor
                 }
-                ImageColorAnalyzer.resolveAdaptiveContrastColor(
-                    isDark = isDark,
-                    localLum = localLum,
-                    defaultDark = dataDarkColor,
-                    defaultLight = dataLightColor,
-                    palette = candidatePalette
-                )
             } else {
                 if (isDark) dataDarkColor else dataLightColor
             }

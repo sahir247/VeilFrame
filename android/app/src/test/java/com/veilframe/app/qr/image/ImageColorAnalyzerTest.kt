@@ -327,4 +327,99 @@ class ImageColorAnalyzerTest {
         assertFalse("Palette must not be empty", result.palette.isEmpty())
         assertTrue("Palette must capture colors from both frames", result.palette.size >= 2)
     }
+
+    @Test
+    fun `Test A - resolveAdaptiveContrastColor enforces CR at least 3 on near-black background without black-on-black`() {
+        val nearBlackBg = 0.02f
+        val defaultDark = Color.BLACK
+        val defaultLight = Color.WHITE
+        val deepNavy = 0xFF0B1021.toInt() // lum ~0.008
+        val palette = listOf(Color.BLACK, deepNavy)
+
+        // When local background is near-black (0.02) and dark candidates are all dark (Black CR 1.4:1, Navy CR 1.25:1),
+        // optimizer MUST NOT return Black or Navy. It must invert visual polarity to white/bright accent
+        // to guarantee CR >= 3.0:1!
+        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            localLum = nearBlackBg,
+            defaultDark = defaultDark,
+            defaultLight = defaultLight,
+            palette = palette
+        )
+
+        val contrast = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(resolved), nearBlackBg)
+        assertTrue("Resolved color on near-black background must achieve CR >= 3.0:1, got $contrast", contrast >= 3.0f)
+        assertNotEquals("Must not return Color.BLACK on near-black background (black-on-black)", Color.BLACK, resolved)
+        assertNotEquals("Must not return deep navy on near-black background", deepNavy, resolved)
+    }
+
+    @Test
+    fun `Test B - resolveAdaptiveContrastColor enforces CR at least 3 on bright background for light module without white-on-white`() {
+        val nearWhiteBg = 0.98f
+        val defaultDark = Color.BLACK
+        val defaultLight = Color.WHITE
+        val paleYellow = 0xFFFFFFE0.toInt() // lum > 0.95
+        val palette = listOf(Color.WHITE, paleYellow)
+
+        // When local background is near-white (0.98) and light module is requested,
+        // returning White (CR 1.02:1) or Pale Yellow (CR ~1.03:1) would make mark invisible.
+        // Optimizer must invert visual polarity or anchor to black to guarantee CR >= 3.0:1!
+        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = false,
+            localLum = nearWhiteBg,
+            defaultDark = defaultDark,
+            defaultLight = defaultLight,
+            palette = palette
+        )
+
+        val contrast = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(resolved), nearWhiteBg)
+        assertTrue("Resolved light module on bright background must achieve CR >= 3.0:1, got $contrast", contrast >= 3.0f)
+        assertNotEquals("Must not return Color.WHITE on near-white background (white-on-white)", Color.WHITE, resolved)
+        assertNotEquals("Must not return pale yellow on near-white background", paleYellow, resolved)
+    }
+
+    @Test
+    fun `Test C - temporal worst-case evaluates minimum frame contrast across all frames`() {
+        // Frame 0 is almost black (L = 0.01), Frame 1 is almost white (L = 0.99)
+        // Average is 0.50, but testing average would allow colors that fail on one of the frames!
+        val frameLums = listOf(0.01f, 0.99f)
+        val defaultDark = Color.BLACK
+        val defaultLight = Color.WHITE
+
+        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            frameLums = frameLums,
+            defaultDark = defaultDark,
+            defaultLight = defaultLight,
+            palette = emptyList()
+        )
+
+        val lum = ImageColorAnalyzer.relativeLuminance(resolved)
+        val cr0 = ImageColorAnalyzer.contrastRatio(lum, 0.01f)
+        val cr1 = ImageColorAnalyzer.contrastRatio(lum, 0.99f)
+        val minCr = Math.min(cr0, cr1)
+
+        assertTrue("Worst-case contrast across all frames must be >= 3.0:1, got min($cr0, $cr1) = $minCr", minCr >= 3.0f)
+    }
+
+    @Test
+    fun `Test D - ADAPTIVE_PALETTE fallback guarantees both CR at least 3 and deltaL at least 0_25`() {
+        // Construct a single-color image where primary luminance is ~0.75
+        // RGB (225, 225, 225) has linear sRGB luminance ~0.7486 (delta to 1.0 is 0.2514 >= 0.25).
+        // If paired with WHITE (1.0), CR = (1.0+0.05)/(0.7486+0.05) = 1.3148:1 (FAILING CR >= 3.0).
+        // Fallback MUST pair with BLACK (0.0), giving CR = 15.97:1 and deltaL = 0.7486 >= 0.25!
+        val bmp = Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val color75 = Color.rgb(225, 225, 225)
+        canvas.drawColor(color75)
+
+        val primaryLum = ImageColorAnalyzer.relativeLuminance(color75)
+        assertTrue("Primary luminance must be around 0.75, was $primaryLum", primaryLum in 0.70f..0.80f)
+
+        val result = ImageColorAnalyzer.analyze(bmp)
+        assertTrue("Fallback contrast ratio must be >= 3.0:1, got ${result.contrastRatio}", result.contrastRatio >= 3.0f)
+        assertTrue("Fallback luminance delta must be >= 0.25, got ${result.luminanceDelta}", result.luminanceDelta >= 0.25f)
+        assertEquals("Light module must be the ~0.75 color", color75, result.lightColor)
+        assertEquals("Dark module must be Color.BLACK to satisfy CR >= 3.0:1", Color.BLACK, result.darkColor)
+    }
 }

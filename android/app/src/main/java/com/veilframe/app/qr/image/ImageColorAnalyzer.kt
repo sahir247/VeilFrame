@@ -37,7 +37,7 @@ data class ResolvedImageColors(
  * 4. Cluster extraction of distinct, prominent palette colors using perceptual color distance (redmean).
  * 5. Relative luminance following W3C WCAG 2.1 / IEC 61966-2-1 linear sRGB standard with lookup table.
  * 6. Local contrast optimizer with guaranteed contrast target (CR >= 3.0:1) and dynamic candidate selection.
- * 7. Multi-frame support for animated image styles ensuring temporal contrast stability.
+ * 7. Multi-frame support for animated image styles with worst-case temporal contrast guarantees.
  */
 object ImageColorAnalyzer {
 
@@ -83,6 +83,23 @@ object ImageColorAnalyzer {
         val lighter = max(lumA, lumB)
         val darker = min(lumA, lumB)
         return (lighter + 0.05f) / (darker + 0.05f)
+    }
+
+    /**
+     * Calculates the minimum (worst-case) contrast ratio of candidate [candLum] across all [frameLums].
+     */
+    fun minContrastRatio(candLum: Float, frameLums: List<Float>): Float {
+        if (frameLums.isEmpty()) return 21.0f
+        var minCr = Float.MAX_VALUE
+        for (fLum in frameLums) {
+            val cr = contrastRatio(candLum, fLum)
+            if (cr < minCr) minCr = cr
+        }
+        return minCr
+    }
+
+    fun minContrastRatio(color: Int, frameLums: List<Float>): Float {
+        return minContrastRatio(relativeLuminance(color), frameLums)
     }
 
     /**
@@ -310,11 +327,16 @@ object ImageColorAnalyzer {
             )
         }
 
-        // Fallback: Pair prominent color with an anchor (WHITE or BLACK) that guarantees deltaL >= 0.25 and high contrast.
+        // Fallback: Pair prominent color with an anchor (WHITE or BLACK).
+        // If primaryColor is dark/mid (lum < 0.50f, e.g. Miku cyan with lum ~0.446),
+        // it serves as dark module paired with Color.WHITE (separation >= 0.25).
+        // If primaryColor is bright (lum >= 0.50f, e.g. pale pastel with lum ~0.75),
+        // it MUST serve as light module paired with Color.BLACK, guaranteeing BOTH
+        // contrastRatio >= 3.0:1 and deltaL >= 0.25 (e.g. CR ~ 16.0:1 for L=0.75 vs 1.31:1 if paired with white).
         val primaryColor = palette.firstOrNull() ?: Color.BLACK
         val primaryLum = relativeLuminance(primaryColor)
 
-        val (darkColor, lightColor) = if (1.0f - primaryLum >= MIN_LUMINANCE_DELTA) {
+        val (darkColor, lightColor) = if (primaryLum < 0.50f) {
             Pair(primaryColor, Color.WHITE)
         } else {
             Pair(Color.BLACK, primaryColor)
@@ -337,20 +359,22 @@ object ImageColorAnalyzer {
     }
 
     /**
-     * Resolves the optimized module color for a data module at local image luminance [localLum].
+     * Resolves the optimized module color for a data module across frame background luminances [frameLums].
      *
      * Guarantees:
-     * 1. Polarity and separation: Dark modules have L <= 0.45, Light modules have L >= 0.55,
-     *    with guaranteed minimum luminance separation.
-     * 2. Local contrast optimization: Evaluates candidates from the extracted image palette
-     *    to choose harmonious image colors that satisfy target contrast against the local background.
-     * 3. Prevents low-contrast dropout: Eliminates unconstrained black-on-black / white-on-white
-     *    by preferring colors with maximum effective contrast.
-     * 4. EF Parity: Transparent light modules (alpha == 0) are strictly preserved as transparent.
+     * 1. Hard Contrast Contract: Evaluates worst-case contrast across all frames:
+     *    min_k(CR(candidate, frameLums[k])) >= 3.0:1.
+     * 2. Palette Candidate Search: Searches extracted image palette for candidate colors
+     *    matching target contrast before falling back to anchors.
+     * 3. Visual Polarity Inversion: If standard polarity cannot achieve 3.0:1 against extreme
+     *    backgrounds (e.g. L_bg = 0.02 where all L <= 0.45 colors have CR < 3.0), evaluates
+     *    contrast-safe inverted marks (L >= 0.55 / Color.WHITE) to prevent invisible black-on-black.
+     * 4. Temporal Stability: Calculates worst-case frame contrast rather than misleading averages.
+     * 5. EF Parity: Transparent light modules (alpha == 0) are strictly preserved as transparent.
      */
     fun resolveAdaptiveContrastColor(
         isDark: Boolean,
-        localLum: Float,
+        frameLums: List<Float>,
         defaultDark: Int,
         defaultLight: Int,
         palette: List<Int> = emptyList()
@@ -362,90 +386,109 @@ object ImageColorAnalyzer {
         val lumDark = relativeLuminance(defaultDark)
         val lumLight = relativeLuminance(defaultLight)
 
+        // Mid-luminance safe anchor for extreme temporal fluctuations (e.g. flashing 0.01 to 0.99)
+        // RGB 125 has linear sRGB luminance ~0.204, achieving CR > 4.0:1 against both 0.01 and 0.99
+        val midLumAnchor = 0xFF7D7D7D.toInt()
+
         if (isDark) {
-            // Dark Module: target L <= 0.45 (or <= lumLight - 0.25)
+            // 1. Primary candidates (standard dark polarity: L <= 0.45 or <= lumLight - 0.25)
             val maxAllowedLum = min(0.45f, lumLight - MIN_LUMINANCE_DELTA)
-
-            // Candidate pool: defaultDark, dark palette colors, and Color.BLACK
-            val candidates = mutableListOf<Int>()
-            if (lumDark <= maxAllowedLum) {
-                candidates.add(defaultDark)
-            }
+            val primaryCandidates = mutableListOf<Int>()
+            if (lumDark <= maxAllowedLum) primaryCandidates.add(defaultDark)
             for (c in palette) {
-                val lumC = relativeLuminance(c)
-                if (lumC <= maxAllowedLum && c !in candidates) {
-                    candidates.add(c)
+                if (relativeLuminance(c) <= maxAllowedLum && c !in primaryCandidates) {
+                    primaryCandidates.add(c)
                 }
             }
-            if (Color.BLACK !in candidates) {
-                candidates.add(Color.BLACK)
+            if (Color.BLACK !in primaryCandidates) primaryCandidates.add(Color.BLACK)
+
+            // Check if any primary candidate achieves guaranteed worst-case CR >= 3.0:1
+            val viablePrimary = primaryCandidates.filter { minContrastRatio(it, frameLums) >= MIN_CONTRAST_RATIO }
+            if (viablePrimary.isNotEmpty()) {
+                return viablePrimary.first()
             }
 
-            // 1. If background is light (localLum >= 0.45):
-            // We want candidate with L < localLum and contrastRatio(localLum, L) >= MIN_CONTRAST_RATIO
-            if (localLum >= 0.45f) {
-                val viable = candidates.filter { c ->
-                    val lumC = relativeLuminance(c)
-                    lumC < localLum && contrastRatio(localLum, lumC) >= MIN_CONTRAST_RATIO
+            // 2. Visual polarity inversion / bright accent candidates:
+            // When background is too dark for any dark module to reach 3.0:1 (e.g. L_bg = 0.02),
+            // a dark QR bit is rendered as a high-contrast visual mark (L >= 0.55).
+            val invertedCandidates = mutableListOf<Int>()
+            for (c in palette) {
+                if (relativeLuminance(c) >= 0.55f && c !in invertedCandidates) {
+                    invertedCandidates.add(c)
                 }
-                return viable.firstOrNull() ?: Color.BLACK
+            }
+            if (Color.WHITE !in invertedCandidates) invertedCandidates.add(Color.WHITE)
+
+            val viableInverted = invertedCandidates.filter { minContrastRatio(it, frameLums) >= MIN_CONTRAST_RATIO }
+            if (viableInverted.isNotEmpty()) {
+                return viableInverted.first()
             }
 
-            // 2. If background is dark (localLum < 0.45):
-            // Check if defaultDark has sufficient contrast against localLum:
-            // e.g. Miku cyan (L ~ 0.44) against localLum ~ 0.05 has CR = 0.49 / 0.10 = 4.9:1.
-            val crDefault = contrastRatio(lumDark, localLum)
-            if (lumDark <= maxAllowedLum && crDefault >= MIN_CONTRAST_RATIO) {
-                return defaultDark
+            // 3. Temporal anchor fallback for flashing / extreme frame divergence
+            if (minContrastRatio(midLumAnchor, frameLums) >= MIN_CONTRAST_RATIO) {
+                return midLumAnchor
             }
 
-            // If defaultDark doesn't satisfy contrast (e.g. defaultDark is black on dark background),
-            // search palette for a candidate with L <= maxAllowedLum that satisfies contrast:
-            val viablePalette = candidates.filter { c ->
-                val lumC = relativeLuminance(c)
-                lumC <= maxAllowedLum && contrastRatio(lumC, localLum) >= MIN_CONTRAST_RATIO
-            }
-            if (viablePalette.isNotEmpty()) {
-                return viablePalette.first()
-            }
-
-            // If no candidate meets 3.0:1, pick the candidate that maximizes contrast against local background
-            return candidates.maxByOrNull { c -> contrastRatio(relativeLuminance(c), localLum) } ?: Color.BLACK
+            // Absolute maximum contrast candidate across all pools
+            val allCandidates = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
+            return allCandidates.maxByOrNull { minContrastRatio(it, frameLums) } ?: Color.WHITE
 
         } else {
-            // Light Module: target L >= 0.55 (or >= lumDark + 0.25)
+            // Light module:
             val minAllowedLum = max(0.55f, lumDark + MIN_LUMINANCE_DELTA)
-
-            // Candidate pool: defaultLight, light palette colors, and Color.WHITE
-            val candidates = mutableListOf<Int>()
-            if (lumLight >= minAllowedLum) {
-                candidates.add(defaultLight)
-            }
+            val primaryCandidates = mutableListOf<Int>()
+            if (lumLight >= minAllowedLum) primaryCandidates.add(defaultLight)
             for (c in palette) {
-                val lumC = relativeLuminance(c)
-                if (lumC >= minAllowedLum && c !in candidates) {
-                    candidates.add(c)
+                if (relativeLuminance(c) >= minAllowedLum && c !in primaryCandidates) {
+                    primaryCandidates.add(c)
                 }
             }
-            if (Color.WHITE !in candidates) {
-                candidates.add(Color.WHITE)
+            if (Color.WHITE !in primaryCandidates) primaryCandidates.add(Color.WHITE)
+
+            val viablePrimary = primaryCandidates.filter { minContrastRatio(it, frameLums) >= MIN_CONTRAST_RATIO }
+            if (viablePrimary.isNotEmpty()) {
+                return viablePrimary.first()
             }
 
-            // 1. If background is dark (localLum <= 0.55):
-            // We want candidate with L > localLum and contrastRatio(L, localLum) >= MIN_CONTRAST_RATIO
-            if (localLum <= 0.55f) {
-                val viable = candidates.filter { c ->
-                    val lumC = relativeLuminance(c)
-                    lumC > localLum && contrastRatio(lumC, localLum) >= MIN_CONTRAST_RATIO
+            // Visual polarity inversion (e.g. near-white background L_bg = 0.98 where white has CR 1.02)
+            val invertedCandidates = mutableListOf<Int>()
+            for (c in palette) {
+                if (relativeLuminance(c) <= 0.45f && c !in invertedCandidates) {
+                    invertedCandidates.add(c)
                 }
-                return viable.firstOrNull() ?: Color.WHITE
+            }
+            if (Color.BLACK !in invertedCandidates) invertedCandidates.add(Color.BLACK)
+
+            val viableInverted = invertedCandidates.filter { minContrastRatio(it, frameLums) >= MIN_CONTRAST_RATIO }
+            if (viableInverted.isNotEmpty()) {
+                return viableInverted.first()
             }
 
-            // 2. If background is light (localLum > 0.55):
-            if (lumLight >= minAllowedLum) {
-                return defaultLight
+            if (minContrastRatio(midLumAnchor, frameLums) >= MIN_CONTRAST_RATIO) {
+                return midLumAnchor
             }
-            return candidates.firstOrNull() ?: Color.WHITE
+
+            val allCandidates = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
+            return allCandidates.maxByOrNull { minContrastRatio(it, frameLums) } ?: Color.BLACK
         }
+    }
+
+    /**
+     * Single-luminance convenience overload for static images.
+     */
+    fun resolveAdaptiveContrastColor(
+        isDark: Boolean,
+        localLum: Float,
+        defaultDark: Int,
+        defaultLight: Int,
+        palette: List<Int> = emptyList()
+    ): Int {
+        return resolveAdaptiveContrastColor(
+            isDark = isDark,
+            frameLums = listOf(localLum),
+            defaultDark = defaultDark,
+            defaultLight = defaultLight,
+            palette = palette
+        )
     }
 }
