@@ -1217,4 +1217,42 @@ class EfImageStyleParityTest {
             assertTrue("White module alpha must be > 0", Color.alpha(w.fill ?: 0) > 0)
         }
     }
+
+    @Test
+    fun `ImageColorStrategy defaults to FIXED across QrDesign QrStyleParams and UiState`() {
+        assertEquals(ImageColorStrategy.FIXED, QrDesign().imageColorStrategy)
+        assertEquals(ImageColorStrategy.FIXED, QrStyleParams().imageColorStrategy)
+        assertEquals(ImageColorStrategy.FIXED, QrStudioViewModel.UiState().imageColorStrategy)
+    }
+
+    @Test
+    fun `QrDesign fromQrStyleParams maps and preserves explicit imageColorStrategy`() {
+        val paletteParams = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_PALETTE
+        )
+        val paletteDesign = QrDesign.fromQrStyleParams(paletteParams)
+        assertEquals(ImageColorStrategy.ADAPTIVE_PALETTE, paletteDesign.imageColorStrategy)
+
+        val contrastParams = QrStyleParams(
+            style = QrStyle.IMAGE,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST
+        )
+        val contrastDesign = QrDesign.fromQrStyleParams(contrastParams)
+        assertEquals(ImageColorStrategy.ADAPTIVE_CONTRAST, contrastDesign.imageColorStrategy)
+    }
+
+    @Test
+    fun `ViewModel updateImageColorStrategy mutates state and updates buildDesign`() {
+        val vm = QrStudioViewModel(Application())
+        assertEquals(ImageColorStrategy.FIXED, vm.state.value.imageColorStrategy)
+
+        vm.updateImageColorStrategy(ImageColorStrategy.ADAPTIVE_PALETTE)
+        assertEquals(ImageColorStrategy.ADAPTIVE_PALETTE, vm.state.value.imageColorStrategy)
+        assertEquals(ImageColorStrategy.ADAPTIVE_PALETTE, vm.buildDesignFromState(vm.state.value).imageColorStrategy)
+
+        vm.updateImageColorStrategy(ImageColorStrategy.ADAPTIVE_CONTRAST)
+        assertEquals(ImageColorStrategy.ADAPTIVE_CONTRAST, vm.state.value.imageColorStrategy)
+        assertEquals(ImageColorStrategy.ADAPTIVE_CONTRAST, vm.buildDesignFromState(vm.state.value).imageColorStrategy)
+    }
 }

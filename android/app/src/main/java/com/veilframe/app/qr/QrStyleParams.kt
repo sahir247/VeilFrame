@@ -119,6 +119,7 @@ data class QrStyleParams(
     val d25PositionHeight: Float = 1.0f,
     // --- IMAGE style specific (VeilFrameStyleImage) ---
     val imageAllowTransparent: Boolean = false,
+    val imageColorStrategy: com.veilframe.app.qr.model.ImageColorStrategy = com.veilframe.app.qr.model.ImageColorStrategy.FIXED,
     val imageDataScale: Float = 1.0f,
     val imageDataDarkColor: Int = Color.BLACK,
     val imageDataLightColor: Int = Color.WHITE,

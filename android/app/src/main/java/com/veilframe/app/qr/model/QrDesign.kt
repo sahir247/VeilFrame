@@ -114,6 +114,21 @@ enum class ImageScaleMode {
     STRETCH
 }
 
+/**
+ * Strategy for determining QR module colors when rendering an image-backed QR code.
+ *
+ * - [FIXED]: Uses explicitly configured [QrDesign.dataColorDark] and [QrDesign.dataColorLight].
+ * - [ADAPTIVE_PALETTE]: Extracts dominant and accent color clusters from the image using weighted visual
+ *   prominence, saturation, and luminance classification, selecting a high-contrast dark/light pair.
+ * - [ADAPTIVE_CONTRAST]: Samples underlying image luminance locally per module and dynamically chooses
+ *   module polarity to maximize readability (VeilFrame adaptive extension).
+ */
+enum class ImageColorStrategy {
+    FIXED,
+    ADAPTIVE_PALETTE,
+    ADAPTIVE_CONTRAST
+}
+
 enum class ImageMaskScope {
     DATA_ONLY,
     ALL_MODULES,
@@ -522,6 +537,7 @@ data class QrDesign(
     val imageSource: ImageSourceStyle = ImageSourceStyle(),
     val clusterStyle: BubbleClusterStyle = BubbleClusterStyle(),
     val allowTransparent: Boolean = false,
+    val imageColorStrategy: ImageColorStrategy = ImageColorStrategy.FIXED,
     val imageDataScale: Float? = null,
     val dataColorDark: Int = Color.BLACK,
     val dataColorLight: Int = Color.WHITE,
@@ -905,6 +921,7 @@ data class QrDesign(
                     positionColor = if (params.style == QrStyle.BUBBLE && params.positionColor == null && params.foreground == android.graphics.Color.BLACK) params.bubblePositionColor else (params.positionColor ?: params.foreground)
                 ),
                 allowTransparent = params.imageAllowTransparent,
+                imageColorStrategy = params.imageColorStrategy,
                 imageDataScale = if (params.style == QrStyle.IMAGE) params.imageDataScale.coerceIn(0.05f, 1.0f) else null,
                 dataColorDark = params.dataColor ?: params.imageDataDarkColor,
                 dataColorLight = params.imageDataLightColor,

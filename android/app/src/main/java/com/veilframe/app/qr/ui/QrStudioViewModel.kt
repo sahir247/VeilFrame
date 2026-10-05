@@ -140,6 +140,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         val connectedLineThickness: Float = 0.2f,
         val imageFillBackgroundColor: Int = Color.WHITE,
         val imageFillMaskColor: Int = 0x1A000000,
+        val imageColorStrategy: ImageColorStrategy = ImageColorStrategy.FIXED,
         val imageDataDarkColor: Int = Color.BLACK,
         val imageDataLightColor: Int = Color.WHITE,
         val imagePositionDarkColor: Int = Color.BLACK,
@@ -1022,6 +1023,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 exposure = s.sourceImageExposure,
                 allowTransparent = s.imageAllowTransparent
             ),
+            imageColorStrategy = s.imageColorStrategy,
             backgroundLayer = BackgroundLayer(
                 enabled = s.backgroundImage != null,
                 color = s.background,
@@ -1486,6 +1488,11 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateImageDataColors(darkColor: Int, lightColor: Int) {
         _state.value = _state.value.copy(imageDataDarkColor = darkColor, imageDataLightColor = lightColor)
+        regenerate(debounceMs = 0)
+    }
+
+    fun updateImageColorStrategy(strategy: ImageColorStrategy) {
+        _state.value = _state.value.copy(imageColorStrategy = strategy)
         regenerate(debounceMs = 0)
     }
 
