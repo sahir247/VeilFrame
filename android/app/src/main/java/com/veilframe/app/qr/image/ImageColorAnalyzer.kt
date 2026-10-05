@@ -256,4 +256,39 @@ object ImageColorAnalyzer {
         val minC = min(r, min(g, b))
         return if (maxC == 0) 0f else (maxC - minC).toFloat() / maxC.toFloat()
     }
+
+    /**
+     * Resolves the adaptive contrast color for a data module at local image luminance [localLum].
+     *
+     * Ensures that dark modules are strictly darker than the local background and light modules
+     * are strictly lighter, preventing localized binarizer dropout and bit-inversion.
+     *
+     * @param isDark Whether the QR matrix module is dark.
+     * @param localLum Relative luminance of the underlying image at the module location (0.0 to 1.0).
+     * @param defaultDark Color configured for dark modules.
+     * @param defaultLight Color configured for light modules.
+     */
+    fun resolveAdaptiveContrastColor(
+        isDark: Boolean,
+        localLum: Float,
+        defaultDark: Int,
+        defaultLight: Int
+    ): Int {
+        val darkLum = relativeLuminance(defaultDark)
+        val lightLum = relativeLuminance(defaultLight)
+
+        return if (isDark) {
+            if (darkLum < localLum - 0.15f) {
+                defaultDark
+            } else {
+                Color.BLACK
+            }
+        } else {
+            if (lightLum > localLum + 0.15f) {
+                defaultLight
+            } else {
+                Color.WHITE
+            }
+        }
+    }
 }

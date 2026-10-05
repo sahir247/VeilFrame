@@ -1,5 +1,6 @@
 package com.veilframe.app.qr.geometry
 
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.RectF
 import java.util.Locale
@@ -122,6 +123,50 @@ object ImageGeometryBuilder {
 
         val imageAlpha = design.imageSource.opacity.coerceIn(0f, 1f)
 
+        // Pre-process watermark images if present
+        val canvasW = n * mSize
+        val canvasH = n * mSize
+
+        val preprocessedFrames: List<Bitmap>? = if (hasImage && animatedFrames != null && animatedFrames.isNotEmpty()) {
+            animatedFrames.map { frame ->
+                EfImagePreprocessor.preprocess(
+                    source = frame,
+                    canvasWidth = canvasW,
+                    canvasHeight = canvasH,
+                    mode = design.imageSource.scaleMode
+                )
+            }
+        } else null
+
+        val preprocessedImage: Bitmap? = if (hasImage && preprocessedFrames == null && sourceImage != null && !sourceImage.isRecycled) {
+            EfImagePreprocessor.preprocess(
+                source = sourceImage,
+                canvasWidth = canvasW,
+                canvasHeight = canvasH,
+                mode = design.imageSource.scaleMode
+            )
+        } else null
+
+        val sampleBitmap: Bitmap? = preprocessedFrames?.firstOrNull() ?: preprocessedImage
+        val isAdaptiveContrast = design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST && sampleBitmap != null && !sampleBitmap.isRecycled
+
+        val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
+            if (isAdaptiveContrast) {
+                val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
+                val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
+                val localPixel = sampleBitmap.getPixel(px, py)
+                val localLum = ImageColorAnalyzer.relativeLuminance(localPixel)
+                ImageColorAnalyzer.resolveAdaptiveContrastColor(
+                    isDark = isDark,
+                    localLum = localLum,
+                    defaultDark = dataDarkColor,
+                    defaultLight = dataLightColor
+                )
+            } else {
+                if (isDark) dataDarkColor else dataLightColor
+            }
+        }
+
         // 2. Transparent Pre-Pass (EFQRCode: ONLY executed when hasImage && allowTransparent)
         if (hasImage && allowTransparent) {
             for (col in 0 until n) {
@@ -137,7 +182,7 @@ object ImageGeometryBuilder {
                         // Skip active alignment modules in pre-pass
                     } else {
                         val isDark = matrix.isDark(col, row)
-                        val color = if (isDark) dataDarkColor else dataLightColor
+                        val color = resolveDataColor(col, row, isDark)
                         if (colorAlpha(color) > 0) {
                             createModuleShapeNode(x0 + col * mSize, y0 + row * mSize, mSize, dataShape, color)?.let { nodes.add(it) }
                         }
@@ -147,9 +192,6 @@ object ImageGeometryBuilder {
         }
 
         // 3. Image Layer with 8x8 Finder Cutout Mask (#hole) (EFQRCode: ONLY created when hasImage is true)
-        val canvasW = n * mSize
-        val canvasH = n * mSize
-
         if (hasImage) {
             val finderW = 8 * mSize
             val tlFinderRect = RectF(x0, y0, x0 + finderW, y0 + finderW)
@@ -168,15 +210,7 @@ object ImageGeometryBuilder {
                 )
             )
 
-            if (animatedFrames != null && animatedFrames.isNotEmpty()) {
-                val preprocessedFrames = animatedFrames.map { frame ->
-                    EfImagePreprocessor.preprocess(
-                        source = frame,
-                        canvasWidth = canvasW,
-                        canvasHeight = canvasH,
-                        mode = design.imageSource.scaleMode
-                    )
-                }
+            if (preprocessedFrames != null && preprocessedFrames.isNotEmpty()) {
                 nodes.add(
                     AnimatedImageNode(
                         x = x0,
@@ -192,20 +226,14 @@ object ImageGeometryBuilder {
                         framePrefix = "${VeilIconPipeline.nextUniqueMark()}fm"
                     )
                 )
-            } else if (sourceImage != null && !sourceImage.isRecycled) {
-                val preprocessed = EfImagePreprocessor.preprocess(
-                    source = sourceImage,
-                    canvasWidth = canvasW,
-                    canvasHeight = canvasH,
-                    mode = design.imageSource.scaleMode
-                )
+            } else if (preprocessedImage != null && !preprocessedImage.isRecycled) {
                 nodes.add(
                     ImageNode(
                         x = x0,
                         y = y0,
                         width = canvasW,
                         height = canvasH,
-                        bitmap = preprocessed,
+                        bitmap = preprocessedImage,
                         opacity = imageAlpha,
                         preserveAspectRatio = "",
                         maskId = "hole",
@@ -271,7 +299,7 @@ object ImageGeometryBuilder {
                     continue
                 } else {
                     if (dataShape != ModuleShape.NONE) {
-                        val color = if (isDark) dataDarkColor else dataLightColor
+                        val color = resolveDataColor(col, row, isDark)
                         if (colorAlpha(color) > 0) {
                             val dx = x0 + (col + dataOffset) * mSize
                             val dy = y0 + (row + dataOffset) * mSize

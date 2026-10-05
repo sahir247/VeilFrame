@@ -168,4 +168,116 @@ class ImageColorAnalyzerTest {
         val b = Color.blue(darkColor)
         assertTrue("ViewModel dark color must be Miku cyan", r in 0x20..0x55 && g in 0xB0..0xD5 && b in 0xA5..0xD0)
     }
+
+    @Test
+    fun `resolveAdaptiveContrastColor adapts based on local background luminance`() {
+        val cyan = 0xFF39C5BC.toInt() // lum ~0.653
+        val white = Color.WHITE // lum 1.0
+
+        // Bright background (lum 0.85): cyan is darker than 0.85 - 0.15 = 0.70 -> keeps cyan
+        val darkOnBright = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            localLum = 0.85f,
+            defaultDark = cyan,
+            defaultLight = white
+        )
+        assertEquals(cyan, darkOnBright)
+
+        // Dark background (lum 0.20): cyan (0.653) is NOT darker than 0.20 - 0.15 = 0.05 -> drops to BLACK
+        val darkOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            localLum = 0.20f,
+            defaultDark = cyan,
+            defaultLight = white
+        )
+        assertEquals(Color.BLACK, darkOnDark)
+
+        // Light module on dark background (lum 0.20): white (1.0) is lighter than 0.20 + 0.15 = 0.35 -> keeps white
+        val lightOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = false,
+            localLum = 0.20f,
+            defaultDark = cyan,
+            defaultLight = white
+        )
+        assertEquals(white, lightOnDark)
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST protects structural patterns (finders, timing, alignment)`() {
+        val splitBmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(splitBmp)
+        canvas.drawColor(Color.BLACK)
+
+        val matrix = QrMatrix("https://veilframe.app/adaptive-contrast-test", ErrorCorrectionLevel.M)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(splitBmp)),
+            positionDarkColor = 0xFF123456.toInt(),
+            positionLightColor = 0xFFABCDEF.toInt(),
+            timingDarkColor = 0xFF234567.toInt(),
+            timingLightColor = 0xFFBCDEFA.toInt(),
+            alignDarkColor = 0xFF345678.toInt(),
+            alignLightColor = 0xFFCDEFAB.toInt(),
+            dataColorDark = 0xFF39C5BC.toInt(),
+            dataColorLight = Color.WHITE
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // 1. Verify finders used position colors (not adaptive data colors)
+        val finderNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.fill == 0xFF123456.toInt() || it.fill == 0xFFABCDEF.toInt()
+        }
+        assertTrue("Finder nodes must use protected position colors", finderNodes.isNotEmpty())
+
+        // 2. Verify timing used timing colors
+        val timingNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.fill == 0xFF234567.toInt() || it.fill == 0xFFBCDEFA.toInt()
+        }
+        assertTrue("Timing nodes must use protected timing colors", timingNodes.isNotEmpty())
+
+        // 3. Verify alignment used alignment colors (if present)
+        val alignNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            it.fill == 0xFF345678.toInt() || it.fill == 0xFFCDEFAB.toInt()
+        }
+        assertTrue("Alignment nodes must use protected alignment colors", alignNodes.isNotEmpty())
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST switches data module colors across split-tone background`() {
+        // Left half is black (0..49), right half is white (50..99)
+        val splitBmp = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(splitBmp)
+        val blackPaint = Paint().apply { color = Color.BLACK }
+        val whitePaint = Paint().apply { color = Color.WHITE }
+        canvas.drawRect(0f, 0f, 50f, 100f, blackPaint)
+        canvas.drawRect(50f, 0f, 100f, 100f, whitePaint)
+
+        val matrix = QrMatrix("https://veilframe.app/split-tone-test", ErrorCorrectionLevel.M)
+        val cyan = 0xFF39C5BC.toInt()
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(splitBmp)),
+            imageDataScale = 0.35f,
+            dataColorDark = cyan,
+            dataColorLight = Color.WHITE
+        )
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        val expectedDataSize = 0.35f * geometry.moduleSize
+        val dataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter {
+            Math.abs(it.width - expectedDataSize) < 0.05f
+        }
+
+        // Data nodes in the right half (white background) with dark fill should be cyan
+        val rightDarkNodes = dataNodes.filter { it.x > 256f && it.fill == cyan }
+        assertTrue("Right side (bright) dark data nodes must use cyan", rightDarkNodes.isNotEmpty())
+
+        // Data nodes in the left half (black background) with dark fill should drop to solid black
+        val leftDarkNodes = dataNodes.filter { it.x < 256f && it.fill == Color.BLACK }
+        assertTrue("Left side (dark) dark data nodes must adapt to solid black", leftDarkNodes.isNotEmpty())
+    }
 }
