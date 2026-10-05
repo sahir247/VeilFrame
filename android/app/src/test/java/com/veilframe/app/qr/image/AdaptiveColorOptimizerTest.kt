@@ -216,7 +216,118 @@ class AdaptiveColorOptimizerTest {
         assertNotNull("ImageGeometryBuilder must populate diagnostics when adaptive contrast is active", ir.diagnostics)
         val diag = ir.diagnostics!!
         assertTrue("Must record optimized data modules", diag.totalOptimizedModules > 0)
-        assertTrue("Min achieved contrast must be > 1.0", diag.minAchievedContrast > 1.0f)
-        assertTrue("Mean achieved contrast must be > 1.0", diag.meanAchievedContrast > 1.0f)
+        assertTrue("Diagnostics must have measurements", diag.hasMeasurements)
+        assertNotNull("Min contrast must not be null", diag.minAchievedContrast)
+        assertTrue("Min achieved contrast must be > 1.0", diag.minAchievedContrast!! > 1.0f)
+        assertNotNull("Mean contrast must not be null", diag.meanAchievedContrast)
+        assertTrue("Mean achieved contrast must be > 1.0", diag.meanAchievedContrast!! > 1.0f)
+    }
+
+    @Test
+    fun testFeasiblePairContractInternallyConsistent() {
+        val darkBgLums = listOf(0.85f)
+        val lightBgLums = listOf(0.85f)
+        val joint = AdaptiveColorOptimizer.optimizeJointColorPair(
+            darkFrameLums = darkBgLums,
+            lightFrameLums = lightBgLums,
+            defaultDark = Color.BLACK,
+            defaultLight = Color.WHITE,
+            targetContrast = 3.0f,
+            minPairContrast = 2.0f
+        )
+
+        // Internal contract consistency: If a pair is feasible, allTargetsMet must be true
+        assertTrue("Dark target met", joint.dark.targetMet)
+        assertTrue("Light target met", joint.light.targetMet)
+        assertTrue("Pair CR must be >= minPairContrast 2.0", joint.pairContrastRatio >= 2.0f)
+        assertTrue("allTargetsMet must be true when feasible pair selected", joint.allTargetsMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.status)
+    }
+
+    @Test
+    fun testMultiFrameLightFieldCompatibilityEvaluatedPerFrame() {
+        // Multi-frame animation with 3 bright frames and 1 dark dip frame: [0.90, 0.90, 0.90, 0.20]
+        val lightFrameLums = listOf(0.90f, 0.90f, 0.90f, 0.20f)
+        val darkFrameLums = listOf(0.90f, 0.90f, 0.90f, 0.20f)
+
+        val joint = AdaptiveColorOptimizer.optimizeJointColorPair(
+            darkFrameLums = darkFrameLums,
+            lightFrameLums = lightFrameLums,
+            defaultDark = Color.BLACK,
+            defaultLight = Color.WHITE,
+            targetContrast = 3.0f
+        )
+
+        // White module matches the light field on the 0.90 frames,
+        // and achieves CR(1.0, 0.20) = 4.2 >= 3.0 on the 0.20 frame.
+        // It must NOT be rejected merely because min() is 0.20!
+        assertTrue("White light module must be compatible with multi-frame light field", joint.light.targetMet)
+        assertTrue("Dark module must contrast with frames", joint.dark.targetMet)
+        assertTrue("All targets met", joint.allTargetsMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.status)
+    }
+
+    @Test
+    fun testSpatialModuleContextPassedToOptimizer() {
+        val dist1 = FootprintSampler.computeDistribution(listOf(0.80f, 0.85f, 0.90f, 0.95f))
+        val dist2 = FootprintSampler.computeDistribution(listOf(0.70f, 0.75f, 0.80f, 0.85f))
+        val spatialContext = SpatialModuleContext(listOf(dist1, dist2), SamplingObjective.PERCENTILE_90_10)
+
+        val darkCandidates = AdaptiveColorOptimizer.generateCandidatePool(true, Color.BLACK)
+        val lightCandidates = AdaptiveColorOptimizer.generateCandidatePool(false, Color.WHITE)
+
+        val joint = AdaptiveColorOptimizer.optimizeJointWithSpatialContext(
+            context = spatialContext,
+            darkCandidates = darkCandidates,
+            lightCandidates = lightCandidates,
+            defaultDark = Color.BLACK,
+            defaultLight = Color.WHITE,
+            targetContrast = 3.0f
+        )
+
+        assertTrue("Dark target met via spatial context", joint.dark.targetMet)
+        assertTrue("Light target met via spatial context", joint.light.targetMet)
+        assertTrue("All targets met via spatial context", joint.allTargetsMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.status)
+    }
+
+    @Test
+    fun testSemiTransparentCandidateColorEffectiveContrast() {
+        // Semi-transparent black (alpha = 128 / ~50% opacity) over a white background (lum = 1.0)
+        // Effective rendered luminance = 0.50 * 0.0 + 0.50 * 1.0 = 0.50
+        // Effective rendered contrast ratio = (1.0 + 0.05) / (0.50 + 0.05) = 1.91:1
+        // For target 3.0:1, targetMet must be FALSE, not falsely claimed as 21:1!
+        val semiTransparentBlack = 0x80000000.toInt()
+        val whiteBg = listOf(1.0f)
+
+        val result = AdaptiveColorOptimizer.optimizeColor(
+            isDark = true,
+            frameLums = whiteBg,
+            referenceColor = semiTransparentBlack,
+            targetContrast = 3.0f
+        )
+
+        // Effective contrast of 50% opacity black over white is ~1.91, which is < 3.0
+        assertTrue("Reported contrast must reflect actual rendered mark (< 2.5:1), was ${result.contrastRatio}", result.contrastRatio < 2.5f)
+        assertFalse("targetMet must be false because effective rendered contrast does not reach 3.0:1", result.targetMet)
+        assertEquals(OptimizationStatus.INFEASIBLE, result.status)
+    }
+
+    @Test
+    fun testEmptyDiagnosticsReportsNullMetricsAndFalseHasMeasurements() {
+        val emptyDiag = com.veilframe.app.qr.geometry.QrOptimizationDiagnostics(
+            totalOptimizedModules = 0,
+            targetMetCount = 0,
+            minAchievedContrast = null,
+            meanAchievedContrast = null,
+            meanDeltaEOk = null,
+            allTargetsMet = true
+        )
+
+        assertFalse("hasMeasurements must be false when totalOptimizedModules == 0", emptyDiag.hasMeasurements)
+        assertNull("minAchievedContrast must be null", emptyDiag.minAchievedContrast)
+        assertNull("meanAchievedContrast must be null", emptyDiag.meanAchievedContrast)
+        assertNull("meanDeltaEOk must be null", emptyDiag.meanDeltaEOk)
+        assertTrue("allTargetsMet is true by default for empty workload", emptyDiag.allTargetsMet)
     }
 }

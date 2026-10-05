@@ -9,6 +9,7 @@ import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.image.FootprintSampler
 import com.veilframe.app.qr.image.ImageColorAnalyzer
 import com.veilframe.app.qr.image.SamplingObjective
+import com.veilframe.app.qr.image.SpatialModuleContext
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
 
@@ -247,17 +248,11 @@ object ImageGeometryBuilder {
                     )
                 }
 
-                // Production objective: PERCENTILE_90_10 for robustness against noise grain and specular highlights
-                val darkFrameLums = distributions.map {
-                    FootprintSampler.resolveObjectiveLuminance(it, isDark = true, SamplingObjective.PERCENTILE_90_10)
-                }
-                val lightFrameLums = distributions.map {
-                    FootprintSampler.resolveObjectiveLuminance(it, isDark = false, SamplingObjective.PERCENTILE_90_10)
-                }
+                // Pass complete spatial context directly into the optimizer
+                val spatialContext = SpatialModuleContext(distributions, SamplingObjective.PERCENTILE_90_10)
 
-                val joint = AdaptiveColorOptimizer.optimizeJointWithCandidates(
-                    darkFrameLums = darkFrameLums,
-                    lightFrameLums = lightFrameLums,
+                val joint = AdaptiveColorOptimizer.optimizeJointWithSpatialContext(
+                    context = spatialContext,
                     darkCandidates = darkCandidates,
                     lightCandidates = lightCandidates,
                     defaultDark = dataDarkColor,
@@ -447,15 +442,26 @@ object ImageGeometryBuilder {
             )
         }
 
-        val diagnostics = if (isAdaptiveContrast && totalOptimizedModules > 0) {
-            QrOptimizationDiagnostics(
-                totalOptimizedModules = totalOptimizedModules,
-                targetMetCount = targetMetCount,
-                minAchievedContrast = minAchievedContrast,
-                meanAchievedContrast = sumAchievedContrast / totalOptimizedModules,
-                meanDeltaEOk = sumDeltaE / totalOptimizedModules,
-                allTargetsMet = (targetMetCount == totalOptimizedModules)
-            )
+        val diagnostics = if (isAdaptiveContrast) {
+            if (totalOptimizedModules > 0) {
+                QrOptimizationDiagnostics(
+                    totalOptimizedModules = totalOptimizedModules,
+                    targetMetCount = targetMetCount,
+                    minAchievedContrast = minAchievedContrast,
+                    meanAchievedContrast = sumAchievedContrast / totalOptimizedModules,
+                    meanDeltaEOk = sumDeltaE / totalOptimizedModules,
+                    allTargetsMet = (targetMetCount == totalOptimizedModules)
+                )
+            } else {
+                QrOptimizationDiagnostics(
+                    totalOptimizedModules = 0,
+                    targetMetCount = 0,
+                    minAchievedContrast = null,
+                    meanAchievedContrast = null,
+                    meanDeltaEOk = null,
+                    allTargetsMet = true
+                )
+            }
         } else null
 
         return QrGeometryIr(

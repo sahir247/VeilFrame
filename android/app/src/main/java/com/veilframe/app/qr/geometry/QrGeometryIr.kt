@@ -202,11 +202,13 @@ data class QrMaskDefinition(
 data class QrOptimizationDiagnostics(
     val totalOptimizedModules: Int = 0,
     val targetMetCount: Int = 0,
-    val minAchievedContrast: Float = 21.0f,
-    val meanAchievedContrast: Float = 21.0f,
-    val meanDeltaEOk: Float = 0f,
+    val minAchievedContrast: Float? = null,
+    val meanAchievedContrast: Float? = null,
+    val meanDeltaEOk: Float? = null,
     val allTargetsMet: Boolean = true
-)
+) {
+    val hasMeasurements: Boolean get() = totalOptimizedModules > 0
+}
 
 /**
  * Complete document-level geometry definition for a QR code.
