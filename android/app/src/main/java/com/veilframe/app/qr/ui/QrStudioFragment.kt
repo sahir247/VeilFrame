@@ -1396,7 +1396,7 @@ class QrGenerateTabFragment : Fragment() {
         }
         imageApplySamplePresetBtn?.setOnClickListener {
             vm.applyImageReferencePreset()
-            Toast.makeText(requireContext(), "Applied EF Image Sample Preset (Cyan 35% + Transparent)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "Applied Image Sample Preset (Cyan + White, 35%)", Toast.LENGTH_SHORT).show()
         }
         imageApplyStandardEfBtn?.setOnClickListener {
             vm.applyImageStandardEfDefaults()

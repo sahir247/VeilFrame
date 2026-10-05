@@ -1531,7 +1531,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             imageDataScale = 0.35f,
             imageDataDarkColor = 0xFF39C5BC.toInt(),
-            imageDataLightColor = Color.TRANSPARENT,
+            imageDataLightColor = Color.WHITE,
             imageAllowTransparent = true,
             imagePositionDarkColor = 0xFF39C5BC.toInt(),
             imagePositionLightColor = Color.WHITE,

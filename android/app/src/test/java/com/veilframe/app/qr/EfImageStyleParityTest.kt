@@ -387,7 +387,7 @@ class EfImageStyleParityTest {
         val state = vm.state.value
         assertEquals("Data module scale must be 35%", 0.35f, state.imageDataScale, 0.001f)
         assertEquals("Dark color must be cyan #39C5BC", 0xFF39C5BC.toInt(), state.imageDataDarkColor)
-        assertEquals("Light color must be transparent", Color.TRANSPARENT, state.imageDataLightColor)
+        assertEquals("Light color must be white", Color.WHITE, state.imageDataLightColor)
         assertTrue("allowTransparent must be true", state.imageAllowTransparent)
         assertEquals("Position dark color must be cyan #39C5BC", 0xFF39C5BC.toInt(), state.imagePositionDarkColor)
         assertEquals("Position light color must be white", Color.WHITE, state.imagePositionLightColor)

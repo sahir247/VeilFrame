@@ -2850,7 +2850,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Apply Sample Preset (Cyan 35% + Transparent)" />
+                        android:text="Apply Image Sample Preset (Cyan 35% + White)" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_image_apply_standard_ef_btn"
