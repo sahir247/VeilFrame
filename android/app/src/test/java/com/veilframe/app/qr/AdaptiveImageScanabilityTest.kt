@@ -9,6 +9,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
 import com.veilframe.app.qr.exporter.SvgExporter
 import com.veilframe.app.qr.geometry.ImageGeometryBuilder
+import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.validation.ScanabilityValidator
 import kotlinx.coroutines.Dispatchers
@@ -208,5 +209,83 @@ class AdaptiveImageScanabilityTest {
         assertEquals(512f, ir.height, 0.01f)
         assertTrue("IR must contain hole mask", ir.masks.containsKey("hole"))
         assertTrue("IR rootNodes must not be empty", ir.rootNodes.isNotEmpty())
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST on near-black background preserves cyan and decodes 100 percent without black-on-black`() = runBlocking {
+        // Near-black background (#05070E) with lum ~0.003
+        val nearBlackBmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(nearBlackBmp)
+        canvas.drawColor(0xFF05070E.toInt())
+
+        val cyan = 0xFF39C5BC.toInt()
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.H)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 512,
+            quietZoneModules = 1,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(source = ImageSource.Memory(nearBlackBmp)),
+            imageDataScale = 0.40f,
+            dataColorDark = cyan,
+            dataColorLight = Color.WHITE,
+            allowTransparent = true,
+            positionDarkColor = Color.BLACK,
+            positionLightColor = Color.WHITE
+        )
+
+        val geometry = QrGeometry.fromDesign(matrix.size, 512, 512, design)
+        val ir = ImageGeometryBuilder.generateGeometry(matrix, design, geometry)
+
+        // Verify that dark modules are rendered with cyan (CR > 8.0 against near-black), NOT black-on-black
+        val darkDataNodes = ir.rootNodes.filterIsInstance<RectNode>().filter { it.fill == cyan }
+        assertFalse("Dark modules on near-black must use cyan with high contrast", darkDataNodes.isEmpty())
+
+        val renderResult = QrGenerator.generateBitmapResult(matrix, design)
+        assertTrue("Render must succeed", renderResult is QrGenerator.BitmapRenderResult.Success)
+        val bitmap = (renderResult as QrGenerator.BitmapRenderResult.Success).bitmap
+        assertNotNull(bitmap)
+
+        val zxResult = zxingDecoder.decode(bitmap)
+        assertTrue("ADAPTIVE_CONTRAST on near-black must decode via ZXing", zxResult.success)
+        assertEquals(expectedPayload, zxResult.text)
+    }
+
+    @Test
+    fun `ADAPTIVE_CONTRAST on animated alternating frames maintains scanability across frames`() = runBlocking {
+        // Frame 1 is dark navy, Frame 2 is bright silver
+        val frame1 = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(0xFF0B1021.toInt())
+        }
+        val frame2 = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(0xFFE2E8F0.toInt())
+        }
+        val animFrames = listOf(QrFrame(frame1), QrFrame(frame2))
+
+        val matrix = QrMatrix(expectedPayload, ErrorCorrectionLevel.H)
+        val design = QrDesign(
+            style = QrStyle.IMAGE,
+            outputSize = 512,
+            quietZoneModules = 1,
+            imageColorStrategy = ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = ImageSourceStyle(
+                source = ImageSource.Animated(frames = listOf(frame1, frame2), delaysMs = listOf(100, 100))
+            ),
+            imageDataScale = 0.40f,
+            dataColorDark = 0xFF39C5BC.toInt(),
+            dataColorLight = Color.WHITE,
+            allowTransparent = true,
+            positionDarkColor = Color.BLACK,
+            positionLightColor = Color.WHITE
+        )
+
+        val renderResult = QrGenerator.generateBitmapResult(matrix, design)
+        assertTrue("Render animated must succeed", renderResult is QrGenerator.BitmapRenderResult.Success)
+        val bitmap = (renderResult as QrGenerator.BitmapRenderResult.Success).bitmap
+        assertNotNull(bitmap)
+
+        val zxResult = zxingDecoder.decode(bitmap)
+        assertTrue("Animated alternating frames with ADAPTIVE_CONTRAST must decode via ZXing", zxResult.success)
+        assertEquals(expectedPayload, zxResult.text)
     }
 }

@@ -96,14 +96,23 @@ object ImageGeometryBuilder {
 
         val dataShape = design.moduleStyle.shape
         val dataScale = maxOf(0f, (design.imageDataScale ?: design.moduleStyle.scale))
-        val adaptiveColors = if (design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_PALETTE) {
-            val candidate = sourceImage ?: animatedFrames?.firstOrNull()
-            if (candidate != null && !candidate.isRecycled) {
-                ImageColorAnalyzer.analyze(candidate)
+        val adaptiveColors = if (design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_PALETTE || design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST) {
+            if (animatedFrames != null && animatedFrames.isNotEmpty()) {
+                ImageColorAnalyzer.analyzeAnimated(animatedFrames)
+            } else if (sourceImage != null && !sourceImage.isRecycled) {
+                ImageColorAnalyzer.analyze(sourceImage)
             } else null
         } else null
-        val dataDarkColor = adaptiveColors?.darkColor ?: design.dataColorDark
-        val dataLightColor = adaptiveColors?.lightColor ?: design.dataColorLight
+        val dataDarkColor = if (design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_PALETTE) {
+            adaptiveColors?.darkColor ?: design.dataColorDark
+        } else {
+            design.dataColorDark
+        }
+        val dataLightColor = if (design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_PALETTE) {
+            adaptiveColors?.lightColor ?: design.dataColorLight
+        } else {
+            design.dataColorLight
+        }
         val allowTransparent = design.allowTransparent
 
         val posStyle = design.eyeStyle.style
@@ -147,20 +156,33 @@ object ImageGeometryBuilder {
             )
         } else null
 
-        val sampleBitmap: Bitmap? = preprocessedFrames?.firstOrNull() ?: preprocessedImage
-        val isAdaptiveContrast = design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST && sampleBitmap != null && !sampleBitmap.isRecycled
+        val sampleFrames: List<Bitmap>? = preprocessedFrames?.filter { !it.isRecycled }
+        val sampleBitmap: Bitmap? = sampleFrames?.firstOrNull() ?: preprocessedImage
+        val isAdaptiveContrast = design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST && (sampleFrames?.isNotEmpty() == true || (sampleBitmap != null && !sampleBitmap.isRecycled))
+        val candidatePalette = adaptiveColors?.palette ?: emptyList()
 
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
-                val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
-                val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
-                val localPixel = sampleBitmap.getPixel(px, py)
-                val localLum = ImageColorAnalyzer.relativeLuminance(localPixel)
+                val localLum = if (sampleFrames != null && sampleFrames.size > 1) {
+                    var sumLum = 0f
+                    for (frame in sampleFrames) {
+                        val px = ((col + 0.5f) / n * frame.width).toInt().coerceIn(0, frame.width - 1)
+                        val py = ((row + 0.5f) / n * frame.height).toInt().coerceIn(0, frame.height - 1)
+                        sumLum += ImageColorAnalyzer.relativeLuminance(frame.getPixel(px, py))
+                    }
+                    sumLum / sampleFrames.size
+                } else {
+                    val px = ((col + 0.5f) / n * sampleBitmap!!.width).toInt().coerceIn(0, sampleBitmap.width - 1)
+                    val py = ((row + 0.5f) / n * sampleBitmap.height).toInt().coerceIn(0, sampleBitmap.height - 1)
+                    val localPixel = sampleBitmap.getPixel(px, py)
+                    ImageColorAnalyzer.relativeLuminance(localPixel)
+                }
                 ImageColorAnalyzer.resolveAdaptiveContrastColor(
                     isDark = isDark,
                     localLum = localLum,
                     defaultDark = dataDarkColor,
-                    defaultLight = dataLightColor
+                    defaultLight = dataLightColor,
+                    palette = candidatePalette
                 )
             } else {
                 if (isDark) dataDarkColor else dataLightColor

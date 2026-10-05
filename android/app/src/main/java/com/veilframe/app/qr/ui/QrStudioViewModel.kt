@@ -1492,13 +1492,23 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun analyzeImageColors(bitmap: Bitmap? = state.value.sourceImage): com.veilframe.app.qr.image.ResolvedImageColors {
-        return com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(bitmap)
+        return if (bitmap != null) {
+            com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(bitmap)
+        } else if (_state.value.animatedFrames.isNotEmpty()) {
+            com.veilframe.app.qr.image.ImageColorAnalyzer.analyzeAnimated(_state.value.animatedFrames.map { it.bitmap })
+        } else {
+            com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(null)
+        }
     }
 
     fun updateImageColorStrategy(strategy: ImageColorStrategy) {
-        val nextColors = if (strategy == ImageColorStrategy.ADAPTIVE_PALETTE && _state.value.sourceImage != null) {
-            val resolved = com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(_state.value.sourceImage)
-            Pair(resolved.darkColor, resolved.lightColor)
+        val nextColors = if (strategy == ImageColorStrategy.ADAPTIVE_PALETTE) {
+            val resolved = if (_state.value.sourceImage != null) {
+                com.veilframe.app.qr.image.ImageColorAnalyzer.analyze(_state.value.sourceImage)
+            } else if (_state.value.animatedFrames.isNotEmpty()) {
+                com.veilframe.app.qr.image.ImageColorAnalyzer.analyzeAnimated(_state.value.animatedFrames.map { it.bitmap })
+            } else null
+            if (resolved != null) Pair(resolved.darkColor, resolved.lightColor) else null
         } else null
 
         _state.value = _state.value.copy(

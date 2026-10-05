@@ -42,9 +42,17 @@ class ImageColorAnalyzerTest {
     }
 
     @Test
-    fun `relativeLuminance and contrastRatio follow WCAG standards`() {
+    fun `relativeLuminance and contrastRatio follow W3C WCAG 2_1 and sRGB standards`() {
         assertEquals(0.0f, ImageColorAnalyzer.relativeLuminance(Color.BLACK), 0.001f)
         assertEquals(1.0f, ImageColorAnalyzer.relativeLuminance(Color.WHITE), 0.001f)
+        assertEquals(0.2126f, ImageColorAnalyzer.relativeLuminance(Color.RED), 0.001f)
+        assertEquals(0.7152f, ImageColorAnalyzer.relativeLuminance(Color.GREEN), 0.001f)
+        assertEquals(0.0722f, ImageColorAnalyzer.relativeLuminance(Color.BLUE), 0.001f)
+
+        // Mid-gray (128, 128, 128): linear sRGB gives ~0.21586, NOT gamma 0.5
+        val grayLum = ImageColorAnalyzer.relativeLuminance(128, 128, 128)
+        assertTrue("Mid-gray luminance must be linearized (~0.21586)", grayLum in 0.214f..0.218f)
+
         assertEquals(21.0f, ImageColorAnalyzer.contrastRatio(Color.BLACK, Color.WHITE), 0.01f)
         assertEquals(1.0f, ImageColorAnalyzer.contrastRatio(Color.RED, Color.RED), 0.01f)
     }
@@ -170,36 +178,61 @@ class ImageColorAnalyzerTest {
     }
 
     @Test
-    fun `resolveAdaptiveContrastColor adapts based on local background luminance`() {
-        val cyan = 0xFF39C5BC.toInt() // lum ~0.653
+    fun `resolveAdaptiveContrastColor optimizes contrast and avoids black-on-black`() {
+        val cyan = 0xFF39C5BC.toInt() // lum ~0.444
         val white = Color.WHITE // lum 1.0
+        val deepNavy = 0xFF0B1021.toInt() // lum ~0.008
+        val palette = listOf(cyan, deepNavy)
 
-        // Bright background (lum 0.85): cyan is darker than 0.85 - 0.15 = 0.70 -> keeps cyan
+        // 1. Adversarial dark background (lum 0.02):
+        // Old bug: dropped to Color.BLACK (0.0), producing black-on-black (CR 1.4:1).
+        // Correct behavior: Cyan (lum ~0.444) has CR = (0.444+0.05)/(0.02+0.05) = 0.494/0.07 = 7.05:1!
+        // It must NOT drop to black-on-black, but use cyan with CR >= 3.0!
+        val darkOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = true,
+            localLum = 0.02f,
+            defaultDark = cyan,
+            defaultLight = white,
+            palette = palette
+        )
+        assertEquals("Dark module on near-black background must use cyan (CR > 7.0), not black", cyan, darkOnDark)
+        val contrastDarkOnDark = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(darkOnDark), 0.02f)
+        assertTrue("Contrast on near-black must be >= 3.0", contrastDarkOnDark >= 3.0f)
+
+        // 2. Bright background (lum 0.85):
+        // Cyan against 0.85 has CR = (0.85+0.05)/(0.444+0.05) = 0.90/0.494 = 1.82 < 3.0.
+        // It searches palette for a darker candidate: deepNavy (lum ~0.008) has CR = 0.90/0.058 = 15.5:1!
         val darkOnBright = ImageColorAnalyzer.resolveAdaptiveContrastColor(
             isDark = true,
             localLum = 0.85f,
             defaultDark = cyan,
-            defaultLight = white
+            defaultLight = white,
+            palette = palette
         )
-        assertEquals(cyan, darkOnBright)
+        assertEquals("Dark module on bright background must select high-contrast palette candidate", deepNavy, darkOnBright)
+        val contrastDarkOnBright = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(darkOnBright), 0.85f)
+        assertTrue("Contrast on bright background must be >= 3.0", contrastDarkOnBright >= 3.0f)
 
-        // Dark background (lum 0.20): cyan (0.653) is NOT darker than 0.20 - 0.15 = 0.05 -> drops to BLACK
-        val darkOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
-            isDark = true,
-            localLum = 0.20f,
-            defaultDark = cyan,
-            defaultLight = white
-        )
-        assertEquals(Color.BLACK, darkOnDark)
-
-        // Light module on dark background (lum 0.20): white (1.0) is lighter than 0.20 + 0.15 = 0.35 -> keeps white
+        // 3. Light module on dark background (lum 0.02):
+        // White on dark has CR = 1.05 / 0.07 = 15.0:1
         val lightOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
             isDark = false,
-            localLum = 0.20f,
+            localLum = 0.02f,
             defaultDark = cyan,
-            defaultLight = white
+            defaultLight = white,
+            palette = palette
         )
         assertEquals(white, lightOnDark)
+
+        // 4. EF Parity: transparent light modules remain transparent
+        val transLight = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+            isDark = false,
+            localLum = 0.50f,
+            defaultDark = cyan,
+            defaultLight = Color.TRANSPARENT,
+            palette = palette
+        )
+        assertEquals(Color.TRANSPARENT, transLight)
     }
 
     @Test
@@ -272,12 +305,26 @@ class ImageColorAnalyzerTest {
             Math.abs(it.width - expectedDataSize) < 0.05f
         }
 
-        // Data nodes in the right half (white background) with dark fill should be cyan
-        val rightDarkNodes = dataNodes.filter { it.x > 256f && it.fill == cyan }
-        assertTrue("Right side (bright) dark data nodes must use cyan", rightDarkNodes.isNotEmpty())
+        // On the dark left side (black background), cyan has CR > 9.0 against black, so it is preserved!
+        val leftDarkNodes = dataNodes.filter { it.x < 256f && it.fill == cyan }
+        assertTrue("Left side (dark) dark data nodes must use cyan for high contrast", leftDarkNodes.isNotEmpty())
 
-        // Data nodes in the left half (black background) with dark fill should drop to solid black
-        val leftDarkNodes = dataNodes.filter { it.x < 256f && it.fill == Color.BLACK }
-        assertTrue("Left side (dark) dark data nodes must adapt to solid black", leftDarkNodes.isNotEmpty())
+        // On the bright right side (white background), cyan has CR ~ 2.1 < 3.0, so it adapts to black (CR = 21.0)
+        val rightDarkNodes = dataNodes.filter { it.x > 256f && it.fill == Color.BLACK }
+        assertTrue("Right side (bright) dark data nodes must adapt to solid black", rightDarkNodes.isNotEmpty())
+    }
+
+    @Test
+    fun `analyzeAnimated extracts conservative palette across multiple animation frames`() {
+        val frame1 = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(0xFFFF0000.toInt())
+        }
+        val frame2 = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).drawColor(0xFF0000FF.toInt())
+        }
+
+        val result = ImageColorAnalyzer.analyzeAnimated(listOf(frame1, frame2))
+        assertFalse("Palette must not be empty", result.palette.isEmpty())
+        assertTrue("Palette must capture colors from both frames", result.palette.size >= 2)
     }
 }
