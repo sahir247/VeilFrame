@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.RectF
 import java.util.Locale
+import com.veilframe.app.qr.image.AdaptiveColorOptimizer
 import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.image.FootprintSampler
 import com.veilframe.app.qr.image.ImageColorAnalyzer
@@ -164,6 +165,26 @@ object ImageGeometryBuilder {
         val sampleBitmap: Bitmap? = sampleFrames?.firstOrNull() ?: preprocessedImage
         val isAdaptiveContrast = design.imageColorStrategy == ImageColorStrategy.ADAPTIVE_CONTRAST && (sampleFrames?.isNotEmpty() == true || (sampleBitmap != null && !sampleBitmap.isRecycled))
         val candidatePalette = adaptiveColors?.palette ?: emptyList()
+        val darkCandidates = if (isAdaptiveContrast) {
+            AdaptiveColorOptimizer.generateCandidatePool(
+                isDark = true,
+                referenceColor = dataDarkColor,
+                palette = candidatePalette
+            )
+        } else emptyList()
+        val lightCandidates = if (isAdaptiveContrast) {
+            AdaptiveColorOptimizer.generateCandidatePool(
+                isDark = false,
+                referenceColor = dataLightColor,
+                palette = candidatePalette
+            )
+        } else emptyList()
+
+        var totalOptimizedModules = 0
+        var targetMetCount = 0
+        var minAchievedContrast = 21.0f
+        var sumAchievedContrast = 0.0f
+        var sumDeltaE = 0.0f
 
         val sampleEffectiveLuminance: (Bitmap, Float, Float) -> Float = { frame, normU, normV ->
             val cx = x0 + normU * canvasW
@@ -171,20 +192,20 @@ object ImageGeometryBuilder {
 
             // 1. Solid canvas backdrop
             val bg = if (colorAlpha(resolvedBackdropColor) > 0) resolvedBackdropColor else Color.WHITE
-            var r = Color.red(bg)
-            var g = Color.green(bg)
-            var b = Color.blue(bg)
+            var r = (bg ushr 16) and 0xFF
+            var g = (bg ushr 8) and 0xFF
+            var b = bg and 0xFF
 
             // 2. Composite backdrop image if present
             if (preprocessedBackdrop != null && !preprocessedBackdrop.isRecycled && width > 0f && height > 0f) {
                 val bx = ((cx / width) * preprocessedBackdrop.width).toInt().coerceIn(0, preprocessedBackdrop.width - 1)
                 val by = ((cy / height) * preprocessedBackdrop.height).toInt().coerceIn(0, preprocessedBackdrop.height - 1)
                 val bPixel = preprocessedBackdrop.getPixel(bx, by)
-                val bAlpha = (Color.alpha(bPixel) / 255.0f) * design.backdropStyle.imageAlpha.coerceIn(0f, 1f)
+                val bAlpha = (((bPixel ushr 24) and 0xFF) / 255.0f) * design.backdropStyle.imageAlpha.coerceIn(0f, 1f)
                 if (bAlpha > 0f) {
-                    r = (Color.red(bPixel) * bAlpha + r * (1f - bAlpha)).toInt()
-                    g = (Color.green(bPixel) * bAlpha + g * (1f - bAlpha)).toInt()
-                    b = (Color.blue(bPixel) * bAlpha + b * (1f - bAlpha)).toInt()
+                    r = (((bPixel ushr 16) and 0xFF) * bAlpha + r * (1f - bAlpha)).toInt()
+                    g = (((bPixel ushr 8) and 0xFF) * bAlpha + g * (1f - bAlpha)).toInt()
+                    b = ((bPixel and 0xFF) * bAlpha + b * (1f - bAlpha)).toInt()
                 }
             }
 
@@ -192,45 +213,65 @@ object ImageGeometryBuilder {
             val fx = (normU * frame.width).toInt().coerceIn(0, frame.width - 1)
             val fy = (normV * frame.height).toInt().coerceIn(0, frame.height - 1)
             val fPixel = frame.getPixel(fx, fy)
-            val fAlpha = (Color.alpha(fPixel) / 255.0f) * imageAlpha
+            val fAlpha = (((fPixel ushr 24) and 0xFF) / 255.0f) * imageAlpha
             if (fAlpha > 0f) {
-                r = (Color.red(fPixel) * fAlpha + r * (1f - fAlpha)).toInt()
-                g = (Color.green(fPixel) * fAlpha + g * (1f - fAlpha)).toInt()
-                b = (Color.blue(fPixel) * fAlpha + b * (1f - fAlpha)).toInt()
+                r = (((fPixel ushr 16) and 0xFF) * fAlpha + r * (1f - fAlpha)).toInt()
+                g = (((fPixel ushr 8) and 0xFF) * fAlpha + g * (1f - fAlpha)).toInt()
+                b = ((fPixel and 0xFF) * fAlpha + b * (1f - fAlpha)).toInt()
             }
 
             ImageColorAnalyzer.relativeLuminance(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
         }
 
-        val sampleFootprintLuminance: (Bitmap, Int, Int, Boolean) -> Float = { frame, col, row, isDark ->
-            val dist = FootprintSampler.sampleModuleDistribution(
-                col = col,
-                row = row,
-                matrixSize = n,
-                dataScale = dataScale,
-                shape = dataShape
-            ) { u, v -> sampleEffectiveLuminance(frame, u, v) }
-            FootprintSampler.resolveObjectiveLuminance(dist, isDark, SamplingObjective.EXTREMA)
-        }
-
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
-                val frameLums = if (sampleFrames != null && sampleFrames.size > 1) {
-                    sampleFrames.map { frame -> sampleFootprintLuminance(frame, col, row, isDark) }
+                val distributions = if (sampleFrames != null && sampleFrames.size > 1) {
+                    sampleFrames.map { frame ->
+                        FootprintSampler.sampleModuleDistribution(
+                            col = col,
+                            row = row,
+                            matrixSize = n,
+                            dataScale = dataScale,
+                            shape = dataShape
+                        ) { u, v -> sampleEffectiveLuminance(frame, u, v) }
+                    }
                 } else {
-                    listOf(sampleFootprintLuminance(sampleBitmap!!, col, row, isDark))
-                }
-                if (isDark) {
-                    ImageColorAnalyzer.resolveAdaptiveContrastColor(
-                        isDark = true,
-                        frameLums = frameLums,
-                        defaultDark = dataDarkColor,
-                        defaultLight = dataLightColor,
-                        palette = candidatePalette
+                    listOf(
+                        FootprintSampler.sampleModuleDistribution(
+                            col = col,
+                            row = row,
+                            matrixSize = n,
+                            dataScale = dataScale,
+                            shape = dataShape
+                        ) { u, v -> sampleEffectiveLuminance(sampleBitmap!!, u, v) }
                     )
-                } else {
-                    dataLightColor
                 }
+
+                // Production objective: PERCENTILE_90_10 for robustness against noise grain and specular highlights
+                val darkFrameLums = distributions.map {
+                    FootprintSampler.resolveObjectiveLuminance(it, isDark = true, SamplingObjective.PERCENTILE_90_10)
+                }
+                val lightFrameLums = distributions.map {
+                    FootprintSampler.resolveObjectiveLuminance(it, isDark = false, SamplingObjective.PERCENTILE_90_10)
+                }
+
+                val joint = AdaptiveColorOptimizer.optimizeJointWithCandidates(
+                    darkFrameLums = darkFrameLums,
+                    lightFrameLums = lightFrameLums,
+                    darkCandidates = darkCandidates,
+                    lightCandidates = lightCandidates,
+                    defaultDark = dataDarkColor,
+                    defaultLight = dataLightColor
+                )
+
+                val chosen = if (isDark) joint.dark else joint.light
+                totalOptimizedModules++
+                if (chosen.targetMet) targetMetCount++
+                minAchievedContrast = minOf(minAchievedContrast, chosen.contrastRatio)
+                sumAchievedContrast += chosen.contrastRatio
+                sumDeltaE += chosen.adjustmentDistance
+
+                chosen.color
             } else {
                 if (isDark) dataDarkColor else dataLightColor
             }
@@ -406,13 +447,25 @@ object ImageGeometryBuilder {
             )
         }
 
+        val diagnostics = if (isAdaptiveContrast && totalOptimizedModules > 0) {
+            QrOptimizationDiagnostics(
+                totalOptimizedModules = totalOptimizedModules,
+                targetMetCount = targetMetCount,
+                minAchievedContrast = minAchievedContrast,
+                meanAchievedContrast = sumAchievedContrast / totalOptimizedModules,
+                meanDeltaEOk = sumDeltaE / totalOptimizedModules,
+                allTargetsMet = (targetMetCount == totalOptimizedModules)
+            )
+        } else null
+
         return QrGeometryIr(
             width = width,
             height = height,
             viewBox = QrGeometryIr.defaultViewBox(width, height),
             defs = defs,
             masks = masks,
-            rootNodes = nodes
+            rootNodes = nodes,
+            diagnostics = diagnostics
         )
     }
 

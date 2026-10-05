@@ -197,6 +197,18 @@ data class QrMaskDefinition(
 )
 
 /**
+ * Diagnostic metrics for adaptive color optimization performed during IR generation.
+ */
+data class QrOptimizationDiagnostics(
+    val totalOptimizedModules: Int = 0,
+    val targetMetCount: Int = 0,
+    val minAchievedContrast: Float = 21.0f,
+    val meanAchievedContrast: Float = 21.0f,
+    val meanDeltaEOk: Float = 0f,
+    val allTargetsMet: Boolean = true
+)
+
+/**
  * Complete document-level geometry definition for a QR code.
  */
 class QrGeometryIr(
@@ -205,7 +217,8 @@ class QrGeometryIr(
     val viewBox: String = defaultViewBox(width, height),
     defs: List<String> = emptyList(),
     val masks: Map<String, QrMaskDefinition> = emptyMap(),
-    val rootNodes: List<QrGeometryNode> = emptyList()
+    val rootNodes: List<QrGeometryNode> = emptyList(),
+    val diagnostics: QrOptimizationDiagnostics? = null
 ) {
     val defs: List<String> = if (masks.isNotEmpty()) {
         val list = ArrayList<String>(defs.size + masks.size)
@@ -227,8 +240,9 @@ class QrGeometryIr(
         viewBox: String = this.viewBox,
         defs: List<String> = this.defs,
         masks: Map<String, QrMaskDefinition> = this.masks,
-        rootNodes: List<QrGeometryNode> = this.rootNodes
-    ): QrGeometryIr = QrGeometryIr(width, height, viewBox, defs, masks, rootNodes)
+        rootNodes: List<QrGeometryNode> = this.rootNodes,
+        diagnostics: QrOptimizationDiagnostics? = this.diagnostics
+    ): QrGeometryIr = QrGeometryIr(width, height, viewBox, defs, masks, rootNodes, diagnostics)
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -239,7 +253,8 @@ class QrGeometryIr(
                 viewBox == other.viewBox &&
                 defs == other.defs &&
                 masks == other.masks &&
-                rootNodes == other.rootNodes
+                rootNodes == other.rootNodes &&
+                diagnostics == other.diagnostics
     }
 
     override fun hashCode(): Int {
@@ -249,11 +264,12 @@ class QrGeometryIr(
         result = 31 * result + defs.hashCode()
         result = 31 * result + masks.hashCode()
         result = 31 * result + rootNodes.hashCode()
+        result = 31 * result + (diagnostics?.hashCode() ?: 0)
         return result
     }
 
     override fun toString(): String {
-        return "QrGeometryIr(width=$width, height=$height, viewBox='$viewBox', defs=$defs, masks=$masks, rootNodes=$rootNodes)"
+        return "QrGeometryIr(width=$width, height=$height, viewBox='$viewBox', defs=$defs, masks=$masks, rootNodes=$rootNodes, diagnostics=$diagnostics)"
     }
 
     companion object {

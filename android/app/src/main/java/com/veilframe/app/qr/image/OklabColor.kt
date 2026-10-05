@@ -37,6 +37,10 @@ object OklabColor {
 
     /**
      * Converts Oklab coordinates to an sRGB packed Int color with channel clamping.
+     *
+     * Note: Performs defensive channel clamping to [0, 255] for arbitrary out-of-gamut inputs.
+     * To prevent perceptual distortion from abrupt channel clipping, callers should use [gamutMapOklch]
+     * which performs constant-hue chroma clipping along constant-hue rays before packing.
      */
     fun oklabToSRgb(oklab: Oklab): Int {
         val lPrime = oklab.l + 0.3963377774f * oklab.a + 0.2158037573f * oklab.b
@@ -103,7 +107,7 @@ object OklabColor {
     }
 
     /**
-     * Gamut maps (targetL, targetC, h) to sRGB along the constant-hue ray.
+     * Constant-hue chroma clipping along constant-hue rays in OKLCH space.
      * Preserves target perceived lightness [targetL] and hue [h], binary-searching the maximum
      * in-gamut chroma C' in [0, targetC].
      */

@@ -188,13 +188,13 @@ class ImageColorAnalyzerTest {
         // Old bug: dropped to Color.BLACK (0.0), producing black-on-black (CR 1.4:1).
         // Correct behavior: Cyan (lum ~0.444) has CR = (0.444+0.05)/(0.02+0.05) = 0.494/0.07 = 7.05:1!
         // It must NOT drop to black-on-black, but use cyan with CR >= 3.0!
-        val darkOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val darkOnDark = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
-            localLum = 0.02f,
-            defaultDark = cyan,
-            defaultLight = white,
+            frameLums = listOf(0.02f),
+            referenceColor = cyan,
+            companionColor = white,
             palette = palette
-        )
+        ).color
         assertEquals("Dark module on near-black background must use cyan (CR > 7.0), not black", cyan, darkOnDark)
         val contrastDarkOnDark = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(darkOnDark), 0.02f)
         assertTrue("Contrast on near-black must be >= 3.0", contrastDarkOnDark >= 3.0f)
@@ -202,36 +202,36 @@ class ImageColorAnalyzerTest {
         // 2. Bright background (lum 0.85):
         // Cyan against 0.85 has CR = (0.85+0.05)/(0.444+0.05) = 0.90/0.494 = 1.82 < 3.0.
         // It searches palette for a darker candidate: deepNavy (lum ~0.008) has CR = 0.90/0.058 = 15.5:1!
-        val darkOnBright = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val darkOnBright = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
-            localLum = 0.85f,
-            defaultDark = cyan,
-            defaultLight = white,
+            frameLums = listOf(0.85f),
+            referenceColor = cyan,
+            companionColor = white,
             palette = palette
-        )
+        ).color
         assertEquals("Dark module on bright background must select high-contrast palette candidate", deepNavy, darkOnBright)
         val contrastDarkOnBright = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(darkOnBright), 0.85f)
         assertTrue("Contrast on bright background must be >= 3.0", contrastDarkOnBright >= 3.0f)
 
         // 3. Light module on dark background (lum 0.02):
         // White on dark has CR = 1.05 / 0.07 = 15.0:1
-        val lightOnDark = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val lightOnDark = AdaptiveColorOptimizer.optimizeColor(
             isDark = false,
-            localLum = 0.02f,
-            defaultDark = cyan,
-            defaultLight = white,
+            frameLums = listOf(0.02f),
+            referenceColor = white,
+            companionColor = cyan,
             palette = palette
-        )
+        ).color
         assertEquals(white, lightOnDark)
 
         // 4. EF Parity: transparent light modules remain transparent
-        val transLight = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val transLight = AdaptiveColorOptimizer.optimizeColor(
             isDark = false,
-            localLum = 0.50f,
-            defaultDark = cyan,
-            defaultLight = Color.TRANSPARENT,
+            frameLums = listOf(0.50f),
+            referenceColor = Color.TRANSPARENT,
+            companionColor = cyan,
             palette = palette
-        )
+        ).color
         assertEquals(Color.TRANSPARENT, transLight)
     }
 
@@ -329,23 +329,20 @@ class ImageColorAnalyzerTest {
     }
 
     @Test
-    fun `Test A - resolveAdaptiveContrastColor enforces CR at least 3 on near-black background without black-on-black`() {
+    fun `Test A - AdaptiveColorOptimizer enforces CR at least 3 on near-black background without black-on-black`() {
         val nearBlackBg = 0.02f
         val defaultDark = Color.BLACK
         val defaultLight = Color.WHITE
         val deepNavy = 0xFF0B1021.toInt() // lum ~0.008
         val palette = listOf(Color.BLACK, deepNavy)
 
-        // When local background is near-black (0.02) and dark candidates are all dark (Black CR 1.4:1, Navy CR 1.25:1),
-        // optimizer MUST NOT return Black or Navy. It must invert visual polarity to white/bright accent
-        // to guarantee CR >= 3.0:1!
-        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val resolved = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
-            localLum = nearBlackBg,
-            defaultDark = defaultDark,
-            defaultLight = defaultLight,
+            frameLums = listOf(nearBlackBg),
+            referenceColor = defaultDark,
+            companionColor = defaultLight,
             palette = palette
-        )
+        ).color
 
         val contrast = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(resolved), nearBlackBg)
         assertTrue("Resolved color on near-black background must achieve CR >= 3.0:1, got $contrast", contrast >= 3.0f)
@@ -354,23 +351,20 @@ class ImageColorAnalyzerTest {
     }
 
     @Test
-    fun `Test B - resolveAdaptiveContrastColor enforces CR at least 3 on bright background for light module without white-on-white`() {
+    fun `Test B - AdaptiveColorOptimizer enforces CR at least 3 on bright background for light module without white-on-white`() {
         val nearWhiteBg = 0.98f
         val defaultDark = Color.BLACK
         val defaultLight = Color.WHITE
         val paleYellow = 0xFFFFFFE0.toInt() // lum > 0.95
         val palette = listOf(Color.WHITE, paleYellow)
 
-        // When local background is near-white (0.98) and light module is requested,
-        // returning White (CR 1.02:1) or Pale Yellow (CR ~1.03:1) would make mark invisible.
-        // Optimizer must invert visual polarity or anchor to black to guarantee CR >= 3.0:1!
-        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val resolved = AdaptiveColorOptimizer.optimizeColor(
             isDark = false,
-            localLum = nearWhiteBg,
-            defaultDark = defaultDark,
-            defaultLight = defaultLight,
+            frameLums = listOf(nearWhiteBg),
+            referenceColor = defaultLight,
+            companionColor = defaultDark,
             palette = palette
-        )
+        ).color
 
         val contrast = ImageColorAnalyzer.contrastRatio(ImageColorAnalyzer.relativeLuminance(resolved), nearWhiteBg)
         assertTrue("Resolved light module on bright background must achieve CR >= 3.0:1, got $contrast", contrast >= 3.0f)
@@ -380,19 +374,17 @@ class ImageColorAnalyzerTest {
 
     @Test
     fun `Test C - temporal worst-case evaluates minimum frame contrast across all frames`() {
-        // Frame 0 is almost black (L = 0.01), Frame 1 is almost white (L = 0.99)
-        // Average is 0.50, but testing average would allow colors that fail on one of the frames!
         val frameLums = listOf(0.01f, 0.99f)
         val defaultDark = Color.BLACK
         val defaultLight = Color.WHITE
 
-        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val resolved = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
             frameLums = frameLums,
-            defaultDark = defaultDark,
-            defaultLight = defaultLight,
+            referenceColor = defaultDark,
+            companionColor = defaultLight,
             palette = emptyList()
-        )
+        ).color
 
         val lum = ImageColorAnalyzer.relativeLuminance(resolved)
         val cr0 = ImageColorAnalyzer.contrastRatio(lum, 0.01f)
@@ -404,10 +396,6 @@ class ImageColorAnalyzerTest {
 
     @Test
     fun `Test D - ADAPTIVE_PALETTE fallback guarantees both CR at least 3 and deltaL at least 0_25`() {
-        // Construct a single-color image where primary luminance is ~0.75
-        // RGB (225, 225, 225) has linear sRGB luminance ~0.7486 (delta to 1.0 is 0.2514 >= 0.25).
-        // If paired with WHITE (1.0), CR = (1.0+0.05)/(0.7486+0.05) = 1.3148:1 (FAILING CR >= 3.0).
-        // Fallback MUST pair with BLACK (0.0), giving CR = 15.97:1 and deltaL = 0.7486 >= 0.25!
         val bmp = Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val color75 = Color.rgb(225, 225, 225)
@@ -424,36 +412,32 @@ class ImageColorAnalyzerTest {
     }
 
     @Test
-    fun `Test E - resolveAdaptiveContrastColor preserves non-black dark candidate when defaultLight is transparent`() {
+    fun `Test E - AdaptiveColorOptimizer preserves non-black dark candidate when defaultLight is transparent`() {
         val cyan = 0xFF39C5BC.toInt() // relative luminance ~0.42
         val lumCyan = ImageColorAnalyzer.relativeLuminance(cyan)
         assertTrue("Cyan luminance is between 0.35 and 0.45", lumCyan in 0.35f..0.45f)
 
-        // When defaultLight is transparent (alpha = 0), its luminance (0.0) must NOT constrain
-        // maxAllowedLum to -0.25f. Dark candidate pool must keep cyan!
-        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val resolved = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
-            localLum = 0.02f, // near-black background
-            defaultDark = cyan,
-            defaultLight = Color.TRANSPARENT,
+            frameLums = listOf(0.02f),
+            referenceColor = cyan,
+            companionColor = Color.TRANSPARENT,
             palette = emptyList()
-        )
+        ).color
 
         assertEquals("Cyan must be preserved as primary dark candidate, not rejected due to transparent light", cyan, resolved)
     }
 
     @Test
-    fun `Test F - resolveAdaptiveContrastColor preserves non-white light candidate when defaultDark is transparent`() {
+    fun `Test F - AdaptiveColorOptimizer preserves non-white light candidate when defaultDark is transparent`() {
         val paleCyan = 0xFF80E5FF.toInt() // relative luminance ~0.70
-        val resolved = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+        val resolved = AdaptiveColorOptimizer.optimizeColor(
             isDark = false,
-            localLum = 0.98f, // near-white background
-            defaultDark = Color.TRANSPARENT,
-            defaultLight = paleCyan,
+            frameLums = listOf(0.98f),
+            referenceColor = paleCyan,
+            companionColor = Color.TRANSPARENT,
             palette = emptyList()
-        )
-        // When defaultDark is transparent, minAllowedLum must not be clamped by transparent dark
-        // On near-white background (0.98), paleCyan (0.70) has CR < 3, so it inverts to Black
-        assertEquals("On near-white background, light module inverts to Black to achieve contrast", Color.BLACK, resolved)
+        ).color
+        assertTrue("On near-white background, light module inverts to dark to achieve contrast", ImageColorAnalyzer.relativeLuminance(resolved) < 0.30f)
     }
 }

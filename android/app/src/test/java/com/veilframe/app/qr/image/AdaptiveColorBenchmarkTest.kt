@@ -187,7 +187,7 @@ class AdaptiveColorBenchmarkTest {
                 results.add(BenchmarkTrialResult("B. Adaptive Palette", "$imgName @ s=$scale", palCr >= 3.0f, palCr, palDeltaE, palCr >= 3.0f))
 
                 // --- Algorithm C: Current Adaptive Contrast v1 (Heuristic) ---
-                val v1Color = ImageColorAnalyzer.resolveAdaptiveContrastColor(
+                val v1Color = resolveLegacyContrastV1(
                     isDark = true,
                     frameLums = listOf(avgBgLum),
                     defaultDark = referenceCyan,
@@ -269,5 +269,87 @@ class AdaptiveColorBenchmarkTest {
         // 3. Temporal v2 must verify worst-case frames with explicit target feasibility
         val fTargetMet = results.filter { it.algorithm.startsWith("F.") }.count { it.targetMet }
         assertTrue("Temporal v2 must successfully evaluate feasibility", fTargetMet > 0)
+    }
+
+    /**
+     * Legacy heuristic v1 resolver preserved privately for empirical benchmarking comparison against v2.
+     */
+    private fun resolveLegacyContrastV1(
+        isDark: Boolean,
+        frameLums: List<Float>,
+        defaultDark: Int,
+        defaultLight: Int,
+        palette: List<Int> = emptyList()
+    ): Int {
+        if (!isDark && Color.alpha(defaultLight) == 0) return Color.TRANSPARENT
+        val lumDark = ImageColorAnalyzer.relativeLuminance(defaultDark)
+        val lumLight = ImageColorAnalyzer.relativeLuminance(defaultLight)
+        val midLumAnchor = 0xFF7D7D7D.toInt()
+
+        if (isDark) {
+            val maxAllowedLum = if (Color.alpha(defaultLight) > 0 && lumLight > 0.45f) {
+                kotlin.math.min(0.45f, lumLight - 0.25f)
+            } else 0.45f
+
+            val primaryCandidates = mutableListOf<Int>()
+            if (lumDark <= maxAllowedLum) primaryCandidates.add(defaultDark)
+            for (c in palette) {
+                if (ImageColorAnalyzer.relativeLuminance(c) <= maxAllowedLum && c !in primaryCandidates) {
+                    primaryCandidates.add(c)
+                }
+            }
+            if (Color.BLACK !in primaryCandidates) primaryCandidates.add(Color.BLACK)
+
+            val viablePrimary = primaryCandidates.filter { ImageColorAnalyzer.minContrastRatio(it, frameLums) >= 3.0f }
+            if (viablePrimary.isNotEmpty()) return viablePrimary.first()
+
+            val invertedCandidates = mutableListOf<Int>()
+            for (c in palette) {
+                if (ImageColorAnalyzer.relativeLuminance(c) >= 0.55f && c !in invertedCandidates) {
+                    invertedCandidates.add(c)
+                }
+            }
+            if (Color.WHITE !in invertedCandidates) invertedCandidates.add(Color.WHITE)
+
+            val viableInverted = invertedCandidates.filter { ImageColorAnalyzer.minContrastRatio(it, frameLums) >= 3.0f }
+            if (viableInverted.isNotEmpty()) return viableInverted.first()
+
+            if (ImageColorAnalyzer.minContrastRatio(midLumAnchor, frameLums) >= 3.0f) return midLumAnchor
+
+            val all = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
+            return all.maxByOrNull { ImageColorAnalyzer.minContrastRatio(it, frameLums) } ?: Color.WHITE
+        } else {
+            val minAllowedLum = if (Color.alpha(defaultDark) > 0 && lumDark < 0.55f) {
+                kotlin.math.max(0.55f, lumDark + 0.25f)
+            } else 0.55f
+
+            val primaryCandidates = mutableListOf<Int>()
+            if (lumLight >= minAllowedLum) primaryCandidates.add(defaultLight)
+            for (c in palette) {
+                if (ImageColorAnalyzer.relativeLuminance(c) >= minAllowedLum && c !in primaryCandidates) {
+                    primaryCandidates.add(c)
+                }
+            }
+            if (Color.WHITE !in primaryCandidates) primaryCandidates.add(Color.WHITE)
+
+            val viablePrimary = primaryCandidates.filter { ImageColorAnalyzer.minContrastRatio(it, frameLums) >= 3.0f }
+            if (viablePrimary.isNotEmpty()) return viablePrimary.first()
+
+            val invertedCandidates = mutableListOf<Int>()
+            for (c in palette) {
+                if (ImageColorAnalyzer.relativeLuminance(c) <= 0.45f && c !in invertedCandidates) {
+                    invertedCandidates.add(c)
+                }
+            }
+            if (Color.BLACK !in invertedCandidates) invertedCandidates.add(Color.BLACK)
+
+            val viableInverted = invertedCandidates.filter { ImageColorAnalyzer.minContrastRatio(it, frameLums) >= 3.0f }
+            if (viableInverted.isNotEmpty()) return viableInverted.first()
+
+            if (ImageColorAnalyzer.minContrastRatio(midLumAnchor, frameLums) >= 3.0f) return midLumAnchor
+
+            val all = primaryCandidates + invertedCandidates + listOf(midLumAnchor)
+            return all.maxByOrNull { ImageColorAnalyzer.minContrastRatio(it, frameLums) } ?: Color.BLACK
+        }
     }
 }

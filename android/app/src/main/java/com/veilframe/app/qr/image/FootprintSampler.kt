@@ -88,9 +88,9 @@ object FootprintSampler {
         val half = s * 0.5f
 
         return when (shape) {
-            ModuleShape.CIRCLE, ModuleShape.BUBBLE -> {
-                // Radial 9-point pattern: center + 8 radial points at r = 0.75 * radius
-                val r = half * 0.75f
+            ModuleShape.CIRCLE, ModuleShape.DOT, ModuleShape.BUBBLE, ModuleShape.BUBBLE_CLUSTER, ModuleShape.PILL -> {
+                // Circular / radial geometry: center + 8 radial points at r = 0.70 * radius
+                val r = half * 0.70f
                 val points = mutableListOf(Pair(0.0f, 0.0f))
                 for (i in 0 until 8) {
                     val angle = (i * Math.PI / 4.0).toFloat()
@@ -98,18 +98,38 @@ object FootprintSampler {
                 }
                 points
             }
-            ModuleShape.DIAMOND -> {
-                // Diamond shape: center + cardinal tips + midpoints
-                val tip = half * 0.80f
-                val mid = half * 0.40f
+            ModuleShape.DIAMOND, ModuleShape.STAR -> {
+                // Diamond / Star geometry: center + 4 tips + 4 inner diagonal points
+                val tip = half * 0.75f
+                val mid = half * 0.35f
                 listOf(
                     Pair(0.0f, 0.0f),
                     Pair(tip, 0.0f), Pair(-tip, 0.0f), Pair(0.0f, tip), Pair(0.0f, -tip),
                     Pair(mid, mid), Pair(-mid, mid), Pair(mid, -mid), Pair(-mid, -mid)
                 )
             }
-            else -> {
-                // Standard 3x3 grid inside square/rounded module footprint
+            ModuleShape.HEX -> {
+                // Hexagonal geometry: center + 6 vertices at 0.70 * radius
+                val r = half * 0.70f
+                val points = mutableListOf(Pair(0.0f, 0.0f))
+                for (i in 0 until 6) {
+                    val angle = (i * Math.PI / 3.0).toFloat()
+                    points.add(Pair(r * cos(angle), r * sin(angle)))
+                }
+                points
+            }
+            ModuleShape.ROUNDED, ModuleShape.SQUIRCLE, ModuleShape.ORGANIC, ModuleShape.CONNECTED -> {
+                // Rounded / squircle: corners pulled inward to remain inside rounded corner radius
+                val axis = half * 0.75f
+                val corner = half * 0.55f
+                listOf(
+                    Pair(0.0f, 0.0f),
+                    Pair(0.0f, -axis), Pair(0.0f, axis), Pair(-axis, 0.0f), Pair(axis, 0.0f),
+                    Pair(-corner, -corner), Pair(corner, -corner), Pair(-corner, corner), Pair(corner, corner)
+                )
+            }
+            ModuleShape.SQUARE, ModuleShape.LINE, ModuleShape.NONE, ModuleShape.CUSTOM -> {
+                // Standard 3x3 grid inside square module footprint
                 val step = half * 0.75f
                 listOf(
                     Pair(0.0f, 0.0f),

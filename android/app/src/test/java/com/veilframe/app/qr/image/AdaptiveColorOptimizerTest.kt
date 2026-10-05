@@ -145,14 +145,15 @@ class AdaptiveColorOptimizerTest {
 
         assertEquals("Transparent light module must remain transparent", Color.TRANSPARENT, joint.light.color)
         assertTrue("Transparent module targetMet must be true", joint.light.targetMet)
+        assertEquals(OptimizationStatus.TRANSPARENT_PRESERVED, joint.light.status)
         assertTrue("Dark module targetMet must be true", joint.dark.targetMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.dark.status)
         assertTrue("All targets met", joint.allTargetsMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.status)
     }
 
     @Test
     fun testTemporalWorstCaseFrameEvaluation() {
-        // Frame 1: L=0.70 (CR with black = 15.0:1)
-        // Frame 2: L=0.20 (CR with black = 5.0:1)
         val frames = listOf(0.70f, 0.20f)
         val result = AdaptiveColorOptimizer.optimizeColor(
             isDark = true,
@@ -162,7 +163,60 @@ class AdaptiveColorOptimizerTest {
         )
 
         assertTrue(result.targetMet)
+        assertEquals(OptimizationStatus.TARGET_MET, result.status)
         // The contrast ratio reported must be the worst-case frame (against L=0.20 -> CR = (0.20+0.05)/(0.0+0.05) = 5.0)
         assertEquals(5.0f, result.contrastRatio, 0.05f)
+    }
+
+    @Test
+    fun testTrueJointCandidatePairEvaluationAvoidsForcedMonochrome() {
+        val cyan = 0xFF39C5BC.toInt()
+        val yellow = 0xFFFFF070.toInt()
+        val bgLums = listOf(0.15f) // dark background: both cyan and yellow can contrast well
+
+        val joint = AdaptiveColorOptimizer.optimizeJointColorPair(
+            frameLums = bgLums,
+            defaultDark = cyan,
+            defaultLight = yellow,
+            targetContrast = 3.0f
+        )
+
+        // Rather than forcing Color.BLACK or Color.WHITE, joint optimizer evaluates (cyan x yellow)
+        // and preserves user seed hues
+        assertNotEquals("Dark module should not collapse to pure black when colored pair is viable", Color.BLACK, joint.dark.color)
+        assertNotEquals("Light module should not collapse to pure white when colored pair is viable", Color.WHITE, joint.light.color)
+        assertTrue("Dark must meet target contrast against 0.15", joint.dark.contrastRatio >= 3.0f)
+        assertTrue("Light must meet target contrast against 0.15", joint.light.contrastRatio >= 3.0f)
+        assertTrue("Dark and light must contrast with each other", joint.pairContrastRatio >= 3.0f)
+        assertTrue("All targets met", joint.allTargetsMet)
+        assertEquals(OptimizationStatus.TARGET_MET, joint.status)
+    }
+
+    @Test
+    fun testImageGeometryBuilderPopulatesOptimizationDiagnostics() {
+        val bmp = android.graphics.Bitmap.createBitmap(100, 100, android.graphics.Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.GRAY)
+        }
+        val matrix = com.veilframe.app.qr.model.QrMatrix("https://veilframe.app/diag", com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M)
+        val design = com.veilframe.app.qr.model.QrDesign(
+            style = com.veilframe.app.qr.QrStyle.IMAGE,
+            imageColorStrategy = com.veilframe.app.qr.model.ImageColorStrategy.ADAPTIVE_CONTRAST,
+            imageSource = com.veilframe.app.qr.model.ImageSourceStyle(source = com.veilframe.app.qr.model.ImageSource.Memory(bmp)),
+            dataColorDark = Color.BLACK,
+            dataColorLight = Color.WHITE
+        )
+        val geom = com.veilframe.app.qr.model.QrGeometry(
+            matrixSize = matrix.size,
+            outputWidth = 250,
+            outputHeight = 250,
+            quietZoneModules = 1
+        )
+
+        val ir = com.veilframe.app.qr.geometry.ImageGeometryBuilder.generateGeometry(matrix, design, geom)
+        assertNotNull("ImageGeometryBuilder must populate diagnostics when adaptive contrast is active", ir.diagnostics)
+        val diag = ir.diagnostics!!
+        assertTrue("Must record optimized data modules", diag.totalOptimizedModules > 0)
+        assertTrue("Min achieved contrast must be > 1.0", diag.minAchievedContrast > 1.0f)
+        assertTrue("Mean achieved contrast must be > 1.0", diag.meanAchievedContrast > 1.0f)
     }
 }
