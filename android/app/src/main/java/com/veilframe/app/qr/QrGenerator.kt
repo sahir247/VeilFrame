@@ -38,13 +38,42 @@ sealed interface QrRenderResult {
         val matrix: QrMatrix
         val design: QrDesign
         val isVerified: Boolean get() = report.isScanReady
+        val isStrictlyVerified: Boolean get() = report.isStrictlyCompliant
 
-        data class Verified(
+        open class Verified(
             override val bitmap: Bitmap?,
             override val report: ScanabilityReport,
             override val matrix: QrMatrix,
             override val design: QrDesign
-        ) : Success
+        ) : Success {
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (other !is Verified) return false
+                return bitmap == other.bitmap && report == other.report && matrix == other.matrix && design == other.design
+            }
+            override fun hashCode(): Int {
+                var res = bitmap?.hashCode() ?: 0
+                res = 31 * res + report.hashCode()
+                res = 31 * res + matrix.hashCode()
+                res = 31 * res + design.hashCode()
+                return res
+            }
+            override fun toString(): String = "Verified(bitmap=$bitmap, report=$report, matrix=$matrix, design=$design)"
+        }
+
+        class StrictVerified(
+            bitmap: Bitmap?,
+            report: ScanabilityReport,
+            matrix: QrMatrix,
+            design: QrDesign
+        ) : Verified(bitmap, report, matrix, design)
+
+        class PreviewVerified(
+            bitmap: Bitmap?,
+            report: ScanabilityReport,
+            matrix: QrMatrix,
+            design: QrDesign
+        ) : Verified(bitmap, report, matrix, design)
 
         data class Unverified(
             override val bitmap: Bitmap?,
@@ -59,10 +88,10 @@ sealed interface QrRenderResult {
                 report: ScanabilityReport,
                 matrix: QrMatrix,
                 design: QrDesign
-            ): Success = if (report.isScanReady) {
-                Verified(bitmap, report, matrix, design)
-            } else {
-                Unverified(bitmap, report, matrix, design)
+            ): Success = when {
+                report.isStrictlyCompliant -> StrictVerified(bitmap, report, matrix, design)
+                report.isScanReady -> PreviewVerified(bitmap, report, matrix, design)
+                else -> Unverified(bitmap, report, matrix, design)
             }
         }
     }
@@ -299,7 +328,8 @@ object QrGenerator {
     fun generateWithResult(
         content: String,
         design: QrDesign = QrDesign(),
-        mode: GenerationMode = defaultModeFor(design)
+        mode: GenerationMode = defaultModeFor(design),
+        strictValidation: Boolean = false
     ): QrRenderResult {
         if (content.isBlank()) {
             return QrRenderResult.Failure(QrError.Input.EmptyContent)
@@ -325,7 +355,11 @@ object QrGenerator {
                 is BitmapRenderResult.Success -> {
                     val bitmap = bitmapResult.bitmap
                     val report = runBlocking {
-                        ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
+                        if (strictValidation) {
+                            ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
+                        } else {
+                            ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
+                        }
                     }
                     return QrRenderResult.Success(
                         bitmap = bitmap,
@@ -341,6 +375,15 @@ object QrGenerator {
             return QrRenderResult.Failure(QrError.fromThrowable(t))
         }
     }
+
+    /**
+     * Canonical entry point for generating QR codes with strict compliance validation (Audit C-01 / C-04).
+     */
+    fun generateStrictWithResult(
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design)
+    ): QrRenderResult = generateWithResult(content, design, mode = mode, strictValidation = true)
 
     /**
      * Convenience entry point for generating deterministic, exact VeilFrame artistic QR codes.
@@ -427,7 +470,7 @@ object QrGenerator {
      */
     sealed interface BitmapRenderResult {
         data class Success(val bitmap: Bitmap) : BitmapRenderResult
-        data class Failure(val error: QrError.Rendering) : BitmapRenderResult
+        data class Failure(val error: QrError) : BitmapRenderResult
     }
 
     /**
@@ -441,6 +484,19 @@ object QrGenerator {
     ): BitmapRenderResult {
         val width = geometry.outputWidth
         val height = geometry.outputHeight
+
+        // Fail-closed validation for unmaterialized image sources (Audit Item 9)
+        val imgSource = design.imageSource.source
+        if ((design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL || design.style == QrStyle.IMAGE_RESAMPLE) && design.imageSource.bitmap == null) {
+            if (imgSource is com.veilframe.app.qr.model.ImageSource.Uri || imgSource is com.veilframe.app.qr.model.ImageSource.Resource) {
+                val desc = when (imgSource) {
+                    is com.veilframe.app.qr.model.ImageSource.Uri -> "Uri(${imgSource.value})"
+                    is com.veilframe.app.qr.model.ImageSource.Resource -> "Resource(id=${imgSource.id})"
+                    else -> imgSource.toString()
+                }
+                return BitmapRenderResult.Failure(QrError.Image.UnmaterializedSource(desc))
+            }
+        }
 
         val bitmap = try {
             Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)

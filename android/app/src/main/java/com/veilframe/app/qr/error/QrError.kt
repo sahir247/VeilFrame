@@ -104,6 +104,10 @@ sealed class QrError(
             val frameIndex: Int,
             val reason: String
         ) : Image("Invalid frame at index $frameIndex: $reason")
+
+        data class UnmaterializedSource(
+            val sourceDescription: String
+        ) : Image("Image source '$sourceDescription' must be materialized into a Bitmap before rendering")
     }
 
     /**

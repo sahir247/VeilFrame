@@ -11,6 +11,8 @@ import com.veilframe.app.qr.model.QrFrame
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
 import com.veilframe.app.qr.model.QrOutputResult
+import com.veilframe.app.qr.validation.ScanabilityReport
+import com.veilframe.app.qr.validation.ScanabilityValidator
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -1176,4 +1178,86 @@ object AnimatedQrGenerator {
         outputFile: File,
         fps: Int = 15
     ): Boolean = encodeToVideoResult(renderedFrames, outputFile, fps) is QrOutputResult.Success
+
+    /**
+     * Report summarizing scanability across all frames of an animated QR code.
+     */
+    data class AnimatedScanabilityReport(
+        val isAllFramesScanReady: Boolean,
+        val totalFrames: Int,
+        val passedFrames: Int,
+        val frameReports: List<ScanabilityReport>,
+        val worstSeparation: Float,
+        val worstQuietZoneMargin: Float,
+        val failureReasons: List<String>
+    )
+
+    /**
+     * Validates that every individual frame of an animated QR code satisfies strict scanability requirements
+     * (Audit Item 6 & 16: True all-frame scanability validation contract).
+     *
+     * Evaluates decode success, contrast distribution, finder integrity, and quiet-zone compliance
+     * for every frame in the animated sequence.
+     */
+    suspend fun validateAnimatedFramesStrict(
+        matrix: QrMatrix,
+        baseDesign: QrDesign,
+        sourceFrames: List<QrFrame>,
+        expectedContent: String,
+        outputSize: Int = 512
+    ): AnimatedScanabilityReport {
+        if (sourceFrames.isEmpty()) {
+            return AnimatedScanabilityReport(
+                isAllFramesScanReady = false,
+                totalFrames = 0,
+                passedFrames = 0,
+                frameReports = emptyList(),
+                worstSeparation = 0f,
+                worstQuietZoneMargin = 0f,
+                failureReasons = listOf("Animated source frames must not be empty")
+            )
+        }
+
+        val frameReports = mutableListOf<ScanabilityReport>()
+        val failureReasons = mutableListOf<String>()
+        var accumulatedMs = 0L
+        val geometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
+
+        for ((idx, frame) in sourceFrames.withIndex()) {
+            val renderResult = renderFrameResultAt(matrix, baseDesign, frame, accumulatedMs, outputSize, geometry)
+            when (renderResult) {
+                is QrOutputResult.Failure -> {
+                    failureReasons.add("Frame $idx failed to render: ${renderResult.error.description}")
+                }
+                is QrOutputResult.Success -> {
+                    val frameDesign = baseDesign.copy(outputSize = outputSize)
+                    val report = ScanabilityValidator.validateStrict(
+                        renderResult.value.bitmap,
+                        frameDesign,
+                        matrix,
+                        expectedContent
+                    )
+                    frameReports.add(report)
+                    if (!report.isStrictlyCompliant) {
+                        failureReasons.add("Frame $idx failed strict validation: ${report.warnings.joinToString("; ")}")
+                    }
+                }
+            }
+            accumulatedMs += frame.durationMs
+        }
+
+        val allReady = frameReports.size == sourceFrames.size && frameReports.all { it.isStrictlyCompliant }
+        val worstSeparation = frameReports.minOfOrNull { it.contrast.separation } ?: 0f
+        val worstMargin = frameReports.minOfOrNull { it.quietZone.minMargin } ?: 0f
+
+        return AnimatedScanabilityReport(
+            isAllFramesScanReady = allReady,
+            totalFrames = sourceFrames.size,
+            passedFrames = frameReports.count { it.isStrictlyCompliant },
+            frameReports = frameReports,
+            worstSeparation = worstSeparation,
+            worstQuietZoneMargin = worstMargin,
+            failureReasons = failureReasons
+        )
+    }
 }

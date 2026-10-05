@@ -6,8 +6,11 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.decoder.DecodeResult
 import com.veilframe.app.qr.decoder.ZxingQrDecoder
+import com.veilframe.app.qr.image.FootprintSampler
+import com.veilframe.app.qr.image.ImageColorAnalyzer
 import com.veilframe.app.qr.model.BasicGeometryProfile
 import com.veilframe.app.qr.model.FunctionPatternType
+import com.veilframe.app.qr.model.ModuleShape
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
@@ -22,9 +25,26 @@ enum class RepairReason {
     ELEVATE_ERROR_CORRECTION
 }
 
+/**
+ * Validation tier separating fast interactive preview validation from strict export compliance gating.
+ */
+enum class ValidationTier {
+    FAST_PREVIEW,
+    STRICT_COMPLIANCE
+}
+
+/**
+ * Directional quiet-zone report preserving margin on all 4 boundaries (Audit C-02 / C-05).
+ */
 data class QuietZoneReport(
     val hasFourModuleMargin: Boolean,
-    val quietZoneModules: Int
+    val quietZoneModules: Int,
+    val left: Float = quietZoneModules.toFloat(),
+    val top: Float = quietZoneModules.toFloat(),
+    val right: Float = quietZoneModules.toFloat(),
+    val bottom: Float = quietZoneModules.toFloat(),
+    val minMargin: Float = minOf(left, top, right, bottom),
+    val isCustomMargin: Boolean = false
 )
 
 data class ContrastReport(
@@ -58,7 +78,9 @@ data class ScanabilityReport(
     val errorCorrection: ErrorCorrectionLevel,
     val warnings: List<String>,
     val repairSuggestions: List<RepairReason>,
-    val validationSkipped: Boolean = false
+    val validationSkipped: Boolean = false,
+    val tier: ValidationTier = ValidationTier.FAST_PREVIEW,
+    val isStrictlyCompliant: Boolean = isScanReady && tier == ValidationTier.STRICT_COMPLIANCE
 )
 
 object ScanabilityValidator {
@@ -105,26 +127,49 @@ object ScanabilityValidator {
             outputHeight = bitmap.height,
             design = design
         )
-        val quietZone = geometry.quietZoneModules
-
-        // 1. Quiet Zone Check
-        val quietZoneOk = quietZone >= 4 ||
-            (design.explicitQuietZone != null && design.explicitQuietZone >= 0) ||
-            design.directionalQuietZone != null ||
-            design.backdropStyle.fractionalQuietZone != null ||
-            design.style == QrStyle.D25 ||
-            ((design.basicProfile == BasicGeometryProfile.EF_PARITY ||
-              design.style == QrStyle.IMAGE_RESAMPLE ||
-              design.style == QrStyle.IMAGE ||
-              design.style == QrStyle.IMAGE_FILL) && quietZone >= 1)
-        val quietZoneReport = QuietZoneReport(
-            hasFourModuleMargin = quietZone >= 4,
-            quietZoneModules = quietZone
+        val minMargin = minOf(
+            geometry.quietZoneLeftFloat,
+            geometry.quietZoneTopFloat,
+            geometry.quietZoneRightFloat,
+            geometry.quietZoneBottomFloat
         )
 
-        // 2. Contrast Distribution Analysis
+        val minRequiredMargin = when {
+            design.style == QrStyle.D25 -> 0.0f
+            design.basicProfile == BasicGeometryProfile.EF_PARITY ||
+            design.style == QrStyle.IMAGE_RESAMPLE ||
+            design.style == QrStyle.IMAGE ||
+            design.style == QrStyle.IMAGE_FILL -> 1.0f
+            else -> 4.0f
+        }
+
+        // 1. Quiet Zone Check:
+        // In strict mode, required margin must actually be met on all 4 sides without escape hatches (Audit C-02 / C-05).
+        // In fast preview mode, intentional custom margins can be previewed if decodable.
+        val quietZoneOk = if (isStrict) {
+            minMargin >= (minRequiredMargin - 0.01f)
+        } else {
+            minMargin >= (minRequiredMargin - 0.01f) ||
+                (design.explicitQuietZone != null && design.explicitQuietZone >= 0) ||
+                design.directionalQuietZone != null ||
+                design.backdropStyle.fractionalQuietZone != null
+        }
+        val quietZoneReport = QuietZoneReport(
+            hasFourModuleMargin = minMargin >= 3.99f,
+            quietZoneModules = minMargin.toInt(),
+            left = geometry.quietZoneLeftFloat,
+            top = geometry.quietZoneTopFloat,
+            right = geometry.quietZoneRightFloat,
+            bottom = geometry.quietZoneBottomFloat,
+            minMargin = minMargin,
+            isCustomMargin = design.explicitQuietZone != null ||
+                design.directionalQuietZone != null ||
+                design.backdropStyle.fractionalQuietZone != null
+        )
+
+        // 2. Contrast Distribution Analysis using shape/scale-aware FootprintSampler and WCAG linearized luminance (Audit C-03 / C-04)
         val is25D = design.style == QrStyle.D25
-        val contrastReport = analyzeContrast(bitmap, geometry, matrix, is25D = is25D)
+        val contrastReport = analyzeContrast(bitmap, geometry, matrix, design, is25D = is25D)
 
         // 3. Finder & Separator Integrity Check
         val isResample = design.style == QrStyle.IMAGE_RESAMPLE
@@ -187,14 +232,18 @@ object ScanabilityValidator {
         val warnings = mutableListOf<String>()
         val suggestions = mutableListOf<RepairReason>()
 
-        if (design.style == QrStyle.IMAGE_RESAMPLE) {
-            if (quietZone < 1) {
-                warnings.add("Quiet zone is less than the required 1 module margin for artistic QR.")
+        if (design.style == QrStyle.IMAGE_RESAMPLE ||
+            design.style == QrStyle.IMAGE ||
+            design.style == QrStyle.IMAGE_FILL ||
+            design.basicProfile == BasicGeometryProfile.EF_PARITY
+        ) {
+            if (minMargin < 0.99f) {
+                warnings.add("Quiet zone ($minMargin modules) is less than the required 1 module margin for artistic/parity QR.")
                 suggestions.add(RepairReason.RESTORE_QUIET_ZONE)
             }
-        } else {
+        } else if (design.style != QrStyle.D25) {
             if (!quietZoneReport.hasFourModuleMargin) {
-                warnings.add("Quiet zone is less than the standard 4 modules margin.")
+                warnings.add("Quiet zone ($minMargin modules) is less than the standard 4 modules margin.")
                 suggestions.add(RepairReason.RESTORE_QUIET_ZONE)
             }
         }
@@ -235,11 +284,11 @@ object ScanabilityValidator {
             }
         }
 
+        val tier = if (isStrict) ValidationTier.STRICT_COMPLIANCE else ValidationTier.FAST_PREVIEW
         val isScanReady = if (decodeMatches) {
             val logoOk = !logoReport.hasProtectedOverlap && logoReport.isWithinErrorCorrectionCapacity
             if (isStrict) {
-                // In strict validation mode (e.g. export or standard production checks),
-                // hard-gate quiet zone compliance, contrast separation, and separator clearance (AUDIT C-03 / P0.4)
+                // In strict validation mode, hard-gate quiet zone compliance, contrast separation, and separator clearance (AUDIT C-01 / C-02)
                 logoOk && quietZoneOk && contrastReport.isContrastAdequate && finderReport.separatorsClear
             } else {
                 logoOk
@@ -257,7 +306,8 @@ object ScanabilityValidator {
             decodeResult = decodeResult,
             errorCorrection = matrix.ecLevel,
             warnings = warnings,
-            repairSuggestions = suggestions.distinct()
+            repairSuggestions = suggestions.distinct(),
+            tier = tier
         )
     }
 
@@ -265,20 +315,24 @@ object ScanabilityValidator {
         bitmap: Bitmap,
         geometry: QrGeometry,
         matrix: QrMatrix,
+        design: QrDesign,
         is25D: Boolean = false
     ): ContrastReport {
         val darkLuminances = mutableListOf<Float>()
         val lightLuminances = mutableListOf<Float>()
 
         val step = maxOf(1, matrix.size / 20) // Sample grid
-        val delta = geometry.moduleSize * 0.25f
-        val sampleOffsets = listOf(
-            Pair(0f, 0f),
-            Pair(-delta, -delta),
-            Pair(delta, -delta),
-            Pair(-delta, delta),
-            Pair(delta, delta)
-        )
+
+        // Use shape/scale-aware footprint offsets matching FootprintSampler (Audit C-04)
+        val dataScale = when {
+            design.style == QrStyle.IMAGE || design.style == QrStyle.IMAGE_FILL -> design.imageDataScale ?: design.moduleStyle.scale
+            else -> design.moduleStyle.scale
+        }.coerceIn(0.1f, 1.0f)
+        val dataShape = design.moduleStyle.shape
+        val normalizedOffsets = FootprintSampler.generateFootprintOffsets(dataScale, dataShape)
+        val sampleOffsets = normalizedOffsets.map { (du, dv) ->
+            Pair(du * geometry.moduleSize, dv * geometry.moduleSize)
+        }
 
         val sq3h = (kotlin.math.sqrt(3.0) / 2.0).toFloat()
         val n = matrix.size
@@ -304,11 +358,8 @@ object ScanabilityValidator {
                     val py = (cy + oy).toInt().coerceIn(0, bitmap.height - 1)
                     val pixel = bitmap.getPixel(px, py)
 
-                    // Relative luminance (sRGB standard)
-                    val r = Color.red(pixel) / 255f
-                    val g = Color.green(pixel) / 255f
-                    val b = Color.blue(pixel) / 255f
-                    val lum = (0.2126f * r) + (0.7152f * g) + (0.0722f * b)
+                    // Relative luminance following W3C WCAG 2.1 linearized sRGB standard (Audit C-03)
+                    val lum = ImageColorAnalyzer.relativeLuminance(pixel)
 
                     if (matrix.isDark(col, row)) {
                         darkLuminances.add(lum)
@@ -372,10 +423,7 @@ object ScanabilityValidator {
         val px = cx.toInt().coerceIn(0, bitmap.width - 1)
         val py = cy.toInt().coerceIn(0, bitmap.height - 1)
         val pixel = bitmap.getPixel(px, py)
-        val r = Color.red(pixel)
-        val g = Color.green(pixel)
-        val b = Color.blue(pixel)
-        return (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f
+        return ImageColorAnalyzer.relativeLuminance(pixel)
     }
 
     private fun verifyFinderIntegrity(
@@ -430,6 +478,12 @@ object ScanabilityValidator {
                 )
                 val avgOuterRing = outerRingLums.average().toFloat()
                 if (avgOuterRing > 0.65f || avgOuterRing > avgLightRing) {
+                    allIntact = false
+                    break
+                }
+
+                // Structural check against function pattern mask (Audit C-08)
+                if (matrix.functionMask[fcCol, fcRow] != FunctionPatternType.FINDER_CORE) {
                     allIntact = false
                     break
                 }

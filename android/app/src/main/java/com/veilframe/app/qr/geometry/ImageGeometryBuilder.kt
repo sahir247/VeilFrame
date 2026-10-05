@@ -8,6 +8,7 @@ import com.veilframe.app.qr.image.AdaptiveColorOptimizer
 import com.veilframe.app.qr.image.EfImagePreprocessor
 import com.veilframe.app.qr.image.FootprintSampler
 import com.veilframe.app.qr.image.ImageColorAnalyzer
+import com.veilframe.app.qr.image.JointColorOptimizationResult
 import com.veilframe.app.qr.image.SamplingObjective
 import com.veilframe.app.qr.image.SpatialModuleContext
 import com.veilframe.app.qr.model.*
@@ -224,6 +225,10 @@ object ImageGeometryBuilder {
             ImageColorAnalyzer.relativeLuminance(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
         }
 
+        // Cache per-render joint optimization results keyed by quantized background signature (Audit Item 10 & Item 2).
+        // Stabilizes spatial palette cohesion between adjacent modules and eliminates redundant Cartesian evaluations.
+        val jointOptimizationCache = HashMap<Long, JointColorOptimizationResult>()
+
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->
             if (isAdaptiveContrast) {
                 val distributions = if (sampleFrames != null && sampleFrames.size > 1) {
@@ -251,13 +256,22 @@ object ImageGeometryBuilder {
                 // Pass complete spatial context directly into the optimizer
                 val spatialContext = SpatialModuleContext(distributions, SamplingObjective.PERCENTILE_90_10)
 
-                val joint = AdaptiveColorOptimizer.optimizeJointWithSpatialContext(
-                    context = spatialContext,
-                    darkCandidates = darkCandidates,
-                    lightCandidates = lightCandidates,
-                    defaultDark = dataDarkColor,
-                    defaultLight = dataLightColor
-                )
+                // Quantize primary distribution p90/p10 into 50 buckets (0.02 step)
+                val avgP90 = distributions.map { it.p90 }.average().toFloat()
+                val avgP10 = distributions.map { it.p10 }.average().toFloat()
+                val qP90 = (avgP90 * 50f).toInt().coerceIn(0, 50)
+                val qP10 = (avgP10 * 50f).toInt().coerceIn(0, 50)
+                val cacheKey = (qP90.toLong() shl 16) or (qP10.toLong() and 0xFFFFL)
+
+                val joint = jointOptimizationCache.getOrPut(cacheKey) {
+                    AdaptiveColorOptimizer.optimizeJointWithSpatialContext(
+                        context = spatialContext,
+                        darkCandidates = darkCandidates,
+                        lightCandidates = lightCandidates,
+                        defaultDark = dataDarkColor,
+                        defaultLight = dataLightColor
+                    )
+                }
 
                 val chosen = if (isDark) joint.dark else joint.light
                 totalOptimizedModules++

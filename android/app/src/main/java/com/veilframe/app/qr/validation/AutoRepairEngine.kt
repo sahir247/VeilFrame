@@ -69,15 +69,25 @@ object AutoRepairEngine {
                 }
 
                 RepairReason.INCREASE_CONTRAST -> {
-                    design = design.copy(
-                        palette = design.palette.copy(
-                            foreground = Color.BLACK,
-                            background = Color.WHITE,
-                            gradientStart = null,
-                            gradientEnd = null
+                    if (design.style == com.veilframe.app.qr.QrStyle.IMAGE || design.style == com.veilframe.app.qr.QrStyle.IMAGE_FILL) {
+                        design = design.copy(
+                            dataColorDark = Color.BLACK,
+                            dataColorLight = Color.WHITE,
+                            allowTransparent = false,
+                            imageDataScale = maxOf(design.imageDataScale ?: design.moduleStyle.scale, 0.50f)
                         )
-                    )
-                    changes.add("Maximized luminance contrast (pure black/white palette)")
+                        changes.add("Enforced high-contrast data mark colors and scale for image QR")
+                    } else {
+                        design = design.copy(
+                            palette = design.palette.copy(
+                                foreground = Color.BLACK,
+                                background = Color.WHITE,
+                                gradientStart = null,
+                                gradientEnd = null
+                            )
+                        )
+                        changes.add("Maximized luminance contrast (pure black/white palette)")
+                    }
                 }
 
                 RepairReason.REDUCE_DEFORMATION -> {
