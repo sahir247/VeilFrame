@@ -67,13 +67,13 @@ class GifEncoder {
      */
     fun addFrame(pixels: IntArray, frameWidth: Int, frameHeight: Int, durationMs: Int = 100) {
         val os = checkNotNull(outputStream) { "GifEncoder must be started before adding frames" }
-        val (palette, indexedPixels) = quantizeToPalette(pixels)
+        val quantized = quantizeToPalette(pixels)
         val delayCentiseconds = max(1, (durationMs + 5) / 10)
 
-        writeGraphicControlExtension(os, delayCentiseconds)
+        writeGraphicControlExtension(os, delayCentiseconds, quantized.transparentIndex)
         writeImageDescriptor(os, frameWidth, frameHeight)
-        writeColorTable(os, palette)
-        writeLzwImageData(os, indexedPixels)
+        writeColorTable(os, quantized.palette)
+        writeLzwImageData(os, quantized.indexedPixels)
     }
 
     /**
@@ -112,13 +112,17 @@ class GifEncoder {
         os.write(0x00) // Block Terminator
     }
 
-    private fun writeGraphicControlExtension(os: OutputStream, delayCs: Int) {
+    private fun writeGraphicControlExtension(os: OutputStream, delayCs: Int, transparentIndex: Int? = null) {
         os.write(0x21) // Extension Introducer
         os.write(0xF9) // Graphic Control Label
         os.write(0x04) // Block size
-        os.write(0x08) // Packed: Disposal method 2 (Restore to background color), no transparent color
+        // Disposal method 1: Do not dispose (0x01 shl 2 = 0x04). Next frame replaces the canvas.
+        // Transparent color flag is Bit 0 (0x01).
+        val hasTransparency = transparentIndex != null
+        val packed = 0x04 or (if (hasTransparency) 0x01 else 0x00)
+        os.write(packed)
         writeShortLE(os, delayCs)
-        os.write(0x00) // Transparent color index
+        os.write(transparentIndex ?: 0x00) // Transparent color index
         os.write(0x00) // Block Terminator
     }
 
@@ -148,61 +152,86 @@ class GifEncoder {
         os.write((value ushr 8) and 0xFF)
     }
 
+    data class QuantizedFrame(
+        val palette: IntArray,
+        val indexedPixels: ByteArray,
+        val transparentIndex: Int?
+    )
+
     /**
      * Quantizes an ARGB pixel buffer to at most 256 colors.
      * Uses exact palette if distinct colors <= 256; otherwise uses fast 4-bit uniform quantization.
+     * Preserves transparent pixels (alpha < 128) by reserving palette index 0 when present.
      */
-    private fun quantizeToPalette(pixels: IntArray): Pair<IntArray, ByteArray> {
+    private fun quantizeToPalette(pixels: IntArray): QuantizedFrame {
         val indexed = ByteArray(pixels.size)
         val uniqueMap = HashMap<Int, Int>(256)
         val paletteList = ArrayList<Int>(256)
+        val hasTransparency = pixels.any { ((it ushr 24) and 0xFF) < 128 }
+
+        if (hasTransparency) {
+            paletteList.add(0) // Slot 0 reserved for transparency
+        }
 
         // Try exact palette first
         var exactPossible = true
         for (i in pixels.indices) {
-            val c = pixels[i] or 0xFF000000.toInt()
-            var idx = uniqueMap[c]
-            if (idx == null) {
-                if (paletteList.size < 256) {
-                    idx = paletteList.size
-                    uniqueMap[c] = idx
-                    paletteList.add(c)
-                } else {
-                    exactPossible = false
-                    break
+            val alpha = (pixels[i] ushr 24) and 0xFF
+            if (hasTransparency && alpha < 128) {
+                indexed[i] = 0.toByte()
+            } else {
+                val c = pixels[i] or 0xFF000000.toInt()
+                var idx = uniqueMap[c]
+                if (idx == null) {
+                    if (paletteList.size < 256) {
+                        idx = paletteList.size
+                        uniqueMap[c] = idx
+                        paletteList.add(c)
+                    } else {
+                        exactPossible = false
+                        break
+                    }
                 }
+                indexed[i] = idx.toByte()
             }
-            indexed[i] = idx.toByte()
         }
 
         if (exactPossible) {
             val pal = IntArray(256)
             for (i in paletteList.indices) pal[i] = paletteList[i]
-            return Pair(pal, indexed)
+            return QuantizedFrame(pal, indexed, if (hasTransparency) 0 else null)
         }
 
         // Fast uniform 4-bit quantization (4 bits per channel = 4096 bins -> mapped to 256 palette)
-        uniqueMap.clear()
-        paletteList.clear()
         for (i in pixels.indices) {
-            val c = pixels[i]
-            val r = (c ushr 16) and 0xFF
-            val g = (c ushr 8) and 0xFF
-            val b = c and 0xFF
+            val alpha = (pixels[i] ushr 24) and 0xFF
+            if (hasTransparency && alpha < 128) {
+                indexed[i] = 0.toByte()
+            } else {
+                val c = pixels[i]
+                val r = (c ushr 16) and 0xFF
+                val g = (c ushr 8) and 0xFF
+                val b = c and 0xFF
 
-            // Quantize to 6x7x6 color cube (252 colors + 4 grayscale)
-            val qr = (r * 5 + 127) / 255
-            val qg = (g * 6 + 127) / 255
-            val qb = (b * 5 + 127) / 255
-            val index = qr * 42 + qg * 6 + qb
-            indexed[i] = (index and 0xFF).toByte()
+                // Quantize to 6x7x6 color cube (252 colors)
+                val qr = (r * 5 + 127) / 255
+                val qg = (g * 6 + 127) / 255
+                val qb = (b * 5 + 127) / 255
+                val baseIndex = qr * 42 + qg * 6 + qb
+                val index = if (hasTransparency) minOf(255, baseIndex + 1) else baseIndex
+                indexed[i] = (index and 0xFF).toByte()
+            }
         }
 
         val uniformPalette = IntArray(256)
+        if (hasTransparency) {
+            uniformPalette[0] = 0x00000000
+        }
         for (qr in 0..5) {
             for (qg in 0..6) {
                 for (qb in 0..5) {
-                    val idx = qr * 42 + qg * 6 + qb
+                    val baseIdx = qr * 42 + qg * 6 + qb
+                    val idx = if (hasTransparency) minOf(255, baseIdx + 1) else baseIdx
                     val r = (qr * 255) / 5
                     val g = (qg * 255) / 6
                     val b = (qb * 255) / 5
@@ -210,7 +239,7 @@ class GifEncoder {
                 }
             }
         }
-        return Pair(uniformPalette, indexed)
+        return QuantizedFrame(uniformPalette, indexed, if (hasTransparency) 0 else null)
     }
 
     /**

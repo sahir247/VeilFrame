@@ -34,18 +34,20 @@ object VeilQrEncoder {
     fun encode(
         content: String,
         errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H,
-        maskPattern: VeilMaskPattern? = null
+        maskPattern: VeilMaskPattern? = null,
+        writeEci: Boolean = false
     ): VeilEncodedQr {
         val data = content.toByteArray(Charsets.UTF_8)
-        return encode(data, errorCorrection, maskPattern)
+        return encode(data, errorCorrection, maskPattern, writeEci)
     }
 
     fun encode(
         data: ByteArray,
         errorCorrection: VeilCorrectionLevel = VeilCorrectionLevel.H,
-        maskPattern: VeilMaskPattern? = null
+        maskPattern: VeilMaskPattern? = null,
+        writeEci: Boolean = false
     ): VeilEncodedQr {
-        val model = QRCodeModel(data, errorCorrection, needTypeTable = true, explicitMaskPattern = maskPattern)
+        val model = QRCodeModel(data, errorCorrection, needTypeTable = true, explicitMaskPattern = maskPattern, writeEci = writeEci)
         val typeTable = model.getTypeTable()
 
         val matrix = QrMatrix(
@@ -68,7 +70,8 @@ object VeilQrEncoder {
 
     fun encode(
         content: String,
-        zxingLevel: ErrorCorrectionLevel
+        zxingLevel: ErrorCorrectionLevel,
+        writeEci: Boolean = false
     ): VeilEncodedQr {
         val level = when (zxingLevel) {
             ErrorCorrectionLevel.L -> VeilCorrectionLevel.L
@@ -76,7 +79,7 @@ object VeilQrEncoder {
             ErrorCorrectionLevel.Q -> VeilCorrectionLevel.Q
             ErrorCorrectionLevel.H -> VeilCorrectionLevel.H
         }
-        return encode(content, level)
+        return encode(content, level, writeEci = writeEci)
     }
 }
 

@@ -69,8 +69,8 @@ class QrGeometry(
         quietZoneBottomFloat = quietZoneBottomFloat
     )
 
-    val totalModulesXFloat: Float = matrixSize + quietZoneLeftFloat + quietZoneRightFloat
-    val totalModulesYFloat: Float = matrixSize + quietZoneTopFloat + quietZoneBottomFloat
+    val totalModulesXFloat: Float = maxOf(1f, matrixSize + quietZoneLeftFloat + quietZoneRightFloat)
+    val totalModulesYFloat: Float = maxOf(1f, matrixSize + quietZoneTopFloat + quietZoneBottomFloat)
     val totalModulesX: Int = Math.round(totalModulesXFloat)
     val totalModulesY: Int = Math.round(totalModulesYFloat)
     val totalModules: Int = maxOf(totalModulesX, totalModulesY)
@@ -105,27 +105,27 @@ class QrGeometry(
             val fracQz = design.backdropStyle.fractionalQuietZone
             if (fracQz != null) {
                 return ResolvedQuietZone(
-                    left = fracQz.left * matrixSize,
-                    top = fracQz.top * matrixSize,
-                    right = fracQz.right * matrixSize,
-                    bottom = fracQz.bottom * matrixSize
+                    left = maxOf(0f, fracQz.left * matrixSize),
+                    top = maxOf(0f, fracQz.top * matrixSize),
+                    right = maxOf(0f, fracQz.right * matrixSize),
+                    bottom = maxOf(0f, fracQz.bottom * matrixSize)
                 )
             }
             val dirQz = design.directionalQuietZone
             if (dirQz != null) {
                 return ResolvedQuietZone(
-                    left = dirQz.leftFloat,
-                    top = dirQz.topFloat,
-                    right = dirQz.rightFloat,
-                    bottom = dirQz.bottomFloat
+                    left = maxOf(0f, dirQz.leftFloat),
+                    top = maxOf(0f, dirQz.topFloat),
+                    right = maxOf(0f, dirQz.rightFloat),
+                    bottom = maxOf(0f, dirQz.bottomFloat)
                 )
             }
             val eqz = design.explicitQuietZone
             if (eqz != null) {
-                val f = eqz.toFloat()
+                val f = maxOf(0f, eqz.toFloat())
                 return ResolvedQuietZone(f, f, f, f)
             }
-            val f = design.quietZoneModules.toFloat()
+            val f = maxOf(0f, design.quietZoneModules.toFloat())
             return ResolvedQuietZone(f, f, f, f)
         }
 
@@ -243,6 +243,11 @@ class QrGeometry(
      * Computes the logo destination rectangle given a center scale fraction (e.g. 0.20 = 20% of QR size).
      */
     fun computeLogoRect(scaleFraction: Float): RectF {
+        if (scaleFraction <= 0.001f) {
+            val cx = offsetX + (matrixSize * moduleSize / 2f)
+            val cy = offsetY + (matrixSize * moduleSize / 2f)
+            return createRectF(cx, cy, cx, cy)
+        }
         val qrPixelSize = matrixSize * moduleSize
         val logoPixelSize = (qrPixelSize * scaleFraction.coerceIn(0.05f, 0.33f))
         val cx = offsetX + (qrPixelSize / 2f)

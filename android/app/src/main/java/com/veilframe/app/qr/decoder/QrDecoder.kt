@@ -13,6 +13,8 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.multi.qrcode.QRCodeMultiReader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -233,94 +235,53 @@ class MlKitQrDecoder : QrDecoder {
         val startTime = System.currentTimeMillis()
         try {
             val image = InputImage.fromBitmap(bitmap, 0)
-            scanner.process(image)
-                .addOnSuccessListener { barcodes ->
-                    val latency = System.currentTimeMillis() - startTime
-                    val found = barcodes.firstOrNull()
-                    if (found != null && found.rawValue != null) {
-                        cont.resume(
-                            DecodeResult(
-                                success = true,
-                                text = found.rawValue,
-                                latencyMs = latency,
-                                decoderId = id
-                            )
+            val executor = Dispatchers.Default.asExecutor()
+            val task = scanner.process(image)
+            task.addOnSuccessListener(executor) { barcodes ->
+                if (!cont.isActive) return@addOnSuccessListener
+                val latency = System.currentTimeMillis() - startTime
+                val found = barcodes.firstOrNull()
+                if (found != null && found.rawValue != null) {
+                    cont.resume(
+                        DecodeResult(
+                            success = true,
+                            text = found.rawValue,
+                            latencyMs = latency,
+                            decoderId = id
                         )
-                    } else {
-                        cont.resume(
-                            DecodeResult(
-                                success = false,
-                                text = null,
-                                latencyMs = latency,
-                                error = "No barcode found",
-                                decoderId = id
-                            )
-                        )
-                    }
-                }
-                .addOnFailureListener { exception ->
-                    val latency = System.currentTimeMillis() - startTime
+                    )
+                } else {
                     cont.resume(
                         DecodeResult(
                             success = false,
                             text = null,
                             latencyMs = latency,
-                            error = exception.message ?: "ML Kit error",
+                            error = "No barcode found",
                             decoderId = id
                         )
                     )
                 }
-        } catch (e: Exception) {
-            val latency = System.currentTimeMillis() - startTime
-            cont.resume(
-                DecodeResult(
-                    success = false,
-                    text = null,
-                    latencyMs = latency,
-                    error = e.message ?: "Failed to process bitmap",
-                    decoderId = id
-                )
-            )
-        }
-    }
-
-    override suspend fun decodeMultiple(bitmap: Bitmap): List<DecodeResult> = suspendCancellableCoroutine { cont ->
-        val startTime = System.currentTimeMillis()
-        try {
-            val image = InputImage.fromBitmap(bitmap, 0)
-            scanner.process(image)
-                .addOnSuccessListener { barcodes ->
-                    val latency = System.currentTimeMillis() - startTime
-                    val list = barcodes.mapNotNull { b ->
-                        b.rawValue?.let { text ->
-                            DecodeResult(
-                                success = true,
-                                text = text,
-                                latencyMs = latency,
-                                decoderId = id
-                            )
-                        }
-                    }
-                    cont.resume(list)
-                }
-                .addOnFailureListener { exception ->
-                    val latency = System.currentTimeMillis() - startTime
-                    cont.resume(
-                        listOf(
-                            DecodeResult(
-                                success = false,
-                                text = null,
-                                latencyMs = latency,
-                                error = exception.message ?: "ML Kit error",
-                                decoderId = id
-                            )
-                        )
+            }
+            task.addOnFailureListener(executor) { exception ->
+                if (!cont.isActive) return@addOnFailureListener
+                val latency = System.currentTimeMillis() - startTime
+                cont.resume(
+                    DecodeResult(
+                        success = false,
+                        text = null,
+                        latencyMs = latency,
+                        error = exception.message ?: "ML Kit error",
+                        decoderId = id
                     )
-                }
+                )
+            }
+            cont.invokeOnCancellation {
+                // Cooperative cancellation check in callbacks via cont.isActive
+            }
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - startTime
-            cont.resume(
-                listOf(
+            if (cont.isActive) {
+                cont.resume(
                     DecodeResult(
                         success = false,
                         text = null,
@@ -329,7 +290,64 @@ class MlKitQrDecoder : QrDecoder {
                         decoderId = id
                     )
                 )
-            )
+            }
+        }
+    }
+
+    override suspend fun decodeMultiple(bitmap: Bitmap): List<DecodeResult> = suspendCancellableCoroutine { cont ->
+        val startTime = System.currentTimeMillis()
+        try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val executor = Dispatchers.Default.asExecutor()
+            val task = scanner.process(image)
+            task.addOnSuccessListener(executor) { barcodes ->
+                if (!cont.isActive) return@addOnSuccessListener
+                val latency = System.currentTimeMillis() - startTime
+                val list = barcodes.mapNotNull { b ->
+                    b.rawValue?.let { text ->
+                        DecodeResult(
+                            success = true,
+                            text = text,
+                            latencyMs = latency,
+                            decoderId = id
+                        )
+                    }
+                }
+                cont.resume(list)
+            }
+            task.addOnFailureListener(executor) { exception ->
+                if (!cont.isActive) return@addOnFailureListener
+                val latency = System.currentTimeMillis() - startTime
+                cont.resume(
+                    listOf(
+                        DecodeResult(
+                            success = false,
+                            text = null,
+                            latencyMs = latency,
+                            error = exception.message ?: "ML Kit error",
+                            decoderId = id
+                        )
+                    )
+                )
+            }
+            cont.invokeOnCancellation {
+                // Cooperative cancellation check in callbacks via cont.isActive
+            }
+        } catch (e: Exception) {
+            val latency = System.currentTimeMillis() - startTime
+            if (cont.isActive) {
+                cont.resume(
+                    listOf(
+                        DecodeResult(
+                            success = false,
+                            text = null,
+                            latencyMs = latency,
+                            error = e.message ?: "Failed to process bitmap",
+                            decoderId = id
+                        )
+                    )
+                )
+            }
         }
     }
 

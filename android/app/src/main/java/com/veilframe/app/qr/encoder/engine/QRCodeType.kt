@@ -47,9 +47,11 @@ object QRCodeType {
         intArrayOf(2953, 2331, 1663, 1273)
     )
 
-    fun typeNumber(forLength: Int, errorCorrectLevel: VeilCorrectionLevel): Int {
+    fun typeNumber(forLength: Int, errorCorrectLevel: VeilCorrectionLevel, hasEci: Boolean = false): Int {
+        val extraBytes = if (hasEci) 2 else 0
+        val effectiveLength = forLength + extraBytes
         for (i in QRCodeLimitLength.indices) {
-            if (forLength <= QRCodeLimitLength[i][errorCorrectLevel.offset]) {
+            if (effectiveLength <= QRCodeLimitLength[i][errorCorrectLevel.offset]) {
                 return i + 1
             }
         }

@@ -811,12 +811,9 @@ class QrStudioViewModelExportValidationTest {
         assertEquals(1, design.directionalQuietZone!!.left)
         assertEquals(2, design.directionalQuietZone!!.top)
         assertEquals(3, design.directionalQuietZone!!.right)
-        assertEquals(4, design.directionalQuietZone!!.bottom)
-        assertNotNull(design.backdropStyle.fractionalQuietZone)
-        assertEquals(1.5f, design.backdropStyle.fractionalQuietZone!!.left, 0.001f)
-        assertEquals(2.5f, design.backdropStyle.fractionalQuietZone!!.top, 0.001f)
-        assertEquals(3.5f, design.backdropStyle.fractionalQuietZone!!.right, 0.001f)
-        assertEquals(4.5f, design.backdropStyle.fractionalQuietZone!!.bottom, 0.001f)
+        // Directional quiet zone uses module counts, and fractionalQuietZone must remain null
+        // to prevent 4 * matrixSize (84 modules) inflation defect.
+        assertNull(design.backdropStyle.fractionalQuietZone)
 
         // 6. Animated logo
         val dummyBitmap = createTestBitmap()

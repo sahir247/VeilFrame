@@ -852,6 +852,8 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         terminateSession()
     }
 
+    internal fun currentDesign(): QrDesign = buildDesignFromState(_state.value, isPreview = false)
+
     internal fun buildDesignFromState(s: UiState, isPreview: Boolean = true): QrDesign {
         val def = com.veilframe.app.qr.registry.QrStyleRegistry.get(s.style)
 
@@ -1344,7 +1346,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 quietZoneRight = right,
                 quietZoneBottom = bottom,
                 directionalQuietZone = DirectionalInsets(left, top, right, bottom),
-                fractionalQuietZone = FractionalInsets(left, top, right, bottom)
+                fractionalQuietZone = null
             )
         }
         regenerate(debounceMs = 120)

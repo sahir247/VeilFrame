@@ -13,9 +13,10 @@ class QRCodeModel(
     val data: ByteArray,
     val errorCorrectLevel: VeilCorrectionLevel,
     val needTypeTable: Boolean = true,
-    val explicitMaskPattern: VeilMaskPattern? = null
+    val explicitMaskPattern: VeilMaskPattern? = null,
+    val writeEci: Boolean = false
 ) {
-    val typeNumber: Int = QRCodeType.typeNumber(data.size, errorCorrectLevel)
+    val typeNumber: Int = QRCodeType.typeNumber(data.size, errorCorrectLevel, hasEci = writeEci)
     val moduleCount: Int = typeNumber * 4 + 17
 
     private var modules: Array<Array<Boolean?>> = Array(moduleCount) { arrayOfNulls(moduleCount) }
@@ -24,7 +25,7 @@ class QRCodeModel(
     val bestMaskPattern: VeilMaskPattern
 
     init {
-        dataCache = createData(typeNumber, errorCorrectLevel, data)
+        dataCache = createData(typeNumber, errorCorrectLevel, data, writeEci)
         bestMaskPattern = explicitMaskPattern ?: findBestMaskPattern()
         makeImpl(isTest = false, maskPattern = bestMaskPattern)
     }
@@ -333,12 +334,16 @@ class QRCodeModel(
                 table[8][nCount - i - 1] = QRPointType.FORMAT
             }
         }
+        // Always-dark module is part of format information (ISO 18004 7.9.1)
+        table[nCount - 8][8] = QRPointType.FORMAT
 
-        // 5. Version
-        for (i in (nCount - 11)..(nCount - 9)) {
-            for (j in 0..5) {
-                table[i][j] = QRPointType.VERSION
-                table[j][i] = QRPointType.VERSION
+        // 5. Version (Only exists on versions >= 7)
+        if (typeNumber >= 7) {
+            for (i in (nCount - 11)..(nCount - 9)) {
+                for (j in 0..5) {
+                    table[i][j] = QRPointType.VERSION
+                    table[j][i] = QRPointType.VERSION
+                }
             }
         }
 
@@ -352,10 +357,18 @@ class QRCodeModel(
         private fun createData(
             typeNumber: Int,
             errorCorrectLevel: VeilCorrectionLevel,
-            data: ByteArray
+            data: ByteArray,
+            writeEci: Boolean = false
         ): IntArray {
             val rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectLevel)
             val buffer = QRBitBuffer()
+
+            if (writeEci) {
+                // ECI Mode: 0b0111 (4 bits)
+                buffer.put(0b0111L, 4)
+                // ECI Assignment for UTF-8 is 26 (0b00011010, 8 bits)
+                buffer.put(26L, 8)
+            }
 
             // Mode: 8-bit byte mode = 0b0100
             buffer.put(0b0100L, 4)

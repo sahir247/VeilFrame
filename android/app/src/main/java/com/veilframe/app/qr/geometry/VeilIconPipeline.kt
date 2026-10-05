@@ -61,7 +61,9 @@ object VeilIconPipeline {
 
         // 1. Sizing: hard-capped at 0.33 per EFQRCodeStyle.swift:218
         val scale = minOf(maxOf(0f, logo.scaleFraction), 0.33f)
+        if (scale <= 0.001f) return
         val iconSize = qrPixelSize * scale
+        if (iconSize <= 0f) return
         val iconXY = (qrPixelSize - iconSize) / 2f
 
         // 2. Exact 2.4% geometric offset per EFQRCodeStyle.swift:222-225
@@ -340,7 +342,9 @@ object VeilIconPipeline {
 
         // 1. Sizing: universal 0.33 hard cap
         val scale = minOf(maxOf(0f, logo.scaleFraction), 0.33f)
+        if (scale <= 0.001f) return
         val iconSize = qrPixelSize * scale
+        if (iconSize <= 0f) return
         val iconXY = (qrPixelSize - iconSize) / 2f
 
         // 2. Exact 2.4% geometric offset

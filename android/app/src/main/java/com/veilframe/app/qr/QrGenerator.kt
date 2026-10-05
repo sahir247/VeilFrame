@@ -23,7 +23,9 @@ import com.veilframe.app.qr.renderer.*
 import com.veilframe.app.qr.validation.AutoRepairEngine
 import com.veilframe.app.qr.validation.ScanabilityReport
 import com.veilframe.app.qr.validation.ScanabilityValidator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 import com.veilframe.app.qr.error.QrError
 import com.veilframe.app.qr.model.QrOutputFormat
@@ -195,10 +197,17 @@ object QrGenerator {
             }
         }
 
-        return if (mode == GenerationMode.ARTISTIC_ENGINE || mode == GenerationMode.PARITY_EF) {
-            com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel).matrix
-        } else {
-            QrEncoder.encode(content, ecLevel).matrix
+        return when (mode) {
+            GenerationMode.ARTISTIC_ENGINE -> {
+                val hasNonAscii = content.any { it.code > 127 }
+                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = hasNonAscii).matrix
+            }
+            GenerationMode.PARITY_EF -> {
+                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = false).matrix
+            }
+            GenerationMode.SAFE -> {
+                QrEncoder.encode(content, ecLevel).matrix
+            }
         }
     }
 
@@ -355,7 +364,7 @@ object QrGenerator {
                 }
                 is BitmapRenderResult.Success -> {
                     val bitmap = bitmapResult.bitmap
-                    val report = runBlocking {
+                    val report = runBlocking(Dispatchers.Default) {
                         if (strictValidation) {
                             ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
                         } else {
@@ -429,13 +438,113 @@ object QrGenerator {
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)
 
     /**
-     * Canonical entry point for generating safe, production-grade QR codes
-     * using ISO/IEC 18004 ZXing encoding, standard 4-module quiet zone, and closed-loop validation.
+     * Coroutine-native generation entry point returning typed [QrRenderResult]
+     * executing off the main looper on [Dispatchers.Default] without blocking threads.
+     */
+    suspend fun generateWithResultSuspend(
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design),
+        strictValidation: Boolean = false
+    ): QrRenderResult = withContext(Dispatchers.Default) {
+        if (content.isBlank()) {
+            return@withContext QrRenderResult.Failure(QrError.Input.EmptyContent)
+        }
+        try {
+            val effectiveDesign = effectiveDesignForMode(design, mode)
+            val matrix = generateMatrix(content, effectiveDesign, mode)
+            val size = effectiveDesign.outputSize.coerceIn(256, 4096)
+            val geometry = QrGeometry.fromDesign(
+                matrixSize = matrix.size,
+                outputWidth = size,
+                outputHeight = size,
+                design = effectiveDesign
+            )
+            when (val bitmapResult = generateBitmapResult(matrix, effectiveDesign, geometry)) {
+                is BitmapRenderResult.Failure -> QrRenderResult.Failure(bitmapResult.error)
+                is BitmapRenderResult.Success -> {
+                    val bitmap = bitmapResult.bitmap
+                    val report = if (strictValidation) {
+                        ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
+                    } else {
+                        ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
+                    }
+                    QrRenderResult.Success(
+                        bitmap = bitmap,
+                        report = report,
+                        matrix = matrix,
+                        design = effectiveDesign
+                    )
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            QrRenderResult.Failure(QrError.fromThrowable(t))
+        }
+    }
+
+    /**
+     * Coroutine-native entry point for generating QR codes with strict compliance validation.
+     */
+    suspend fun generateStrictWithResultSuspend(
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design)
+    ): QrRenderResult = generateWithResultSuspend(content, design, mode = mode, strictValidation = true)
+
+    /**
+     * Canonical entry point for generating safe, production-grade QR codes.
+     *
+     * Enforces the complete safe contract:
+     * 1. ISO/IEC 18004 ZXing encoding ([GenerationMode.SAFE])
+     * 2. Mandatory 4-module quiet zone (overriding any user zero/custom margin)
+     * 3. Strict scanability and compliance validation
+     * 4. Closed failure if the strict contract fails.
      */
     fun generateSafe(
         content: String,
         design: QrDesign = QrDesign()
-    ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.SAFE)
+    ): QrRenderResult {
+        val safeDesign = design.copy(
+            quietZoneModules = maxOf(4, design.quietZoneModules),
+            explicitQuietZone = maxOf(4, design.explicitQuietZone ?: 4),
+            directionalQuietZone = null,
+            backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
+        )
+        val result = generateWithResult(content, safeDesign, mode = GenerationMode.SAFE, strictValidation = true)
+        return when (result) {
+            is QrRenderResult.Failure -> result
+            is QrRenderResult.Success -> {
+                if (!result.report.isScanReady || !result.report.decodeResult.success) {
+                    QrRenderResult.Failure(
+                        QrError.Validation.ScanabilityFailed(
+                            reason = "Safe QR contract violation: strict scanability failed",
+                            warnings = result.report.warnings
+                        )
+                    )
+                } else {
+                    result
+                }
+            }
+        }
+    }
+
+    fun generateSafe(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateSafe(content, materialized)
+    }
+
+    suspend fun generateSafeSuspend(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = withContext(Dispatchers.Default) {
+        generateSafe(content, design)
+    }
 
     /**
      * Canonical entry point for generating exact EFQRCode 7.0.3 parity QR codes

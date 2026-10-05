@@ -32,8 +32,18 @@ object AutoRepairEngine {
         for (reason in report.repairSuggestions) {
             when (reason) {
                 RepairReason.RESTORE_QUIET_ZONE -> {
-                    if (report.quietZone.quietZoneModules < 4 || design.quietZoneModules < 4 || (design.explicitQuietZone != null && design.explicitQuietZone < 4)) {
-                        design = design.copy(quietZoneModules = 4, explicitQuietZone = 4)
+                    val currentMinMargin = minOf(
+                        report.quietZone.minMargin,
+                        design.quietZoneModules.toFloat(),
+                        design.explicitQuietZone?.toFloat() ?: Float.MAX_VALUE
+                    )
+                    if (currentMinMargin < 4f || design.directionalQuietZone != null || design.backdropStyle.fractionalQuietZone != null) {
+                        design = design.copy(
+                            quietZoneModules = 4,
+                            explicitQuietZone = 4,
+                            directionalQuietZone = null,
+                            backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
+                        )
                         changes.add("Restored 4-module quiet zone")
                     }
                 }
@@ -100,24 +110,26 @@ object AutoRepairEngine {
                 }
 
                 RepairReason.ELEVATE_ERROR_CORRECTION -> {
-                    val nextLevel = when (design.correction) {
-                        ErrorCorrectionChoice.L -> ErrorCorrectionChoice.M
-                        ErrorCorrectionChoice.AUTO,
-                        ErrorCorrectionChoice.M -> ErrorCorrectionChoice.Q
-                        ErrorCorrectionChoice.Q -> ErrorCorrectionChoice.H
-                        ErrorCorrectionChoice.H -> ErrorCorrectionChoice.H
-                    }
+                    // Only elevate if not already at maximum recovery level H (prevents H -> Q downgrade)
+                    if (report.errorCorrection != ErrorCorrectionLevel.H) {
+                        val nextLevel = when (report.errorCorrection) {
+                            ErrorCorrectionLevel.L -> ErrorCorrectionChoice.M
+                            ErrorCorrectionLevel.M -> ErrorCorrectionChoice.Q
+                            ErrorCorrectionLevel.Q,
+                            ErrorCorrectionLevel.H -> ErrorCorrectionChoice.H
+                        }
 
-                    if (nextLevel != design.correction) {
-                        design = design.copy(correction = nextLevel)
-                        changes.add("Elevated error correction level to $nextLevel")
+                        if (nextLevel != design.correction) {
+                            design = design.copy(correction = nextLevel)
+                            changes.add("Elevated error correction level to $nextLevel")
 
-                        // Re-encode through the unified generator abstraction to validate new matrix sizing
-                        com.veilframe.app.qr.QrGenerator.generateMatrix(
-                            content = content,
-                            design = design,
-                            mode = design.recommendedGenerationMode
-                        )
+                            // Re-encode through the unified generator abstraction to validate new matrix sizing
+                            com.veilframe.app.qr.QrGenerator.generateMatrix(
+                                content = content,
+                                design = design,
+                                mode = design.recommendedGenerationMode
+                            )
+                        }
                     }
                 }
             }

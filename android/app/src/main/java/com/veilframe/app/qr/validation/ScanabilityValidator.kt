@@ -525,7 +525,7 @@ object ScanabilityValidator {
         design: QrDesign
     ): LogoOcclusionReport {
         val logo = design.logo
-        if (logo == null || logo.bitmap == null) {
+        if (logo == null || logo.bitmap == null || logo.scaleFraction <= 0.001f) {
             return LogoOcclusionReport(
                 hasProtectedOverlap = false,
                 affectedDataModules = 0,
