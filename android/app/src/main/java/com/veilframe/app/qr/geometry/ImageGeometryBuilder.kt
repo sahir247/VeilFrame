@@ -5,7 +5,9 @@ import android.graphics.Color
 import android.graphics.RectF
 import java.util.Locale
 import com.veilframe.app.qr.image.EfImagePreprocessor
+import com.veilframe.app.qr.image.FootprintSampler
 import com.veilframe.app.qr.image.ImageColorAnalyzer
+import com.veilframe.app.qr.image.SamplingObjective
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.VeilPositionPatternGeometry
 
@@ -201,25 +203,14 @@ object ImageGeometryBuilder {
         }
 
         val sampleFootprintLuminance: (Bitmap, Int, Int, Boolean) -> Float = { frame, col, row, isDark ->
-            val uCenter = (col + 0.5f) / n
-            val vCenter = (row + 0.5f) / n
-            val halfU = (dataScale * 0.5f) / n
-            val halfV = (dataScale * 0.5f) / n
-
-            // Sample 5 points within the actual visible mark footprint
-            val lCenter = sampleEffectiveLuminance(frame, uCenter, vCenter)
-            val lLeft = sampleEffectiveLuminance(frame, (uCenter - 0.5f * halfU).coerceIn(0f, 1f), vCenter)
-            val lRight = sampleEffectiveLuminance(frame, (uCenter + 0.5f * halfU).coerceIn(0f, 1f), vCenter)
-            val lTop = sampleEffectiveLuminance(frame, uCenter, (vCenter - 0.5f * halfV).coerceIn(0f, 1f))
-            val lBottom = sampleEffectiveLuminance(frame, uCenter, (vCenter + 0.5f * halfV).coerceIn(0f, 1f))
-
-            if (isDark) {
-                // For dark modules: worst-case background is the brightest pixel in mark footprint
-                maxOf(lCenter, lLeft, lRight, lTop, lBottom)
-            } else {
-                // For light modules: worst-case background is the darkest pixel in mark footprint
-                minOf(lCenter, lLeft, lRight, lTop, lBottom)
-            }
+            val dist = FootprintSampler.sampleModuleDistribution(
+                col = col,
+                row = row,
+                matrixSize = n,
+                dataScale = dataScale,
+                shape = dataShape
+            ) { u, v -> sampleEffectiveLuminance(frame, u, v) }
+            FootprintSampler.resolveObjectiveLuminance(dist, isDark, SamplingObjective.EXTREMA)
         }
 
         val resolveDataColor: (Int, Int, Boolean) -> Int = { col, row, isDark ->

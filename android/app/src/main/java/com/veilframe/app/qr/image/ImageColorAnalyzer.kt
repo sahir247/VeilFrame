@@ -62,7 +62,10 @@ object ImageColorAnalyzer {
      * Relative luminance following W3C WCAG 2.1 / IEC 61966-2-1 sRGB standard (0.0 to 1.0).
      */
     fun relativeLuminance(color: Int): Float {
-        return relativeLuminance(Color.red(color), Color.green(color), Color.blue(color))
+        val r = (color ushr 16) and 0xFF
+        val g = (color ushr 8) and 0xFF
+        val b = color and 0xFF
+        return relativeLuminance(r, g, b)
     }
 
     fun relativeLuminance(r: Int, g: Int, b: Int): Float {
