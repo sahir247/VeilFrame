@@ -1,17 +1,18 @@
 package com.veilframe.app.qr.renderer
 
 import android.graphics.Canvas
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.RectF
-import android.graphics.Shader
-import com.veilframe.app.qr.model.FinderStyle
+import android.graphics.Color
+import com.veilframe.app.qr.QrStyleParams
+import com.veilframe.app.qr.geometry.BasicGeometryBuilder
+import com.veilframe.app.qr.geometry.GeometryFill
+import com.veilframe.app.qr.geometry.IrCanvasRenderer
+import com.veilframe.app.qr.geometry.QrGeometryIr
+import com.veilframe.app.qr.geometry.QrGeometryNode
+import com.veilframe.app.qr.geometry.RectNode
 import com.veilframe.app.qr.model.FunctionPatternType
-import com.veilframe.app.qr.model.GradientType
 import com.veilframe.app.qr.model.QrDesign
 import com.veilframe.app.qr.model.QrGeometry
 import com.veilframe.app.qr.model.QrMatrix
-import com.veilframe.app.qr.QrStyleParams
 
 /**
  * Style 11 — STYLE_FUNCTION (Style-level function override)
@@ -24,57 +25,85 @@ import com.veilframe.app.qr.QrStyleParams
  * Uses design-level gradient configuration. If no gradient is configured,
  * falls back to a diagonal gradient from foreground to its complementary hue.
  *
- * Mirrors VeilFrame Style Engine's style-level function concept where the
- * module color is defined by a function of (x, y) rather than a flat color.
+ * Implements [IrBackedQrRenderer] ensuring identical mathematical geometry
+ * and gradient definition across Canvas rasterization and SVG vector emission.
  */
-class StyleFunctionRenderer : QrRenderer {
+class StyleFunctionRenderer : IrBackedQrRenderer {
 
-    override fun render(
+    override fun generateGeometry(
         matrix: QrMatrix,
         design: QrDesign,
-        canvas: Canvas,
-        geometry: QrGeometry,
-        context: RenderContext
-    ) {
+        geometry: QrGeometry
+    ): QrGeometryIr {
         val n = matrix.size
         val cs = geometry.moduleSize
+        val ox = geometry.offsetX
+        val oy = geometry.offsetY
+        val totalWidth = geometry.outputWidthFloat
+        val totalHeight = geometry.outputHeightFloat
         val fgColor = design.palette.foreground
-        val bgColor = design.palette.background
+        val bgColor = design.backdropStyle.color ?: design.palette.background
         val scale = design.moduleStyle.scale.coerceIn(0.5f, 1.0f)
 
-        // 1. Draw protected finders first
-        FinderRenderer.renderFinders(
-            canvas = canvas,
-            geometry = geometry,
-            style = design.eyeStyle.style,
-            outerColor = design.eyeStyle.outerColor ?: fgColor,
-            innerColor = design.eyeStyle.innerColor ?: fgColor,
-            backgroundColor = bgColor,
-            context = context
-        )
+        val defs = mutableListOf<String>()
+        val nodes = mutableListOf<QrGeometryNode>()
 
-        // 2. Build diagonal gradient paint for data modules (single allocation)
+        // 1. Build diagonal gradient for data modules
         val dataBounds = geometry.dataRegionBounds()
         val gradStart = design.palette.gradientStart ?: fgColor
         val gradEnd = design.palette.gradientEnd ?: complementaryColor(fgColor)
-        val gradientPaint = context.tempPaint
-        gradientPaint.reset()
-        gradientPaint.isAntiAlias = true
-        gradientPaint.shader = LinearGradient(
-            dataBounds.left, dataBounds.top,
-            dataBounds.right, dataBounds.bottom,
-            gradStart, gradEnd,
-            Shader.TileMode.CLAMP
+
+        val x0 = dataBounds.left
+        val y0 = dataBounds.top
+        val x1 = dataBounds.right
+        val y1 = dataBounds.bottom
+
+        val startStop = BasicGeometryBuilder.formatStop("0%", gradStart)
+        val endStop = BasicGeometryBuilder.formatStop("100%", gradEnd)
+        val x0Str = com.veilframe.app.qr.exporter.SvgExporter.formatCoord(x0.toDouble())
+        val y0Str = com.veilframe.app.qr.exporter.SvgExporter.formatCoord(y0.toDouble())
+        val x1Str = com.veilframe.app.qr.exporter.SvgExporter.formatCoord(x1.toDouble())
+        val y1Str = com.veilframe.app.qr.exporter.SvgExporter.formatCoord(y1.toDouble())
+
+        defs.add("""<linearGradient id="styleFuncGrad" gradientUnits="userSpaceOnUse" x1="$x0Str" y1="$y0Str" x2="$x1Str" y2="$y1Str">$startStop$endStop</linearGradient>""")
+
+        val linearGrad = GeometryFill.LinearGradient(
+            startColor = gradStart,
+            endColor = gradEnd,
+            x0 = x0,
+            y0 = y0,
+            x1 = x1,
+            y1 = y1
         )
 
-        val solidPaint = context.fillPaint
+        // 2. Draw finders via canonical position pattern geometry
+        val finderCenters = listOf(
+            Pair(3, 3),
+            Pair(n - 4, 3),
+            Pair(3, n - 4)
+        )
+        for ((fx, fy) in finderCenters) {
+            nodes.addAll(
+                VeilPositionPatternGeometry.toIrNodes(
+                    x = fx,
+                    y = fy,
+                    moduleSize = cs,
+                    offsetX = ox,
+                    offsetY = oy,
+                    style = design.eyeStyle.style,
+                    size = design.positionSize,
+                    color = design.eyeStyle.outerColor ?: fgColor,
+                    bgColor = bgColor
+                )
+            )
+        }
 
         // 3. Draw remaining modules (Timing, Alignment, Data)
         for (col in 0 until n) {
             for (row in 0 until n) {
                 if (!matrix.isDark(col, row)) continue
                 if (matrix.functionMask.isFinder(col, row) || matrix.functionMask.isSeparator(col, row)) {
-                    continue // Already handled by FinderRenderer
+                    continue
                 }
 
                 val type = matrix.functionMask[col, row]
@@ -84,36 +113,65 @@ class StyleFunctionRenderer : QrRenderer {
                     type == FunctionPatternType.TIMING ||
                     type == FunctionPatternType.ALIGNMENT_CENTER ||
                     type == FunctionPatternType.ALIGNMENT_OTHER -> {
-                        // Timing & Alignment: solid color for contrast
-                        solidPaint.reset()
-                        solidPaint.isAntiAlias = true
-                        solidPaint.style = Paint.Style.FILL
-                        solidPaint.color = fgColor
                         val rx = rect.width() * 0.25f
-                        canvas.drawRoundRect(rect, rx, rx, solidPaint)
+                        nodes.add(
+                            RectNode(
+                                x = rect.left,
+                                y = rect.top,
+                                width = rect.width(),
+                                height = rect.height(),
+                                rx = rx,
+                                ry = rx,
+                                fill = fgColor
+                            )
+                        )
                     }
                     else -> {
                         val half = cs * scale / 2f
-                        canvas.drawRoundRect(
-                            rect,
-                            half * 0.45f, half * 0.45f,
-                            gradientPaint
+                        val rx = half * 0.45f
+                        nodes.add(
+                            RectNode(
+                                x = rect.left,
+                                y = rect.top,
+                                width = rect.width(),
+                                height = rect.height(),
+                                rx = rx,
+                                ry = rx,
+                                fillString = "url(#styleFuncGrad)",
+                                geometryFill = linearGrad
+                            )
                         )
                     }
                 }
             }
         }
 
-        // 4. Draw center logo
+        return QrGeometryIr(
+            width = totalWidth,
+            height = totalHeight,
+            defs = defs,
+            rootNodes = nodes
+        )
+    }
+
+    override fun render(
+        matrix: QrMatrix,
+        design: QrDesign,
+        canvas: Canvas,
+        geometry: QrGeometry,
+        context: RenderContext
+    ) {
+        val ir = generateGeometry(matrix, design, geometry)
+        IrCanvasRenderer.render(ir, canvas)
         drawLogo(canvas, design, geometry, context)
     }
 
     /** Produces a rough complementary color by rotating hue by 180°. */
     private fun complementaryColor(color: Int): Int {
         val hsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(color, hsv)
+        Color.colorToHSV(color, hsv)
         hsv[0] = (hsv[0] + 180f) % 360f
-        return android.graphics.Color.HSVToColor(hsv)
+        return Color.HSVToColor(hsv)
     }
 
     override fun render(matrix: QrMatrix, params: QrStyleParams, canvas: Canvas, cellSize: Float) {

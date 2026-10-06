@@ -120,8 +120,11 @@ object SvgExporter {
         if (design.style == com.veilframe.app.qr.QrStyle.DSJ) {
             return generateDsjSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
-        if (design.style == com.veilframe.app.qr.QrStyle.FUNCTION || design.style == com.veilframe.app.qr.QrStyle.STYLE_FUNCTION) {
+        if (design.style == com.veilframe.app.qr.QrStyle.FUNCTION) {
             return generateFunctionSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.STYLE_FUNCTION) {
+            return generateStyleFunctionSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.CONNECTED_ORGANIC) {
             return generateConnectedOrganicSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
@@ -1098,6 +1101,32 @@ object SvgExporter {
         }
     }
 
+    private fun generateStyleFunctionSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
+    ): String {
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
+        val rawIr = com.veilframe.app.qr.renderer.StyleFunctionRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
+            sb.toString()
+        } else {
+            svg
+        }
+    }
 
     private fun appendFinders(
         sb: StringBuilder,

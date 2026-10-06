@@ -615,7 +615,7 @@ object BasicGeometryBuilder {
         }
     }
 
-    private fun formatStop(offset: String, color: Int): String {
+    internal fun formatStop(offset: String, color: Int): String {
         val hex = String.format(Locale.US, "#%06X", 0xFFFFFF and color)
         val alpha = ((color ushr 24) and 0xFF) / 255f
         val opacityAttr = if (alpha < 1.0f) {
