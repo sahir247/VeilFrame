@@ -63,11 +63,13 @@ class CvMemoryPolicyTest {
             ManualMemoryProbe(total = 6 * gb, available = 512L * 1024 * 1024),
             safetyFactor = 0.25,
         )
-        val decision = memory.admit(costBytes = 2L * 1024 * 1024 * 1024)
+        val decision = memory.inspectAdmission(costBytes = 2L * 1024 * 1024 * 1024)
         assertTrue(decision is AdmissionDecision.Rejected)
         val rejected = decision as AdmissionDecision.Rejected
         assertTrue(rejected.budgetBytes < rejected.costBytes)
         assertEquals(ResolutionTier.TILED, rejected.suggestedTier)
+        @Suppress("DEPRECATION")
+        assertEquals(decision, memory.admit(costBytes = 2L * 1024 * 1024 * 1024))
     }
 
     @Test
@@ -76,6 +78,8 @@ class CvMemoryPolicyTest {
             ManualMemoryProbe(total = 16 * gb, available = 8 * gb),
             safetyFactor = 0.25,
         )
+        assertTrue(memory.inspectAdmission(costBytes = 512L * 1024 * 1024) is AdmissionDecision.Admitted)
+        @Suppress("DEPRECATION")
         assertTrue(memory.admit(costBytes = 512L * 1024 * 1024) is AdmissionDecision.Admitted)
     }
 

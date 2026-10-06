@@ -1,0 +1,62 @@
+name: Build Custom OpenCV + WeChatQRCode Android SDK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/scripts/build_opencv_contrib_sdk.sh'
+      - '.github/workflows/build-opencv-sdk.yml'
+
+jobs:
+  build-opencv:
+    name: Build OpenCV 4.14.0 Android SDK (ARM64 + x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1'
+
+      - name: Install Host Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build python3 python3-pip git
+
+      - name: Execute OpenCV Android SDK Build
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
+          chmod +x android/scripts/build_opencv_contrib_sdk.sh
+          ./android/scripts/build_opencv_contrib_sdk.sh
+
+      - name: Verify Built SDK Artifacts
+        run: |
+          echo "=== Verifying native libraries ==="
+          ls -lh android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          ls -lh android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          echo "=== Verifying Java bindings ==="
+          test -f android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
+          echo "WeChatQRCode Java source verified!"
+
+      - name: Test Assemble :opencv-sdk
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :opencv-sdk:assembleRelease
+
+      - name: Upload OpenCV SDK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: veilframe-custom-opencv-sdk
+          path: |
+            android/opencv-sdk/src/main/jniLibs/
+            android/opencv-sdk/src/main/java/
+            android/opencv-sdk/build/outputs/aar/

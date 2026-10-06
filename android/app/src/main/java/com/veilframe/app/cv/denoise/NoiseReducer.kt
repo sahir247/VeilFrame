@@ -158,7 +158,7 @@ object NoiseReducer {
                 else -> throw UnsupportedOperationException("unsupported channel count ${source.channels()}")
             }
             out
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
             Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
             out
         }

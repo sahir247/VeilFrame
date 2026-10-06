@@ -134,11 +134,12 @@ class CvMemoryManager(
     }
 
     /**
-     * Admission control (non-reserving check). A job is admitted when its estimated peak fits inside
-     * the safety share of currently available memory (plus whatever the pool can
-     * recycle). Rejected jobs should be retried at a lower resolution tier.
+     * Non-reserving admission probe for informational/tier-selection queries.
+     *
+     * WARNING: Does NOT atomically reserve memory; concurrent executions calling
+     * this probe will race. Always use [reserve] for actual execution admission control.
      */
-    fun admit(costBytes: Long): AdmissionDecision {
+    fun inspectAdmission(costBytes: Long): AdmissionDecision {
         val available = probe.availableMemoryBytes()
         val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
         val remainingBudget = (totalBudget - reservedBytes.get()).coerceAtLeast(0L)
@@ -152,6 +153,16 @@ class CvMemoryManager(
             )
         }
     }
+
+    /**
+     * @deprecated Non-reserving admission check is vulnerable to concurrency races.
+     * Use [reserve] for concurrency-safe execution admission, or [inspectAdmission] for informational queries.
+     */
+    @Deprecated(
+        message = "Non-reserving admission check is vulnerable to concurrency races. Use reserve() for concurrency-safe execution.",
+        replaceWith = ReplaceWith("reserve(costBytes)")
+    )
+    fun admit(costBytes: Long): AdmissionDecision = inspectAdmission(costBytes)
 
     /** Peak is the high-water mark of outstanding pooled bytes — not just what the pool retains. */
     fun footprint(): MemoryFootprint {
