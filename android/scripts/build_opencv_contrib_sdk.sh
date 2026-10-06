@@ -20,9 +20,9 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OPENCV_SDK_DIR="${PROJECT_ROOT}/android/opencv-sdk"
 
 OPENCV_VERSION="4.14.0"
-# Exact forensic release commit SHAs pinned from verified upstream tree
-OPENCV_COMMIT_SHA="0654a42b10ba2dc2b0d00f73fbfb534442654ee0"
-OPENCV_CONTRIB_COMMIT_SHA="a8e9acdd94489bb2df921e64906a5efdcfdae267"
+# Exact upstream release commit SHAs for OpenCV 4.14.0 and opencv_contrib 4.14.0
+OPENCV_COMMIT_SHA="0654a42e19215ef25b1d367d822f3c630447e7c7"
+OPENCV_CONTRIB_COMMIT_SHA="a8e9acd62cabd30419dba83007f2ac0d07de5e2c"
 
 WORK_DIR="${SCRIPT_DIR}/.opencv_build"
 
@@ -76,8 +76,8 @@ checkout_pinned_repo() {
     local expected_sha="$3"
 
     if [ ! -d "${target_dir}/.git" ]; then
-        echo "==> Cloning ${target_dir}..."
-        git clone "${repo_url}" "${target_dir}"
+        echo "==> Cloning ${target_dir} (${OPENCV_VERSION})..."
+        git clone --depth 1 --branch "${OPENCV_VERSION}" "${repo_url}" "${target_dir}"
     fi
 
     echo "==> Validating revision for ${target_dir}..."
@@ -86,11 +86,11 @@ checkout_pinned_repo() {
         CURRENT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "none")
         if [ "${CURRENT_SHA}" != "${expected_sha}" ]; then
             echo "Checking out pinned commit ${expected_sha}..."
-            git fetch --depth 1 origin "${expected_sha}" 2>/dev/null || git fetch origin
+            git fetch --depth 1 origin "${expected_sha}" 2>/dev/null || git fetch --depth 1 origin "refs/tags/${OPENCV_VERSION}:refs/tags/${OPENCV_VERSION}" || git fetch origin
             git checkout -f "${expected_sha}"
-            NEW_SHA=$(git rev-parse HEAD)
-            if [ "${NEW_SHA}" != "${expected_sha}" ]; then
-                echo "ERROR: Failed to pin ${target_dir} to ${expected_sha} (got ${NEW_SHA})"
+            CURRENT_SHA=$(git rev-parse HEAD)
+            if [ "${CURRENT_SHA}" != "${expected_sha}" ]; then
+                echo "ERROR: Failed to pin ${target_dir} to ${expected_sha} (got ${CURRENT_SHA})"
                 exit 1
             fi
         fi

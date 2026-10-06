@@ -49,13 +49,13 @@ jobs:
           echo "=== Verifying Java bindings ==="
           test -f android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
           test -f android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
-          echo "=== Verifying Completion Marker & Forensic Provenance ==="
+          echo "=== Verifying Completion Marker & Build Metadata ==="
           test -f android/opencv-sdk/src/main/.opencv-sdk-complete
           cat android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "Status=VERIFIED_COMPLETE" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "OpenCV=4.14.0" android/opencv-sdk/src/main/.opencv-sdk-complete
-          grep -q "OpenCV_SHA=0654a42b10ba2dc2b0d00f73fbfb534442654ee0" android/opencv-sdk/src/main/.opencv-sdk-complete
-          grep -q "Contrib_SHA=a8e9acdd94489bb2df921e64906a5efdcfdae267" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "OpenCV_SHA=0654a42e19215ef25b1d367d822f3c630447e7c7" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "Contrib_SHA=a8e9acd62cabd30419dba83007f2ac0d07de5e2c" android/opencv-sdk/src/main/.opencv-sdk-complete
 
       - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android

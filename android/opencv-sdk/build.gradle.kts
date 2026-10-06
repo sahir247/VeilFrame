@@ -42,8 +42,8 @@ val matJava = file("src/main/java/org/opencv/core/Mat.java")
 val wechatJava = file("src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java")
 
 val expectedOpenCvVersion = "4.14.0"
-val expectedOpenCvSha = "0654a42b10ba2dc2b0d00f73fbfb534442654ee0"
-val expectedContribSha = "a8e9acdd94489bb2df921e64906a5efdcfdae267"
+val expectedOpenCvSha = "0654a42e19215ef25b1d367d822f3c630447e7c7"
+val expectedContribSha = "a8e9acd62cabd30419dba83007f2ac0d07de5e2c"
 val expectedAbis = "arm64-v8a,x86_64"
 val expectedStatus = "VERIFIED_COMPLETE"
 
