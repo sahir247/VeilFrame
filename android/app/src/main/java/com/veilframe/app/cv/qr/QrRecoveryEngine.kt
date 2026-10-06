@@ -116,7 +116,9 @@ object QrRecoveryEngine {
             val bitmap = com.veilframe.app.cv.core.BitmapBridge.toBitmap(image)
             val text = try {
                 secondary.decode(bitmap)
-            } catch (_: Throwable) {
+            } catch (e: Exception) {
+                // ML Kit plugin failure: treat as no result, not a system error.
+                // Errors (OOM, etc.) propagate.
                 null
             }
             if (!text.isNullOrEmpty() && (expected == null || text == expected)) {
@@ -185,7 +187,11 @@ object QrRecoveryEngine {
                 outputSize = null,
                 interpolation = Imgproc.INTER_CUBIC,
             )
-        } catch (_: Throwable) {
+        } catch (e: org.opencv.core.CvException) {
+            // Native warp failure: fall back to binary clone.
+            binary.clone()
+        } catch (e: IllegalArgumentException) {
+            // Degenerate corner geometry: fall back to binary clone.
             binary.clone()
         }
     }

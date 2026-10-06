@@ -146,18 +146,25 @@ sealed class CvResult<out T> {
 /**
  * Immutable handle to an image buffer flowing through the engine.
  *
- * The wrapped [Mat] is owned by this handle when [isOwner] is true; callers that
- * need long-lived access must clone. Pooled leases never expose ownership here.
+ * Ownership semantics:
+ * - [wrap]: the caller retains ownership of [mat]; [close] will NOT release it.
+ * - [own]:  this handle takes ownership of [mat]; [close] WILL release it.
+ *
+ * Callers that need long-lived access past the handle's lifetime must clone.
+ * Pooled leases never expose ownership here.
  */
 class CvImage internal constructor(
     val mat: Mat,
     val colorSpace: ColorSpace,
-    private val owner: AutoCloseable?,
+    /** True when this handle owns [mat] and is responsible for releasing it. */
+    val ownsMat: Boolean,
+    private val owner: AutoCloseable? = null,
+    private val matReleaser: (Mat) -> Unit = { it.release() },
 ) : AutoCloseable {
     val width: Int get() = mat.cols()
     val height: Int get() = mat.rows()
     val channels: Int get() = mat.channels()
-    val isClosed: Boolean get() = mat.empty() && closed
+    val isClosed: Boolean get() = closed
 
     private var closed = false
 
@@ -165,18 +172,29 @@ class CvImage internal constructor(
         if (!closed) {
             closed = true
             owner?.close()
-            mat.release()
+            // Only release the Mat when we own it; wrap() callers retain ownership.
+            if (ownsMat) matReleaser(mat)
         }
     }
 
     companion object {
-        /** Wraps an already-owned Mat without taking ownership. */
+        /**
+         * Wraps [mat] WITHOUT taking ownership.
+         *
+         * The caller is responsible for releasing [mat]. Closing the returned
+         * [CvImage] does NOT call [Mat.release].
+         */
         fun wrap(mat: Mat, colorSpace: ColorSpace = colorSpaceOf(mat)): CvImage =
-            CvImage(mat, colorSpace, owner = null)
+            CvImage(mat, colorSpace, ownsMat = false)
 
-        /** Takes ownership of [mat] (it will be released with the handle). */
+        /**
+         * Takes OWNERSHIP of [mat].
+         *
+         * Closing the returned [CvImage] releases [mat]. The caller must not
+         * release [mat] independently after calling this.
+         */
         fun own(mat: Mat, colorSpace: ColorSpace = colorSpaceOf(mat)): CvImage =
-            CvImage(mat, colorSpace, owner = null)
+            CvImage(mat, colorSpace, ownsMat = true)
 
         fun colorSpaceOf(mat: Mat): ColorSpace = when (mat.channels()) {
             1 -> ColorSpace.GRAY

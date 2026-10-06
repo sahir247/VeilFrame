@@ -119,7 +119,9 @@ object QrStressMatrix {
                     decoded
                 }
             }
-        } catch (_: Throwable) {
+        } catch (e: org.opencv.core.CvException) {
+            // Native encode/decode failure: produce a clean clone instead of a
+            // stress score of zero for a tooling-level issue.
             image.clone()
         } finally {
             buffer.release()

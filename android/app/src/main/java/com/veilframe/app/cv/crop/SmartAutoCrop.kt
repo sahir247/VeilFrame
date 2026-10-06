@@ -75,7 +75,9 @@ object SmartAutoCrop {
         val importance = importanceMap(source, options.centerBias)
         val modelMask = try {
             subjectMask?.maskFor(source)
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
+            // Subject mask plugin failure: continue with classical importance map only.
+            // Errors (OOM, etc.) propagate.
             null
         }
         if (modelMask != null) {

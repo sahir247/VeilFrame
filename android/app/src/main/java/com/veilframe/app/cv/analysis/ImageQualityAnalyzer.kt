@@ -127,15 +127,18 @@ object ImageQualityAnalyzer {
             val rows = residual.rows()
             val cols = residual.cols()
             val rowBuf = ByteArray(cols)
-            val histogram = IntArray(256)
+            val histogram = LongArray(256)
             for (r in 0 until rows) {
                 residual.get(r, 0, rowBuf)
                 for (c in 0 until cols) {
                     histogram[rowBuf[c].toInt() and 0xFF]++
                 }
             }
-            val target = (rows.toLong() * cols / 2).toInt()
-            var cumulative = 0
+            // Use Long throughout: for an 8K image (7680×4320 = ~33 M pixels)
+            // target = ~16 M which overflows Int.MAX_VALUE only at >4 Gpx, but
+            // cumulative must match to avoid a signed-comparison mismatch.
+            val target = rows.toLong() * cols / 2L
+            var cumulative = 0L
             var median = 255
             for (v in histogram.indices) {
                 cumulative += histogram[v]

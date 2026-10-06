@@ -108,7 +108,11 @@ class CvMemoryManager(
         }
         synchronized(lock) {
             val available = probe.availableMemoryBytes()
-            val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+            // Budget = a safety fraction of system-available memory.
+            // Do NOT add pool.stats().retainedBytes: MemAvailable already
+            // reflects the process's current native footprint; adding retained
+            // pool bytes back would double-count memory already committed.
+            val totalBudget = (available * safetyFactor).toLong()
             val currentlyReserved = reservedBytes.get()
             val remainingBudget = (totalBudget - currentlyReserved).coerceAtLeast(0L)
 
@@ -126,10 +130,10 @@ class CvMemoryManager(
         }
     }
 
-    /** Unreserved available budget under current safety factor + pool retention. */
+    /** Unreserved available budget under current safety factor. */
     fun availableBudget(): Long {
         val available = probe.availableMemoryBytes()
-        val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+        val totalBudget = (available * safetyFactor).toLong()
         return (totalBudget - reservedBytes.get()).coerceAtLeast(0L)
     }
 
@@ -141,7 +145,7 @@ class CvMemoryManager(
      */
     fun inspectAdmission(costBytes: Long): AdmissionDecision {
         val available = probe.availableMemoryBytes()
-        val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+        val totalBudget = (available * safetyFactor).toLong()
         val remainingBudget = (totalBudget - reservedBytes.get()).coerceAtLeast(0L)
         return if (costBytes <= remainingBudget) {
             AdmissionDecision.Admitted(budgetBytes = remainingBudget)

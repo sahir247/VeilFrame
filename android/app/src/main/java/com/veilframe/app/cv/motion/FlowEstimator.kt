@@ -93,7 +93,7 @@ class FlowEstimator(
                 synchronized(dis) { dis.calc(from, to, flow) }
                 flow
             }
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
             // Any DIS failure (missing symbols, invalid input) → Farnebäck.
             flow.release()
             farnebackFlow(from, to)
@@ -130,9 +130,12 @@ class FlowEstimator(
             val calc = clazz.getMethod("calc", Mat::class.java, Mat::class.java, Mat::class.java)
             calc.invoke(instance, from, to, flow)
             flow
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
             // Release on the failure path too — the old try-expression leaked
             // the freshly-allocated Mat whenever reflection failed.
+            flow.release()
+            null
+        } catch (e: LinkageError) {
             flow.release()
             null
         }
@@ -172,7 +175,10 @@ class FlowEstimator(
                 cachedDis != null -> cachedDis
                 else -> try {
                     DISOpticalFlow.create(DISOpticalFlow.PRESET_MEDIUM).also { cachedDis = it }
-                } catch (_: Throwable) {
+                } catch (e: Exception) {
+                    disUnavailable = true
+                    null
+                } catch (e: LinkageError) {
                     disUnavailable = true
                     null
                 }

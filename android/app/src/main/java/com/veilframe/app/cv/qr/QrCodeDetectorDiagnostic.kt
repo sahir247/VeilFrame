@@ -17,7 +17,9 @@ import org.opencv.objdetect.QRCodeDetector
 class QrCodeDetectorDiagnostic {
     private val detector = try {
         QRCodeDetector()
-    } catch (_: Throwable) {
+    } catch (e: Exception) {
+        null
+    } catch (e: LinkageError) {
         null
     }
 
@@ -29,10 +31,13 @@ class QrCodeDetectorDiagnostic {
         if (image.empty()) return null
         return try {
             val points = Mat()
-            val text = d.detectAndDecode(image, points)
-            points.release()
-            text?.takeIf { it.isNotEmpty() }
-        } catch (_: Throwable) {
+            try {
+                val text = d.detectAndDecode(image, points)
+                text?.takeIf { it.isNotEmpty() }
+            } finally {
+                points.release()
+            }
+        } catch (e: Exception) {
             null
         }
     }
@@ -43,10 +48,12 @@ class QrCodeDetectorDiagnostic {
         if (image.empty()) return false
         return try {
             val points = Mat()
-            val detected = d.detectMulti(image, points)
-            points.release()
-            detected
-        } catch (_: Throwable) {
+            try {
+                d.detectMulti(image, points)
+            } finally {
+                points.release()
+            }
+        } catch (e: Exception) {
             false
         }
     }

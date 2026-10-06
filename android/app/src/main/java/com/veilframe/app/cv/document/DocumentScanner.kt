@@ -72,7 +72,11 @@ object DocumentScanner {
                 source,
                 detection.corners,
             )
-        } catch (_: Throwable) {
+        } catch (e: org.opencv.core.CvException) {
+            // Native warp failure (e.g. degenerate quad from noise): no scan result.
+            return null
+        } catch (e: IllegalArgumentException) {
+            // Degenerate corner geometry rejected by PerspectiveCorrector.
             return null
         }
         val enhanced = enhance(warped, options.mode)

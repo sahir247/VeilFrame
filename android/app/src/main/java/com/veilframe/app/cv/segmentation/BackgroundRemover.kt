@@ -51,7 +51,9 @@ object BackgroundRemover {
         require(!image.empty()) { "image is empty" }
         val rawMask = try {
             segmenter.segment(image)
-        } catch (_: Throwable) {
+        } catch (e: Exception) {
+            // Segmenter plugin failure: degrade to identity mask.
+            // Errors (OOM, etc.) propagate — they must not be swallowed here.
             null
         }
 

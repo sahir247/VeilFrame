@@ -71,7 +71,9 @@ object QrReliabilityGate {
                     payloadMatches = detection != null &&
                         (expectedPayload == null || detection.rawValue == expectedPayload),
                 )
-            } catch (_: Throwable) {
+            } catch (e: Exception) {
+                // Decoder plugin exception — count as undecodable condition.
+                // Errors (OOM, etc.) propagate and do not become silent miss scores.
                 ConditionOutcome(condition, null, false)
             } finally {
                 degraded.release()
