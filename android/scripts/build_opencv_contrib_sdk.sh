@@ -122,12 +122,12 @@ echo "==> Invoking OpenCV build_sdk.py with verified module whitelist..."
 python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
     --ndk_path="${ANDROID_NDK_HOME}" \
     --sdk_path="${ANDROID_HOME:-/opt/android-sdk}" \
-    --opencv_dir="${WORK_DIR}/opencv" \
     --extra_modules_path="${WORK_DIR}/opencv_contrib/modules" \
     --modules_list="${BUILD_MODULES}" \
     --config="${WORK_DIR}/opencv-veilframe.config.py" \
     --no_samples_build \
-    "${BUILD_OUT}"
+    "${BUILD_OUT}" \
+    "${WORK_DIR}/opencv"
 
 SDK_STAGE="${BUILD_OUT}/OpenCV-android-sdk/sdk"
 
