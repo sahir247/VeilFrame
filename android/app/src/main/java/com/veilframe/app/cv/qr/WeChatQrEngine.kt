@@ -131,6 +131,29 @@ class WeChatQrEngine private constructor(
         private const val SR_PROTOTXT = "sr.prototxt"
         private const val SR_CAFFEMODEL = "sr.caffemodel"
 
+        /** Expected cryptographic SHA-256 hashes for all bundled WeChat QR Caffe models. */
+        val EXPECTED_MODEL_HASHES = mapOf(
+            DETECTOR_CAFFEMODEL to "cc49b8c9babaf45f3037610fe499df38c8819ebda29e90ca9f2e33270f6ef809",
+            DETECTOR_PROTOTXT to "e8acfc395caf443a47f15686a9b9207b36cb8f7e6ceb8fbaf6466665e68a9466",
+            SR_CAFFEMODEL to "e5d36889d8e6ef2f1c1f515f807cec03979320ac81792cd8fb927c31fd658ae3",
+            SR_PROTOTXT to "8ae41acba97e8b4a8e741ee350481e49b8e01d787193f470a4c95ee1c02d5b61",
+        )
+
+        internal fun sha256Of(file: File): String? = try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val r = input.read(buf)
+                    if (r < 0) break
+                    digest.update(buf, 0, r)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            null
+        }
+
         @Volatile
         private var instance: WeChatQrEngine? = null
 
@@ -212,9 +235,19 @@ class WeChatQrEngine private constructor(
             val dir = File(context.filesDir, "cv_models/wechat_qr")
             if (!dir.exists()) dir.mkdirs()
             val target = File(dir, name)
+            val expectedHash = EXPECTED_MODEL_HASHES[name]
+
+            // If target already exists and passes exact SHA-256 integrity, reuse immediately
+            if (target.exists() && target.length() > 0L && expectedHash != null) {
+                if (sha256Of(target).equals(expectedHash, ignoreCase = true)) {
+                    return target
+                }
+            }
+
             val tmp = File(dir, "$name.tmp")
             return try {
-                val expected = context.assets.open("$ASSET_DIR/$name").use { input ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val expectedLen = context.assets.open("$ASSET_DIR/$name").use { input ->
                     FileOutputStream(tmp).use { out ->
                         val fd = out.fd
                         val buffer = ByteArray(64 * 1024)
@@ -223,6 +256,7 @@ class WeChatQrEngine private constructor(
                             val read = input.read(buffer)
                             if (read < 0) break
                             out.write(buffer, 0, read)
+                            digest.update(buffer, 0, read)
                             written += read
                         }
                         out.flush()
@@ -230,7 +264,10 @@ class WeChatQrEngine private constructor(
                         written
                     }
                 }
-                if (expected > 0 && tmp.length() == expected) {
+                val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+                val hashValid = expectedHash == null || actualHash.equals(expectedHash, ignoreCase = true)
+
+                if (expectedLen > 0 && tmp.length() == expectedLen && hashValid) {
                     try {
                         java.nio.file.Files.move(
                             tmp.toPath(),
@@ -248,14 +285,14 @@ class WeChatQrEngine private constructor(
                     target
                 } else {
                     if (tmp.exists()) tmp.delete()
-                    if (target.exists() && target.length() > 0) target else null
+                    null
                 }
             } catch (e: java.io.IOException) {
                 if (tmp.exists()) tmp.delete()
-                if (target.exists() && target.length() > 0) target else null
+                null
             } catch (e: Exception) {
                 if (tmp.exists()) tmp.delete()
-                if (target.exists() && target.length() > 0) target else null
+                null
             }
         }
     }

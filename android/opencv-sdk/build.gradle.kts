@@ -47,7 +47,7 @@ val expectedContribSha = "a8e9acdd94489bb2df921e64906a5efdcfdae267"
 val expectedAbis = "arm64-v8a,x86_64"
 val expectedStatus = "VERIFIED_COMPLETE"
 
-fun validateMarkerProvenance(file: File): Boolean {
+fun validateMarkerMetadata(file: File): Boolean {
     if (!file.exists() || file.length() == 0L) return false
     val props = Properties()
     return try {
@@ -62,7 +62,7 @@ fun validateMarkerProvenance(file: File): Boolean {
     }
 }
 
-val isMarkerValid = validateMarkerProvenance(markerFile)
+val isMarkerValid = validateMarkerMetadata(markerFile)
 val isCustomSdkComplete = isMarkerValid &&
     arm64So.exists() && arm64So.length() > 0L &&
     x86_64So.exists() && x86_64So.length() > 0L &&
@@ -78,7 +78,7 @@ dependencies {
         val hasPartialJava = file("src/main/java").exists() &&
             file("src/main/java").walkTopDown().any { it.extension == "java" }
         if (markerFile.exists() && !isMarkerValid) {
-            logger.warn(":opencv-sdk WARNING: Completion marker failed provenance verification (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Safely falling back to verified Maven distribution.")
+            logger.warn(":opencv-sdk WARNING: Completion marker failed deterministic build metadata validation (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Safely falling back to verified Maven distribution.")
         } else if (hasPartialSo || hasPartialJava || markerFile.exists()) {
             logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or valid marker)! Safely falling back to verified Maven distribution.")
         } else {

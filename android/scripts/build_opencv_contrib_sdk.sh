@@ -52,12 +52,14 @@ if [ -z "${ANDROID_NDK_HOME:-}" ] || [ ! -d "${ANDROID_NDK_HOME}" ]; then
     exit 1
 fi
 
-ACTUAL_NDK_VERSION=""
-if [ -f "${ANDROID_NDK_HOME}/source.properties" ]; then
-    ACTUAL_NDK_VERSION=$(grep "^Pkg.Revision" "${ANDROID_NDK_HOME}/source.properties" | cut -d'=' -f2 | tr -d '[:space:]')
+if [ ! -f "${ANDROID_NDK_HOME}/source.properties" ]; then
+    echo "FATAL: NDK source.properties is missing in ${ANDROID_NDK_HOME}"
+    exit 1
 fi
+ACTUAL_NDK_VERSION="$(sed -n 's/^Pkg.Revision *= *//p' "${ANDROID_NDK_HOME}/source.properties" | head -n 1 | tr -d '[:space:]')"
 if [ -z "${ACTUAL_NDK_VERSION}" ]; then
-    ACTUAL_NDK_VERSION="$(basename "${ANDROID_NDK_HOME}")"
+    echo "FATAL: Failed to parse Pkg.Revision from ${ANDROID_NDK_HOME}/source.properties"
+    exit 1
 fi
 
 if [ "${ACTUAL_NDK_VERSION}" != "${EXPECTED_NDK_VERSION}" ]; then
@@ -154,19 +156,20 @@ validate_elf_arch() {
         fi
     fi
 
-    if [ -n "${readelf_bin}" ]; then
-        local header
-        header=$("${readelf_bin}" -h "${so_path}" 2>/dev/null || true)
-        if ! echo "${header}" | grep -q "${expected_arch}"; then
-            echo "FATAL: ELF machine architecture mismatch for ${so_path}!"
-            echo "Expected: ${expected_arch}"
-            echo "${header}"
-            exit 1
-        fi
-        echo "✓ Validated ELF architecture (${expected_arch}) for $(basename "${so_path}")"
-    else
-        echo "NOTE: readelf/llvm-readelf not found; skipped ELF machine header inspection."
+    if [ -z "${readelf_bin}" ]; then
+        echo "FATAL: readelf or llvm-readelf is required for fail-closed ELF architecture verification."
+        exit 1
     fi
+
+    local header
+    header=$("${readelf_bin}" -h "${so_path}" 2>/dev/null || true)
+    if ! echo "${header}" | grep -q "${expected_arch}"; then
+        echo "FATAL: ELF machine architecture mismatch for ${so_path}!"
+        echo "Expected: ${expected_arch}"
+        echo "${header}"
+        exit 1
+    fi
+    echo "✓ Validated ELF architecture (${expected_arch}) for $(basename "${so_path}")"
 }
 
 validate_elf_arch "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "AArch64"

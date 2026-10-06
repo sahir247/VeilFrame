@@ -51,4 +51,32 @@ class WeChatQrEngineContractTest {
         assertTrue(failedReport.detections.isEmpty())
         assertEquals("Native model load failure", failedReport.engineError?.message)
     }
+
+    @Test
+    fun `EXPECTED_MODEL_HASHES covers all four WeChat QR models with valid SHA256 format`() {
+        val requiredModels = setOf(
+            "detect.caffemodel",
+            "detect.prototxt",
+            "sr.caffemodel",
+            "sr.prototxt",
+        )
+        assertEquals(requiredModels, WeChatQrEngine.EXPECTED_MODEL_HASHES.keys)
+        for ((model, hash) in WeChatQrEngine.EXPECTED_MODEL_HASHES) {
+            assertEquals("Hash for $model must be 64-char hex", 64, hash.length)
+            assertTrue("Hash for $model must be lowercase hex", hash.matches(Regex("^[0-9a-f]{64}$")))
+        }
+    }
+
+    @Test
+    fun `sha256Of correctly hashes test file`() {
+        val temp = java.io.File.createTempFile("test_sha", ".txt")
+        try {
+            temp.writeText("hello world\n")
+            val hash = WeChatQrEngine.sha256Of(temp)
+            assertNotNull(hash)
+            assertEquals(64, hash?.length)
+        } finally {
+            temp.delete()
+        }
+    }
 }

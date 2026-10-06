@@ -8,7 +8,6 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.veilframe.app.cv.core.BitmapBridge
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -40,7 +39,7 @@ class WeChatQrRoundTripTest {
     fun wechatQrCodeDecodesBasicRaster() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val engine = WeChatQrEngine.install(context)
-        assumeTrue("WeChatQRCode unavailable in this environment", engine.isAvailable)
+        assertTrue("WeChatQRCode MUST be available for runtime verification (initError=${engine.initError})", engine.isAvailable)
 
         val mat = BitmapBridge.toMat(renderQr(payload))
         try {
@@ -57,7 +56,7 @@ class WeChatQrRoundTripTest {
     fun reliabilityGateApprovesBasicRaster() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val engine = WeChatQrEngine.install(context)
-        assumeTrue("WeChatQRCode unavailable in this environment", engine.isAvailable)
+        assertTrue("WeChatQRCode MUST be available for runtime verification (initError=${engine.initError})", engine.isAvailable)
 
         val mat = BitmapBridge.toMat(renderQr(payload))
         try {
@@ -82,7 +81,7 @@ class WeChatQrRoundTripTest {
     fun reliabilityGateBlocksCorruptedImage() {
         val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
         val engine = WeChatQrEngine.install(context)
-        assumeTrue("WeChatQRCode unavailable in this environment", engine.isAvailable)
+        assertTrue("WeChatQRCode MUST be available for runtime verification (initError=${engine.initError})", engine.isAvailable)
 
         // Pure noise: nothing resembling a QR symbol exists.
         val noise = android.graphics.Bitmap.createBitmap(512, 512, android.graphics.Bitmap.Config.ARGB_8888)
