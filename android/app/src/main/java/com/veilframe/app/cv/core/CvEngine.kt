@@ -76,14 +76,8 @@ class CvEngine(
         val context = CvContext(name, CvPriority.INTERACTIVE, 0L, CvCancellation(), pool = pool)
         return try {
             CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
-        } catch (c: CvCancelled) {
-            CvFailureMapper.toResult(c)
-        } catch (c: kotlinx.coroutines.CancellationException) {
-            CvFailureMapper.toResult(c)
-        } catch (oom: OutOfMemoryError) {
-            CvFailureMapper.toResult(oom)
-        } catch (e: Exception) {
-            CvFailureMapper.toResult(e)
+        } catch (t: Throwable) {
+            CvFailureMapper.toResult(t)
         }
     }
 

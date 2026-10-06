@@ -188,6 +188,54 @@ class AlgorithmContractsTest {
     }
 
     @Test
+    fun backgroundRemoverReleasesMaskWhenValidatorThrows() {
+        val image = allocateDummyMat()
+        val mask = allocateDummyMat()
+        var maskReleased = false
+        val segmenter = BackgroundRemover.ForegroundSegmenter { mask }
+
+        var thrown = false
+        try {
+            BackgroundRemover.resolveRawMask(
+                image = image,
+                segmenter = segmenter,
+                shapeValidator = { _, _ -> throw IllegalStateException("Validator simulated crash") },
+                maskReleaser = { maskReleased = true },
+            )
+        } catch (e: IllegalStateException) {
+            thrown = true
+            org.junit.Assert.assertEquals("Validator simulated crash", e.message)
+        }
+
+        assertTrue("Validator exception must re-throw", thrown)
+        assertTrue("Mask must be released when validator throws exception", maskReleased)
+    }
+
+    @Test
+    fun backgroundRemoverReleasesMaskWhenValidatorThrowsFatalError() {
+        val image = allocateDummyMat()
+        val mask = allocateDummyMat()
+        var maskReleased = false
+        val segmenter = BackgroundRemover.ForegroundSegmenter { mask }
+
+        var thrown = false
+        try {
+            BackgroundRemover.resolveRawMask(
+                image = image,
+                segmenter = segmenter,
+                shapeValidator = { _, _ -> throw OutOfMemoryError("Simulated OOM in validator") },
+                maskReleaser = { maskReleased = true },
+            )
+        } catch (e: OutOfMemoryError) {
+            thrown = true
+            org.junit.Assert.assertEquals("Simulated OOM in validator", e.message)
+        }
+
+        assertTrue("Validator fatal error must re-throw", thrown)
+        assertTrue("Mask must be released when validator throws fatal error", maskReleased)
+    }
+
+    @Test
     fun flowScaleNumericalRegressionOnAnisotropicDownscale() {
         // Frame: 640x360 -> Working resolution: 320x120 (anisotropic scaling)
         val origW = 640.0

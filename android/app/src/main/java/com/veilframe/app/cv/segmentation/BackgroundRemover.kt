@@ -97,20 +97,25 @@ object BackgroundRemover {
             !m.empty() && m.rows() == img.rows() && m.cols() == img.cols() && m.type() == org.opencv.core.CvType.CV_8UC1
         },
         maskReleaser: (Mat) -> Unit = { it.release() },
-    ): Mat? = try {
-        val m = segmenter.segment(image)
-        if (m != null) {
+    ): Mat? {
+        val m = try {
+            segmenter.segment(image)
+        } catch (e: Exception) {
+            // Segmenter plugin failure: degrade to identity mask.
+            // Fatal errors (OOM, LinkageError, etc.) propagate — they are not caught here.
+            return null
+        } ?: return null
+
+        return try {
             if (shapeValidator(m, image)) {
                 m
             } else {
                 maskReleaser(m)
                 null
             }
-        } else {
-            null
+        } catch (t: Throwable) {
+            maskReleaser(m)
+            throw t
         }
-    } catch (e: Exception) {
-        // Segmenter plugin failure: degrade to identity mask.
-        // Fatal errors (OOM, LinkageError, etc.) propagate — they are not caught here.
     }
 }

@@ -167,4 +167,34 @@ class MatPoolAccountingTest {
         assertEquals(0L, pool.stats().retainedBytes)
         assertEquals(0, pool.stats().retainedBuffers)
     }
+
+    @Test
+    fun matPoolReleasesAllocatedMatIfLeaseConstructionThrows() {
+        val releasedMats = mutableListOf<org.opencv.core.Mat>()
+        val pool = MatPool(
+            maxRetainedBytes = 100L * 1024 * 1024,
+            maxPerClass = 3,
+            matFactory = { _, _, _ -> allocateDummyMat() },
+            matReleaser = { releasedMats.add(it) },
+            matEmptyPredicate = { false },
+        )
+
+        var threw = false
+        try {
+            pool.acquire(
+                rows = 100,
+                cols = 100,
+                type = CvType.CV_8UC1,
+                leaseFactory = { _, _, _, _, _, _, _ -> throw IllegalStateException("Simulated lease failure") },
+            )
+        } catch (e: IllegalStateException) {
+            threw = true
+            assertEquals("Simulated lease failure", e.message)
+        }
+
+        assertTrue("Lease construction failure must propagate", threw)
+        assertEquals("Allocated Mat must be released if lease construction throws", 1, releasedMats.size)
+        assertEquals(0L, pool.stats().liveBytes)
+        assertEquals(0, pool.stats().liveLeases)
+    }
 }

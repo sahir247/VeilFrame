@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -47,16 +48,41 @@ val expectedContribSha = "a8e9acd62cabd30419dba83007f2ac0d07de5e2c"
 val expectedAbis = "arm64-v8a,x86_64"
 val expectedStatus = "VERIFIED_COMPLETE"
 
+fun calculateSha256(file: File): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { stream ->
+        val buffer = ByteArray(8192)
+        var read: Int
+        while (stream.read(buffer).also { read = it } > 0) {
+            md.update(buffer, 0, read)
+        }
+    }
+    return md.digest().joinToString("") { b -> "%02x".format(b) }
+}
+
 fun validateMarkerMetadata(file: File): Boolean {
     if (!file.exists() || file.length() == 0L) return false
     val props = Properties()
     return try {
         file.inputStream().use { props.load(it) }
-        props.getProperty("OpenCV") == expectedOpenCvVersion &&
+        val baseValid = props.getProperty("OpenCV") == expectedOpenCvVersion &&
             props.getProperty("OpenCV_SHA") == expectedOpenCvSha &&
             props.getProperty("Contrib_SHA") == expectedContribSha &&
             props.getProperty("ABIs") == expectedAbis &&
             props.getProperty("Status") == expectedStatus
+
+        if (!baseValid) return false
+
+        val expectedArm64Sha = props.getProperty("ARM64_SHA256")
+        if (expectedArm64Sha != null && (!arm64So.exists() || calculateSha256(arm64So) != expectedArm64Sha)) {
+            return false
+        }
+        val expectedX86Sha = props.getProperty("X86_64_SHA256")
+        if (expectedX86Sha != null && (!x86_64So.exists() || calculateSha256(x86_64So) != expectedX86Sha)) {
+            return false
+        }
+
+        true
     } catch (_: Exception) {
         false
     }
@@ -68,24 +94,51 @@ val isCustomSdkComplete = isMarkerValid &&
     x86_64So.exists() && x86_64So.length() > 0L &&
     matJava.exists() && wechatJava.exists()
 
+val isExplicitDevFallbackAllowed = (project.findProperty("allowMavenOpenCvFallback")?.toString()?.toBoolean() == true) ||
+    (System.getenv("ALLOW_MAVEN_OPENCV_FALLBACK")?.toBoolean() == true)
+
 dependencies {
     if (isCustomSdkComplete) {
         logger.lifecycle(":opencv-sdk compiling with complete in-tree custom OpenCV SDK (OpenCV=$expectedOpenCvVersion, SHA=${expectedOpenCvSha.take(8)})")
     } else {
+        if (!isExplicitDevFallbackAllowed) {
+            throw GradleException(
+                "FATAL: Custom OpenCV SDK is missing or incomplete in :opencv-sdk! " +
+                "A verified in-tree custom OpenCV build (with WeChatQRCode, native ABIs, and .opencv-sdk-complete marker) " +
+                "is strictly mandatory. For development or JVM unit tests only, you may explicitly opt into " +
+                "transitional Maven fallback by setting allowMavenOpenCvFallback=true in gradle.properties or passing -PallowMavenOpenCvFallback=true. " +
+                "Release builds will always fail closed."
+            )
+        }
+
         // Detect partial/broken/forged artifacts to alert developer
         val hasPartialSo = file("src/main/jniLibs").exists() &&
             file("src/main/jniLibs").walkTopDown().any { it.extension == "so" }
         val hasPartialJava = file("src/main/java").exists() &&
             file("src/main/java").walkTopDown().any { it.extension == "java" }
         if (markerFile.exists() && !isMarkerValid) {
-            logger.warn(":opencv-sdk WARNING: Completion marker failed deterministic build metadata validation (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Safely falling back to verified Maven distribution.")
+            logger.warn(":opencv-sdk WARNING: Completion marker failed deterministic build metadata validation (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true).")
         } else if (hasPartialSo || hasPartialJava || markerFile.exists()) {
-            logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or valid marker)! Safely falling back to verified Maven distribution.")
+            logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or valid marker)! Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true).")
         } else {
-            logger.lifecycle(":opencv-sdk using vetted Maven WeChatQRCode OpenCV distribution (transitional baseline)")
+            logger.warn(":opencv-sdk WARNING: Custom OpenCV SDK not staged locally. Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true). Release builds will fail closed.")
         }
         api("com.github.jenly1314.WeChatQRCode:opencv:2.6.0")
         api("com.github.jenly1314.WeChatQRCode:opencv-armv64:2.6.0")
         api("com.github.jenly1314.WeChatQRCode:opencv-x86_64:2.6.0")
+    }
+}
+
+// Fail closed on any release task if the custom SDK is missing or invalid
+gradle.taskGraph.whenReady {
+    val releaseTasks = allTasks.filter { task ->
+        task.name.contains("Release", ignoreCase = true)
+    }
+    if (releaseTasks.isNotEmpty() && !isCustomSdkComplete) {
+        throw GradleException(
+            "FATAL: Release build failed closed. Requested tasks [${releaseTasks.joinToString { it.path }}] require " +
+            "a verified in-tree custom OpenCV SDK with WeChatQRCode, but valid custom SDK artifacts are missing from :opencv-sdk. " +
+            "Transitional Maven fallback is strictly prohibited on release builds."
+        )
     }
 }

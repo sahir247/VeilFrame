@@ -83,9 +83,11 @@ class CvNativeSubsystemTest {
         val match = matcher.match(scene, template)
 
         assertNotNull("TemplateMatcher must find embedded synthetic pattern", match)
-        assertEquals(80.0, match!!.rect.x.toDouble(), 4.0)
-        assertEquals(80.0, match.rect.y.toDouble(), 4.0)
-        assertTrue("Confidence must be near 1.0", match.confidence >= 0.95)
+        assertEquals(80.0, match!!.rect.x.toDouble(), 1.0)
+        assertEquals(80.0, match.rect.y.toDouble(), 1.0)
+        assertEquals(40, match.rect.width)
+        assertEquals(40, match.rect.height)
+        assertTrue("Confidence must be near 1.0", match.confidence >= 0.98)
 
         scene.release()
         template.release()
@@ -112,6 +114,8 @@ class CvNativeSubsystemTest {
         val warped = corrector.warp(image, quad!!)
         assertFalse(warped.empty())
         assertTrue(warped.rows() > 0 && warped.cols() > 0)
+        val meanVal = org.opencv.core.Core.mean(warped).`val`[0]
+        assertTrue("Unwarped quad must be predominantly white (>200.0 mean brightness), was $meanVal", meanVal > 200.0)
 
         image.release()
         warped.release()
@@ -134,6 +138,16 @@ class CvNativeSubsystemTest {
         val bg = Mat(100, 100, CvType.CV_8UC3, Scalar(0.0, 0.0, 0.0))
         val composited = MaskOps.composite(src, bg, feathered)
         assertEquals(CvType.CV_8UC3, composited.type())
+
+        // Verify composited pixel values: center should be foreground src, boundary should be bg
+        val centerPixel = composited.get(50, 50)
+        assertEquals(100.0, centerPixel[0], 2.0)
+        assertEquals(150.0, centerPixel[1], 2.0)
+        assertEquals(200.0, centerPixel[2], 2.0)
+        val outerPixel = composited.get(5, 5)
+        assertEquals(0.0, outerPixel[0], 2.0)
+        assertEquals(0.0, outerPixel[1], 2.0)
+        assertEquals(0.0, outerPixel[2], 2.0)
 
         // Degraded mode when segmenter returns null
         val nullResult = BackgroundRemover.removeBackground(
@@ -159,6 +173,9 @@ class CvNativeSubsystemTest {
         val src = Mat(120, 120, CvType.CV_8UC3, Scalar(120.0, 130.0, 140.0))
         val gray = Preprocessor.toGray(src)
         assertEquals(1, gray.channels())
+        // OpenCV BGR to Gray: 0.114*120 + 0.587*130 + 0.299*140 = 131.85 ~ 132
+        val grayVal = gray.get(60, 60)[0].toInt() and 0xFF
+        assertEquals(132, grayVal)
 
         val blurred = Preprocessor.blur(gray, Preprocessor.BlurMethod.GAUSSIAN, kernelSize = 5)
         assertEquals(gray.size(), blurred.size())
@@ -189,6 +206,20 @@ class CvNativeSubsystemTest {
         assertEquals(CvType.CV_32FC2, flow.forward.flow.type())
         assertEquals(160, flow.forward.flow.rows())
         assertEquals(160, flow.forward.flow.cols())
+
+        // Numerical verification: sample vector at center of moved object (60, 60)
+        val shiftVec = FloatArray(2)
+        flow.forward.flow.get(60, 60, shiftVec)
+        val dx = shiftVec[0]
+        val dy = shiftVec[1]
+        assertTrue("Estimated horizontal flow dx ($dx) should be positive and near +10px", dx in 7.0f..13.0f)
+        assertTrue("Estimated vertical flow dy ($dy) should be positive and near +5px", dy in 2.5f..7.5f)
+
+        // Numerical verification: static background (10, 10) must be near zero
+        val bgVec = FloatArray(2)
+        flow.forward.flow.get(10, 10, bgVec)
+        assertTrue("Background flow dx (${bgVec[0]}) should be near 0", Math.abs(bgVec[0]) < 1.0f)
+        assertTrue("Background flow dy (${bgVec[1]}) should be near 0", Math.abs(bgVec[1]) < 1.0f)
 
         flow.release()
         frame1.release()

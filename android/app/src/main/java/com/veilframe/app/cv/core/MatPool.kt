@@ -57,7 +57,12 @@ class MatPool(
 
     /** Acquires a zero-or-undefined content buffer of [rows] x [cols] x [type]. */
     @Synchronized
-    fun acquire(rows: Int, cols: Int, type: Int): MatLease {
+    fun acquire(
+        rows: Int,
+        cols: Int,
+        type: Int,
+        leaseFactory: (mat: Mat, pool: MatPool, accounting: MatLeaseAccounting, key: SizeClass?, rows: Int, cols: Int, type: Int) -> MatLease = { m, p, a, k, r, c, t -> MatLease(m, p, a, k, r, c, t) },
+    ): MatLease {
         val accounting = SizeClass.accountingFor(rows, cols, type)
         val key = if (accounting.retainable) {
             SizeClass(
@@ -71,22 +76,32 @@ class MatPool(
 
         val bucket = key?.let { free[it] }
         val recycled = bucket?.removeFirstOrNull()
-        val lease = if (recycled != null) {
+        val (mat, isHit) = if (recycled != null) {
             retainedBytes = (retainedBytes - recycled.actualBytes).coerceAtLeast(0L)
-            val mat = if (recycled.rows == rows && recycled.cols == cols && recycled.type == type) {
-                hits++
-                recycled.mat
+            if (recycled.rows == rows && recycled.cols == cols && recycled.type == type) {
+                recycled.mat to true
             } else {
-                misses++
                 matReleaser(recycled.mat)
-                matFactory(rows, cols, type).also { allocations++ }
+                matFactory(rows, cols, type) to false
             }
-            MatLease(mat, this, accounting, key, rows, cols, type)
+        } else {
+            matFactory(rows, cols, type) to false
+        }
+
+        val lease = try {
+            leaseFactory(mat, this, accounting, key, rows, cols, type)
+        } catch (t: Throwable) {
+            matReleaser(mat)
+            throw t
+        }
+
+        if (isHit) {
+            hits++
         } else {
             misses++
             allocations++
-            MatLease(matFactory(rows, cols, type), this, accounting, key, rows, cols, type)
         }
+
         liveLeases++
         liveBytes += accounting.actualBytes
         if (liveBytes > peakLiveBytes) peakLiveBytes = liveBytes

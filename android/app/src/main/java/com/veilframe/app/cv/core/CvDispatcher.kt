@@ -106,14 +106,8 @@ class CvDispatcher(
                     context.markRunning()
                     CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
                 }
-            } catch (c: CvCancelled) {
-                CvResult.Err(CvErrorCode.CANCELLED, c.detail, c)
-            } catch (c: CancellationException) {
-                CvResult.Err(CvErrorCode.CANCELLED, c.message ?: "cancelled", c)
-            } catch (oom: OutOfMemoryError) {
-                CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${oom.message}", oom)
-            } catch (e: Exception) {
-                CvFailureMapper.toResult(e)
+            } catch (t: Throwable) {
+                CvFailureMapper.toResult(t)
             } finally {
                 context.markFinished()
                 reservation?.close()

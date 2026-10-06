@@ -130,4 +130,48 @@ class CvFailureMapperContractTest {
             assertEquals("Fatal JVM error", e.message)
         }
     }
+
+    @Test
+    fun cvEngineRunInlineRoutesThroughFailureMapper() {
+        val memory = CvMemoryManager(ManualMemoryProbe(total = 8L * 1024 * 1024 * 1024, available = 2L * 1024 * 1024 * 1024))
+        val engine = CvEngine(memory)
+
+        // 1. IllegalArgumentException -> INVALID_INPUT
+        val invalidResult = engine.runInline("test_invalid") {
+            throw IllegalArgumentException("bad argument")
+        }
+        assertTrue(invalidResult is CvResult.Err)
+        assertEquals(CvErrorCode.INVALID_INPUT, (invalidResult as CvResult.Err).code)
+
+        // 2. OutOfMemoryError -> OUT_OF_MEMORY
+        val oomResult = engine.runInline("test_oom") {
+            throw OutOfMemoryError("native allocation failed")
+        }
+        assertTrue(oomResult is CvResult.Err)
+        assertEquals(CvErrorCode.OUT_OF_MEMORY, (oomResult as CvResult.Err).code)
+
+        // 3. LinkageError -> Re-thrown, never swallowed
+        var linkageThrown = false
+        try {
+            engine.runInline("test_linkage") {
+                throw UnsatisfiedLinkError("missing library")
+            }
+        } catch (e: LinkageError) {
+            linkageThrown = true
+        }
+        assertTrue("Fatal LinkageError must be re-thrown by runInline", linkageThrown)
+
+        // 4. StackOverflowError -> Re-thrown, never swallowed
+        var soeThrown = false
+        try {
+            engine.runInline("test_soe") {
+                throw StackOverflowError("infinite recursion")
+            }
+        } catch (e: StackOverflowError) {
+            soeThrown = true
+        }
+        assertTrue("Fatal StackOverflowError must be re-thrown by runInline", soeThrown)
+
+        engine.shutdown()
+    }
 }
