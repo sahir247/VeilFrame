@@ -181,11 +181,11 @@ object SmartAutoCrop {
         val magnitude = Mat()
         val blurred = Mat()
         try {
-            Imgproc.cvtColor(
-                source,
-                gray,
-                if (source.channels() == 4) Imgproc.COLOR_BGRA2GRAY else Imgproc.COLOR_BGR2GRAY,
-            )
+            when (source.channels()) {
+                1 -> source.copyTo(gray)
+                4 -> Imgproc.cvtColor(source, gray, Imgproc.COLOR_BGRA2GRAY)
+                else -> Imgproc.cvtColor(source, gray, Imgproc.COLOR_BGR2GRAY)
+            }
             Imgproc.Sobel(gray, gx, org.opencv.core.CvType.CV_32F, 1, 0, 3, 1.0, 0.0, org.opencv.core.Core.BORDER_REPLICATE)
             Imgproc.Sobel(gray, gy, org.opencv.core.CvType.CV_32F, 0, 1, 3, 1.0, 0.0, org.opencv.core.Core.BORDER_REPLICATE)
             org.opencv.core.Core.magnitude(gx, gy, magnitude)

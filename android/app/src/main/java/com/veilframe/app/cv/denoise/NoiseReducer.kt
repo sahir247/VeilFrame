@@ -51,15 +51,19 @@ object NoiseReducer {
             Imgproc.GaussianBlur(gray, blurred, Size(3.0, 3.0), 0.0)
             Core.absdiff(gray, blurred, residual)
 
-            // Exact 8-bit histogram instead of DoubleArray + full sort — the
-            // sort materialised ~96 MB of temporaries at 12 MP, which is
-            // unacceptable on the 6 GB target. Median and tail counts are
-            // bit-identical to the sorted-array versions.
-            val bytes = ByteArray(gray.rows() * gray.cols())
-            residual.get(0, 0, bytes)
+            // Exact 8-bit histogram via row-buffered streaming — avoids
+            // allocating a full-resolution 12 MP ByteArray on the JVM heap.
+            val rows = gray.rows()
+            val cols = gray.cols()
+            val rowBuf = ByteArray(cols)
             val histogram = IntArray(256)
-            for (b in bytes) histogram[b.toInt() and 0xFF]++
-            val total = bytes.size
+            for (r in 0 until rows) {
+                residual.get(r, 0, rowBuf)
+                for (c in 0 until cols) {
+                    histogram[rowBuf[c].toInt() and 0xFF]++
+                }
+            }
+            val total = rows * cols
             val sigma = medianOfHistogram(histogram, total) / 0.6745
 
             // Impulse noise: pixels far beyond 4*sigma of the local median.

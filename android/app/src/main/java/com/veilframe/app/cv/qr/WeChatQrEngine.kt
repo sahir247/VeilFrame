@@ -69,7 +69,10 @@ class WeChatQrEngine private constructor(
      * release validation of artistic QR depends on that difference.
      */
     fun decodeReport(image: Mat): QrDecodeReport {
-        val engine = detector ?: return QrDecodeReport(emptyList(), null)
+        val engine = detector ?: return QrDecodeReport(
+            detections = emptyList(),
+            engineError = initError ?: IllegalStateException("WeChat QR engine unavailable (availability=$availability)"),
+        )
         if (image.empty()) return QrDecodeReport(emptyList(), null)
         return synchronized(lock) {
             val points = ArrayList<Mat>()

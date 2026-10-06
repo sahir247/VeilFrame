@@ -122,13 +122,19 @@ object ImageQualityAnalyzer {
         try {
             Imgproc.GaussianBlur(luma, blurred, Size(3.0, 3.0), 0.0)
             Core.absdiff(luma, blurred, residual)
-            // Exact 8-bit histogram median — no DoubleArray + full sort (the
-            // sort materialised ~96 MB of temporaries at 12 MP).
-            val bytes = ByteArray(residual.rows() * residual.cols())
-            residual.get(0, 0, bytes)
+            // Exact 8-bit histogram median with row-buffered streaming — avoids
+            // allocating a full-resolution 12 MP ByteArray on the JVM heap.
+            val rows = residual.rows()
+            val cols = residual.cols()
+            val rowBuf = ByteArray(cols)
             val histogram = IntArray(256)
-            for (b in bytes) histogram[b.toInt() and 0xFF]++
-            val target = bytes.size / 2
+            for (r in 0 until rows) {
+                residual.get(r, 0, rowBuf)
+                for (c in 0 until cols) {
+                    histogram[rowBuf[c].toInt() and 0xFF]++
+                }
+            }
+            val target = (rows.toLong() * cols / 2).toInt()
             var cumulative = 0
             var median = 255
             for (v in histogram.indices) {
