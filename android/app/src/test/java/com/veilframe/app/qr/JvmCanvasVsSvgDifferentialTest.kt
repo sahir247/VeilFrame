@@ -579,4 +579,47 @@ class JvmCanvasVsSvgDifferentialTest {
         )
         executeDifferentialCase("21_basic_with_logo", design)
     }
+
+    @Test
+    fun case22_connectedOrganicCanvasVsSvgDifferential() {
+        val design = QrDesign(
+            style = QrStyle.CONNECTED_ORGANIC,
+            outputSize = 400,
+            palette = PaletteStyle(foreground = Color.BLACK, background = Color.WHITE)
+        )
+        val result = executeDifferentialCase(
+            caseName = "22_connected_organic",
+            design = design,
+            width = 400,
+            height = 400,
+            payload = "https://veilframe.app/connected-organic-diff",
+            maxAllowedMae = 5.0,
+            maxAllowedPctDiff = 12.0
+        )
+        assertNotNull(result)
+        assertTrue("Connected organic total pixels evaluated", result.totalPixels > 0)
+    }
+
+    @Test
+    fun case23_styleFunctionCanvasVsSvgDifferential() {
+        val design = QrDesign(
+            style = QrStyle.STYLE_FUNCTION,
+            outputSize = 400,
+            palette = PaletteStyle(
+                foreground = Color.BLACK,
+                background = Color.WHITE
+            )
+        )
+        val result = executeDifferentialCase(
+            caseName = "23_style_function",
+            design = design,
+            width = 400,
+            height = 400,
+            payload = "https://veilframe.app/style-function-diff",
+            maxAllowedMae = 5.0,
+            maxAllowedPctDiff = 12.0
+        )
+        assertNotNull(result)
+        assertTrue("Style function total pixels evaluated", result.totalPixels > 0)
+    }
 }

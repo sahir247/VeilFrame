@@ -354,7 +354,7 @@ class QRCodeModel(
         private const val PAD0 = 0xEC
         private const val PAD1 = 0x11
 
-        private fun createData(
+        internal fun createData(
             typeNumber: Int,
             errorCorrectLevel: VeilCorrectionLevel,
             data: ByteArray,

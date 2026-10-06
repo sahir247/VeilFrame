@@ -23,6 +23,10 @@ import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.raster.DeterministicSvgRasterizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -189,8 +193,9 @@ class Phase2AuditDefectsTest {
     }
 
     @Test
-    fun testStyleFunctionSvg_DispatchesToFunctionSvg() {
-        // CODE VERIFIED: QrStyle.STYLE_FUNCTION must dispatch to generateFunctionSvg in SvgExporter
+    fun testStyleFunctionSvg_DispatchesToStyleFunctionSvg() {
+        // CODE & IR VERIFIED: QrStyle.STYLE_FUNCTION dispatches to generateStyleFunctionSvg in SvgExporter
+        // emitting linear gradient shader and rounded-rect data modules matching StyleFunctionRenderer IR.
         val design = QrDesign(
             style = QrStyle.STYLE_FUNCTION,
             outputSize = 512
@@ -198,8 +203,8 @@ class Phase2AuditDefectsTest {
         val matrix = QrGenerator.generateMatrix(payload, design)
         val svg = SvgExporter.generateSvg(matrix, design)
 
-        // Function SVG outputs rect/circle elements with key attributes
-        assertTrue("STYLE_FUNCTION SVG must contain key attributes from generateFunctionSvg", svg.contains("key=\"0\"") || svg.contains("key=\"1\""))
+        assertTrue("STYLE_FUNCTION SVG must contain styleFuncGrad linear gradient definition", svg.contains("""id="styleFuncGrad""""))
+        assertTrue("STYLE_FUNCTION SVG must reference styleFuncGrad in data module fill", svg.contains("""fill="url(#styleFuncGrad)""""))
     }
 
     @Test
@@ -340,32 +345,55 @@ class Phase2AuditDefectsTest {
     }
 
     @Test
-    fun testCoroutineSuspendEntryPoints_ExecuteNonBlocking() = runBlocking {
+    fun testCoroutineSuspendEntryPoints_ExecuteNonBlocking() {
         // CODE & INTEGRATION VERIFIED: Coroutine-native entry points execute asynchronously without blocking threads
-        val design = QrDesign(
-            style = QrStyle.BASIC,
-            correction = ErrorCorrectionChoice.M,
-            outputSize = 512
-        )
+        val singleThreadDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        try {
+            runBlocking(singleThreadDispatcher) {
+                val design = QrDesign(
+                    style = QrStyle.BASIC,
+                    correction = ErrorCorrectionChoice.M,
+                    outputSize = 512
+                )
 
-        // 1. generateWithResultSuspend
-        val res1 = QrGenerator.generateWithResultSuspend(payload, design)
-        assertTrue("generateWithResultSuspend must succeed", res1 is QrRenderResult.Success)
-        assertTrue((res1 as QrRenderResult.Success).report.isScanReady)
+                // Prove non-blocking concurrency: if the suspend generator blocked the caller thread,
+                // a concurrent coroutine on this single-thread dispatcher could never run or make progress.
+                var progressTicks = 0
+                val tickerJob = launch {
+                    while (isActive) {
+                        progressTicks++
+                        delay(2)
+                    }
+                }
 
-        // 2. generateSafeSuspend
-        val res2 = QrGenerator.generateSafeSuspend(payload, design)
-        assertTrue("generateSafeSuspend must succeed", res2 is QrRenderResult.Success)
-        val s2 = res2 as QrRenderResult.Success
-        assertTrue(s2.report.isScanReady)
-        assertEquals(4, s2.design.quietZoneModules)
+                // 1. generateWithResultSuspend
+                val res1 = QrGenerator.generateWithResultSuspend(payload, design)
+                assertTrue("generateWithResultSuspend must succeed", res1 is QrRenderResult.Success)
+                assertTrue((res1 as QrRenderResult.Success).report.isScanReady)
 
-        // 3. generateStrictWithResultSuspend
-        val res3 = QrGenerator.generateStrictWithResultSuspend(payload, design)
-        assertTrue("generateStrictWithResultSuspend must succeed", res3 is QrRenderResult.Success)
+                // 2. generateSafeSuspend
+                val res2 = QrGenerator.generateSafeSuspend(payload, design)
+                assertTrue("generateSafeSuspend must succeed", res2 is QrRenderResult.Success)
+                val s2 = res2 as QrRenderResult.Success
+                assertTrue(s2.report.isScanReady)
+                assertEquals(4, s2.design.quietZoneModules)
 
-        // 4. generateWithAutoRepairSuspend
-        val res4 = QrGenerator.generateWithAutoRepairSuspend(payload, design)
-        assertTrue("generateWithAutoRepairSuspend must succeed", res4 is QrRenderResult.Success)
+                // 3. generateStrictWithResultSuspend
+                val res3 = QrGenerator.generateStrictWithResultSuspend(payload, design)
+                assertTrue("generateStrictWithResultSuspend must succeed", res3 is QrRenderResult.Success)
+
+                // 4. generateWithAutoRepairSuspend
+                val res4 = QrGenerator.generateWithAutoRepairSuspend(payload, design)
+                assertTrue("generateWithAutoRepairSuspend must succeed", res4 is QrRenderResult.Success)
+
+                tickerJob.cancel()
+                assertTrue(
+                    "Concurrent coroutine must yield and tick while suspend generator runs off-thread ($progressTicks ticks)",
+                    progressTicks > 0
+                )
+            }
+        } finally {
+            singleThreadDispatcher.close()
+        }
     }
 }
