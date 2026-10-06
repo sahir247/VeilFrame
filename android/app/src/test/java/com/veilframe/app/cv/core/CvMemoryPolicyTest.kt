@@ -210,4 +210,47 @@ class CvMemoryPolicyTest {
 
         engine.shutdown()
     }
+
+    @Test
+    fun `concurrent reservations cannot collectively exceed budget and release cleanly`() {
+        val totalAvailable = 500L * 1024 * 1024 // 500 MB budget
+        val memory = CvMemoryManager(
+            ManualMemoryProbe(total = 8 * gb, available = totalAvailable),
+            safetyFactor = 1.0, // exactly 500 MB budget
+        )
+
+        val threadCount = 20
+        val requestPerThread = 100L * 1024 * 1024 // 100 MB each (20 * 100 MB = 2000 MB requested)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount)
+        val startLatch = java.util.concurrent.CountDownLatch(1)
+        val doneLatch = java.util.concurrent.CountDownLatch(threadCount)
+        val grantedList = java.util.Collections.synchronizedList(mutableListOf<ReservationResult.Granted>())
+        val rejectedList = java.util.Collections.synchronizedList(mutableListOf<ReservationResult.Rejected>())
+
+        for (i in 0 until threadCount) {
+            executor.submit {
+                startLatch.await()
+                when (val res = memory.reserve(requestPerThread)) {
+                    is ReservationResult.Granted -> grantedList.add(res)
+                    is ReservationResult.Rejected -> rejectedList.add(res)
+                }
+                doneLatch.countDown()
+            }
+        }
+
+        startLatch.countDown()
+        assertTrue(doneLatch.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        executor.shutdown()
+
+        // Maximum 5 reservations of 100 MB could ever fit in a 500 MB budget
+        assertTrue("Granted reservations must not exceed total budget", grantedList.size <= 5)
+        assertEquals(threadCount, grantedList.size + rejectedList.size)
+        val totalGrantedBytes = grantedList.size * requestPerThread
+        assertTrue("Total granted bytes ($totalGrantedBytes) must be <= total budget ($totalAvailable)", totalGrantedBytes <= totalAvailable)
+        assertEquals(totalGrantedBytes, memory.currentReservedBytes)
+
+        // Close all granted reservations
+        grantedList.forEach { it.reservation.close() }
+        assertEquals(0L, memory.currentReservedBytes)
+    }
 }

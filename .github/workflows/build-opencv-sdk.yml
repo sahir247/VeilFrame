@@ -6,6 +6,7 @@ on:
     paths:
       - 'android/scripts/build_opencv_contrib_sdk.sh'
       - '.github/workflows/build-opencv-sdk.yml'
+      - 'android/opencv-sdk/**'
 
 jobs:
   build-opencv:
@@ -37,26 +38,36 @@ jobs:
           chmod +x android/scripts/build_opencv_contrib_sdk.sh
           ./android/scripts/build_opencv_contrib_sdk.sh
 
-      - name: Verify Built SDK Artifacts
+      - name: Verify Staged Custom SDK Artifacts & Marker
         run: |
           echo "=== Verifying native libraries ==="
           ls -lh android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           ls -lh android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
           echo "=== Verifying Java bindings ==="
+          test -f android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
           test -f android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
-          echo "WeChatQRCode Java source verified!"
+          echo "=== Verifying Completion Marker ==="
+          test -f android/opencv-sdk/src/main/.opencv-sdk-complete
+          cat android/opencv-sdk/src/main/.opencv-sdk-complete
 
-      - name: Test Assemble :opencv-sdk
+      - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android
         run: |
           chmod +x ./gradlew
           ./gradlew :opencv-sdk:assembleRelease
 
-      - name: Upload OpenCV SDK Artifacts
+      - name: Validate Application Compilation with Custom OpenCV SDK
+        working-directory: android
+        run: |
+          ./gradlew :app:assembleDebug
+          ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*"
+
+      - name: Upload Custom OpenCV SDK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: veilframe-custom-opencv-sdk
           path: |
             android/opencv-sdk/src/main/jniLibs/
             android/opencv-sdk/src/main/java/
+            android/opencv-sdk/src/main/.opencv-sdk-complete
             android/opencv-sdk/build/outputs/aar/

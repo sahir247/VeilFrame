@@ -158,7 +158,10 @@ object NoiseReducer {
                 else -> throw UnsupportedOperationException("unsupported channel count ${source.channels()}")
             }
             out
-        } catch (e: Exception) {
+        } catch (e: ReflectiveOperationException) {
+            Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
+            out
+        } catch (e: org.opencv.core.CvException) {
             Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
             out
         }

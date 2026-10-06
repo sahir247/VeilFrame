@@ -128,3 +128,6 @@ keystore_base64.txt
 PrivacyVideoCleaner_v1_tauri/
 AGENTS.MD
 GUIDE.txt
+
+# OpenCV local build scratch
+android/scripts/.opencv_build/
