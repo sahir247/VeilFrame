@@ -107,42 +107,46 @@ are never all run on every frame.
 
 - **Every operation runs through `CvEngine.submit()`**: memory check →
   resolution selection → operation → cancellation checks → release Mats.
-- **`MatPool` exists and is enforced at the CvEngine job level** (size classes,
-  automatic release). A 6000×4000 RGBA buffer is ~96 MB. **Honest status: the
-  feature primitives (FrameSynthesizer, FlowConsistency, ImageQualityAnalyzer,
-  NoiseReducer, SmartSharpener, QuadDetector, MaskOps, TemplateMatcher, …)
-  currently allocate their own Mats directly and release them in `finally`
-  blocks.** Do NOT describe this as a pool-backed memory architecture yet —
-  migrating primitive call-sites to `MatPool` leases is tracked as remaining
-  work. The pool's size-class math (`SizeClass.forMat`) and
-  `CvMemoryManager.estimateBytes` are type-aware (`CvType.ELEM_SIZE`) so
-  CV_32F/CV_64F buffers are budgeted correctly.
-- **`CvMemoryManager`** models the 6–16 GB *total* RAM target: conservative /
-  normal / high tiers from total+available memory, resolution tiers
-  (720p preview / 1280 / 1080p / source / tiled) and admission control.
+- **`MatPool` provides reusable native buffer leases** (size classes,
+  automatic release). A 6000×4000 RGBA buffer is ~96 MB. Large pixel buffers in
+  hot paths (`FrameSynthesizer` warp grid/maps, `FlowConsistency` warp flows)
+  are pooled through `MatPool.default` / `CvContext.acquireMat()`, preventing
+  continuous native allocation churn during intermediate frame synthesis.
+  Small/transient matrices (< 256 KB) remain directly managed for architectural
+  clarity.
+- **`CvMemoryManager` with reservational admission** models the 6–16 GB *total*
+  RAM target: conservative / normal / high tiers from total+available memory,
+  resolution tiers (720p preview / 1280 / 1080p / source / tiled).
+  Admission control is concurrency-safe: `CvEngine.submit` atomically reserves
+  estimated memory against the safety budget before enqueuing, releasing the
+  reservation upon job completion, error, or cancellation.
 - **`CvDispatcher`** lanes: INTERACTIVE / BACKGROUND / VIDEO with dedicated
   permits, so video work can never freeze the UI. Jobs support `cancel()`,
   progress and memory estimates.
-- Quality/blur scores are **component-wise and configurable** — the aggregate is
-  explicitly not an absolute photographic quality claim.
+- Quality/blur scores are **component-wise and configurable**. High-resolution
+  Gaussian noise estimation uses streaming row-buffered histograms (4 KB heap
+  footprint) rather than full-resolution byte arrays.
+- `SmartAutoCrop` handles both color (BGR/BGRA) and single-channel grayscale
+  (`CV_8UC1`) inputs natively.
 
 ## Testing
 
 - JVM (`app/src/test/.../cv/`): gate grading policy, stress-suite contract,
-  memory/resolution policy, quality/blur score policy. No native OpenCV needed.
+  memory/reservation policy, concurrent admission gating, quality/blur score policy.
+  No native OpenCV needed.
 - Instrumented (`app/src/androidTest/.../cv/qr/WeChatQrRoundTripTest.kt`):
   WeChatQRCode round-trip decode + reliability gate end-to-end on device.
 
-## Phase plan (remaining work)
+## Hardening Progress
 
 1. ✅ CV foundation (core, preprocess, geometry, analysis) + QR stack
-2. ⬜ Migrate feature primitives to `MatPool` leases (currently direct `Mat()`
-   allocation with manual `finally` release — see “CV core contracts”)
-3. ⬜ Document scanner (QuadDetector + PerspectiveCorrector are ready)
-4. ⬜ Denoise / smart sharpening / color engine / smart auto-crop /
-   template matching / motion detection
-5. ⬜ Enhanced optical-flow interpolation (DIS primary, Farnebäck fallback),
-   background-removal mask post-processing (segmentation model stays ONNX-side)
+2. ✅ Reservational memory admission (`CvMemoryManager.reserve` + atomic semaphore)
+3. ✅ Large-Mat pooling in hot motion & frame synthesis paths (`FrameSynthesizer`, `FlowConsistency`)
+4. ✅ Streamed noise estimation histogram (zero large JVM heap allocations)
+5. ✅ Grayscale `CV_8UC1` smart auto-crop compatibility
+6. ✅ WeChatQrEngine diagnostic health reporting contract
+7. ⬜ Full ONNX segmentation mask model integration (post-processing is implemented)
+8. ⬜ Device-level 6 GB concurrent stress execution (physical device test)
 
 Video boundary stays as planned: FFmpeg owns demux/decode/encode; the CV engine
 only analyses/interpolates decoded frames.

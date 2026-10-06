@@ -108,4 +108,102 @@ class CvMemoryPolicyTest {
         assertTrue(threw)
         assertFalse(DispatcherConfig().interactiveSlots == 0)
     }
+
+    @Test
+    fun `reservation atomically tracks reserved bytes and restores budget on close`() {
+        val memory = CvMemoryManager(
+            ManualMemoryProbe(total = 8 * gb, available = 2 * gb),
+            safetyFactor = 0.25, // budget = 512 MB
+        )
+        val initialBudget = memory.availableBudget()
+        assertEquals(512L * 1024 * 1024, initialBudget)
+
+        val resResult = memory.reserve(200L * 1024 * 1024)
+        assertTrue(resResult is ReservationResult.Granted)
+        val granted = resResult as ReservationResult.Granted
+        assertEquals(200L * 1024 * 1024, granted.reservation.reservedBytes)
+        assertEquals(200L * 1024 * 1024, memory.currentReservedBytes)
+        assertEquals(312L * 1024 * 1024, memory.availableBudget())
+
+        // Closing the reservation releases the reserved bytes
+        granted.reservation.close()
+        assertTrue(granted.reservation.isClosed)
+        assertEquals(0L, memory.currentReservedBytes)
+        assertEquals(initialBudget, memory.availableBudget())
+    }
+
+    @Test
+    fun `concurrent reservation rejects second job when combined cost exceeds budget`() {
+        val memory = CvMemoryManager(
+            ManualMemoryProbe(total = 8 * gb, available = 2 * gb),
+            safetyFactor = 0.25, // budget = 512 MB
+        )
+        // Job 1 reserves 300 MB out of 512 MB -> succeeds
+        val job1 = memory.reserve(300L * 1024 * 1024)
+        assertTrue(job1 is ReservationResult.Granted)
+        val granted1 = job1 as ReservationResult.Granted
+        assertEquals(212L * 1024 * 1024, memory.availableBudget())
+
+        // Job 2 requests 300 MB -> exceeds remaining 212 MB -> rejected
+        val job2 = memory.reserve(300L * 1024 * 1024)
+        assertTrue(job2 is ReservationResult.Rejected)
+        val rejected = job2 as ReservationResult.Rejected
+        assertEquals(212L * 1024 * 1024, rejected.budgetBytes)
+        assertEquals(300L * 1024 * 1024, rejected.costBytes)
+
+        // Job 1 finishes and releases
+        granted1.reservation.close()
+        assertEquals(512L * 1024 * 1024, memory.availableBudget())
+
+        // Now Job 2 can be reserved
+        val retryJob2 = memory.reserve(300L * 1024 * 1024)
+        assertTrue(retryJob2 is ReservationResult.Granted)
+        (retryJob2 as ReservationResult.Granted).reservation.close()
+    }
+
+    @Test
+    fun `double close on reservation is idempotent`() {
+        val memory = CvMemoryManager(
+            ManualMemoryProbe(total = 8 * gb, available = 2 * gb),
+            safetyFactor = 0.25,
+        )
+        val res = memory.reserve(100L * 1024 * 1024) as ReservationResult.Granted
+        assertEquals(100L * 1024 * 1024, memory.currentReservedBytes)
+
+        res.reservation.close()
+        assertEquals(0L, memory.currentReservedBytes)
+
+        // Second close must not subtract again into negative numbers
+        res.reservation.close()
+        assertEquals(0L, memory.currentReservedBytes)
+    }
+
+    @Test
+    fun `engine submit rejects job when concurrent in-flight reservation exhausts budget`() {
+        val memory = CvMemoryManager(
+            ManualMemoryProbe(total = 8 * gb, available = 2 * gb),
+            safetyFactor = 0.25, // 512 MB budget
+        )
+        val engine = CvEngine(memory)
+
+        // First job reserves 400 MB
+        val job1 = engine.submit("job1", CvPriority.INTERACTIVE, 400L * 1024 * 1024) {
+            Thread.sleep(80)
+            "done1"
+        }
+
+        // Second parallel job tries to reserve 200 MB (400 + 200 > 512 MB) -> rejected immediately
+        val job2 = engine.submit("job2", CvPriority.INTERACTIVE, 200L * 1024 * 1024) {
+            "done2"
+        }
+
+        assertEquals(CvJobState.FAILED, job2.state)
+        val result2 = job2.tryGetNow()
+        assertTrue(result2 is CvResult.Err)
+        val err = result2 as CvResult.Err
+        assertEquals(CvErrorCode.OUT_OF_MEMORY, err.code)
+        assertTrue(err.message.contains("exceeds unreserved budget"))
+
+        engine.shutdown()
+    }
 }

@@ -125,4 +125,23 @@ class QrReliabilityGateTest {
         assertEquals(Level.FAIL, report.level)
         assertEquals(0.0, report.totalMatchRate, 1e-9)
     }
+
+    @Test
+    fun `QrDecodeReport distinguishes clean no-QR from engine failure`() {
+        val cleanNoQr = QrDecodeReport(emptyList(), null)
+        assertTrue(cleanNoQr.engineHealthy)
+        assertTrue(cleanNoQr.detections.isEmpty())
+
+        val engineFault = QrDecodeReport(emptyList(), IllegalStateException("WeChat QR engine unavailable"))
+        assertFalse(engineFault.engineHealthy)
+        assertEquals("WeChat QR engine unavailable", engineFault.engineError?.message)
+    }
+
+    @Test
+    fun `uninstalled WeChatQrEngine reports unavailable status`() {
+        WeChatQrEngine.resetForTests()
+        val engine = WeChatQrEngine.get()
+        assertFalse(engine.isAvailable)
+        assertEquals(WeChatQrEngine.Availability.UNAVAILABLE, engine.availability)
+    }
 }
