@@ -77,11 +77,11 @@ class CvEngine(
         return try {
             CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
         } catch (c: CvCancelled) {
-            CvResult.Err(CvErrorCode.CANCELLED, c.detail, c)
+            CvFailureMapper.toResult(c)
         } catch (c: kotlinx.coroutines.CancellationException) {
-            CvResult.Err(CvErrorCode.CANCELLED, c.message ?: "cancelled", c)
+            CvFailureMapper.toResult(c)
         } catch (oom: OutOfMemoryError) {
-            CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${oom.message}", oom)
+            CvFailureMapper.toResult(oom)
         } catch (e: Exception) {
             CvFailureMapper.toResult(e)
         }

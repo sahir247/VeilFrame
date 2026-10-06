@@ -144,4 +144,83 @@ class QrReliabilityGateTest {
         assertFalse(engine.isAvailable)
         assertEquals(WeChatQrEngine.Availability.UNAVAILABLE, engine.availability)
     }
+
+    private fun allocateDummyMat(): org.opencv.core.Mat {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val field = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }
+        val unsafe = field.get(null)
+        val allocate = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        return allocate.invoke(unsafe, org.opencv.core.Mat::class.java) as org.opencv.core.Mat
+    }
+
+    @Test
+    fun `probe throwing CvException is handled as undecodable condition`() {
+        var releasedCount = 0
+        val dummy = allocateDummyMat()
+        val probe = QrReliabilityGate.DecoderProbe {
+            throw org.opencv.core.CvException("native decoding error")
+        }
+
+        val report = QrReliabilityGate.run(
+            image = dummy,
+            expectedPayload = "payload",
+            probe = probe,
+            matrixProvider = { _, _ -> dummy },
+            matReleaser = { releasedCount++ },
+        )
+
+        assertEquals(Level.FAIL, report.level)
+        assertFalse(report.releaseApproved)
+        assertEquals(0.0, report.wechatMatchRate, 1e-9)
+        assertEquals(0.0, report.totalMatchRate, 1e-9)
+        assertEquals(QrStressMatrix.ALL.size, releasedCount)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `probe throwing IllegalStateException propagates directly`() {
+        val dummy = allocateDummyMat()
+        val probe = QrReliabilityGate.DecoderProbe {
+            throw IllegalStateException("scanner state corrupted")
+        }
+
+        QrReliabilityGate.run(
+            image = dummy,
+            expectedPayload = "payload",
+            probe = probe,
+            matrixProvider = { _, _ -> dummy },
+            matReleaser = { },
+        )
+    }
+
+    @Test(expected = OutOfMemoryError::class)
+    fun `probe throwing OutOfMemoryError propagates directly`() {
+        val dummy = allocateDummyMat()
+        val probe = QrReliabilityGate.DecoderProbe {
+            throw OutOfMemoryError("OOM during model inference")
+        }
+
+        QrReliabilityGate.run(
+            image = dummy,
+            expectedPayload = "payload",
+            probe = probe,
+            matrixProvider = { _, _ -> dummy },
+            matReleaser = { },
+        )
+    }
+
+    @Test(expected = LinkageError::class)
+    fun `probe throwing LinkageError propagates directly`() {
+        val dummy = allocateDummyMat()
+        val probe = QrReliabilityGate.DecoderProbe {
+            throw UnsatisfiedLinkError("libopencv_java4.so missing")
+        }
+
+        QrReliabilityGate.run(
+            image = dummy,
+            expectedPayload = "payload",
+            probe = probe,
+            matrixProvider = { _, _ -> dummy },
+            matReleaser = { },
+        )
+    }
 }

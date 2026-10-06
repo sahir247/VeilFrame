@@ -83,13 +83,7 @@ class CvDispatcher(
         // Keep the engine's result and the coroutine result in sync.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             result.complete(runCatching { deferred.await() }.getOrElse {
-                when (it) {
-                    is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, it.detail, it)
-                    is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, it.message ?: "cancelled", it)
-                    is OutOfMemoryError -> CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${it.message}", it)
-                    is Exception -> CvFailureMapper.toResult(it)
-                    else -> throw it
-                }
+                CvFailureMapper.toResult(it)
             })
         }
 
@@ -283,12 +277,21 @@ class CvJob<T> internal constructor(
 
 /** Centralized failure mapper converting non-fatal exceptions to structured CvResult.Err. */
 object CvFailureMapper {
-    fun <T> toResult(e: Exception): CvResult<T> = when (e) {
-        is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, e.detail, e)
-        is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, e.message ?: "cancelled", e)
-        is IllegalArgumentException -> CvResult.Err(CvErrorCode.INVALID_INPUT, e.message ?: "invalid input", e)
-        is UnsupportedOperationException -> CvResult.Err(CvErrorCode.UNSUPPORTED, e.message ?: "unsupported", e)
-        is org.opencv.core.CvException -> CvResult.Err(CvErrorCode.INTERNAL, "OpenCV native error: ${e.message}", e)
-        else -> CvResult.Err(CvErrorCode.INTERNAL, e.message ?: e::class.java.simpleName, e)
+    /**
+     * Converts non-fatal failures to structured [CvResult.Err].
+     *
+     * Fatal VM errors ([StackOverflowError], [LinkageError], [ThreadDeath],
+     * and non-OOM [VirtualMachineError]s) are re-thrown and NEVER swallowed.
+     */
+    fun <T> toResult(t: Throwable): CvResult<T> = when (t) {
+        is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, t.detail, t)
+        is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, t.message ?: "cancelled", t)
+        is OutOfMemoryError -> CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${t.message}", t)
+        is IllegalArgumentException -> CvResult.Err(CvErrorCode.INVALID_INPUT, t.message ?: "invalid input", t)
+        is UnsupportedOperationException -> CvResult.Err(CvErrorCode.UNSUPPORTED, t.message ?: "unsupported", t)
+        is org.opencv.core.CvException -> CvResult.Err(CvErrorCode.INTERNAL, "OpenCV native error: ${t.message}", t)
+        is Exception -> CvResult.Err(CvErrorCode.INTERNAL, t.message ?: t::class.java.simpleName, t)
+        is StackOverflowError, is LinkageError, is ThreadDeath, is VirtualMachineError -> throw t
+        else -> throw t
     }
 }

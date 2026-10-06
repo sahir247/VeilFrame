@@ -22,11 +22,22 @@ import org.opencv.core.Mat
  *
  * Thread-safety: all public methods are synchronized on the pool instance.
  */
+internal data class PooledBuffer(
+    val mat: Mat,
+    val actualBytes: Long,
+    val rows: Int,
+    val cols: Int,
+    val type: Int,
+)
+
 class MatPool(
     private val maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,
     private val maxPerClass: Int = DEFAULT_MAX_PER_CLASS,
+    private val matFactory: (rows: Int, cols: Int, type: Int) -> Mat = { r, c, t -> Mat(r, c, t) },
+    private val matReleaser: (Mat) -> Unit = { it.release() },
+    private val matEmptyPredicate: (Mat) -> Boolean = { it.empty() },
 ) {
-    private val free = HashMap<SizeClass, ArrayDeque<Mat>>()
+    private val free = HashMap<SizeClass, ArrayDeque<PooledBuffer>>()
     private var retainedBytes = 0L
     private var liveBytes = 0L
 
@@ -61,20 +72,20 @@ class MatPool(
         val bucket = key?.let { free[it] }
         val recycled = bucket?.removeFirstOrNull()
         val lease = if (recycled != null) {
-            val recycledActual = recycled.rows().toLong() * recycled.cols().toLong() * org.opencv.core.CvType.ELEM_SIZE(recycled.type()).toLong()
-            retainedBytes = (retainedBytes - recycledActual).coerceAtLeast(0L)
-            hits++
-            val mat = if (recycled.rows() == rows && recycled.cols() == cols && recycled.type() == type) {
-                recycled
+            retainedBytes = (retainedBytes - recycled.actualBytes).coerceAtLeast(0L)
+            val mat = if (recycled.rows == rows && recycled.cols == cols && recycled.type == type) {
+                hits++
+                recycled.mat
             } else {
-                recycled.release()
-                Mat(rows, cols, type).also { allocations++ }
+                misses++
+                matReleaser(recycled.mat)
+                matFactory(rows, cols, type).also { allocations++ }
             }
-            MatLease(mat, this, accounting, key)
+            MatLease(mat, this, accounting, key, rows, cols, type)
         } else {
             misses++
             allocations++
-            MatLease(Mat(rows, cols, type), this, accounting, key)
+            MatLease(matFactory(rows, cols, type), this, accounting, key, rows, cols, type)
         }
         liveLeases++
         liveBytes += accounting.actualBytes
@@ -95,16 +106,16 @@ class MatPool(
         liveLeases--
         liveBytes = (liveBytes - lease.accounting.actualBytes).coerceAtLeast(0L)
         val key = lease.key
-        if (mat.empty() || !lease.accounting.retainable || key == null) {
-            mat.release()
+        if (matEmptyPredicate(mat) || !lease.accounting.retainable || key == null) {
+            matReleaser(mat)
             return
         }
         val actual = lease.accounting.actualBytes
         val bucket = free.getOrPut(key) { ArrayDeque() }
         if (bucket.size >= maxPerClass || retainedBytes + actual > maxRetainedBytes) {
-            mat.release()
+            matReleaser(mat)
         } else {
-            bucket.addLast(mat)
+            bucket.addLast(PooledBuffer(mat, actual, lease.rows, lease.cols, lease.type))
             retainedBytes += actual
         }
     }
@@ -114,10 +125,9 @@ class MatPool(
     fun trim() {
         for (bucket in free.values) {
             while (bucket.isNotEmpty()) {
-                val mat = bucket.removeFirst()
-                val actual = mat.rows().toLong() * mat.cols().toLong() * org.opencv.core.CvType.ELEM_SIZE(mat.type()).toLong()
-                retainedBytes = (retainedBytes - actual).coerceAtLeast(0L)
-                mat.release()
+                val entry = bucket.removeFirst()
+                retainedBytes = (retainedBytes - entry.actualBytes).coerceAtLeast(0L)
+                matReleaser(entry.mat)
             }
         }
         free.clear()
@@ -171,11 +181,10 @@ class MatLease internal constructor(
     private val pool: MatPool,
     val accounting: MatLeaseAccounting,
     internal val key: SizeClass?,
+    val rows: Int = runCatching { mat.rows() }.getOrDefault(0),
+    val cols: Int = runCatching { mat.cols() }.getOrDefault(0),
+    val type: Int = runCatching { mat.type() }.getOrDefault(0),
 ) : AutoCloseable {
-    val rows: Int get() = mat.rows()
-    val cols: Int get() = mat.cols()
-    val type: Int get() = mat.type()
-
     private var closed = false
 
     override fun close() {

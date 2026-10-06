@@ -60,9 +60,11 @@ object QrReliabilityGate {
         image: Mat,
         expectedPayload: String?,
         probe: DecoderProbe,
+        matrixProvider: (Mat, QrStressMatrix.StressCondition) -> Mat = { img, cond -> QrStressMatrix.apply(img, cond) },
+        matReleaser: (Mat) -> Unit = { it.release() },
     ): Report {
         val outcomes = QrStressMatrix.ALL.map { condition ->
-            val degraded = QrStressMatrix.apply(image, condition)
+            val degraded = matrixProvider(image, condition)
             try {
                 val detection = probe.decode(degraded)
                 ConditionOutcome(
@@ -76,7 +78,7 @@ object QrReliabilityGate {
                 // Other unexpected exceptions/errors propagate instead of masking plugin bugs.
                 ConditionOutcome(condition, null, false)
             } finally {
-                degraded.release()
+                matReleaser(degraded)
             }
         }
         return evaluate(outcomes, expectedPayload)

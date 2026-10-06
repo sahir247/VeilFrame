@@ -69,7 +69,7 @@ jobs:
           ./gradlew :app:assembleDebug
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*"
 
-      - name: Device Runtime Verification (WeChatQRCode RoundTrip on x86_64 Emulator)
+      - name: Device Runtime Verification (WeChatQRCode + Native CV Subsystem on x86_64 Emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -79,7 +79,7 @@ jobs:
           profile: pixel_6
           script: |
             cd android
-            ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.veilframe.app.cv.qr.WeChatQrRoundTripTest
+            ./gradlew :app:connectedDebugAndroidTest
 
       - name: Upload Custom OpenCV SDK Artifacts
         uses: actions/upload-artifact@v4

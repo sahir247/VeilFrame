@@ -53,23 +53,7 @@ object BackgroundRemover {
         options: Options = Options(),
     ): RemovalResult {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(image, "image")
-        val rawMask = try {
-            val m = segmenter.segment(image)
-            if (m != null) {
-                if (!m.empty() && m.rows() == image.rows() && m.cols() == image.cols() && m.type() == org.opencv.core.CvType.CV_8UC1) {
-                    m
-                } else {
-                    m.release()
-                    null
-                }
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            // Segmenter plugin failure: degrade to identity mask.
-            // Errors (OOM, etc.) propagate — they must not be swallowed here.
-            null
-        }
+        val rawMask = resolveRawMask(image, segmenter)
 
         if (rawMask == null) {
             // Degraded path: identity mask — the image passes through untouched.
@@ -104,5 +88,29 @@ object BackgroundRemover {
         } finally {
             rawMask.release()
         }
+    }
+
+    internal fun resolveRawMask(
+        image: Mat,
+        segmenter: ForegroundSegmenter,
+        shapeValidator: (mask: Mat, image: Mat) -> Boolean = { m, img ->
+            !m.empty() && m.rows() == img.rows() && m.cols() == img.cols() && m.type() == org.opencv.core.CvType.CV_8UC1
+        },
+        maskReleaser: (Mat) -> Unit = { it.release() },
+    ): Mat? = try {
+        val m = segmenter.segment(image)
+        if (m != null) {
+            if (shapeValidator(m, image)) {
+                m
+            } else {
+                maskReleaser(m)
+                null
+            }
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        // Segmenter plugin failure: degrade to identity mask.
+        // Fatal errors (OOM, LinkageError, etc.) propagate — they are not caught here.
     }
 }

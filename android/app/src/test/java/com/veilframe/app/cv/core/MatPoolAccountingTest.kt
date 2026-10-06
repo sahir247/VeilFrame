@@ -55,4 +55,116 @@ class MatPoolAccountingTest {
         assertEquals(-1, SizeClass.byteClassFor(maxClass + 1))
         assertEquals(-1, SizeClass.byteClassFor(800L * 1024 * 1024))
     }
+
+    private fun allocateDummyMat(): org.opencv.core.Mat {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val field = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }
+        val unsafe = field.get(null)
+        val allocate = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        return allocate.invoke(unsafe, org.opencv.core.Mat::class.java) as org.opencv.core.Mat
+    }
+
+    @Test
+    fun shapeMismatchInSameBucketRejectsReuseAndAdjustsRetainedBytesExactly() {
+        val releasedMats = mutableListOf<org.opencv.core.Mat>()
+        val pool = MatPool(
+            maxRetainedBytes = 100L * 1024 * 1024,
+            maxPerClass = 3,
+            matFactory = { _, _, _ -> allocateDummyMat() },
+            matReleaser = { releasedMats.add(it) },
+            matEmptyPredicate = { false },
+        )
+
+        // Request A: 400 x 100 x CV_8UC1 -> 40,000 bytes (bucket = 64 KiB)
+        val leaseA = pool.acquire(400, 100, CvType.CV_8UC1)
+        assertEquals(40_000L, leaseA.accounting.actualBytes)
+        assertEquals(40_000L, pool.stats().liveBytes)
+        assertEquals(0L, pool.stats().retainedBytes)
+
+        leaseA.close()
+        assertEquals(0L, pool.stats().liveBytes)
+        assertEquals(40_000L, pool.stats().retainedBytes)
+        assertEquals(1, pool.stats().retainedBuffers)
+        assertEquals(1, pool.stats().allocations)
+        assertEquals(0, pool.stats().hits)
+        assertEquals(1, pool.stats().misses)
+
+        // Request B: 200 x 200 x CV_8UC1 -> 40,000 bytes (same bucket = 64 KiB, different shape)
+        val leaseB = pool.acquire(200, 200, CvType.CV_8UC1)
+        // Recycled was removed: retainedBytes must be decremented by 40,000L immediately
+        assertEquals(0L, pool.stats().retainedBytes)
+        // Mismatch rejected: liveBytes must match leaseB's actualBytes
+        assertEquals(40_000L, pool.stats().liveBytes)
+        // Incompatible Mat released immediately
+        assertEquals(1, releasedMats.size)
+        // Miss count incremented, hits remains 0, allocations incremented
+        assertEquals(2, pool.stats().allocations)
+        assertEquals(0, pool.stats().hits)
+        assertEquals(2, pool.stats().misses)
+
+        leaseB.close()
+        assertEquals(0L, pool.stats().liveBytes)
+        assertEquals(40_000L, pool.stats().retainedBytes)
+        assertEquals(1, pool.stats().retainedBuffers)
+
+        pool.trim()
+        assertEquals(0L, pool.stats().retainedBytes)
+        assertEquals(0, pool.stats().retainedBuffers)
+        assertEquals(2, releasedMats.size)
+    }
+
+    @Test
+    fun exactShapeMatchReusesBufferAndIncrementsHits() {
+        val releasedMats = mutableListOf<org.opencv.core.Mat>()
+        val pool = MatPool(
+            maxRetainedBytes = 100L * 1024 * 1024,
+            maxPerClass = 3,
+            matFactory = { _, _, _ -> allocateDummyMat() },
+            matReleaser = { releasedMats.add(it) },
+            matEmptyPredicate = { false },
+        )
+
+        val leaseA = pool.acquire(100, 100, CvType.CV_8UC1)
+        val matA = leaseA.mat
+        leaseA.close()
+
+        val leaseB = pool.acquire(100, 100, CvType.CV_8UC1)
+        // Exact hit
+        org.junit.Assert.assertSame(matA, leaseB.mat)
+        assertEquals(1, pool.stats().hits)
+        assertEquals(1, pool.stats().misses)
+        assertEquals(1, pool.stats().allocations)
+        assertEquals(10_000L, pool.stats().liveBytes)
+        assertEquals(0L, pool.stats().retainedBytes)
+
+        leaseB.close()
+        assertEquals(0L, pool.stats().liveBytes)
+        assertEquals(10_000L, pool.stats().retainedBytes)
+    }
+
+    @Test
+    fun oversizeAllocationIsNeverRetainedAndReleasedImmediatelyOnClose() {
+        val releasedMats = mutableListOf<org.opencv.core.Mat>()
+        val pool = MatPool(
+            maxRetainedBytes = 100L * 1024 * 1024,
+            maxPerClass = 3,
+            matFactory = { _, _, _ -> allocateDummyMat() },
+            matReleaser = { releasedMats.add(it) },
+            matEmptyPredicate = { false },
+        )
+
+        // 800 MiB allocation (>512 MiB MAX_BYTE_CLASS)
+        val lease = pool.acquire(10000, 10000, CvType.CV_64FC1)
+        assertFalse("Oversize lease must not be retainable", lease.accounting.retainable)
+        assertNull("Oversize lease must have null size class key", lease.key)
+        assertEquals(800_000_000L, pool.stats().liveBytes)
+        assertEquals(0L, pool.stats().retainedBytes)
+
+        lease.close()
+        // Must be released immediately and never retained in free list
+        assertEquals(1, releasedMats.size)
+        assertEquals(0L, pool.stats().liveBytes)
+        assertEquals(0L, pool.stats().retainedBytes)
+        assertEquals(0, pool.stats().retainedBuffers)
+    }
 }
