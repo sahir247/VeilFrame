@@ -339,22 +339,23 @@ object QrGenerator {
      * Modern domain generation entry point returning typed [QrRenderResult]
      * with automated structural and decode scanability validation.
      */
-    fun generateWithResult(
+    /**
+     * Canonical internal suspend generation pipeline (Audit Pass 2 architectural unification).
+     * All synchronous and suspend public API entry points delegate to this single implementation,
+     * eliminating implementation duplication and preventing behavioral drift.
+     */
+    private suspend fun generateCore(
         content: String,
-        design: QrDesign = QrDesign(),
-        mode: GenerationMode = defaultModeFor(design),
-        strictValidation: Boolean = false
-    ): QrRenderResult {
+        design: QrDesign,
+        mode: GenerationMode,
+        strictValidation: Boolean
+    ): QrRenderResult = withContext(Dispatchers.Default) {
         if (content.isBlank()) {
-            return QrRenderResult.Failure(QrError.Input.EmptyContent)
+            return@withContext QrRenderResult.Failure(QrError.Input.EmptyContent)
         }
-
-
         try {
             val effectiveDesign = effectiveDesignForMode(design, mode)
-
             val matrix = generateMatrix(content, effectiveDesign, mode)
-
             val size = effectiveDesign.outputSize.coerceIn(256, 4096)
             val geometry = QrGeometry.fromDesign(
                 matrixSize = matrix.size,
@@ -362,21 +363,16 @@ object QrGenerator {
                 outputHeight = size,
                 design = effectiveDesign
             )
-
             when (val bitmapResult = generateBitmapResult(matrix, effectiveDesign, geometry)) {
-                is BitmapRenderResult.Failure -> {
-                    return QrRenderResult.Failure(bitmapResult.error)
-                }
+                is BitmapRenderResult.Failure -> QrRenderResult.Failure(bitmapResult.error)
                 is BitmapRenderResult.Success -> {
                     val bitmap = bitmapResult.bitmap
-                    val report = runBlocking(Dispatchers.Default) {
-                        if (strictValidation) {
-                            ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
-                        } else {
-                            ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
-                        }
+                    val report = if (strictValidation) {
+                        ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
+                    } else {
+                        ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
                     }
-                    return QrRenderResult.Success(
+                    QrRenderResult.Success(
                         bitmap = bitmap,
                         report = report,
                         matrix = matrix,
@@ -387,8 +383,22 @@ object QrGenerator {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (t: Throwable) {
-            return QrRenderResult.Failure(QrError.fromThrowable(t))
+            QrRenderResult.Failure(QrError.fromThrowable(t))
         }
+    }
+
+    /**
+     * Modern domain generation entry point returning typed [QrRenderResult]
+     * with automated structural and decode scanability validation.
+     * Synchronous compatibility wrapper around canonical [generateCore].
+     */
+    fun generateWithResult(
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design),
+        strictValidation: Boolean = false
+    ): QrRenderResult = runBlocking(Dispatchers.Default) {
+        generateCore(content, design, mode, strictValidation)
     }
 
     /**
@@ -434,6 +444,29 @@ object QrGenerator {
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
 
+    suspend fun generateArtisticSuspend(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResultSuspend(content, design, mode = GenerationMode.ARTISTIC_ENGINE)
+
+    fun generateArtistic(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateArtistic(content, materialized)
+    }
+
+    suspend fun generateArtisticSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateArtisticSuspend(content, materialized)
+    }
+
     /**
      * Convenience entry point for generating QR code with EFQRCode 7.0.3 exact behavioral parity.
      */
@@ -441,6 +474,29 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)
+
+    suspend fun generateParitySuspend(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResultSuspend(content, design, mode = GenerationMode.PARITY_EF)
+
+    fun generateParity(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateParity(content, materialized)
+    }
+
+    suspend fun generateParitySuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateParitySuspend(content, materialized)
+    }
 
     /**
      * Coroutine-native generation entry point returning typed [QrRenderResult]
@@ -451,43 +507,7 @@ object QrGenerator {
         design: QrDesign = QrDesign(),
         mode: GenerationMode = defaultModeFor(design),
         strictValidation: Boolean = false
-    ): QrRenderResult = withContext(Dispatchers.Default) {
-        if (content.isBlank()) {
-            return@withContext QrRenderResult.Failure(QrError.Input.EmptyContent)
-        }
-        try {
-            val effectiveDesign = effectiveDesignForMode(design, mode)
-            val matrix = generateMatrix(content, effectiveDesign, mode)
-            val size = effectiveDesign.outputSize.coerceIn(256, 4096)
-            val geometry = QrGeometry.fromDesign(
-                matrixSize = matrix.size,
-                outputWidth = size,
-                outputHeight = size,
-                design = effectiveDesign
-            )
-            when (val bitmapResult = generateBitmapResult(matrix, effectiveDesign, geometry)) {
-                is BitmapRenderResult.Failure -> QrRenderResult.Failure(bitmapResult.error)
-                is BitmapRenderResult.Success -> {
-                    val bitmap = bitmapResult.bitmap
-                    val report = if (strictValidation) {
-                        ScanabilityValidator.validateStrict(bitmap, effectiveDesign, matrix, content)
-                    } else {
-                        ScanabilityValidator.validateFast(bitmap, effectiveDesign, matrix, content)
-                    }
-                    QrRenderResult.Success(
-                        bitmap = bitmap,
-                        report = report,
-                        matrix = matrix,
-                        design = effectiveDesign
-                    )
-                }
-            }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            QrRenderResult.Failure(QrError.fromThrowable(t))
-        }
-    }
+    ): QrRenderResult = generateCore(content, design, mode, strictValidation)
 
     /**
      * Coroutine-native entry point for generating QR codes with strict compliance validation.
@@ -523,6 +543,29 @@ object QrGenerator {
         mode: GenerationMode = defaultModeFor(design)
     ): QrRenderResult = generateWithResultSuspend(context, content, design, mode = mode, strictValidation = true)
 
+    private fun prepareSafeDesign(design: QrDesign): QrDesign = design.copy(
+        quietZoneModules = maxOf(4, design.quietZoneModules),
+        explicitQuietZone = maxOf(4, design.explicitQuietZone ?: 4),
+        directionalQuietZone = null,
+        backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
+    )
+
+    private fun verifySafeResult(result: QrRenderResult): QrRenderResult = when (result) {
+        is QrRenderResult.Failure -> result
+        is QrRenderResult.Success -> {
+            if (!result.report.isScanReady || !result.report.decodeResult.success) {
+                QrRenderResult.Failure(
+                    QrError.Validation.ScanabilityFailed(
+                        reason = "Safe QR contract violation: strict scanability failed",
+                        warnings = result.report.warnings
+                    )
+                )
+            } else {
+                result
+            }
+        }
+    }
+
     /**
      * Canonical entry point for generating safe, production-grade QR codes.
      *
@@ -535,29 +578,8 @@ object QrGenerator {
     fun generateSafe(
         content: String,
         design: QrDesign = QrDesign()
-    ): QrRenderResult {
-        val safeDesign = design.copy(
-            quietZoneModules = maxOf(4, design.quietZoneModules),
-            explicitQuietZone = maxOf(4, design.explicitQuietZone ?: 4),
-            directionalQuietZone = null,
-            backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
-        )
-        val result = generateWithResult(content, safeDesign, mode = GenerationMode.SAFE, strictValidation = true)
-        return when (result) {
-            is QrRenderResult.Failure -> result
-            is QrRenderResult.Success -> {
-                if (!result.report.isScanReady || !result.report.decodeResult.success) {
-                    QrRenderResult.Failure(
-                        QrError.Validation.ScanabilityFailed(
-                            reason = "Safe QR contract violation: strict scanability failed",
-                            warnings = result.report.warnings
-                        )
-                    )
-                } else {
-                    result
-                }
-            }
-        }
+    ): QrRenderResult = runBlocking(Dispatchers.Default) {
+        generateSafeSuspend(content, design)
     }
 
     fun generateSafe(
@@ -572,29 +594,10 @@ object QrGenerator {
     suspend fun generateSafeSuspend(
         content: String,
         design: QrDesign = QrDesign()
-    ): QrRenderResult = withContext(Dispatchers.Default) {
-        val safeDesign = design.copy(
-            quietZoneModules = maxOf(4, design.quietZoneModules),
-            explicitQuietZone = maxOf(4, design.explicitQuietZone ?: 4),
-            directionalQuietZone = null,
-            backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
-        )
-        val result = generateWithResultSuspend(content, safeDesign, mode = GenerationMode.SAFE, strictValidation = true)
-        when (result) {
-            is QrRenderResult.Failure -> result
-            is QrRenderResult.Success -> {
-                if (!result.report.isScanReady || !result.report.decodeResult.success) {
-                    QrRenderResult.Failure(
-                        QrError.Validation.ScanabilityFailed(
-                            reason = "Safe QR contract violation: strict scanability failed",
-                            warnings = result.report.warnings
-                        )
-                    )
-                } else {
-                    result
-                }
-            }
-        }
+    ): QrRenderResult {
+        val safeDesign = prepareSafeDesign(design)
+        val result = generateCore(content, safeDesign, mode = GenerationMode.SAFE, strictValidation = true)
+        return verifySafeResult(result)
     }
 
     suspend fun generateSafeSuspend(
@@ -620,6 +623,24 @@ object QrGenerator {
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResultSuspend(content, design, mode = GenerationMode.PARITY_EF)
 
+    fun generateEfCompatible(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateEfCompatible(content, materialized)
+    }
+
+    suspend fun generateEfCompatibleSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateEfCompatibleSuspend(content, materialized)
+    }
+
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.
      *
@@ -632,38 +653,18 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign(),
         maxAttempts: Int = 3
+    ): QrRenderResult = runBlocking(Dispatchers.Default) {
+        generateWithAutoRepairSuspend(content, design, maxAttempts)
+    }
+
+    fun generateWithAutoRepair(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        maxAttempts: Int = 3
     ): QrRenderResult {
-        if (content.isBlank()) {
-            return QrRenderResult.Failure(QrError.Input.EmptyContent)
-        }
-
-        var currentDesign = design
-        var lastSuccess: QrRenderResult.Success? = null
-        val repairTrail = mutableListOf<String>()
-
-        for (attempt in 1..maxAttempts) {
-            val result = generateWithResult(content, currentDesign)
-            when (result) {
-                is QrRenderResult.Failure -> return result
-                is QrRenderResult.Success -> {
-                    lastSuccess = result
-                    // Check if decode succeeded and report is scan-ready
-                    if (result.report.isScanReady && result.report.decodeResult.success) {
-                        return result
-                    }
-                    if (attempt < maxAttempts) {
-                        val repair = AutoRepairEngine.repair(currentDesign, result.report, content)
-                        if (repair.changesApplied.isEmpty() || repair.repairedDesign == currentDesign) {
-                            break
-                        }
-                        repairTrail.addAll(repair.changesApplied)
-                        currentDesign = repair.repairedDesign
-                    }
-                }
-            }
-        }
-
-        return lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateWithAutoRepair(content, materialized, maxAttempts)
     }
 
     suspend fun generateWithAutoRepairSuspend(
@@ -680,7 +681,7 @@ object QrGenerator {
         val repairTrail = mutableListOf<String>()
 
         for (attempt in 1..maxAttempts) {
-            val result = generateWithResultSuspend(content, currentDesign)
+            val result = generateCore(content, currentDesign, defaultModeFor(currentDesign), strictValidation = false)
             when (result) {
                 is QrRenderResult.Failure -> return@withContext result
                 is QrRenderResult.Success -> {
@@ -702,6 +703,16 @@ object QrGenerator {
         }
 
         lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
+    }
+
+    suspend fun generateWithAutoRepairSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        maxAttempts: Int = 3
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateWithAutoRepairSuspend(content, materialized, maxAttempts)
     }
 
     /**
