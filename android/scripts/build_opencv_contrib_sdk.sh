@@ -119,7 +119,6 @@ python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
     --modules_list="${BUILD_MODULES}" \
     --config="${WORK_DIR}/opencv-veilframe.config.py" \
     --no_samples_build \
-    --build_doc=OFF \
     "${BUILD_OUT}"
 
 SDK_STAGE="${BUILD_OUT}/OpenCV-android-sdk/sdk"
