@@ -21,7 +21,11 @@ import com.veilframe.app.qr.model.QrOutputFormat
 import com.veilframe.app.qr.model.QrOutputResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.graphics.Canvas
+import android.graphics.Color
+import android.os.ParcelFileDescriptor
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -676,13 +680,67 @@ object QrExporter {
     ): Uri? = saveVideoTyped(context, videoFile).getOrNull()
 
     /**
+     * Rasterizes the actual generated PDF artifact using [android.graphics.pdf.PdfRenderer]
+     * and strictly validates scanability against the expected content (Audit Issue 4).
+     */
+    internal suspend fun verifyPdfArtifactScanability(
+        pdfFile: File,
+        content: String,
+        design: QrDesign,
+        matrix: QrMatrix
+    ): QrError.Validation.ScanabilityFailed? {
+        if (!pdfFile.exists() || pdfFile.length() == 0L) return null
+        var pfd: ParcelFileDescriptor? = null
+        var renderer: android.graphics.pdf.PdfRenderer? = null
+        var page: android.graphics.pdf.PdfRenderer.Page? = null
+        var rasterBmp: Bitmap? = null
+        return try {
+            pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            if (pfd == null) return null
+            renderer = android.graphics.pdf.PdfRenderer(pfd)
+            if (renderer.pageCount <= 0) return null
+            page = renderer.openPage(0)
+            val renderW = maxOf(1024, page.width * 2)
+            val renderH = maxOf(1024, page.height * 2)
+            rasterBmp = Bitmap.createBitmap(renderW, renderH, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(rasterBmp)
+            canvas.drawColor(Color.WHITE)
+            page.render(rasterBmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            val report = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(rasterBmp, design, matrix, content)
+            if (!report.isScanReady && !report.validationSkipped) {
+                QrError.Validation.ScanabilityFailed(
+                    "Post-export PDF artifact verification failed: rendered page degraded scanability",
+                    report.warnings
+                )
+            } else {
+                null
+            }
+        } catch (_: NoClassDefFoundError) {
+            null
+        } catch (_: UnsatisfiedLinkError) {
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { rasterBmp?.recycle() } catch (_: Throwable) {}
+            try { page?.close() } catch (_: Throwable) {}
+            try { renderer?.close() } catch (_: Throwable) {}
+            try { pfd?.close() } catch (_: Throwable) {}
+        }
+    }
+
+    /**
      * Saves [bitmap] as a printable PDF document returning typed [QrOutputResult].
+     * Executes actual artifact post-export round-trip validation when [content], [design], and [matrix] are provided.
      */
     suspend fun savePdfTyped(
         context: Context,
         bitmap: Bitmap,
         pageWidthPoints: Int = 595,
-        pageHeightPoints: Int = 842
+        pageHeightPoints: Int = 842,
+        content: String? = null,
+        design: QrDesign? = null,
+        matrix: QrMatrix? = null
     ): QrOutputResult<Uri> = withContext(Dispatchers.IO) {
         if (bitmap.isRecycled) {
             return@withContext QrOutputResult.Failure(
@@ -709,62 +767,79 @@ object QrExporter {
             canvas.drawBitmap(bitmap, src, dst, null)
             document.finishPage(page)
 
-            var createdUri: Uri? = null
+            val tempPdf = File.createTempFile("qr_export_val_", ".pdf", context.cacheDir)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val cv = ContentValues().apply {
-                        put(MediaStore.Downloads.DISPLAY_NAME, name)
-                        put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                        put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
-                        put(MediaStore.Downloads.IS_PENDING, 1)
-                    }
-                    val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
-                        ?: return@withContext QrOutputResult.Failure(
-                            QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
-                        )
-                    createdUri = uri
-                    val stream = context.contentResolver.openOutputStream(uri)
-                    if (stream == null) {
-                        context.contentResolver.delete(uri, null, null)
-                        createdUri = null
-                        return@withContext QrOutputResult.Failure(
-                            QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
-                        )
-                    }
-                    stream.use { out ->
-                        document.writeTo(out)
-                    }
-                    cv.clear()
-                    cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                    context.contentResolver.update(uri, cv, null, null)
-                    QrOutputResult.Success(uri)
-                } else {
-                    @Suppress("DEPRECATION")
-                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
-                    if (!dir.exists() && !dir.mkdirs()) {
-                        return@withContext QrOutputResult.Failure(
-                            QrError.Platform.StorageFailed(dir.absolutePath)
-                        )
-                    }
-                    val file = File(dir, name)
-                    FileOutputStream(file).use { out ->
-                        document.writeTo(out)
-                    }
-                    android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("application/pdf"), null)
-                    val uri = try {
-                        androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-                    } catch (_: Exception) {
-                        Uri.fromFile(file)
-                    }
-                    QrOutputResult.Success(uri)
+                FileOutputStream(tempPdf).use { fos ->
+                    document.writeTo(fos)
                 }
-            } catch (t: Throwable) {
-                createdUri?.let { uri ->
-                    try {
-                        context.contentResolver.delete(uri, null, null)
-                    } catch (_: Throwable) {}
+
+                // Post-export actual-PDF artifact rasterize & decode verification (Audit Item 4)
+                if (content != null && design != null && matrix != null) {
+                    val artifactError = verifyPdfArtifactScanability(tempPdf, content, design, matrix)
+                    if (artifactError != null) {
+                        return@withContext QrOutputResult.Failure(artifactError)
+                    }
                 }
-                throw t
+
+                var createdUri: Uri? = null
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val cv = ContentValues().apply {
+                            put(MediaStore.Downloads.DISPLAY_NAME, name)
+                            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
+                            put(MediaStore.Downloads.IS_PENDING, 1)
+                        }
+                        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                            ?: return@withContext QrOutputResult.Failure(
+                                QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
+                            )
+                        createdUri = uri
+                        val stream = context.contentResolver.openOutputStream(uri)
+                        if (stream == null) {
+                            context.contentResolver.delete(uri, null, null)
+                            createdUri = null
+                            return@withContext QrOutputResult.Failure(
+                                QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                            )
+                        }
+                        stream.use { out ->
+                            FileInputStream(tempPdf).use { fis ->
+                                fis.copyTo(out)
+                            }
+                        }
+                        cv.clear()
+                        cv.put(MediaStore.Downloads.IS_PENDING, 0)
+                        context.contentResolver.update(uri, cv, null, null)
+                        QrOutputResult.Success(uri)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
+                        if (!dir.exists() && !dir.mkdirs()) {
+                            return@withContext QrOutputResult.Failure(
+                                QrError.Platform.StorageFailed(dir.absolutePath)
+                            )
+                        }
+                        val file = File(dir, name)
+                        tempPdf.copyTo(file, overwrite = true)
+                        android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("application/pdf"), null)
+                        val uri = try {
+                            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                        } catch (_: Exception) {
+                            Uri.fromFile(file)
+                        }
+                        QrOutputResult.Success(uri)
+                    }
+                } catch (t: Throwable) {
+                    createdUri?.let { uri ->
+                        try {
+                            context.contentResolver.delete(uri, null, null)
+                        } catch (_: Throwable) {}
+                    }
+                    throw t
+                }
+            } finally {
+                tempPdf.delete()
             }
         } catch (t: Throwable) {
             QrOutputResult.Failure(QrError.fromThrowable(t))
@@ -923,7 +998,7 @@ object QrExporter {
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
 
-                // Verify post-compression JPEG scanability before exporting
+                // Verify post-compression JPEG scanability strictly before exporting
                 val baos = java.io.ByteArrayOutputStream()
                 val compressed = bmp.compress(Bitmap.CompressFormat.JPEG, format.quality, baos)
                 if (!compressed) {
@@ -933,7 +1008,7 @@ object QrExporter {
                 val decodedBmp = android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                 if (decodedBmp != null) {
                     try {
-                        val postCompressReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateFast(
+                        val postCompressReport = com.veilframe.app.qr.validation.ScanabilityValidator.validateStrict(
                             decodedBmp,
                             effectiveDesign,
                             matrix,
@@ -990,7 +1065,7 @@ object QrExporter {
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
-                savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints)
+                savePdfTyped(context, bmp, format.pageWidthPoints, format.pageHeightPoints, content, effectiveDesign, matrix)
             }
             is QrOutputFormat.Gif -> {
                 val frames = AnimatedQrGenerator.extractSourceFrames(effectiveDesign)

@@ -43,23 +43,49 @@ class GifEncoder {
 
     /**
      * Adds a frame to the animated GIF sequence from a [Bitmap].
+     * Normalizes dimensions to match the logical screen descriptor ([width] x [height]) to prevent frame misalignment.
      */
     fun addFrame(bitmap: Bitmap, durationMs: Int = 100) {
         val os = checkNotNull(outputStream) { "GifEncoder must be started before adding frames" }
-        val w = bitmap.width
-        val h = bitmap.height
-        val pixels = IntArray(w * h)
+        val rawW = try { bitmap.width } catch (_: Throwable) { 0 }
+        val rawH = try { bitmap.height } catch (_: Throwable) { 0 }
+        val targetW = if (width > 0) width else if (rawW > 0) rawW else 1
+        val targetH = if (height > 0) height else if (rawH > 0) rawH else 1
+
+        val effectiveBitmap = if (rawW > 0 && rawH > 0 && (rawW != targetW || rawH != targetH)) {
+            try {
+                Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+            } catch (_: Throwable) {
+                bitmap
+            }
+        } else {
+            bitmap
+        }
+        val isTemp = effectiveBitmap !== bitmap
         try {
-            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
-        } catch (_: Throwable) {
-            // Fallback for headless JVM test environments where android Bitmap stubs don't supply getPixels
-            for (y in 0 until h) {
-                for (x in 0 until w) {
-                    pixels[y * w + x] = try { bitmap.getPixel(x, y) } catch (_: Throwable) { 0xFFFFFFFF.toInt() }
+            val effW = try { effectiveBitmap.width.takeIf { it > 0 } ?: targetW } catch (_: Throwable) { targetW }
+            val effH = try { effectiveBitmap.height.takeIf { it > 0 } ?: targetH } catch (_: Throwable) { targetH }
+            val pixels = IntArray(effW * effH)
+            var pixelsExtracted = false
+            try {
+                effectiveBitmap.getPixels(pixels, 0, effW, 0, 0, effW, effH)
+                pixelsExtracted = true
+            } catch (_: Throwable) {
+            }
+            if (!pixelsExtracted) {
+                // Fallback for headless JVM test environments where android Bitmap stubs don't supply getPixels
+                for (y in 0 until effH) {
+                    for (x in 0 until effW) {
+                        pixels[y * effW + x] = try { effectiveBitmap.getPixel(x, y) } catch (_: Throwable) { 0xFFFFFFFF.toInt() }
+                    }
                 }
             }
+            addFrame(pixels, effW, effH, durationMs)
+        } finally {
+            if (isTemp) {
+                try { effectiveBitmap.recycle() } catch (_: Throwable) {}
+            }
         }
-        addFrame(pixels, w, h, durationMs)
     }
 
     /**
@@ -67,11 +93,16 @@ class GifEncoder {
      */
     fun addFrame(pixels: IntArray, frameWidth: Int, frameHeight: Int, durationMs: Int = 100) {
         val os = checkNotNull(outputStream) { "GifEncoder must be started before adding frames" }
+        val targetW = if (width > 0) width else frameWidth
+        val targetH = if (height > 0) height else frameHeight
+        require(frameWidth == targetW && frameHeight == targetH) {
+            "Frame dimensions ($frameWidth x $frameHeight) must match GIF logical screen descriptor ($targetW x $targetH)"
+        }
         val quantized = quantizeToPalette(pixels)
         val delayCentiseconds = max(1, (durationMs + 5) / 10)
 
         writeGraphicControlExtension(os, delayCentiseconds, quantized.transparentIndex)
-        writeImageDescriptor(os, frameWidth, frameHeight)
+        writeImageDescriptor(os, targetW, targetH)
         writeColorTable(os, quantized.palette)
         writeLzwImageData(os, quantized.indexedPixels)
     }
