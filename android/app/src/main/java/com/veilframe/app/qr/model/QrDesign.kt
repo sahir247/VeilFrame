@@ -563,7 +563,8 @@ data class QrDesign(
     ),
     val resampleStyle: ResampleStyle = ResampleStyle(),
     val backdropStyle: BackdropStyle = BackdropStyle(),
-    val directionalQuietZone: DirectionalInsets? = null
+    val directionalQuietZone: DirectionalInsets? = null,
+    val forceEci: Boolean? = null
 ) {
     @Deprecated(
         message = "Matrix size is required. Use resolveQuietZone(matrixSize).",

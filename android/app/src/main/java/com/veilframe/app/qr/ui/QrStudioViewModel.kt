@@ -764,7 +764,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 if (generation != renderGeneration.get()) return@launch
 
                 val mode = s.generationMode
-                val renderResult = QrGenerator.generateWithResult(effectiveContent, design, mode = mode)
+                val renderResult = QrGenerator.generateWithResultSuspend(effectiveContent, design, mode = mode)
                 ensureActive()
                 if (generation != renderGeneration.get()) return@launch
 
@@ -1822,7 +1822,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             val exportDesign = buildDesignFromState(_state.value, isPreview = false)
             val mode = _state.value.generationMode
             val renderResult = withContext(Dispatchers.Default) {
-                QrGenerator.generateStrictWithResult(getApplication(), content, exportDesign, mode = mode)
+                QrGenerator.generateStrictWithResultSuspend(getApplication(), content, exportDesign, mode = mode)
             }
             val (bmp, report) = when (renderResult) {
                 is QrRenderResult.Success -> renderResult.bitmap to renderResult.report

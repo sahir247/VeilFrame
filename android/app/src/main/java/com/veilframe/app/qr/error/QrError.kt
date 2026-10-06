@@ -224,6 +224,10 @@ sealed class QrError(
         data class VectorRasterizationFailed(
             val detail: String = "Vector SVG verification failed (rasterization error)"
         ) : Validation("Vector SVG verification failed: $detail")
+
+        data class ExecutionRejected(
+            val reason: String
+        ) : Validation("QR execution rejected: $reason")
     }
 
     /**

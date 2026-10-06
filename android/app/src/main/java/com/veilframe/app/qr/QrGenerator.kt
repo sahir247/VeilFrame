@@ -200,10 +200,14 @@ object QrGenerator {
         return when (mode) {
             GenerationMode.ARTISTIC_ENGINE -> {
                 val hasNonAscii = content.any { it.code > 127 }
-                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = hasNonAscii).matrix
+                val writeEci = design.forceEci ?: hasNonAscii
+                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = writeEci).matrix
             }
             GenerationMode.PARITY_EF -> {
-                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = false).matrix
+                // Parity with EFQRCode 7.0.3 / QRCodeSwift 2.3.1: Upstream byte mode does not write ECI blocks by default.
+                // Callers can explicitly specify forceEci = true to emit ISO/IEC 18004 ECI headers.
+                val writeEci = design.forceEci ?: false
+                com.veilframe.app.qr.encoder.engine.VeilQrEncoder.encode(content, ecLevel, writeEci = writeEci).matrix
             }
             GenerationMode.SAFE -> {
                 QrEncoder.encode(content, ecLevel).matrix
@@ -344,6 +348,7 @@ object QrGenerator {
         if (content.isBlank()) {
             return QrRenderResult.Failure(QrError.Input.EmptyContent)
         }
+
 
         try {
             val effectiveDesign = effectiveDesignForMode(design, mode)
@@ -494,6 +499,31 @@ object QrGenerator {
     ): QrRenderResult = generateWithResultSuspend(content, design, mode = mode, strictValidation = true)
 
     /**
+     * Context-aware coroutine entry point that safely materializes unmaterialized image sources via
+     * [com.veilframe.app.qr.image.ImageSourceLoader] before generating the QR code.
+     */
+    suspend fun generateWithResultSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design),
+        strictValidation: Boolean = false
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateWithResultSuspend(content, materialized, mode, strictValidation)
+    }
+
+    /**
+     * Context-aware coroutine entry point that safely materializes unmaterialized image sources and executes strict validation.
+     */
+    suspend fun generateStrictWithResultSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign(),
+        mode: GenerationMode = defaultModeFor(design)
+    ): QrRenderResult = generateWithResultSuspend(context, content, design, mode = mode, strictValidation = true)
+
+    /**
      * Canonical entry point for generating safe, production-grade QR codes.
      *
      * Enforces the complete safe contract:
@@ -543,7 +573,37 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = withContext(Dispatchers.Default) {
-        generateSafe(content, design)
+        val safeDesign = design.copy(
+            quietZoneModules = maxOf(4, design.quietZoneModules),
+            explicitQuietZone = maxOf(4, design.explicitQuietZone ?: 4),
+            directionalQuietZone = null,
+            backdropStyle = design.backdropStyle.copy(fractionalQuietZone = null)
+        )
+        val result = generateWithResultSuspend(content, safeDesign, mode = GenerationMode.SAFE, strictValidation = true)
+        when (result) {
+            is QrRenderResult.Failure -> result
+            is QrRenderResult.Success -> {
+                if (!result.report.isScanReady || !result.report.decodeResult.success) {
+                    QrRenderResult.Failure(
+                        QrError.Validation.ScanabilityFailed(
+                            reason = "Safe QR contract violation: strict scanability failed",
+                            warnings = result.report.warnings
+                        )
+                    )
+                } else {
+                    result
+                }
+            }
+        }
+    }
+
+    suspend fun generateSafeSuspend(
+        context: Context,
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult {
+        val materialized = com.veilframe.app.qr.image.ImageSourceLoader.materializeDesign(context, design)
+        return generateSafeSuspend(content, materialized)
     }
 
     /**
@@ -554,6 +614,11 @@ object QrGenerator {
         content: String,
         design: QrDesign = QrDesign()
     ): QrRenderResult = generateWithResult(content, design, mode = GenerationMode.PARITY_EF)
+
+    suspend fun generateEfCompatibleSuspend(
+        content: String,
+        design: QrDesign = QrDesign()
+    ): QrRenderResult = generateWithResultSuspend(content, design, mode = GenerationMode.PARITY_EF)
 
     /**
      * Generates a QR code with an automated closed-loop repair feedback pipeline.
@@ -599,6 +664,44 @@ object QrGenerator {
         }
 
         return lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
+    }
+
+    suspend fun generateWithAutoRepairSuspend(
+        content: String,
+        design: QrDesign = QrDesign(),
+        maxAttempts: Int = 3
+    ): QrRenderResult = withContext(Dispatchers.Default) {
+        if (content.isBlank()) {
+            return@withContext QrRenderResult.Failure(QrError.Input.EmptyContent)
+        }
+
+        var currentDesign = design
+        var lastSuccess: QrRenderResult.Success? = null
+        val repairTrail = mutableListOf<String>()
+
+        for (attempt in 1..maxAttempts) {
+            val result = generateWithResultSuspend(content, currentDesign)
+            when (result) {
+                is QrRenderResult.Failure -> return@withContext result
+                is QrRenderResult.Success -> {
+                    lastSuccess = result
+                    // Check if decode succeeded and report is scan-ready
+                    if (result.report.isScanReady && result.report.decodeResult.success) {
+                        return@withContext result
+                    }
+                    if (attempt < maxAttempts) {
+                        val repair = AutoRepairEngine.repair(currentDesign, result.report, content)
+                        if (repair.changesApplied.isEmpty() || repair.repairedDesign == currentDesign) {
+                            break
+                        }
+                        repairTrail.addAll(repair.changesApplied)
+                        currentDesign = repair.repairedDesign
+                    }
+                }
+            }
+        }
+
+        lastSuccess ?: QrRenderResult.Failure("Auto-repair failed to produce a valid QR code")
     }
 
     /**

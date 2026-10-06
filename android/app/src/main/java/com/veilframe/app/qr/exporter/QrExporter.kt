@@ -709,49 +709,62 @@ object QrExporter {
             canvas.drawBitmap(bitmap, src, dst, null)
             document.finishPage(page)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val cv = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, name)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
-                    put(MediaStore.Downloads.IS_PENDING, 1)
+            var createdUri: Uri? = null
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val cv = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                        put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/VeilFrame")
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+                        ?: return@withContext QrOutputResult.Failure(
+                            QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
+                        )
+                    createdUri = uri
+                    val stream = context.contentResolver.openOutputStream(uri)
+                    if (stream == null) {
+                        context.contentResolver.delete(uri, null, null)
+                        createdUri = null
+                        return@withContext QrOutputResult.Failure(
+                            QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
+                        )
+                    }
+                    stream.use { out ->
+                        document.writeTo(out)
+                    }
+                    cv.clear()
+                    cv.put(MediaStore.Downloads.IS_PENDING, 0)
+                    context.contentResolver.update(uri, cv, null, null)
+                    QrOutputResult.Success(uri)
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
+                    if (!dir.exists() && !dir.mkdirs()) {
+                        return@withContext QrOutputResult.Failure(
+                            QrError.Platform.StorageFailed(dir.absolutePath)
+                        )
+                    }
+                    val file = File(dir, name)
+                    FileOutputStream(file).use { out ->
+                        document.writeTo(out)
+                    }
+                    android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf("application/pdf"), null)
+                    val uri = try {
+                        androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                    } catch (_: Exception) {
+                        Uri.fromFile(file)
+                    }
+                    QrOutputResult.Success(uri)
                 }
-                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
-                    ?: return@withContext QrOutputResult.Failure(
-                        QrError.Platform.ExportUriUnavailable("Failed to create MediaStore entry for $name")
-                    )
-                val stream = context.contentResolver.openOutputStream(uri)
-                if (stream == null) {
-                    context.contentResolver.delete(uri, null, null)
-                    return@withContext QrOutputResult.Failure(
-                        QrError.Platform.StorageFailed("Failed to open output stream for MediaStore URI $uri")
-                    )
+            } catch (t: Throwable) {
+                createdUri?.let { uri ->
+                    try {
+                        context.contentResolver.delete(uri, null, null)
+                    } catch (_: Throwable) {}
                 }
-                stream.use { out ->
-                    document.writeTo(out)
-                }
-                cv.clear()
-                cv.put(MediaStore.Downloads.IS_PENDING, 0)
-                context.contentResolver.update(uri, cv, null, null)
-                QrOutputResult.Success(uri)
-            } else {
-                @Suppress("DEPRECATION")
-                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "VeilFrame")
-                if (!dir.exists() && !dir.mkdirs()) {
-                    return@withContext QrOutputResult.Failure(
-                        QrError.Platform.StorageFailed(dir.absolutePath)
-                    )
-                }
-                val file = File(dir, name)
-                FileOutputStream(file).use { out ->
-                    document.writeTo(out)
-                }
-                val uri = try {
-                    androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-                } catch (_: Exception) {
-                    Uri.fromFile(file)
-                }
-                QrOutputResult.Success(uri)
+                throw t
             }
         } catch (t: Throwable) {
             QrOutputResult.Failure(QrError.fromThrowable(t))
@@ -872,7 +885,7 @@ object QrExporter {
 
         return when (format) {
             is QrOutputFormat.Png -> {
-                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
+                val renderResult = QrGenerator.generateStrictWithResultSuspend(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
@@ -892,7 +905,7 @@ object QrExporter {
                 saveBitmapTyped(context, bmp, Bitmap.CompressFormat.PNG, 100)
             }
             is QrOutputFormat.Jpeg -> {
-                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
+                val renderResult = QrGenerator.generateStrictWithResultSuspend(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
@@ -960,11 +973,20 @@ object QrExporter {
                 }
             }
             is QrOutputFormat.Pdf -> {
-                val renderResult = QrGenerator.generateStrictWithResult(content, effectiveDesign, mode = mode)
+                val renderResult = QrGenerator.generateStrictWithResultSuspend(content, effectiveDesign, mode = mode)
                 if (renderResult is QrRenderResult.Failure) {
                     return QrOutputResult.Failure(renderResult.qrError)
                 }
-                val bmp = (renderResult as QrRenderResult.Success).bitmap
+                val success = renderResult as QrRenderResult.Success
+                if (!success.report.isScanReady && !success.report.validationSkipped) {
+                    return QrOutputResult.Failure(
+                        QrError.Validation.ScanabilityFailed(
+                            success.report.warnings.firstOrNull() ?: "Scanability validation failed",
+                            success.report.warnings
+                        )
+                    )
+                }
+                val bmp = success.bitmap
                     ?: return QrOutputResult.Failure(
                         QrError.Rendering.BitmapAllocationFailed(effectiveDesign.outputSize, effectiveDesign.outputSize)
                     )
