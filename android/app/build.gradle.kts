@@ -88,6 +88,12 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        jniLibs {
+            keepDebugSymbols += listOf("**/*.so")
+        }
+    }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true

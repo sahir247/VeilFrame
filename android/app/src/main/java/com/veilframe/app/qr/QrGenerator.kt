@@ -250,9 +250,15 @@ object QrGenerator {
         mode: GenerationMode = defaultModeFor(design),
         policy: AnimatedQrGenerator.FrameDropPolicy = AnimatedQrGenerator.FrameDropPolicy.FailFast
     ): List<com.veilframe.app.qr.model.QrFrame> {
-        val effectiveDesign = effectiveDesignForMode(design, mode)
-        val matrix = generateMatrix(content, effectiveDesign, mode)
-        return AnimatedQrGenerator.renderDesign(matrix, effectiveDesign, outputSize, policy)
+        return when (val res = generateAnimatedFramesResult(content, design, outputSize, mode, policy)) {
+            is QrOutputResult.Success -> res.value
+            is QrOutputResult.Failure -> {
+                if (policy == AnimatedQrGenerator.FrameDropPolicy.FailFast && res.error !is QrError.Animation.EmptyFrames) {
+                    throw IllegalStateException("generateAnimatedFrames failed under FailFast: ${res.error}")
+                }
+                emptyList()
+            }
+        }
     }
 
     /**
@@ -885,7 +891,13 @@ object QrGenerator {
         quality: Int = 100,
         ecLevel: ErrorCorrectionLevel = if (params.logo != null) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
     ): ByteArray {
-        val bmp = generate(content, params, ecLevel)
+        require(content.isNotBlank()) { "QR content must not be blank" }
+        val baseDesign = QrDesign.fromQrStyleParams(params)
+        val design = baseDesign.copy(correction = ErrorCorrectionChoice.fromZxing(ecLevel))
+        val bmp = when (val res = generateWithResult(content, design)) {
+            is QrRenderResult.Success -> res.bitmap ?: throw IllegalStateException("Bitmap creation failed")
+            is QrRenderResult.Failure -> throw IllegalStateException(res.error, res.throwable)
+        }
         val baos = java.io.ByteArrayOutputStream()
         bmp.compress(Bitmap.CompressFormat.PNG, quality, baos)
         bmp.recycle()
@@ -905,7 +917,13 @@ object QrGenerator {
         quality: Int = 90,
         ecLevel: ErrorCorrectionLevel = if (params.logo != null) ErrorCorrectionLevel.H else ErrorCorrectionLevel.M
     ): ByteArray {
-        val bmp = generate(content, params, ecLevel)
+        require(content.isNotBlank()) { "QR content must not be blank" }
+        val baseDesign = QrDesign.fromQrStyleParams(params)
+        val design = baseDesign.copy(correction = ErrorCorrectionChoice.fromZxing(ecLevel))
+        val bmp = when (val res = generateWithResult(content, design)) {
+            is QrRenderResult.Success -> res.bitmap ?: throw IllegalStateException("Bitmap creation failed")
+            is QrRenderResult.Failure -> throw IllegalStateException(res.error, res.throwable)
+        }
         val baos = java.io.ByteArrayOutputStream()
         bmp.compress(Bitmap.CompressFormat.JPEG, quality, baos)
         bmp.recycle()

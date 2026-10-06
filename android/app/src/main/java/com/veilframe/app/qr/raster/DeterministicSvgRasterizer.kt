@@ -334,6 +334,7 @@ object DeterministicSvgRasterizer {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
                 }
                 val invMatrix = android.graphics.Matrix()
+                @Suppress("DEPRECATION")
                 if (canvas.matrix.invert(invMatrix)) {
                     val countM = canvas.save()
                     canvas.concat(invMatrix)

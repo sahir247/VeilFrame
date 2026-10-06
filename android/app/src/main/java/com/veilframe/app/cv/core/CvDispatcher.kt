@@ -208,6 +208,7 @@ class CvContext internal constructor(
 }
 
 /** Handle over submitted CV work. */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class CvJob<T> internal constructor(
     val name: String,
     val priority: CvPriority,
