@@ -113,10 +113,15 @@ mkdir -p "${BUILD_OUT}"
 
 cat << 'EOF' > "${WORK_DIR}/opencv-veilframe.config.py"
 ABIs = [
-    ABI("3", "arm64-v8a", "aarch64-linux-android"),
-    ABI("4", "x86_64", "x86_64-linux-android"),
+    ABI("3", "arm64-v8a", None, cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
+    ABI("4", "x86_64", None, cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
 ]
 EOF
+
+NINJA_ARG=()
+if command -v ninja >/dev/null 2>&1; then
+    NINJA_ARG=("--ninja_path=$(command -v ninja)")
+fi
 
 echo "==> Invoking OpenCV build_sdk.py with verified module whitelist..."
 python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
@@ -125,6 +130,7 @@ python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
     --extra_modules_path="${WORK_DIR}/opencv_contrib/modules" \
     --modules_list="${BUILD_MODULES}" \
     --config="${WORK_DIR}/opencv-veilframe.config.py" \
+    "${NINJA_ARG[@]}" \
     --no_samples_build \
     "${BUILD_OUT}" \
     "${WORK_DIR}/opencv"
@@ -199,12 +205,21 @@ cp "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "${OPENCV_SDK_DIR}/sr
 cp "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/"
 cp -R "${SDK_STAGE}/java/src/org" "${OPENCV_SDK_DIR}/src/main/java/"
 
+ARM64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
+X86_64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/libopencv_java4.so"
+ARM64_SHA256="$(sha256sum "${ARM64_SO}" | awk '{print $1}')"
+X86_64_SHA256="$(sha256sum "${X86_64_SO}" | awk '{print $1}')"
+
 # Write completion marker with exact provenance metadata
 cat << EOF > "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
 OpenCV=${OPENCV_VERSION}
 OpenCV_SHA=${OPENCV_COMMIT_SHA}
 Contrib_SHA=${OPENCV_CONTRIB_COMMIT_SHA}
+NDK=${EXPECTED_NDK_VERSION}
+STL=c++_static
 ABIs=arm64-v8a,x86_64
+ARM64_SHA256=${ARM64_SHA256}
+X86_64_SHA256=${X86_64_SHA256}
 GeneratedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 Status=VERIFIED_COMPLETE
 EOF

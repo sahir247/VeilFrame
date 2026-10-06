@@ -35,6 +35,7 @@ jobs:
       - name: Execute OpenCV Android SDK Build
         run: |
           export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
+          export ANDROID_STL=c++_static
           chmod +x android/scripts/build_opencv_contrib_sdk.sh
           ./android/scripts/build_opencv_contrib_sdk.sh
 
@@ -56,6 +57,9 @@ jobs:
           grep -q "OpenCV=4.14.0" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "OpenCV_SHA=0654a42e19215ef25b1d367d822f3c630447e7c7" android/opencv-sdk/src/main/.opencv-sdk-complete
           grep -q "Contrib_SHA=a8e9acd62cabd30419dba83007f2ac0d07de5e2c" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "STL=c++_static" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "ARM64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "X86_64_SHA256=" android/opencv-sdk/src/main/.opencv-sdk-complete
 
       - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android
