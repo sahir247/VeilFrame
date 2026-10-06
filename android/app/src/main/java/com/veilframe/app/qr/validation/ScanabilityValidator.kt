@@ -87,8 +87,19 @@ object ScanabilityValidator {
 
     private val mlKitDecoder by lazy { com.veilframe.app.qr.decoder.MlKitQrDecoder() }
     private val zxingDecoder by lazy { ZxingQrDecoder() }
+    private val wechatDecoder by lazy { com.veilframe.app.qr.decoder.WeChatQrDecoder() }
 
     var primaryDecoder: com.veilframe.app.qr.decoder.QrDecoder? = null
+
+    /**
+     * Decode chain resolution. Per the VeilFrame QR architecture:
+     *   WeChatQRCode (PRIMARY - same engine users scan with) -> ML Kit -> ZXing.
+     * Explicitly configured [primaryDecoder] still overrides everything.
+     * When WeChatQRCode is unavailable (JVM tests, stripped builds) the chain
+     * falls back to ML Kit exactly as before.
+     */
+    private fun resolveDecoder(): com.veilframe.app.qr.decoder.QrDecoder =
+        primaryDecoder ?: if (wechatDecoder.isAvailable) wechatDecoder else mlKitDecoder
 
     /**
      * Fast validation executed during live editing on preview bitmaps (e.g. 512px).
@@ -180,8 +191,9 @@ object ScanabilityValidator {
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
 
-        // 5. Decode Validation (Primary: Google ML Kit / configured decoder; Fallback: Multi-pass ZXing & Multi-resolution)
-        val decoder = primaryDecoder ?: mlKitDecoder
+        // 5. Decode Validation (Primary: WeChatQRCode — the engine users scan with;
+        //    Fallback: ML Kit -> multi-pass ZXing & multi-resolution)
+        val decoder = resolveDecoder()
         var decodeResult = try {
             decoder.decode(bitmap)
         } catch (e: Throwable) {
@@ -213,7 +225,7 @@ object ScanabilityValidator {
                     if (zxScaled.success && zxScaled.text == expectedContent) {
                         decodeResult = zxScaled
                     } else {
-                        val mlScaled = (primaryDecoder ?: mlKitDecoder).decode(downscaled)
+                        val mlScaled = resolveDecoder().decode(downscaled)
                         if (mlScaled.success && mlScaled.text == expectedContent) {
                             decodeResult = mlScaled
                         }

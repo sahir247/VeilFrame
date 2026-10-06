@@ -22,12 +22,14 @@ import java.util.concurrent.TimeUnit
 
 /**
  * High-performance CameraX [ImageAnalysis.Analyzer] combining:
- * 1. Bundled offline ML Kit Barcode Scanning with [enableAllPotentialBarcodes]
- *    as the primary camera detector/localizer/decoder.
- * 2. Automatic zoom suggestion calculation when potential barcodes are distant/small.
- * 3. Localized Candidate ROI coordinate mapping from upright space to camera buffer space.
- * 4. Resilient secondary ZXing fallback with 3-pass binarization (Hybrid, GlobalHistogram, Invert).
- * 5. Throttled frame gating to ~8–10 processed FPS via [ScannerController].
+ * 1. OpenCV WeChatQRCode (detector + super-resolution) as PRIMARY decoder on
+ *    camera luma plane.
+ * 2. Bundled offline ML Kit Barcode Scanning with [enableAllPotentialBarcodes]
+ *    as SECONDARY detector/localizer/decoder.
+ * 3. Automatic zoom suggestion calculation when potential barcodes are distant/small.
+ * 4. Localized Candidate ROI coordinate mapping from upright space to camera buffer space.
+ * 5. Resilient ZXing fallback with 3-pass binarization (Hybrid, GlobalHistogram, Invert).
+ * 6. Throttled frame gating to ~8–10 processed FPS via [ScannerController].
  */
 class QrScanner(
     private val controller: ScannerController = ScannerController(),
@@ -137,7 +139,14 @@ class QrScanner(
             } catch (_: Throwable) {}
         }
 
-        // 2. Primary Path: Bundled ML Kit processing mediaImage directly
+        // 2. PRIMARY engine: cv::wechat_qrcode::WeChatQRCode (detector + super
+        //    resolution) on the camera luma plane. ML Kit below is the secondary
+        //    fallback; ZXing stays as the last resort.
+        if (tryWeChatDecode(mediaImage, token)) {
+            return
+        }
+
+        // 3. Secondary Path: Bundled ML Kit processing mediaImage directly
         try {
             val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
             mlKitScanner.process(inputImage)
@@ -179,6 +188,86 @@ class QrScanner(
                 }
         } catch (_: Exception) {
             fallbackToZxing(token, mediaImage, null, rotationDegrees)
+        }
+    }
+
+    /**
+     * PRIMARY decode stage — WeChatQRCode over the camera Y (luma) plane.
+     *
+     * @return true when the frame was fully handled (payload delivered and the
+     *         frame token finished), false to let the secondary chain run.
+     */
+    private fun tryWeChatDecode(mediaImage: android.media.Image, token: FrameToken): Boolean {
+        val engine = com.veilframe.app.cv.qr.WeChatQrEngine.get()
+        if (!engine.isAvailable) return false
+        return try {
+            val mat = yPlaneToMat(mediaImage) ?: return false
+            val detection = try {
+                engine.decode(mat).firstOrNull()
+            } finally {
+                mat.release()
+            }
+            if (detection != null && detection.rawValue.isNotEmpty()) {
+                if (controller.isTokenActive(token)) {
+                    if (controller.onPayloadDecoded(detection.rawValue)) {
+                        onResult(detection.rawValue)
+                    }
+                    controller.finishFrameProcessing(token)
+                } else {
+                    token.close()
+                }
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** Camera Y plane -> CV_8UC1 Mat, decimated to <=1024px on the long edge. */
+    private fun yPlaneToMat(mediaImage: android.media.Image): org.opencv.core.Mat? {
+        val plane = mediaImage.planes.firstOrNull() ?: return null
+        val width = mediaImage.width
+        val height = mediaImage.height
+        if (width <= 0 || height <= 0) return null
+        val buffer = plane.buffer.duplicate()
+        val rowStride = plane.rowStride
+        val data = ByteArray(width * height)
+        try {
+            if (rowStride == width) {
+                buffer.position(0)
+                buffer.get(data, 0, width * height)
+            } else {
+                var offset = 0
+                for (row in 0 until height) {
+                    buffer.position(row * rowStride)
+                    buffer.get(data, offset, width)
+                    offset += width
+                }
+            }
+        } catch (_: Throwable) {
+            return null
+        }
+        val full = org.opencv.core.Mat(height, width, org.opencv.core.CvType.CV_8UC1)
+        full.put(0, 0, data)
+        val maxEdge = maxOf(width, height)
+        return if (maxEdge <= 1024) {
+            full
+        } else {
+            val scaled = org.opencv.core.Mat()
+            val scale = 1024.0 / maxEdge
+            org.opencv.imgproc.Imgproc.resize(
+                full,
+                scaled,
+                org.opencv.core.Size(
+                    maxOf(1, Math.round(width * scale).toInt()).toDouble(),
+                    maxOf(1, Math.round(height * scale).toInt()).toDouble(),
+                ),
+                0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA,
+            )
+            full.release()
+            scaled
         }
     }
 
