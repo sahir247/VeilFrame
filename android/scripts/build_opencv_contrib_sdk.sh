@@ -118,11 +118,6 @@ ABIs = [
 ]
 EOF
 
-NINJA_ARG=()
-if command -v ninja >/dev/null 2>&1; then
-    NINJA_ARG=("--ninja_path=$(command -v ninja)")
-fi
-
 echo "==> Invoking OpenCV build_sdk.py with verified module whitelist..."
 python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
     --ndk_path="${ANDROID_NDK_HOME}" \
@@ -130,7 +125,6 @@ python3 "${WORK_DIR}/opencv/platforms/android/build_sdk.py" \
     --extra_modules_path="${WORK_DIR}/opencv_contrib/modules" \
     --modules_list="${BUILD_MODULES}" \
     --config="${WORK_DIR}/opencv-veilframe.config.py" \
-    "${NINJA_ARG[@]}" \
     --no_samples_build \
     "${BUILD_OUT}" \
     "${WORK_DIR}/opencv"
