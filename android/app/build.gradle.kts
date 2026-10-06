@@ -135,6 +135,10 @@ dependencies {
     // Google ML Kit Barcode Scanning (bundled model for 100% offline QR scanning)
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
+    // OpenCV — first-class VeilFrame CV Engine (com.veilframe.app.cv)
+    // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
+    implementation(project(":opencv-sdk"))
+
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")
 

@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "VeilFrame"
 include(":app")
+include(":opencv-sdk")
