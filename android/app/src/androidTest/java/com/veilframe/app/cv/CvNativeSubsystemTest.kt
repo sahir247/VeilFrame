@@ -27,9 +27,8 @@ import org.opencv.imgproc.Imgproc
 /**
  * On-device native OpenCV subsystem suite.
  *
- * Verifies that the native OpenCV C++ binaries (libopencv_java4.so),
- * JNI bindings, buffer leasing, and computer-vision primitives execute
- * correctly and leak-free on real ARM64 and x86_64 runtimes.
+ * Verifies native execution on the configured Android runtime; ARM64/x86_64
+ * binaries are separately validated during SDK build.
  */
 @RunWith(AndroidJUnit4::class)
 class CvNativeSubsystemTest {
@@ -113,9 +112,13 @@ class CvNativeSubsystemTest {
         val corrector = PerspectiveCorrector()
         val warped = corrector.warp(image, quad!!)
         assertFalse(warped.empty())
-        assertTrue(warped.rows() > 0 && warped.cols() > 0)
-        val meanVal = org.opencv.core.Core.mean(warped).`val`[0]
-        assertTrue("Unwarped quad must be predominantly white (>200.0 mean brightness), was $meanVal", meanVal > 200.0)
+        assertTrue("Rectified polygon must produce valid dimensions", warped.rows() >= 250 && warped.cols() >= 250)
+
+        // Sample central ROI of rectified quadrilateral
+        val centerRoi = warped.submat(warped.rows() / 4, (warped.rows() * 3) / 4, warped.cols() / 4, (warped.cols() * 3) / 4)
+        val centerMean = org.opencv.core.Core.mean(centerRoi).`val`[0]
+        centerRoi.release()
+        assertTrue("Central rectified quadrilateral region must be white (>240.0 mean brightness), was $centerMean", centerMean > 240.0)
 
         image.release()
         warped.release()

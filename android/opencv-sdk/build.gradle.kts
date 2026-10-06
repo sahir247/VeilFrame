@@ -73,12 +73,13 @@ fun validateMarkerMetadata(file: File): Boolean {
 
         if (!baseValid) return false
 
-        val expectedArm64Sha = props.getProperty("ARM64_SHA256")
-        if (expectedArm64Sha != null && (!arm64So.exists() || calculateSha256(arm64So) != expectedArm64Sha)) {
+        val expectedArm64Sha = props.getProperty("ARM64_SHA256") ?: return false
+        val expectedX86Sha = props.getProperty("X86_64_SHA256") ?: return false
+
+        if (!arm64So.exists() || calculateSha256(arm64So) != expectedArm64Sha) {
             return false
         }
-        val expectedX86Sha = props.getProperty("X86_64_SHA256")
-        if (expectedX86Sha != null && (!x86_64So.exists() || calculateSha256(x86_64So) != expectedX86Sha)) {
+        if (!x86_64So.exists() || calculateSha256(x86_64So) != expectedX86Sha) {
             return false
         }
 

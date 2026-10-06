@@ -36,6 +36,7 @@ class MatPool(
     private val matFactory: (rows: Int, cols: Int, type: Int) -> Mat = { r, c, t -> Mat(r, c, t) },
     private val matReleaser: (Mat) -> Unit = { it.release() },
     private val matEmptyPredicate: (Mat) -> Boolean = { it.empty() },
+    private val leaseFactory: (mat: Mat, pool: MatPool, accounting: MatLeaseAccounting, key: SizeClass?, rows: Int, cols: Int, type: Int) -> MatLease = { m, p, a, k, r, c, t -> MatLease(m, p, a, k, r, c, t) },
 ) {
     private val free = HashMap<SizeClass, ArrayDeque<PooledBuffer>>()
     private var retainedBytes = 0L
@@ -57,12 +58,7 @@ class MatPool(
 
     /** Acquires a zero-or-undefined content buffer of [rows] x [cols] x [type]. */
     @Synchronized
-    fun acquire(
-        rows: Int,
-        cols: Int,
-        type: Int,
-        leaseFactory: (mat: Mat, pool: MatPool, accounting: MatLeaseAccounting, key: SizeClass?, rows: Int, cols: Int, type: Int) -> MatLease = { m, p, a, k, r, c, t -> MatLease(m, p, a, k, r, c, t) },
-    ): MatLease {
+    fun acquire(rows: Int, cols: Int, type: Int): MatLease {
         val accounting = SizeClass.accountingFor(rows, cols, type)
         val key = if (accounting.retainable) {
             SizeClass(

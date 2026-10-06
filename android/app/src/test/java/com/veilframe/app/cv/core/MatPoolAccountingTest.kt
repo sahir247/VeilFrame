@@ -177,16 +177,12 @@ class MatPoolAccountingTest {
             matFactory = { _, _, _ -> allocateDummyMat() },
             matReleaser = { releasedMats.add(it) },
             matEmptyPredicate = { false },
+            leaseFactory = { _, _, _, _, _, _, _ -> throw IllegalStateException("Simulated lease failure") },
         )
 
         var threw = false
         try {
-            pool.acquire(
-                rows = 100,
-                cols = 100,
-                type = CvType.CV_8UC1,
-                leaseFactory = { _, _, _, _, _, _, _ -> throw IllegalStateException("Simulated lease failure") },
-            )
+            pool.acquire(100, 100, CvType.CV_8UC1)
         } catch (e: IllegalStateException) {
             threw = true
             assertEquals("Simulated lease failure", e.message)
