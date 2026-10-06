@@ -18,7 +18,8 @@ class CvMemoryPolicyTest {
         assertEquals(SizeClass.MIN_BYTE_CLASS, SizeClass.byteClassFor(0))
         assertEquals(SizeClass.MIN_BYTE_CLASS, SizeClass.byteClassFor(64 * 1024))
         assertEquals(128 * 1024, SizeClass.byteClassFor(64 * 1024 + 1))
-        assertEquals(SizeClass.MAX_BYTE_CLASS, SizeClass.byteClassFor(SizeClass.MAX_BYTE_CLASS.toLong() * 4))
+        assertEquals(SizeClass.MAX_BYTE_CLASS, SizeClass.byteClassFor(SizeClass.MAX_BYTE_CLASS.toLong()))
+        assertEquals(-1, SizeClass.byteClassFor(SizeClass.MAX_BYTE_CLASS.toLong() * 4))
     }
 
     @Test

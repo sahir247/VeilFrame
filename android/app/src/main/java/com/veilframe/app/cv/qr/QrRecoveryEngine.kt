@@ -60,12 +60,18 @@ object QrRecoveryEngine {
      *
      * @param expected when non-null, a decode with a different payload keeps
      *                 escalating (protects against stale/foreign QR in frame).
+     * @param cancellation optional per-invocation cancellation handle.
      */
     fun recover(
         image: Mat,
         expected: String? = null,
         secondary: SecondaryDecoder? = null,
+        cancellation: com.veilframe.app.cv.core.CvCancellation? = null,
     ): RecoveryResult {
+        val checkActive = {
+            cancellation?.ensureActive()
+            ensureActive()
+        }
         val log = mutableListOf<Stage>()
         val wechat = WeChatQrEngine.get()
 
@@ -74,7 +80,7 @@ object QrRecoveryEngine {
         firstMatch(wechat.decode(image), expected)?.let { return RecoveryResult(it, Stage.ORIGINAL, log) }
 
         // Stage 1 — grayscale + upscale.
-        ensureActive()
+        checkActive()
         log += Stage.GRAY_UPSCALE
         val grayUp = grayUpscaled(image)
         firstMatch(wechat.decode(grayUp), expected)?.let {
@@ -83,7 +89,7 @@ object QrRecoveryEngine {
         }
 
         // Stage 2 — contrast stretch + adaptive threshold.
-        ensureActive()
+        checkActive()
         log += Stage.THRESHOLD
         val binary = enhancedBinary(grayUp)
         firstMatch(wechat.decode(binary), expected)?.let {
@@ -93,7 +99,7 @@ object QrRecoveryEngine {
         }
 
         // Stage 3 — perspective-corrected upscale of the binary (planar photos).
-        ensureActive()
+        checkActive()
         log += Stage.PERSPECTIVE
         val perspective = perspectiveCorrected(image, binary)
         val perspectiveHit = firstMatch(wechat.decode(perspective), expected)
@@ -103,7 +109,7 @@ object QrRecoveryEngine {
         perspectiveHit?.let { return RecoveryResult(it, Stage.PERSPECTIVE, log) }
 
         // Stage 4 — alternative preprocessing (inverted + noise-cleaned).
-        ensureActive()
+        checkActive()
         log += Stage.ALTERNATIVE
         val alternative = alternativePreprocess(image)
         val alternativeHit = firstMatch(wechat.decode(alternative), expected)
@@ -112,6 +118,7 @@ object QrRecoveryEngine {
 
         // Stage 5 — ML Kit fallback (secondary engine, last resort).
         if (secondary != null) {
+            checkActive()
             log += Stage.ML_KIT_FALLBACK
             val bitmap = com.veilframe.app.cv.core.BitmapBridge.toBitmap(image)
             val text = try {

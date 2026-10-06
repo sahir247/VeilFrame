@@ -30,6 +30,10 @@ object BackgroundRemover {
         /** Composite over a background colour instead of producing alpha. */
         val backgroundBgr: DoubleArray? = null,
     ) {
+        init {
+            com.veilframe.app.cv.core.CvContracts.requireOddPositive(cleanupKernel, "cleanupKernel")
+            com.veilframe.app.cv.core.CvContracts.requireNonNegative(featherRadius, "featherRadius")
+        }
         override fun equals(other: Any?): Boolean = this === other
         override fun hashCode(): Int = System.identityHashCode(this)
     }
@@ -48,9 +52,19 @@ object BackgroundRemover {
         segmenter: ForegroundSegmenter,
         options: Options = Options(),
     ): RemovalResult {
-        require(!image.empty()) { "image is empty" }
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(image, "image")
         val rawMask = try {
-            segmenter.segment(image)
+            val m = segmenter.segment(image)
+            if (m != null) {
+                if (!m.empty() && m.rows() == image.rows() && m.cols() == image.cols() && m.type() == org.opencv.core.CvType.CV_8UC1) {
+                    m
+                } else {
+                    m.release()
+                    null
+                }
+            } else {
+                null
+            }
         } catch (e: Exception) {
             // Segmenter plugin failure: degrade to identity mask.
             // Errors (OOM, etc.) propagate — they must not be swallowed here.

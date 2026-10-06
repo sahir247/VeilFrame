@@ -79,15 +79,21 @@ object DocumentScanner {
             // Degenerate corner geometry rejected by PerspectiveCorrector.
             return null
         }
-        val enhanced = enhance(warped, options.mode)
-        if (enhanced !== warped) warped.release()
-
-        return ScanResult(
-            warped = enhanced,
-            corners = detection.corners,
-            confidence = detection.confidence,
-            mode = options.mode,
-        )
+        var warpedToRelease: Mat? = warped
+        try {
+            val enhanced = enhance(warped, options.mode)
+            if (enhanced === warped) {
+                warpedToRelease = null
+            }
+            return ScanResult(
+                warped = enhanced,
+                corners = detection.corners,
+                confidence = detection.confidence,
+                mode = options.mode,
+            )
+        } finally {
+            warpedToRelease?.release()
+        }
     }
 
     /**

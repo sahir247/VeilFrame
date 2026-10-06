@@ -82,7 +82,15 @@ class CvDispatcher(
 
         // Keep the engine's result and the coroutine result in sync.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            result.complete(runCatching { deferred.await() }.getOrElse { CvResult.errFrom(it) })
+            result.complete(runCatching { deferred.await() }.getOrElse {
+                when (it) {
+                    is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, it.detail, it)
+                    is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, it.message ?: "cancelled", it)
+                    is OutOfMemoryError -> CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${it.message}", it)
+                    is Exception -> CvFailureMapper.toResult(it)
+                    else -> throw it
+                }
+            })
         }
 
         return CvJob(name, priority, memoryEstimate, cancellation, result, stateRef, deferred, reservation)
@@ -105,11 +113,13 @@ class CvDispatcher(
                     CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
                 }
             } catch (c: CvCancelled) {
-                CvResult.Err(CvErrorCode.CANCELLED, c.detail)
+                CvResult.Err(CvErrorCode.CANCELLED, c.detail, c)
+            } catch (c: CancellationException) {
+                CvResult.Err(CvErrorCode.CANCELLED, c.message ?: "cancelled", c)
             } catch (oom: OutOfMemoryError) {
                 CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${oom.message}", oom)
-            } catch (t: Throwable) {
-                CvResult.errFrom(t)
+            } catch (e: Exception) {
+                CvFailureMapper.toResult(e)
             } finally {
                 context.markFinished()
                 reservation?.close()
@@ -271,13 +281,14 @@ class CvJob<T> internal constructor(
     }
 }
 
-private fun <T> CvResult.Companion.errFrom(t: Throwable): CvResult<T> = when (t) {
-    is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, t.detail, t)
-    // A cancelled coroutine surfaces its CancellationException through await();
-    // it must map to CANCELLED, not INTERNAL.
-    is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, t.message ?: "cancelled", t)
-    is OutOfMemoryError -> CvResult.Err(CvErrorCode.OUT_OF_MEMORY, t.message ?: "OOM", t)
-    is IllegalArgumentException -> CvResult.Err(CvErrorCode.INVALID_INPUT, t.message ?: "invalid input", t)
-    is UnsupportedOperationException -> CvResult.Err(CvErrorCode.UNSUPPORTED, t.message ?: "unsupported", t)
-    else -> CvResult.Err(CvErrorCode.INTERNAL, t.message ?: t::class.java.simpleName, t)
+/** Centralized failure mapper converting non-fatal exceptions to structured CvResult.Err. */
+object CvFailureMapper {
+    fun <T> toResult(e: Exception): CvResult<T> = when (e) {
+        is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, e.detail, e)
+        is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, e.message ?: "cancelled", e)
+        is IllegalArgumentException -> CvResult.Err(CvErrorCode.INVALID_INPUT, e.message ?: "invalid input", e)
+        is UnsupportedOperationException -> CvResult.Err(CvErrorCode.UNSUPPORTED, e.message ?: "unsupported", e)
+        is org.opencv.core.CvException -> CvResult.Err(CvErrorCode.INTERNAL, "OpenCV native error: ${e.message}", e)
+        else -> CvResult.Err(CvErrorCode.INTERNAL, e.message ?: e::class.java.simpleName, e)
+    }
 }

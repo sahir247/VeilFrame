@@ -42,7 +42,13 @@ object QuadDetector {
         cannyLow: Double = 40.0,
         cannyHigh: Double = 140.0,
     ): Detection? {
-        require(!source.empty()) { "source is empty" }
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requirePositive(workingMaxEdge, "workingMaxEdge")
+        com.veilframe.app.cv.core.CvContracts.requireInRange(minCoverage, 0.0, 1.0, "minCoverage")
+        com.veilframe.app.cv.core.CvContracts.requireNonNegative(cannyLow, "cannyLow")
+        com.veilframe.app.cv.core.CvContracts.requirePositive(cannyHigh, "cannyHigh")
+        require(cannyHigh >= cannyLow) { "cannyHigh ($cannyHigh) must be >= cannyLow ($cannyLow)" }
+
         val working = workingImage(source, workingMaxEdge)
         val scale = source.cols().toDouble() / working.cols()
         val gray = Mat()
@@ -58,7 +64,12 @@ object QuadDetector {
             val closeKernel = Mat.ones(3, 3, CvType8u)
             Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, closeKernel)
             closeKernel.release()
-            Imgproc.findContours(edges, contours, Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            val hierarchy = Mat()
+            try {
+                Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+            } finally {
+                hierarchy.release()
+            }
 
             val workingArea = working.rows().toDouble() * working.cols()
             var best: Detection? = null

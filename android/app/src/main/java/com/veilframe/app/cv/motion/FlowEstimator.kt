@@ -24,12 +24,26 @@ class FlowEstimator(
 ) {
     enum class Algorithm { DIS, FARNEBACK, AUTO }
 
+    /** Independent X and Y resize ratios for optical flow scaling. */
+    data class FlowScale(
+        val x: Double,
+        val y: Double,
+    ) {
+        val isUniform: Boolean get() = kotlin.math.abs(x - y) < 1e-6
+    }
+
     /** One direction of dense flow: CV_32FC2, one vector per pixel. */
     data class FlowField(
         val flow: Mat,
-        /** Scale between the flow resolution and the original frame. */
-        val scale: Double,
+        /** Scale between the flow resolution and the original frame along both axes. */
+        val scale: FlowScale,
     ) {
+        /** Convenience constructor for uniform scaling. */
+        constructor(flow: Mat, uniformScale: Double) : this(flow, FlowScale(uniformScale, uniformScale))
+
+        /** Backward-compatible scalar scale accessor (uses X scale). */
+        val scalarScale: Double get() = scale.x
+
         fun release() {
             flow.release()
         }
@@ -55,7 +69,9 @@ class FlowEstimator(
         val nextGray = toGray(current)
         val prevWork = downscale(prevGray)
         val nextWork = downscale(nextGray)
-        val scale = prevWork.cols().toDouble() / prevGray.cols()
+        val scaleX = prevWork.cols().toDouble() / prevGray.cols()
+        val scaleY = prevWork.rows().toDouble() / prevGray.rows()
+        val scale = FlowScale(x = scaleX, y = scaleY)
         try {
             val chosen = when (algorithm) {
                 Algorithm.DIS, Algorithm.FARNEBACK -> algorithm

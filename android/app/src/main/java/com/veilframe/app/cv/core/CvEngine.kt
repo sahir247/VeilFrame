@@ -62,9 +62,12 @@ class CvEngine(
                 pool = pool,
                 block = block,
             )
-        } catch (t: Throwable) {
+        } catch (e: Exception) {
             reservation?.close()
-            throw t
+            throw e
+        } catch (oom: OutOfMemoryError) {
+            reservation?.close()
+            throw oom
         }
     }
 
@@ -74,18 +77,13 @@ class CvEngine(
         return try {
             CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
         } catch (c: CvCancelled) {
-            CvResult.Err(CvErrorCode.CANCELLED, c.detail)
-        } catch (t: Throwable) {
-            CvResult.Err(
-                when (t) {
-                    is IllegalArgumentException -> CvErrorCode.INVALID_INPUT
-                    is UnsupportedOperationException -> CvErrorCode.UNSUPPORTED
-                    is OutOfMemoryError -> CvErrorCode.OUT_OF_MEMORY
-                    else -> CvErrorCode.INTERNAL
-                },
-                t.message ?: t::class.java.simpleName,
-                t,
-            )
+            CvResult.Err(CvErrorCode.CANCELLED, c.detail, c)
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            CvResult.Err(CvErrorCode.CANCELLED, c.message ?: "cancelled", c)
+        } catch (oom: OutOfMemoryError) {
+            CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${oom.message}", oom)
+        } catch (e: Exception) {
+            CvFailureMapper.toResult(e)
         }
     }
 

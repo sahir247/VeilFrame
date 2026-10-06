@@ -108,21 +108,14 @@ object QrStressMatrix {
         return try {
             val encoded = Imgcodecs.imencode(".jpg", image, buffer, params)
             if (!encoded) {
-                // Tooling failure, not a QR failure — don't score it as a stress miss.
-                image.clone()
-            } else {
-                val decoded = Imgcodecs.imdecode(buffer, Imgcodecs.IMREAD_UNCHANGED)
-                if (decoded.empty()) {
-                    decoded.release()
-                    image.clone()
-                } else {
-                    decoded
-                }
+                throw org.opencv.core.CvException("imencode failed for JPEG Q$quality")
             }
-        } catch (e: org.opencv.core.CvException) {
-            // Native encode/decode failure: produce a clean clone instead of a
-            // stress score of zero for a tooling-level issue.
-            image.clone()
+            val decoded = Imgcodecs.imdecode(buffer, Imgcodecs.IMREAD_UNCHANGED)
+            if (decoded.empty()) {
+                decoded.release()
+                throw org.opencv.core.CvException("imdecode produced empty Mat for JPEG Q$quality")
+            }
+            decoded
         } finally {
             buffer.release()
             params.release()

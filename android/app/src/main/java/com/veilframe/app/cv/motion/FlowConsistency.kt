@@ -34,15 +34,18 @@ object FlowConsistency {
     fun check(forward: FlowEstimator.FlowField, backward: FlowEstimator.FlowField): ConsistencyResult {
         val warpedBackward = warpFlow(backward.flow, forward.flow, scale = 1.0)
         val sum = Mat()
-        val errorMap = Mat()
-        val occlusionMask = Mat()
-        val confidence = Mat()
+        var errorMap: Mat? = Mat()
+        var occlusionMask: Mat? = Mat()
+        var confidence: Mat? = Mat()
         try {
+            val err = errorMap!!
+            val occ = occlusionMask!!
+            val conf = confidence!!
             Core.add(forward.flow, warpedBackward, sum)
             // split + magnitude
             val channels = ArrayList<Mat>()
             Core.split(sum, channels)
-            Core.magnitude(channels[0], channels[1], errorMap)
+            Core.magnitude(channels[0], channels[1], err)
             channels.forEach { it.release() }
 
             // Threshold: relative to displacement + 1px tolerance.
@@ -55,25 +58,27 @@ object FlowConsistency {
             Core.add(dispMagnitude, Scalar1(), thresholdMap)
             Core.multiply(thresholdMap, Scalar05(), thresholdMap)
 
-            Core.compare(errorMap, thresholdMap, occlusionMask, Core.CMP_GT)
+            Core.compare(err, thresholdMap, occ, Core.CMP_GT)
 
             // confidence = 1 - normalized error, clipped to 0..1
-            Core.divide(errorMap, thresholdMap, confidence)
-            val ones = Mat.ones(confidence.size(), confidence.type())
-            Core.subtract(ones, confidence, confidence)
-            Core.max(confidence, Scalar0(), confidence)
-            Core.min(confidence, Scalar1(), confidence)
+            Core.divide(err, thresholdMap, conf)
+            val ones = Mat.ones(conf.size(), conf.type())
+            Core.subtract(ones, conf, conf)
+            Core.max(conf, Scalar0(), conf)
+            Core.min(conf, Scalar1(), conf)
             ones.release()
             dispMagnitude.release()
             thresholdMap.release()
 
-            return ConsistencyResult(errorMap, occlusionMask, confidence)
-        } catch (t: Throwable) {
-            errorMap.release()
-            occlusionMask.release()
-            confidence.release()
-            throw t
+            val result = ConsistencyResult(err, occ, conf)
+            errorMap = null
+            occlusionMask = null
+            confidence = null
+            return result
         } finally {
+            errorMap?.release()
+            occlusionMask?.release()
+            confidence?.release()
             warpedBackward.release()
             sum.release()
         }
@@ -84,6 +89,9 @@ object FlowConsistency {
      * motion boundaries (flow-gradient mask), so warps stay sharp at edges.
      */
     fun refine(flow: Mat, boundaryStrength: Double = 0.7): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(flow, "flow")
+        com.veilframe.app.cv.core.CvContracts.requireFlow32FC2(flow, "flow")
+        com.veilframe.app.cv.core.CvContracts.requireInRange(boundaryStrength, 0.0, 1.0, "boundaryStrength")
         val smoothed = Mat()
         val boundaryMask = Mat()
         val refined = Mat()

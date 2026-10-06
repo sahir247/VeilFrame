@@ -7,19 +7,18 @@ import org.opencv.core.Mat
  *
  * A 6000x4000 RGBA image is ~96 MB for ONE uncompressed buffer. Allocating
  * several intermediate Mats per operation destroys a 6 GB device.
- *
- * Honest scope (see docs/cv/VEILFRAME_CV_ENGINE.md): pooling is currently
- * ENFORCED at the CvEngine job level — the feature primitives in
- * com.veilframe.app.cv.* still allocate Mat() directly and release in finally.
- * Migrating hot paths onto this pool is tracked phase work; do not describe the
- * engine as pool-backed until that lands.
+  * Honest scope (see docs/cv/VEILFRAME_CV_ENGINE.md): pooling is an OPT-IN
+ * native buffer leasing facility for heavy operations and high-frequency routines.
+ * Feature primitives in com.veilframe.app.cv.* that do not lease from this pool
+ * allocate Mat() directly and release within structured try/finally scopes.
  *
  * Contract:
  *   - [acquire] returns a [MatLease]; the lease MUST be closed (use `lease.use { }`).
- *   - Closing a lease returns the buffer to its size-class bucket.
+ *   - Closing a lease returns retainable buffers to their size-class bucket.
  *   - A pooled buffer is never handed out twice concurrently.
- *   - Buffers larger than [maxRetainedBytes] per class are released instead of
- *     retained, so the pool cannot pin an unbounded amount of native memory.
+ *   - Buffers larger than [SizeClass.MAX_BYTE_CLASS] (512 MiB) or exceeding
+ *     [maxRetainedBytes] are released immediately instead of retained.
+ *   - Actual allocation bytes are tracked separately from size-class capacity buckets.
  *
  * Thread-safety: all public methods are synchronized on the pool instance.
  */
@@ -41,34 +40,44 @@ class MatPool(
     var liveLeases: Int = 0
         private set
 
-    /** High-water mark of concurrently outstanding pooled bytes (peak, not retained). */
+    /** High-water mark of concurrently outstanding pooled actual bytes. */
     var peakLiveBytes: Long = 0L
         private set
 
     /** Acquires a zero-or-undefined content buffer of [rows] x [cols] x [type]. */
     @Synchronized
     fun acquire(rows: Int, cols: Int, type: Int): MatLease {
-        val key = SizeClass.forMat(rows, cols, type)
-        val bucket = free[key]
+        val accounting = SizeClass.accountingFor(rows, cols, type)
+        val key = if (accounting.retainable) {
+            SizeClass(
+                channels = org.opencv.core.CvType.channels(type),
+                depth = org.opencv.core.CvType.depth(type),
+                byteClass = accounting.classBytes.toInt(),
+            )
+        } else {
+            null
+        }
+
+        val bucket = key?.let { free[it] }
         val recycled = bucket?.removeFirstOrNull()
         val lease = if (recycled != null) {
-            retainedBytes -= key.approximateBytes
+            val recycledActual = recycled.rows().toLong() * recycled.cols().toLong() * org.opencv.core.CvType.ELEM_SIZE(recycled.type()).toLong()
+            retainedBytes = (retainedBytes - recycledActual).coerceAtLeast(0L)
             hits++
-            // Shape may differ inside the class; allocate fresh when it does.
             val mat = if (recycled.rows() == rows && recycled.cols() == cols && recycled.type() == type) {
                 recycled
             } else {
                 recycled.release()
                 Mat(rows, cols, type).also { allocations++ }
             }
-            MatLease(mat, this, key)
+            MatLease(mat, this, accounting, key)
         } else {
             misses++
             allocations++
-            MatLease(Mat(rows, cols, type), this, key)
+            MatLease(Mat(rows, cols, type), this, accounting, key)
         }
         liveLeases++
-        liveBytes += key.approximateBytes
+        liveBytes += accounting.actualBytes
         if (liveBytes > peakLiveBytes) peakLiveBytes = liveBytes
         return lease
     }
@@ -82,16 +91,21 @@ class MatPool(
     fun acquireCopyOf(template: Mat): MatLease = acquireLike(template).also { template.copyTo(it.mat) }
 
     @Synchronized
-    internal fun release(mat: Mat, key: SizeClass) {
+    internal fun release(mat: Mat, lease: MatLease) {
         liveLeases--
-        liveBytes = (liveBytes - key.approximateBytes).coerceAtLeast(0L)
-        if (mat.empty()) return
+        liveBytes = (liveBytes - lease.accounting.actualBytes).coerceAtLeast(0L)
+        val key = lease.key
+        if (mat.empty() || !lease.accounting.retainable || key == null) {
+            mat.release()
+            return
+        }
+        val actual = lease.accounting.actualBytes
         val bucket = free.getOrPut(key) { ArrayDeque() }
-        if (bucket.size >= maxPerClass || retainedBytes + key.approximateBytes > maxRetainedBytes) {
+        if (bucket.size >= maxPerClass || retainedBytes + actual > maxRetainedBytes) {
             mat.release()
         } else {
             bucket.addLast(mat)
-            retainedBytes += key.approximateBytes
+            retainedBytes += actual
         }
     }
 
@@ -101,14 +115,13 @@ class MatPool(
         for (bucket in free.values) {
             while (bucket.isNotEmpty()) {
                 val mat = bucket.removeFirst()
-                retainedBytes -= SizeClass.forMat(
-                    maxOf(mat.rows(), 1), maxOf(mat.cols(), 1), mat.type()
-                ).approximateBytes
+                val actual = mat.rows().toLong() * mat.cols().toLong() * org.opencv.core.CvType.ELEM_SIZE(mat.type()).toLong()
+                retainedBytes = (retainedBytes - actual).coerceAtLeast(0L)
                 mat.release()
             }
         }
         free.clear()
-        retainedBytes = 0
+        retainedBytes = 0L
     }
 
     @Synchronized
@@ -139,7 +152,7 @@ data class PoolStats(
     val hits: Int,
     val misses: Int,
     val liveBytes: Long = 0L,
-    /** High-water mark of concurrently outstanding pooled bytes. */
+    /** High-water mark of concurrently outstanding pooled actual bytes. */
     val peakLiveBytes: Long = 0L,
 ) {
     val hitRate: Double
@@ -156,7 +169,8 @@ data class PoolStats(
 class MatLease internal constructor(
     val mat: Mat,
     private val pool: MatPool,
-    private val key: SizeClass,
+    val accounting: MatLeaseAccounting,
+    internal val key: SizeClass?,
 ) : AutoCloseable {
     val rows: Int get() = mat.rows()
     val cols: Int get() = mat.cols()
@@ -167,8 +181,7 @@ class MatLease internal constructor(
     override fun close() {
         if (!closed) {
             closed = true
-            pool.release(mat, key)
+            pool.release(mat, this)
         }
     }
 }
-

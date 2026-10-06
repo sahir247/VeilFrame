@@ -52,7 +52,13 @@ object FrameSynthesizer {
         val minConfidence: Double = 0.25,
         val refineFlow: Boolean = true,
         val pool: com.veilframe.app.cv.core.MatPool? = null,
-    )
+        val estimator: FlowEstimator? = null,
+    ) {
+        init {
+            com.veilframe.app.cv.core.CvContracts.requirePositive(artifactFactor, "artifactFactor")
+            com.veilframe.app.cv.core.CvContracts.requireInRange(minConfidence, 0.0, 1.0, "minConfidence")
+        }
+    }
 
     /**
      * Backward-map warp: `out(q) = src(q + s * flow(q))`.
@@ -111,7 +117,7 @@ object FrameSynthesizer {
         if (t == 0.0) return passthrough(frameA)
         if (t == 1.0) return passthrough(frameB)
 
-        val estimator = FlowEstimator()
+        val estimator = options.estimator ?: FlowEstimator()
         val flows = estimator.estimate(frameA, frameB)
         try {
             val forward = if (options.refineFlow) refineField(flows.forward) else flows.forward
@@ -291,8 +297,17 @@ object FrameSynthesizer {
         if (flow.flow.size() == size) return flow.flow.clone()
         val out = Mat()
         Imgproc.resize(flow.flow, out, size, 0.0, 0.0, Imgproc.INTER_LINEAR)
-        // Flow vectors are displacements: scale them to the target resolution.
-        Core.multiply(out, ScalarOf(1.0 / flow.scale), out)
+        // Flow vectors are displacements: scale them to the target resolution independently along X and Y.
+        if (flow.scale.isUniform) {
+            Core.multiply(out, ScalarOf(1.0 / flow.scale.x), out)
+        } else {
+            val channels = ArrayList<Mat>()
+            Core.split(out, channels)
+            Core.multiply(channels[0], ScalarOf(1.0 / flow.scale.x), channels[0])
+            Core.multiply(channels[1], ScalarOf(1.0 / flow.scale.y), channels[1])
+            Core.merge(channels, out)
+            channels.forEach { it.release() }
+        }
         return out
     }
 

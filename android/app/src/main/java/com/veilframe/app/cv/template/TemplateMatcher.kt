@@ -1,5 +1,6 @@
 package com.veilframe.app.cv.template
 
+import com.veilframe.app.cv.core.CvContracts
 import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.core.Point
@@ -36,7 +37,19 @@ object TemplateMatcher {
         val coarseStep: Double = 0.25,
         /** Hard cap on total scales evaluated (coarse + refined). */
         val maxScales: Int = 12,
-    )
+        /** Resource cap: maximum image edge admitted for template matching. */
+        val maxImageEdge: Int = 4096,
+    ) {
+        init {
+            CvContracts.requireInRange(minConfidence, 0.0, 1.0, "minConfidence")
+            CvContracts.requirePositive(scaleMin, "scaleMin")
+            CvContracts.requireFinite(scaleMax, "scaleMax")
+            require(scaleMax >= scaleMin) { "scaleMax ($scaleMax) must be >= scaleMin ($scaleMin)" }
+            CvContracts.requirePositive(coarseStep, "coarseStep")
+            CvContracts.requirePositive(maxScales, "maxScales")
+            CvContracts.requirePositive(maxImageEdge, "maxImageEdge")
+        }
+    }
 
     /**
      * Finds the best occurrence of [template] in [image].
@@ -44,7 +57,11 @@ object TemplateMatcher {
      * nothing exceeds [Options.minConfidence].
      */
     fun match(image: Mat, template: Mat, options: Options = Options()): MatchResult? {
-        require(!image.empty() && !template.empty()) { "image and template must be non-empty" }
+        CvContracts.requireNonEmpty(image, "image")
+        CvContracts.requireNonEmpty(template, "template")
+        require(image.cols() <= options.maxImageEdge && image.rows() <= options.maxImageEdge) {
+            "image dimensions (${image.cols()}x${image.rows()}) exceed maxImageEdge (${options.maxImageEdge})"
+        }
         require(options.scaleMin > 0 && options.scaleMax >= options.scaleMin) { "invalid scale range" }
 
         val coarseScales = buildList {

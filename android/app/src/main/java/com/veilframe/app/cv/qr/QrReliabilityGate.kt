@@ -71,9 +71,9 @@ object QrReliabilityGate {
                     payloadMatches = detection != null &&
                         (expectedPayload == null || detection.rawValue == expectedPayload),
                 )
-            } catch (e: Exception) {
-                // Decoder plugin exception — count as undecodable condition.
-                // Errors (OOM, etc.) propagate and do not become silent miss scores.
+            } catch (e: org.opencv.core.CvException) {
+                // Expected OpenCV decode failure — count as undecodable condition.
+                // Other unexpected exceptions/errors propagate instead of masking plugin bugs.
                 ConditionOutcome(condition, null, false)
             } finally {
                 degraded.release()

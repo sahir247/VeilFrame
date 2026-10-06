@@ -98,21 +98,28 @@ object Preprocessor {
     }
 
     /** Content-agnostic fast denoise (Gaussian / Median / Bilateral). */
-    fun denoise(source: Mat, strength: Int = 5, method: DenoiseMethod = DenoiseMethod.BILATERAL): Mat = when (method) {
-        DenoiseMethod.GAUSSIAN -> {
-            val out = Mat()
-            Imgproc.GaussianBlur(source, out, Size(0.0, 0.0), strength / 2.5)
-            out
+    fun denoise(source: Mat, strength: Int = 5, method: DenoiseMethod = DenoiseMethod.BILATERAL): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requirePositive(strength, "strength")
+        if (method == DenoiseMethod.MEDIAN) {
+            require(strength % 2 == 1) { "strength for MEDIAN denoise must be odd (got $strength)" }
         }
-        DenoiseMethod.MEDIAN -> {
-            val out = Mat()
-            Imgproc.medianBlur(source, out, strength or 1)
-            out
-        }
-        DenoiseMethod.BILATERAL -> {
-            val out = Mat()
-            Imgproc.bilateralFilter(source, out, strength, 75.0, 75.0)
-            out
+        return when (method) {
+            DenoiseMethod.GAUSSIAN -> {
+                val out = Mat()
+                Imgproc.GaussianBlur(source, out, Size(0.0, 0.0), strength / 2.5)
+                out
+            }
+            DenoiseMethod.MEDIAN -> {
+                val out = Mat()
+                Imgproc.medianBlur(source, out, strength)
+                out
+            }
+            DenoiseMethod.BILATERAL -> {
+                val out = Mat()
+                Imgproc.bilateralFilter(source, out, strength, 75.0, 75.0)
+                out
+            }
         }
     }
 
@@ -167,6 +174,9 @@ object Preprocessor {
         kernelSize: Int = 3,
         iterations: Int = 1,
     ): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireOddPositive(kernelSize, "kernelSize")
+        require(iterations >= 1) { "iterations must be >= 1 (got $iterations)" }
         val kernel = Imgproc.getStructuringElement(
             Imgproc.MORPH_RECT,
             Size(kernelSize.toDouble(), kernelSize.toDouble()),
@@ -182,6 +192,9 @@ object Preprocessor {
 
     /** Edge-preserving smoothing (bilateral by default). */
     fun edgePreserve(source: Mat, sigmaColor: Double = 50.0, sigmaSpace: Double = 50.0): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requirePositive(sigmaColor, "sigmaColor")
+        com.veilframe.app.cv.core.CvContracts.requirePositive(sigmaSpace, "sigmaSpace")
         val out = Mat()
         Imgproc.bilateralFilter(source, out, 0, sigmaColor, sigmaSpace)
         return out

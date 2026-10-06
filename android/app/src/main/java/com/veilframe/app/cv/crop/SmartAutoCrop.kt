@@ -58,7 +58,17 @@ object SmartAutoCrop {
         val margin: Double = 0.05,
         /** Center-bias weight fused into the importance map. */
         val centerBias: Double = 0.15,
-    )
+    ) {
+        init {
+            if (aspect == Aspect.CUSTOM) {
+                require(customRatio != null && customRatio.isFinite() && customRatio > 0.0) {
+                    "customRatio must be non-null, finite and > 0 for Aspect.CUSTOM (got $customRatio)"
+                }
+            }
+            com.veilframe.app.cv.core.CvContracts.requireInRange(margin, 0.0, 0.5, "margin")
+            com.veilframe.app.cv.core.CvContracts.requireInRange(centerBias, 0.0, 1.0, "centerBias")
+        }
+    }
 
     /**
      * Computes the best crop for [source].
@@ -228,6 +238,8 @@ object SmartAutoCrop {
 
     /** Multiplies importance by a model mask (resized if needed). */
     private fun fuseMask(importance: Mat, modelMask: Mat) {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(modelMask, "modelMask")
+        com.veilframe.app.cv.core.CvContracts.requireGray8(modelMask, "modelMask")
         val resized = if (modelMask.size() != importance.size()) {
             val r = Mat()
             Imgproc.resize(modelMask, r, importance.size())

@@ -33,7 +33,8 @@ object ColorEngine {
      * `strength` blends between the original (0) and fully corrected (1).
      */
     fun autoWhiteBalance(source: Mat, strength: Double = 1.0): WhiteBalanceResult {
-        require(strength in 0.0..1.0)
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireInRange(strength, 0.0, 1.0, "strength")
         val bgr = toBgr(source)
         try {
             val means = Core.mean(bgr).`val`
@@ -41,9 +42,9 @@ object ColorEngine {
             val meanG = means[1]
             val meanR = means[2]
             val anchor = (meanB + meanG + meanR) / 3.0
-            var gainB = anchor / maxOf(meanB, 1.0)
-            var gainG = anchor / maxOf(meanG, 1.0)
-            var gainR = anchor / maxOf(meanR, 1.0)
+            var gainB = if (anchor <= 1e-4) 1.0 else (anchor / maxOf(meanB, 1.0)).coerceIn(0.25, 4.0)
+            var gainG = if (anchor <= 1e-4) 1.0 else (anchor / maxOf(meanG, 1.0)).coerceIn(0.25, 4.0)
+            var gainR = if (anchor <= 1e-4) 1.0 else (anchor / maxOf(meanR, 1.0)).coerceIn(0.25, 4.0)
             // Blend with identity per strength.
             gainB = 1.0 + (gainB - 1.0) * strength
             gainG = 1.0 + (gainG - 1.0) * strength
@@ -67,6 +68,8 @@ object ColorEngine {
 
     /** Exposure: linear gain in stops (±2 typical). */
     fun exposure(source: Mat, stops: Double): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireInRange(stops, -10.0, 10.0, "stops")
         val out = Mat()
         source.convertTo(out, -1, Math.pow(2.0, stops), 0.0)
         return out
@@ -74,6 +77,10 @@ object ColorEngine {
 
     /** Contrast around mid-grey. 1.0 = unchanged. */
     fun contrast(source: Mat, contrast: Double, pivot: Double = 128.0): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireFinite(contrast, "contrast")
+        require(contrast >= 0.0) { "contrast must be >= 0.0 (got $contrast)" }
+        com.veilframe.app.cv.core.CvContracts.requireFinite(pivot, "pivot")
         val out = Mat()
         source.convertTo(out, -1, contrast, pivot * (1.0 - contrast))
         return out
@@ -81,6 +88,9 @@ object ColorEngine {
 
     /** Saturation multiplier (0 = grayscale, 1 = unchanged, >1 = boosted) via HSV S. */
     fun saturation(source: Mat, multiplier: Double): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireFinite(multiplier, "multiplier")
+        require(multiplier >= 0.0) { "multiplier must be >= 0.0 (got $multiplier)" }
         if (source.channels() == 1 || multiplier == 1.0) return source.clone()
         val bgr = toBgr(source)
         val hsv = Mat()

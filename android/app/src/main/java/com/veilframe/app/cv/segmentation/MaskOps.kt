@@ -19,6 +19,8 @@ object MaskOps {
 
     /** Morphological cleanup: removes speckles and closes pinholes. */
     fun cleanup(mask: Mat, kernelSize: Int = 5): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireOddPositive(kernelSize, "kernelSize")
         val kernel = Imgproc.getStructuringElement(
             Imgproc.MORPH_ELLIPSE,
             Size(kernelSize.toDouble(), kernelSize.toDouble()),
@@ -124,6 +126,8 @@ object MaskOps {
 
     /** Feathering: soft alpha edge of [radius] pixels. */
     fun feather(mask: Mat, radius: Double = 2.0): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireNonNegative(radius, "radius")
         val out = Mat()
         Imgproc.GaussianBlur(mask, out, Size(0.0, 0.0), radius)
         return out
@@ -135,7 +139,12 @@ object MaskOps {
      * [foreground].
      */
     fun composite(foreground: Mat, background: Mat, mask: Mat): Mat {
-        require(foreground.size() == background.size()) { "foreground/background size mismatch" }
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(foreground, "foreground")
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(background, "background")
+        com.veilframe.app.cv.core.CvContracts.requireSameSize(foreground, background, "foreground", "background")
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireGray8(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireSameSize(foreground, mask, "foreground", "mask")
         val alpha = Mat()
         val fg = Mat()
         val bg = Mat()
@@ -179,6 +188,10 @@ object MaskOps {
 
     /** Transparent PNG-style output: BGRA with [mask] as alpha channel. */
     fun toTransparent(foreground: Mat, mask: Mat): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(foreground, "foreground")
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireGray8(mask, "mask")
+        com.veilframe.app.cv.core.CvContracts.requireSameSize(foreground, mask, "foreground", "mask")
         val channels = ArrayList<Mat>()
         val fgBgr = if (foreground.channels() == 4) {
             val bgr = Mat()
