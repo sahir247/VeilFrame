@@ -167,13 +167,22 @@ object FlowConsistency {
     }
 
     /** Warps [flow] by [byFlow] * [scale] using bilinear remap. */
-    private fun warpFlow(flow: Mat, byFlow: Mat, scale: Double): Mat {
+    private fun warpFlow(
+        flow: Mat,
+        byFlow: Mat,
+        scale: Double,
+        pool: com.veilframe.app.cv.core.MatPool = com.veilframe.app.cv.core.MatPool.default,
+    ): Mat {
         val channels = ArrayList<Mat>()
         Core.split(byFlow, channels)
-        val mapX = Mat()
-        val mapY = Mat()
-        val gridX = Mat(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
-        val gridY = Mat(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
+        val mapXLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
+        val mapYLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
+        val gridXLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
+        val gridYLease = pool.acquire(byFlow.rows(), byFlow.cols(), CvType.CV_32F)
+        val mapX = mapXLease.mat
+        val mapY = mapYLease.mat
+        val gridX = gridXLease.mat
+        val gridY = gridYLease.mat
         try {
             buildGrid(gridX, gridY)
             Core.multiply(channels[0], ScalarOf(scale), mapX)
@@ -185,10 +194,10 @@ object FlowConsistency {
             return out
         } finally {
             channels.forEach { it.release() }
-            mapX.release()
-            mapY.release()
-            gridX.release()
-            gridY.release()
+            mapXLease.close()
+            mapYLease.close()
+            gridXLease.close()
+            gridYLease.close()
         }
     }
 

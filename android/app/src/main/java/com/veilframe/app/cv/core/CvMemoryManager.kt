@@ -89,21 +89,66 @@ class CvMemoryManager(
         return total + EXIF_AND_META_OVERHEAD
     }
 
+    private val lock = Any()
+    private val reservedBytes = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** Currently active reserved memory in bytes across running/queued jobs. */
+    val currentReservedBytes: Long get() = reservedBytes.get()
+
     /**
-     * Admission control. A job is admitted when its estimated peak fits inside
+     * Atomically reserves [costBytes] against the available memory budget.
+     *
+     * Prevents concurrency admission race conditions where multiple parallel jobs
+     * could observe the same available budget and collectively exceed the device's
+     * safety threshold.
+     */
+    fun reserve(costBytes: Long): ReservationResult {
+        if (costBytes <= 0L) {
+            return ReservationResult.Granted(NoOpReservation, budgetBytes = availableBudget())
+        }
+        synchronized(lock) {
+            val available = probe.availableMemoryBytes()
+            val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+            val currentlyReserved = reservedBytes.get()
+            val remainingBudget = (totalBudget - currentlyReserved).coerceAtLeast(0L)
+
+            return if (costBytes <= remainingBudget) {
+                reservedBytes.addAndGet(costBytes)
+                val reservation = ActiveReservation(costBytes)
+                ReservationResult.Granted(reservation, budgetBytes = remainingBudget)
+            } else {
+                ReservationResult.Rejected(
+                    budgetBytes = remainingBudget,
+                    costBytes = costBytes,
+                    suggestedTier = if (costBytes > totalBudget * 4) ResolutionTier.TILED else ResolutionTier.NORMAL,
+                )
+            }
+        }
+    }
+
+    /** Unreserved available budget under current safety factor + pool retention. */
+    fun availableBudget(): Long {
+        val available = probe.availableMemoryBytes()
+        val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+        return (totalBudget - reservedBytes.get()).coerceAtLeast(0L)
+    }
+
+    /**
+     * Admission control (non-reserving check). A job is admitted when its estimated peak fits inside
      * the safety share of currently available memory (plus whatever the pool can
      * recycle). Rejected jobs should be retried at a lower resolution tier.
      */
     fun admit(costBytes: Long): AdmissionDecision {
         val available = probe.availableMemoryBytes()
-        val budget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
-        return if (costBytes <= budget) {
-            AdmissionDecision.Admitted(budgetBytes = budget)
+        val totalBudget = (available * safetyFactor).toLong() + pool.stats().retainedBytes
+        val remainingBudget = (totalBudget - reservedBytes.get()).coerceAtLeast(0L)
+        return if (costBytes <= remainingBudget) {
+            AdmissionDecision.Admitted(budgetBytes = remainingBudget)
         } else {
             AdmissionDecision.Rejected(
-                budgetBytes = budget,
+                budgetBytes = remainingBudget,
                 costBytes = costBytes,
-                suggestedTier = if (costBytes > budget * 4) ResolutionTier.TILED else ResolutionTier.NORMAL,
+                suggestedTier = if (costBytes > totalBudget * 4) ResolutionTier.TILED else ResolutionTier.NORMAL,
             )
         }
     }
@@ -115,7 +160,27 @@ class CvMemoryManager(
             peakBytes = stats.peakLiveBytes,
             pooledBytes = stats.retainedBytes,
             allocations = stats.allocations,
+            reservedBytes = reservedBytes.get(),
         )
+    }
+
+    private inner class ActiveReservation(
+        override val reservedBytes: Long,
+    ) : MemoryReservation {
+        private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+        override val isClosed: Boolean get() = closed.get()
+
+        override fun close() {
+            if (closed.compareAndSet(false, true)) {
+                this@CvMemoryManager.reservedBytes.addAndGet(-reservedBytes)
+            }
+        }
+    }
+
+    private object NoOpReservation : MemoryReservation {
+        override val reservedBytes: Long = 0L
+        override val isClosed: Boolean = false
+        override fun close() = Unit
     }
 
     companion object {
@@ -195,4 +260,28 @@ sealed class AdmissionDecision {
         val costBytes: Long,
         val suggestedTier: ResolutionTier,
     ) : AdmissionDecision()
+}
+
+/** Result of attempting to reserve memory against the unreserved budget envelope. */
+sealed class ReservationResult {
+    data class Granted(
+        val reservation: MemoryReservation,
+        val budgetBytes: Long,
+    ) : ReservationResult()
+
+    data class Rejected(
+        val budgetBytes: Long,
+        val costBytes: Long,
+        val suggestedTier: ResolutionTier,
+    ) : ReservationResult()
+}
+
+/**
+ * Handle over an active memory reservation. Closing releases the reserved bytes back
+ * to the unreserved budget. Implementations are idempotent and thread-safe.
+ */
+interface MemoryReservation : AutoCloseable {
+    val reservedBytes: Long
+    val isClosed: Boolean
+    override fun close()
 }

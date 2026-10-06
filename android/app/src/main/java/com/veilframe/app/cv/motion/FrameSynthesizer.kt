@@ -51,20 +51,31 @@ object FrameSynthesizer {
         /** Confidence below this falls back to the temporally nearest frame. */
         val minConfidence: Double = 0.25,
         val refineFlow: Boolean = true,
+        val pool: com.veilframe.app.cv.core.MatPool? = null,
     )
 
     /**
      * Backward-map warp: `out(q) = src(q + s * flow(q))`.
      * `s = -t` warps A toward time t; `s = (1 - t)` warps B toward time t.
      */
-    fun warpToward(src: Mat, flow: FlowEstimator.FlowField, s: Double): Mat {
+    fun warpToward(
+        src: Mat,
+        flow: FlowEstimator.FlowField,
+        s: Double,
+        pool: com.veilframe.app.cv.core.MatPool? = null,
+    ): Mat {
+        val poolInstance = pool ?: com.veilframe.app.cv.core.MatPool.default
         val flowFull = scaleFlowTo(flow, src.size())
         val channels = ArrayList<Mat>()
         Core.split(flowFull, channels)
-        val mapX = Mat()
-        val mapY = Mat()
-        val gridX = Mat(src.rows(), src.cols(), CvType.CV_32F)
-        val gridY = Mat(src.rows(), src.cols(), CvType.CV_32F)
+        val mapXLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
+        val mapYLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
+        val gridXLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
+        val gridYLease = poolInstance.acquire(src.rows(), src.cols(), CvType.CV_32F)
+        val mapX = mapXLease.mat
+        val mapY = mapYLease.mat
+        val gridX = gridXLease.mat
+        val gridY = gridYLease.mat
         try {
             buildGrid(gridX, gridY)
             Core.multiply(channels[0], Scalar(s), mapX)
@@ -77,10 +88,10 @@ object FrameSynthesizer {
         } finally {
             flowFull.release()
             channels.forEach { it.release() }
-            mapX.release()
-            mapY.release()
-            gridX.release()
-            gridY.release()
+            mapXLease.close()
+            mapYLease.close()
+            gridXLease.close()
+            gridYLease.close()
         }
     }
 
@@ -108,8 +119,8 @@ object FrameSynthesizer {
 
             val consistency = FlowConsistency.check(forward, backward)
             try {
-                val warpedA = warpToward(frameA, forward, -t)
-                val warpedB = warpToward(frameB, backward, (1 - t))
+                val warpedA = warpToward(frameA, forward, -t, options.pool)
+                val warpedB = warpToward(frameB, backward, (1 - t), options.pool)
 
                 // Artifact mask: disagreeing warps in supposedly consistent areas.
                 val residual = Mat()

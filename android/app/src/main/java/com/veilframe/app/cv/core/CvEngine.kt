@@ -25,6 +25,9 @@ class CvEngine(
     /**
      * Submits work. When [memoryEstimate] exceeds the admission budget the job
      * fails fast with [CvErrorCode.OUT_OF_MEMORY] instead of killing the app.
+     *
+     * Concurrency-safe: atomically reserves [memoryEstimate] against the unreserved
+     * budget envelope before enqueuing to prevent parallel over-budget spikes.
      */
     fun <T> submit(
         name: String,
@@ -32,27 +35,42 @@ class CvEngine(
         memoryEstimate: Long = 0L,
         block: (CvContext) -> T,
     ): CvJob<T> {
-        if (memoryEstimate > 0L) {
-            when (val decision = memory.admit(memoryEstimate)) {
-                is AdmissionDecision.Rejected -> return CvJob.finished(
+        val reservation = if (memoryEstimate > 0L) {
+            when (val decision = memory.reserve(memoryEstimate)) {
+                is ReservationResult.Rejected -> return CvJob.finished(
                     name,
                     priority,
                     memoryEstimate,
                     CvResult.Err(
                         CvErrorCode.OUT_OF_MEMORY,
-                        "estimated $memoryEstimate bytes exceeds budget ${decision.budgetBytes}; " +
+                        "estimated $memoryEstimate bytes exceeds unreserved budget ${decision.budgetBytes}; " +
                             "retry at ${decision.suggestedTier}",
                     ),
                 )
-                is AdmissionDecision.Admitted -> Unit
+                is ReservationResult.Granted -> decision.reservation
             }
+        } else {
+            null
         }
-        return dispatcher.submit(name, priority, memoryEstimate, block)
+
+        return try {
+            dispatcher.submit(
+                name = name,
+                priority = priority,
+                memoryEstimate = memoryEstimate,
+                reservation = reservation,
+                pool = pool,
+                block = block,
+            )
+        } catch (t: Throwable) {
+            reservation?.close()
+            throw t
+        }
     }
 
     /** Convenience: run [block] now on the calling thread with a full [CvContext]. */
     fun <T> runInline(name: String, block: (CvContext) -> T): CvResult<T> {
-        val context = CvContext(name, CvPriority.INTERACTIVE, 0L, CvCancellation())
+        val context = CvContext(name, CvPriority.INTERACTIVE, 0L, CvCancellation(), pool = pool)
         return try {
             CvResult.Ok(block(context), context.warningsSnapshot(), context.timings())
         } catch (c: CvCancelled) {

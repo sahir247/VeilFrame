@@ -97,6 +97,7 @@ data class MemoryFootprint(
     val peakBytes: Long,
     val pooledBytes: Long,
     val allocations: Int,
+    val reservedBytes: Long = 0L,
 )
 
 /**

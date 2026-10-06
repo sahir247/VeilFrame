@@ -126,6 +126,8 @@ class MatPool(
     companion object {
         const val DEFAULT_MAX_RETAINED_BYTES: Long = 96L * 1024 * 1024
         const val DEFAULT_MAX_PER_CLASS: Int = 3
+
+        val default: MatPool by lazy { MatPool() }
     }
 }
 

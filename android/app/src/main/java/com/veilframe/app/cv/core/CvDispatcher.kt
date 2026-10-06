@@ -43,16 +43,20 @@ class CvDispatcher(
         name: String,
         priority: CvPriority,
         memoryEstimate: Long = 0L,
+        reservation: MemoryReservation? = null,
+        pool: MatPool = MatPool.default,
         block: (CvContext) -> T,
     ): CvJob<T> {
         // A lane configured with 0 slots is DISABLED: submitting to a
         // Semaphore(0) lane would suspend forever, so reject up front.
         if (config.slotsFor(priority) == 0) {
+            reservation?.close()
             return CvJob.finished(
                 name,
                 priority,
                 memoryEstimate,
                 CvResult.unsupported("CV lane $priority is disabled (0 slots)"),
+                reservation,
             )
         }
         val cancellation = CvCancellation()
@@ -63,22 +67,31 @@ class CvDispatcher(
             priority = priority,
             memoryEstimate = memoryEstimate,
             cancellation = cancellation,
+            pool = pool,
             state = stateRef,
         )
 
-        val deferred: Deferred<CvResult<T>> = scope.asyncResult(priority, context, block)
+        val deferred: Deferred<CvResult<T>> = scope.asyncResult(priority, context, reservation, block)
+
+        // Ensure reservation releases on normal completion, exception, or cancellation
+        reservation?.let { res ->
+            deferred.invokeOnCompletion {
+                res.close()
+            }
+        }
 
         // Keep the engine's result and the coroutine result in sync.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             result.complete(runCatching { deferred.await() }.getOrElse { CvResult.errFrom(it) })
         }
 
-        return CvJob(name, priority, memoryEstimate, cancellation, result, stateRef, deferred)
+        return CvJob(name, priority, memoryEstimate, cancellation, result, stateRef, deferred, reservation)
     }
 
     private fun <T> CoroutineScope.asyncResult(
         priority: CvPriority,
         context: CvContext,
+        reservation: MemoryReservation?,
         block: (CvContext) -> T,
     ): Deferred<CvResult<T>> {
         val lane = laneSemaphores.getValue(priority)
@@ -99,6 +112,7 @@ class CvDispatcher(
                 CvResult.errFrom(t)
             } finally {
                 context.markFinished()
+                reservation?.close()
                 lane.release()
             }
         }
@@ -142,10 +156,17 @@ class CvContext internal constructor(
     val priority: CvPriority,
     val memoryEstimate: Long,
     val cancellation: CvCancellation,
+    val pool: MatPool = MatPool.default,
     private val state: AtomicReference<CvJobState> = AtomicReference(CvJobState.PENDING),
 ) {
     private val warnings = java.util.concurrent.CopyOnWriteArrayList<CvWarning>()
     private val timings = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Leases a pooled Mat buffer of [rows] x [cols] x [type]. */
+    fun acquireMat(rows: Int, cols: Int, type: Int): MatLease = pool.acquire(rows, cols, type)
+
+    /** Leases a pooled Mat matching the shape and type of [template]. */
+    fun acquireMatLike(template: org.opencv.core.Mat): MatLease = pool.acquireLike(template)
 
     /** 0f..1f, monotonic best-effort. */
     @Volatile
@@ -195,6 +216,7 @@ class CvJob<T> internal constructor(
     private val result: CompletableDeferred<CvResult<T>>,
     private val stateRef: AtomicReference<CvJobState>,
     private val coroutine: Job?,
+    private val reservation: MemoryReservation? = null,
 ) {
     val isActive: Boolean get() = !result.isCompleted && !cancellation.isCancelled
 
@@ -216,6 +238,7 @@ class CvJob<T> internal constructor(
         // immediately instead of waiting for a free permit. In-flight blocks are
         // non-suspending, so their cooperative checks (ensureActive) still apply.
         coroutine?.cancel(CancellationException(reason))
+        reservation?.close()
     }
 
     suspend fun await(): CvResult<T> = result.await()
@@ -230,15 +253,20 @@ class CvJob<T> internal constructor(
             priority: CvPriority,
             memoryEstimate: Long,
             outcome: CvResult<T>,
-        ): CvJob<T> = CvJob(
-            name,
-            priority,
-            memoryEstimate,
-            CvCancellation(),
-            CompletableDeferred(outcome),
-            AtomicReference(CvJobState.COMPLETED),
-            null,
-        )
+            reservation: MemoryReservation? = null,
+        ): CvJob<T> {
+            reservation?.close()
+            return CvJob(
+                name,
+                priority,
+                memoryEstimate,
+                CvCancellation(),
+                CompletableDeferred(outcome),
+                AtomicReference(CvJobState.COMPLETED),
+                null,
+                reservation,
+            )
+        }
     }
 }
 
