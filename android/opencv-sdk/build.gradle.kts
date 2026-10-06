@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -39,23 +41,46 @@ val x86_64So = file("src/main/jniLibs/x86_64/libopencv_java4.so")
 val matJava = file("src/main/java/org/opencv/core/Mat.java")
 val wechatJava = file("src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java")
 
-val isCustomSdkComplete = markerFile.exists() &&
+val expectedOpenCvVersion = "4.14.0"
+val expectedOpenCvSha = "0654a42b10ba2dc2b0d00f73fbfb534442654ee0"
+val expectedContribSha = "a8e9acdd94489bb2df921e64906a5efdcfdae267"
+val expectedAbis = "arm64-v8a,x86_64"
+val expectedStatus = "VERIFIED_COMPLETE"
+
+fun validateMarkerProvenance(file: File): Boolean {
+    if (!file.exists() || file.length() == 0L) return false
+    val props = Properties()
+    return try {
+        file.inputStream().use { props.load(it) }
+        props.getProperty("OpenCV") == expectedOpenCvVersion &&
+            props.getProperty("OpenCV_SHA") == expectedOpenCvSha &&
+            props.getProperty("Contrib_SHA") == expectedContribSha &&
+            props.getProperty("ABIs") == expectedAbis &&
+            props.getProperty("Status") == expectedStatus
+    } catch (_: Exception) {
+        false
+    }
+}
+
+val isMarkerValid = validateMarkerProvenance(markerFile)
+val isCustomSdkComplete = isMarkerValid &&
     arm64So.exists() && arm64So.length() > 0L &&
     x86_64So.exists() && x86_64So.length() > 0L &&
     matJava.exists() && wechatJava.exists()
 
 dependencies {
     if (isCustomSdkComplete) {
-        val markerHeader = markerFile.readLines().firstOrNull { it.startsWith("OpenCV=") } ?: "Verified"
-        logger.lifecycle(":opencv-sdk compiling with complete in-tree custom OpenCV SDK ($markerHeader)")
+        logger.lifecycle(":opencv-sdk compiling with complete in-tree custom OpenCV SDK (OpenCV=$expectedOpenCvVersion, SHA=${expectedOpenCvSha.take(8)})")
     } else {
-        // Detect partial/broken artifacts to alert developer
+        // Detect partial/broken/forged artifacts to alert developer
         val hasPartialSo = file("src/main/jniLibs").exists() &&
             file("src/main/jniLibs").walkTopDown().any { it.extension == "so" }
         val hasPartialJava = file("src/main/java").exists() &&
             file("src/main/java").walkTopDown().any { it.extension == "java" }
-        if (hasPartialSo || hasPartialJava || markerFile.exists()) {
-            logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or marker)! Safely falling back to verified Maven distribution.")
+        if (markerFile.exists() && !isMarkerValid) {
+            logger.warn(":opencv-sdk WARNING: Completion marker failed provenance verification (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Safely falling back to verified Maven distribution.")
+        } else if (hasPartialSo || hasPartialJava || markerFile.exists()) {
+            logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or valid marker)! Safely falling back to verified Maven distribution.")
         } else {
             logger.lifecycle(":opencv-sdk using vetted Maven WeChatQRCode OpenCV distribution (transitional baseline)")
         }

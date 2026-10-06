@@ -79,8 +79,11 @@ class WeChatQrEngine private constructor(
             var engineError: Throwable? = null
             val texts: List<String> = try {
                 engine.detectAndDecode(image, points)
-            } catch (t: Throwable) {
-                engineError = t
+            } catch (e: org.opencv.core.CvException) {
+                engineError = e
+                emptyList()
+            } catch (e: Exception) {
+                engineError = e
                 emptyList()
             }
             if (texts.isNullOrEmpty()) {
@@ -114,7 +117,9 @@ class WeChatQrEngine private constructor(
                 pointsMat.get(0, 0, data)
                 (0 until elements).map { i -> Point(data[i * channels], data[i * channels + 1]) }
             }
-        } catch (_: Throwable) {
+        } catch (e: org.opencv.core.CvException) {
+            null
+        } catch (e: Exception) {
             null
         }
     }
@@ -171,9 +176,14 @@ class WeChatQrEngine private constructor(
                         initError = initError,
                     )
                 }
-            } catch (t: Throwable) {
-                // Native OpenCV missing, contrib module absent, or models corrupt.
-                WeChatQrEngine(null, false, Availability.UNAVAILABLE, initError ?: t)
+            } catch (e: LinkageError) {
+                // Native OpenCV missing, JNI symbols absent, or ABI mismatch.
+                WeChatQrEngine(null, false, Availability.UNAVAILABLE, initError ?: e)
+            } catch (e: org.opencv.core.CvException) {
+                WeChatQrEngine(null, false, Availability.UNAVAILABLE, initError ?: e)
+            } catch (e: Exception) {
+                // Corrupt models, IO errors, or initialization failure.
+                WeChatQrEngine(null, false, Availability.UNAVAILABLE, initError ?: e)
             }
             instance = engine
             return engine
@@ -198,34 +208,55 @@ class WeChatQrEngine private constructor(
          * after the size check passes, so a process death mid-copy can never
          * leave a corrupt model at the final path.
          */
-        private fun extractModel(context: Context, name: String): File? = try {
+        private fun extractModel(context: Context, name: String): File? {
             val dir = File(context.filesDir, "cv_models/wechat_qr")
             if (!dir.exists()) dir.mkdirs()
             val target = File(dir, name)
             val tmp = File(dir, "$name.tmp")
-            val expected = context.assets.open("$ASSET_DIR/$name").use { input ->
-                val out = FileOutputStream(tmp)
-                val buffer = ByteArray(64 * 1024)
-                var written = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    out.write(buffer, 0, read)
-                    written += read
+            return try {
+                val expected = context.assets.open("$ASSET_DIR/$name").use { input ->
+                    FileOutputStream(tmp).use { out ->
+                        val fd = out.fd
+                        val buffer = ByteArray(64 * 1024)
+                        var written = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            out.write(buffer, 0, read)
+                            written += read
+                        }
+                        out.flush()
+                        try { fd.sync() } catch (_: Exception) {}
+                        written
+                    }
                 }
-                out.flush()
-                out.close()
-                written
+                if (expected > 0 && tmp.length() == expected) {
+                    try {
+                        java.nio.file.Files.move(
+                            tmp.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                        java.nio.file.Files.move(
+                            tmp.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    }
+                    target
+                } else {
+                    if (tmp.exists()) tmp.delete()
+                    if (target.exists() && target.length() > 0) target else null
+                }
+            } catch (e: java.io.IOException) {
+                if (tmp.exists()) tmp.delete()
+                if (target.exists() && target.length() > 0) target else null
+            } catch (e: Exception) {
+                if (tmp.exists()) tmp.delete()
+                if (target.exists() && target.length() > 0) target else null
             }
-            if (expected > 0 && tmp.length() == expected) {
-                if (target.exists()) target.delete()
-                if (tmp.renameTo(target)) target else null
-            } else {
-                tmp.delete()
-                null
-            }
-        } catch (_: Throwable) {
-            null
         }
     }
 }

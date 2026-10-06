@@ -43,12 +43,19 @@ jobs:
           echo "=== Verifying native libraries ==="
           ls -lh android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
           ls -lh android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          echo "=== Verifying ELF machine architecture ==="
+          readelf -h android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so | grep -E "Class:|Machine:" | grep -q "AArch64"
+          readelf -h android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so | grep -E "Class:|Machine:" | grep -q "Advanced Micro Devices X86-64"
           echo "=== Verifying Java bindings ==="
           test -f android/opencv-sdk/src/main/java/org/opencv/core/Mat.java
           test -f android/opencv-sdk/src/main/java/org/opencv/wechat_qrcode/WeChatQRCode.java
-          echo "=== Verifying Completion Marker ==="
+          echo "=== Verifying Completion Marker & Forensic Provenance ==="
           test -f android/opencv-sdk/src/main/.opencv-sdk-complete
           cat android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "Status=VERIFIED_COMPLETE" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "OpenCV=4.14.0" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "OpenCV_SHA=0654a42b10ba2dc2b0d00f73fbfb534442654ee0" android/opencv-sdk/src/main/.opencv-sdk-complete
+          grep -q "Contrib_SHA=a8e9acdd94489bb2df921e64906a5efdcfdae267" android/opencv-sdk/src/main/.opencv-sdk-complete
 
       - name: Build & Assemble :opencv-sdk with In-Tree Custom Binaries
         working-directory: android
@@ -61,6 +68,18 @@ jobs:
         run: |
           ./gradlew :app:assembleDebug
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*"
+
+      - name: Device Runtime Verification (WeChatQRCode RoundTrip on x86_64 Emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          disable-animations: true
+          profile: pixel_6
+          script: |
+            cd android
+            ./gradlew :app:connectedDebugAndroidTest --tests "com.veilframe.app.cv.qr.WeChatQrRoundTripTest*"
 
       - name: Upload Custom OpenCV SDK Artifacts
         uses: actions/upload-artifact@v4

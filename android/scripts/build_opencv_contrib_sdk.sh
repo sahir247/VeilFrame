@@ -37,29 +37,35 @@ mkdir -p "${WORK_DIR}"
 cd "${WORK_DIR}"
 
 # 1. Verify Android Toolchain
-if [ -z "${ANDROID_NDK_HOME:-}" ] && [ -n "${ANDROID_NDK_ROOT:-}" ]; then
-    export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
-fi
-if [ -z "${ANDROID_NDK_HOME:-}" ] && [ -n "${ANDROID_HOME:-}" ]; then
-    # Auto-detect verified NDK 27.2.12479018 or latest installed under Android SDK
-    if [ -d "${ANDROID_HOME}/ndk/27.2.12479018" ]; then
-        export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
-    elif [ -d "${ANDROID_HOME}/ndk" ]; then
-        LATEST_NDK=$(ls -d "${ANDROID_HOME}/ndk/"* 2>/dev/null | sort -V | tail -n 1)
-        if [ -n "${LATEST_NDK}" ]; then
-            export ANDROID_NDK_HOME="${LATEST_NDK}"
-        fi
+EXPECTED_NDK_VERSION="27.2.12479018"
+if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+    if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}/ndk/${EXPECTED_NDK_VERSION}" ]; then
+        export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${EXPECTED_NDK_VERSION}"
+    elif [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+        export ANDROID_NDK_HOME="${ANDROID_NDK_ROOT}"
     fi
 fi
 
 if [ -z "${ANDROID_NDK_HOME:-}" ] || [ ! -d "${ANDROID_NDK_HOME}" ]; then
-    echo "ERROR: ANDROID_NDK_HOME is not set or does not exist."
-    echo "Expected verified NDK: 27.2.12479018"
-    echo "Please set ANDROID_NDK_HOME=/path/to/android-ndk"
+    echo "FATAL: Required NDK ${EXPECTED_NDK_VERSION} is not found."
+    echo "Please install Android NDK ${EXPECTED_NDK_VERSION} or set ANDROID_NDK_HOME to it."
     exit 1
 fi
 
-echo "Verified Android NDK: ${ANDROID_NDK_HOME}"
+ACTUAL_NDK_VERSION=""
+if [ -f "${ANDROID_NDK_HOME}/source.properties" ]; then
+    ACTUAL_NDK_VERSION=$(grep "^Pkg.Revision" "${ANDROID_NDK_HOME}/source.properties" | cut -d'=' -f2 | tr -d '[:space:]')
+fi
+if [ -z "${ACTUAL_NDK_VERSION}" ]; then
+    ACTUAL_NDK_VERSION="$(basename "${ANDROID_NDK_HOME}")"
+fi
+
+if [ "${ACTUAL_NDK_VERSION}" != "${EXPECTED_NDK_VERSION}" ]; then
+    echo "FATAL: Toolchain mismatch: expected exact NDK ${EXPECTED_NDK_VERSION}, got ${ACTUAL_NDK_VERSION} (${ANDROID_NDK_HOME})"
+    exit 1
+fi
+
+echo "✓ Verified Android NDK: ${ANDROID_NDK_HOME} (${ACTUAL_NDK_VERSION})"
 
 # 2. Checkout pinned repositories with exact commit validation
 checkout_pinned_repo() {
@@ -133,6 +139,39 @@ if [ ! -s "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" ]; then
     echo "FATAL: x86_64/libopencv_java4.so is missing or empty!"
     exit 1
 fi
+
+validate_elf_arch() {
+    local so_path="$1"
+    local expected_arch="$2"
+    local readelf_bin=""
+    if command -v readelf >/dev/null 2>&1; then
+        readelf_bin="readelf"
+    else
+        local ndk_llvm_readelf
+        ndk_llvm_readelf=$(find "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt" -name "llvm-readelf" 2>/dev/null | head -n 1 || true)
+        if [ -n "${ndk_llvm_readelf}" ] && [ -x "${ndk_llvm_readelf}" ]; then
+            readelf_bin="${ndk_llvm_readelf}"
+        fi
+    fi
+
+    if [ -n "${readelf_bin}" ]; then
+        local header
+        header=$("${readelf_bin}" -h "${so_path}" 2>/dev/null || true)
+        if ! echo "${header}" | grep -q "${expected_arch}"; then
+            echo "FATAL: ELF machine architecture mismatch for ${so_path}!"
+            echo "Expected: ${expected_arch}"
+            echo "${header}"
+            exit 1
+        fi
+        echo "✓ Validated ELF architecture (${expected_arch}) for $(basename "${so_path}")"
+    else
+        echo "NOTE: readelf/llvm-readelf not found; skipped ELF machine header inspection."
+    fi
+}
+
+validate_elf_arch "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "AArch64"
+validate_elf_arch "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "Advanced Micro Devices X86-64"
+
 if [ ! -s "${SDK_STAGE}/java/src/org/opencv/core/Mat.java" ]; then
     echo "FATAL: Core Java bindings (org/opencv/core/Mat.java) missing or empty!"
     exit 1
@@ -142,7 +181,7 @@ if [ ! -s "${SDK_STAGE}/java/src/org/opencv/wechat_qrcode/WeChatQRCode.java" ]; 
     exit 1
 fi
 
-echo "✓ All required native libraries and Java sources verified in build stage."
+echo "✓ All required native libraries (valid ELF ABIs) and Java sources verified in build stage."
 
 # 5. Staging into :opencv-sdk with completion marker
 echo "==> Staging compiled native libraries and Java bindings into :opencv-sdk..."

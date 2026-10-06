@@ -31,9 +31,9 @@ object NoiseReducer {
     enum class Quality { FAST, HIGH }
 
     /** Exact median (index n/2 of the sorted values) of an 8-bit histogram. */
-    private fun medianOfHistogram(histogram: IntArray, total: Int): Double {
+    private fun medianOfHistogram(histogram: IntArray, total: Long): Double {
         val target = total / 2
-        var cumulative = 0
+        var cumulative = 0L
         for (v in histogram.indices) {
             cumulative += histogram[v]
             if (cumulative > target) return v.toDouble()
@@ -63,14 +63,14 @@ object NoiseReducer {
                     histogram[rowBuf[c].toInt() and 0xFF]++
                 }
             }
-            val total = rows * cols
+            val total = rows.toLong() * cols.toLong()
             val sigma = medianOfHistogram(histogram, total) / 0.6745
 
             // Impulse noise: pixels far beyond 4*sigma of the local median.
             val threshold = (4.0 * sigma).coerceAtLeast(12.0)
-            var impulse = 0
+            var impulse = 0L
             for (v in (threshold.toInt() + 1)..255) impulse += histogram[v]
-            val impulseRatio = impulse.toDouble() / total
+            val impulseRatio = if (total > 0L) impulse.toDouble() / total else 0.0
 
             Imgproc.Canny(gray, edges, 60.0, 120.0)
             val edgeCount = Core.countNonZero(edges)
@@ -158,6 +158,18 @@ object NoiseReducer {
                 else -> throw UnsupportedOperationException("unsupported channel count ${source.channels()}")
             }
             out
+        } catch (e: java.lang.reflect.InvocationTargetException) {
+            val target = e.targetException
+            if (target is org.opencv.core.CvException) {
+                Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
+                out
+            } else if (target is RuntimeException) {
+                throw target
+            } else if (target is Error) {
+                throw target
+            } else {
+                throw RuntimeException("Photo.fastNlMeansDenoising invocation failed", target)
+            }
         } catch (e: ReflectiveOperationException) {
             Imgproc.bilateralFilter(source, out, 9, 75.0, 75.0)
             out
