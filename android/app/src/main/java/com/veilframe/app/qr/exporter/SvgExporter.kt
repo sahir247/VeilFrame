@@ -120,8 +120,11 @@ object SvgExporter {
         if (design.style == com.veilframe.app.qr.QrStyle.DSJ) {
             return generateDsjSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
-        if (design.style == com.veilframe.app.qr.QrStyle.FUNCTION) {
+        if (design.style == com.veilframe.app.qr.QrStyle.FUNCTION || design.style == com.veilframe.app.qr.QrStyle.STYLE_FUNCTION) {
             return generateFunctionSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
+        }
+        if (design.style == com.veilframe.app.qr.QrStyle.CONNECTED_ORGANIC) {
+            return generateConnectedOrganicSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
         }
         if (design.style == com.veilframe.app.qr.QrStyle.LINE) {
             return generateLineSvg(matrix, design, qzLeft, qzTop, qzRight, qzBottom)
@@ -248,6 +251,9 @@ object SvgExporter {
                 mode = design.backdropStyle.imageScaleMode
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
+            if (preprocessedBackdrop !== design.backdropStyle.image && !preprocessedBackdrop.isRecycled) {
+                preprocessedBackdrop.recycle()
+            }
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
             sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
@@ -709,6 +715,9 @@ object SvgExporter {
                 mode = design.backdropStyle.imageScaleMode
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
+            if (preprocessedBackdrop !== design.backdropStyle.image && !preprocessedBackdrop.isRecycled) {
+                preprocessedBackdrop.recycle()
+            }
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
             sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$vbW" height="$vbH" x="$vbXStr" y="$vbYStr"/>""").append("\n")
         }
@@ -845,6 +854,9 @@ object SvgExporter {
                 mode = design.backdropStyle.imageScaleMode
             )
             val biB64 = bitmapToBase64(preprocessedBackdrop)
+            if (preprocessedBackdrop !== design.backdropStyle.image && !preprocessedBackdrop.isRecycled) {
+                preprocessedBackdrop.recycle()
+            }
             val biAlpha = formatOpacity(design.backdropStyle.imageAlpha)
             sb.append("""  <image key="bi" opacity="$biAlpha" xlink:href="data:image/png;base64,$biB64" width="$twStr" height="$thStr" x="0" y="0"/>""").append("\n")
         }
@@ -1044,6 +1056,33 @@ object SvgExporter {
         val totalHeight = matrix.size + qzTop + qzBottom
         val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
         val rawIr = com.veilframe.app.qr.renderer.RandomRectangleRenderer().generateGeometry(matrix, design, normGeometry)
+        val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
+        val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
+        return if (design.logo?.bitmap != null) {
+            val bgHex = toSvgColor(design.backdropStyle.color ?: design.palette.background).hex
+            val closeTag = if (design.backdropStyle.cornerRadius > 0f) "</g>\n</svg>" else "</svg>"
+            val prefix = if (svg.endsWith(closeTag)) svg.removeSuffix(closeTag) else svg.removeSuffix("</svg>")
+            val sb = StringBuilder(prefix)
+            appendLogo(sb, design, matrix.size, qzLeft, qzTop, bgHex)
+            sb.append(if (design.backdropStyle.cornerRadius > 0f) "  </g>\n</svg>" else "</svg>")
+            sb.toString()
+        } else {
+            svg
+        }
+    }
+
+    private fun generateConnectedOrganicSvg(
+        matrix: QrMatrix,
+        design: QrDesign,
+        qzLeft: Double,
+        qzTop: Double,
+        qzRight: Double,
+        qzBottom: Double
+    ): String {
+        val totalWidth = matrix.size + qzLeft + qzRight
+        val totalHeight = matrix.size + qzTop + qzBottom
+        val normGeometry = com.veilframe.app.qr.model.QrGeometry.fromDesign(matrix.size, totalWidth.toFloat(), totalHeight.toFloat(), design)
+        val rawIr = com.veilframe.app.qr.renderer.ConnectedOrganicRenderer().generateGeometry(matrix, design, normGeometry)
         val ir = applyBackdropToIr(rawIr, design, totalWidth.toFloat(), totalHeight.toFloat())
         val svg = com.veilframe.app.qr.geometry.IrSvgRenderer.render(ir)
         return if (design.logo?.bitmap != null) {
@@ -1287,6 +1326,9 @@ object SvgExporter {
                 mode = design.backdropStyle.imageScaleMode
             )
             val base64 = bitmapToBase64(preprocessed)
+            if (preprocessed !== design.backdropStyle.image && !preprocessed.isRecycled) {
+                preprocessed.recycle()
+            }
             backdropNodes.add(
                 ImageNode(
                     x = 0f,
@@ -1344,8 +1386,8 @@ object SvgExporter {
         )
     }
 
-    fun formatCornerRadius(radius: Float): String {
-        val r = maxOf(0f, radius)
+    fun formatCornerRadius(radius: Float, maxBound: Float = Float.MAX_VALUE): String {
+        val r = maxOf(0f, minOf(radius, maxBound))
         return if (r % 1f == 0f) {
             r.toInt().toString()
         } else {

@@ -69,19 +69,26 @@ object DeterministicSvgRasterizer {
         val svg = doc.documentElement
 
         val vbAttr = svg.getAttribute("viewBox")
-        val (vbW, vbH) = if (vbAttr.isNotEmpty()) {
+        val (vbMinX, vbMinY, vbW, vbH) = if (vbAttr.isNotEmpty()) {
             val parts = vbAttr.trim().split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }
-            if (parts.size >= 4) Pair(parts[2], parts[3]) else Pair(targetWidth.toFloat(), targetHeight.toFloat())
+            if (parts.size >= 4) {
+                listOf(parts[0], parts[1], parts[2], parts[3])
+            } else {
+                listOf(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat())
+            }
         } else {
-            Pair(targetWidth.toFloat(), targetHeight.toFloat())
+            listOf(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat())
         }
 
         val sx = targetWidth.toFloat() / vbW
         val sy = targetHeight.toFloat() / vbH
-        val scaleNeeded = sx != 1f || sy != 1f
-        if (scaleNeeded) {
+        val transformNeeded = sx != 1f || sy != 1f || vbMinX != 0f || vbMinY != 0f
+        if (transformNeeded) {
             canvas.save()
             canvas.scale(sx, sy)
+            if (vbMinX != 0f || vbMinY != 0f) {
+                canvas.translate(-vbMinX, -vbMinY)
+            }
         }
 
         val linearGradients = mutableMapOf<String, LinearGradientDef>()
@@ -103,17 +110,17 @@ object DeterministicSvgRasterizer {
                 when (node.tagName) {
                     "linearGradient" -> {
                         val id = node.getAttribute("id")
-                        val x1 = node.getAttribute("x1").toFloatOrNull() ?: 0f
-                        val y1 = node.getAttribute("y1").toFloatOrNull() ?: 0f
-                        val x2 = node.getAttribute("x2").toFloatOrNull() ?: vbW
-                        val y2 = node.getAttribute("y2").toFloatOrNull() ?: vbH
+                        val x1 = node.getAttribute("x1").toFloatOrNull() ?: vbMinX
+                        val y1 = node.getAttribute("y1").toFloatOrNull() ?: vbMinY
+                        val x2 = node.getAttribute("x2").toFloatOrNull() ?: (vbMinX + vbW)
+                        val y2 = node.getAttribute("y2").toFloatOrNull() ?: (vbMinY + vbH)
                         val (colors, pos) = parseStops(node)
                         linearGradients[id] = LinearGradientDef(x1, y1, x2, y2, colors, pos)
                     }
                     "radialGradient" -> {
                         val id = node.getAttribute("id")
-                        val cx = node.getAttribute("cx").toFloatOrNull() ?: (vbW / 2f)
-                        val cy = node.getAttribute("cy").toFloatOrNull() ?: (vbH / 2f)
+                        val cx = node.getAttribute("cx").toFloatOrNull() ?: (vbMinX + vbW / 2f)
+                        val cy = node.getAttribute("cy").toFloatOrNull() ?: (vbMinY + vbH / 2f)
                         val r = node.getAttribute("r").toFloatOrNull() ?: (maxOf(vbW, vbH) / 2f)
                         val (colors, pos) = parseStops(node)
                         radialGradients[id] = RadialGradientDef(cx, cy, r, colors, pos)
@@ -146,6 +153,8 @@ object DeterministicSvgRasterizer {
                         elementsById = elementsById,
                         inheritedOpacity = 1.0f,
                         overrideFill = null,
+                        vbMinX = vbMinX,
+                        vbMinY = vbMinY,
                         vbW = vbW,
                         vbH = vbH,
                         targetWidth = targetWidth,
@@ -155,7 +164,7 @@ object DeterministicSvgRasterizer {
             }
         }
 
-        if (scaleNeeded) {
+        if (transformNeeded) {
             canvas.restore()
         }
 
@@ -271,6 +280,8 @@ object DeterministicSvgRasterizer {
         elementsById: Map<String, Element>,
         inheritedOpacity: Float = 1.0f,
         overrideFill: String? = null,
+        vbMinX: Float = 0f,
+        vbMinY: Float = 0f,
         vbW: Float,
         vbH: Float,
         targetWidth: Int,
@@ -295,6 +306,8 @@ object DeterministicSvgRasterizer {
                 elementsById = elementsById,
                 inheritedOpacity = inheritedOpacity,
                 overrideFill = overrideFill,
+                vbMinX = vbMinX,
+                vbMinY = vbMinY,
                 vbW = vbW,
                 vbH = vbH,
                 targetWidth = targetWidth,
@@ -304,6 +317,8 @@ object DeterministicSvgRasterizer {
             // Render and apply mask with luminance-to-alpha DST_IN transfer
             val maskBmp = renderMaskBitmap(
                 maskEl = maskEl,
+                vbMinX = vbMinX,
+                vbMinY = vbMinY,
                 vbW = vbW,
                 vbH = vbH,
                 targetWidth = targetWidth,
@@ -325,7 +340,7 @@ object DeterministicSvgRasterizer {
                     canvas.drawBitmap(maskBmp, 0f, 0f, maskPaint)
                     canvas.restoreToCount(countM)
                 } else {
-                    canvas.drawBitmap(maskBmp, null, RectF(0f, 0f, vbW, vbH), maskPaint)
+                    canvas.drawBitmap(maskBmp, null, RectF(vbMinX, vbMinY, vbMinX + vbW, vbMinY + vbH), maskPaint)
                 }
                 maskBmp.recycle()
             }
@@ -344,6 +359,8 @@ object DeterministicSvgRasterizer {
             elementsById = elementsById,
             inheritedOpacity = inheritedOpacity,
             overrideFill = overrideFill,
+            vbMinX = vbMinX,
+            vbMinY = vbMinY,
             vbW = vbW,
             vbH = vbH,
             targetWidth = targetWidth,
@@ -361,6 +378,8 @@ object DeterministicSvgRasterizer {
         elementsById: Map<String, Element>,
         inheritedOpacity: Float = 1.0f,
         overrideFill: String? = null,
+        vbMinX: Float = 0f,
+        vbMinY: Float = 0f,
         vbW: Float,
         vbH: Float,
         targetWidth: Int,
@@ -391,6 +410,8 @@ object DeterministicSvgRasterizer {
                         elementsById = elementsById,
                         inheritedOpacity = inheritedOpacity * op,
                         overrideFill = overrideFill,
+                        vbMinX = vbMinX,
+                        vbMinY = vbMinY,
                         vbW = vbW,
                         vbH = vbH,
                         targetWidth = targetWidth,
@@ -400,6 +421,13 @@ object DeterministicSvgRasterizer {
                 canvas.restoreToCount(count)
             }
             "rect" -> {
+                val transformStr = el.getAttribute("transform")
+                val hasTransform = transformStr.isNotEmpty()
+                val transformCount = if (hasTransform) {
+                    val count = canvas.save()
+                    applyTransform(transformStr, canvas)
+                    count
+                } else -1
                 val x = el.getAttribute("x").toFloatOrNull() ?: 0f
                 val y = el.getAttribute("y").toFloatOrNull() ?: 0f
                 val w = el.getAttribute("width").toFloatOrNull() ?: 0f
@@ -432,6 +460,9 @@ object DeterministicSvgRasterizer {
                     } else {
                         canvas.drawRect(x, y, x + w, y + h, paint)
                     }
+                }
+                if (hasTransform) {
+                    canvas.restoreToCount(transformCount)
                 }
             }
             "circle" -> {
@@ -652,6 +683,8 @@ object DeterministicSvgRasterizer {
                         elementsById = elementsById,
                         inheritedOpacity = inheritedOpacity * op,
                         overrideFill = useFill.ifEmpty { overrideFill },
+                        vbMinX = vbMinX,
+                        vbMinY = vbMinY,
                         vbW = vbW,
                         vbH = vbH,
                         targetWidth = targetWidth,
@@ -668,6 +701,8 @@ object DeterministicSvgRasterizer {
 
     private fun renderMaskBitmap(
         maskEl: Element,
+        vbMinX: Float = 0f,
+        vbMinY: Float = 0f,
         vbW: Float,
         vbH: Float,
         targetWidth: Int,
@@ -687,6 +722,9 @@ object DeterministicSvgRasterizer {
         val sx = targetWidth.toFloat() / vbW
         val sy = targetHeight.toFloat() / vbH
         maskCanvas.scale(sx, sy)
+        if (vbMinX != 0f || vbMinY != 0f) {
+            maskCanvas.translate(-vbMinX, -vbMinY)
+        }
 
         val children = maskEl.childNodes
         for (i in 0 until children.length) {
@@ -701,6 +739,8 @@ object DeterministicSvgRasterizer {
                 elementsById = elementsById,
                 inheritedOpacity = 1.0f,
                 overrideFill = null,
+                vbMinX = vbMinX,
+                vbMinY = vbMinY,
                 vbW = vbW,
                 vbH = vbH,
                 targetWidth = targetWidth,
@@ -797,7 +837,7 @@ object DeterministicSvgRasterizer {
     private fun parseTransformMatrix(transformStr: String): android.graphics.Matrix {
         val matrix = android.graphics.Matrix()
         if (transformStr.isEmpty()) return matrix
-        val regex = Regex("""(translate|scale|rotate)\(([^)]+)\)""")
+        val regex = Regex("""(translate|scale|rotate|matrix|skewX|skewY)\(([^)]+)\)""")
         for (match in regex.findAll(transformStr)) {
             val op = match.groupValues[1]
             val args = match.groupValues[2].split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }
@@ -814,6 +854,31 @@ object DeterministicSvgRasterizer {
                     if (args.size >= 3) matrix.preRotate(args[0], args[1], args[2])
                     else if (args.isNotEmpty()) matrix.preRotate(args[0])
                 }
+                "matrix" -> {
+                    if (args.size >= 6) {
+                        val m = android.graphics.Matrix()
+                        m.setValues(floatArrayOf(
+                            args[0], args[2], args[4],
+                            args[1], args[3], args[5],
+                            0f,      0f,      1f
+                        ))
+                        matrix.preConcat(m)
+                    }
+                }
+                "skewX" -> {
+                    if (args.isNotEmpty()) {
+                        val tanVal = kotlin.math.tan(Math.toRadians(args[0].toDouble())).toFloat()
+                        val m = android.graphics.Matrix().apply { setSkew(tanVal, 0f) }
+                        matrix.preConcat(m)
+                    }
+                }
+                "skewY" -> {
+                    if (args.isNotEmpty()) {
+                        val tanVal = kotlin.math.tan(Math.toRadians(args[0].toDouble())).toFloat()
+                        val m = android.graphics.Matrix().apply { setSkew(0f, tanVal) }
+                        matrix.preConcat(m)
+                    }
+                }
             }
         }
         return matrix
@@ -821,7 +886,7 @@ object DeterministicSvgRasterizer {
 
     private fun applyTransform(transformStr: String, canvas: Canvas) {
         if (transformStr.isEmpty()) return
-        val regex = Regex("""(translate|scale|rotate)\(([^)]+)\)""")
+        val regex = Regex("""(translate|scale|rotate|matrix|skewX|skewY)\(([^)]+)\)""")
         for (match in regex.findAll(transformStr)) {
             val op = match.groupValues[1]
             val args = match.groupValues[2].split(Regex("""[\s,]+""")).mapNotNull { it.toFloatOrNull() }
@@ -837,6 +902,31 @@ object DeterministicSvgRasterizer {
                 "rotate" -> {
                     if (args.size >= 3) canvas.rotate(args[0], args[1], args[2])
                     else if (args.isNotEmpty()) canvas.rotate(args[0])
+                }
+                "matrix" -> {
+                    if (args.size >= 6) {
+                        val m = android.graphics.Matrix()
+                        m.setValues(floatArrayOf(
+                            args[0], args[2], args[4],
+                            args[1], args[3], args[5],
+                            0f,      0f,      1f
+                        ))
+                        canvas.concat(m)
+                    }
+                }
+                "skewX" -> {
+                    if (args.isNotEmpty()) {
+                        val tanVal = kotlin.math.tan(Math.toRadians(args[0].toDouble())).toFloat()
+                        val m = android.graphics.Matrix().apply { setSkew(tanVal, 0f) }
+                        canvas.concat(m)
+                    }
+                }
+                "skewY" -> {
+                    if (args.isNotEmpty()) {
+                        val tanVal = kotlin.math.tan(Math.toRadians(args[0].toDouble())).toFloat()
+                        val m = android.graphics.Matrix().apply { setSkew(0f, tanVal) }
+                        canvas.concat(m)
+                    }
                 }
             }
         }

@@ -4,6 +4,7 @@ import android.graphics.Color
 import com.veilframe.app.qr.QrStyle
 import com.veilframe.app.qr.model.*
 import com.veilframe.app.qr.renderer.*
+import java.util.Locale
 
 /**
  * Builds a unified [QrGeometryIr] intermediate representation for [com.veilframe.app.qr.QrStyle.IMAGE_RESAMPLE].
@@ -83,7 +84,7 @@ object ResampleGeometryBuilder {
                     opacity = design.resampleStyle.backdropOpacity.coerceIn(0f, 1f),
                     preserveAspectRatio = aspect,
                     clipPathId = clipId,
-                    maskId = clipId,
+                    maskId = null,
                     clipPath = backdropPath,
                     style = blendStyle
                 )
@@ -274,7 +275,10 @@ object ResampleGeometryBuilder {
                         Pair(cx, cy + 1.5f * mSize),
                         Pair(cx - 1.5f * mSize, cy)
                     )
-                    nodes.add(PolygonNode(points = "", pointsList = pts, fill = eyeInner))
+                    val pointsStr = pts.joinToString(" ") { (px, py) ->
+                        String.format(Locale.US, "%.4f,%.4f", px, py)
+                    }
+                    nodes.add(PolygonNode(points = pointsStr, pointsList = pts, fill = eyeInner))
                 }
                 FinderStyle.SOFT -> {
                     nodes.add(RectNode(fx + 0.5f * mSize, fy + 0.5f * mSize, 6f * mSize, 6f * mSize, rx = 1.5f * mSize, ry = 1.5f * mSize, stroke = eyeOuter, strokeWidth = posSize * mSize, fill = null))

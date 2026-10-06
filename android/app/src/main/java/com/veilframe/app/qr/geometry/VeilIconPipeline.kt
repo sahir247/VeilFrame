@@ -390,10 +390,16 @@ object VeilIconPipeline {
             Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = iconAlpha }
         } else null
 
-        canvas.save()
-        canvas.clipPath(clipPath)
-        canvas.drawBitmap(preprocessed, null, imageRect, imgPaint)
-        canvas.restore()
+        try {
+            canvas.save()
+            canvas.clipPath(clipPath)
+            canvas.drawBitmap(preprocessed, null, imageRect, imgPaint)
+            canvas.restore()
+        } finally {
+            if (preprocessed !== logoBmp && !preprocessed.isRecycled) {
+                preprocessed.recycle()
+            }
+        }
     }
 
     fun formatOpacity(alpha: Float): String {

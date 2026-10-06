@@ -215,6 +215,11 @@ object AnimatedQrGenerator {
         outputSize: Int = 512,
         geometry: QrGeometry = QrGeometry.fromDesign(matrix.size, outputSize, outputSize, baseDesign)
     ): QrOutputResult<QrFrame> {
+        if (sourceFrame.bitmap.isRecycled) {
+            return QrOutputResult.Failure(
+                QrError.Rendering.CanvasRenderFailed("Animation frame bitmap is recycled", IllegalStateException("Frame bitmap is recycled"))
+            )
+        }
         val hasAnimatedImg = baseDesign.imageSource.isAnimated || !baseDesign.imageSource.animatedFrames.isNullOrEmpty()
         val imgSource = if (hasAnimatedImg) {
             baseDesign.imageSource.copy(
@@ -472,6 +477,12 @@ object AnimatedQrGenerator {
                 is QrOutputResult.Failure -> {
                     if (firstError == null) firstError = renderedResult.error
                     if (policy == FrameDropPolicy.FailFast) {
+                        for (f in renderedFrames) {
+                            if (!f.bitmap.isRecycled) {
+                                f.bitmap.recycle()
+                            }
+                        }
+                        renderedFrames.clear()
                         return QrOutputResult.Failure(renderedResult.error)
                     }
                     // For FrameDropPolicy.SkipFailedFrames, explicitly continue

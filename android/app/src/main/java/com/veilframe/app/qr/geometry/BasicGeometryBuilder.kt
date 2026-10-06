@@ -47,8 +47,10 @@ object BasicGeometryBuilder {
 
         val rng = Random(design.effects.seed)
 
-        val hasCornerClip = design.backdropStyle.cornerRadius > 0f
-        val crStr = SvgExporter.formatCornerRadius(design.backdropStyle.cornerRadius)
+        val maxSafeRadius = (minOf(totalWidth, totalHeight) / 2.0).toFloat()
+        val clampedRadius = minOf(design.backdropStyle.cornerRadius, maxSafeRadius)
+        val hasCornerClip = clampedRadius > 0f
+        val crStr = SvgExporter.formatCornerRadius(clampedRadius)
         val twStr = SvgExporter.formatCoord(totalWidth.toDouble())
         val thStr = SvgExporter.formatCoord(totalHeight.toDouble())
 
@@ -170,7 +172,7 @@ object BasicGeometryBuilder {
         appendLogo(nodes, defs, masks, design, ox, oy, nCount, cs)
 
         val cornerPath = if (hasCornerClip) {
-            val cr = maxOf(0f, design.backdropStyle.cornerRadius)
+            val cr = clampedRadius
             Path().apply {
                 addRoundRect(0f, 0f, totalWidth, totalHeight, cr, cr, Path.Direction.CW)
             }

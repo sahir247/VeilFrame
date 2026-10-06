@@ -121,7 +121,16 @@ object IrSvgRenderer {
                 sb.append(" />\n")
             }
             is PolygonNode -> {
-                sb.append(pad).append("<polygon points=\"").append(node.points).append("\"")
+                val ptsStr = if (node.points.isNotEmpty()) {
+                    node.points
+                } else if (node.pointsList.isNotEmpty()) {
+                    node.pointsList.joinToString(" ") { (px, py) ->
+                        String.format(Locale.US, "%.4f,%.4f", px, py)
+                    }
+                } else {
+                    ""
+                }
+                sb.append(pad).append("<polygon points=\"").append(ptsStr).append("\"")
                 if (node.fillString != null) sb.append(" fill=\"").append(node.fillString).append("\"")
                 else if (node.fill != null) sb.append(" fill=\"").append(colorToHex(node.fill)).append("\"")
                 else sb.append(" fill=\"none\"")
