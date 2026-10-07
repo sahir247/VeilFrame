@@ -346,7 +346,7 @@ class DocumentScannerController(
             srcMat.release()
 
             val detectedPts = if (corners.size == 4) {
-                corners.map { PointF(it.x.toFloat(), it.y.toFloat()) }
+                corners.map { pt -> PointF(pt.x.toFloat(), pt.y.toFloat()) }
             } else null
 
             activity.runOnUiThread {
@@ -464,10 +464,8 @@ class DocumentScannerController(
             val loaded = DocumentSession.loadFromDisk(activity, sessionId)
             withContext(Dispatchers.Main) {
                 if (loaded != null && !loaded.isEmpty) {
-                    session.pages.clear()
-                    session.pages.addAll(loaded.pages)
-                    session.activePageIndex = 0
-                    session.sessionId = loaded.sessionId
+                    session.replaceAllPages(loaded.pages)
+                    session.id = loaded.id
                     session.title = loaded.title
                     updateUi()
                     Toast.makeText(activity, "Resumed document with ${session.pageCount} pages", Toast.LENGTH_SHORT).show()

@@ -26,8 +26,22 @@ data class ScannedPage(
     var corners: List<org.opencv.core.Point>? = null,
     // Transient in-memory cached bitmaps for smooth rendering
     @Transient var originalBitmapCache: Bitmap? = null,
-    @Transient var processedBitmapCache: Bitmap? = null
+    @Transient var processedBitmapCache: Bitmap? = null,
+    @Transient var thumbnailBitmapCache: Bitmap? = null
 ) {
+    var appliedQuad: List<org.opencv.core.Point>?
+        get() = corners
+        set(value) { corners = value }
+
+    var appliedFilter: String
+        get() = mode.name
+        set(value) {
+            mode = try {
+                DocumentScanner.DocumentMode.valueOf(value)
+            } catch (_: Throwable) {
+                DocumentScanner.DocumentMode.ENHANCED
+            }
+        }
     fun getDisplayBitmap(context: Context): Bitmap? {
         if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
             return processedBitmapCache
@@ -106,14 +120,27 @@ class DocumentSession(
     var id: String = UUID.randomUUID().toString(),
     var title: String = "Scanned Document"
 ) {
-    private val _pages = mutableListOf<ScannedPage>()
+    var sessionId: String
+        get() = id
+        set(value) { id = value }
+
+    internal val _pages = mutableListOf<ScannedPage>()
     val pages: List<ScannedPage> get() = _pages.toList()
+
+    val pageCount: Int get() = _pages.size
+    val isEmpty: Boolean get() = _pages.isEmpty()
 
     var createdAt: Long = System.currentTimeMillis()
     var lastModifiedAt: Long = System.currentTimeMillis()
 
     var activePageIndex: Int = 0
-        private set
+
+    fun replaceAllPages(newPages: List<ScannedPage>) {
+        _pages.clear()
+        _pages.addAll(newPages)
+        activePageIndex = 0
+        lastModifiedAt = System.currentTimeMillis()
+    }
 
     fun addPage(page: ScannedPage) {
         _pages.add(page)
