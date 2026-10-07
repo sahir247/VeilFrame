@@ -6,7 +6,6 @@ __pycache__/
 *.pyd
 *.exe
 *.dll
-
 # Distribution / packaging
 .Python
 build/
@@ -28,19 +27,16 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
 # PyInstaller
 *.manifest
 *.spec
 !VeilFrame.spec
-
 # Virtual Environments
 .venv/
 venv/
 ENV/
 env/
 env.bak/
-
 # Scratch & temporary artifacts
 scratch/
 examples/
@@ -51,7 +47,6 @@ calibration_corpus/**/*.mkv
 calibration_corpus/**/*.avi
 !calibration_corpus/manifest.json
 !calibration_corpus/README.md
-
 # Unit test / coverage
 .tox/
 .nox/
@@ -65,7 +60,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
 # Video & Test scratch files
 *.mp4
 *.mov
@@ -79,16 +73,13 @@ calibration/data/distorted/
 *_veilframe.*
 *_sanitized.*
 !android/app/src/main/res/drawable/ic_veilframe_brand.xml
-
 # Bundled binaries
 resources/ffmpeg/
 **/resources/ffmpeg/*.exe
-
 # Audit manifests and scan reports in scratch dirs (preserve examples/ fixtures if any)
 audit_manifests/
 *_scan_report.*
 scan_report.*
-
 # Operating System Files
 .DS_Store
 .DS_Store?
@@ -98,7 +89,6 @@ scan_report.*
 ehthumbs.db
 Thumbs.db
 [Dd]esktop.ini
-
 # IDE & Editor files
 .idea/
 .vscode/
@@ -106,7 +96,6 @@ Thumbs.db
 *.swo
 *~
 resource_videos
-
 # Android & Gradle
 .gradle/
 **/android/.gradle/
@@ -118,18 +107,14 @@ android/jdk*/
 *.aab
 *.aar
 local.properties
-
 # AI Bundles
 *.aibundle
 release.keystore
 keystore_base64.txt
-
 # Tauri integration (local/temporary ignore)
 PrivacyVideoCleaner_v1_tauri/
 AGENTS.MD
 GUIDE.txt
-
 # OpenCV local build scratch
 android/scripts/.opencv_build/
-android/opencv-sdk/src/main/java/
 android/opencv-sdk/src/main/.opencv-sdk-complete
