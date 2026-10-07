@@ -6,12 +6,10 @@
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "WhatsApp Status Pipeline: Bounded resolution architecture (HD 720p / FHD 1080p) preserving DAR deterministically without distortion or forced crops",
-    "Video Studio Constraints: Rigid mutual exclusivity locking MP4 and H.264 for WhatsApp Status, and disabling codec/audio controls for animated GIF",
-    "Estimation & Empty State Fix: Eliminated phantom file size calculations when no media is loaded, correctly graying out edit and audio tools",
-    "Floating Action Dock: 4-stage reactive state machine (Empty, Ready, Processing, Completed) with 2.5s saved indicator and edit reset",
-    "Image Studio Passport Preset: Dedicated 1:1 aspect constraint and exact 600x600 px export sizing for official document compliance",
-    "Theming & AMOLED Dark: Strict AMOLED Dark styling with Dynamic Color notice and post-inflation theme application",
-    "2025-2026 AI Upscaler Catalog: Added SAT-light, SAFMNv3, Real-SAFMN++, ESPAN, PFT-light, DRCT, and PlainUSR, with legacy standard re-labeling"
+    "OpenCV 4.14.0 SDK: In-tree native integration with WeChatQRCode and Videoio",
+    "Computer Vision Subsystem: Added QuadDetector, TemplateMatcher, and Farneback FlowEstimator",
+    "Compiler & Build Stability: In-process Kotlin compilation and preserved native debug symbols",
+    "Modern Toolchain: Updated Android SDK command-line tools to latest standards",
+    "UI Redesign Baseline: Architecture foundation for upcoming multi-workspace shell"
   ]
 }

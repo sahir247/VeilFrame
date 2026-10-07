@@ -2,84 +2,21 @@
 
 ## v2.2.9 — October 2026
 
-VeilFrame v2.2.9 provides an authoritative hardening update for the native Computer Vision subsystem, deterministic in-tree OpenCV 4.14.0 SDK compilation, toolchain modernization, and the architectural baseline for the upcoming VeilFrame Android UI/UX redesign.
-
-- **Deterministic In-Tree Custom OpenCV 4.14.0 SDK with WeChatQRCode & Videoio:**
-  - Automated hermetic build script `android/scripts/build_opencv_contrib_sdk.sh` compiling native libraries for Android NDK r27b with ABI targets `arm64-v8a` and `x86_64`.
-  - Staging of styled attributes (`CameraBridgeViewBase`) into `:opencv-sdk/src/main/res/values/attrs.xml`.
-  - Deterministic compilation and fail-closed SHA-256 metadata verification in `:opencv-sdk/build.gradle.kts`.
-
-- **Computer Vision Subsystem Robustness & Mathematical Verification:**
-  - **QuadDetector Polygon Convexity:** Fixed quadrilateral convexity validation to evaluate the simplified 4-point polygon (`approxMat`) rather than raw stair-stepped raster contours, resolving spurious detection rejection on high-contrast polygons.
-  - **TemplateMatcher Low-Variance Fallback:** Added automatic template variance analysis (`Core.meanStdDev`); gracefully falls back to `TM_SQDIFF_NORMED` when evaluating zero-variance templates, preventing division-by-zero errors in `TM_CCOEFF_NORMED`.
-  - **Optical Flow Gradient Texture:** Resolved the aperture problem in Farnebäck optical flow verification by populating synthetic test regions with deterministic spatial gradient textures.
-  - **In-Process Kotlin Compilation:** Configured `kotlin.compiler.execution.strategy=in-process` in `gradle.properties`, eliminating Kotlin daemon IPC crashes (`error code: 0`) in memory-constrained CI environments.
-  - **Native Library Debug Symbol Preservation:** Configured `packaging.jniLibs.keepDebugSymbols += listOf("**/*.so")` across `:opencv-sdk` and `:app`, eliminating release stripping warnings.
-  - **Android SDK Toolchain Modernization:** Added `cmdline-tools;latest` to CI SDK setup, eliminating XML schema version 4 parsing warnings.
-
-- **Android UI/UX Redesign Architectural Lock:**
-  - Formally locked the implementation roadmap extending the current XML + ViewBinding + Material Components architecture.
-  - Established boundaries decoupling `WorkspaceRoute` from legacy `ToolMode`, preserving existing studio engines (Image Studio, Video Studio, QR Studio) while defining the 13-workspace catalogue, intent-first shell, multi-page Document Scanner, and Background Remover.
+**OpenCV 4.14.0 native SDK, Computer Vision subsystem & UI redesign architecture.**
+- **OpenCV 4.14.0 SDK Integration:** In-tree native OpenCV 4.14.0 build with WeChatQRCode and Videoio modules for ARM64 and x86_64.
+- **Computer Vision Subsystem:** Native CV engine featuring `QuadDetector` (document and polygon geometry), `TemplateMatcher` (pattern matching), and `FlowEstimator` (dense optical flow).
+- **Build Stability:** In-process Kotlin compilation and preserved native library debug symbols across builds.
+- **Modern Toolchain:** Updated to latest Android SDK command-line tools.
+- **UI Redesign Baseline:** Architectural foundation ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)) for the upcoming modular multi-workspace shell.
 
 ## v2.2.8 — September 2026
 
-VeilFrame v2.2.8 delivers an authoritative architectural update across the application stack. Highlights include the launch of the **QR Code Studio (8th Native Mobile Tool)** with 11 artistic visual rendering modes, live CameraX viewfinder scanning, and safe 11-format payload parsing; dynamic theming with per-Activity lifecycle management and pure AMOLED black (`#000000`) surfaces; an iterative rate-controlled WhatsApp video pipeline with a non-negotiable 16 MiB ceiling; floating dock scroll-to-bottom hide behavior; folder-picker binding for Folder Analyzer and AI Bundle; authoritative `ImageTransformPlan` with Passport 600x600 px preset enforcement; dual publisher certificate verification; and complete zero-emoji compliance with a pure SVG vector iconography system.
-
-- **QR Code Studio (8th Tool) & 11 Artistic Visual Renderers:**
-  - **11 Visual Rendering Modes:** Complete implementation of artistic rendering styles powered by VeilFrame Art Engine:
-    1. `Basic`: Standard rectangular and rounded modules with configurable corner shapes.
-    2. `Bubble`: Organic clustered circles with separate outline and core coloration.
-    3. `2.5D`: Isometric 3D projection rendering top, left, and right illuminated cube faces.
-    4. `DSJ`: Concentric circular DJ turntable position markers.
-    5. `Image Fill`: Module-level image texture fill via hardware `BitmapShader`.
-    6. `Image Overlay`: Full background image compositing with contrast-preserving module masks.
-    7. `Image Resample`: Pixelated image sampling into the QR grid with luminance weighting.
-    8. `Line`: Interconnected horizontal and vertical stripe geometry.
-    9. `Random Rectangle`: Seeded pseudo-random rectangular jitter for artistic layouts.
-    10. `Function`: Procedural mathematical shape generation based on module coordinates.
-    11. `Style Function`: Dynamic functional style compositing with secondary modulation.
-  - **Live CameraX Viewfinder Scanner:** Real-time frame analysis using ZXing `PlanarYUVLuminanceSource`, custom reticle overlay (`QrScanOverlayView`), and gallery photo static image decoding.
-  - **Comprehensive Safe Payload Parser (11 Formats):** Automated parsing and safe intent dispatch for Wi-Fi, UPI payments, URLs (with IDN homograph phishing defense), Phone (`tel:`), SMS (`smsto:`), Email (`mailto:`), Geo coordinates (`geo:`), Contacts (vCard/MeCard), Calendar events, and OtpAuth tokens.
-  - **Multi-Format Vector & Raster Exporter:** High-resolution PNG, JPEG, SVG path data, and PDF vector document export.
-
-- **Floating Action Dock Refinements & Folder Pickers:**
-  - **Scroll-to-Bottom Auto-Hide:** Floating action dock dynamically hides when scrolling down to the bottom of the workspace to prevent content obstruction, reappearing instantly when scrolling up.
-  - **Folder Picker Binding:** Folder Analyzer and AI Bundle tools now explicitly bind to directory selection (`ACTION_OPEN_DOCUMENT_TREE`) from the floating action bar.
-  - **Generation Token Guard:** Implemented `activeGeneration` token verification across Video Studio, Image Studio, and Cleaner tools, guaranteeing that stale asynchronous tasks cannot overwrite state.
-
-- **Strict Zero-Emoji & Pure SVG Iconography:**
-  - Complete elimination of unicode emojis across all UI layouts, Kotlin controllers, Python backends, console telemetry, and Markdown documentation.
-  - Dedicated 24x24 vector SVG icon set for all tool workspaces (`qr.svg`, `upscale.svg`, `video_studio.svg`, `image_studio.svg`, `folder.svg`, `ai.svg`, `markdown.svg`, `security.svg`).
-
-- **Dynamic Theming & AMOLED True Black Surfaces:**
-  - **Per-Activity Theme Lifecycle:** Restructured theme and dynamic color application directly in `Activity.onCreate` before `setContentView()`, eliminating startup theme flashes and ensuring seamless runtime palette switching.
-  - **AMOLED True Black:** Added pure black surfaces (`#000000`) for `android:windowBackground`, `colorSurface`, status bar, and navigation bar with high-contrast `#0A0A0C` surface variants.
-  - **Palette System & Dynamic Color:** Seamlessly integrates custom theme palettes (`Monochrome`, `Forest Sage`, `Deep Ocean`, `Warm Amber`, `Cyber Violet`) when Dynamic Color is disabled, while harmonizing with Android Monet Dynamic Color when enabled.
-
-- **WhatsApp Video Pipeline: 16 MiB Hard Ceiling & Canonical Geometry:**
-  - **Iterative Rate Control Ceiling:** Enforces an absolute 16.0 MiB size ceiling with an iterative retry loop (up to 2 passes with safety factor `0.92`) that dynamically lowers video bitrate if actual output exceeds 16 MiB.
-  - **Stage 1 Trim Verification & Fallback:** Validates intermediate stream-copy clips against requested trim boundaries. If stream copy fails or produces an invalid duration, automatically falls back to passing `-ss` and `-t` directly into Stage 2 for a single-pass transcode trim.
-  - **Bounded DAR & Geometry Preservation:** Canonical resolution and aspect specification with strict even dimension invariants `(dimension / 2) * 2` and bounded DAR validation within 3% tolerance.
-  - **Non-Blocking Cancellable FFmpeg:** Uses `suspendCancellableCoroutine` to enable instant cancellation of active encoding sessions.
-  - **SAR & Rotation Tracking:** Extracts sample aspect ratio (`sample_aspect_ratio`) and display matrix rotation in `WhatsappStatusMediaAnalyzer`.
-
-- **Image Studio Authoritative TransformPlan & Memory Lifecycle:**
-  - **Authoritative `ImageTransformPlan`:** Unifies preview rendering, probe estimation, and export parameters into a single immutable specification.
-  - **Passport 600x600 Preset Enforcement:** Enforces strict 1:1 aspect constraint in cropping and exports directly to 600x600 px dimensions for visa and passport document compliance.
-  - **Empirical Probe Encoding:** Directly probe-encodes rendered bitmaps with the target codec, quality, and metadata policy for honest file size estimation.
-  - **Proactive Bitmap Recycling:** Explicitly recycles intermediate preview and result bitmaps before allocating new bitmaps or exiting tools, eliminating native memory leaks.
-
-- **Publisher Certificate Security Fix:**
-  - **Dual Certificate Verification:** `AppUpdateManager` validates update APK signatures against either the currently installed application certificate or the pinned release signing certificate, preventing MITM update attacks while supporting debug development builds.
-
-- **Model Registry & Device-Bound AI Planner Cache:**
-  - **Experimental Model Classification:** Neural super-resolution models without cryptographically verified SHA-256 checksums are classified as `DeploymentStatus.ANDROID_EXPERIMENTAL`.
-  - **Typed `ModelRuntimeSpec`:** Enforces strict runtime validation of input tensor dimension multiples, scale factors, channel formats, and opset requirements.
-  - **Device-Bound Cache:** Binds performance benchmark profiles to specific SoC hardware architectures (`Build.HARDWARE`), preventing invalid cached execution plans across heterogeneous devices.
-
-- **Foreground Service Job Identity & Lifecycle:**
-  - **Structured `ProcessingJob`:** Tracks media processing tasks with explicit UUIDs, state transitions, and input/output URIs in `VeilFrameProcessingService`.
-  - **Android 15 (API 35) Timeout Handling:** Implements `onTimeout()` callback to gracefully terminate background tasks and notify users before system kills.
+**QR Code Studio (8th native tool), AMOLED Dark mode, WhatsApp 16 MiB ceiling & Passport 600x600 preset.**
+- Added QR Code Studio with 11 visual styles (Basic, Bubble, 2.5D, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function), live CameraX scanner, and safe 11-format payload parser.
+- Enforced 16 MiB video size ceiling for WhatsApp Status with iterative rate control and bounded DAR preservation.
+- Introduced strict AMOLED Dark `#000000` styling with per-Activity lifecycle setup.
+- Added Passport 600x600 px export preset and proactive bitmap recycling in Image Studio.
+- Implemented floating dock scroll-to-bottom auto-hide and pure vector SVG iconography.
 
 ### Upgrade notes
 

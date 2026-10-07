@@ -10,21 +10,18 @@
 
 ## Release Milestones & Architecture Status
 
-### v2.2.9 CURRENT (Production Release)
+### v2.2.9 (Stable)
 - **In-Tree Custom OpenCV 4.14.0 SDK with WeChatQRCode & Videoio Integration**:
-  - Full native build toolchain via `build_opencv_contrib_sdk.sh` targeting NDK r27b for `arm64-v8a` and `x86_64`.
-  - Automatic staging of `CameraBridgeViewBase` styled attributes in `:opencv-sdk/src/main/res/values/attrs.xml`.
-  - Fail-closed deterministic artifact and SHA-256 checksum verification in `:opencv-sdk/build.gradle.kts`.
-- **Computer Vision Subsystem Robustness & Mathematical Verification**:
-  - Fixed `QuadDetector` polygon convexity testing on simplified 4-vertex polygon (`approxMat`) rather than stair-stepped raw raster contours.
-  - Zero-variance template matching fallback in `TemplateMatcher` with `TM_SQDIFF_NORMED` gracefully handling low-variance templates.
-  - Spatial gradient texture generation for Farnebäck optical flow resolving the aperture problem.
-  - In-process Kotlin compiler execution (`kotlin.compiler.execution.strategy=in-process`) eliminating daemon termination failures.
-  - Native shared library debug symbol preservation (`keepDebugSymbols += listOf("**/*.so")`) across `:app` and `:opencv-sdk`.
-  - Toolchain modernization (`cmdline-tools;latest`) eliminating SDK XML schema version 4 parsing warnings.
+  - Native build targeting NDK r27b for `arm64-v8a` and `x86_64`.
+  - `CameraBridgeViewBase` styled attributes in `:opencv-sdk/src/main/res/values/attrs.xml`.
+  - Fail-closed SHA-256 checksum verification in `:opencv-sdk/build.gradle.kts`.
+- **Computer Vision Subsystem**:
+  - Native CV engine with `QuadDetector`, `TemplateMatcher`, and `FlowEstimator`.
+  - In-process Kotlin compilation and preserved native library debug symbols.
+  - Android SDK command-line tools updated to latest standards.
 - **Android UI/UX Architecture Baseline**:
-  - Formal architectural lock extending existing XML + ViewBinding + Material Components foundation.
-  - Groundwork for 13-workspace catalogue, intent-first shell, persistent multi-page Document Scanner, and Background Remover.
+  - Architectural lock extending XML + ViewBinding + Material Components foundation.
+  - Roadmap for 13-workspace catalogue, intent-first shell, Document Scanner, and Background Remover.
 
 ### v2.2.8 (Previous Release)
 - **QR Code Studio (8th Native Mobile Tool) & 11 Artistic Renderers**:
