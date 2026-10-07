@@ -267,4 +267,26 @@ class OpenCvSdkBuildConfigurationTest {
         val rootGradlew = File(root, "gradlew")
         assertTrue("Root gradlew wrapper must exist", rootGradlew.exists())
     }
+
+    @Test
+    fun `opencv-sdk and app build gradle configure opt-in for ExperimentalUnsignedTypes`() {
+        val root = findProjectRoot()
+        val sdkBuildGradle = File(root, "android/opencv-sdk/build.gradle.kts")
+        val appBuildGradle = File(root, "android/app/build.gradle.kts")
+
+        assertTrue("opencv-sdk/build.gradle.kts must exist", sdkBuildGradle.exists())
+        assertTrue("app/build.gradle.kts must exist", appBuildGradle.exists())
+
+        val sdkContent = sdkBuildGradle.readText()
+        val appContent = appBuildGradle.readText()
+
+        assertTrue(
+            "opencv-sdk build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes for MatAt.kt extensions",
+            sdkContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
+        )
+        assertTrue(
+            "app build.gradle.kts must configure -opt-in=kotlin.ExperimentalUnsignedTypes",
+            appContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
+        )
+    }
 }
