@@ -24,6 +24,9 @@ object ColorEngine {
         /** Per-channel gains that were applied (B, G, R). */
         val gains: DoubleArray,
     ) {
+        fun size(): org.opencv.core.Size = corrected.size()
+        fun type(): Int = corrected.type()
+        fun release() { corrected.release() }
         override fun equals(other: Any?): Boolean = this === other
         override fun hashCode(): Int = System.identityHashCode(this)
     }

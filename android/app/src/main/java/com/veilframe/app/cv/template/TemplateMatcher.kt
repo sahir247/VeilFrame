@@ -4,6 +4,7 @@ import com.veilframe.app.cv.core.CvContracts
 import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.core.Point
+import org.opencv.core.Rect
 import org.opencv.imgproc.Imgproc
 
 /**
@@ -13,7 +14,7 @@ import org.opencv.imgproc.Imgproc
  * over the configured range, then refines around the best scale — bounded work
  * regardless of image size.
  */
-object TemplateMatcher {
+class TemplateMatcher(private val defaultOptions: Options = Options()) {
 
     enum class Method(val code: Int) {
         CCOEFF_NORMED(Imgproc.TM_CCOEFF_NORMED),
@@ -26,6 +27,7 @@ object TemplateMatcher {
         val confidence: Double,
         /** true when confidence >= [Options.minConfidence]. */
         val accepted: Boolean,
+        val rect: Rect = Rect(location.x.toInt(), location.y.toInt(), 0, 0),
     )
 
     data class Options(
@@ -51,91 +53,102 @@ object TemplateMatcher {
         }
     }
 
-    /**
-     * Finds the best occurrence of [template] in [image].
-     * Returns null when the template is larger than the image at every scale or
-     * nothing exceeds [Options.minConfidence].
-     */
-    fun match(image: Mat, template: Mat, options: Options = Options()): MatchResult? {
-        CvContracts.requireNonEmpty(image, "image")
-        CvContracts.requireNonEmpty(template, "template")
-        require(image.cols() <= options.maxImageEdge && image.rows() <= options.maxImageEdge) {
-            "image dimensions (${image.cols()}x${image.rows()}) exceed maxImageEdge (${options.maxImageEdge})"
-        }
-        require(options.scaleMin > 0 && options.scaleMax >= options.scaleMin) { "invalid scale range" }
+    fun match(image: Mat, template: Mat, options: Options = defaultOptions): MatchResult? =
+        Companion.match(image, template, options)
 
-        val coarseScales = buildList {
-            var s = options.scaleMin
-            while (s <= options.scaleMax + 1e-9 && size < options.maxScales / 2) {
-                add(s)
-                s += options.coarseStep
+    companion object {
+        operator fun invoke(options: Options = Options()): TemplateMatcher = TemplateMatcher(options)
+
+        /**
+         * Finds the best occurrence of [template] in [image].
+         * Returns null when the template is larger than the image at every scale or
+         * nothing exceeds [Options.minConfidence].
+         */
+        fun match(image: Mat, template: Mat, options: Options = Options()): MatchResult? {
+            CvContracts.requireNonEmpty(image, "image")
+            CvContracts.requireNonEmpty(template, "template")
+            require(image.cols() <= options.maxImageEdge && image.rows() <= options.maxImageEdge) {
+                "image dimensions (${image.cols()}x${image.rows()}) exceed maxImageEdge (${options.maxImageEdge})"
             }
-            if (isEmpty()) add(1.0)
-        }
+            require(options.scaleMin > 0 && options.scaleMax >= options.scaleMin) { "invalid scale range" }
 
-        var best: MatchResult? = null
-        for (scale in coarseScales) {
-            val candidate = evaluateScale(image, template, scale, options)
-            if (best == null || (candidate != null && candidate.confidence > best.confidence)) {
-                best = candidate ?: best
-            }
-        }
-
-        // Refine around the coarse winner with a finer step.
-        val center = best?.scale ?: return null
-        val fineStep = options.coarseStep / 4.0
-        val refinement = listOf(-fineStep, fineStep, -fineStep / 2, fineStep / 2)
-        var budget = options.maxScales - coarseScales.size
-        for (delta in refinement) {
-            if (budget <= 0) break
-            budget--
-            val scale = center + delta
-            if (scale < options.scaleMin || scale > options.scaleMax) continue
-            val candidate = evaluateScale(image, template, scale, options)
-            if (candidate != null && candidate.confidence > (best?.confidence ?: Double.NEGATIVE_INFINITY)) {
-                best = candidate
-            }
-        }
-
-        return best?.takeIf { it.confidence >= options.minConfidence }
-    }
-
-    private fun evaluateScale(image: Mat, template: Mat, scale: Double, options: Options): MatchResult? {
-        val scaledTemplate = Mat()
-        try {
-            if (scale == 1.0) {
-                template.copyTo(scaledTemplate)
-            } else {
-                Imgproc.resize(
-                    template,
-                    scaledTemplate,
-                    org.opencv.core.Size(),
-                    scale,
-                    scale,
-                    if (scale < 1.0) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR,
-                )
-            }
-            if (scaledTemplate.cols() > image.cols() || scaledTemplate.rows() > image.rows()) return null
-
-            val result = Mat()
-            try {
-                Imgproc.matchTemplate(image, scaledTemplate, result, options.method.code)
-                val mmr = Core.minMaxLoc(result)
-                val (confidence, location) = when (options.method) {
-                    Method.CCOEFF_NORMED, Method.CCORR_NORMED -> mmr.maxVal to mmr.maxLoc
-                    else -> mmr.maxVal to mmr.maxLoc
+            val coarseScales = buildList {
+                var s = options.scaleMin
+                while (s <= options.scaleMax + 1e-9 && size < options.maxScales / 2) {
+                    add(s)
+                    s += options.coarseStep
                 }
-                return MatchResult(
-                    location = location,
-                    scale = scale,
-                    confidence = confidence,
-                    accepted = confidence >= options.minConfidence,
-                )
-            } finally {
-                result.release()
+                if (isEmpty()) add(1.0)
             }
-        } finally {
-            scaledTemplate.release()
+
+            var best: MatchResult? = null
+            for (scale in coarseScales) {
+                val candidate = evaluateScale(image, template, scale, options)
+                if (best == null || (candidate != null && candidate.confidence > best.confidence)) {
+                    best = candidate ?: best
+                }
+            }
+
+            // Refine around the coarse winner with a finer step.
+            val center = best?.scale ?: return null
+            val fineStep = options.coarseStep / 4.0
+            val refinement = listOf(-fineStep, fineStep, -fineStep / 2, fineStep / 2)
+            var budget = options.maxScales - coarseScales.size
+            for (delta in refinement) {
+                if (budget <= 0) break
+                budget--
+                val scale = center + delta
+                if (scale < options.scaleMin || scale > options.scaleMax) continue
+                val candidate = evaluateScale(image, template, scale, options)
+                if (candidate != null && candidate.confidence > (best?.confidence ?: Double.NEGATIVE_INFINITY)) {
+                    best = candidate
+                }
+            }
+
+            return best?.takeIf { it.confidence >= options.minConfidence }
+        }
+
+        private fun evaluateScale(image: Mat, template: Mat, scale: Double, options: Options): MatchResult? {
+            val scaledTemplate = Mat()
+            try {
+                if (scale == 1.0) {
+                    template.copyTo(scaledTemplate)
+                } else {
+                    Imgproc.resize(
+                        template,
+                        scaledTemplate,
+                        org.opencv.core.Size(),
+                        scale,
+                        scale,
+                        if (scale < 1.0) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR,
+                    )
+                }
+                if (scaledTemplate.cols() > image.cols() || scaledTemplate.rows() > image.rows()) return null
+
+                val result = Mat()
+                try {
+                    Imgproc.matchTemplate(image, scaledTemplate, result, options.method.code)
+                    val mmr = Core.minMaxLoc(result)
+                    val (confidence, location) = when (options.method) {
+                        Method.CCOEFF_NORMED, Method.CCORR_NORMED -> mmr.maxVal to mmr.maxLoc
+                        else -> mmr.maxVal to mmr.maxLoc
+                    }
+                    val width = Math.round(template.cols() * scale).toInt()
+                    val height = Math.round(template.rows() * scale).toInt()
+                    val rect = Rect(location.x.toInt(), location.y.toInt(), width, height)
+                    return MatchResult(
+                        location = location,
+                        scale = scale,
+                        confidence = confidence,
+                        accepted = confidence >= options.minConfidence,
+                        rect = rect,
+                    )
+                } finally {
+                    result.release()
+                }
+            } finally {
+                scaledTemplate.release()
+            }
         }
     }
 }

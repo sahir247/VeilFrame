@@ -27,6 +27,24 @@ object Preprocessor {
         return out
     }
 
+    /** Alias for [grayscale] matching common image processing conventions. */
+    fun toGray(source: Mat): Mat = grayscale(source)
+
+    enum class BlurMethod { GAUSSIAN, BOX, MEDIAN }
+
+    /** Blurs an image using the specified [BlurMethod] with an odd [kernelSize]. */
+    fun blur(source: Mat, method: BlurMethod = BlurMethod.GAUSSIAN, kernelSize: Int = 5): Mat {
+        com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
+        com.veilframe.app.cv.core.CvContracts.requireOddPositive(kernelSize, "kernelSize")
+        val out = Mat()
+        when (method) {
+            BlurMethod.GAUSSIAN -> Imgproc.GaussianBlur(source, out, Size(kernelSize.toDouble(), kernelSize.toDouble()), 0.0)
+            BlurMethod.BOX -> Imgproc.blur(source, out, Size(kernelSize.toDouble(), kernelSize.toDouble()))
+            BlurMethod.MEDIAN -> Imgproc.medianBlur(source, out, kernelSize)
+        }
+        return out
+    }
+
     /**
      * Resize with algorithm selection:
      *  - downscale  → INTER_AREA (anti-aliased decimation)

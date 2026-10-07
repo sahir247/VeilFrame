@@ -16,6 +16,22 @@ import org.opencv.imgproc.Imgproc
  */
 object PerspectiveCorrector {
 
+    operator fun invoke(): PerspectiveCorrector = this
+
+    fun warp(
+        image: Mat,
+        detection: QuadDetector.Detection,
+        outputSize: Pair<Int, Int>? = null,
+        interpolation: Int = Imgproc.INTER_LINEAR,
+    ): Mat = correct(image, detection.corners, outputSize, interpolation)
+
+    fun warp(
+        image: Mat,
+        corners: List<Point>,
+        outputSize: Pair<Int, Int>? = null,
+        interpolation: Int = Imgproc.INTER_LINEAR,
+    ): Mat = correct(image, corners, outputSize, interpolation)
+
     /**
      * Warps the quadrilateral [sourceCorners] of [image] to a rectangle.
      *

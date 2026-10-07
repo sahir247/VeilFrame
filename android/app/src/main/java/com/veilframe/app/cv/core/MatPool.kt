@@ -76,6 +76,19 @@ class MatPool internal constructor(
     private val leaseFactory: MatLeaseFactory = MatLeaseFactory.Default,
 ) {
     /**
+     * Public constructor for production use and device runtime tests.
+     */
+    constructor(
+        maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,
+        maxPerClass: Int = DEFAULT_MAX_PER_CLASS,
+    ) : this(
+        maxRetainedBytes = maxRetainedBytes,
+        maxPerClass = maxPerClass,
+        allocator = MatAllocator.Default,
+        leaseFactory = MatLeaseFactory.Default,
+    )
+
+    /**
      * Backward-compatible test constructor for callers specifying individual functional seams.
      */
     internal constructor(

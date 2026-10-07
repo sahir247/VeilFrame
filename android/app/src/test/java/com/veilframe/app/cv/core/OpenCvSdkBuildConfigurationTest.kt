@@ -331,4 +331,37 @@ class OpenCvSdkBuildConfigurationTest {
             submissionContent.contains("gradle-version: \"8.10.2\"")
         )
     }
+
+    @Test
+    fun `cv native subsystem contract defines all types and methods used by androidTest`() {
+        val root = findProjectRoot()
+        val templateMatcherFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/template/TemplateMatcher.kt")
+        val quadDetectorFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/geometry/QuadDetector.kt")
+        val perspectiveCorrectorFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/geometry/PerspectiveCorrector.kt")
+        val preprocessorFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/preprocess/Preprocessor.kt")
+        val colorEngineFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/color/ColorEngine.kt")
+        val matPoolFile = File(root, "android/app/src/main/java/com/veilframe/app/cv/core/MatPool.kt")
+
+        val tmText = templateMatcherFile.readText()
+        assertTrue("TemplateMatcher must define rect property on MatchResult", tmText.contains("val rect: Rect"))
+        assertTrue("TemplateMatcher must be instantiable as class or invoke", tmText.contains("class TemplateMatcher") || tmText.contains("operator fun invoke"))
+
+        val qdText = quadDetectorFile.readText()
+        assertTrue("QuadDetector must support invoke operator", qdText.contains("operator fun invoke"))
+
+        val pcText = perspectiveCorrectorFile.readText()
+        assertTrue("PerspectiveCorrector must support invoke operator", pcText.contains("operator fun invoke"))
+        assertTrue("PerspectiveCorrector must provide warp convenience method", pcText.contains("fun warp("))
+
+        val ppText = preprocessorFile.readText()
+        assertTrue("Preprocessor must provide toGray alias", ppText.contains("fun toGray("))
+        assertTrue("Preprocessor must provide BlurMethod enum", ppText.contains("enum class BlurMethod"))
+        assertTrue("Preprocessor must provide blur function", ppText.contains("fun blur("))
+
+        val ceText = colorEngineFile.readText()
+        assertTrue("WhiteBalanceResult must provide size(), type(), and release() delegators", ceText.contains("fun size(): org.opencv.core.Size") && ceText.contains("fun release()"))
+
+        val mpText = matPoolFile.readText()
+        assertTrue("MatPool must have public constructor for device tests", mpText.contains("constructor(\n        maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,"))
+    }
 }

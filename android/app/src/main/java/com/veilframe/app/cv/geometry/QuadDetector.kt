@@ -19,6 +19,8 @@ import org.opencv.imgproc.Imgproc
  */
 object QuadDetector {
 
+    operator fun invoke(): QuadDetector = this
+
     data class Detection(
         /** TL, TR, BR, BL in SOURCE-image coordinates (already scaled back). */
         val corners: List<Point>,
