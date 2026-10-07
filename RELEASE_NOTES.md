@@ -1,5 +1,26 @@
 # VeilFrame Release Notes
 
+## v2.2.9 — October 2026
+
+VeilFrame v2.2.9 provides an authoritative hardening update for the native Computer Vision subsystem, deterministic in-tree OpenCV 4.14.0 SDK compilation, toolchain modernization, and the architectural baseline for the upcoming VeilFrame Android UI/UX redesign.
+
+- **Deterministic In-Tree Custom OpenCV 4.14.0 SDK with WeChatQRCode & Videoio:**
+  - Automated hermetic build script `android/scripts/build_opencv_contrib_sdk.sh` compiling native libraries for Android NDK r27b with ABI targets `arm64-v8a` and `x86_64`.
+  - Staging of styled attributes (`CameraBridgeViewBase`) into `:opencv-sdk/src/main/res/values/attrs.xml`.
+  - Deterministic compilation and fail-closed SHA-256 metadata verification in `:opencv-sdk/build.gradle.kts`.
+
+- **Computer Vision Subsystem Robustness & Mathematical Verification:**
+  - **QuadDetector Polygon Convexity:** Fixed quadrilateral convexity validation to evaluate the simplified 4-point polygon (`approxMat`) rather than raw stair-stepped raster contours, resolving spurious detection rejection on high-contrast polygons.
+  - **TemplateMatcher Low-Variance Fallback:** Added automatic template variance analysis (`Core.meanStdDev`); gracefully falls back to `TM_SQDIFF_NORMED` when evaluating zero-variance templates, preventing division-by-zero errors in `TM_CCOEFF_NORMED`.
+  - **Optical Flow Gradient Texture:** Resolved the aperture problem in Farnebäck optical flow verification by populating synthetic test regions with deterministic spatial gradient textures.
+  - **In-Process Kotlin Compilation:** Configured `kotlin.compiler.execution.strategy=in-process` in `gradle.properties`, eliminating Kotlin daemon IPC crashes (`error code: 0`) in memory-constrained CI environments.
+  - **Native Library Debug Symbol Preservation:** Configured `packaging.jniLibs.keepDebugSymbols += listOf("**/*.so")` across `:opencv-sdk` and `:app`, eliminating release stripping warnings.
+  - **Android SDK Toolchain Modernization:** Added `cmdline-tools;latest` to CI SDK setup, eliminating XML schema version 4 parsing warnings.
+
+- **Android UI/UX Redesign Architectural Lock:**
+  - Formally locked the implementation roadmap extending the current XML + ViewBinding + Material Components architecture.
+  - Established boundaries decoupling `WorkspaceRoute` from legacy `ToolMode`, preserving existing studio engines (Image Studio, Video Studio, QR Studio) while defining the 13-workspace catalogue, intent-first shell, multi-page Document Scanner, and Background Remover.
+
 ## v2.2.8 — September 2026
 
 VeilFrame v2.2.8 delivers an authoritative architectural update across the application stack. Highlights include the launch of the **QR Code Studio (8th Native Mobile Tool)** with 11 artistic visual rendering modes, live CameraX viewfinder scanning, and safe 11-format payload parsing; dynamic theming with per-Activity lifecycle management and pure AMOLED black (`#000000`) surfaces; an iterative rate-controlled WhatsApp video pipeline with a non-negotiable 16 MiB ceiling; floating dock scroll-to-bottom hide behavior; folder-picker binding for Folder Analyzer and AI Bundle; authoritative `ImageTransformPlan` with Passport 600x600 px preset enforcement; dual publisher certificate verification; and complete zero-emoji compliance with a pure SVG vector iconography system.
