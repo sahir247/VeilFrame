@@ -3,6 +3,7 @@
     <!-- VeilFrame Minimal Monochrome Dark Theme Palette -->
     <!-- Base Surfaces (Charcoal matte dark mode surfaces; AMOLED overlay provides true #000000) -->
     <color name="vf_bg_dark">#121214</color>
+    <color name="vf_background">#121214</color>
     <color name="vf_surface">#1C1C20</color>
     <color name="vf_surface_variant">#27272A</color>
     <color name="vf_surface_stroke">#3F3F46</color>

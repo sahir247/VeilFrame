@@ -5,7 +5,7 @@
     android:id="@+id/layoutDocumentScannerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/vf_background"
+    android:background="@color/vf_bg_dark"
     android:visibility="gone">
 
     <LinearLayout

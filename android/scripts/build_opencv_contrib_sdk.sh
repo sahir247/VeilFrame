@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # VeilFrame Android OpenCV 4.14.0 + opencv_contrib (WeChatQRCode) Build Script
-# Native OpenCV 4.14.0 SDK build trigger (ARM64 + x86_64) - 2026-10-07T20:10:00Z
+# Native OpenCV 4.14.0 SDK build trigger (ARM64 + x86_64) - 2026-10-07T21:23:00Z
 #
 # Reproducibly builds the custom OpenCV Android SDK with wechat_qrcode and Java
 # bindings for ARM64 and x86_64, placing output directly into :opencv-sdk.

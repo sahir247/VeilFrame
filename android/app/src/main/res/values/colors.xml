@@ -3,6 +3,7 @@
     <!-- VeilFrame Minimal Monochrome Light Theme Palette -->
     <!-- Base Surfaces (Clean crisp light gray & white) -->
     <color name="vf_bg_dark">#F4F4F6</color>
+    <color name="vf_background">#F4F4F6</color>
     <color name="vf_surface">#FFFFFF</color>
     <color name="vf_surface_variant">#EAEAEA</color>
     <color name="vf_surface_stroke">#D4D4D8</color>
