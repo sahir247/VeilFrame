@@ -249,4 +249,22 @@ class OpenCvSdkBuildConfigurationTest {
             content.contains("android/opencv-sdk/src/main/res/")
         )
     }
+
+    @Test
+    fun `ci workflow configures working-directory and executable gradlew for device tests`() {
+        val root = findProjectRoot()
+        val workflowFile = File(root, ".github/workflows/build-opencv-sdk.yml")
+        val content = workflowFile.readText()
+
+        assertTrue(
+            "CI workflow emulator step must configure working-directory for android subproject",
+            content.contains("working-directory: ./android")
+        )
+        assertTrue(
+            "CI workflow must ensure chmod +x on gradlew before emulator execution",
+            content.contains("chmod +x ./gradlew")
+        )
+        val rootGradlew = File(root, "gradlew")
+        assertTrue("Root gradlew wrapper must exist", rootGradlew.exists())
+    }
 }

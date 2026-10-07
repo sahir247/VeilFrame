@@ -77,6 +77,11 @@ jobs:
           ./gradlew :app:assembleDebug
           ./gradlew :app:testDebugUnitTest --tests "com.veilframe.app.cv.*"
 
+      - name: Ensure Gradle Wrapper Executable Permissions
+        run: |
+          chmod +x ./gradlew || true
+          chmod +x android/gradlew || true
+
       - name: Device Runtime Verification (WeChatQRCode + Native CV Subsystem on x86_64 Emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -85,8 +90,9 @@ jobs:
           arch: x86_64
           disable-animations: true
           profile: pixel_6
+          working-directory: ./android
           script: |
-            cd android
+            chmod +x ./gradlew
             ./gradlew :app:connectedDebugAndroidTest
 
       - name: Upload Custom OpenCV SDK Artifacts
