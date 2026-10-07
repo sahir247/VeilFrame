@@ -24,45 +24,11 @@
   - Roadmap for 13-workspace catalogue, intent-first shell, Document Scanner, and Background Remover.
 
 ### v2.2.8 (Previous Release)
-- **QR Code Studio (8th Native Mobile Tool) & 11 Artistic Renderers**:
-  - Full suite of 11 artistic visual rendering styles powered by VeilFrame Art Engine (Basic, Bubble, 2.5D Isometric, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function).
-  - Live CameraX Viewfinder scanner with `QrScanOverlayView` reticle tracking and gallery photo static image decoding.
-  - Comprehensive Safe Payload Parser supporting 11 schema formats (Wi-Fi, UPI payments, URLs with IDN homograph phishing defense, Phone, SMS, Email, Geo, vCard, MeCard, Event, OtpAuth).
-  - Export engine supporting high-resolution PNG, JPEG, SVG path data, and PDF documents.
-- **Floating Action Dock Refinements & Folder Pickers**:
-  - Scroll-to-bottom auto-hide: floating action dock hides automatically when scrolling down to the bottom of the workspace, reappearing when scrolling up.
-  - Folder picker binding: Folder Analyzer and AI Bundle tools explicitly bind to folder selection (`ACTION_OPEN_DOCUMENT_TREE`) from the floating action bar.
-  - Generation token guard (`activeGeneration`) preventing asynchronous race conditions on media switching.
-- **Strict Zero-Emoji Policy & Pure SVG Iconography**:
-  - Zero unicode emojis across all layouts, controllers, logs, and markdown documentation.
-  - Universal adoption of vector SVG icons across all tool workspaces and documentation headings.
-- **Theming Architecture & Dynamic Color Lifecycle**:
-  - Per-Activity theme lifecycle in `Activity.onCreate` before `setContentView()`, eliminating UI flicker.
-  - Strict AMOLED Dark `#000000` surface themes, status/navigation bars, and high-contrast variant `#0A0A0C`.
-  - Palette styles (`Monochrome`, `Forest Sage`, `Deep Ocean`, `Warm Amber`, `Cyber Violet`) active when Dynamic Color is disabled, seamless Monet Dynamic Color overlay when enabled.
-- **WhatsApp Video Rate Control & Canonical Geometry**:
-  - Non-negotiable 16 MiB size ceiling with iterative dynamic retry loop (up to 2 passes with safety factor `0.92`).
-  - Stage 1 trim verification (`allowedError = maxOf(0.5, requestedDuration * 0.05)`) with automatic fallback to Stage 2 single-pass transcode trim.
-  - Bounded DAR validator with 3% tolerance and strict even dimension invariant `(dimension / 2) * 2`.
-  - Cancellable non-blocking FFmpeg execution via `suspendCancellableCoroutine`.
-  - Source geometry, SAR, and rotation capture via `WhatsappStatusMediaAnalyzer`.
-- **Floating Action Dock State Machine & Generation Token Guard**:
-  - Unified 4-stage reactive controller (`EMPTY` $\to$ `READY` $\to$ `PROCESSING` $\to$ `COMPLETED`) across all tool docks.
-  - Floating Material card styling with 28dp rounded corners, 10dp elevation, and navigation bar inset responsiveness.
-  - Separate reporting of processed items versus successfully exported files.
-- **Image Studio TransformPlan & Memory Lifecycle**:
-  - Authoritative `ImageTransformPlan` unifying preview, probe estimation, and export parameters.
-  - Passport 600x600 px preset enforcement with strict 1:1 cropping and document export sizing.
-  - Empirical probe encoding for honest pre-export file size estimation.
-  - Explicit bitmap memory lifecycle management with intermediate preview and result bitmap recycling.
-- **Publisher Security & Certificate Verification**:
-  - Dual publisher certificate verification in `AppUpdateManager` supporting installed app signature matching or pinned release certificate fallback.
-- **AI Model Registry & Device-Bound Performance Cache**:
-  - Reclassified experimental SOTA models lacking verified checksums to `DeploymentStatus.ANDROID_EXPERIMENTAL`.
-  - Introduced typed `ModelRuntimeSpec` validating tensor dimension multiples, scale factors, channel formats, and opset requirements.
-  - Device-bound performance caching binding benchmarks to specific SoC hardware architectures (`Build.HARDWARE`).
-- **Foreground Service Job Tracking & Android 15 Support**:
-  - `VeilFrameProcessingService` with structured `ProcessingJob` tracking (`activeJob`), failure propagation, and API 35 `onTimeout()` lifecycle handling.
+- **QR Code Studio (8th Tool)**: 11 artistic visual rendering styles, live CameraX viewfinder scanner, and 11-format safe payload parser.
+- **WhatsApp Status 16 MiB Ceiling**: Iterative dynamic rate control loop and bounded DAR validation guaranteeing outputs under 16 MiB.
+- **AMOLED Dark Theming & UI**: Per-Activity lifecycle theming with true `#000000` dark surfaces and pure vector SVG iconography.
+- **Image Studio Passport Preset**: 600×600 px document export preset with strict 1:1 cropping and proactive bitmap recycling.
+- **Floating Action Dock**: 4-stage reactive controller with bottom-scroll auto-hide and folder picker bindings.
 
 ### v2.2.7 (Previous Release)
 - **WhatsApp Status Bounded Resolution Architecture**:

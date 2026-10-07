@@ -1,28 +1,13 @@
 # VeilFrame Release Notes
 
-## v2.2.9 — October 2026
+## v2.2.9 — October 2026 (Stable)
 
 **OpenCV 4.14.0 native SDK, Computer Vision subsystem & UI redesign architecture.**
-- **OpenCV 4.14.0 SDK Integration:** In-tree native OpenCV 4.14.0 build with WeChatQRCode and Videoio modules for ARM64 and x86_64.
+- **OpenCV 4.14.0 SDK Integration:** In-tree native OpenCV 4.14.0 build with WeChatQRCode and Videoio modules.
 - **Computer Vision Subsystem:** Native CV engine featuring `QuadDetector` (document and polygon geometry), `TemplateMatcher` (pattern matching), and `FlowEstimator` (dense optical flow).
 - **Build Stability:** In-process Kotlin compilation and preserved native library debug symbols across builds.
 - **Modern Toolchain:** Updated to latest Android SDK command-line tools.
 - **UI Redesign Baseline:** Architectural foundation ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)) for the upcoming modular multi-workspace shell.
-
-## v2.2.8 — September 2026
-
-**QR Code Studio (8th native tool), AMOLED Dark mode, WhatsApp 16 MiB ceiling & Passport 600x600 preset.**
-- Added QR Code Studio with 11 visual styles (Basic, Bubble, 2.5D, DSJ, Image Fill, Image Overlay, Image Resample, Line, Random Rectangle, Function, Style Function), live CameraX scanner, and safe 11-format payload parser.
-- Enforced 16 MiB video size ceiling for WhatsApp Status with iterative rate control and bounded DAR preservation.
-- Introduced strict AMOLED Dark `#000000` styling with per-Activity lifecycle setup.
-- Added Passport 600x600 px export preset and proactive bitmap recycling in Image Studio.
-- Implemented floating dock scroll-to-bottom auto-hide and pure vector SVG iconography.
-
-### Upgrade notes
-
-- Existing Android installations upgrade cleanly via the in-app updater verifying against `update.json` version `2.2.8` (`versionCode = 228`) with mandatory SHA-256 and signing certificate validation.
-- WhatsApp Status video processing strictly guarantees outputs under 16 MiB with automatic iterative retry and trim fallback.
-- Image Studio Passport preset guarantees 600x600 px output dimensions.
 
 ### Downloads and installation
 
@@ -32,12 +17,12 @@ Download the appropriate artifact from the [GitHub Releases page](https://github
 - Windows: `VeilFrame-windows-x86_64.exe`
 - Linux: `VeilFrame-linux-x86_64.deb` or `VeilFrame-linux-x86_64.tar.gz`
 - macOS Apple Silicon: `VeilFrame-macos-arm64.dmg` or `VeilFrame-macos-arm64.tar.gz`
-- Python: `veilframe-2.2.8-py3-none-any.whl`
+- Python: `veilframe-2.2.9-py3-none-any.whl`
 
 For Python installation:
 
 ```bash
-pip install veilframe-2.2.8-py3-none-any.whl
+pip install veilframe-2.2.9-py3-none-any.whl
 ```
 
 ### Verification & Compatibility
@@ -48,6 +33,11 @@ pip install veilframe-2.2.8-py3-none-any.whl
 ---
 
 ## Previous releases
+
+### v2.2.8 — September 2026
+**QR Code Studio (8th native tool), AMOLED Dark mode, WhatsApp 16 MiB ceiling & Passport 600x600 preset.**
+Added QR Code Studio with 11 visual styles and CameraX scanner; enforced 16 MiB video size ceiling for WhatsApp Status; added AMOLED Dark styling, Passport 600x600 px export preset, and vector UI assets.
+
 
 ### v2.2.7 — September 2026
 **WhatsApp HD/FHD bounded resolution, 4-stage Floating Action Dock, Passport 600x600 preset, AMOLED Dark theming & 2025–2026 AI super-resolution model lineup.**
