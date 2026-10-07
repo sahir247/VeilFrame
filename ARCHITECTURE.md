@@ -740,6 +740,49 @@ VeilFrame v2.2.8 integrates the **QR Code Studio (8th Tool)** (`com.veilframe.ap
 
 ---
 
+## Mobile Shell & Modular Workspace Architecture (ADR 0004)
+
+VeilFrame v2.2.9 locks the architectural design for the Android application shell redesign ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)). The application architecture remains rooted in native **XML layouts, ViewBinding, and Material 3 components**, strictly rejecting a premature Jetpack Compose rewrite while extending the existing controller foundations:
+
+```text
+                                 ┌────────────────────────┐
+                                 │   APP SHELL (ROOT)     │
+                                 │ Insets / Motion / Nav  │
+                                 └───────────┬────────────┘
+                                             │
+                   ┌─────────────────────────┼─────────────────────────┐
+                   ▼                         ▼                         ▼
+             [   HOME   ]              [  TOOLS  ]               [  LIBRARY  ]
+         • Intent Launcher          • 13 Workspaces           • Recent Work
+         • Quick Tools (≤6)         • Grouped Grid            • Scanner Sessions
+         • Status / Privacy         • Search & Synonyms       • Completed Exports
+                   │                         │                         │
+                   └─────────────────────────┼─────────────────────────┘
+                                             ▼
+                                  ┌────────────────────┐
+                                  │   WORKSPACE ROUTE  │
+                                  └──────────┬─────────┘
+                                             │
+      ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┐
+      ▼                  ▼                   ▼                   ▼                  ▼
+[ IMAGE STUDIO ]  [ VIDEO STUDIO ]    [ QR STUDIO ]      [ DOC SCANNER ]     [ BG REMOVER ]
+(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • Before/After
+• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • 48dp Touch
+• Denoise/Enhance • Transcode Engine  • Cleanroom Parity • Page Manager      • Dual Pan/Zoom
+                                                         • Shared Editor     • Alpha Masks
+                                                         • PDF/Img Export
+```
+
+### 1. Architectural Invariants
+1. **No Compose Rewrite**: All visual components leverage ViewBinding, XML layouts, and Material Components (M3). Existing production studio controllers (`ImageStudioController`, `VideoStudioController`, `QR Studio`) remain intact without disruptive refactoring.
+2. **`WorkspaceRoute` vs `ToolMode` Decoupling**: User-facing navigation routes (`WorkspaceRoute`) are cleanly decoupled from the legacy `ToolMode` batch-execution state machine.
+3. **Tri-Destination Shell**: Navigation is organized around `Home` (intent-first launcher), `Tools` (13-workspace catalogue grouped under Create & Edit, Privacy, Analyze, and Developer with synonym search), and `Library` (recents, resumable multi-page scanner sessions, and export management).
+4. **Window Size Classes**: Adaptive layout adapts to `Compact` (bottom navigation) and `Medium`/`Expanded` (vertical navigation rail) via Android Window Size Classes, eliminating fragile device-name branching.
+5. **Shared Workflows**: Reusable `SharedSourcePickerSheet` (Camera, Photo Picker, Files) and shared export pipeline (PDF single/separate, paper sizes, raster qualities).
+6. **Isolated CV Contracts**: The UI consumes high-level Kotlin contracts (`DocumentDetectionResult`, `SegmentationResult`, `QualityScore`), insulating UI components from underlying OpenCV/NDK updates.
+
+---
+
 ## Summary of System Invariants
 
 1. **Zero Silent Modification:** Every byte modification is constrained by an explicit, self-describing mathematical policy budget or privacy contract.
