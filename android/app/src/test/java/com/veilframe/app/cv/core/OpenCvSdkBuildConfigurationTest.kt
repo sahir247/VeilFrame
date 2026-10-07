@@ -306,4 +306,29 @@ class OpenCvSdkBuildConfigurationTest {
                 content.contains("if: always()")
         )
     }
+
+    @Test
+    fun `root gradle wrapper files and dependency submission workflow exist and are configured`() {
+        val root = findProjectRoot()
+        val rootProperties = File(root, "gradle/wrapper/gradle-wrapper.properties")
+        val rootJar = File(root, "gradle/wrapper/gradle-wrapper.jar")
+        val submissionWorkflow = File(root, ".github/workflows/dependency-submission.yml")
+
+        assertTrue("Root gradle-wrapper.properties must exist", rootProperties.exists())
+        assertTrue("Root gradle-wrapper.jar must exist", rootJar.exists())
+        assertTrue(
+            "Root gradle-wrapper.properties must specify gradle-8.10.2",
+            rootProperties.readText().contains("gradle-8.10.2")
+        )
+        assertTrue("dependency-submission.yml must exist", submissionWorkflow.exists())
+        val submissionContent = submissionWorkflow.readText()
+        assertTrue(
+            "dependency-submission workflow must configure build-root-directory to ./android",
+            submissionContent.contains("build-root-directory: ./android")
+        )
+        assertTrue(
+            "dependency-submission workflow must configure gradle-version 8.10.2",
+            submissionContent.contains("gradle-version: \"8.10.2\"")
+        )
+    }
 }
