@@ -104,8 +104,8 @@ checkout_pinned_repo "opencv_contrib" "https://github.com/opencv/opencv_contrib.
 # 3. Create build configuration
 # FIX: In OpenCV's CMake system, --modules_list sets -DBUILD_LIST.
 # If 'java' is omitted, CMake disables java and java_bindings_generator by whitelist!
-# Modules MUST explicitly include: core, imgproc, imgcodecs, video, photo, objdetect, dnn, wechat_qrcode, java
-BUILD_MODULES="core,imgproc,imgcodecs,video,photo,objdetect,dnn,wechat_qrcode,java"
+# Modules MUST explicitly include: core, imgproc, imgcodecs, video, videoio, photo, objdetect, dnn, wechat_qrcode, java
+BUILD_MODULES="core,imgproc,imgcodecs,video,videoio,photo,objdetect,dnn,wechat_qrcode,java"
 
 BUILD_OUT="${WORK_DIR}/output"
 rm -rf "${BUILD_OUT}"
@@ -113,8 +113,8 @@ mkdir -p "${BUILD_OUT}"
 
 cat << 'EOF' > "${WORK_DIR}/opencv-veilframe.config.py"
 ABIs = [
-    ABI("3", "arm64-v8a", None, cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
-    ABI("4", "x86_64", None, cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
+    ABI("3", "arm64-v8a", None, "26", cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
+    ABI("4", "x86_64", None, "26", cmake_vars=dict(ANDROID_STL="c++_static", ANDROID_TOOLCHAIN="clang")),
 ]
 EOF
 
@@ -183,21 +183,29 @@ if [ ! -s "${SDK_STAGE}/java/src/org/opencv/wechat_qrcode/WeChatQRCode.java" ]; 
     echo "FATAL: WeChatQRCode Java binding (org/opencv/wechat_qrcode/WeChatQRCode.java) missing or empty!"
     exit 1
 fi
+if [ ! -s "${SDK_STAGE}/java/src/org/opencv/videoio/Videoio.java" ]; then
+    echo "FATAL: VideoIO Java binding (org/opencv/videoio/Videoio.java) missing or empty!"
+    exit 1
+fi
 
 echo "✓ All required native libraries (valid ELF ABIs) and Java sources verified in build stage."
 
 # 5. Staging into :opencv-sdk with completion marker
-echo "==> Staging compiled native libraries and Java bindings into :opencv-sdk..."
+echo "==> Staging compiled native libraries, Java bindings, and resources into :opencv-sdk..."
 # Remove marker first so partial staging cannot be interpreted as complete
 rm -f "${OPENCV_SDK_DIR}/src/main/.opencv-sdk-complete"
 
 mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a"
 mkdir -p "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64"
 mkdir -p "${OPENCV_SDK_DIR}/src/main/java"
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res"
 
 cp "${SDK_STAGE}/native/libs/arm64-v8a/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/"
 cp "${SDK_STAGE}/native/libs/x86_64/libopencv_java4.so" "${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/"
 cp -R "${SDK_STAGE}/java/src/org" "${OPENCV_SDK_DIR}/src/main/java/"
+if [ -d "${SDK_STAGE}/java/res" ]; then
+    cp -R "${SDK_STAGE}/java/res/"* "${OPENCV_SDK_DIR}/src/main/res/"
+fi
 
 ARM64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
 X86_64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/libopencv_java4.so"
