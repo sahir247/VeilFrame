@@ -3,11 +3,12 @@ package com.veilframe.app.navigation
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
 
 /**
  * Controller orchestrating top-level screen navigation, view visibility toggles,
- * and system back-press routing for the VeilFrame Mobile Hub.
+ * bottom navigation tab state, and system back-press routing for the VeilFrame Mobile Hub.
  */
 class MainNavigationController(
     private val activity: AppCompatActivity,
@@ -21,6 +22,8 @@ class MainNavigationController(
         private set
     var previousScreen: ScreenState = ScreenState.HOME
         private set
+
+    private var isSyncingBottomNav = false
 
     fun init() {
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
@@ -41,6 +44,8 @@ class MainNavigationController(
                     } else {
                         showHomeScreen()
                     }
+                } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
+                    showHomeScreen()
                 } else if (currentScreen != ScreenState.HOME) {
                     showHomeScreen()
                 } else {
@@ -53,6 +58,33 @@ class MainNavigationController(
 
         binding.btnBackToHome.setOnClickListener {
             showHomeScreen()
+        }
+
+        binding.bottomNavigation.setOnItemSelectedListener { item ->
+            if (isSyncingBottomNav) return@setOnItemSelectedListener true
+            when (item.itemId) {
+                R.id.nav_home -> {
+                    if (currentScreen != ScreenState.HOME) showHomeScreen()
+                    true
+                }
+                R.id.nav_tools -> {
+                    if (currentScreen != ScreenState.TOOLS) showToolsScreen()
+                    true
+                }
+                R.id.nav_library -> {
+                    if (currentScreen != ScreenState.LIBRARY) showLibraryScreen()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun syncBottomNavSelection(itemId: Int) {
+        if (binding.bottomNavigation.selectedItemId != itemId) {
+            isSyncingBottomNav = true
+            binding.bottomNavigation.selectedItemId = itemId
+            isSyncingBottomNav = false
         }
     }
 
@@ -83,6 +115,14 @@ class MainNavigationController(
             binding.fragmentQrStudio.visibility = View.GONE
             binding.fragmentQrStudio.translationX = 0f
         }
+        if (activeView != binding.layoutToolsCatalogue.scrollToolsCatalogue) {
+            binding.layoutToolsCatalogue.scrollToolsCatalogue.visibility = View.GONE
+            binding.layoutToolsCatalogue.scrollToolsCatalogue.translationX = 0f
+        }
+        if (activeView != binding.layoutLibrary.scrollLibrary) {
+            binding.layoutLibrary.scrollLibrary.visibility = View.GONE
+            binding.layoutLibrary.scrollLibrary.translationX = 0f
+        }
     }
 
     fun showHomeScreen() {
@@ -97,7 +137,10 @@ class MainNavigationController(
             ScreenState.IMAGE_UPSCALER -> binding.layoutImageUpscaler.scrollImageUpscaler
             ScreenState.MARKDOWN_VIEWER -> binding.layoutMarkdownViewer.layoutMarkdownRoot
             ScreenState.QR_STUDIO -> binding.fragmentQrStudio
+            ScreenState.TOOLS -> binding.layoutToolsCatalogue.scrollToolsCatalogue
+            ScreenState.LIBRARY -> binding.layoutLibrary.scrollLibrary
             ScreenState.HOME -> null
+            else -> null
         }
         previousScreen = currentScreen
         currentScreen = ScreenState.HOME
@@ -106,8 +149,10 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.VISIBLE
+        syncBottomNavSelection(R.id.nav_home)
 
-        if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE) {
+        if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE && outgoingToolView != binding.layoutToolsCatalogue.scrollToolsCatalogue && outgoingToolView != binding.layoutLibrary.scrollLibrary) {
             com.veilframe.app.ui.motion.NavigationMotionController.hideTool(
                 homeView = binding.scrollHome,
                 toolView = outgoingToolView
@@ -136,12 +181,56 @@ class MainNavigationController(
         onHomeScreenEntered()
     }
 
+    fun showToolsScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        previousScreen = currentScreen
+        currentScreen = ScreenState.TOOLS
+
+        binding.toolbarHome.visibility = View.VISIBLE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.VISIBLE
+        syncBottomNavSelection(R.id.nav_tools)
+
+        hideAllToolViewsExcept(binding.layoutToolsCatalogue.scrollToolsCatalogue)
+        binding.scrollHome.visibility = View.GONE
+        binding.layoutToolsCatalogue.scrollToolsCatalogue.visibility = View.VISIBLE
+        binding.layoutToolsCatalogue.scrollToolsCatalogue.alpha = 1.0f
+        binding.layoutToolsCatalogue.scrollToolsCatalogue.translationX = 0f
+    }
+
+    fun showLibraryScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        previousScreen = currentScreen
+        currentScreen = ScreenState.LIBRARY
+
+        binding.toolbarHome.visibility = View.VISIBLE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.VISIBLE
+        syncBottomNavSelection(R.id.nav_library)
+
+        hideAllToolViewsExcept(binding.layoutLibrary.scrollLibrary)
+        binding.scrollHome.visibility = View.GONE
+        binding.layoutLibrary.scrollLibrary.visibility = View.VISIBLE
+        binding.layoutLibrary.scrollLibrary.alpha = 1.0f
+        binding.layoutLibrary.scrollLibrary.translationX = 0f
+    }
+
     fun showToolScreen() {
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         previousScreen = currentScreen
         currentScreen = ScreenState.TOOL
 
@@ -149,6 +238,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.VISIBLE
         binding.cardCleanerActionDock.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE
+        binding.bottomNavigation.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.scrollTool)
@@ -170,7 +260,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_STUDIO
 
@@ -178,6 +268,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -200,7 +291,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         previousScreen = currentScreen
         currentScreen = ScreenState.VIDEO_STUDIO
 
@@ -208,6 +299,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -233,13 +325,14 @@ class MainNavigationController(
         if (currentScreen != ScreenState.MARKDOWN_VIEWER) {
             previousScreen = currentScreen
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         currentScreen = ScreenState.MARKDOWN_VIEWER
 
         binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutMarkdownViewer.layoutMarkdownRoot)
@@ -261,7 +354,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_UPSCALER
 
@@ -269,6 +362,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutImageUpscaler.scrollImageUpscaler)
@@ -290,7 +384,7 @@ class MainNavigationController(
         if (currentScreen == ScreenState.TOOL) {
             onSaveActiveToolState()
         }
-        val wasHome = (currentScreen == ScreenState.HOME)
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         previousScreen = currentScreen
         currentScreen = ScreenState.QR_STUDIO
 
@@ -298,6 +392,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.fragmentQrStudio)

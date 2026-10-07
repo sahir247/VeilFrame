@@ -2137,6 +2137,20 @@
         android:visibility="gone" />
 
     <!-- ================================================================= -->
+    <!-- 8. TOOLS CATALOGUE WORKSPACE                                      -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutToolsCatalogue"
+        layout="@layout/layout_tools_catalogue" />
+
+    <!-- ================================================================= -->
+    <!-- 9. LIBRARY & EXPORTS WORKSPACE                                    -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutLibrary"
+        layout="@layout/layout_library" />
+
+    <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->
     <!-- ================================================================= -->
     <com.google.android.material.card.MaterialCardView
@@ -2235,6 +2249,20 @@
     </com.google.android.material.card.MaterialCardView>
 
     <!-- ================================================================= -->
+    <!-- SHELL BOTTOM NAVIGATION BAR                                       -->
+    <!-- ================================================================= -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavigation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="?attr/colorSurface"
+        android:visibility="visible"
+        app:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_color_selector"
+        app:itemTextColor="@color/bottom_nav_color_selector"
+        app:menu="@menu/bottom_nav_menu" />
+
     <!-- 8. SETTINGS SLIDE-OVER OVERLAY                                    -->
     <!-- ================================================================= -->
     <View

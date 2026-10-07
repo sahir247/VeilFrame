@@ -28,6 +28,9 @@ import com.veilframe.app.media.VideoPlayerController
 import com.veilframe.app.media.VideoStudioController
 import com.veilframe.app.navigation.MainNavigationController
 import com.veilframe.app.navigation.ScreenState
+import com.veilframe.app.navigation.WorkspaceRoute
+import com.veilframe.app.navigation.WorkspaceCategory
+import com.veilframe.app.ui.picker.SharedSourcePickerSheet
 import com.veilframe.app.upscale.ui.ImageUpscalerController
 import com.veilframe.app.storage.CreateDocumentWithMime
 import com.veilframe.app.storage.SafStorageManager
@@ -608,6 +611,29 @@ class MainActivity : AppCompatActivity() {
             openQrStudio()
         }
 
+        // Tools Catalogue Workspace Card Clicks
+        binding.layoutToolsCatalogue.cardToolImageStudio.setOnClickListener { openImageStudio() }
+        binding.layoutToolsCatalogue.cardToolVideoStudio.setOnClickListener { openVideoStudio() }
+        binding.layoutToolsCatalogue.cardToolQrStudio.setOnClickListener { openQrStudio() }
+        binding.layoutToolsCatalogue.cardToolAiUpscaler.setOnClickListener { openImageUpscaler() }
+        binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { openTool(ToolMode.AI_BUNDLE) }
+        binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { openTool(ToolMode.PRIVACY_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolFolderAnalyzer.setOnClickListener { openTool(ToolMode.FOLDER_SCANNER) }
+        binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { showDocumentSourcePicker() }
+        binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { showBackgroundRemoverSourcePicker() }
+        binding.layoutToolsCatalogue.cardToolImageQuality.setOnClickListener { showImageQualitySourcePicker() }
+        binding.layoutToolsCatalogue.cardToolCvBench.setOnClickListener {
+            Toast.makeText(this, "OpenCV 4.14.0 Subsystem Active (Native ARM64 / x86_64)", Toast.LENGTH_SHORT).show()
+        }
+
+        // Library Explore Button
+        binding.layoutLibrary.btnLibraryExploreTools.setOnClickListener {
+            navigationController.showToolsScreen()
+        }
+
+        // Search & Category Filters in Tools Catalogue
+        setupToolsCatalogueFiltering()
+
         // In-App Updates & Repair Button
         binding.btnCheckUpdates.setOnClickListener {
             appUpdateManager.checkForUpdates(isUserInitiated = true)
@@ -670,6 +696,108 @@ class MainActivity : AppCompatActivity() {
         // Multi-Format Export Action (Save As to device storage)
         binding.btnExportResult.setOnClickListener { launchExportCurrentArtifact() }
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
+    }
+
+    private fun setupToolsCatalogueFiltering() {
+        val cards = listOf(
+            WorkspaceRoute.IMAGE_STUDIO to binding.layoutToolsCatalogue.cardToolImageStudio,
+            WorkspaceRoute.VIDEO_STUDIO to binding.layoutToolsCatalogue.cardToolVideoStudio,
+            WorkspaceRoute.DOCUMENT_SCANNER to binding.layoutToolsCatalogue.cardToolDocScanner,
+            WorkspaceRoute.QR_STUDIO to binding.layoutToolsCatalogue.cardToolQrStudio,
+            WorkspaceRoute.BACKGROUND_REMOVER to binding.layoutToolsCatalogue.cardToolBgRemover,
+            WorkspaceRoute.IMAGE_CLEANER to binding.layoutToolsCatalogue.cardToolPrivacyScrubber,
+            WorkspaceRoute.IMAGE_UPSCALER to binding.layoutToolsCatalogue.cardToolAiUpscaler,
+            WorkspaceRoute.AI_BUNDLE to binding.layoutToolsCatalogue.cardToolAiBundler,
+            WorkspaceRoute.FOLDER_SCANNER to binding.layoutToolsCatalogue.cardToolFolderAnalyzer,
+            WorkspaceRoute.IMAGE_QUALITY to binding.layoutToolsCatalogue.cardToolImageQuality,
+            WorkspaceRoute.PROVENANCE to binding.layoutToolsCatalogue.cardToolCvBench
+        )
+
+        fun applyFilter() {
+            val query = binding.layoutToolsCatalogue.etToolSearch.text?.toString().orEmpty().trim()
+            val checkedChipId = binding.layoutToolsCatalogue.chipGroupToolCategories.checkedChipId
+
+            val matchingRoutes = if (query.isEmpty()) {
+                WorkspaceRoute.values().toList()
+            } else {
+                WorkspaceRoute.search(query)
+            }.toSet()
+
+            val selectedCategory = when (checkedChipId) {
+                R.id.chipCategoryCreate -> WorkspaceCategory.CREATE_EDIT
+                R.id.chipCategoryPrivacy -> WorkspaceCategory.PRIVACY
+                R.id.chipCategoryAnalyze -> WorkspaceCategory.ANALYZE
+                R.id.chipCategoryDev -> WorkspaceCategory.DEVELOPER
+                else -> null
+            }
+
+            var visibleCount = 0
+            cards.forEach { (route, card) ->
+                val matchesQuery = route in matchingRoutes
+                val matchesCat = (selectedCategory == null || route.category == selectedCategory)
+                val visible = matchesQuery && matchesCat
+                card.visibility = if (visible) View.VISIBLE else View.GONE
+                if (visible) visibleCount++
+            }
+
+            binding.layoutToolsCatalogue.containerEmptySearch.visibility =
+                if (visibleCount == 0) View.VISIBLE else View.GONE
+        }
+
+        binding.layoutToolsCatalogue.etToolSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                applyFilter()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        binding.layoutToolsCatalogue.chipGroupToolCategories.setOnCheckedStateChangeListener { _, _ ->
+            applyFilter()
+        }
+    }
+
+    private fun showDocumentSourcePicker() {
+        SharedSourcePickerSheet.newInstance(
+            title = "Document Scanner Source",
+            mediaType = SharedSourcePickerSheet.MediaType.DOCUMENT_ONLY
+        ) { source ->
+            when (source) {
+                SharedSourcePickerSheet.SourceType.CAMERA -> {
+                    Toast.makeText(this, "Document Scanner Camera (Beta)", Toast.LENGTH_SHORT).show()
+                }
+                SharedSourcePickerSheet.SourceType.FILES,
+                SharedSourcePickerSheet.SourceType.PHOTOS -> {
+                    imgStudioPickerLauncher.launch("image/*")
+                }
+            }
+        }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
+    }
+
+    private fun showBackgroundRemoverSourcePicker() {
+        SharedSourcePickerSheet.newInstance(
+            title = "Background Remover Source",
+            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY
+        ) { source ->
+            when (source) {
+                SharedSourcePickerSheet.SourceType.CAMERA -> {
+                    Toast.makeText(this, "Camera capture for background removal (Alpha)", Toast.LENGTH_SHORT).show()
+                }
+                SharedSourcePickerSheet.SourceType.PHOTOS,
+                SharedSourcePickerSheet.SourceType.FILES -> {
+                    imgStudioPickerLauncher.launch("image/*")
+                }
+            }
+        }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
+    }
+
+    private fun showImageQualitySourcePicker() {
+        SharedSourcePickerSheet.newInstance(
+            title = "Quality Inspector Source",
+            mediaType = SharedSourcePickerSheet.MediaType.IMAGE_ONLY
+        ) { _ ->
+            imgStudioPickerLauncher.launch("image/*")
+        }.show(supportFragmentManager, SharedSourcePickerSheet.TAG)
     }
 
     /**
