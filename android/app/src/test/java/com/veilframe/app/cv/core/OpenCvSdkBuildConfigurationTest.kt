@@ -289,4 +289,21 @@ class OpenCvSdkBuildConfigurationTest {
             appContent.contains("-opt-in=kotlin.ExperimentalUnsignedTypes")
         )
     }
+
+    @Test
+    fun `ci workflow configures KVM hardware acceleration for emulator runner`() {
+        val root = findProjectRoot()
+        val workflowFile = File(root, ".github/workflows/build-opencv-sdk.yml")
+        val content = workflowFile.readText()
+
+        assertTrue(
+            "CI workflow must configure KVM permissions for hardware accelerated emulator execution",
+            content.contains("/dev/kvm") && content.contains("99-kvm4all.rules")
+        )
+        assertTrue(
+            "CI workflow must upload custom OpenCV SDK artifacts with if: always()",
+            content.contains("Upload Custom OpenCV SDK Artifacts") &&
+                content.contains("if: always()")
+        )
+    }
 }
