@@ -106,12 +106,74 @@ class OpenCvSdkBuildConfigurationTest {
         val content = buildGradle.readText()
 
         assertTrue(
-            "build.gradle.kts must set namespace to org.opencv when isCustomSdkComplete is true",
-            content.contains("""namespace = if (isCustomSdkComplete) "org.opencv" else "com.veilframe.opencv"""")
+            "build.gradle.kts must set namespace unconditionally to org.opencv",
+            content.contains("""namespace = "org.opencv"""")
         )
         assertTrue(
             "build.gradle.kts must enable buildConfig in buildFeatures for BuildConfig imports",
             content.contains("buildConfig = true")
+        )
+    }
+
+    @Test
+    fun `opencv-sdk build gradle does not contain Maven fallback dependencies`() {
+        val root = findProjectRoot()
+        val buildGradle = File(root, "android/opencv-sdk/build.gradle.kts")
+        val content = buildGradle.readText()
+
+        assertTrue(
+            "build.gradle.kts must not contain external jenly1314 Maven dependencies",
+            !content.contains("com.github.jenly1314.WeChatQRCode")
+        )
+        assertTrue(
+            "build.gradle.kts must not contain allowMavenOpenCvFallback property check",
+            !content.contains("allowMavenOpenCvFallback")
+        )
+    }
+
+    @Test
+    fun `settings gradle does not contain JitPack repository`() {
+        val root = findProjectRoot()
+        val settingsFile = File(root, "android/settings.gradle.kts")
+        assertTrue("settings.gradle.kts must exist", settingsFile.exists())
+        val content = settingsFile.readText()
+
+        assertTrue(
+            "settings.gradle.kts must not declare jitpack.io repository",
+            !content.contains("jitpack.io")
+        )
+    }
+
+    @Test
+    fun `gradle properties does not configure allowMavenOpenCvFallback`() {
+        val root = findProjectRoot()
+        val propertiesFile = File(root, "android/gradle.properties")
+        assertTrue("gradle.properties must exist", propertiesFile.exists())
+        val content = propertiesFile.readText()
+
+        assertTrue(
+            "gradle.properties must not define allowMavenOpenCvFallback",
+            !content.contains("allowMavenOpenCvFallback")
+        )
+    }
+
+    @Test
+    fun `app build gradle validates release signing on task graph when ready and not during configuration`() {
+        val root = findProjectRoot()
+        val appGradle = File(root, "android/app/build.gradle.kts")
+        assertTrue("app/build.gradle.kts must exist", appGradle.exists())
+        val content = appGradle.readText()
+
+        assertTrue(
+            "app/build.gradle.kts must not throw GradleException during project configuration based on startParameter.taskNames",
+            !content.contains("gradle.startParameter.taskNames.any")
+        )
+        assertTrue(
+            "app/build.gradle.kts must validate release keystore credentials in taskGraph.whenReady",
+            content.contains("gradle.taskGraph.whenReady") &&
+                content.contains("task.project == project") &&
+                content.contains("task.name.startsWith(\"assembleRelease\")") &&
+                content.contains("Release keystore credentials missing!")
         )
     }
 

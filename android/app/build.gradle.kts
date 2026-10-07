@@ -44,11 +44,6 @@ android {
                 storePassword = storePass
                 keyAlias = keyAl
                 keyPassword = keyPass
-            } else {
-                val hasReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
-                if (hasReleaseTask) {
-                    throw GradleException("Release keystore credentials missing! Release builds cannot be signed with debug keys. Provide KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD.")
-                }
             }
 
             // V1 is intentionally disabled.
@@ -66,7 +61,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -155,4 +153,25 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
+
+// Fail closed when release packaging tasks are scheduled for :app without release credentials
+gradle.taskGraph.whenReady {
+    val appReleaseTasks = allTasks.filter { task ->
+        task.project == project && (
+            task.name.startsWith("assembleRelease") ||
+            task.name.startsWith("bundleRelease") ||
+            task.name.startsWith("packageRelease") ||
+            task.name.startsWith("validateSigningRelease")
+        )
+    }
+    if (appReleaseTasks.isNotEmpty()) {
+        val releaseConfig = android.signingConfigs.getByName("release")
+        if (releaseConfig.storeFile == null || !releaseConfig.storeFile!!.exists() || releaseConfig.storePassword.isNullOrEmpty()) {
+            throw GradleException(
+                "Release keystore credentials missing! Release builds cannot be signed with debug keys. " +
+                "Provide KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD."
+            )
+        }
+    }
 }

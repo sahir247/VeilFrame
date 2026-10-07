@@ -70,14 +70,10 @@ val isCustomSdkComplete = isMarkerValid &&
     x86_64So.exists() && x86_64So.length() > 0L &&
     matJava.exists() && wechatJava.exists() && videoioJava.exists()
 
-val isExplicitDevFallbackAllowed = (project.findProperty("allowMavenOpenCvFallback")?.toString()?.toBoolean() == true) ||
-    (System.getenv("ALLOW_MAVEN_OPENCV_FALLBACK")?.toBoolean() == true)
-
 android {
-    // When custom SDK sources are complete, namespace must be "org.opencv" so AGP generates
-    // org.opencv.R and org.opencv.BuildConfig expected by CameraBridgeViewBase and CameraGLSurfaceView.
-    // In dev fallback mode, "com.veilframe.opencv" avoids package collision with fallback Maven AAR.
-    namespace = if (isCustomSdkComplete) "org.opencv" else "com.veilframe.opencv"
+    // Namespace is org.opencv so AGP generates org.opencv.R and org.opencv.BuildConfig
+    // expected by CameraBridgeViewBase, CameraGLSurfaceView, and custom CV native components.
+    namespace = "org.opencv"
     compileSdk = 35
 
     buildFeatures {
@@ -114,45 +110,23 @@ android {
 dependencies {
     if (isCustomSdkComplete) {
         logger.lifecycle(":opencv-sdk compiling with complete in-tree custom OpenCV SDK (OpenCV=$expectedOpenCvVersion, SHA=${expectedOpenCvSha.take(8)})")
-    } else {
-        if (!isExplicitDevFallbackAllowed) {
-            throw GradleException(
-                "FATAL: Custom OpenCV SDK is missing or incomplete in :opencv-sdk! " +
-                "A verified in-tree custom OpenCV build (with WeChatQRCode, native ABIs, and .opencv-sdk-complete marker) " +
-                "is strictly mandatory. For development or JVM unit tests only, you may explicitly opt into " +
-                "transitional Maven fallback by setting allowMavenOpenCvFallback=true in gradle.properties or passing -PallowMavenOpenCvFallback=true. " +
-                "Release builds will always fail closed."
-            )
-        }
-
-        // Detect partial/broken/forged artifacts to alert developer
-        val hasPartialSo = file("src/main/jniLibs").exists() &&
-            file("src/main/jniLibs").walkTopDown().any { it.extension == "so" }
-        val hasPartialJava = file("src/main/java").exists() &&
-            file("src/main/java").walkTopDown().any { it.extension == "java" }
-        if (markerFile.exists() && !isMarkerValid) {
-            logger.warn(":opencv-sdk WARNING: Completion marker failed deterministic build metadata validation (expected OpenCV=$expectedOpenCvVersion SHA=${expectedOpenCvSha.take(8)}, Contrib SHA=${expectedContribSha.take(8)}, ABIs=$expectedAbis)! Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true).")
-        } else if (hasPartialSo || hasPartialJava || markerFile.exists()) {
-            logger.warn(":opencv-sdk WARNING: Incomplete custom OpenCV artifacts detected (missing required ABIs, Java bindings, or valid marker)! Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true).")
-        } else {
-            logger.warn(":opencv-sdk WARNING: Custom OpenCV SDK not staged locally. Using explicit development Maven fallback (-PallowMavenOpenCvFallback=true). Release builds will fail closed.")
-        }
-        api("com.github.jenly1314.WeChatQRCode:opencv:2.6.0")
-        api("com.github.jenly1314.WeChatQRCode:opencv-armv64:2.6.0")
-        api("com.github.jenly1314.WeChatQRCode:opencv-x86_64:2.6.0")
     }
 }
 
-// Fail closed on any release task if the custom SDK is missing or invalid
+// Fail closed if custom SDK artifacts are missing or invalid when building :opencv-sdk or packaging :app
 gradle.taskGraph.whenReady {
-    val releaseTasks = allTasks.filter { task ->
-        task.name.contains("Release", ignoreCase = true)
+    val requiresCustomSdk = allTasks.any { task ->
+        task.project == project || (task.project.name == "app" && (
+            task.name.startsWith("assemble") ||
+            task.name.startsWith("bundle") ||
+            task.name.startsWith("package")
+        ))
     }
-    if (releaseTasks.isNotEmpty() && !isCustomSdkComplete) {
+    if (requiresCustomSdk && !isCustomSdkComplete) {
         throw GradleException(
-            "FATAL: Release build failed closed. Requested tasks [${releaseTasks.joinToString { it.path }}] require " +
-            "a verified in-tree custom OpenCV SDK with WeChatQRCode, but valid custom SDK artifacts are missing from :opencv-sdk. " +
-            "Transitional Maven fallback is strictly prohibited on release builds."
+            "FATAL: Custom OpenCV SDK is missing or incomplete in :opencv-sdk! " +
+            "A verified in-tree custom OpenCV build (with WeChatQRCode, native ABIs, and .opencv-sdk-complete marker) " +
+            "is strictly mandatory. Build OpenCV using android/scripts/build_opencv_contrib_sdk.sh before building :opencv-sdk or packaging :app."
         )
     }
 }
