@@ -81,10 +81,15 @@ object QuadDetector {
                 val contour2f = MatOfPoint2f(*contour.toArray())
                 Imgproc.approxPolyDP(contour2f, approx, 0.02 * Imgproc.arcLength(contour2f, true), true)
                 val points = approx.toList()
+                if (points.size != 4) {
+                    approx.release()
+                    contour2f.release()
+                    continue
+                }
                 val approxMat = MatOfPoint(*points.toTypedArray())
                 val isConvex = Imgproc.isContourConvex(approxMat)
                 approxMat.release()
-                if (points.size != 4 || !isConvex) {
+                if (!isConvex) {
                     approx.release()
                     contour2f.release()
                     continue
