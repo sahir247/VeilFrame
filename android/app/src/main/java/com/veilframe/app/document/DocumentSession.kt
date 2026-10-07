@@ -127,9 +127,6 @@ class DocumentSession(
     internal val _pages = mutableListOf<ScannedPage>()
     val pages: List<ScannedPage> get() = _pages.toList()
 
-    val pageCount: Int get() = _pages.size
-    val isEmpty: Boolean get() = _pages.isEmpty()
-
     var createdAt: Long = System.currentTimeMillis()
     var lastModifiedAt: Long = System.currentTimeMillis()
 
