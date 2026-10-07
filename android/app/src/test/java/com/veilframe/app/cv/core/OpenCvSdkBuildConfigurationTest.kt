@@ -378,4 +378,31 @@ class OpenCvSdkBuildConfigurationTest {
             content.contains("cmdline-tools;latest")
         )
     }
+
+    @Test
+    fun `gradle properties configures in-process kotlin execution strategy to prevent daemon termination`() {
+        val root = findProjectRoot()
+        val propsFile = File(root, "android/gradle.properties")
+        val content = propsFile.readText()
+
+        assertTrue(
+            "gradle.properties must configure kotlin.compiler.execution.strategy=in-process",
+            content.contains("kotlin.compiler.execution.strategy=in-process")
+        )
+        assertTrue(
+            "gradle.properties must configure kotlin.daemon.jvmargs",
+            content.contains("kotlin.daemon.jvmargs")
+        )
+    }
+
+    @Test
+    fun `opencv-sdk build gradle keeps jniLibs debug symbols to prevent stripReleaseDebugSymbols warning`() {
+        val root = findProjectRoot()
+        val sdkGradle = File(root, "android/opencv-sdk/build.gradle.kts").readText()
+
+        assertTrue(
+            "opencv-sdk build.gradle.kts must configure packaging.jniLibs.keepDebugSymbols",
+            sdkGradle.contains("keepDebugSymbols += listOf(\"**/*.so\")")
+        )
+    }
 }

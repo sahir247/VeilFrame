@@ -106,6 +106,12 @@ android {
         )
     }
 
+    packaging {
+        jniLibs {
+            keepDebugSymbols += listOf("**/*.so")
+        }
+    }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
