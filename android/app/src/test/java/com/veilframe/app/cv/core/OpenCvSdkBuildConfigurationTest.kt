@@ -345,9 +345,11 @@ class OpenCvSdkBuildConfigurationTest {
         val tmText = templateMatcherFile.readText()
         assertTrue("TemplateMatcher must define rect property on MatchResult", tmText.contains("val rect: Rect"))
         assertTrue("TemplateMatcher must be instantiable as class or invoke", tmText.contains("class TemplateMatcher") || tmText.contains("operator fun invoke"))
+        assertTrue("TemplateMatcher must gracefully handle low-variance templates", tmText.contains("TM_SQDIFF_NORMED"))
 
         val qdText = quadDetectorFile.readText()
         assertTrue("QuadDetector must support invoke operator", qdText.contains("operator fun invoke"))
+        assertTrue("QuadDetector must verify convexity on approximated 4-point quad", qdText.contains("Imgproc.isContourConvex(approxMat)"))
 
         val pcText = perspectiveCorrectorFile.readText()
         assertTrue("PerspectiveCorrector must support invoke operator", pcText.contains("operator fun invoke"))
@@ -363,5 +365,17 @@ class OpenCvSdkBuildConfigurationTest {
 
         val mpText = matPoolFile.readText()
         assertTrue("MatPool must have public constructor for device tests", mpText.contains("constructor(\n        maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,"))
+    }
+
+    @Test
+    fun `ci workflow specifies cmdline-tools latest to prevent sdkmanager xml version mismatch`() {
+        val root = findProjectRoot()
+        val workflowFile = File(root, ".github/workflows/build-opencv-sdk.yml")
+        val content = workflowFile.readText()
+
+        assertTrue(
+            "CI workflow must install cmdline-tools;latest to eliminate XML version warning",
+            content.contains("cmdline-tools;latest")
+        )
     }
 }

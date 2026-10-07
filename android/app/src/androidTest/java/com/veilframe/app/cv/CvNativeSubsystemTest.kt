@@ -71,7 +71,10 @@ class CvNativeSubsystemTest {
     @Test
     fun templateMatcherNativeExecution() {
         val scene = Mat(200, 200, CvType.CV_8UC1, Scalar(50.0))
-        val template = Mat(40, 40, CvType.CV_8UC1, Scalar(220.0))
+        val template = Mat(40, 40, CvType.CV_8UC1, Scalar(50.0))
+
+        // Draw high-contrast synthetic pattern inside template
+        Imgproc.rectangle(template, Point(10.0, 10.0), Point(30.0, 30.0), Scalar(220.0), -1)
 
         // Embed template in scene at (80, 80)
         val roi = scene.submat(80, 120, 80, 120)
@@ -198,9 +201,14 @@ class CvNativeSubsystemTest {
         val frame1 = Mat(160, 160, CvType.CV_8UC1, Scalar(40.0))
         val frame2 = Mat(160, 160, CvType.CV_8UC1, Scalar(40.0))
 
-        // Draw rectangle shifted by +10px in X and +5px in Y
-        Imgproc.rectangle(frame1, Point(40.0, 40.0), Point(80.0, 80.0), Scalar(230.0), -1)
-        Imgproc.rectangle(frame2, Point(50.0, 45.0), Point(90.0, 85.0), Scalar(230.0), -1)
+        // Populate object with deterministic texture so spatial gradients exist across its interior
+        for (y in 40 until 80) {
+            for (x in 40 until 80) {
+                val pattern = ((x * 11 + y * 17) % 190 + 50).toDouble()
+                frame1.put(y, x, pattern)
+                frame2.put(y + 5, x + 10, pattern)
+            }
+        }
 
         val estimator = FlowEstimator(algorithm = FlowEstimator.Algorithm.FARNEBACK, workingMaxEdge = 160)
         val flow = estimator.estimate(frame1, frame2)

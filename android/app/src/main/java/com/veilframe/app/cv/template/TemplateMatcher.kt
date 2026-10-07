@@ -127,11 +127,25 @@ class TemplateMatcher(private val defaultOptions: Options = Options()) {
 
                 val result = Mat()
                 try {
-                    Imgproc.matchTemplate(image, scaledTemplate, result, options.method.code)
-                    val mmr = Core.minMaxLoc(result)
-                    val (confidence, location) = when (options.method) {
-                        Method.CCOEFF_NORMED, Method.CCORR_NORMED -> mmr.maxVal to mmr.maxLoc
-                        else -> mmr.maxVal to mmr.maxLoc
+                    val stdDev = org.opencv.core.MatOfDouble()
+                    val mean = org.opencv.core.MatOfDouble()
+                    Core.meanStdDev(scaledTemplate, mean, stdDev)
+                    val isFlat = (stdDev.toArray().firstOrNull() ?: 0.0) < 1e-4
+                    stdDev.release()
+                    mean.release()
+
+                    val (confidence, location) = if (isFlat && options.method == Method.CCOEFF_NORMED) {
+                        Imgproc.matchTemplate(image, scaledTemplate, result, Imgproc.TM_SQDIFF_NORMED)
+                        val mmr = Core.minMaxLoc(result)
+                        val conf = (1.0 - mmr.minVal).coerceIn(0.0, 1.0)
+                        conf to mmr.minLoc
+                    } else {
+                        Imgproc.matchTemplate(image, scaledTemplate, result, options.method.code)
+                        val mmr = Core.minMaxLoc(result)
+                        when (options.method) {
+                            Method.CCOEFF_NORMED, Method.CCORR_NORMED -> mmr.maxVal.coerceIn(0.0, 1.0) to mmr.maxLoc
+                            else -> mmr.maxVal.coerceIn(0.0, 1.0) to mmr.maxLoc
+                        }
                     }
                     val width = Math.round(template.cols() * scale).toInt()
                     val height = Math.round(template.rows() * scale).toInt()
