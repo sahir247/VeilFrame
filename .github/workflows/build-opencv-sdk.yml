@@ -53,6 +53,7 @@ jobs:
           test -f android/opencv-sdk/src/main/java/org/opencv/videoio/Videoio.java
           echo "=== Verifying Resources ==="
           test -f android/opencv-sdk/src/main/res/values/attrs.xml
+          grep -q '<declare-styleable name="CameraBridgeViewBase">' android/opencv-sdk/src/main/res/values/attrs.xml
           echo "=== Verifying Completion Marker & Build Metadata ==="
           test -f android/opencv-sdk/src/main/.opencv-sdk-complete
           cat android/opencv-sdk/src/main/.opencv-sdk-complete

@@ -22,6 +22,45 @@ import org.opencv.core.Mat
  *
  * Thread-safety: all public methods are synchronized on the pool instance.
  */
+/**
+ * Abstraction for native [Mat] allocation, release, and emptiness inspection.
+ * Decouples [MatPool] from direct native calls and groups test seams into a clean contract.
+ */
+internal interface MatAllocator {
+    fun allocate(rows: Int, cols: Int, type: Int): Mat
+    fun release(mat: Mat)
+    fun isEmpty(mat: Mat): Boolean
+
+    companion object {
+        val Default: MatAllocator = object : MatAllocator {
+            override fun allocate(rows: Int, cols: Int, type: Int): Mat = Mat(rows, cols, type)
+            override fun release(mat: Mat) { mat.release() }
+            override fun isEmpty(mat: Mat): Boolean = mat.empty()
+        }
+    }
+}
+
+/**
+ * Factory abstraction for creating [MatLease] instances over pooled or newly-allocated Mats.
+ */
+internal fun interface MatLeaseFactory {
+    fun create(
+        mat: Mat,
+        pool: MatPool,
+        accounting: MatLeaseAccounting,
+        key: SizeClass?,
+        rows: Int,
+        cols: Int,
+        type: Int,
+    ): MatLease
+
+    companion object {
+        val Default: MatLeaseFactory = MatLeaseFactory { mat, pool, accounting, key, rows, cols, type ->
+            MatLease(mat, pool, accounting, key, rows, cols, type)
+        }
+    }
+}
+
 internal data class PooledBuffer(
     val mat: Mat,
     val actualBytes: Long,
@@ -30,14 +69,33 @@ internal data class PooledBuffer(
     val type: Int,
 )
 
-class MatPool(
+class MatPool internal constructor(
     private val maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,
     private val maxPerClass: Int = DEFAULT_MAX_PER_CLASS,
-    private val matFactory: (rows: Int, cols: Int, type: Int) -> Mat = { r, c, t -> Mat(r, c, t) },
-    private val matReleaser: (Mat) -> Unit = { it.release() },
-    private val matEmptyPredicate: (Mat) -> Boolean = { it.empty() },
-    private val leaseFactory: (mat: Mat, pool: MatPool, accounting: MatLeaseAccounting, key: SizeClass?, rows: Int, cols: Int, type: Int) -> MatLease = { m, p, a, k, r, c, t -> MatLease(m, p, a, k, r, c, t) },
+    private val allocator: MatAllocator = MatAllocator.Default,
+    private val leaseFactory: MatLeaseFactory = MatLeaseFactory.Default,
 ) {
+    /**
+     * Backward-compatible test constructor for callers specifying individual functional seams.
+     */
+    internal constructor(
+        maxRetainedBytes: Long = DEFAULT_MAX_RETAINED_BYTES,
+        maxPerClass: Int = DEFAULT_MAX_PER_CLASS,
+        matFactory: (rows: Int, cols: Int, type: Int) -> Mat,
+        matReleaser: (Mat) -> Unit = { it.release() },
+        matEmptyPredicate: (Mat) -> Boolean = { it.empty() },
+        leaseFactory: (mat: Mat, pool: MatPool, accounting: MatLeaseAccounting, key: SizeClass?, rows: Int, cols: Int, type: Int) -> MatLease = { m, p, a, k, r, c, t -> MatLease(m, p, a, k, r, c, t) },
+    ) : this(
+        maxRetainedBytes = maxRetainedBytes,
+        maxPerClass = maxPerClass,
+        allocator = object : MatAllocator {
+            override fun allocate(rows: Int, cols: Int, type: Int): Mat = matFactory(rows, cols, type)
+            override fun release(mat: Mat) = matReleaser(mat)
+            override fun isEmpty(mat: Mat): Boolean = matEmptyPredicate(mat)
+        },
+        leaseFactory = MatLeaseFactory { m, p, a, k, r, c, t -> leaseFactory(m, p, a, k, r, c, t) },
+    )
+
     private val free = HashMap<SizeClass, ArrayDeque<PooledBuffer>>()
     private var retainedBytes = 0L
     private var liveBytes = 0L
@@ -77,17 +135,17 @@ class MatPool(
             if (recycled.rows == rows && recycled.cols == cols && recycled.type == type) {
                 recycled.mat to true
             } else {
-                matReleaser(recycled.mat)
-                matFactory(rows, cols, type) to false
+                allocator.release(recycled.mat)
+                allocator.allocate(rows, cols, type) to false
             }
         } else {
-            matFactory(rows, cols, type) to false
+            allocator.allocate(rows, cols, type) to false
         }
 
         val lease = try {
-            leaseFactory(mat, this, accounting, key, rows, cols, type)
+            leaseFactory.create(mat, this, accounting, key, rows, cols, type)
         } catch (t: Throwable) {
-            matReleaser(mat)
+            allocator.release(mat)
             throw t
         }
 
@@ -117,14 +175,14 @@ class MatPool(
         liveLeases--
         liveBytes = (liveBytes - lease.accounting.actualBytes).coerceAtLeast(0L)
         val key = lease.key
-        if (matEmptyPredicate(mat) || !lease.accounting.retainable || key == null) {
-            matReleaser(mat)
+        if (allocator.isEmpty(mat) || !lease.accounting.retainable || key == null) {
+            allocator.release(mat)
             return
         }
         val actual = lease.accounting.actualBytes
         val bucket = free.getOrPut(key) { ArrayDeque() }
         if (bucket.size >= maxPerClass || retainedBytes + actual > maxRetainedBytes) {
-            matReleaser(mat)
+            allocator.release(mat)
         } else {
             bucket.addLast(PooledBuffer(mat, actual, lease.rows, lease.cols, lease.type))
             retainedBytes += actual
@@ -138,7 +196,7 @@ class MatPool(
             while (bucket.isNotEmpty()) {
                 val entry = bucket.removeFirst()
                 retainedBytes = (retainedBytes - entry.actualBytes).coerceAtLeast(0L)
-                matReleaser(entry.mat)
+                allocator.release(entry.mat)
             }
         }
         free.clear()

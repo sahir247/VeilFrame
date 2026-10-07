@@ -12,11 +12,21 @@ import java.io.File
 class OpenCvSdkBuildConfigurationTest {
 
     private fun findProjectRoot(): File {
-        var current = File(System.getProperty("user.dir") ?: ".")
-        while (!File(current, "android").exists() && current.parentFile != null) {
-            current = current.parentFile!!
+        var current: File? = File(System.getProperty("user.dir") ?: ".").canonicalFile
+        while (current != null) {
+            if (File(current, "android/opencv-sdk").exists() && File(current, ".github").exists()) {
+                return current
+            }
+            if (File(current, "opencv-sdk").exists() && File(current, "app").exists()) {
+                val parent = current.parentFile
+                if (parent != null && File(parent, "android").exists()) {
+                    return parent
+                }
+            }
+            current = current.parentFile
         }
-        return if (File(current, "android").exists()) current else File(current, "..")
+        val fallback = File(System.getProperty("user.dir") ?: ".").canonicalFile
+        return if (File(fallback, "android").exists()) fallback else fallback.parentFile ?: fallback
     }
 
     @Test
@@ -178,22 +188,39 @@ class OpenCvSdkBuildConfigurationTest {
     }
 
     @Test
+    fun `build script ensures and validates CameraBridgeViewBase attrs xml`() {
+        val root = findProjectRoot()
+        val buildScript = File(root, "android/scripts/build_opencv_contrib_sdk.sh")
+        val content = buildScript.readText()
+
+        assertTrue(
+            "Build script must explicitly ensure attrs.xml with CameraBridgeViewBase",
+            content.contains("""<declare-styleable name="CameraBridgeViewBase">""") &&
+                content.contains("attrs.xml")
+        )
+    }
+
+    @Test
     fun `opencv-sdk attrs xml defines CameraBridgeViewBase styled attributes`() {
         val root = findProjectRoot()
-        val attrsXml = File(root, "android/opencv-sdk/src/main/res/values/attrs.xml")
+        val candidatePaths = listOf(
+            File(root, "android/opencv-sdk/src/main/res/values/attrs.xml"),
+            File(root, "opencv-sdk/src/main/res/values/attrs.xml"),
+        )
+        val attrsXml = candidatePaths.firstOrNull { it.exists() } ?: candidatePaths.first()
         assertTrue("attrs.xml must exist at ${attrsXml.absolutePath}", attrsXml.exists())
 
         val content = attrsXml.readText()
         assertTrue(
-            "attrs.xml must declare CameraBridgeViewBase styleable",
+            "attrs.xml at ${attrsXml.absolutePath} must declare CameraBridgeViewBase styleable (content was: '$content')",
             content.contains("""<declare-styleable name="CameraBridgeViewBase">""")
         )
         assertTrue(
-            "attrs.xml must declare show_fps attribute",
+            "attrs.xml at ${attrsXml.absolutePath} must declare show_fps attribute",
             content.contains("""<attr name="show_fps" format="boolean"""")
         )
         assertTrue(
-            "attrs.xml must declare camera_id attribute",
+            "attrs.xml at ${attrsXml.absolutePath} must declare camera_id attribute",
             content.contains("""<attr name="camera_id" format="integer"""")
         )
     }
@@ -212,6 +239,10 @@ class OpenCvSdkBuildConfigurationTest {
         assertTrue(
             "CI workflow must verify attrs.xml existence",
             content.contains("test -f android/opencv-sdk/src/main/res/values/attrs.xml")
+        )
+        assertTrue(
+            "CI workflow must verify CameraBridgeViewBase in attrs.xml",
+            content.contains("""grep -q '<declare-styleable name="CameraBridgeViewBase">' android/opencv-sdk/src/main/res/values/attrs.xml""")
         )
         assertTrue(
             "CI workflow must include res directory in uploaded artifacts",

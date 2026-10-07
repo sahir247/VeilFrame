@@ -207,6 +207,33 @@ if [ -d "${SDK_STAGE}/java/res" ]; then
     cp -R "${SDK_STAGE}/java/res/"* "${OPENCV_SDK_DIR}/src/main/res/"
 fi
 
+# Ensure CameraBridgeViewBase styled attributes XML is always present and valid
+mkdir -p "${OPENCV_SDK_DIR}/src/main/res/values"
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ] || ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    cat << 'EOF' > "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CameraBridgeViewBase">
+        <attr name="show_fps" format="boolean" />
+        <attr name="camera_id" format="integer">
+            <enum name="any" value="-1" />
+            <enum name="back" value="99" />
+            <enum name="front" value="98" />
+        </attr>
+    </declare-styleable>
+</resources>
+EOF
+fi
+
+if [ ! -s "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml" ]; then
+    echo "FATAL: attrs.xml missing or empty in :opencv-sdk!"
+    exit 1
+fi
+if ! grep -q '<declare-styleable name="CameraBridgeViewBase">' "${OPENCV_SDK_DIR}/src/main/res/values/attrs.xml"; then
+    echo "FATAL: attrs.xml does not declare CameraBridgeViewBase!"
+    exit 1
+fi
+
 ARM64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
 X86_64_SO="${OPENCV_SDK_DIR}/src/main/jniLibs/x86_64/libopencv_java4.so"
 ARM64_SHA256="$(sha256sum "${ARM64_SO}" | awk '{print $1}')"

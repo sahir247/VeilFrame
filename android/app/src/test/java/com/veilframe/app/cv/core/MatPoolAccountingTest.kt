@@ -193,4 +193,47 @@ class MatPoolAccountingTest {
         assertEquals(0L, pool.stats().liveBytes)
         assertEquals(0, pool.stats().liveLeases)
     }
+
+    @Test
+    fun matPoolWithCustomAllocatorAndLeaseFactoryDirectlyGovernsOwnershipLifecycle() {
+        val allocatedList = mutableListOf<org.opencv.core.Mat>()
+        val releasedList = mutableListOf<org.opencv.core.Mat>()
+        val customAllocator = object : MatAllocator {
+            override fun allocate(rows: Int, cols: Int, type: Int): org.opencv.core.Mat {
+                val mat = allocateDummyMat()
+                allocatedList.add(mat)
+                return mat
+            }
+            override fun release(mat: org.opencv.core.Mat) {
+                releasedList.add(mat)
+            }
+            override fun isEmpty(mat: org.opencv.core.Mat): Boolean = false
+        }
+
+        var customLeaseCreated = false
+        val customLeaseFactory = MatLeaseFactory { mat, pool, accounting, key, rows, cols, type ->
+            customLeaseCreated = true
+            MatLease(mat, pool, accounting, key, rows, cols, type)
+        }
+
+        val pool = MatPool(
+            maxRetainedBytes = 100L * 1024 * 1024,
+            maxPerClass = 3,
+            allocator = customAllocator,
+            leaseFactory = customLeaseFactory,
+        )
+
+        val lease = pool.acquire(100, 100, CvType.CV_8UC1)
+        assertTrue("Custom lease factory must be invoked", customLeaseCreated)
+        assertEquals(1, allocatedList.size)
+        assertEquals(0, releasedList.size)
+
+        lease.close()
+        // Retained in pool
+        assertEquals(1, pool.stats().retainedBuffers)
+
+        pool.trim()
+        assertEquals("Custom allocator release must be invoked on trim", 1, releasedList.size)
+        org.junit.Assert.assertSame(allocatedList.first(), releasedList.first())
+    }
 }
