@@ -137,3 +137,4 @@ jobs:
             android/opencv-sdk/src/main/res/
             android/opencv-sdk/src/main/.opencv-sdk-complete
             android/opencv-sdk/build/outputs/aar/
+          include-hidden-files: true

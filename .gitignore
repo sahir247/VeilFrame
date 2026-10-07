@@ -131,3 +131,5 @@ GUIDE.txt
 
 # OpenCV local build scratch
 android/scripts/.opencv_build/
+android/opencv-sdk/src/main/java/
+android/opencv-sdk/src/main/.opencv-sdk-complete
