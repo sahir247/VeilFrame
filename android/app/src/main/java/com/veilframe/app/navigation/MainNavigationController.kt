@@ -16,7 +16,8 @@ class MainNavigationController(
     private val onSaveActiveToolState: () -> Unit,
     private val onPauseVideoPlayback: () -> Unit,
     private val onHomeScreenEntered: () -> Unit,
-    private val onMarkdownBackPressed: () -> Boolean = { false }
+    private val onMarkdownBackPressed: () -> Boolean = { false },
+    private val onLibraryScreenEntered: (() -> Unit)? = null
 ) {
     var currentScreen: ScreenState = ScreenState.HOME
         private set
@@ -47,7 +48,13 @@ class MainNavigationController(
                 } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
                     showHomeScreen()
                 } else if (currentScreen != ScreenState.HOME) {
-                    showHomeScreen()
+                    if (previousScreen == ScreenState.TOOLS) {
+                        showToolsScreen()
+                    } else if (previousScreen == ScreenState.LIBRARY) {
+                        showLibraryScreen()
+                    } else {
+                        showHomeScreen()
+                    }
                 } else {
                     isEnabled = false
                     activity.onBackPressedDispatcher.onBackPressed()
@@ -123,6 +130,22 @@ class MainNavigationController(
             binding.layoutLibrary.scrollLibrary.visibility = View.GONE
             binding.layoutLibrary.scrollLibrary.translationX = 0f
         }
+        if (activeView != binding.layoutDocumentScanner.layoutDocumentScannerRoot) {
+            binding.layoutDocumentScanner.layoutDocumentScannerRoot.visibility = View.GONE
+            binding.layoutDocumentScanner.layoutDocumentScannerRoot.translationX = 0f
+        }
+        if (activeView != binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot) {
+            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.visibility = View.GONE
+            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.translationX = 0f
+        }
+        if (activeView != binding.layoutImageQuality.layoutImageQualityRoot) {
+            binding.layoutImageQuality.layoutImageQualityRoot.visibility = View.GONE
+            binding.layoutImageQuality.layoutImageQualityRoot.translationX = 0f
+        }
+        if (activeView != binding.layoutProvenance.layoutProvenanceRoot) {
+            binding.layoutProvenance.layoutProvenanceRoot.visibility = View.GONE
+            binding.layoutProvenance.layoutProvenanceRoot.translationX = 0f
+        }
     }
 
     fun showHomeScreen() {
@@ -139,8 +162,15 @@ class MainNavigationController(
             ScreenState.QR_STUDIO -> binding.fragmentQrStudio
             ScreenState.TOOLS -> binding.layoutToolsCatalogue.scrollToolsCatalogue
             ScreenState.LIBRARY -> binding.layoutLibrary.scrollLibrary
+            ScreenState.DOCUMENT_SCANNER_ENTRY,
+            ScreenState.DOCUMENT_SCANNER_CAMERA,
+            ScreenState.DOCUMENT_SCANNER_PAGES,
+            ScreenState.DOCUMENT_SCANNER_EDITOR,
+            ScreenState.DOCUMENT_SCANNER_EXPORT -> binding.layoutDocumentScanner.layoutDocumentScannerRoot
+            ScreenState.BACKGROUND_REMOVER -> binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot
+            ScreenState.IMAGE_QUALITY -> binding.layoutImageQuality.layoutImageQualityRoot
+            ScreenState.PROVENANCE -> binding.layoutProvenance.layoutProvenanceRoot
             ScreenState.HOME -> null
-            else -> null
         }
         previousScreen = currentScreen
         currentScreen = ScreenState.HOME
@@ -223,6 +253,8 @@ class MainNavigationController(
         binding.layoutLibrary.scrollLibrary.visibility = View.VISIBLE
         binding.layoutLibrary.scrollLibrary.alpha = 1.0f
         binding.layoutLibrary.scrollLibrary.translationX = 0f
+
+        onLibraryScreenEntered?.invoke()
     }
 
     fun showToolScreen() {
@@ -406,6 +438,126 @@ class MainNavigationController(
             binding.fragmentQrStudio.alpha = 1.0f
             binding.fragmentQrStudio.translationX = 0f
             hideAllToolViewsExcept(binding.fragmentQrStudio)
+        }
+    }
+
+    fun showDocumentScannerScreen(state: ScreenState = ScreenState.DOCUMENT_SCANNER_ENTRY) {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        previousScreen = currentScreen
+        currentScreen = state
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.layoutDocumentScanner.layoutDocumentScannerRoot)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.layoutDocumentScanner.layoutDocumentScannerRoot
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.layoutDocumentScanner.layoutDocumentScannerRoot.visibility = View.VISIBLE
+            binding.layoutDocumentScanner.layoutDocumentScannerRoot.alpha = 1.0f
+            binding.layoutDocumentScanner.layoutDocumentScannerRoot.translationX = 0f
+            hideAllToolViewsExcept(binding.layoutDocumentScanner.layoutDocumentScannerRoot)
+        }
+    }
+
+    fun showBackgroundRemoverScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        previousScreen = currentScreen
+        currentScreen = ScreenState.BACKGROUND_REMOVER
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.visibility = View.VISIBLE
+            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.alpha = 1.0f
+            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.translationX = 0f
+            hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
+        }
+    }
+
+    fun showImageQualityScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        previousScreen = currentScreen
+        currentScreen = ScreenState.IMAGE_QUALITY
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.layoutImageQuality.layoutImageQualityRoot)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.layoutImageQuality.layoutImageQualityRoot
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.layoutImageQuality.layoutImageQualityRoot.visibility = View.VISIBLE
+            binding.layoutImageQuality.layoutImageQualityRoot.alpha = 1.0f
+            binding.layoutImageQuality.layoutImageQualityRoot.translationX = 0f
+            hideAllToolViewsExcept(binding.layoutImageQuality.layoutImageQualityRoot)
+        }
+    }
+
+    fun showProvenanceScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        previousScreen = currentScreen
+        currentScreen = ScreenState.PROVENANCE
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        binding.bottomNavigation.visibility = View.GONE
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.layoutProvenance.layoutProvenanceRoot)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.layoutProvenance.layoutProvenanceRoot
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.layoutProvenance.layoutProvenanceRoot.visibility = View.VISIBLE
+            binding.layoutProvenance.layoutProvenanceRoot.alpha = 1.0f
+            binding.layoutProvenance.layoutProvenanceRoot.translationX = 0f
+            hideAllToolViewsExcept(binding.layoutProvenance.layoutProvenanceRoot)
         }
     }
 }

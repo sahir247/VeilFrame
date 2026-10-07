@@ -66,6 +66,7 @@
                     android:contentDescription="Camera" />
 
                 <TextView
+                    android:id="@+id/tvLabelCamera"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
@@ -106,6 +107,7 @@
                     android:contentDescription="Photos" />
 
                 <TextView
+                    android:id="@+id/tvLabelPhotos"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
@@ -145,6 +147,7 @@
                     android:contentDescription="Files" />
 
                 <TextView
+                    android:id="@+id/tvLabelFiles"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"

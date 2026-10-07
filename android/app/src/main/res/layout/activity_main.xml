@@ -216,15 +216,18 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Hero Banner -->
+            <!-- Hero Banner: AI Image Upscaler (Flagship Neural Feature) -->
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardHeroUpscaler"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
                 app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="@color/vf_surface_stroke"
-                app:strokeWidth="1dp">
+                app:cardCornerRadius="20dp"
+                app:strokeColor="@color/vf_primary"
+                app:strokeWidth="1.5dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -232,22 +235,82 @@
                     android:orientation="vertical"
                     android:padding="16dp">
 
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="FLAGSHIP NEURAL ENGINE"
+                            android:textColor="@color/vf_primary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@color/vf_surface_variant"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingBottom="2dp"
+                            android:text="Stable • Local ONNX"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="VEILFRAME"
-                        android:textColor="@color/vf_primary"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.08" />
+                        android:layout_marginTop="8dp"
+                        android:text="AI Image Upscaler"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="100% on-device privacy forensics, media studios &amp; offline AI"
+                        android:text="Offline 2x / 4x super-resolution and neural restoration with local tiled acceleration."
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Launch Upscaler"
+                            android:textSize="12sp"
+                            android:clickable="false"
+                            app:icon="@drawable/ic_resize"
+                            app:iconSize="16dp" />
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:layout_weight="1" />
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_arrow_forward"
+                            android:contentDescription="Launch"
+                            app:tint="@color/vf_primary" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -506,6 +569,68 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open QR Studio"
+                        app:tint="@color/vf_secondary" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Intent Launcher 4: Document Scanner -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardHomeDocScanner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="24dp"
+                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:src="@drawable/ic_camera"
+                        android:contentDescription="Document Scanner Tool"
+                        app:tint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="8dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="DOCUMENT SCANNER"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.04" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Multi-page intake, corner detection &amp; PDF export"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:contentDescription="Open Document Scanner"
                         app:tint="@color/vf_secondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -2149,6 +2274,34 @@
     <include
         android:id="@+id/layoutLibrary"
         layout="@layout/layout_library" />
+
+    <!-- ================================================================= -->
+    <!-- 10. DOCUMENT SCANNER WORKSPACE                                    -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutDocumentScanner"
+        layout="@layout/layout_document_scanner" />
+
+    <!-- ================================================================= -->
+    <!-- 11. BACKGROUND REMOVER WORKSPACE                                  -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutBackgroundRemover"
+        layout="@layout/layout_background_remover" />
+
+    <!-- ================================================================= -->
+    <!-- 12. IMAGE QUALITY WORKSPACE                                       -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutImageQuality"
+        layout="@layout/layout_image_quality" />
+
+    <!-- ================================================================= -->
+    <!-- 13. PROVENANCE & VERIFY WORKSPACE                                 -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutProvenance"
+        layout="@layout/layout_provenance" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->

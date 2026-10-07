@@ -14,6 +14,15 @@ enum class WorkspaceCategory(val title: String) {
 }
 
 /**
+ * Maturity and stability classification for user-facing workspaces.
+ */
+enum class WorkspaceStatus(val label: String) {
+    STABLE("Stable"),
+    BETA("Beta"),
+    ALPHA("Alpha")
+}
+
+/**
  * Authoritative catalogue of user-facing workspaces across VeilFrame Mobile.
  * Decoupled from legacy batch-execution [com.veilframe.app.tools.ToolMode].
  */
@@ -22,15 +31,17 @@ enum class WorkspaceRoute(
     val title: String,
     val description: String,
     val category: WorkspaceCategory,
+    val status: WorkspaceStatus,
     val aliases: List<String>,
     @DrawableRes val iconRes: Int
 ) {
     IMAGE_STUDIO(
         id = "image_studio",
         title = "Image Studio",
-        description = "Advanced editing, cropping, color adjustment, denoise, and formats",
+        description = "Advanced editing, cropping, color adjustment, and compression",
         category = WorkspaceCategory.CREATE_EDIT,
-        aliases = listOf("photo", "picture", "edit", "crop", "color", "denoise", "filter"),
+        status = WorkspaceStatus.STABLE,
+        aliases = listOf("photo", "picture", "edit", "crop", "color", "denoise", "filter", "passport"),
         iconRes = R.drawable.ic_tab_image
     ),
     VIDEO_STUDIO(
@@ -38,6 +49,7 @@ enum class WorkspaceRoute(
         title = "Video Studio",
         description = "Trimming, speed adjustment, rotation, audio stripping, and WhatsApp compression",
         category = WorkspaceCategory.CREATE_EDIT,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("video", "clip", "trim", "compress", "whatsapp", "movie", "audio"),
         iconRes = R.drawable.ic_tab_video
     ),
@@ -46,6 +58,7 @@ enum class WorkspaceRoute(
         title = "QR Code Studio",
         description = "Artistic QR generator with 11 styles, CameraX scanner, and payload parser",
         category = WorkspaceCategory.CREATE_EDIT,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("qr", "barcode", "scan", "generator", "scanner", "wifi", "upi"),
         iconRes = R.drawable.ic_tool_qr
     ),
@@ -54,6 +67,7 @@ enum class WorkspaceRoute(
         title = "Document Scanner",
         description = "Multi-page scan, automatic corner detection, perspective fix, and PDF export",
         category = WorkspaceCategory.CREATE_EDIT,
+        status = WorkspaceStatus.BETA,
         aliases = listOf("pdf", "document", "scan", "page", "book", "receipt", "contract", "paper"),
         iconRes = R.drawable.ic_camera
     ),
@@ -62,15 +76,17 @@ enum class WorkspaceRoute(
         title = "Background Remover",
         description = "Offline subject segmentation, transparent cutout, and interactive compare",
         category = WorkspaceCategory.CREATE_EDIT,
+        status = WorkspaceStatus.ALPHA,
         aliases = listOf("remove bg", "background", "cutout", "transparent", "segmentation", "matting", "isolate"),
         iconRes = R.drawable.ic_crop
     ),
     IMAGE_UPSCALER(
         id = "image_upscaler",
-        title = "AI Super-Resolution",
-        description = "Neural 2x/4x image upscaling with tiled local ONNX acceleration",
+        title = "AI Image Upscaler",
+        description = "Offline AI super-resolution and restoration",
         category = WorkspaceCategory.CREATE_EDIT,
-        aliases = listOf("upscale", "super-res", "enhance", "ai", "hd", "resolution", "clarity"),
+        status = WorkspaceStatus.STABLE,
+        aliases = listOf("upscale", "super-res", "enhance", "ai", "hd", "resolution", "clarity", "restore"),
         iconRes = R.drawable.ic_resize
     ),
     IMAGE_CLEANER(
@@ -78,6 +94,7 @@ enum class WorkspaceRoute(
         title = "Image Cleaner",
         description = "Strip EXIF, GPS coordinates, camera serials, and thumbnail traces",
         category = WorkspaceCategory.PRIVACY,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("metadata", "exif", "gps", "privacy", "sanitize", "clean", "scrub"),
         iconRes = R.drawable.ic_exif
     ),
@@ -86,6 +103,7 @@ enum class WorkspaceRoute(
         title = "Video Cleaner",
         description = "Purge container metadata, chapters, encoder tags, and PRNU noise traces",
         category = WorkspaceCategory.PRIVACY,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("video privacy", "metadata", "prnu", "sanitize", "clean", "scrub"),
         iconRes = R.drawable.ic_action_clear
     ),
@@ -94,6 +112,7 @@ enum class WorkspaceRoute(
         title = "Image Quality",
         description = "Evaluate sharpness, blur, sensor noise, dynamic range, and compression",
         category = WorkspaceCategory.ANALYZE,
+        status = WorkspaceStatus.BETA,
         aliases = listOf("sharpness", "blur", "quality", "noise", "exposure", "contrast", "analyze"),
         iconRes = R.drawable.ic_visibility
     ),
@@ -102,6 +121,7 @@ enum class WorkspaceRoute(
         title = "Folder Scanner",
         description = "Recursive directory inspection, duplicate detection, and file type auditing",
         category = WorkspaceCategory.ANALYZE,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("folder", "directory", "storage", "duplicates", "audit", "disk"),
         iconRes = R.drawable.ic_tab_folder
     ),
@@ -110,6 +130,7 @@ enum class WorkspaceRoute(
         title = "AI Context Bundler",
         description = "Compile codebases and docs into secure, token-budgeted .aibundle archives",
         category = WorkspaceCategory.DEVELOPER,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("bundle", "ai", "llm", "context", "prompt", "token", "source"),
         iconRes = R.drawable.ic_tab_bundle
     ),
@@ -118,6 +139,7 @@ enum class WorkspaceRoute(
         title = "Markdown Studio",
         description = "Offline markdown previewer, report viewer, and forensic manifest reader",
         category = WorkspaceCategory.DEVELOPER,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("markdown", "md", "preview", "viewer", "report", "docs"),
         iconRes = R.drawable.ic_toc
     ),
@@ -126,6 +148,7 @@ enum class WorkspaceRoute(
         title = "Provenance & Verify",
         description = "Ed25519 digital signature validation, SHA-256 integrity, and audit manifests",
         category = WorkspaceCategory.DEVELOPER,
+        status = WorkspaceStatus.STABLE,
         aliases = listOf("provenance", "verify", "signature", "ed25519", "sha256", "hash", "cert"),
         iconRes = R.drawable.ic_check_circle
     );

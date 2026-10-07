@@ -8,6 +8,9 @@ import android.os.Build
 import android.util.Log
 import android.os.Bundle
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,7 +25,11 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
+import com.veilframe.app.document.DocumentScannerController
+import com.veilframe.app.media.BackgroundRemoverController
+import com.veilframe.app.media.ImageQualityController
 import com.veilframe.app.media.ImageStudioController
+import com.veilframe.app.media.ProvenanceController
 import com.veilframe.app.media.SafDestinationManager
 import com.veilframe.app.media.VideoPlayerController
 import com.veilframe.app.media.VideoStudioController
@@ -73,6 +80,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var videoStudioController: VideoStudioController
     private lateinit var imageUpscalerController: ImageUpscalerController
     private lateinit var markdownViewerController: MarkdownViewerController
+    private lateinit var docScannerController: DocumentScannerController
+    private lateinit var backgroundRemoverController: BackgroundRemoverController
+    private lateinit var imageQualityController: ImageQualityController
+    private lateinit var provenanceController: ProvenanceController
     private var pendingExportFile: File? = null
     private var isConsoleExpanded: Boolean = false
     private var backClearTimerJob: Job? = null
@@ -265,6 +276,81 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Dedicated Document Scanner Activity Result Launchers
+    private val docScannerCameraLauncher = registerForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            docScannerController.handleCameraPhotoCaptured(bitmap)
+        }
+    }
+
+    private val docScannerPhotosLauncher = registerForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            docScannerController.handlePhotosImported(uris)
+        }
+    }
+
+    private val docScannerExportLauncher = registerForActivityResult(
+        CreateDocumentWithMime()
+    ) { destUri ->
+        val file = pendingExportFile
+        if (destUri != null && file != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                safStorageManager.copyFileToUri(file, destUri)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "PDF saved to storage", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        pendingExportFile = null
+    }
+
+    // Dedicated Background Remover Activity Result Launchers
+    private val bgRemoverPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            backgroundRemoverController.handleImageSelected(uri)
+        }
+    }
+
+    private val bgRemoverExportLauncher = registerForActivityResult(
+        CreateDocumentWithMime()
+    ) { destUri ->
+        val file = pendingExportFile
+        if (destUri != null && file != null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                safStorageManager.copyFileToUri(file, destUri)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        pendingExportFile = null
+    }
+
+    // Dedicated Image Quality Activity Result Launcher
+    private val qualityPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            imageQualityController.handleImageSelected(uri)
+        }
+    }
+
+    // Dedicated Provenance Activity Result Launcher
+    private val provenancePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            safStorageManager.persistReadPermission(uri)
+            provenanceController.handleFileSelected(uri)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
@@ -281,7 +367,7 @@ class MainActivity : AppCompatActivity() {
             binding.tvWhatsNewContent.text = cachedChangelog
         }
 
-        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel
+        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel + bottom navigation
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
             val statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
@@ -292,6 +378,7 @@ class MainActivity : AppCompatActivity() {
                 layoutParams.bottomMargin = navBarBottom + (16 * resources.displayMetrics.density).toInt()
                 binding.cardCleanerActionDock.layoutParams = layoutParams
             }
+            binding.bottomNavigation.setPadding(0, 0, 0, navBarBottom)
             insets
         }
 
@@ -417,7 +504,8 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     false
                 }
-            }
+            },
+            onLibraryScreenEntered = { refreshLibrary() }
         )
         navigationController.init()
 
@@ -534,6 +622,83 @@ class MainActivity : AppCompatActivity() {
         imageStudioController.initWorkspace()
         videoStudioController.initWorkspace()
         imageUpscalerController.init()
+
+        docScannerController = DocumentScannerController(
+            activity = this,
+            binding = binding.layoutDocumentScanner,
+            safStorageManager = safStorageManager,
+            scope = lifecycleScope,
+            onTakePhotoRequest = { docScannerCameraLauncher.launch(null) },
+            onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
+            onExportPdfRequest = { file ->
+                pendingExportFile = file
+                val mime = safStorageManager.getExportMimeType(file)
+                docScannerExportLauncher.launch(file.name to mime)
+            },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
+
+        backgroundRemoverController = BackgroundRemoverController(
+            activity = this,
+            binding = binding.layoutBackgroundRemover,
+            scope = lifecycleScope,
+            onPickImageRequest = { bgRemoverPickerLauncher.launch("image/*") },
+            onExportPngRequest = { file ->
+                pendingExportFile = file
+                val mime = safStorageManager.getExportMimeType(file)
+                bgRemoverExportLauncher.launch(file.name to mime)
+            },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
+
+        imageQualityController = ImageQualityController(
+            activity = this,
+            binding = binding.layoutImageQuality,
+            scope = lifecycleScope,
+            onPickImageRequest = { qualityPickerLauncher.launch("image/*") },
+            onShareReportRequest = { reportText ->
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "VeilFrame Image Quality Report")
+                    putExtra(Intent.EXTRA_TEXT, reportText)
+                }
+                startActivity(Intent.createChooser(sendIntent, "Share Quality Report"))
+            },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
+
+        provenanceController = ProvenanceController(
+            activity = this,
+            binding = binding.layoutProvenance,
+            safStorageManager = safStorageManager,
+            scope = lifecycleScope,
+            onPickFileRequest = { provenancePickerLauncher.launch(arrayOf("*/*")) },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
     }
 
     private fun setupListeners() {
@@ -611,24 +776,38 @@ class MainActivity : AppCompatActivity() {
             openQrStudio()
         }
 
-        // Tools Catalogue Workspace Card Clicks
+        binding.cardHeroUpscaler.setOnClickListener {
+            openImageUpscaler()
+        }
+
+        binding.cardHomeDocScanner.setOnClickListener {
+            openDocumentScanner()
+        }
+
+        // Tools Catalogue Workspace Card Clicks (All 13 Canonical Workspaces)
         binding.layoutToolsCatalogue.cardToolImageStudio.setOnClickListener { openImageStudio() }
         binding.layoutToolsCatalogue.cardToolVideoStudio.setOnClickListener { openVideoStudio() }
         binding.layoutToolsCatalogue.cardToolQrStudio.setOnClickListener { openQrStudio() }
+        binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { openDocumentScanner() }
+        binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { openBackgroundRemover() }
         binding.layoutToolsCatalogue.cardToolAiUpscaler.setOnClickListener { openImageUpscaler() }
-        binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { openTool(ToolMode.AI_BUNDLE) }
-        binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { openTool(ToolMode.PRIVACY_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { openTool(ToolMode.IMAGE_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolVideoCleaner.setOnClickListener { openTool(ToolMode.VIDEO_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolImageQuality.setOnClickListener { openImageQuality() }
         binding.layoutToolsCatalogue.cardToolFolderAnalyzer.setOnClickListener { openTool(ToolMode.FOLDER_SCANNER) }
-        binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { showDocumentSourcePicker() }
-        binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { showBackgroundRemoverSourcePicker() }
-        binding.layoutToolsCatalogue.cardToolImageQuality.setOnClickListener { showImageQualitySourcePicker() }
-        binding.layoutToolsCatalogue.cardToolCvBench.setOnClickListener {
-            Toast.makeText(this, "OpenCV 4.14.0 Subsystem Active (Native ARM64 / x86_64)", Toast.LENGTH_SHORT).show()
+        binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { openTool(ToolMode.AI_BUNDLE) }
+        binding.layoutToolsCatalogue.cardToolMarkdownStudio.setOnClickListener {
+            navigationController.showMarkdownViewerScreen()
+            markdownViewerController.createNewDocument()
         }
+        binding.layoutToolsCatalogue.cardToolProvenance.setOnClickListener { openProvenance() }
 
-        // Library Explore Button
+        // Library Explore Button & Filters
         binding.layoutLibrary.btnLibraryExploreTools.setOnClickListener {
             navigationController.showToolsScreen()
+        }
+        binding.layoutLibrary.chipGroupLibraryFilter.setOnCheckedStateChangeListener { _, _ ->
+            refreshLibrary()
         }
 
         // Search & Category Filters in Tools Catalogue
@@ -702,15 +881,17 @@ class MainActivity : AppCompatActivity() {
         val cards = listOf(
             WorkspaceRoute.IMAGE_STUDIO to binding.layoutToolsCatalogue.cardToolImageStudio,
             WorkspaceRoute.VIDEO_STUDIO to binding.layoutToolsCatalogue.cardToolVideoStudio,
-            WorkspaceRoute.DOCUMENT_SCANNER to binding.layoutToolsCatalogue.cardToolDocScanner,
             WorkspaceRoute.QR_STUDIO to binding.layoutToolsCatalogue.cardToolQrStudio,
+            WorkspaceRoute.DOCUMENT_SCANNER to binding.layoutToolsCatalogue.cardToolDocScanner,
             WorkspaceRoute.BACKGROUND_REMOVER to binding.layoutToolsCatalogue.cardToolBgRemover,
-            WorkspaceRoute.IMAGE_CLEANER to binding.layoutToolsCatalogue.cardToolPrivacyScrubber,
             WorkspaceRoute.IMAGE_UPSCALER to binding.layoutToolsCatalogue.cardToolAiUpscaler,
-            WorkspaceRoute.AI_BUNDLE to binding.layoutToolsCatalogue.cardToolAiBundler,
-            WorkspaceRoute.FOLDER_SCANNER to binding.layoutToolsCatalogue.cardToolFolderAnalyzer,
+            WorkspaceRoute.IMAGE_CLEANER to binding.layoutToolsCatalogue.cardToolPrivacyScrubber,
+            WorkspaceRoute.VIDEO_CLEANER to binding.layoutToolsCatalogue.cardToolVideoCleaner,
             WorkspaceRoute.IMAGE_QUALITY to binding.layoutToolsCatalogue.cardToolImageQuality,
-            WorkspaceRoute.PROVENANCE to binding.layoutToolsCatalogue.cardToolCvBench
+            WorkspaceRoute.FOLDER_SCANNER to binding.layoutToolsCatalogue.cardToolFolderAnalyzer,
+            WorkspaceRoute.AI_BUNDLE to binding.layoutToolsCatalogue.cardToolAiBundler,
+            WorkspaceRoute.MARKDOWN_STUDIO to binding.layoutToolsCatalogue.cardToolMarkdownStudio,
+            WorkspaceRoute.PROVENANCE to binding.layoutToolsCatalogue.cardToolProvenance
         )
 
         fun applyFilter() {
@@ -933,6 +1114,211 @@ class MainActivity : AppCompatActivity() {
         navigationController.showMarkdownViewerScreen()
         markdownViewerController.loadMarkdown(file, title)
         consoleLogController.log("[MARKDOWN] Opened viewer: ${file.name}")
+    }
+
+    fun openDocumentScanner() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showDocumentScannerScreen()
+        consoleLogController.log("[UI] Opened Document Scanner workspace.")
+    }
+
+    fun openBackgroundRemover() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showBackgroundRemoverScreen()
+        consoleLogController.log("[UI] Opened Background Remover workspace.")
+    }
+
+    fun openImageQuality() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showImageQualityScreen()
+        consoleLogController.log("[UI] Opened Image Quality Forensics workspace.")
+    }
+
+    fun openProvenance() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showProvenanceScreen()
+        consoleLogController.log("[UI] Opened Provenance & Verify workspace.")
+    }
+
+    private fun refreshLibrary() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val exportDirs = listOf(
+                File(filesDir, "exports"),
+                File(cacheDir, "exports"),
+                File(cacheDir, "studio_exports"),
+                File(cacheDir, "scanned_docs"),
+                File(filesDir, "cv/exports")
+            )
+            val allFiles = exportDirs
+                .filter { it.exists() && it.isDirectory }
+                .flatMap { it.listFiles()?.toList() ?: emptyList() }
+                .filter { it.isFile && it.length() > 0 }
+                .sortedByDescending { it.lastModified() }
+
+            val checkedFilterId = binding.layoutLibrary.chipGroupLibraryFilter.checkedChipId
+            val filteredFiles = when (checkedFilterId) {
+                R.id.chipLibraryImages -> allFiles.filter { f ->
+                    val ext = f.extension.lowercase()
+                    ext in listOf("jpg", "jpeg", "png", "webp", "bmp")
+                }
+                R.id.chipLibraryVideos -> allFiles.filter { f ->
+                    val ext = f.extension.lowercase()
+                    ext in listOf("mp4", "mkv", "webm", "mov", "avi")
+                }
+                R.id.chipLibraryDocs -> allFiles.filter { f ->
+                    val ext = f.extension.lowercase()
+                    ext in listOf("pdf", "md", "txt", "json", "aibundle")
+                }
+                R.id.chipLibraryQr -> allFiles.filter { f ->
+                    f.name.lowercase().contains("qr") || f.extension.lowercase() == "svg"
+                }
+                else -> allFiles
+            }
+
+            withContext(Dispatchers.Main) {
+                if (filteredFiles.isEmpty()) {
+                    binding.layoutLibrary.containerLibraryEmpty.visibility = View.VISIBLE
+                    binding.layoutLibrary.containerLibraryItems.visibility = View.GONE
+                } else {
+                    binding.layoutLibrary.containerLibraryEmpty.visibility = View.GONE
+                    binding.layoutLibrary.containerLibraryItems.visibility = View.VISIBLE
+                    binding.layoutLibrary.containerLibraryItems.removeAllViews()
+
+                    val density = resources.displayMetrics.density
+                    val margin12 = (12 * density).toInt()
+
+                    for (file in filteredFiles) {
+                        val card = com.google.android.material.card.MaterialCardView(this@MainActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = margin12
+                            }
+                            radius = 16 * density
+                            cardElevation = 1 * density
+                            setCardBackgroundColor(getColor(R.color.vf_surface))
+                            strokeColor = getColor(R.color.vf_surface_variant)
+                            strokeWidth = (1 * density).toInt()
+                            isClickable = true
+                            isFocusable = true
+                        }
+
+                        val row = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            setPadding(margin12, margin12, margin12, margin12)
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                        }
+
+                        val icon = ImageView(this@MainActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt()).apply {
+                                marginEnd = margin12
+                            }
+                            val iconRes = when (file.extension.lowercase()) {
+                                "jpg", "jpeg", "png", "webp", "bmp" -> R.drawable.ic_tab_image
+                                "mp4", "mkv", "webm", "mov" -> R.drawable.ic_tab_video
+                                "pdf", "md", "txt" -> R.drawable.ic_toc
+                                else -> if (file.name.contains("qr", ignoreCase = true)) R.drawable.ic_tool_qr else R.drawable.ic_check_circle
+                            }
+                            setImageResource(iconRes)
+                            setColorFilter(getColor(R.color.vf_primary))
+                        }
+
+                        val infoCol = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        }
+
+                        val nameText = TextView(this@MainActivity).apply {
+                            text = file.name
+                            setTextColor(getColor(R.color.vf_text_primary))
+                            textSize = 13f
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        }
+
+                        val metaText = TextView(this@MainActivity).apply {
+                            val sizeStr = safStorageManager.formatBytes(file.length())
+                            val dateStr = android.text.format.DateFormat.format("MMM d, yyyy HH:mm", file.lastModified())
+                            text = "$sizeStr • $dateStr"
+                            setTextColor(getColor(R.color.vf_text_secondary))
+                            textSize = 11f
+                        }
+
+                        infoCol.addView(nameText)
+                        infoCol.addView(metaText)
+
+                        val btnShare = com.google.android.material.button.MaterialButton(
+                            this@MainActivity,
+                            null,
+                            com.google.android.material.R.attr.borderlessButtonStyle
+                        ).apply {
+                            layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                            setIconResource(R.drawable.ic_share)
+                            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.vf_primary))
+                            iconGravity = com.google.android.material.button.MaterialButton.ICON_GRAVITY_TEXT_START
+                            setPadding(0, 0, 0, 0)
+                            setOnClickListener {
+                                val mime = safStorageManager.getExportMimeType(file)
+                                shareStudioFile(file, mime)
+                            }
+                        }
+
+                        val btnDelete = com.google.android.material.button.MaterialButton(
+                            this@MainActivity,
+                            null,
+                            com.google.android.material.R.attr.borderlessButtonStyle
+                        ).apply {
+                            layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                            setIconResource(R.drawable.ic_action_clear)
+                            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.vf_text_secondary))
+                            setPadding(0, 0, 0, 0)
+                            setOnClickListener {
+                                file.delete()
+                                refreshLibrary()
+                            }
+                        }
+
+                        card.setOnClickListener {
+                            val mime = safStorageManager.getExportMimeType(file)
+                            shareStudioFile(file, mime)
+                        }
+
+                        row.addView(icon)
+                        row.addView(infoCol)
+                        row.addView(btnShare)
+                        row.addView(btnDelete)
+                        card.addView(row)
+                        binding.layoutLibrary.containerLibraryItems.addView(card)
+                    }
+                }
+            }
+        }
     }
 
     private fun scheduleBackClearWork() {
