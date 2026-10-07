@@ -58,6 +58,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:visibility="gone"
                         android:text="Privacy Forensics &amp; AI Bundler"
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="10sp" />
@@ -559,7 +560,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="12 artistic styles, presets &amp; safe scanner"
+                            android:text="11 artistic styles, presets &amp; safe scanner"
                             android:textColor="@color/vf_text_secondary"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -2402,8 +2403,20 @@
     </com.google.android.material.card.MaterialCardView>
 
     <!-- ================================================================= -->
-    <!-- SHELL BOTTOM NAVIGATION BAR                                       -->
+    <!-- SHELL ADAPTIVE NAVIGATION (Rail for >=600dp, Bar for <600dp)      -->
     <!-- ================================================================= -->
+    <com.google.android.material.navigationrail.NavigationRailView
+        android:id="@+id/navigationRail"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="?attr/colorSurface"
+        android:visibility="gone"
+        app:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_color_selector"
+        app:itemTextColor="@color/bottom_nav_color_selector"
+        app:menu="@menu/bottom_nav_menu" />
+
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNavigation"
         android:layout_width="match_parent"

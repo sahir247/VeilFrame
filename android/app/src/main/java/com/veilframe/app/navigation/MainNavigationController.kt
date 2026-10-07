@@ -85,12 +85,48 @@ class MainNavigationController(
                 else -> false
             }
         }
+
+        binding.navigationRail.setOnItemSelectedListener { item ->
+            if (isSyncingBottomNav) return@setOnItemSelectedListener true
+            when (item.itemId) {
+                R.id.nav_home -> {
+                    if (currentScreen != ScreenState.HOME) showHomeScreen()
+                    true
+                }
+                R.id.nav_tools -> {
+                    if (currentScreen != ScreenState.TOOLS) showToolsScreen()
+                    true
+                }
+                R.id.nav_library -> {
+                    if (currentScreen != ScreenState.LIBRARY) showLibraryScreen()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun setAdaptiveNavigationVisibility(visible: Boolean) {
+        val isExpanded = activity.resources.configuration.screenWidthDp >= 600
+        if (!visible) {
+            binding.bottomNavigation.visibility = View.GONE
+            binding.navigationRail.visibility = View.GONE
+        } else {
+            if (isExpanded) {
+                binding.navigationRail.visibility = View.VISIBLE
+                binding.bottomNavigation.visibility = View.GONE
+            } else {
+                binding.navigationRail.visibility = View.GONE
+                binding.bottomNavigation.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun syncBottomNavSelection(itemId: Int) {
-        if (binding.bottomNavigation.selectedItemId != itemId) {
+        if (binding.bottomNavigation.selectedItemId != itemId || binding.navigationRail.selectedItemId != itemId) {
             isSyncingBottomNav = true
             binding.bottomNavigation.selectedItemId = itemId
+            binding.navigationRail.selectedItemId = itemId
             isSyncingBottomNav = false
         }
     }
@@ -179,7 +215,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.VISIBLE
+        setAdaptiveNavigationVisibility(true)
         syncBottomNavSelection(R.id.nav_home)
 
         if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE && outgoingToolView != binding.layoutToolsCatalogue.scrollToolsCatalogue && outgoingToolView != binding.layoutLibrary.scrollLibrary) {
@@ -223,7 +259,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.VISIBLE
+        setAdaptiveNavigationVisibility(true)
         syncBottomNavSelection(R.id.nav_tools)
 
         hideAllToolViewsExcept(binding.layoutToolsCatalogue.scrollToolsCatalogue)
@@ -245,7 +281,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.VISIBLE
+        setAdaptiveNavigationVisibility(true)
         syncBottomNavSelection(R.id.nav_library)
 
         hideAllToolViewsExcept(binding.layoutLibrary.scrollLibrary)
@@ -270,7 +306,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.VISIBLE
         binding.cardCleanerActionDock.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.scrollTool)
@@ -300,7 +336,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
         binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -331,7 +367,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
         binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
@@ -364,7 +400,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutMarkdownViewer.layoutMarkdownRoot)
@@ -394,7 +430,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutImageUpscaler.scrollImageUpscaler)
@@ -424,7 +460,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.fragmentQrStudio)
@@ -454,7 +490,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutDocumentScanner.layoutDocumentScannerRoot)
@@ -484,7 +520,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
@@ -514,7 +550,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutImageQuality.layoutImageQualityRoot)
@@ -544,7 +580,7 @@ class MainNavigationController(
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        binding.bottomNavigation.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
 
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
             hideAllToolViewsExcept(binding.layoutProvenance.layoutProvenanceRoot)

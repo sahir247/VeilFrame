@@ -190,6 +190,32 @@
                 app:iconTint="@color/vf_primary" />
         </LinearLayout>
 
+        <!-- Active Document Sessions Section -->
+        <LinearLayout
+            android:id="@+id/containerLibrarySessionsSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ACTIVE SESSIONS"
+                android:textColor="@color/vf_text_secondary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <LinearLayout
+                android:id="@+id/containerLibrarySessions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical" />
+        </LinearLayout>
+
         <!-- Library Items Container -->
         <LinearLayout
             android:id="@+id/containerLibraryItems"

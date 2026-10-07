@@ -8,7 +8,9 @@
     android:background="@color/vf_bg_dark"
     android:visibility="gone">
 
+    <!-- Normal Content Layer: Toolbar + Empty State / Page Manager -->
     <LinearLayout
+        android:id="@+id/containerDocMainFlow"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
@@ -45,7 +47,7 @@
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <!-- Empty State -->
+            <!-- 1. Empty State (Start Scan or Import) -->
             <LinearLayout
                 android:id="@+id/containerDocEmptyState"
                 android:layout_width="match_parent"
@@ -75,7 +77,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:gravity="center"
-                    android:text="Capture with camera or import photos from storage to begin multi-page scanning with automatic corner detection."
+                    android:text="Capture with live camera edge detection or import photos from storage to create multi-page documents."
                     android:textColor="@color/vf_text_secondary"
                     android:textSize="13sp" />
 
@@ -90,7 +92,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="Take Photo"
+                        android:text="Document Camera"
                         app:icon="@drawable/ic_camera" />
 
                     <com.google.android.material.button.MaterialButton
@@ -104,7 +106,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Document Preview & Inspection Container -->
+            <!-- 2. Real Page Manager & Multi-Page Document Workspace -->
             <LinearLayout
                 android:id="@+id/containerDocPreview"
                 android:layout_width="match_parent"
@@ -112,12 +114,12 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Page Preview Image -->
+                <!-- Large Selected Page Preview -->
                 <FrameLayout
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="1"
-                    android:padding="16dp">
+                    android:padding="12dp">
 
                     <ImageView
                         android:id="@+id/ivDocPagePreview"
@@ -126,18 +128,80 @@
                         android:scaleType="fitCenter"
                         android:contentDescription="Scanned Page Preview" />
 
+                    <!-- Floating Page Indicator Badge -->
                     <TextView
                         android:id="@+id/tvDocPageIndicator"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="top|end"
                         android:background="@color/vf_surface"
-                        android:padding="6dp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="5dp"
+                        android:paddingBottom="5dp"
                         android:text="Page 1 of 1"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:textStyle="bold" />
                 </FrameLayout>
+
+                <!-- Page Operations Strip (Reorder, Rotate, Duplicate, Delete) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageMoveLeft"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="Move Left"
+                        app:icon="@drawable/ic_arrow_back"
+                        app:iconSize="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageMoveRight"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="Move Right"
+                        app:icon="@drawable/ic_arrow_forward"
+                        app:iconSize="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageRotate"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="Rotate 90"
+                        app:icon="@drawable/ic_rotate"
+                        app:iconSize="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageDuplicate"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="Duplicate Page"
+                        app:icon="@drawable/ic_action_copy"
+                        app:iconSize="18dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageDelete"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="Delete Page"
+                        app:icon="@drawable/ic_action_clear"
+                        app:iconTint="@android:color/holo_red_light"
+                        app:iconSize="18dp" />
+                </LinearLayout>
 
                 <!-- Processing / Filter Chips -->
                 <HorizontalScrollView
@@ -145,6 +209,7 @@
                     android:layout_height="wrap_content"
                     android:paddingStart="16dp"
                     android:paddingEnd="16dp"
+                    android:paddingBottom="4dp"
                     android:scrollbars="none">
 
                     <com.google.android.material.chip.ChipGroup
@@ -218,7 +283,7 @@
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
-                    android:text="Camera"
+                    android:text="+ Camera"
                     android:textSize="12sp"
                     app:icon="@drawable/ic_camera"
                     app:iconSize="16dp" />
@@ -231,7 +296,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
                     android:layout_marginEnd="3dp"
-                    android:text="Photos"
+                    android:text="+ Photos"
                     android:textSize="12sp"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="16dp" />
@@ -249,4 +314,121 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
+
+    <!-- Dedicated Fullscreen CameraX Document Camera Screen -->
+    <FrameLayout
+        android:id="@+id/containerDocCamera"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#000000"
+        android:visibility="gone">
+
+        <!-- CameraX Viewfinder -->
+        <androidx.camera.view.PreviewView
+            android:id="@+id/docCameraPreviewView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Live Detected Document Quad Canvas -->
+        <com.veilframe.app.ui.views.DocumentQuadOverlayView
+            android:id="@+id/docQuadOverlayView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Top Camera Header Overlay -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:background="#77000000"
+            android:padding="12dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDocCamClose"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="Close Camera"
+                app:icon="@drawable/ic_close"
+                app:iconTint="@color/vf_text_primary" />
+
+            <TextView
+                android:id="@+id/tvDocCamStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Align document inside frame"
+                android:textColor="@color/vf_text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDocCamFlash"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="Toggle Flash"
+                app:icon="@drawable/ic_flash_off"
+                app:iconTint="@color/vf_text_primary" />
+        </LinearLayout>
+
+        <!-- Bottom Camera Action Overlay (Rapid Multi-Capture & Shutter) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="#99000000"
+            android:padding="20dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDocCamImport"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:contentDescription="Import Photos"
+                app:icon="@drawable/ic_tab_image"
+                app:iconTint="@color/vf_text_primary" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- Rapid Multi-Capture Shutter Button -->
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btnDocCamShutter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:fabCustomSize="72dp"
+                app:backgroundTint="@color/vf_text_primary"
+                app:tint="@color/vf_bg_dark"
+                app:srcCompat="@drawable/ic_camera"
+                android:contentDescription="Take Scan" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- Done / Page Counter Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDocCamDone"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:text="Done (0)"
+                android:textSize="12sp"
+                app:icon="@drawable/ic_done" />
+        </LinearLayout>
+    </FrameLayout>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

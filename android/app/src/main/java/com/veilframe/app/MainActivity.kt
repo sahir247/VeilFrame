@@ -367,10 +367,11 @@ class MainActivity : AppCompatActivity() {
             binding.tvWhatsNewContent.text = cachedChangelog
         }
 
-        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel + bottom navigation
+        // System insets handling: status bar top inset for AppBarLayout + navigation bar bottom inset for action dock + settings panel + bottom navigation / rail
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
             val statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             val navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val navBarLeft = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).left
             binding.appBarLayout.setPadding(0, statusBarTop, 0, 0)
             binding.containerSettings.setPadding(0, statusBarTop, 0, navBarBottom)
             val layoutParams = binding.cardCleanerActionDock.layoutParams as? android.view.ViewGroup.MarginLayoutParams
@@ -379,6 +380,7 @@ class MainActivity : AppCompatActivity() {
                 binding.cardCleanerActionDock.layoutParams = layoutParams
             }
             binding.bottomNavigation.setPadding(0, 0, 0, navBarBottom)
+            binding.navigationRail.setPadding(navBarLeft, statusBarTop, 0, navBarBottom)
             insets
         }
 
@@ -628,11 +630,10 @@ class MainActivity : AppCompatActivity() {
             binding = binding.layoutDocumentScanner,
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
-            onTakePhotoRequest = { docScannerCameraLauncher.launch(null) },
+            onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
             onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
-            onExportPdfRequest = { file ->
+            onExportFileRequest = { file, mime ->
                 pendingExportFile = file
-                val mime = safStorageManager.getExportMimeType(file)
                 docScannerExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
@@ -1175,6 +1176,7 @@ class MainActivity : AppCompatActivity() {
                 .filter { it.isFile && it.length() > 0 }
                 .sortedByDescending { it.lastModified() }
 
+            val savedSessions = com.veilframe.app.document.DocumentSession.listSavedSessions(this@MainActivity)
             val checkedFilterId = binding.layoutLibrary.chipGroupLibraryFilter.checkedChipId
             val filteredFiles = when (checkedFilterId) {
                 R.id.chipLibraryImages -> allFiles.filter { f ->
@@ -1196,16 +1198,118 @@ class MainActivity : AppCompatActivity() {
             }
 
             withContext(Dispatchers.Main) {
-                if (filteredFiles.isEmpty()) {
+                val density = resources.displayMetrics.density
+                val margin12 = (12 * density).toInt()
+
+                // Render active document scanner sessions
+                if (savedSessions.isNotEmpty()) {
+                    binding.layoutLibrary.containerLibrarySessionsSection.visibility = View.VISIBLE
+                    binding.layoutLibrary.containerLibrarySessions.removeAllViews()
+                    for (session in savedSessions) {
+                        val card = com.google.android.material.card.MaterialCardView(this@MainActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = margin12
+                            }
+                            radius = 16 * density
+                            cardElevation = 1 * density
+                            setCardBackgroundColor(getColor(R.color.vf_surface))
+                            strokeColor = getColor(R.color.vf_surface_variant)
+                            strokeWidth = (1 * density).toInt()
+                        }
+
+                        val row = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            setPadding(margin12, margin12, margin12, margin12)
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                        }
+
+                        val icon = ImageView(this@MainActivity).apply {
+                            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt()).apply {
+                                marginEnd = margin12
+                            }
+                            setImageResource(R.drawable.ic_camera)
+                            setColorFilter(getColor(R.color.vf_primary))
+                        }
+
+                        val infoCol = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        }
+
+                        val nameText = TextView(this@MainActivity).apply {
+                            text = session.title
+                            setTextColor(getColor(R.color.vf_text_primary))
+                            textSize = 13f
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        }
+
+                        val metaText = TextView(this@MainActivity).apply {
+                            val timeAgo = android.text.format.DateUtils.getRelativeTimeSpanString(session.lastModifiedAt)
+                            text = "${session.pageCount} pages • Edited $timeAgo"
+                            setTextColor(getColor(R.color.vf_text_secondary))
+                            textSize = 11f
+                        }
+
+                        infoCol.addView(nameText)
+                        infoCol.addView(metaText)
+
+                        val btnContinue = com.google.android.material.button.MaterialButton(
+                            this@MainActivity,
+                            null,
+                            com.google.android.material.R.attr.borderlessButtonStyle
+                        ).apply {
+                            text = "Continue"
+                            textSize = 12f
+                            setTextColor(getColor(R.color.vf_primary))
+                            setOnClickListener {
+                                openDocumentScanner()
+                                docScannerController.resumeSession(session.sessionId)
+                            }
+                        }
+
+                        val btnDelete = com.google.android.material.button.MaterialButton(
+                            this@MainActivity,
+                            null,
+                            com.google.android.material.R.attr.borderlessButtonStyle
+                        ).apply {
+                            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+                            setIconResource(R.drawable.ic_action_clear)
+                            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.vf_text_secondary))
+                            setPadding(0, 0, 0, 0)
+                            setOnClickListener {
+                                com.veilframe.app.document.DocumentSession.deleteSession(this@MainActivity, session.sessionId)
+                                refreshLibrary()
+                            }
+                        }
+
+                        row.addView(icon)
+                        row.addView(infoCol)
+                        row.addView(btnContinue)
+                        row.addView(btnDelete)
+                        card.addView(row)
+                        binding.layoutLibrary.containerLibrarySessions.addView(card)
+                    }
+                } else {
+                    binding.layoutLibrary.containerLibrarySessionsSection.visibility = View.GONE
+                }
+
+                val hasAnyContent = savedSessions.isNotEmpty() || filteredFiles.isNotEmpty()
+                if (!hasAnyContent) {
                     binding.layoutLibrary.containerLibraryEmpty.visibility = View.VISIBLE
                     binding.layoutLibrary.containerLibraryItems.visibility = View.GONE
                 } else {
                     binding.layoutLibrary.containerLibraryEmpty.visibility = View.GONE
-                    binding.layoutLibrary.containerLibraryItems.visibility = View.VISIBLE
+                    binding.layoutLibrary.containerLibraryItems.visibility = if (filteredFiles.isNotEmpty()) View.VISIBLE else View.GONE
                     binding.layoutLibrary.containerLibraryItems.removeAllViews()
-
-                    val density = resources.displayMetrics.density
-                    val margin12 = (12 * density).toInt()
 
                     for (file in filteredFiles) {
                         val card = com.google.android.material.card.MaterialCardView(this@MainActivity).apply {

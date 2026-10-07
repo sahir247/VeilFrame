@@ -27,6 +27,18 @@
             app:subtitleTextColor="@color/vf_text_secondary">
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBgResetCompare"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="end"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone"
+                android:contentDescription="Reset comparison"
+                app:icon="@drawable/ic_reset"
+                app:iconSize="18dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBgSavePng"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
@@ -87,14 +99,12 @@
                     app:icon="@drawable/ic_tab_image" />
             </LinearLayout>
 
-            <!-- Segmentation Preview -->
-            <ImageView
-                android:id="@+id/ivBgResultPreview"
+            <!-- Interactive Before/After Split Comparison View -->
+            <com.veilframe.app.ui.views.BeforeAfterSplitView
+                android:id="@+id/splitViewBgCompare"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:scaleType="fitCenter"
-                android:visibility="gone"
-                android:contentDescription="Background Removal Result" />
+                android:visibility="gone" />
         </FrameLayout>
 
         <!-- Action Dock -->
