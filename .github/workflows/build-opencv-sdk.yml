@@ -43,8 +43,13 @@ jobs:
 
       - name: Install Host Build Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build python3 python3-pip git
+          sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list* /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="15" -o Acquire::https::Timeout="15"
+          sudo apt-get install -y --no-install-recommends ninja-build python3 python3-pip git
+          ninja --version
+          python3 --version
+          git --version
 
       - name: Execute OpenCV Android SDK Build
         run: |
