@@ -23,20 +23,20 @@
             app:navigationIconTint="@color/vf_text_primary"
             app:title="Image Quality"
             app:titleTextColor="@color/vf_text_primary"
-            app:subtitle="Sharpness, Blur &amp; Sensor Forensics"
+            app:subtitle="Clarity, Noise &amp; Exposure Analysis"
             app:subtitleTextColor="@color/vf_text_secondary">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnQualityExportReport"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
+                android:layout_height="48dp"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
                 android:text="Share Report"
                 android:textSize="12sp"
                 app:icon="@drawable/ic_action_share"
-                app:iconSize="16dp" />
+                app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <androidx.core.widget.NestedScrollView
@@ -221,24 +221,24 @@
                     android:id="@+id/btnQualityPickImage"
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:text="Select Image"
-                    android:textSize="12sp"
+                    android:textSize="13sp"
                     app:icon="@drawable/ic_tab_image"
-                    app:iconSize="16dp" />
+                    app:iconSize="18dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnQualityAnalyze"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:layout_marginStart="6dp"
-                    android:text="Run Diagnostics"
-                    android:textSize="12sp"
+                    android:text="Evaluate Quality"
+                    android:textSize="13sp"
                     app:icon="@drawable/ic_visibility"
-                    app:iconSize="16dp" />
+                    app:iconSize="18dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>

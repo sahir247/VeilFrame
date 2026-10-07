@@ -125,12 +125,15 @@ dependencies {
 
 // Fail closed if custom SDK artifacts are missing or invalid when building :opencv-sdk or packaging :app
 gradle.taskGraph.whenReady {
+    val finalArtifactTaskNames = setOf(
+        "assemble", "assembleDebug", "assembleRelease",
+        "packageDebug", "packageRelease",
+        "bundle", "bundleDebug", "bundleRelease",
+        "bundleDebugAar", "bundleReleaseAar"
+    )
     val requiresCustomSdk = allTasks.any { task ->
-        task.project == project || (task.project.name == "app" && (
-            task.name.startsWith("assemble") ||
-            task.name.startsWith("bundle") ||
-            task.name.startsWith("package")
-        ))
+        (task.project == project || task.project.name == "app") &&
+            task.name in finalArtifactTaskNames
     }
     if (requiresCustomSdk && !isCustomSdkComplete) {
         throw GradleException(

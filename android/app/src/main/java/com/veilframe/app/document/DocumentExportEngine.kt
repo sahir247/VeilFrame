@@ -108,6 +108,43 @@ object DocumentExportEngine {
         }
     }
 
+    suspend fun exportSinglePage(
+        context: Context,
+        page: ScannedPage,
+        pageIndex: Int,
+        title: String,
+        options: ExportOptions = ExportOptions()
+    ): ExportResult {
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val timestamp = System.currentTimeMillis()
+        val bmp = page.getDisplayBitmap(context) ?: throw IllegalStateException("Page bitmap could not be decoded")
+
+        return when (options.format) {
+            OutputFormat.SINGLE_PDF, OutputFormat.SEPARATE_PDFS -> {
+                val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.pdf")
+                val pdfDoc = PdfDocument()
+                try {
+                    val (pageW, pageH) = resolvePageDimensions(bmp, options)
+                    val pageInfo = PdfDocument.PageInfo.Builder(pageW, pageH, 1).create()
+                    val pdfPage = pdfDoc.startPage(pageInfo)
+                    renderBitmapToCanvas(pdfPage.canvas, bmp, pageW, pageH, options)
+                    pdfDoc.finishPage(pdfPage)
+                    FileOutputStream(outFile).use { fos -> pdfDoc.writeTo(fos) }
+                } finally {
+                    pdfDoc.close()
+                }
+                ExportResult(outFile, 1, "application/pdf")
+            }
+            OutputFormat.IMAGES_ZIP -> {
+                val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.jpg")
+                FileOutputStream(outFile).use { fos ->
+                    bmp.compress(Bitmap.CompressFormat.JPEG, options.quality.jpegQuality, fos)
+                }
+                ExportResult(outFile, 1, "image/jpeg")
+            }
+        }
+    }
+
     private fun createSinglePdf(
         context: Context,
         session: DocumentSession,
@@ -187,17 +224,21 @@ object DocumentExportEngine {
     }
 
     private fun resolvePageDimensions(bitmap: Bitmap, options: ExportOptions): Pair<Int, Int> {
+        return resolvePageDimensions(bitmap.width, bitmap.height, options)
+    }
+
+    internal fun resolvePageDimensions(bitmapWidth: Int, bitmapHeight: Int, options: ExportOptions): Pair<Int, Int> {
         if (options.paperSize == PaperSize.ORIGINAL_IMAGE) {
-            return Pair(bitmap.width, bitmap.height)
+            return Pair(bitmapWidth, bitmapHeight)
         }
 
-        var baseW = options.paperSize.widthPt
-        var baseH = options.paperSize.heightPt
+        val baseW = options.paperSize.widthPt
+        val baseH = options.paperSize.heightPt
 
         val isLandscape = when (options.orientation) {
             Orientation.PORTRAIT -> false
             Orientation.LANDSCAPE -> true
-            Orientation.AUTO -> bitmap.width > bitmap.height
+            Orientation.AUTO -> bitmapWidth > bitmapHeight
         }
 
         return if (isLandscape) {
@@ -251,7 +292,7 @@ object DocumentExportEngine {
         }
     }
 
-    private fun sanitizeFileName(name: String): String {
+    internal fun sanitizeFileName(name: String): String {
         return name.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(40)
     }
 }

@@ -10,12 +10,17 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import android.net.Uri
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -23,11 +28,15 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.card.MaterialCardView
 import com.veilframe.app.R
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.document.DocumentScanner
 import com.veilframe.app.databinding.LayoutDocumentScannerBinding
+import com.veilframe.app.databinding.SheetDocumentExportBinding
 import com.veilframe.app.storage.SafStorageManager
+import com.veilframe.app.ui.motion.VeilFrameInteraction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,13 +46,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Controller orchestrating the dedicated Document Scanner workspace:
  * - Dedicated CameraX viewfinder with real-time OpenCV quadrilateral tracking
+ * - Pinch-to-zoom, zoom preset buttons, tap-to-focus with animated indicator, and lens flipping
  * - Rapid continuous multi-capture (burst scanning into session)
- * - Persistent Page Manager (reorder, rotate, duplicate, auto-crop, delete)
- * - Multi-format export pipeline (Single PDF, Separate PDFs, Image Sequence)
+ * - Persistent Page Manager with visual horizontal thumbnail strip (reorder, rotate, duplicate, auto-crop, delete)
+ * - Multi-format export pipeline (Single PDF, Separate PDFs, Image Sequence, Custom Paper Sizes & Margins)
  */
 class DocumentScannerController(
     private val activity: AppCompatActivity,
@@ -62,8 +73,12 @@ class DocumentScannerController(
     private var imageCapture: ImageCapture? = null
     private var camera: Camera? = null
     private var isFlashOn = false
+    private var isBackCamera = true
+    private var currentZoomRatio = 1.0f
+    private var scaleGestureDetector: ScaleGestureDetector? = null
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
+    @SuppressLint("ClickableViewAccessibility")
     fun init() {
         binding.toolbarDocScanner.setNavigationOnClickListener {
             onNavigateBack()
@@ -145,6 +160,13 @@ class DocumentScannerController(
             toggleFlash()
         }
 
+        binding.btnDocCamFlip.setOnClickListener {
+            isBackCamera = !isBackCamera
+            isFlashOn = false
+            binding.btnDocCamFlash.setIconResource(R.drawable.ic_flash_off)
+            bindCameraUseCases()
+        }
+
         binding.btnDocCamImport.setOnClickListener {
             onChoosePhotosRequest()
         }
@@ -155,6 +177,33 @@ class DocumentScannerController(
 
         binding.btnDocCamDone.setOnClickListener {
             closeCameraViewfinder()
+        }
+
+        // Camera zoom presets
+        binding.btnDocZoomHalf.setOnClickListener { setCameraZoom(0.5f) }
+        binding.btnDocZoom1x.setOnClickListener { setCameraZoom(1.0f) }
+        binding.btnDocZoom2x.setOnClickListener { setCameraZoom(2.0f) }
+
+        // Camera pinch-to-zoom & tap-to-focus gesture detectors
+        scaleGestureDetector = ScaleGestureDetector(activity, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val cam = camera ?: return false
+                val zoomState = cam.cameraInfo.zoomState.value ?: return false
+                val nextZoom = (zoomState.zoomRatio * detector.scaleFactor).coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+                cam.cameraControl.setZoomRatio(nextZoom)
+                currentZoomRatio = nextZoom
+                updateZoomButtons(nextZoom)
+                return true
+            }
+        })
+
+        binding.docCameraPreviewView.setOnTouchListener { v, event ->
+            scaleGestureDetector?.onTouchEvent(event)
+            if (event.action == MotionEvent.ACTION_UP && scaleGestureDetector?.isInProgress != true) {
+                handleTapToFocus(event.x, event.y)
+                v.performClick()
+            }
+            true
         }
 
         // Filter chips
@@ -171,6 +220,9 @@ class DocumentScannerController(
                 applyFilterToCurrentPage(mode)
             }
         }
+
+        // Universal interaction tactile bounce
+        VeilFrameInteraction.bindWorkspace(binding.root)
 
         updateUi()
     }
@@ -205,7 +257,11 @@ class DocumentScannerController(
         val provider = cameraProvider ?: return
         provider.unbindAll()
 
-        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+        val cameraSelector = if (isBackCamera) {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        } else {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        }
 
         val preview = Preview.Builder().build().also {
             it.setSurfaceProvider(binding.docCameraPreviewView.surfaceProvider)
@@ -231,8 +287,51 @@ class DocumentScannerController(
                 imageCapture,
                 imageAnalysis
             )
+            setCameraZoom(currentZoomRatio)
         } catch (e: Exception) {
             Toast.makeText(activity, "Camera binding error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setCameraZoom(ratio: Float) {
+        val cam = camera ?: return
+        val zoomState = cam.cameraInfo.zoomState.value ?: return
+        val clamped = ratio.coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+        cam.cameraControl.setZoomRatio(clamped)
+        currentZoomRatio = clamped
+        updateZoomButtons(clamped)
+    }
+
+    private fun updateZoomButtons(ratio: Float) {
+        binding.btnDocZoomHalf.setTextColor(if (ratio < 0.8f) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_secondary))
+        binding.btnDocZoom1x.setTextColor(if (ratio in 0.8f..1.5f) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_secondary))
+        binding.btnDocZoom2x.setTextColor(if (ratio > 1.5f) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_secondary))
+    }
+
+    private fun handleTapToFocus(x: Float, y: Float) {
+        val cam = camera ?: return
+        val factory = binding.docCameraPreviewView.meteringPointFactory
+        val point = factory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+        cam.cameraControl.startFocusAndMetering(action)
+
+        // Show animated focus ring centered at touch coordinate
+        binding.ivDocCamFocusRing.apply {
+            this.x = x - (width / 2f)
+            this.y = y - (height / 2f)
+            alpha = 1.0f
+            scaleX = 1.3f
+            scaleY = 1.3f
+            visibility = View.VISIBLE
+            animate()
+                .scaleX(1.0f)
+                .scaleY(1.0f)
+                .alpha(0.0f)
+                .setDuration(600)
+                .withEndAction { visibility = View.GONE }
+                .start()
         }
     }
 
@@ -257,7 +356,7 @@ class DocumentScannerController(
                     frameBitmap.height
                 )
                 if (detectedPts != null) {
-                    binding.tvDocCamStatus.text = "Document detected (Steady)"
+                    binding.tvDocCamStatus.text = "Document detected"
                 } else {
                     binding.tvDocCamStatus.text = "Align document inside frame"
                 }
@@ -361,78 +460,68 @@ class DocumentScannerController(
     }
 
     fun resumeSession(sessionId: String) {
-        val loaded = DocumentSession.loadFromDisk(activity, sessionId)
-        if (loaded != null && !loaded.isEmpty) {
-            session.clear()
-            session.id = loaded.id
-            session.title = loaded.title
-            session.addPages(loaded.pages)
-            updateUi()
-            Toast.makeText(activity, "Resumed ${loaded.title} (${loaded.pageCount} pages)", Toast.LENGTH_SHORT).show()
+        scope.launch(Dispatchers.IO) {
+            val loaded = DocumentSession.loadFromDisk(activity, sessionId)
+            withContext(Dispatchers.Main) {
+                if (loaded != null && !loaded.isEmpty) {
+                    session.pages.clear()
+                    session.pages.addAll(loaded.pages)
+                    session.activePageIndex = 0
+                    session.sessionId = loaded.sessionId
+                    session.title = loaded.title
+                    updateUi()
+                    Toast.makeText(activity, "Resumed document with ${session.pageCount} pages", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
     private fun runAutoCropOnCurrentPage() {
         val page = session.currentPage ?: return
-        val origBmp = page.getOriginalBitmap(activity) ?: return
+        val bmp = page.getDisplayBitmap(activity) ?: return
 
         scope.launch(Dispatchers.IO) {
-            var warpedBitmap: Bitmap? = null
             try {
-                val srcMat = BitmapBridge.toMat(origBmp)
-                val scanResult = DocumentScanner.scan(
-                    srcMat,
-                    DocumentScanner.Options(mode = page.mode)
-                )
-                if (scanResult != null) {
-                    warpedBitmap = BitmapBridge.toBitmap(scanResult.warped)
-                    page.corners = scanResult.corners
-                    scanResult.warped.release()
+                val srcMat = BitmapBridge.toMat(bmp)
+                val corners = DocumentScanner.findCorners(srcMat)
+
+                if (corners.size == 4) {
+                    val croppedMat = DocumentScanner.warpPerspective(srcMat, corners)
+                    val croppedBmp = BitmapBridge.toBitmap(croppedMat)
+                    croppedMat.release()
+
+                    withContext(Dispatchers.Main) {
+                        page.processedBitmapCache = croppedBmp
+                        page.appliedQuad = corners
+                        persistSession()
+                        updateUi()
+                    }
                 }
                 srcMat.release()
-            } catch (_: Throwable) {
-                warpedBitmap = null
-            }
-
-            withContext(Dispatchers.Main) {
-                if (warpedBitmap != null) {
-                    page.processedBitmapCache = warpedBitmap
-                    binding.ivDocPagePreview.setImageBitmap(warpedBitmap)
-                    persistSession()
-                }
-            }
+            } catch (_: Throwable) {}
         }
     }
 
     private fun applyFilterToCurrentPage(mode: DocumentScanner.DocumentMode) {
         val page = session.currentPage ?: return
-        val origBmp = page.getOriginalBitmap(activity) ?: return
-        page.mode = mode
+        val baseBmp = page.originalBitmapCache ?: page.processedBitmapCache ?: return
 
         scope.launch(Dispatchers.IO) {
-            var filteredBitmap: Bitmap? = null
             try {
-                val srcMat = BitmapBridge.toMat(origBmp)
-                val scanResult = DocumentScanner.scan(
-                    srcMat,
-                    DocumentScanner.Options(mode = mode)
-                )
-                if (scanResult != null) {
-                    filteredBitmap = BitmapBridge.toBitmap(scanResult.warped)
-                    scanResult.warped.release()
-                }
-                srcMat.release()
-            } catch (_: Throwable) {
-                filteredBitmap = null
-            }
+                val srcMat = BitmapBridge.toMat(baseBmp)
+                val filteredMat = DocumentScanner.process(srcMat, mode)
+                val filteredBmp = BitmapBridge.toBitmap(filteredMat)
 
-            withContext(Dispatchers.Main) {
-                if (filteredBitmap != null) {
-                    page.processedBitmapCache = filteredBitmap
-                    binding.ivDocPagePreview.setImageBitmap(filteredBitmap)
+                filteredMat.release()
+                srcMat.release()
+
+                withContext(Dispatchers.Main) {
+                    page.processedBitmapCache = filteredBmp
+                    page.appliedFilter = mode.name
                     persistSession()
+                    updateUi()
                 }
-            }
+            } catch (_: Throwable) {}
         }
     }
 
@@ -452,35 +541,92 @@ class DocumentScannerController(
             return
         }
 
-        val formats = DocumentExportEngine.OutputFormat.values().map { it.displayName }.toTypedArray()
-        var selectedFormatIndex = 0
+        val sheetBinding = SheetDocumentExportBinding.inflate(activity.layoutInflater)
+        val dialog = BottomSheetDialog(activity)
+        dialog.setContentView(sheetBinding.root)
 
-        val paperSizes = DocumentExportEngine.PaperSize.values().map { it.displayName }.toTypedArray()
-        var selectedPaperIndex = 0
+        sheetBinding.tvExportSubtitle.text = "${session.title} • ${session.pageCount} page(s)"
+        sheetBinding.chipScopeAllPages.text = "All Pages (${session.pageCount})"
+        sheetBinding.chipScopeCurrentPage.text = "Page ${session.activePageIndex + 1} Only"
 
-        AlertDialog.Builder(activity)
-            .setTitle("Export Document (${session.pageCount} Pages)")
-            .setSingleChoiceItems(formats, selectedFormatIndex) { _, which ->
-                selectedFormatIndex = which
+        sheetBinding.btnExportExecute.setOnClickListener {
+            dialog.dismiss()
+
+            // Resolve Format
+            val format = when {
+                sheetBinding.chipFormatSeparatePdfs.isChecked -> DocumentExportEngine.OutputFormat.SEPARATE_PDFS
+                sheetBinding.chipFormatImages.isChecked -> DocumentExportEngine.OutputFormat.IMAGES_ZIP
+                else -> DocumentExportEngine.OutputFormat.SINGLE_PDF
             }
-            .setPositiveButton("Export") { _, _ ->
-                val format = DocumentExportEngine.OutputFormat.values()[selectedFormatIndex]
-                val options = DocumentExportEngine.ExportOptions(
-                    format = format,
-                    paperSize = DocumentExportEngine.PaperSize.values()[selectedPaperIndex]
-                )
-                executeExport(options)
+
+            // Resolve Paper Size
+            val paperSize = when {
+                sheetBinding.chipPaperLetter.isChecked -> DocumentExportEngine.PaperSize.LETTER
+                sheetBinding.chipPaperLegal.isChecked -> DocumentExportEngine.PaperSize.LEGAL
+                sheetBinding.chipPaperA3.isChecked -> DocumentExportEngine.PaperSize.A3
+                sheetBinding.chipPaperA5.isChecked -> DocumentExportEngine.PaperSize.A5
+                sheetBinding.chipPaperTabloid.isChecked -> DocumentExportEngine.PaperSize.TABLOID
+                sheetBinding.chipPaperOriginal.isChecked -> DocumentExportEngine.PaperSize.ORIGINAL_IMAGE
+                else -> DocumentExportEngine.PaperSize.A4
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+
+            // Resolve Orientation
+            val orientation = when {
+                sheetBinding.chipOrientPortrait.isChecked -> DocumentExportEngine.Orientation.PORTRAIT
+                sheetBinding.chipOrientLandscape.isChecked -> DocumentExportEngine.Orientation.LANDSCAPE
+                else -> DocumentExportEngine.Orientation.AUTO
+            }
+
+            // Resolve Fit & Margins
+            val fit = when {
+                sheetBinding.chipFitFill.isChecked -> DocumentExportEngine.PageFit.FILL_PAGE
+                sheetBinding.chipFitPage.isChecked -> DocumentExportEngine.PageFit.FIT_PAGE
+                else -> DocumentExportEngine.PageFit.ORIGINAL
+            }
+
+            val margin = when {
+                sheetBinding.chipMarginZero.isChecked -> DocumentExportEngine.Margin.NONE
+                sheetBinding.chipMarginCompact.isChecked -> DocumentExportEngine.Margin.COMPACT
+                else -> DocumentExportEngine.Margin.NORMAL
+            }
+
+            // Resolve Quality
+            val quality = when {
+                sheetBinding.chipQualityCompact.isChecked -> DocumentExportEngine.ExportQuality.LOW
+                sheetBinding.chipQualityBalanced.isChecked -> DocumentExportEngine.ExportQuality.MEDIUM
+                else -> DocumentExportEngine.ExportQuality.HIGH
+            }
+
+            val isCurrentPageOnly = sheetBinding.chipScopeCurrentPage.isChecked
+
+            val options = DocumentExportEngine.ExportOptions(
+                format = format,
+                paperSize = paperSize,
+                orientation = orientation,
+                fit = fit,
+                margin = margin,
+                quality = quality
+            )
+
+            executeExport(options, isCurrentPageOnly)
+        }
+
+        dialog.show()
     }
 
-    private fun executeExport(options: DocumentExportEngine.ExportOptions) {
+    private fun executeExport(options: DocumentExportEngine.ExportOptions, isCurrentPageOnly: Boolean) {
         Toast.makeText(activity, "Compiling document export...", Toast.LENGTH_SHORT).show()
 
         scope.launch(Dispatchers.IO) {
             try {
-                val result = DocumentExportEngine.exportDocument(activity, session, options)
+                val result = if (isCurrentPageOnly) {
+                    val activeIndex = session.activePageIndex
+                    val page = session.pages[activeIndex]
+                    DocumentExportEngine.exportSinglePage(activity, page, activeIndex, session.title, options)
+                } else {
+                    DocumentExportEngine.exportDocument(activity, session, options)
+                }
+
                 withContext(Dispatchers.Main) {
                     onExportFileRequest(result.file, result.mimeType)
                 }
@@ -512,7 +658,128 @@ class DocumentScannerController(
             // Enable/disable navigation buttons based on current index
             binding.btnDocPageMoveLeft.isEnabled = (session.activePageIndex > 0)
             binding.btnDocPageMoveRight.isEnabled = (session.activePageIndex < session.pageCount - 1)
+
+            // Populate visual horizontal thumbnail strip
+            renderThumbnailStrip()
         }
+    }
+
+    private fun renderThumbnailStrip() {
+        val density = activity.resources.displayMetrics.density
+        val container = binding.containerDocThumbnails
+        container.removeAllViews()
+
+        for (i in 0 until session.pageCount) {
+            val page = session.pages[i]
+            val isSelected = (i == session.activePageIndex)
+
+            val card = MaterialCardView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    (62 * density).toInt(),
+                    (82 * density).toInt()
+                ).apply {
+                    setMargins(0, 0, (8 * density).toInt(), 0)
+                }
+                radius = 10 * density
+                strokeWidth = if (isSelected) (2.5f * density).toInt() else (1 * density).toInt()
+                strokeColor = if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_surface_stroke)
+                setCardBackgroundColor(activity.getColor(R.color.vf_surface_variant))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    session.selectPage(i)
+                    updateUi()
+                }
+            }
+
+            val cardInner = LinearLayout(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                )
+                orientation = LinearLayout.VERTICAL
+            }
+
+            val ivThumb = ImageView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (58 * density).toInt()
+                )
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "Page ${i + 1}"
+                val thumbBmp = page.thumbnailBitmapCache ?: page.getDisplayBitmap(activity)
+                setImageBitmap(thumbBmp)
+            }
+
+            val tvBadge = TextView(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (24 * density).toInt()
+                )
+                gravity = android.view.Gravity.CENTER
+                text = "%02d".format(i + 1)
+                textSize = 11f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(if (isSelected) activity.getColor(R.color.vf_primary) else activity.getColor(R.color.vf_text_primary))
+            }
+
+            cardInner.addView(ivThumb)
+            cardInner.addView(tvBadge)
+            card.addView(cardInner)
+            container.addView(card)
+        }
+
+        // Add trailing "+ Add Page" card
+        val addCard = MaterialCardView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (62 * density).toInt(),
+                (82 * density).toInt()
+            )
+            radius = 10 * density
+            strokeWidth = (1 * density).toInt()
+            strokeColor = activity.getColor(R.color.vf_surface_stroke)
+            setCardBackgroundColor(activity.getColor(R.color.vf_surface))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                openCameraViewfinder()
+            }
+        }
+
+        val addInner = LinearLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+            gravity = android.view.Gravity.CENTER
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val addIcon = ImageView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (24 * density).toInt(),
+                (24 * density).toInt()
+            )
+            setImageResource(R.drawable.ic_camera)
+            imageTintList = android.content.res.ColorStateList.valueOf(activity.getColor(R.color.vf_primary))
+            contentDescription = "Add Page"
+        }
+
+        val addText = TextView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            text = "+ Add"
+            textSize = 10f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(activity.getColor(R.color.vf_primary))
+        }
+
+        addInner.addView(addIcon)
+        addInner.addView(addText)
+        addCard.addView(addInner)
+        container.addView(addCard)
     }
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {

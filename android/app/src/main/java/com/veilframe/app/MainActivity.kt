@@ -47,6 +47,7 @@ import com.veilframe.app.tools.ToolMode
 import com.veilframe.app.tools.ToolSessionManager
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MorphDialogController
+import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.updates.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -387,6 +388,7 @@ class MainActivity : AppCompatActivity() {
         initSubControllers()
         initStudioWorkspaces()
         setupListeners()
+        VeilFrameInteraction.bindWorkspace(binding.root)
 
         binding.tvVersionBadge.text = "v${BuildConfig.VERSION_NAME}"
         binding.tvUpdateStatus.text = "Installed: v${BuildConfig.VERSION_NAME} • Local Engine"
@@ -1382,8 +1384,8 @@ class MainActivity : AppCompatActivity() {
                             null,
                             com.google.android.material.R.attr.borderlessButtonStyle
                         ).apply {
-                            layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
-                            setIconResource(R.drawable.ic_share)
+                            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
+                            setIconResource(R.drawable.ic_action_share)
                             iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.vf_primary))
                             iconGravity = com.google.android.material.button.MaterialButton.ICON_GRAVITY_TEXT_START
                             setPadding(0, 0, 0, 0)
@@ -1398,7 +1400,7 @@ class MainActivity : AppCompatActivity() {
                             null,
                             com.google.android.material.R.attr.borderlessButtonStyle
                         ).apply {
-                            layoutParams = LinearLayout.LayoutParams((40 * density).toInt(), (40 * density).toInt())
+                            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
                             setIconResource(R.drawable.ic_action_clear)
                             iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.vf_text_secondary))
                             setPadding(0, 0, 0, 0)

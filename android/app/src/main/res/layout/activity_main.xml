@@ -246,7 +246,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="FLAGSHIP NEURAL ENGINE"
+                            android:text="OFFLINE AI ENHANCEMENT"
                             android:textColor="@color/vf_primary"
                             android:textSize="11sp"
                             android:textStyle="bold"
@@ -260,7 +260,7 @@
                             android:paddingEnd="6dp"
                             android:paddingTop="2dp"
                             android:paddingBottom="2dp"
-                            android:text="Stable • Local ONNX"
+                            android:text="Private &amp; Offline"
                             android:textColor="@color/vf_secondary"
                             android:textSize="10sp"
                             android:textStyle="bold" />
@@ -279,7 +279,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Offline 2x / 4x super-resolution and neural restoration with local tiled acceleration."
+                        android:text="Offline AI super-resolution &amp; restoration (2x / 4x) without cloud data leakage."
                         android:textColor="@color/vf_text_secondary"
                         android:textSize="12sp" />
 

@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.segmentation.BackgroundRemover
 import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
+import com.veilframe.app.ui.motion.VeilFrameInteraction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,6 +67,25 @@ class BackgroundRemoverController(
             exportPng()
         }
 
+        binding.chipGroupBgBackdrop.setOnCheckedStateChangeListener { _, checkedIds ->
+            val mode = when {
+                checkedIds.contains(binding.chipBackdropWhite.id) ->
+                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_WHITE
+                checkedIds.contains(binding.chipBackdropBlack.id) ->
+                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_BLACK
+                else ->
+                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.TRANSPARENT_CHECKERBOARD
+            }
+            binding.splitViewBgCompare.backgroundMode = mode
+        }
+
+        binding.chipGroupBgRefinement.setOnCheckedStateChangeListener { _, _ ->
+            if (sourceBitmap != null) {
+                executeRemoval()
+            }
+        }
+
+        VeilFrameInteraction.bindWorkspace(binding.root)
         updateUi()
     }
 
@@ -96,18 +116,29 @@ class BackgroundRemoverController(
         val srcBmp = sourceBitmap ?: return
         Toast.makeText(activity, "Extracting foreground subject...", Toast.LENGTH_SHORT).show()
 
+        val iterations = when {
+            binding.chipRefineHigh.isChecked -> 5
+            binding.chipRefineLow.isChecked -> 1
+            else -> 3
+        }
+        val feather = when {
+            binding.chipRefineHigh.isChecked -> 3.5
+            binding.chipRefineLow.isChecked -> 1.0
+            else -> 2.5
+        }
+
         scope.launch(Dispatchers.IO) {
             var cutoutBmp: Bitmap? = null
             try {
                 val srcMat = BitmapBridge.toMat(srcBmp)
 
                 // Multi-pass foreground segmentation:
-                // 1. GrabCut algorithm with bounding box prior
+                // 1. GrabCut algorithm with bounding box prior & configurable iterations
                 // 2. Downscaled working resolution for responsive performance (<200ms)
                 // 3. Bilinear upsampling and binary thresholding
-                // 4. Morphological hole filling & feathering via BackgroundRemover
+                // 4. Morphological hole filling & edge feathering via BackgroundRemover
                 val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
-                    computeForegroundMask(img)
+                    computeForegroundMask(img, iterations)
                 }
 
                 val removalResult = BackgroundRemover.removeBackground(
@@ -117,7 +148,7 @@ class BackgroundRemoverController(
                         cleanupKernel = 5,
                         fillHoles = true,
                         refineEdges = true,
-                        featherRadius = 2.5
+                        featherRadius = feather
                     )
                 )
 
@@ -137,7 +168,7 @@ class BackgroundRemoverController(
         }
     }
 
-    private fun computeForegroundMask(img: Mat): Mat {
+    private fun computeForegroundMask(img: Mat, iterations: Int = 3): Mat {
         val rows = img.rows()
         val cols = img.cols()
 
@@ -183,7 +214,7 @@ class BackgroundRemoverController(
                 rect,
                 bgdModel,
                 fgdModel,
-                3,
+                iterations,
                 Imgproc.GC_INIT_WITH_RECT
             )
 
@@ -233,8 +264,27 @@ class BackgroundRemoverController(
         scope.launch(Dispatchers.IO) {
             val exportDir = File(activity.cacheDir, "exports").apply { mkdirs() }
             val outFile = File(exportDir, "Cutout_${System.currentTimeMillis()}.png")
+
+            val finalExportBmp = when (binding.splitViewBgCompare.backgroundMode) {
+                com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> {
+                    val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(comp)
+                    canvas.drawColor(android.graphics.Color.WHITE)
+                    canvas.drawBitmap(bmp, 0f, 0f, null)
+                    comp
+                }
+                com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> {
+                    val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(comp)
+                    canvas.drawColor(android.graphics.Color.BLACK)
+                    canvas.drawBitmap(bmp, 0f, 0f, null)
+                    comp
+                }
+                else -> bmp
+            }
+
             FileOutputStream(outFile).use { fos ->
-                bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
             }
             withContext(Dispatchers.Main) {
                 onExportPngRequest(outFile)
@@ -247,12 +297,14 @@ class BackgroundRemoverController(
             binding.containerBgEmptyState.visibility = View.VISIBLE
             binding.splitViewBgCompare.visibility = View.GONE
             binding.cardBgActionDock.visibility = View.GONE
+            binding.containerBgControls.visibility = View.GONE
             binding.btnBgResetCompare.visibility = View.GONE
             binding.btnBgSavePng.isEnabled = false
         } else {
             binding.containerBgEmptyState.visibility = View.GONE
             binding.splitViewBgCompare.visibility = View.VISIBLE
             binding.cardBgActionDock.visibility = View.VISIBLE
+            binding.containerBgControls.visibility = View.VISIBLE
             binding.btnBgResetCompare.visibility = if (resultBitmap != null) View.VISIBLE else View.GONE
             binding.btnBgSavePng.isEnabled = (resultBitmap != null)
 

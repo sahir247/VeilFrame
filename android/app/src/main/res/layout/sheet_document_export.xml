@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/vf_surface">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="24dp">
+
+        <!-- Drag Handle Indicator -->
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:background="@color/vf_surface_stroke" />
+
+        <!-- Title & Subtitle -->
+        <TextView
+            android:id="@+id/tvExportTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Export Document"
+            android:textColor="@color/vf_text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvExportSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Configure document layout, paper size, and output format"
+            android:textColor="@color/vf_text_secondary"
+            android:textSize="13sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 1. Scope Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="EXPORT SCOPE"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupExportScope"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipScopeAllPages"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="All Pages (1)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipScopeCurrentPage"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Current Page Only" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <!-- 2. Format Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="OUTPUT FORMAT"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupExportFormat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipFormatSinglePdf"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Combined PDF" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipFormatSeparatePdfs"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Separate PDFs" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipFormatImages"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="High-Res Images" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <!-- 3. Paper Size Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PAPER SIZE"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupExportPaper"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleLine="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperA4"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="A4" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperLetter"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="US Letter" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperLegal"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="US Legal" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperA3"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="A3" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperA5"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="A5" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperTabloid"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Tabloid" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipPaperOriginal"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Original (1:1)" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- 4. Orientation Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ORIENTATION"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupExportOrientation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipOrientAuto"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Auto (Match Image)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipOrientPortrait"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Portrait" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipOrientLandscape"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Landscape" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <!-- 5. Page Fit & Margins Row -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PAGE FITTING &amp; MARGINS"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupExportFit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleLine="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFitPage"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="Fit Page" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipFitFill"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Fill (Crop)" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipMarginNormal"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Normal Margins" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipMarginZero"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Zero Margins" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
+
+        <!-- 6. Quality Preset -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="IMAGE COMPRESSION"
+            android:textColor="@color/vf_primary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="6dp" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupExportQuality"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            android:layout_marginBottom="24dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityHigh"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="High (Lossless 95%)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityBalanced"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Balanced (80%)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityCompact"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Compact (60%)" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <!-- 7. Action Button (48dp height minimum for touch target) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExportExecute"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="Export Document"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            app:cornerRadius="16dp"
+            app:icon="@drawable/ic_action_save"
+            app:iconGravity="textStart"
+            app:iconSize="20dp" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

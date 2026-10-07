@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.databinding.LayoutProvenanceBinding
 import com.veilframe.app.storage.SafStorageManager
+import com.veilframe.app.ui.motion.VeilFrameInteraction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,6 +48,8 @@ class ProvenanceController(
                 Toast.makeText(activity, "SHA-256 copied to clipboard", Toast.LENGTH_SHORT).show()
             }
         }
+
+        VeilFrameInteraction.bindWorkspace(binding.root)
     }
 
     fun handleFileSelected(uri: Uri) {

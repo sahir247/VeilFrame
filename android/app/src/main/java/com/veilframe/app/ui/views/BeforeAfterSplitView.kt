@@ -38,6 +38,18 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     private var beforeBitmap: Bitmap? = null
     private var afterBitmap: Bitmap? = null
 
+    enum class BackgroundMode {
+        TRANSPARENT_CHECKERBOARD,
+        PURE_WHITE,
+        PURE_BLACK
+    }
+
+    var backgroundMode: BackgroundMode = BackgroundMode.TRANSPARENT_CHECKERBOARD
+        set(value) {
+            field = value
+            postInvalidateOnAnimation()
+        }
+
     // Split position fraction: 0.0f (all after) to 1.0f (all before)
     var splitFraction: Float = 0.5f
         set(value) {
@@ -292,11 +304,26 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     }
 
     private fun drawCheckerboard(canvas: Canvas, bounds: RectF) {
-        val checkSize = dpToPx(10f)
         val startX = bounds.left.coerceAtLeast(0f)
         val endX = bounds.right.coerceAtMost(width.toFloat())
         val startY = bounds.top.coerceAtLeast(0f)
         val endY = bounds.bottom.coerceAtMost(height.toFloat())
+
+        when (backgroundMode) {
+            BackgroundMode.PURE_WHITE -> {
+                canvas.drawRect(startX, startY, endX, endY, Paint().apply { color = Color.WHITE })
+                return
+            }
+            BackgroundMode.PURE_BLACK -> {
+                canvas.drawRect(startX, startY, endX, endY, Paint().apply { color = Color.BLACK })
+                return
+            }
+            BackgroundMode.TRANSPARENT_CHECKERBOARD -> {
+                // proceed with checkerboard
+            }
+        }
+
+        val checkSize = dpToPx(10f)
 
         var y = startY
         var row = 0

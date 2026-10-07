@@ -20,11 +20,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Swap Space (Prevent Runner OOM)
+        continue-on-error: true
         run: |
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /swapfile
           sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo swapon /swapfile || true
           free -h
 
       - name: Set up JDK 17

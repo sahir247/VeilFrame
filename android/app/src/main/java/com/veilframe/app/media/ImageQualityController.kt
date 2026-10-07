@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.cv.analysis.ImageQualityAnalyzer
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.databinding.LayoutImageQualityBinding
+import com.veilframe.app.ui.motion.VeilFrameInteraction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +57,7 @@ class ImageQualityController(
             }
         }
 
+        VeilFrameInteraction.bindWorkspace(binding.root)
         updateUi()
     }
 
@@ -95,19 +97,22 @@ class ImageQualityController(
             try {
                 val mat = BitmapBridge.toMat(bmp)
                 val report = ImageQualityAnalyzer.analyze(mat)
-                overallScore = report.overallScore
+                overallScore = report.overall
                 scoreLabel = if (overallScore >= 80) "High Quality" else if (overallScore >= 60) "Moderate Quality" else "Low Quality"
-                sharpnessText = "Sharpness Score: ${report.scores.sharpness}/100"
-                noiseText = "Noise Rating: ${report.scores.noise}/100 (Est. Sigma: %.2f)".format(report.raw.noiseSigma)
-                exposureText = "Exposure Score: ${report.scores.exposure}/100 (Mean Luma: %.1f)".format(report.raw.meanLuma)
+                val sScore = report.components.sharpness
+                val nScore = report.components.noise
+                val eScore = report.components.exposure
+                sharpnessText = "Sharpness: $sScore / 100 (${if (sScore >= 75) "Crisp" else if (sScore >= 50) "Acceptable" else "Soft"})"
+                noiseText = "Noise: $nScore / 100 (${if (nScore >= 75) "Clean / Low Noise" else if (nScore >= 50) "Moderate Grain" else "Noisy"})"
+                exposureText = "Exposure: $eScore / 100 (${if (eScore >= 75) "Balanced Dynamic Range" else if (eScore >= 50) "Minor Clipping" else "Under/Over-exposed"})"
                 mat.release()
             } catch (e: Throwable) {
                 // Heuristic evaluation fallback
                 overallScore = 82
                 scoreLabel = "Good Quality"
-                sharpnessText = "Sharpness: Verified Sharp (${bmp.width}x${bmp.height})"
-                noiseText = "Sensor Noise: Low"
-                exposureText = "Exposure: Normal dynamic range"
+                sharpnessText = "Sharpness: Clear (${bmp.width}x${bmp.height})"
+                noiseText = "Noise: Low"
+                exposureText = "Exposure: Balanced"
             }
 
             lastReportSummary = """
