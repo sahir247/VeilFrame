@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.BitmapRegionDecoder
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 
 /**
  * F1 (memory correctness): abstraction over the upscale SOURCE image.
@@ -68,9 +69,12 @@ class UriRegionSource(
         val stream = context.contentResolver.openInputStream(uri)
             ?: throw TileIOException("content resolver returned no stream for $uri")
         return stream.use { input ->
-            @Suppress("DEPRECATION") // BitmapRegionDecoder.newInstance: API 10+, deprecated but functional on 31+
-            val decoder = BitmapRegionDecoder.newInstance(input)
-                ?: throw TileIOException("BitmapRegionDecoder could not open $uri")
+            val decoder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                BitmapRegionDecoder.newInstance(input)
+            } else {
+                @Suppress("DEPRECATION")
+                BitmapRegionDecoder.newInstance(input, false)
+            } ?: throw TileIOException("BitmapRegionDecoder could not open $uri")
             try {
                 val options = BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888

@@ -350,6 +350,7 @@ class DocumentScannerController(
         }
     }
 
+    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun analyzeFrameForDocument(imageProxy: ImageProxy) {
         // Fast bail-out when the CV engine is unavailable: never burn frames
         // converting JPEGs just to swallow UnsatisfiedLinkError per frame (CV-6).
