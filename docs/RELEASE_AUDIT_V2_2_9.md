@@ -155,12 +155,23 @@ Target: VeilFrame-debug.apk
 - **Phase 1 (Production vs Emulator ABI Partitioning)**:
   - `release`: Restricts `abiFilters` exclusively to `arm64-v8a`, eliminating ~25+ MB duplicate x86_64 OpenCV, FFmpegKit, and ONNX Runtime binaries from user downloads.
   - `debug`: Retains `arm64-v8a` + `x86_64` for Android Studio emulators and developer workflows.
-  - Granular control via `-PtargetAbi=<abi>` flag for custom targets.
+  - Granular control via `-PtargetAbi=<abi>` flag (supports single ABI or comma-separated list), which takes strict precedence across `defaultConfig`, `release`, and `debug` without being overridden by buildType defaults.
 - **Phase 2 (Release Symbol Stripping via AGP Variant API)**:
   - `debug`: Configured via `androidComponents.onVariants(selector().withBuildType("debug"))` to retain native symbols for crash stack unwinding and debugging.
   - `release`: Strips unneeded `.so` debug symbols automatically via AGP's `stripReleaseDebugSymbols`.
-- **C++ Runtime Investigation (`c++_static` vs `c++_shared`)**:
-  - Investigated `ANDROID_STL=c++_static` vs `c++_shared`. VeilFrame bundles multiple independent native dependencies (`libopencv_java4.so`, `ffmpeg-kit-full-gpl`, and `onnxruntime-android`). Using `c++_shared` across multiple independently-compiled AARs introduces serious risks of ODR (One Definition Rule) violations, incompatible libc++ ABI collisions, and `SIGSEGV` during static initialization. Preserving `c++_static` with symbol stripping is the safest, standard production architecture.
+- **C++ Runtime Architecture & Tradeoff Evaluation (`c++_static` vs `c++_shared`)**:
+  - **Current Stack**:
+    - `libopencv_java4.so`: Built in-tree with `ANDROID_STL=c++_static` (NDK r27.2).
+    - `ffmpeg-kit-full-gpl`: Prebuilt AAR providing its own native stack dynamically linked against `libc++_shared.so` (Clang 18.0.1 / NDK r27).
+    - `onnxruntime-android`: Prebuilt AAR statically linking its C++ runtime (`c++_static`).
+  - **Tradeoff Analysis**:
+    - `c++_static`:
+      - *Advantage*: Absolute module isolation. Encapsulates all C++ runtime symbols, allocators, and exception tables within `libopencv_java4.so`, completely decoupling it from FFmpegKit's toolchain and any external NDK version drift.
+      - *Cost*: Modest duplication (~1–1.5 MB) of standard library runtime code embedded inside `libopencv_java4.so`.
+    - `c++_shared`:
+      - *Advantage*: Potentially saves ~1–1.5 MB duplicated runtime by sharing the `libc++_shared.so` that FFmpegKit already bundles in the APK.
+      - *Cost / Risks*: Requires AGP packaging resolution (`pickFirsts += "**/libc++_shared.so"`). More critically, introduces tight NDK toolchain coupling—if OpenCV's NDK version drifts from FFmpegKit's prebuilt NDK version, ABI layout mismatches (`std::string`, `std::vector`), exception pointer divergence, or allocator conflicts can arise.
+  - **Verdict**: Preserving `c++_static` for v2.2.9 is maintained as a **deferred optimization requiring controlled native-runtime compatibility testing**, rather than a permanently settled architecture. Testing OpenCV compiled against `c++_shared` under synchronized NDK r27 CI builds is slated for a future minor release cycle.
 
 ---
 

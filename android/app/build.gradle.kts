@@ -7,6 +7,12 @@ android {
     namespace = "com.veilframe.app"
     compileSdk = 35
 
+    val customAbis = (project.findProperty("targetAbi") as String?)
+        ?.split(",")
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() }
+        ?.takeIf { it.isNotEmpty() }
+
     defaultConfig {
         applicationId = "com.veilframe.app"
         minSdk = 26
@@ -17,9 +23,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            val customAbi = project.findProperty("targetAbi") as String?
-            if (!customAbi.isNullOrBlank()) {
-                abiFilters += customAbi
+            if (customAbis != null) {
+                abiFilters += customAbis
             } else {
                 abiFilters += "arm64-v8a"
             }
@@ -70,18 +75,27 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
-            // Production release builds package only arm64-v8a to eliminate emulator ABI bloat
+            // Production release packages arm64-v8a by default, or the explicit -PtargetAbi override
             ndk {
                 abiFilters.clear()
-                abiFilters.add("arm64-v8a")
+                if (customAbis != null) {
+                    abiFilters.addAll(customAbis)
+                } else {
+                    abiFilters.add("arm64-v8a")
+                }
             }
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            // Debug & local development builds retain x86_64 for Android Studio emulators
+            // Debug packages emulator x86_64 + device arm64-v8a by default, or explicit -PtargetAbi
             ndk {
-                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+                abiFilters.clear()
+                if (customAbis != null) {
+                    abiFilters.addAll(customAbis)
+                } else {
+                    abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+                }
             }
         }
     }
