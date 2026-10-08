@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import android.os.Bundle
 import android.view.View
@@ -1839,7 +1840,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("About VeilFrame")
             .setMessage(
                 """
-                VeilFrame v2.3.0
+                VeilFrame v2.2.9
                 Privacy Forensics & AI Bundler
                 
                 • Local Processing: 100% on-device execution

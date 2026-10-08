@@ -8,15 +8,15 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Strict contract test ensuring 1-to-1 parity between the 13 canonical [WorkspaceRoute]
+ * Strict contract test ensuring 1-to-1 parity between the 14 canonical [WorkspaceRoute]
  * definitions and the UI catalogue layout + Activity click bindings.
  */
 class WorkspaceCatalogueContractTest {
 
     @Test
-    fun `canonical workspace catalogue has exactly 13 routes with complete metadata`() {
+    fun `canonical workspace catalogue has exactly 14 routes with complete metadata`() {
         val routes = WorkspaceRoute.values()
-        assertEquals("WorkspaceRoute catalogue must define exactly 13 canonical workspaces", 13, routes.size)
+        assertEquals("WorkspaceRoute catalogue must define exactly 14 canonical workspaces", 14, routes.size)
 
         routes.forEach { route ->
             assertNotNull(route.id)
@@ -30,7 +30,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `all 13 canonical workspaces have corresponding cards in layout_tools_catalogue`() {
+    fun `all 14 canonical workspaces have corresponding cards in layout_tools_catalogue`() {
         val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
         val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
         val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
@@ -51,10 +51,11 @@ class WorkspaceCatalogueContractTest {
             "cardToolFolderAnalyzer",
             "cardToolAiBundler",
             "cardToolMarkdownStudio",
-            "cardToolProvenance"
+            "cardToolProvenance",
+            "cardToolMotionLab"
         )
 
-        assertEquals("Expected exactly 13 card IDs in layout", 13, expectedCardIds.size)
+        assertEquals("Expected exactly 14 card IDs in layout", 14, expectedCardIds.size)
 
         expectedCardIds.forEach { cardId ->
             assertTrue(
@@ -71,7 +72,7 @@ class WorkspaceCatalogueContractTest {
     }
 
     @Test
-    fun `activity wires all 13 workspace card listeners and filter pairs`() {
+    fun `activity wires all 14 workspace card listeners and filter pairs`() {
         val actFile = File("src/main/java/com/veilframe/app/MainActivity.kt")
         val altActFile = File("android/app/src/main/java/com/veilframe/app/MainActivity.kt")
         val targetFile = if (actFile.exists()) actFile else altActFile
@@ -92,7 +93,8 @@ class WorkspaceCatalogueContractTest {
             "cardToolFolderAnalyzer",
             "cardToolAiBundler",
             "cardToolMarkdownStudio",
-            "cardToolProvenance"
+            "cardToolProvenance",
+            "cardToolMotionLab"
         )
 
         expectedCards.forEach { cardId ->

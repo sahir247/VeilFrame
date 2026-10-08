@@ -9,9 +9,9 @@ import org.junit.Test
 class WorkspaceRouteTest {
 
     @Test
-    fun `all 13 canonical workspaces are defined and populated`() {
+    fun `all 14 canonical workspaces are defined and populated`() {
         val routes = WorkspaceRoute.values()
-        assertEquals("Must define exactly 13 canonical workspaces", 13, routes.size)
+        assertEquals("Must define exactly 14 canonical workspaces", 14, routes.size)
 
         routes.forEach { route ->
             assertNotNull(route.id)
@@ -30,7 +30,7 @@ class WorkspaceRouteTest {
         val analyze = WorkspaceRoute.forCategory(WorkspaceCategory.ANALYZE)
         val developer = WorkspaceRoute.forCategory(WorkspaceCategory.DEVELOPER)
 
-        assertEquals("Create & Edit category must contain 6 studios", 6, createEdit.size)
+        assertEquals("Create & Edit category must contain 7 studios", 7, createEdit.size)
         assertEquals("Privacy category must contain 2 sanitizers", 2, privacy.size)
         assertEquals("Analyze category must contain 2 tools", 2, analyze.size)
         assertEquals("Developer category must contain 3 tools", 3, developer.size)
@@ -41,6 +41,7 @@ class WorkspaceRouteTest {
         assertTrue(createEdit.contains(WorkspaceRoute.DOCUMENT_SCANNER))
         assertTrue(createEdit.contains(WorkspaceRoute.BACKGROUND_REMOVER))
         assertTrue(createEdit.contains(WorkspaceRoute.IMAGE_UPSCALER))
+        assertTrue(createEdit.contains(WorkspaceRoute.MOTION_LAB))
 
         assertTrue(privacy.contains(WorkspaceRoute.IMAGE_CLEANER))
         assertTrue(privacy.contains(WorkspaceRoute.VIDEO_CLEANER))
@@ -71,8 +72,11 @@ class WorkspaceRouteTest {
         val qrResults = WorkspaceRoute.search("qr")
         assertTrue("Searching 'qr' must return QR Code Studio", qrResults.contains(WorkspaceRoute.QR_STUDIO))
 
+        val motionResults = WorkspaceRoute.search("optical flow")
+        assertTrue("Searching 'optical flow' must return Motion Lab", motionResults.contains(WorkspaceRoute.MOTION_LAB))
+
         val emptyResults = WorkspaceRoute.search("")
-        assertEquals("Empty query must return all 13 workspaces", 13, emptyResults.size)
+        assertEquals("Empty query must return all 14 workspaces", 14, emptyResults.size)
     }
 
     @Test

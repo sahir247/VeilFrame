@@ -1,15 +1,16 @@
 {
-  "versionCode": 230,
-  "versionName": "2.3.0",
-  "tag": "v2.3.0",
+  "versionCode": 229,
+  "versionName": "2.2.9",
+  "tag": "v2.2.9",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "Material 3 Expressive design system v3.0 (Quiet Intensity): spring-physics motion, emphasized typography, container hierarchy",
-    "Expressive components: 64dp navigation bar with pill indicator, thick & wavy progress indicators, 5-tier button sizes with shape morph",
-    "Monochrome-first theming extended with tertiary accents, full surface-container ladders (light/dark/AMOLED) and Dynamic Color role mapping",
-    "Accessibility: 40dp+ icon button targets, 48dp secondary actions, 11sp text floor, reduced-motion spring collapse",
-    "AI Upscaler stability & performance program (see docs/UPSCALER_STABILITY_FIX_PLAN.md)"
+    "Material 3 Expressive UI: spring-physics motion (VfSprings v3.1), emphasized typography, surface-container ladders, and unified WorkspaceInsets",
+    "Motion Lab (Alpha): frame interpolation and 2x/4x FPS synthesis powered by native optical flow (DIS / Farnebäck)",
+    "Document Scanner: real-time EMA QuadStabilizer, per-page exposure/contrast/saturation Adjust dialog, and progressive PDF export",
+    "Background Remover: direct MediaStore gallery exports (Pictures/VeilFrame) with persistent Library synchronization",
+    "AI Upscaler: streaming band processing for huge images, dynamic memory governor (6–16 GB devices), Lanczos-3 precomputed kernels, and fail-closed quantized-model pipeline (FP16/INT8)",
+    "CV Reliability: Phase B6 cancellation checkpoints across all computer vision primitives and OpenCV 4.14.0 + WeChatQRCode in-tree SDK"
   ]
 }

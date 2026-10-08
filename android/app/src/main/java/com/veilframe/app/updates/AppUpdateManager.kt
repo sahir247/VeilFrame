@@ -597,7 +597,7 @@ class AppUpdateManager(
                     } else if (isRepairMode) {
                         Toast.makeText(activity, "Repair package not available on GitHub release.", Toast.LENGTH_LONG).show()
                     } else {
-                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.3.0" } catch (_: Exception) { "2.3.0" }
+                        val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.9" } catch (_: Exception) { "2.2.9" }
                         binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Up to date"
                         binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_accent_green))
                         if (isUserInitiated) {
@@ -613,7 +613,7 @@ class AppUpdateManager(
                         if (isUserInitiated) {
                             Toast.makeText(activity, "$action failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         } else {
-                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.3.0" } catch (_: Exception) { "2.3.0" }
+                            val currentVersionName = try { activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "2.2.9" } catch (_: Exception) { "2.2.9" }
                             binding.tvUpdateStatus.text = "Installed: v$currentVersionName • Local Engine"
                             binding.tvUpdateStatus.setTextColor(activity.getColor(R.color.vf_text_secondary))
                         }

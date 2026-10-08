@@ -20,7 +20,7 @@
 
 ## Executive Overview
 
-**VeilFrame** is an offline-first, local-native multimedia engineering, signal transformation, and privacy compilation platform. Originally architected as a specialized bitstream privacy sanitizer, VeilFrame has evolved into a complete, standalone workstation spanning **8 specialized creative and forensic workspaces** across Mobile (Android) and Desktop (Windows, Linux, macOS).
+**VeilFrame** is an offline-first, local-native multimedia engineering, signal transformation, and privacy compilation platform. Originally architected as a specialized bitstream privacy sanitizer, VeilFrame has evolved into a complete, standalone workstation spanning **10 specialized creative, computer vision, and forensic workspaces** across Mobile (Android) and Desktop (Windows, Linux, macOS).
 
 VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sovereignty, and enforces strict mathematical boundaries across all operations.
 
@@ -33,24 +33,27 @@ VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sover
                                         │
         ┌───────────────────────────────┼───────────────────────────────┐
         ▼                               ▼                               ▼
- [ Creative Studios ]           [ Privacy Cleaners ]          [ Forensics & AI ]
- • AI Image Upscaler            • Video Sanitizer             • Folder Forensic Scanner
- • QR Code Studio (11 Modes)    • Image Privacy Compiler      • AI Context Bundler (.aibundle)
- • Video Studio & Trimmer                                     • Offline Markdown Studio
- • Image Studio & Compressor                                  • Cryptographic Provenance
+ [ Creative & Vision Studios ]   [ Privacy & Forensics ]       [ Developer & Docs ]
+ • AI Image Upscaler (Streaming) • Video Privacy Sanitizer     • Folder Forensic Scanner
+ • QR Code Studio (11 Modes)     • Image Privacy Compiler      • AI Context Bundler (.aibundle)
+ • Document Scanner (Stabilized) • Background Remover (Gallery) • Offline Markdown Studio
+ • Motion Lab (Optical Flow FPS)                               • Cryptographic Provenance
+ • Video Studio & Trimmer
+ • Image Studio & Compressor
 ```
 
 | Workspace | Domain | Key Technology | Core Capabilities |
 |---|---|---|---|
-| **1. AI Image Upscaler** | Creative / AI | ONNX Runtime, Tiled Streamer | Real-ESRGAN, Anime 4B, UltraSharp, FBCNN deblocking, SCUNet denoising, smoothstep tile blending. |
-| **2. QR Code Studio** | Creative / Utility | ZXing, CameraX, Canvas Engine | 11 artistic rendering modes, logo masking, background image embedding, live camera scanning, safe intent dispatch. |
-| **3. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Visual timeline range trimming, target size ceilings (WhatsApp, Discord), rotation, aspect cropping, speed scaling. |
-| **4. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing. |
-| **5. Video Cleaner** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate. |
-| **6. Image Cleaner** | Privacy / Forensics | Deterministic Compiler | Layer A container strip, Layer B sRGB normalize, Layer C solid redaction, 7 red-team probes, 5-contract QualityGate. |
-| **7. Folder Scanner** | Forensics / Storage | SQLite3, Parallel Hasher | Selective directory traversal, staged 3-tier duplicate file detector, wasted space calculation, full 64-char SHA-256. |
-| **8. AI Context Bundler** | Developer / LLM | PathSpec, Knapsack Allocator | Polyglot heuristics (14+ languages), zero-truncation guarantee, modular secret masking, lockfile summarization. |
-| **9. Markdown Studio** | Productivity / Docs | Marked.js, KaTeX, Mermaid | Dual-pane live preview, offline KaTeX math rendering, local Mermaid diagram synthesis, split editor. |
+| **1. AI Image Upscaler** | Creative / AI | ONNX Runtime, Band Streamer | Real-ESRGAN, Anime 4B, UltraSharp, FBCNN deblocking, SCUNet denoising, smoothstep tile blending, disk streaming, dynamic memory governor. |
+| **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, logo masking, background image embedding, live camera scanning, EF parity, safe intent dispatch. |
+| **3. Document Scanner** | Vision / Docs | QuadStabilizer, OpenCV 4.14 | Real-time EMA corner stabilization, per-page exposure/contrast/saturation Adjust dialog, perspective correction, progressive PDF export. |
+| **4. Motion Lab** | Video / Vision | DIS & Farnebäck Optical Flow | Pairwise dense optical flow frame synthesis, 2× and 4× FPS interpolation, flat memory management, direct MediaStore gallery output. |
+| **5. Background Remover** | Vision / Utility | GrabCut, MediaStore | Interactive foreground extraction, transparent PNG export directly to device gallery (`Pictures/VeilFrame`), persistent Library mirror. |
+| **6. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Visual timeline range trimming, target size ceilings (WhatsApp, Discord), rotation, aspect cropping, speed scaling. |
+| **7. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing. |
+| **8. Video & Image Cleaners** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate. |
+| **9. Folder Scanner** | Forensics / Storage | SQLite3, Parallel Hasher | Selective directory traversal, staged 3-tier duplicate file detector, wasted space calculation, full 64-char SHA-256. |
+| **10. AI Bundler & Markdown** | Developer / Docs | PathSpec, Marked.js, KaTeX | Polyglot heuristics (14+ languages), zero-truncation `.aibundle` v1, offline GFM editor with Mermaid diagrams and KaTeX formulas. |
 
 ---
 

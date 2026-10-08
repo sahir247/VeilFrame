@@ -143,7 +143,7 @@ class MotionLabController(
                     inFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IllegalStateException("Cannot open the selected video")
 
-                com.veilframe.app.cv.core.CvRuntime.init(activity)
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
 
                 val retriever = android.media.MediaMetadataRetriever()
                 retriever.setDataSource(inFile.absolutePath)

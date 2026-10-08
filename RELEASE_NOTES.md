@@ -1,30 +1,45 @@
 # VeilFrame Release Notes
 
-## v2.3.0-rc1 — October 2026 (Release Candidate: M3 Expressive UI)
-
-**Material 3 Expressive design system v3.0 "Quiet Intensity" — full UI/UX migration ([ADR 0005](docs/adr/0005-m3-expressive-design-system.md)).**
-- **Expressive foundation:** Material Components 1.12.0 → 1.14.0; theme re-parented to `Theme.Material3Expressive.DayNight.NoActionBar`; spring-physics motion core (`VfSprings`) replacing overshoot interpolators; hand-copied motion tokens deleted (library is source of truth).
-- **Monochrome-first color system:** full surface-container ladders in light + dark, new tertiary editorial voice for all 5 palettes, outline roles, tokenized scrims; widgets migrated from raw `@color/vf_*` pins to theme roles so Dynamic Color finally flows everywhere.
-- **Components:** all 290 buttons remapped to expressive role styles (XL Execute pill, 48dp tonal actions, 40dp icon buttons — fixing 38dp targets); 64dp expressive navigation bar with pill indicator (custom tint selector deleted); thick 8dp + wavy progress indicators; expressive Medium sliders.
-- **Typography:** emphasized type scale for chrome (title-case section headers, BodyLargeEmphasized card titles); 9–10sp text eliminated (11sp floor); telemetry keeps terminal caps identity.
-- **Containment:** hero card on brightest surface with 48dp top rounding; dock on 32dp XL+ card; cards tokenized to container/outline-variant.
-- **Accessibility:** reduced-motion spring collapse retained, 48dp secondary actions, semantic status = container+icon+text, haptics vocabulary centralized (API 26-safe).
-
-**Device-feedback batch (round 10) — stabilization follow-ups from real-device runs.**
-- **NEW: Motion Lab (Alpha)** — optical flow is now its own tool: pick a video, synthesize intermediate frames with the governed `cv/motion` stack (DIS fast / Farnebäck quality), re-encode at 2×/4× frame rate with original audio, save to Gallery + Library. Honest Alpha limits: ≤30 s / ≤900 frames, mixed-resolution refusal, every failure surfaced.
-- **Document scanning:** per-page **Adjust** dialog (exposure/contrast/saturation) wiring the previously dormant `ColorEngine` under CvEngine governance — editing beyond colour filters and auto-crop.
-- **Background remover:** "image not saving" fixed — SAF handoff replaced with a direct MediaStore gallery save (`Pictures/VeilFrame`) plus a persistent `filesDir/exports` copy.
-- **Library:** now merges MediaStore saves (`*/VeilFrame/*` — upscaler, background remover, Motion Lab) with app-dir exports, so the Library shows what was actually stored.
-- **Clipping sweep:** 126 fixed-height text buttons → `wrap_content`, 22 fixed-height text/button rows → `wrap_content`; the expressive type scale no longer fights hardcoded heights.
-
 ## v2.2.9 — October 2026 (Stable)
 
-**OpenCV 4.14.0 native SDK, Computer Vision subsystem & UI redesign architecture.**
-- **OpenCV 4.14.0 SDK Integration:** In-tree native OpenCV 4.14.0 build with WeChatQRCode and Videoio modules.
-- **Computer Vision Subsystem:** Native CV engine featuring `QuadDetector` (document and polygon geometry), `TemplateMatcher` (pattern matching), and `FlowEstimator` (dense optical flow).
-- **Build Stability:** In-process Kotlin compilation and preserved native library debug symbols across builds.
-- **Modern Toolchain:** Updated to latest Android SDK command-line tools.
-- **UI Redesign Baseline:** Architectural foundation ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md)) for the upcoming modular multi-workspace shell.
+**Major Release: Material 3 Expressive UI v3.0, Motion Lab (Optical Flow), Document Scanner Adjust & Stabilization, AI Upscaler Streaming, and OpenCV 4.14.0 Native Engine.**
+
+### New Features & Highlights
+
+1. **Material 3 Expressive UI ("Quiet Intensity") ([ADR 0005](docs/adr/0005-m3-expressive-design-system.md))**:
+   - **Expressive Foundation:** Upgraded to Material Components 1.14.0 with root `Theme.Material3Expressive.DayNight.NoActionBar`.
+   - **Monochrome & Dynamic Colors:** Full surface-container ladders (Lowest to Highest) across light, dark, and AMOLED modes with 5 accent palettes (Monochrome, Forest Sage, Deep Ocean, Warm Amber, Cyber Violet).
+   - **Spring Motion Physics:** Real-world spring dynamics (`VfSprings v3.1` using immutable `SpringSpec` architecture) replacing overshoot interpolators; tactile press-bounce, completion flourish, and reduced-motion contract.
+   - **System Insets Contract:** Centralized `WorkspaceInsets` contract applying edge-to-edge padding across all 12 workspace roots, preventing toolbar and dock occlusion under system bars.
+   - **Clipping Sweep:** Converted 126 fixed-height buttons and 22 rows to `wrap_content`, eliminating label clipping across the larger expressive typography scale.
+
+2. **Motion Lab (10th Native Workspace — Alpha)**:
+   - **Optical Flow Frame Synthesis:** New dedicated workspace wiring the `cv/motion` engine (`FlowEstimator`, `FrameSynthesizer`) for 2× and 4× FPS video frame interpolation.
+   - **Dual Estimation Algorithms:** DIS Optical Flow for fast mobile processing and Farnebäck Optical Flow for high-quality dense motion vectors.
+   - **Memory & Storage Safety:** Flat pairwise Mat memory management, temporary frame scratch cleanup, and direct export to MediaStore (`Movies/VeilFrame`).
+
+3. **Document Scanner Hardening & Adjust Dialog**:
+   - **Real-Time QuadStabilizer:** Exponential Moving Average (EMA, α=0.4) corner smoothing with 48px tolerance and hysteresis, eliminating viewfinder corner strobing.
+   - **Per-Page Image Adjust:** Interactive per-page adjustment dialog for Exposure (−2..+2 stops), Contrast (0.5..2×), and Saturation (0..2×) powered by `cv/color/ColorEngine`.
+   - **CameraX Lifecycle Discipline:** Single-flight capture lock (`isCapturing`) and OOM-guarded bitmap decoding preventing camera executor race conditions.
+   - **Progressive Export Sheet:** Redesigned document export bottom sheet with progressive disclosure ("More options ⇄ Fewer options").
+
+4. **Background Remover Gallery Export**:
+   - **Direct MediaStore Save:** Saves transparent PNG exports directly to the device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, fixing previous SAF handoff failures.
+   - **Persistent Mirror:** Synchronously mirrors exports to `filesDir/exports` for immediate Library visibility.
+
+5. **AI Image Upscaler Streaming & Memory Governor ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
+   - **Streaming Band Processing:** `StreamingPngWriter` and `UpscaleForegroundService` stream output bands directly to disk, enabling massive multi-megapixel upscaling without OOM crashes.
+   - **Dynamic Memory Governor:** Allocates tile sizes and execution paths based on live `MemAvailable`, dynamically tuning performance across 6–16 GB devices.
+   - **Mathematical Resampling:** Precomputed Lanczos-3 weight kernels and bicubic fallbacks for zero-hallucination processing.
+   - **Quantized Model Pipeline:** Production tool (`tools/model_pipeline/quantize_upscale_models.py`) with PSNR validation gates (FP16 $\ge$ 55 dB, INT8 $\ge$ 35 dB).
+
+6. **Unified Library Synchronization**:
+   - **Hybrid Indexing:** Merges MediaStore query results (`DATA LIKE '%/VeilFrame/%'`) with app-internal directory exports so all previous creations appear in the Library.
+
+7. **OpenCV 4.14.0 SDK & Computer Vision Reliability**:
+   - **In-Tree Custom SDK:** Complete custom OpenCV 4.14.0 SDK with WeChatQRCode and native ABIs.
+   - **Phase B6 Cancellation Checkpoints:** 34 granular cancellation checkpoints across GrabCut, quality metrics, contour detection, and Lanczos loops for instant abort responsiveness.
 
 ### Downloads and installation
 
