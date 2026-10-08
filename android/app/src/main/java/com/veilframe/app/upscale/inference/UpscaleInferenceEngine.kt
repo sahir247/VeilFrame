@@ -71,7 +71,7 @@ class UpscaleInferenceEngine(
         model: UpscaleModel,
         targetScale: Int,
         listener: InferenceProgressListener?
-    ): Result<Bitmap> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, UpscaleInferenceParams(), listener)
+    ): Result<UpscaleOutput> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, UpscaleInferenceParams(), listener)
 
     suspend fun upscale(
         source: Bitmap,
@@ -79,7 +79,7 @@ class UpscaleInferenceEngine(
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: InferenceProgressListener? = null
-    ): Result<Bitmap> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, params, listener)
+    ): Result<UpscaleOutput> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, params, listener)
 
     /**
      * F1 primary entry point: streams the source via [SourceAccess] so huge
@@ -94,7 +94,8 @@ class UpscaleInferenceEngine(
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         listener: InferenceProgressListener? = null
-    ): Result<Bitmap> = withContext(Dispatchers.Default) {
+    ): Result<UpscaleOutput> = withContext(Dispatchers.Default) {
+        val t0 = System.currentTimeMillis()
         val srcW = source.width
         val srcH = source.height
 
@@ -106,7 +107,7 @@ class UpscaleInferenceEngine(
             listener?.onStatus("Preparing processing pipeline...")
             listener?.onStage("Preparing", 0, 1)
 
-            val resultBitmap = when (model.type) {
+            val resultOutput = when (model.type) {
                 ModelType.ALGORITHMIC -> {
                     listener?.onStatus("Applying ${model.name}...")
                     listener?.onProgress(0, 1, 0)
@@ -123,7 +124,7 @@ class UpscaleInferenceEngine(
                     }
                     listener?.onProgress(1, 1, 100)
                     listener?.onStage("Complete", 1, 1)
-                    res
+                    UpscaleOutput.InMemory(res)
                 }
                 ModelType.AI_ONNX -> {
                     val modelFile = repository.getModelFile(model.id)
@@ -156,17 +157,37 @@ class UpscaleInferenceEngine(
                         val processor = AiProcessor(context)
                         val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
 
+                        // F2/F4: hybrid refinement needs BOTH the AI output and the
+                        // refined output in RAM — refuse honestly up front when the
+                        // dynamic budget cannot hold them (suggests 4x / smaller source).
+                        if (scalePlan.requiresRefinement) {
+                            val budget = processor.inRamOutputBudget()
+                            val aiBytes = srcW.toLong() * model.nativeScale *
+                                (srcH.toLong() * model.nativeScale) * 4L
+                            val finalBytes = srcW.toLong() * targetScale *
+                                (srcH.toLong() * targetScale) * 4L
+                            if (aiBytes > budget || finalBytes > budget) {
+                                return@withContext Result.failure(
+                                    UpscaleMemoryException(
+                                        "Hybrid ${targetScale}× refinement needs ~${finalBytes / (1024 * 1024)} MB " +
+                                            "in memory (budget ${budget / (1024 * 1024)} MB). " +
+                                            "Use ${model.nativeScale}× or a smaller source."
+                                    )
+                                )
+                            }
+                        }
+
                         listener?.onStatus("Running ${model.name} via ${OnnxSessionManager.lastBackend}...")
                         listener?.onStage("Neural Inference", 0, 1)
 
                         // F4: bounded OOM retry with halved tiles, then typed failure.
                         var attemptParams = params
-                        var aiBitmap: Bitmap? = null
+                        var aiOutput: UpscaleOutput? = null
                         var lastOom: OutOfMemoryError? = null
                         var attempt = 0
-                        while (attempt < 2 && aiBitmap == null) {
+                        while (attempt < 2 && aiOutput == null) {
                             try {
-                                aiBitmap = processor.processImage(
+                                aiOutput = processor.processImage(
                                     session = session,
                                     source = source,
                                     modelName = modelFile.name,
@@ -194,7 +215,7 @@ class UpscaleInferenceEngine(
                                 listener?.onStage("Neural Inference (reduced tiles)", 0, 1)
                             }
                         }
-                        if (aiBitmap == null) {
+                        if (aiOutput == null) {
                             return@withContext Result.failure(
                                 UpscaleMemoryException(
                                     "Neural inference exceeded this device's memory budget " +
@@ -205,6 +226,11 @@ class UpscaleInferenceEngine(
                         }
 
                         if (scalePlan.requiresRefinement) {
+                            val inMemory = aiOutput as? UpscaleOutput.InMemory
+                                ?: return@withContext Result.failure(
+                                    UpscaleMemoryException("Hybrid refinement requires an in-memory AI pass")
+                                )
+                            val aiBitmap = inMemory.bitmap
                             listener?.onStatus("Applying Lanczos refinement (${scalePlan.refinementScale}×)...")
                             listener?.onStage("Refinement", 1, 1)
                             val refinedW = aiBitmap.width * scalePlan.refinementScale
@@ -219,9 +245,9 @@ class UpscaleInferenceEngine(
                             if (!aiBitmap.isRecycled) {
                                 aiBitmap.recycle()
                             }
-                            refinedBitmap
+                            UpscaleOutput.InMemory(refinedBitmap)
                         } else {
-                            aiBitmap
+                            aiOutput
                         }
                     } finally {
                         session.close()
@@ -229,9 +255,31 @@ class UpscaleInferenceEngine(
                 }
             }
 
-            Result.success(resultBitmap)
+            com.veilframe.app.cv.core.CvTelemetry.record(
+                linkedMapOf(
+                    "ts" to System.currentTimeMillis(), "job" to "upscale",
+                    "model" to model.id, "scale" to targetScale,
+                    "backend" to OnnxSessionManager.lastBackend.name,
+                    "chunk" to params.chunkSize, "workers" to params.parallelWorkers,
+                    "srcW" to srcW, "srcH" to srcH,
+                    "ms" to (System.currentTimeMillis() - t0), "outcome" to "ok",
+                    "streamed" to (resultOutput is UpscaleOutput.Streamed)
+                )
+            )
+            Result.success(resultOutput)
         } catch (e: Exception) {
             Log.e(TAG, "Upscale failed: ${e.message}", e)
+            com.veilframe.app.cv.core.CvTelemetry.record(
+                linkedMapOf(
+                    "ts" to System.currentTimeMillis(), "job" to "upscale",
+                    "model" to model.id, "scale" to targetScale,
+                    "backend" to OnnxSessionManager.lastBackend.name,
+                    "chunk" to params.chunkSize, "workers" to params.parallelWorkers,
+                    "srcW" to srcW, "srcH" to srcH,
+                    "ms" to (System.currentTimeMillis() - t0), "outcome" to "err",
+                    "error" to (e.message ?: e.javaClass.simpleName)
+                )
+            )
             Result.failure(e)
         }
     }

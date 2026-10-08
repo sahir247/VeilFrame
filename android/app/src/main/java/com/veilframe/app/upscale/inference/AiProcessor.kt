@@ -43,7 +43,7 @@ class AiProcessor(
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
-    ): Bitmap = processImage(
+    ): UpscaleOutput = processImage(
         session = session,
         source = BitmapSource(inputBitmap) as SourceAccess,
         modelName = modelName,
@@ -65,7 +65,7 @@ class AiProcessor(
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
-    ): Bitmap = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
         val info = ModelInfo(
             session = session,
             modelName = modelName,
@@ -100,7 +100,7 @@ class AiProcessor(
         parallelWorkers: Int,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
-    ): Bitmap = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
         ensureActive()
 
         val tileLimit = info.tileLimit
@@ -129,13 +129,15 @@ class AiProcessor(
         session: OrtSession,
         source: SourceAccess,
         info: ModelInfo
-    ): Bitmap = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
         // runModelOnBitmap never mutates its input, so the old defensive
         // full-size copy (up to 192 MB on 48 MP sources) is dropped.
-        runModelOnBitmap(
-            session = session,
-            bitmap = source.full(),
-            info = info
+        UpscaleOutput.InMemory(
+            runModelOnBitmap(
+                session = session,
+                bitmap = source.full(),
+                info = info
+            )
         )
     }
 
@@ -189,12 +191,52 @@ class AiProcessor(
             onStatus = onStatus
         )
 
-        composeTiles(
-            tiles = tiles,
-            imageSize = TensorSize(source.width, source.height),
-            overlap = info.overlap,
-            scaleFactor = info.scaleFactor
-        )
+        val imageSize = TensorSize(source.width, source.height)
+        val outputBytes = imageSize.width.toLong() * info.scaleFactor *
+            (imageSize.height.toLong() * info.scaleFactor) * 4L
+
+        if (outputBytes <= inRamOutputBudget()) {
+            UpscaleOutput.InMemory(
+                composeTiles(
+                    tiles = tiles,
+                    imageSize = imageSize,
+                    overlap = info.overlap,
+                    scaleFactor = info.scaleFactor
+                )
+            )
+        } else {
+            // F2: band-streaming compose — the full-size output bitmap never exists.
+            Log.i(TAG, "Output ${outputBytes / (1024 * 1024)} MB exceeds RAM budget — streaming to PNG")
+            onStatus?.invoke("Composing output (streaming to disk)...")
+            val outDir = File(context.cacheDir, "upscale_outputs").apply { mkdirs() }
+            val outFile = File(outDir, "upscale_${System.currentTimeMillis()}.png")
+            composeTilesStreaming(
+                tiles = tiles,
+                imageSize = imageSize,
+                overlap = info.overlap,
+                scaleFactor = info.scaleFactor,
+                outFile = outFile
+            )
+        }
+    }
+
+    /**
+     * Dynamic in-RAM output budget (user policy: 6–16 GB devices with
+     * fluctuating availability — neither too conservative nor too aggressive).
+     * min(45% of app heap, 220 MB, half of CURRENTLY available system memory).
+     */
+    internal fun inRamOutputBudget(): Long {
+        val heap = Runtime.getRuntime().maxMemory()
+        val avail = try {
+            com.veilframe.app.cv.core.MemInfoMemoryProbe().availableMemoryBytes()
+        } catch (_: Throwable) {
+            0L
+        }
+        var budget = minOf(heap * 45 / 100, 220L * 1024L * 1024L)
+        if (avail > 0L) {
+            budget = minOf(budget, avail / 2)
+        }
+        return budget.coerceAtLeast(48L * 1024L * 1024L)
     }
 
     /** F5: typed, honest disk-space refusal instead of mid-job write failures. */
@@ -470,15 +512,30 @@ class AiProcessor(
         overlap: Int,
         scaleFactor: Int
     ) = withContext(Dispatchers.Default) {
-        val targetX = tile.area.x * scaleFactor
-        val targetY = tile.area.y * scaleFactor
-        val blendWidth = overlap * scaleFactor
-        val shouldBlendLeft = tile.position.column > 0
-        val shouldBlendTop = tile.position.row > 0
+        blendTileInto(
+            result = result,
+            tileBitmap = tileBitmap,
+            targetX = tile.area.x * scaleFactor,
+            targetY = tile.area.y * scaleFactor,
+            blendWidth = overlap * scaleFactor,
+            shouldBlendLeft = tile.position.column > 0,
+            shouldBlendTop = tile.position.row > 0
+        )
+    }
 
+    /** Draws [tileBitmap] at explicit target coords with smoothstep overlap blending. */
+    private suspend fun blendTileInto(
+        result: Bitmap,
+        tileBitmap: Bitmap,
+        targetX: Int,
+        targetY: Int,
+        blendWidth: Int,
+        shouldBlendLeft: Boolean,
+        shouldBlendTop: Boolean
+    ) {
         if (!shouldBlendLeft && !shouldBlendTop) {
             Canvas(result).drawBitmap(tileBitmap, targetX.toFloat(), targetY.toFloat(), null)
-            return@withContext
+            return
         }
 
         val width = tileBitmap.width
@@ -490,7 +547,7 @@ class AiProcessor(
             result.getPixels(existing, 0, width, targetX, targetY, width, height)
         } catch (_: Throwable) {
             Canvas(result).drawBitmap(tileBitmap, targetX.toFloat(), targetY.toFloat(), null)
-            return@withContext
+            return
         }
 
         tileBitmap.getPixels(incoming, 0, width, 0, 0, width, height)
@@ -521,6 +578,108 @@ class AiProcessor(
         }
 
         result.setPixels(incoming, 0, width, targetX, targetY, width, height)
+    }
+
+    /**
+     * F2: band-streaming compose. Tiles are composed one tile-ROW band at a
+     * time; each band is deflated straight into [outFile] via
+     * [StreamingPngWriter] and recycled, so peak RAM is one band
+     * (outWidth x (tile+overlap) x scale x 4 bytes) instead of the whole
+     * output (which reached 768 MB for 48 MP at 4x and OOM-killed the app).
+     *
+     * Vertical overlap blending stays pixel-identical to the in-RAM path:
+     * each band carries the previous band's tail rows ([prevTail]) so the
+     * smoothstep blend reads the same "existing" content.
+     */
+    private suspend fun composeTilesStreaming(
+        tiles: List<Tile>,
+        imageSize: TensorSize,
+        overlap: Int,
+        scaleFactor: Int,
+        outFile: File
+    ): UpscaleOutput.Streamed = withContext(Dispatchers.Default) {
+        val outW = imageSize.width * scaleFactor
+        val outH = imageSize.height * scaleFactor
+        val blendPx = overlap * scaleFactor
+
+        val rowsByY = tiles.groupBy { it.position.row }.toSortedMap()
+        val maxTileH = rowsByY.values.maxOf { row -> row.maxOf { it.area.height } } * scaleFactor
+        val bandBytes = outW.toLong() * (maxTileH + blendPx) * 4L
+        val heap = Runtime.getRuntime().maxMemory()
+        if (bandBytes > heap * 45 / 100) {
+            throw UpscaleMemoryException(
+                "Output too wide for band-streaming: one band needs ~${bandBytes / (1024 * 1024)} MB " +
+                    "on a ${heap / (1024 * 1024)} MB heap. Use a smaller scale or crop the source."
+            )
+        }
+
+        val writer = StreamingPngWriter(outFile, outW, outH)
+        val rowPixels = IntArray(outW)
+        var prevTail: IntArray? = null
+        var rowsWritten = 0
+        try {
+            val rowKeys = rowsByY.keys.toList()
+            for ((rowNo, key) in rowKeys.withIndex()) {
+                ensureActive()
+                val rowTiles = rowsByY.getValue(key).sortedBy { it.position.column }
+                val isLast = rowNo == rowKeys.lastIndex
+                val rowTopGlobal = rowTiles.first().area.y * scaleFactor
+                val areaH = rowTiles.maxOf { it.area.height } * scaleFactor
+                val topSkip = if (rowNo > 0 && blendPx > 0) blendPx else 0
+                val bandH = topSkip + areaH
+
+                val band = Bitmap.createBitmap(outW, bandH, Bitmap.Config.ARGB_8888)
+                try {
+                    if (topSkip > 0) {
+                        prevTail?.let { band.setPixels(it, 0, outW, 0, 0, outW, topSkip) }
+                    }
+                    for (tile in rowTiles) {
+                        ensureActive()
+                        val tb = loadBitmap(tile.files.output, "processed tile ${tile.index}")
+                        try {
+                            blendTileInto(
+                                result = band,
+                                tileBitmap = tb,
+                                targetX = tile.area.x * scaleFactor,
+                                targetY = tile.area.y * scaleFactor - rowTopGlobal + topSkip,
+                                blendWidth = blendPx,
+                                shouldBlendLeft = tile.position.column > 0,
+                                shouldBlendTop = rowNo > 0
+                            )
+                        } finally {
+                            tb.recycle()
+                        }
+                    }
+
+                    val bottomSkip = if (isLast || blendPx <= 0) 0 else blendPx
+                    for (y in topSkip until bandH - bottomSkip) {
+                        band.getPixels(rowPixels, 0, outW, 0, y, outW, 1)
+                        writer.writeRow(rowPixels)
+                        rowsWritten++
+                    }
+                    prevTail = if (!isLast && blendPx > 0) {
+                        IntArray(outW * blendPx).also {
+                            band.getPixels(it, 0, outW, 0, bandH - blendPx, outW, blendPx)
+                        }
+                    } else {
+                        null
+                    }
+                } finally {
+                    band.recycle()
+                }
+            }
+            if (rowsWritten != outH) {
+                throw TileIOException("Streaming compose wrote $rowsWritten of $outH scanlines")
+            }
+            writer.close()
+        } catch (t: Throwable) {
+            writer.abort()
+            throw t
+        }
+
+        val preview = com.veilframe.app.media.MediaDecoder.decodeSampledFile(outFile)
+            ?: throw TileIOException("Streamed output could not be re-decoded for preview: ${outFile.name}")
+        UpscaleOutput.Streamed(file = outFile, preview = preview, width = outW, height = outH)
     }
 
     private fun resolveParallelWorkers(

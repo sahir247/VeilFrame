@@ -119,6 +119,13 @@
             android:exported="false"
             android:foregroundServiceType="mediaProcessing|dataSync" />
 
+        <!-- F6: keeps long AI upscale jobs alive (OEM phantom-process killers)
+             with a cancellable, silent progress notification. -->
+        <service
+            android:name=".upscale.UpscaleForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Loads the OpenCV native library before Application.onCreate (CV-2 fix) -->
         <provider
             android:name=".cv.core.OpenCVInitProvider"

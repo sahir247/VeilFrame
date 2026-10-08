@@ -46,8 +46,8 @@ data class UpscaleInferenceParams(
             val lowRam = am?.isLowRamDevice ?: false
             val bigScale = targetScale >= 4
 
-            val chunk: Int
-            val workers: Int
+            var chunk: Int
+            var workers: Int
             when {
                 lowRam || heapMb < 256 -> {
                     chunk = if (bigScale) 160 else 256
@@ -62,6 +62,26 @@ data class UpscaleInferenceParams(
                     workers = 2
                 }
             }
+
+            // DYNAMIC adjustment (target fleet: 6-16 GB TOTAL, with fluctuating
+            // AVAILABLE memory): the static heap tier above is only the ceiling.
+            // Live MemAvailable decides the actual profile — neither hardcoded
+            // conservative (would waste 16 GB flagships) nor hardcoded aggressive
+            // (would OOM a 6 GB device busy with other apps).
+            val availBytes = try {
+                com.veilframe.app.cv.core.MemInfoMemoryProbe().availableMemoryBytes()
+            } catch (_: Throwable) {
+                0L
+            }
+            if (availBytes in 1 until 1_500_000_000L) {
+                // Under ~1.5 GB available: step chunk down ~25% (snapped to 32px), single worker.
+                chunk = ((chunk * 3 / 4) / 32 * 32).coerceAtLeast(128)
+                workers = 1
+            } else if (availBytes >= 4_000_000_000L && heapMb >= 512 && !bigScale) {
+                // Plenty of headroom: keep the aggressive profile (2 workers).
+                workers = 2
+            }
+
             return UpscaleInferenceParams(
                 chunkSize = chunk,
                 overlap = minOf(32, chunk / 4),

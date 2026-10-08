@@ -32,6 +32,7 @@ import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.inference.UpscaleInferenceParams
 import com.veilframe.app.upscale.inference.OnnxSessionManager
 import com.veilframe.app.upscale.inference.UpscaleMemoryException
+import com.veilframe.app.upscale.inference.UpscaleOutput
 import com.veilframe.app.upscale.inference.UriRegionSource
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
@@ -61,6 +62,9 @@ class ImageUpscalerController(
 ) {
     companion object {
         private const val TAG = "VeilFrame.ImageUpscaler"
+
+        /** Hard output cap (~200 MP) — beyond this even band-streaming is refused. */
+        private const val OUTPUT_PIXEL_CAP = 200_000_000L
     }
 
     private val upscalerBinding: LayoutImageUpscalerBinding
@@ -87,7 +91,9 @@ class ImageUpscalerController(
     private var sourceW: Int = 0
     private var sourceH: Int = 0
 
-    private var resultBitmap: Bitmap? = null
+    /** F2: result may live in RAM (InMemory) or as a streamed PNG file (Streamed). */
+    private var resultOutput: UpscaleOutput? = null
+    private var resultFile: File? = null
     private var activePreset: UpscalePreset = UpscalePresetRegistry.PHOTO
     private var targetScale: Int = 2
     private var explicitModel: UpscaleModel? = null
@@ -178,7 +184,9 @@ class ImageUpscalerController(
 
     fun handleImageSelected(uri: Uri) {
         selectedUri = uri
-        resultBitmap = null
+        resultOutput = null
+        resultFile?.let { runCatching { it.delete() } }
+        resultFile = null
         scope.launch(Dispatchers.IO) {
             try {
                 val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -263,32 +271,13 @@ class ImageUpscalerController(
         }
     }
 
-    /** F1: power-of-two sampled decode for display-only previews. */
+    /** F1/B5: sampled preview decode via the shared MediaDecoder policy. */
     private fun decodeSampledPreview(uri: Uri, maxEdge: Int): Bitmap? {
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            activity.contentResolver.openInputStream(uri)?.use { s ->
-                BitmapFactory.decodeStream(s, null, bounds)
-            }
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-            var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge) {
-                sample *= 2
-            }
-            val opts = BitmapFactory.Options().apply {
-                inSampleSize = sample
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            activity.contentResolver.openInputStream(uri)?.use { s ->
-                BitmapFactory.decodeStream(s, null, opts)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Preview decode failed", e)
-            null
-        } catch (oom: OutOfMemoryError) {
-            Log.e(TAG, "Preview decode OOM", oom)
-            null
-        }
+        return com.veilframe.app.media.MediaDecoder.decodeSampled(
+            activity.contentResolver,
+            uri,
+            com.veilframe.app.media.MediaDecoder.PREVIEW_PIXEL_CAP
+        )
     }
 
     private fun getUriFileSize(uri: Uri): Long {
@@ -494,7 +483,7 @@ class ImageUpscalerController(
     private fun updateUIState() {
         val hasImage = (sourceAccess != null)
         val isProcessing = (inferenceJob?.isActive == true || downloadJob?.isActive == true)
-        val hasResult = (resultBitmap != null)
+        val hasResult = (resultOutput != null)
         val model = getResolvedModel()
         val isInstalled = repository.isModelInstalled(model)
 
@@ -551,31 +540,8 @@ class ImageUpscalerController(
         }
 
         val model = getResolvedModel()
-
-        // F2: output memory budget — refuse honestly instead of OOM-crashing.
-        // (Band-streaming compose lifts this cap in a follow-up; see fix plan F2.)
-        val heapBytes = Runtime.getRuntime().maxMemory()
-        val outputBudget = minOf(heapBytes * 45 / 100, 220L * 1024L * 1024L)
-        val outputBytes = sourceW.toLong() * targetScale * (sourceH.toLong() * targetScale) * 4L
-        if (outputBytes > outputBudget) {
-            showOutputTooLargeDialog(outputBytes, outputBudget)
-            return
-        }
-
-        // Algorithmic models need the full source in memory (no tiling).
-        if (model.type == com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && sourceBitmap == null) {
-            val srcBytes = sourceW.toLong() * sourceH.toLong() * 4L
-            if (srcBytes > heapBytes * 35 / 100) {
-                Toast.makeText(
-                    activity,
-                    "Lanczos/Bicubic needs the whole image in memory — too large on this device. " +
-                        "Use an AI model (streams from disk) or a smaller source.",
-                    Toast.LENGTH_LONG
-                ).show()
-                return
-            }
-        }
-
+        // F2/F3/F11 gates + profiles run off the main thread inside
+        // executeUpscaling (live MemAvailable + heap + thermal/battery state).
         if (repository.isModelInstalled(model)) {
             executeUpscaling(src, model, targetScale)
         } else {
@@ -583,21 +549,12 @@ class ImageUpscalerController(
         }
     }
 
-    private fun showOutputTooLargeDialog(outputBytes: Long, budgetBytes: Long) {
-        val outMp = (sourceW.toLong() * targetScale) * (sourceH.toLong() * targetScale) / 1_000_000.0
+    private fun showRefusalDialog(message: String, offerTwoX: Boolean) {
         val builder = MaterialAlertDialogBuilder(activity)
-            .setTitle("Output too large for this device")
-            .setMessage(
-                String.format(
-                    Locale.US,
-                    "A %d× upscale of this %d×%d source produces ~%.0f MP (~%d MB in memory), " +
-                        "exceeding the safe budget (~%d MB).\n\nUse a smaller scale or crop the source first.",
-                    targetScale, sourceW, sourceH, outMp,
-                    outputBytes / (1024 * 1024), budgetBytes / (1024 * 1024)
-                )
-            )
+            .setTitle("Cannot run this job")
+            .setMessage(message)
             .setNegativeButton("Cancel", null)
-        if (targetScale > 2) {
+        if (offerTwoX && targetScale > 2) {
             builder.setPositiveButton("Switch to 2×") { _, _ ->
                 targetScale = 2
                 upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale2x)
@@ -607,7 +564,50 @@ class ImageUpscalerController(
             builder.setPositiveButton("OK", null)
         }
         builder.show()
-        onLog("[UPSCALER] Refused: output ${outputBytes / (1024 * 1024)} MB > budget ${budgetBytes / (1024 * 1024)} MB")
+        onLog("[UPSCALER] Refused: $message")
+    }
+
+    /**
+     * Background execution gate (F2): honest refusals with exact numbers.
+     * AI models stream to disk beyond the RAM budget, so they are only refused
+     * above the hard output cap; algorithmic models need everything in RAM.
+     * Returns null when the job may proceed, else the user-facing reason.
+     */
+    private fun evaluateExecutionGate(model: UpscaleModel, scale: Int): String? {
+        val outPixels = sourceW.toLong() * scale * (sourceH.toLong() * scale)
+        if (outPixels > OUTPUT_PIXEL_CAP) {
+            return String.format(
+                Locale.US,
+                "Output would be ~%.0f MP — above the 200 MP device-safety cap. " +
+                    "Use a smaller scale or crop the source first.",
+                outPixels / 1_000_000.0
+            )
+        }
+        if (model.type == com.veilframe.app.upscale.model.ModelType.ALGORITHMIC) {
+            val heap = Runtime.getRuntime().maxMemory()
+            val avail = try {
+                com.veilframe.app.cv.core.MemInfoMemoryProbe().availableMemoryBytes()
+            } catch (_: Throwable) {
+                0L
+            }
+            var budget = minOf(heap * 45 / 100, 220L * 1024L * 1024L)
+            if (avail > 0L) budget = minOf(budget, avail / 2)
+
+            if (sourceBitmap == null && sourceW.toLong() * sourceH.toLong() * 4L > heap * 35 / 100) {
+                return "Lanczos/Bicubic needs the whole image in memory — too large on this device. " +
+                    "Use an AI model (streams from disk) or a smaller source."
+            }
+            val outBytes = outPixels * 4L
+            if (outBytes > budget) {
+                return String.format(
+                    Locale.US,
+                    "Algorithmic output needs ~%d MB in memory (current budget ~%d MB). " +
+                        "Use an AI model (streams to disk) or a smaller scale.",
+                    outBytes / (1024 * 1024), budget / (1024 * 1024)
+                )
+            }
+        }
+        return null
     }
 
     private fun showModelRequiredDialog(model: UpscaleModel, originView: View? = null) {
@@ -697,27 +697,46 @@ class ImageUpscalerController(
 
         inferenceJob = scope.launch {
             onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
-            val startTime = System.currentTimeMillis()
 
-            // F3 + F11: device-class profile, then thermal/battery efficiency overrides.
-            var jobParams = UpscaleInferenceParams.forDevice(activity, scale)
-            when {
-                com.veilframe.app.runtime.ThermalGovernor.isThrottled -> {
-                    jobParams = jobParams.copy(
-                        parallelWorkers = 1,
-                        chunkSize = (jobParams.chunkSize / 2).coerceAtLeast(128)
-                    )
-                    onLog(
-                        "[UPSCALER] Thermal ${com.veilframe.app.runtime.ThermalGovernor.statusName()}" +
-                            " — efficiency profile chunk=${jobParams.chunkSize} workers=1"
-                    )
+            // F2 gate + F3/F11 profile — computed off the main thread (reads
+            // /proc/meminfo, thermal status, battery state).
+            val prep = withContext(Dispatchers.IO) {
+                val gate = evaluateExecutionGate(model, scale)
+                var p = UpscaleInferenceParams.forDevice(activity, scale)
+                var note: String? = null
+                if (gate == null) {
+                    when {
+                        com.veilframe.app.runtime.ThermalGovernor.isThrottled -> {
+                            p = p.copy(
+                                parallelWorkers = 1,
+                                chunkSize = (p.chunkSize / 2).coerceAtLeast(128)
+                            )
+                            note = "[UPSCALER] Thermal ${com.veilframe.app.runtime.ThermalGovernor.statusName()}" +
+                                " — efficiency profile chunk=${p.chunkSize} workers=1"
+                        }
+                        com.veilframe.app.runtime.ThermalGovernor.batteryConstrained(activity) -> {
+                            p = p.copy(parallelWorkers = 1)
+                            note = "[UPSCALER] Battery constrained — efficiency profile workers=1"
+                        }
+                    }
                 }
-                com.veilframe.app.runtime.ThermalGovernor.batteryConstrained(activity) -> {
-                    jobParams = jobParams.copy(parallelWorkers = 1)
-                    onLog("[UPSCALER] Battery constrained — efficiency profile workers=1")
-                }
+                Triple(gate, p, note)
             }
+            if (prep.first != null) {
+                upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
+                showRefusalDialog(prep.first!!, scale > 2)
+                updateUIState()
+                return@launch
+            }
+            prep.third?.let { onLog(it) }
+            val jobParams = prep.second
 
+            // F6: foreground service — the job survives navigation & OEM
+            // phantom-process killers, with a cancellable notification.
+            com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = { inferenceJob?.cancel() }
+            com.veilframe.app.upscale.UpscaleForegroundService.start(activity, "${model.name} • ${scale}×")
+
+            val startTime = System.currentTimeMillis()
             val result = inferenceEngine.upscale(
                 source = src,
                 model = model,
@@ -755,13 +774,19 @@ class ImageUpscalerController(
             val elapsedSec = (System.currentTimeMillis() - startTime) / 1000.0
 
             withContext(Dispatchers.Main) {
+                com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
+                com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
                 upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
                 upscalerBinding.btnUpscalerExecute.isEnabled = true
 
                 result.fold(
-                    onSuccess = { upscaled ->
-                        resultBitmap = upscaled
-                        upscalerBinding.imgUpscalerPreview.setImageBitmap(upscaled)
+                    onSuccess = { output ->
+                        (resultOutput as? UpscaleOutput.Streamed)?.let { prev ->
+                            runCatching { prev.file.delete() }
+                        }
+                        resultOutput = output
+                        resultFile = (output as? UpscaleOutput.Streamed)?.file
+                        upscalerBinding.imgUpscalerPreview.setImageBitmap(output.previewBitmap())
                         val resolvedModel = getResolvedModel()
                         val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
                         val badgeText = if (resolvedModel.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
@@ -774,29 +799,31 @@ class ImageUpscalerController(
                         upscalerBinding.layoutUpscalerResults.visibility = View.VISIBLE
                         com.veilframe.app.ui.motion.ProcessingMotionController.confirmCompletion(upscalerBinding.layoutUpscalerResults)
 
-                        val mp = (upscaled.width * upscaled.height) / 1_000_000.0
+                        val mp = (output.width.toLong() * output.height) / 1_000_000.0
                         val throughput = if (elapsedSec > 0.0) mp / elapsedSec else 0.0
                         upscalerBinding.tvDiagThroughput.text = String.format(
                             Locale.US,
-                            "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)",
+                            "Throughput: ~%.1f MP/s (%.1fs for %.1f MP)%s",
                             throughput,
                             elapsedSec,
-                            mp
+                            mp,
+                            if (output is UpscaleOutput.Streamed) " • streamed" else ""
                         )
                         onLog(
                             String.format(
                                 Locale.US,
-                                "[UPSCALER] Upscale completed in %.1fs (~%.1f MP/s): %d×%d (~%.1f MP)",
+                                "[UPSCALER] Upscale completed in %.1fs (~%.1f MP/s): %d×%d (~%.1f MP, streamed=%b)",
                                 elapsedSec,
                                 throughput,
-                                upscaled.width,
-                                upscaled.height,
-                                mp
+                                output.width,
+                                output.height,
+                                mp,
+                                output is UpscaleOutput.Streamed
                             )
                         )
                         Toast.makeText(
                             activity,
-                            String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", upscaled.width, upscaled.height, throughput, elapsedSec),
+                            String.format(Locale.US, "Upscaled to %d×%d (~%.1f MP/s) in %.1fs", output.width, output.height, throughput, elapsedSec),
                             Toast.LENGTH_SHORT
                         ).show()
                     },
@@ -862,6 +889,8 @@ class ImageUpscalerController(
         inferenceJob = null
         downloadJob?.cancel()
         downloadJob = null
+        com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
+        com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
         upscalerBinding.layoutUpscalerProgress.visibility = View.GONE
         onLog("[UPSCALER] Active operation cancelled by user.")
         Toast.makeText(activity, "Cancelled", Toast.LENGTH_SHORT).show()
@@ -1104,7 +1133,7 @@ class ImageUpscalerController(
     }
 
     private fun saveUpscaledImage() {
-        val bitmap = resultBitmap ?: return
+        val output = resultOutput ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -1126,7 +1155,7 @@ class ImageUpscalerController(
 
                     if (savedUri != null) {
                         resolver.openOutputStream(savedUri)?.use { os ->
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
+                            writeOutput(output, os)
                         }
                         values.clear()
                         values.put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -1137,7 +1166,7 @@ class ImageUpscalerController(
                     picturesDir.mkdirs()
                     val outFile = File(picturesDir, filename)
                     FileOutputStream(outFile).use { fos ->
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                        writeOutput(output, fos)
                     }
                     savedUri = try {
                         FileProvider.getUriForFile(activity, "${activity.packageName}.provider", outFile)
@@ -1163,15 +1192,23 @@ class ImageUpscalerController(
         }
     }
 
+    /** Writes the output as PNG: in-memory compress, or a byte copy of the streamed file. */
+    private fun writeOutput(output: UpscaleOutput, os: java.io.OutputStream) {
+        when (output) {
+            is UpscaleOutput.InMemory -> output.bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
+            is UpscaleOutput.Streamed -> output.file.inputStream().use { it.copyTo(os) }
+        }
+    }
+
     private fun shareUpscaledImage() {
-        val bitmap = resultBitmap ?: return
+        val output = resultOutput ?: return
         scope.launch(Dispatchers.IO) {
             try {
                 val cacheDir = File(activity.cacheDir, "shared_upscaled")
                 cacheDir.mkdirs()
                 val tempFile = File(cacheDir, "upscaled_${System.currentTimeMillis()}.png")
                 FileOutputStream(tempFile).use { fos ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    writeOutput(output, fos)
                 }
 
                 val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", tempFile)
@@ -1199,6 +1236,10 @@ class ImageUpscalerController(
         downloadJob?.cancel()
         scope.cancel()
         sourceAccess?.close()
+        com.veilframe.app.upscale.UpscaleForegroundService.cancelHook = null
+        com.veilframe.app.upscale.UpscaleForegroundService.stop(activity)
+        resultFile?.let { runCatching { it.delete() } }
+        resultFile = null
         com.veilframe.app.runtime.ThermalGovernor.unregister()
     }
 }
