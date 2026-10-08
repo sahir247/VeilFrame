@@ -22,8 +22,8 @@ object MediaDecoder {
     private const val TAG = "VeilFrame.MediaDecoder"
 
     /** Working-resolution caps by purpose (pixels). Tiers refine these at call sites. */
-    const val PREVIEW_PIXEL_CAP = 4_200_000      // ~2048px long edge
-    const val ANALYSIS_PIXEL_CAP = 16_000_000    // ~4000px long edge
+    const val PREVIEW_PIXEL_CAP = 4_200_000L      // ~2048px long edge
+    const val ANALYSIS_PIXEL_CAP = 16_000_000L    // ~4000px long edge
 
     data class Bounds(val width: Int, val height: Int) {
         val pixelCount: Long get() = width.toLong() * height.toLong()

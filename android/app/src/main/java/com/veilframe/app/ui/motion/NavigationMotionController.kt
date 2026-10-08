@@ -127,8 +127,8 @@ object NavigationMotionController {
                     toolView, android.R.attr.colorBackground
                 )
                 scrimColor = android.graphics.Color.argb(96, 0, 0, 0)
-                addListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                addListener(object : androidx.transition.TransitionListenerAdapter() {
+                    override fun onTransitionEnd(transition: androidx.transition.Transition) {
                         homeView.isVisible = false
                         onComplete?.invoke()
                     }

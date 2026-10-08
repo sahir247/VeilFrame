@@ -63,3 +63,40 @@
 ## 6. Verification for this round
 
 Structural: all XML well-formed; stripped-token brace/paren balance on every touched file; zero remaining `setBackgroundResource(R.color…)`; `bindWorkspace` present in all workspace controllers/fragments; reference audit clean (new drawables resolve). Semantic: band algebra re-derived by hand (BUG-1), Lanczos rewrite proven tap-identical (same formula/order/clamping), benchmark path exercised against `ModelInfo`/`appendControlInputs` signatures from source. Device gates unchanged (ADR 0006 §4) and now additionally: **streamed-vs-in-RAM golden equality** on a 24 MP fixture (BUG-1 regression test), NNAPI-vs-XNNPACK timing sanity on one flagship + one mid-ranger.
+
+
+---
+
+## 7. Round 3 — real-toolchain harmonization (post-merge-fixes, commit `HARM`)
+
+The maintainer ran the branch through an actual build (`gradlew :app:compileDebugKotlin` on
+Windows, against upstream `main@1716798`). Their compiler caught what the sandbox could not.
+All findings were fixed **at the source** (this branch), and every library symbol was
+re-verified against the **1.14.0 git tag** (previous verification used `master` — the gap
+that let the CardView parent through):
+
+| Their finding | Root cause (confirmed) | Fix applied here |
+|---|---|---|
+| AAPT: `Widget.Material3.CardView` missing | Bare style genuinely does not exist in 1.14.0 (only `.Filled/.Elevated/.Outlined`) — verified against tag `card/res/values/styles.xml` | All 4 `Widget.VeilFrame.Card.*`/`Dock` parents → `Widget.Material3.CardView.Filled` |
+| Duplicate `findCorners`/`process` | Upstream `main` restored its own canonical implementations after our base commit; textual merge kept both | Merged `origin/main@1716798` into the branch; **our wrapper block deleted**, upstream canonical kept (semantics identical: `process` clones in both) |
+| `setSpringForce` unresolved | Official API is **`SpringAnimation.setSpring(SpringForce)`** (confirmed via developer.android.com reference + androidx source — `setSpringForce` never existed on SpringAnimation) | All 6 call sites → `.setSpring(...)` (property syntax `springForce =` would NOT compile: setter returns `SpringAnimation`, so Kotlin synthesizes `spring` from get/setSpring) |
+| Transition listener mismatch | `MaterialContainerTransform` extends **androidx.transition.Transition** → `addListener` takes `TransitionListener`, not `android.animation.AnimatorListenerAdapter` | → `androidx.transition.TransitionListenerAdapter.onTransitionEnd(Transition)` |
+| `ensureActive()` without receiver | Our P1 restructure moved `processTile` out of the `coroutineScope` lambda, so the local suspend fun lost the lexical `CoroutineScope` receiver | → `kotlin.coroutines.coroutineContext.ensureActive()` |
+| `StatFs.usableBytes` | Real API is `getAvailableBytes()` (there is no `getUsableBytes`) | → `.availableBytes` |
+| Int→Long mismatch | `PREVIEW_PIXEL_CAP`/`ANALYSIS_PIXEL_CAP` were Int constants passed to `pixelCap: Long` | Constants → `4_200_000L` / `16_000_000L` (fixes MediaDecoder + ImageQualityController call sites) |
+| (not in their table, found in re-verification) `renderByTiles` still declared `: Bitmap` after the F2 edit made it return `UpscaleOutput` | type mismatch | → `: UpscaleOutput` |
+| (upgrade) dialog overlay parent | `ThemeOverlay.Material3Expressive.MaterialAlertDialog` exists in 1.14.0 (`dialog/themes_overlay.xml`) and is the correct parent under an expressive theme | re-parented (buttons inherit expressive defaults; our Vf overrides still pin size/shape) |
+
+**Full tag re-verification matrix (1.14.0):** all `Widget.Material3Expressive.*` styles used
+(Button/TonalButton/OutlinedButton/TextButton/ElevatedButton/IconButton.Standard/.Filled,
+MaterialButtonGroup.Connected, Linear/Circular ProgressIndicator[.Wavy], Slider.{Small,Medium,
+Large}, FloatingActionButton.Large, SearchBar), all `SizeOverlay.Material3Expressive.Button.*`
+(incl. `.Small.Square`, `IconButton.{Small,Medium}`), `Theme.Material3Expressive.DayNight.
+NoActionBar`, all `TextAppearance.Material3.*.Emphasized` styles **and** `textAppearance*`
+theme attrs, all six `motionSpring*` attrs, `materialSizeOverlay`, and
+`MotionUtils.resolveThemeSpringForce(Context,int,int)` (public, exact signature) — **all
+present in the tag**. `ThemeOverlay.Material3.MaterialAlertDialog` also present (kept as
+fallback knowledge; expressive variant now used).
+
+**Merge state:** branch now contains `origin/main@1716798` (OpenCV in-tree bindings, CI
+rework, DocumentSession dedup) — merging this branch into `main` is a **fast-forward**.

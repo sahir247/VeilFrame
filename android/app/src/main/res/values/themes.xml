@@ -59,7 +59,7 @@
     </style>
 
     <!-- ============ DIALOG OVERLAY (28dp XL shape retained — expressive-aligned) ============ -->
-    <style name="ThemeOverlay.VeilFrame.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+    <style name="ThemeOverlay.VeilFrame.MaterialAlertDialog" parent="ThemeOverlay.Material3Expressive.MaterialAlertDialog">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Dialog</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.VeilFrame.Dialog</item>
         <item name="colorSurface">?attr/colorSurfaceContainerHigh</item>

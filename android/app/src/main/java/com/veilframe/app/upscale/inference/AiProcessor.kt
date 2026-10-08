@@ -150,7 +150,7 @@ class AiProcessor(
         requestedWorkers: Int,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
-    ): Bitmap = withContext(Dispatchers.Default) {
+    ): UpscaleOutput = withContext(Dispatchers.Default) {
         val grid = TileGrid.from(
             imageWidth = source.width,
             imageHeight = source.height,
@@ -242,7 +242,7 @@ class AiProcessor(
     /** F5: typed, honest disk-space refusal instead of mid-job write failures. */
     private fun ensureDiskBudget(jobDir: File, outputPixels: Long) {
         val estimateBytes = (outputPixels * 4.0 * 0.6).toLong() + 64L * 1024L * 1024L
-        val usableBytes = android.os.StatFs(jobDir.absolutePath).usableBytes
+        val usableBytes = android.os.StatFs(jobDir.absolutePath).availableBytes
         if (usableBytes < estimateBytes) {
             throw InsufficientDiskSpaceException(
                 "Need ~${estimateBytes / (1024 * 1024)} MB of cache storage for tiled inference; " +
@@ -270,7 +270,8 @@ class AiProcessor(
         val completedTiles = AtomicInteger(0)
 
         suspend fun processTile(tile: Tile) {
-            ensureActive()
+            // Local suspend fun: no CoroutineScope receiver here, so qualify.
+            kotlin.coroutines.coroutineContext.ensureActive()
             // F11: cooperative abort before the OS hard-throttles the whole device.
             if (com.veilframe.app.runtime.ThermalGovernor.isCritical) {
                 throw ThermalShutdownException(

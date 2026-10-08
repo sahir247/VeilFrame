@@ -123,7 +123,7 @@ object VfSprings {
         listOf(
             SpringAnimation(view, DynamicAnimation.SCALE_X, target),
             SpringAnimation(view, DynamicAnimation.SCALE_Y, target)
-        ).forEach { it.setSpringForce(spatial).start() }
+        ).forEach { it.setSpring(spatial).start() }
         // Alpha/state-color effects ride the effects spring when provided.
         effects?.let { /* components animate their own color via fast-effects internally */ }
     }
@@ -149,9 +149,9 @@ object VfSprings {
         }
         var pending = 2
         val end = { if (--pending == 0) onComplete?.invoke() }
-        SpringAnimation(view, DynamicAnimation.SCALE_X, 1f).setSpringForce(jelly)
+        SpringAnimation(view, DynamicAnimation.SCALE_X, 1f).setSpring(jelly)
             .addEndListener { _, _, _, _ -> end() }.start()
-        SpringAnimation(view, DynamicAnimation.SCALE_Y, 1f).setSpringForce(jelly)
+        SpringAnimation(view, DynamicAnimation.SCALE_Y, 1f).setSpring(jelly)
             .addEndListener { _, _, _, _ -> end() }.start()
     }
 
@@ -164,7 +164,7 @@ object VfSprings {
             view.translationY = targetY; return
         }
         SpringAnimation(view, DynamicAnimation.TRANSLATION_Y, targetY)
-            .setSpringForce(if (fullScreen) slowSpatial(view.context) else defaultSpatial(view.context))
+            .setSpring(if (fullScreen) slowSpatial(view.context) else defaultSpatial(view.context))
             .start()
     }
 
@@ -177,9 +177,9 @@ object VfSprings {
             child.translationY = childOffsetPx * child.resources.displayMetrics.density
             child.postDelayed({
                 SpringAnimation(child, DynamicAnimation.TRANSLATION_Y, 0f)
-                    .setSpringForce(fastSpatial(child.context)).start()
+                    .setSpring(fastSpatial(child.context)).start()
                 SpringAnimation(child, DynamicAnimation.ALPHA, 1f)
-                    .setSpringForce(fastEffects(child.context)).start()
+                    .setSpring(fastEffects(child.context)).start()
             }, i * staggerMs)
         }
     }

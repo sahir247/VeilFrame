@@ -90,7 +90,7 @@
     <!-- ================= CARDS / CONTAINMENT ================= -->
 
     <!-- Hero Moment container (Home upscaler card): XXL top rounding, brightest surface -->
-    <style name="Widget.VeilFrame.Card.Hero" parent="Widget.Material3.CardView">
+    <style name="Widget.VeilFrame.Card.Hero" parent="Widget.Material3.CardView.Filled">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.HeroTop</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerHighest</item>
         <item name="cardElevation">0dp</item>
@@ -98,7 +98,7 @@
     </style>
 
     <!-- Standard workspace/list card -->
-    <style name="Widget.VeilFrame.Card.Workspace" parent="Widget.Material3.CardView">
+    <style name="Widget.VeilFrame.Card.Workspace" parent="Widget.Material3.CardView.Filled">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.L</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
         <item name="cardElevation">0dp</item>
@@ -107,14 +107,14 @@
     </style>
 
     <!-- Segment wrapper (Library / catalogue groups) -->
-    <style name="Widget.VeilFrame.Card.Segment" parent="Widget.Material3.CardView">
+    <style name="Widget.VeilFrame.Card.Segment" parent="Widget.Material3.CardView.Filled">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XL</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
         <item name="cardElevation">0dp</item>
     </style>
 
     <!-- Floating action dock (Hero Moment #1 shell) -->
-    <style name="Widget.VeilFrame.Dock" parent="Widget.Material3.CardView">
+    <style name="Widget.VeilFrame.Dock" parent="Widget.Material3.CardView.Filled">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XLPlus</item>
         <item name="cardBackgroundColor">?attr/colorSurfaceContainerHigh</item>
         <item name="cardElevation">10dp</item>
