@@ -693,6 +693,26 @@ class DocumentScannerController(
         sheetBinding.chipScopeAllPages.text = "All Pages (${session.pageCount})"
         sheetBinding.chipScopeCurrentPage.text = "Page ${session.activePageIndex + 1} Only"
 
+        // Progressive disclosure (expressive export UX): paper / orientation /
+        // fitting+margins / compression collapse behind "More options". All chip
+        // ids and defaults are untouched — the export click listener reads the
+        // same checked states whether the section is visible or not.
+        val advancedExportViews = listOf(
+            sheetBinding.tvExportPaperHeader, sheetBinding.hsvExportPaper,
+            sheetBinding.tvExportOrientationHeader, sheetBinding.chipGroupExportOrientation,
+            sheetBinding.tvExportFitHeader, sheetBinding.hsvExportFit,
+            sheetBinding.tvExportQualityHeader, sheetBinding.chipGroupExportQuality
+        )
+        sheetBinding.btnExportAdvancedToggle.setOnClickListener {
+            val expand = sheetBinding.btnExportAdvancedToggle.tag != "open"
+            advancedExportViews.forEach { v -> v.visibility = if (expand) View.VISIBLE else View.GONE }
+            sheetBinding.btnExportAdvancedToggle.text = if (expand) "Fewer options" else "More options"
+            sheetBinding.btnExportAdvancedToggle.setIconResource(
+                if (expand) R.drawable.ic_expand_less else R.drawable.ic_expand_more
+            )
+            sheetBinding.btnExportAdvancedToggle.tag = if (expand) "open" else "closed"
+        }
+
         sheetBinding.btnExportExecute.setOnClickListener {
             dialog.dismiss()
 

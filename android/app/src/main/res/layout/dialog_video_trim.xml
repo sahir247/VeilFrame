@@ -84,14 +84,12 @@
                     android:visibility="gone"
                     android:contentDescription="Video Frame Thumbnail" />
 
-                <ProgressBar
+                <com.google.android.material.progressindicator.CircularProgressIndicator
                     android:id="@+id/trimBufferingBar"
-                    style="?android:attr/progressBarStyleSmall"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
+                    style="@style/Widget.VeilFrame.Progress.Circular.Wavy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:indeterminate="true"
-                    android:indeterminateTint="@color/vf_primary"
                     android:visibility="gone" />
 
                 <!-- Interactive Play / Pause Overlay Button -->

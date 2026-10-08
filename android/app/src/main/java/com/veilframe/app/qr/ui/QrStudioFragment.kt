@@ -378,7 +378,7 @@ class QrGenerateTabFragment : Fragment() {
         val previewCard        = view.findViewById<MaterialCardView>(R.id.qr_preview_card)
         val previewImage       = view.findViewById<ImageView>(R.id.qr_preview_image)
         val previewEmptyState  = view.findViewById<View>(R.id.qr_preview_empty_state)
-        val previewProgress    = view.findViewById<ProgressBar>(R.id.qr_preview_progress)
+        val previewProgress    = view.findViewById<View>(R.id.qr_preview_progress)
 
         // Adaptive preview size: min(screenWidth - 32dp, 360dp)
         val dm = resources.displayMetrics

@@ -122,3 +122,21 @@ Their five residual harmonization fixes, root-caused honestly:
 Lesson recorded: three of five were blind-edit defects in *our* patches — exactly the risk class the "compile gate on maintainer hardware" step exists for; all were mechanical, none architectural. The design/behavior of every subsystem was validated unchanged by the 899-test suite.
 
 **rc6 = branch state after absorbing `a6b846e`** (merge `ebc37f2`, dedupe `3f6a9e5`, pre-compile hardening `4d1669f` for the not-yet-compiled B6/F15 delta: self-named metric locals renamed, registry smart-cast hardened). FF-mergeable over current `main`.
+
+
+---
+
+## 9. Round 5 — component-by-component UI polish pass (post-audit response)
+
+External audit of merged `main` rated the UI ~8/10 ("serious modern app, not production-final") with six named gaps. This pass addresses each **without a broad rewrite** (per the audit's own verdict):
+
+| Gap | Action taken | Status |
+|---|---|---|
+| **1. Explicit `Widget.Material3.*` pins (37)** | Verified: **zero** `Widget.Material3.Button*` pins remain (RC1 swept all 278). The remaining pins are `Chip.Filter/Suggestion/Assist` (269), `TextInputLayout.OutlinedBox` (32), `CardView.Filled` (23) — **Material 1.14.0 ships no expressive variants for chips/text fields/cards** (verified against the tag). These pins ARE the library defaults under the expressive theme; removing them changes nothing visually. | Documented hold (upgrade when expressive variants ship) |
+| **2. Legacy components** | ① `Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense` → `Widget.Material3.…Dense` (existence verified in tag) ② QR color picker: **4 native `SeekBar`s → Material `Slider`s** with the HSV gradients preserved on dedicated strips under transparent-track sliders (`labelBehavior=gone`, live values stay in the row headers) ③ 2 raw `ProgressBar`s (trim buffering, QR preview) → **CircularProgressIndicator.Wavy** (+ `QrStudioFragment` findViewById type fixed — CircularProgressIndicator is not a ProgressBar subclass). Remaining natives: 6 `Spinner`s in QR generate — **deliberately deferred**: `onItemSelected` fires on initial layout, dropdown listeners don't; converting changes behavior and needs per-site regression (named follow-up). | Done (spinners deferred w/ rationale) |
+| **3. Sub-48dp icon buttons** | Triaged all 22 fixed-size (30–44dp) hits: **all are decorative** (card icons, brand logo, drag handles, status glyphs) — the actual icon *buttons* were normalized in RC1 (40dp visual via size overlays + `ensureMinTouchTargetSize`=48dp default). No new fixes needed; the audit's examples (crop/EXIF/resize/rotate/video-dialog/TOC close buttons) already carry `Widget.VeilFrame.IconButton.Toolbar` from the RC1 sweep. | Verified complete |
+| **4. Export sheet too settings-heavy** | **Progressive disclosure shipped**: Scope + Format stay primary; Paper / Orientation / Fit+Margins / Compression collapse behind a "More options" ⇄ "Fewer options" toggle (chevron flips); CTA upgraded to the expressive Execute XL style. All chip ids/defaults untouched — export logic reads the same states collapsed or expanded. The four section headers also got their missed restyle (raw 11sp/.08 pins → `TitleSmallEmphasized`). | Done |
+| **5. Tool header hierarchy** | Layout-level hierarchy already shipped in RC1 (TitleLargeEmphasized title, BodySmall subtitle, pill badge, 40dp icon buttons). The next step — collapsing theme/settings into one overflow and showing the status badge only in non-default states — is **behavior surgery best done with a device in hand**. | Documented for device pass |
+| **6. Motion ubiquity** | `VeilFrameInteraction` now **excludes Chips from scale-bounce** (dense, high-frequency controls keep library ripple + state morphs). Bounce remains on deliberate actions (buttons/FABs/icon buttons) and subtle 0.98 depression on cards; jelly stays reserved for completion events. Motion semantics: micro→component→transformational tiers unchanged. | Done |
+
+Verification: zero `<SeekBar`/`MaterialComponents` matches in layouts; zero dangling `seekbar_*` references; all touched files balance-checked; governance ratchet PASS; XML well-formed. Compiler gate = maintainer run (rc7).

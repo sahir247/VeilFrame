@@ -10,7 +10,7 @@ import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.button.MaterialButton
@@ -55,10 +55,18 @@ class QrColorPickerDialog(
         val contrastIcon    = view.findViewById<ImageView>(R.id.picker_contrast_icon)
         val contrastText    = view.findViewById<TextView>(R.id.picker_contrast_text)
 
-        val hueSlider       = view.findViewById<SeekBar>(R.id.seekbar_hue)
-        val satSlider       = view.findViewById<SeekBar>(R.id.seekbar_saturation)
-        val valSlider       = view.findViewById<SeekBar>(R.id.seekbar_brightness)
-        val alphaSlider     = view.findViewById<SeekBar>(R.id.seekbar_alpha)
+        // Legacy native SeekBars replaced with Material Sliders over gradient
+        // strips (expressive polish pass): the HSV gradients now live on
+        // dedicated Views under transparent-track Sliders.
+        val hueSlider       = view.findViewById<Slider>(R.id.slider_hue)
+        val satSlider       = view.findViewById<Slider>(R.id.slider_saturation)
+        val valSlider       = view.findViewById<Slider>(R.id.slider_brightness)
+        val alphaSlider     = view.findViewById<Slider>(R.id.slider_alpha)
+
+        val hueGradient     = view.findViewById<View>(R.id.gradient_hue)
+        val satGradient     = view.findViewById<View>(R.id.gradient_saturation)
+        val valGradient     = view.findViewById<View>(R.id.gradient_brightness)
+        val alphaGradient   = view.findViewById<View>(R.id.gradient_alpha)
 
         val hueLabel        = view.findViewById<TextView>(R.id.label_hue_val)
         val satLabel        = view.findViewById<TextView>(R.id.label_sat_val)
@@ -94,7 +102,7 @@ class QrColorPickerDialog(
         val hueTrack = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, hueSpectrum).apply {
             cornerRadius = 16f
         }
-        hueSlider.background = hueTrack
+        hueGradient.background = hueTrack
 
         fun getSelectedColor(): Int {
             val rgb = Color.HSVToColor(floatArrayOf(activeHue, activeSat, activeVal))
@@ -107,7 +115,7 @@ class QrColorPickerDialog(
             val satTrack = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(satStart, satEnd)).apply {
                 cornerRadius = 16f
             }
-            satSlider.background = satTrack
+            satGradient.background = satTrack
         }
 
         fun updateValGradient() {
@@ -116,7 +124,7 @@ class QrColorPickerDialog(
             val valTrack = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(valStart, valEnd)).apply {
                 cornerRadius = 16f
             }
-            valSlider.background = valTrack
+            valGradient.background = valTrack
         }
 
         fun updateAlphaGradient() {
@@ -126,7 +134,7 @@ class QrColorPickerDialog(
             val alphaTrack = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(alphaStart, alphaEnd)).apply {
                 cornerRadius = 16f
             }
-            alphaSlider.background = alphaTrack
+            alphaGradient.background = alphaTrack
         }
 
         fun updateUi(updateSliders: Boolean = true, updateHex: Boolean = true) {
@@ -140,10 +148,10 @@ class QrColorPickerDialog(
             alphaLabel.text = if (activeAlpha == 0) "0% (Transparent)" else "$alphaPct%"
 
             if (updateSliders) {
-                hueSlider.progress = activeHue.toInt()
-                satSlider.progress = (activeSat * 100).toInt()
-                valSlider.progress = (activeVal * 100).toInt()
-                alphaSlider.progress = alphaPct
+                hueSlider.value = activeHue.toInt().toFloat()
+                satSlider.value = (activeSat * 100).toInt().toFloat()
+                valSlider.value = (activeVal * 100).toInt().toFloat()
+                alphaSlider.value = alphaPct.toFloat()
             }
 
             updateSatGradient()
@@ -201,49 +209,33 @@ class QrColorPickerDialog(
         }
 
         // Slider listeners
-        hueSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    activeHue = p.toFloat().coerceIn(0f, 360f)
-                    updateUi(updateSliders = false, updateHex = true)
-                }
+        hueSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                activeHue = value.coerceIn(0f, 360f)
+                updateUi(updateSliders = false, updateHex = true)
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        }
 
-        satSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    activeSat = (p / 100f).coerceIn(0f, 1f)
-                    updateUi(updateSliders = false, updateHex = true)
-                }
+        satSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                activeSat = (value / 100f).coerceIn(0f, 1f)
+                updateUi(updateSliders = false, updateHex = true)
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        }
 
-        valSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    activeVal = (p / 100f).coerceIn(0f, 1f)
-                    updateUi(updateSliders = false, updateHex = true)
-                }
+        valSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                activeVal = (value / 100f).coerceIn(0f, 1f)
+                updateUi(updateSliders = false, updateHex = true)
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        }
 
-        alphaSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    activeAlpha = (p * 255f / 100f).roundToInt().coerceIn(0, 255)
-                    updateUi(updateSliders = false, updateHex = true)
-                }
+        alphaSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                activeAlpha = (value * 255f / 100f).roundToInt().coerceIn(0, 255)
+                updateUi(updateSliders = false, updateHex = true)
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        }
 
         // Hex Input TextWatcher (supports #RRGGBB and #AARRGGBB)
         hexInput.addTextChangedListener(object : TextWatcher {

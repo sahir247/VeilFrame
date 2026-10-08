@@ -178,15 +178,33 @@
                 android:textAppearance="?attr/textAppearanceLabelSmall" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/seekbar_hue"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="32dp"
-            android:max="360"
-            android:progress="0"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:layout_marginBottom="12dp" />
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp">
+
+            <View
+                android:id="@+id/gradient_hue"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="14dp"
+                android:layout_marginEnd="14dp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_hue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:valueFrom="0"
+                android:valueTo="360"
+                android:value="0"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@android:color/transparent"
+                app:trackColorActive="@android:color/transparent"
+                app:trackColorInactive="@android:color/transparent" />
+        </FrameLayout>
 
         <!-- Saturation Slider -->
         <LinearLayout
@@ -212,15 +230,33 @@
                 android:textAppearance="?attr/textAppearanceLabelSmall" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/seekbar_saturation"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="32dp"
-            android:max="100"
-            android:progress="100"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:layout_marginBottom="12dp" />
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp">
+
+            <View
+                android:id="@+id/gradient_saturation"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="14dp"
+                android:layout_marginEnd="14dp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_saturation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:valueFrom="0"
+                android:valueTo="100"
+                android:value="100"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@android:color/transparent"
+                app:trackColorActive="@android:color/transparent"
+                app:trackColorInactive="@android:color/transparent" />
+        </FrameLayout>
 
         <!-- Brightness / Value Slider -->
         <LinearLayout
@@ -246,15 +282,33 @@
                 android:textAppearance="?attr/textAppearanceLabelSmall" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/seekbar_brightness"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="32dp"
-            android:max="100"
-            android:progress="100"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:layout_marginBottom="12dp" />
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp">
+
+            <View
+                android:id="@+id/gradient_brightness"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="14dp"
+                android:layout_marginEnd="14dp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_brightness"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:valueFrom="0"
+                android:valueTo="100"
+                android:value="100"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@android:color/transparent"
+                app:trackColorActive="@android:color/transparent"
+                app:trackColorInactive="@android:color/transparent" />
+        </FrameLayout>
 
         <!-- Opacity / Alpha Slider -->
         <LinearLayout
@@ -281,15 +335,33 @@
                 android:textAppearance="?attr/textAppearanceLabelSmall" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/seekbar_alpha"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="32dp"
-            android:max="100"
-            android:progress="100"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:layout_marginBottom="16dp" />
+            android:layout_height="48dp"
+            android:layout_marginBottom="16dp">
+
+            <View
+                android:id="@+id/gradient_alpha"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="14dp"
+                android:layout_marginEnd="14dp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_alpha"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:valueFrom="0"
+                android:valueTo="100"
+                android:value="100"
+                android:stepSize="1"
+                app:labelBehavior="gone"
+                app:haloColor="@android:color/transparent"
+                app:trackColorActive="@android:color/transparent"
+                app:trackColorInactive="@android:color/transparent" />
+        </FrameLayout>
 
         <!-- Quick Curated Swatches Section -->
         <TextView

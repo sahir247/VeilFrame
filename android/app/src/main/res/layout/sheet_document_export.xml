@@ -119,16 +119,18 @@
 
         <!-- 3. Paper Size Selection -->
         <TextView
+            android:id="@+id/tvExportPaperHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Paper size"
-            android:textColor="@color/vf_primary"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
 
         <HorizontalScrollView
+            android:id="@+id/hsvExportPaper"
+            android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none"
@@ -195,17 +197,18 @@
 
         <!-- 4. Orientation Selection -->
         <TextView
+            android:id="@+id/tvExportOrientationHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Orientation"
-            android:textColor="@color/vf_primary"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
 
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/chipGroupExportOrientation"
+            android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:singleSelection="true"
@@ -236,16 +239,18 @@
 
         <!-- 5. Page Fit & Margins Row -->
         <TextView
+            android:id="@+id/tvExportFitHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Page fitting &amp; margins"
-            android:textColor="@color/vf_primary"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
 
         <HorizontalScrollView
+            android:id="@+id/hsvExportFit"
+            android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:scrollbars="none"
@@ -298,17 +303,18 @@
 
         <!-- 6. Quality Preset -->
         <TextView
+            android:id="@+id/tvExportQualityHeader"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Image compression"
-            android:textColor="@color/vf_primary"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
 
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/chipGroupExportQuality"
+            android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:singleSelection="true"
@@ -337,15 +343,27 @@
                 android:text="Compact (60%)" />
         </com.google.android.material.chip.ChipGroup>
 
-        <!-- 7. Action Button (48dp height minimum for touch target) -->
+        <!-- Progressive disclosure: secondary options collapse behind "More options"
+             (expressive export UX — decisions first, configuration on demand) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExportAdvancedToggle"
+            style="@style/Widget.VeilFrame.Button.Quiet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="More options"
+            android:tag="closed"
+            app:icon="@drawable/ic_expand_more"
+            app:iconGravity="textStart" />
+
+        <!-- 7. Action Button (expressive XL primary) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnExportExecute"
+            style="@style/Widget.VeilFrame.Button.Execute"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:text="Export Document"
             app:icon="@drawable/ic_action_save"
-            app:iconGravity="textStart"
-            app:iconSize="20dp" />
+            app:iconGravity="textStart" />
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

@@ -15,7 +15,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
  * Automatically traverses view hierarchies to attach:
  * - Tactile spring bounce on all MaterialButtons, FABs, and icon buttons
  * - Subtle spring depression on MaterialCardViews
- * - Smooth touch response on Chips
+ * - Chips: library ripple + state morphs only (no bounce — semantic motion)
  * Without breaking click listeners, scroll views, or gesture detectors.
  */
 object VeilFrameInteraction {
@@ -28,7 +28,11 @@ object VeilFrameInteraction {
             is MaterialCardView -> {
                 ExpressiveMotion.applyCardSpringMotion(root)
             }
-            is MaterialButton, is FloatingActionButton, is ImageButton, is Button, is Chip -> {
+            // Chips deliberately EXCLUDED from scale-bounce: they are dense,
+            // high-frequency controls with their own library ripple + expressive
+            // state morphs. Motion is semantic, not ubiquitous — bounce belongs
+            // to deliberate actions (buttons/FABs), not every tappable surface.
+            is MaterialButton, is FloatingActionButton, is ImageButton, is Button -> {
                 ExpressiveMotion.applyTouchBounce(root)
             }
         }
