@@ -128,29 +128,29 @@ object SmartAutoCrop {
                 squared.release()
             }
 
-            try { // CV-11: integral released even when the search throws
             var bestX = (width - paddedW) / 2
             var bestY = (height - paddedH) / 2
             var bestEnergy = -1.0
-            val stepX = maxOf(1, paddedW / 16)
-            val stepY = maxOf(1, paddedH / 16)
-            var y = 0
-            while (y + paddedH <= height) {
-                var x = 0
-                while (x + paddedW <= width) {
-                    val energy = windowSum(integral, x, y, paddedW, paddedH)
-                    if (energy > bestEnergy) {
-                        bestEnergy = energy
-                        bestX = x
-                        bestY = y
+            try { // CV-11: integral released even when the search throws
+                val stepX = maxOf(1, paddedW / 16)
+                val stepY = maxOf(1, paddedH / 16)
+                var y = 0
+                while (y + paddedH <= height) {
+                    var x = 0
+                    while (x + paddedW <= width) {
+                        val energy = windowSum(integral, x, y, paddedW, paddedH)
+                        if (energy > bestEnergy) {
+                            bestEnergy = energy
+                            bestX = x
+                            bestY = y
+                        }
+                        x += stepX
                     }
-                    x += stepX
+                    y += stepY
                 }
-                y += stepY
-            }
-            // Clamp to bounds after stepping.
-            bestX = bestX.coerceIn(0, width - paddedW)
-            bestY = bestY.coerceIn(0, height - paddedH)
+                // Clamp to bounds after stepping.
+                bestX = bestX.coerceIn(0, width - paddedW)
+                bestY = bestY.coerceIn(0, height - paddedH)
             } finally {
                 integral.release()
             }
