@@ -37,7 +37,17 @@ data class UpscaleModel(
     val outputNormalizationRange: String = "[0.0, 1.0]",
     val tileCompatible: Boolean = true,
     val minInputDimension: Int = 16,
-    val isImported: Boolean = false
+    val isImported: Boolean = false,
+    // ---- F15: quantization / variant metadata (additive; defaults keep every
+    // existing entry and test valid). Populated by tools/model_pipeline output.
+    /** Weight precision of THIS artifact. FP16/INT8 variants are published separately. */
+    val precision: ModelPrecision = ModelPrecision.FP32,
+    /** Base FP32 model id when this entry is a quantized variant. */
+    val variantOf: String? = null,
+    /** Approximate peak working-set bytes at the reference tile size (0 = unknown). */
+    val memoryClassBytes: Long = 0L,
+    /** Pipeline-measured backend hint ("xnnpack"/"nnapi"/"cpu"); null = benchmark auto. */
+    val recommendedBackend: String? = null
 ) {
     /**
      * Backward-compatibility accessor for existing tests and call sites.
@@ -90,6 +100,13 @@ data class UpscaleModel(
 enum class ModelType {
     ALGORITHMIC,
     AI_ONNX
+}
+
+/** F15: weight precision of a published model artifact. */
+enum class ModelPrecision {
+    FP32,
+    FP16,
+    INT8
 }
 
 enum class ModelTier {

@@ -194,6 +194,7 @@ class BackgroundRemoverController(
                     // 3. Bilinear upsampling and binary thresholding
                     // 4. Morphological hole filling & edge feathering via BackgroundRemover
                     val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
+                        ctx.ensureActive() // B6: GrabCut is the longest stage
                         computeForegroundMask(img, iterations)
                     }
                     ctx.reportProgress(0.15f)
@@ -206,7 +207,8 @@ class BackgroundRemoverController(
                             fillHoles = true,
                             refineEdges = true,
                             featherRadius = feather
-                        )
+                        ),
+                        context = ctx
                     )
 
                     ctx.reportProgress(0.8f)

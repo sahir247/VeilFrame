@@ -51,8 +51,10 @@ object BackgroundRemover {
         image: Mat,
         segmenter: ForegroundSegmenter,
         options: Options = Options(),
+        context: com.veilframe.app.cv.core.CvContext? = null,
     ): RemovalResult {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(image, "image")
+        context?.ensureActive() // B6
         val rawMask = resolveRawMask(image, segmenter)
 
         if (rawMask == null) {
@@ -64,17 +66,21 @@ object BackgroundRemover {
         }
 
         try {
+            context?.ensureActive() // B6: between mask stages
             var mask = MaskOps.cleanup(rawMask, options.cleanupKernel)
             if (options.fillHoles) {
+                context?.ensureActive()
                 val filled = MaskOps.fillHoles(mask)
                 mask.release()
                 mask = filled
             }
             if (options.refineEdges) {
+                context?.ensureActive()
                 val refined = MaskOps.refineEdges(mask)
                 mask.release()
                 mask = refined
             }
+            context?.ensureActive()
             val feathered = MaskOps.feather(mask, options.featherRadius)
             mask.release()
 

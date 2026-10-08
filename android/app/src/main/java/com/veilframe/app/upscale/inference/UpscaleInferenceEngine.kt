@@ -10,6 +10,7 @@ import com.veilframe.app.upscale.model.UpscaleModelRepository
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 
 /**
@@ -117,10 +118,14 @@ class UpscaleInferenceEngine(
                     val fullSource = source.full()
                     val targetW = srcW * targetScale
                     val targetH = srcH * targetScale
+                    // B6: per-row cancellation checkpoints — a cancelled
+                    // algorithmic job stops within one row.
+                    val cc = coroutineContext
+                    val checkpoint: () -> Unit = { cc.ensureActive() }
                     val res = when (model.id) {
-                        "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH)
+                        "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH, checkpoint)
                         "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
-                        else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH)
+                        else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH, checkpoint)
                     }
                     listener?.onProgress(1, 1, 100)
                     listener?.onStage("Complete", 1, 1)
@@ -245,7 +250,8 @@ class UpscaleInferenceEngine(
                             val refinedW = aiBitmap.width * scalePlan.refinementScale
                             val refinedH = aiBitmap.height * scalePlan.refinementScale
                             val refinedBitmap = try {
-                                AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH)
+                                val ccRefine = coroutineContext
+                                AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH) { ccRefine.ensureActive() }
                             } catch (oom: OutOfMemoryError) {
                                 return@withContext Result.failure(
                                     UpscaleMemoryException("Lanczos refinement exceeded the memory budget", oom)

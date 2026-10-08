@@ -43,6 +43,7 @@ object QuadDetector {
         minCoverage: Double = 0.08,
         cannyLow: Double = 40.0,
         cannyHigh: Double = 140.0,
+        context: com.veilframe.app.cv.core.CvContext? = null,
     ): Detection? {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
         com.veilframe.app.cv.core.CvContracts.requirePositive(workingMaxEdge, "workingMaxEdge")
@@ -51,6 +52,7 @@ object QuadDetector {
         com.veilframe.app.cv.core.CvContracts.requirePositive(cannyHigh, "cannyHigh")
         require(cannyHigh >= cannyLow) { "cannyHigh ($cannyHigh) must be >= cannyLow ($cannyLow)" }
 
+        context?.ensureActive() // B6: checkpoint before the heavy stage chain
         val working = workingImage(source, workingMaxEdge)
         val scale = source.cols().toDouble() / working.cols()
         val gray = Mat()
@@ -76,6 +78,8 @@ object QuadDetector {
             val workingArea = working.rows().toDouble() * working.cols()
             var best: Detection? = null
             for (contour in contours) {
+                // B6: noisy frames yield thousands of contours; stay cancellable.
+                context?.ensureActive()
                 if (Imgproc.contourArea(contour) < workingArea * minCoverage) continue
                 val approx = MatOfPoint2f()
                 val contour2f = MatOfPoint2f(*contour.toArray())

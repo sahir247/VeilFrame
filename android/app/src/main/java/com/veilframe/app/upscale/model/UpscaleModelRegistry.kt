@@ -612,6 +612,45 @@ object UpscaleModelRegistry {
         }
 
     fun getModelById(id: String): UpscaleModel? {
-        return customModels[id] ?: ALL_MODELS.find { it.id.equals(id, ignoreCase = true) }
+        return customModels[id]
+            ?: quantizedVariants[id]
+            ?: ALL_MODELS.find { it.id.equals(id, ignoreCase = true) }
     }
+
+    // ---------------------------------------------------------------------
+    // F15: quantized variants (fp16 / int8), produced and PSNR-gated by
+    // tools/model_pipeline/quantize_upscale_models.py, published to GitHub
+    // Releases, then registered here WITH REAL downloadUrl + sha256.
+    // Fail-closed: registration refuses placeholders — no artifact, no entry.
+    // ---------------------------------------------------------------------
+
+    private val quantizedVariants = java.util.concurrent.ConcurrentHashMap<String, UpscaleModel>()
+
+    fun registerQuantizedVariant(model: UpscaleModel) {
+        require(model.precision != ModelPrecision.FP32) {
+            "quantized variant must declare FP16 or INT8 precision: ${model.id}"
+        }
+        require(!model.variantOf.isNullOrEmpty()) {
+            "quantized variant must declare variantOf (base FP32 model id): ${model.id}"
+        }
+        require(model.sha256.isNotEmpty() && model.downloadUrl.isNotEmpty()) {
+            "quantized variant must be published with a real downloadUrl and sha256 " +
+                "(fail-closed; placeholder entries are refused): ${model.id}"
+        }
+        require(getModelById(model.variantOf) != null) {
+            "quantized variant ${model.id} references unknown base model ${model.variantOf}"
+        }
+        quantizedVariants[model.id] = model
+    }
+
+    /** All published quantized variants of [baseModelId] (empty until published). */
+    fun variantsOf(baseModelId: String): List<UpscaleModel> =
+        quantizedVariants.values.filter { it.variantOf.equals(baseModelId, ignoreCase = true) }
+
+    /** Specific precision variant of [baseModelId], if published. */
+    fun variant(baseModelId: String, precision: ModelPrecision): UpscaleModel? =
+        variantsOf(baseModelId).firstOrNull { it.precision == precision }
+
+    /** Snapshot for diagnostics/tests. */
+    fun registeredVariants(): List<UpscaleModel> = quantizedVariants.values.toList()
 }

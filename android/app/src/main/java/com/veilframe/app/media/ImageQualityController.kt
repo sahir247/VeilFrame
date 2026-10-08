@@ -129,7 +129,7 @@ class ImageQualityController(
                 ctx.ensureActive()
                 val mat = BitmapBridge.toMat(bmp)
                 try {
-                    ImageQualityAnalyzer.analyze(mat)
+                    ImageQualityAnalyzer.analyze(mat, context = ctx) // B6
                 } finally {
                     mat.release() // CV-4: was leaked on every failure path
                 }

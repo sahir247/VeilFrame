@@ -592,7 +592,7 @@ class DocumentScannerController(
                 ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(bmp)
                 try {
-                    val corners = DocumentScanner.findCorners(srcMat)
+                    val corners = DocumentScanner.findCorners(srcMat, ctx) // B6
                     if (corners.size != 4) {
                         null
                     } else {
@@ -643,7 +643,7 @@ class DocumentScannerController(
                 ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(baseBmp)
                 try {
-                    val filteredMat = DocumentScanner.process(srcMat, mode)
+                    val filteredMat = DocumentScanner.process(srcMat, mode, ctx) // B6
                     try {
                         BitmapBridge.toBitmap(filteredMat)
                     } finally {

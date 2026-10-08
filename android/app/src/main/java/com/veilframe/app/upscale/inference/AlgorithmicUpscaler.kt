@@ -14,7 +14,12 @@ import kotlin.math.sin
  */
 object AlgorithmicUpscaler {
 
-    fun scaleNearest(source: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+    fun scaleNearest(
+        source: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        checkpoint: (() -> Unit)? = null,
+    ): Bitmap {
         val srcW = source.width
         val srcH = source.height
         val srcPixels = IntArray(srcW * srcH)
@@ -25,6 +30,7 @@ object AlgorithmicUpscaler {
         val yRatio = srcH.toFloat() / targetHeight.toFloat()
 
         for (y in 0 until targetHeight) {
+            checkpoint?.invoke() // B6: cancellable per output row
             val srcY = (y * yRatio).toInt().coerceIn(0, srcH - 1)
             val srcRowOffset = srcY * srcW
             val dstRowOffset = y * targetWidth
@@ -54,7 +60,12 @@ object AlgorithmicUpscaler {
         return result
     }
 
-    fun scaleLanczos3(source: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+    fun scaleLanczos3(
+        source: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        checkpoint: (() -> Unit)? = null,
+    ): Bitmap {
         val srcW = source.width
         val srcH = source.height
         val a = 3 // 3 lobes
@@ -130,6 +141,7 @@ object AlgorithmicUpscaler {
         // Pass 1: Horizontal resampling to intermediate primitive buffer.
         val interPixels = FloatArray(targetWidth * srcH * 4)
         for (y in 0 until srcH) {
+            checkpoint?.invoke() // B6: cancellable per source row (pass 1)
             val srcRowOffset = y * srcW
             val dstRowOffset = y * targetWidth
             for (x in 0 until targetWidth) {
@@ -165,6 +177,7 @@ object AlgorithmicUpscaler {
         // Pass 2: Vertical resampling to destination pixels.
         val dstPixels = IntArray(targetWidth * targetHeight)
         for (y in 0 until targetHeight) {
+            checkpoint?.invoke() // B6: cancellable per output row (pass 2)
             val taps = rowTapIdx[y]
             val weights = rowTapW[y]
             val dstRow = y * targetWidth

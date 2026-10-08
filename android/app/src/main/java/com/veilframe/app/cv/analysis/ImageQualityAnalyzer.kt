@@ -31,21 +31,47 @@ import org.opencv.imgproc.Imgproc
 object ImageQualityAnalyzer {
 
     /** Full quality report for one image. */
-    fun analyze(source: Mat, weights: QualityWeights = QualityWeights()): QualityReport {
+    fun analyze(
+        source: Mat,
+        weights: QualityWeights = QualityWeights(),
+        context: com.veilframe.app.cv.core.CvContext? = null,
+    ): QualityReport {
         require(!source.empty()) { "source is empty" }
         val luma = luma8(source)
         try {
+            // B6: each metric is a full-image pass; checkpoints between stages
+            // keep a 16 MP analysis cancellable at ~100 ms granularity.
+            context?.ensureActive()
+            val varianceOfLaplacian = varianceOfLaplacian(luma)
+            context?.ensureActive()
+            val noiseSigma = estimateNoiseSigma(luma)
+            context?.ensureActive()
+            val meanLuma = Core.mean(luma).`val`[0]
+            context?.ensureActive()
+            val clippedHighlightRatio = clippedRatio(luma, high = true)
+            val clippedShadowRatio = clippedRatio(luma, high = false)
+            context?.ensureActive()
+            val contrastRms = contrastRms(luma)
+            context?.ensureActive()
+            val lumaSpreadP5P95 = percentileSpread(luma)
+            context?.ensureActive()
+            val saturationMean = meanSaturation(source)
+            context?.ensureActive()
+            val blockiness = blockiness(luma)
+            context?.ensureActive()
+            val ringing = ringing(luma)
+
             val raw = QualityRawMeasurements(
-                varianceOfLaplacian = varianceOfLaplacian(luma),
-                noiseSigma = estimateNoiseSigma(luma),
-                meanLuma = Core.mean(luma).`val`[0],
-                clippedHighlightRatio = clippedRatio(luma, high = true),
-                clippedShadowRatio = clippedRatio(luma, high = false),
-                contrastRms = contrastRms(luma),
-                lumaSpreadP5P95 = percentileSpread(luma),
-                saturationMean = meanSaturation(source),
-                blockiness = blockiness(luma),
-                ringing = ringing(luma),
+                varianceOfLaplacian = varianceOfLaplacian,
+                noiseSigma = noiseSigma,
+                meanLuma = meanLuma,
+                clippedHighlightRatio = clippedHighlightRatio,
+                clippedShadowRatio = clippedShadowRatio,
+                contrastRms = contrastRms,
+                lumaSpreadP5P95 = lumaSpreadP5P95,
+                saturationMean = saturationMean,
+                blockiness = blockiness,
+                ringing = ringing,
             )
             return QualityScore.evaluate(raw, weights)
         } finally {
