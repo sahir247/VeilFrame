@@ -120,7 +120,7 @@
                                 android:id="@+id/btnProvenanceCopyHash"
                                 style="@style/Widget.VeilFrame.Button.Quiet"
                                 android:layout_width="wrap_content"
-                                android:layout_height="32dp"
+                                android:layout_height="wrap_content"
                                 android:text="Copy"
                                 app:icon="@drawable/ic_action_copy"
                                 app:iconSize="14dp" />
@@ -211,7 +211,7 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnProvenanceSelectFile"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:text="Choose File to Audit"
                     app:icon="@drawable/ic_file_pick"
                     app:iconSize="18dp" />

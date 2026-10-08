@@ -27,6 +27,7 @@ import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
 import com.veilframe.app.media.BackgroundRemoverController
+import com.veilframe.app.media.MotionLabController
 import com.veilframe.app.media.ImageQualityController
 import com.veilframe.app.media.ImageStudioController
 import com.veilframe.app.media.ProvenanceController
@@ -83,6 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var markdownViewerController: MarkdownViewerController
     private lateinit var docScannerController: DocumentScannerController
     private lateinit var backgroundRemoverController: BackgroundRemoverController
+    private lateinit var motionLabController: MotionLabController
     private lateinit var imageQualityController: ImageQualityController
     private lateinit var provenanceController: ProvenanceController
     private var pendingExportFile: File? = null
@@ -208,6 +210,12 @@ class MainActivity : AppCompatActivity() {
         if (!uris.isNullOrEmpty()) {
             videoStudioController.handleVideosSelected(uris)
         }
+    }
+
+    private val motionLabPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) motionLabController.setSource(uri)
     }
 
     private val vidStudioAddMoreLauncher = registerForActivityResult(
@@ -400,6 +408,7 @@ class MainActivity : AppCompatActivity() {
                 binding.layoutBackgroundRemover.root,
                 binding.layoutImageQuality.root,
                 binding.layoutProvenance.root,
+                binding.layoutMotionLab.root,
                 binding.fragmentQrStudio,
                 binding.scrollTool
             ).forEach { root ->
@@ -672,6 +681,20 @@ class MainActivity : AppCompatActivity() {
             }
         ).apply { init() }
 
+        motionLabController = MotionLabController(
+            activity = this,
+            binding = binding.layoutMotionLab,
+            scope = lifecycleScope,
+            onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        )
+
         backgroundRemoverController = BackgroundRemoverController(
             activity = this,
             binding = binding.layoutBackgroundRemover,
@@ -828,6 +851,7 @@ class MainActivity : AppCompatActivity() {
         binding.layoutToolsCatalogue.cardToolQrStudio.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolQrStudio; openQrStudio() }
         binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolDocScanner; openDocumentScanner() }
         binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolBgRemover; openBackgroundRemover() }
+        binding.layoutToolsCatalogue.cardToolMotionLab.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolMotionLab; openMotionLab() }
         binding.layoutToolsCatalogue.cardToolAiUpscaler.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolAiUpscaler; openImageUpscaler() }
         binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolPrivacyScrubber; openTool(ToolMode.IMAGE_CLEANER) }
         binding.layoutToolsCatalogue.cardToolVideoCleaner.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolVideoCleaner; openTool(ToolMode.VIDEO_CLEANER) }
@@ -922,6 +946,7 @@ class MainActivity : AppCompatActivity() {
             WorkspaceRoute.QR_STUDIO to binding.layoutToolsCatalogue.cardToolQrStudio,
             WorkspaceRoute.DOCUMENT_SCANNER to binding.layoutToolsCatalogue.cardToolDocScanner,
             WorkspaceRoute.BACKGROUND_REMOVER to binding.layoutToolsCatalogue.cardToolBgRemover,
+            WorkspaceRoute.MOTION_LAB to binding.layoutToolsCatalogue.cardToolMotionLab,
             WorkspaceRoute.IMAGE_UPSCALER to binding.layoutToolsCatalogue.cardToolAiUpscaler,
             WorkspaceRoute.IMAGE_CLEANER to binding.layoutToolsCatalogue.cardToolPrivacyScrubber,
             WorkspaceRoute.VIDEO_CLEANER to binding.layoutToolsCatalogue.cardToolVideoCleaner,
@@ -1176,6 +1201,17 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[UI] Opened Background Remover workspace.")
     }
 
+    fun openMotionLab() {
+        backClearTimerJob?.cancel()
+        backClearTimerJob = null
+        pauseVideoPlayback()
+        if (navigationController.currentScreen == ScreenState.TOOL) {
+            toolSessionManager.saveCurrentToolState()
+        }
+        navigationController.showMotionLabScreen()
+        consoleLogController.log("[UI] Opened Motion Lab workspace.")
+    }
+
     fun openImageQuality() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
@@ -1207,10 +1243,35 @@ class MainActivity : AppCompatActivity() {
                 File(cacheDir, "scanned_docs"),
                 File(filesDir, "cv/exports")
             )
-            val allFiles = exportDirs
+            // v2.3.0 fix ("library does not store previous works as it displays"):
+            // MediaStore saves (Pictures/Movies VeilFrame — upscaler, bg remover, Motion Lab)
+            // were invisible to the Library. Merge them with the app-dir exports.
+            val mediaStoreFiles = mutableListOf<File>()
+            try {
+                contentResolver.query(
+                    MediaStore.Files.getContentUri("external"),
+                    arrayOf(MediaStore.Files.FileColumns.DATA),
+                    "${MediaStore.Files.FileColumns.DATA} LIKE ?",
+                    arrayOf("%/VeilFrame/%"),
+                    null
+                )?.use { c ->
+                    val idx = c.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                    if (idx >= 0) {
+                        while (c.moveToNext()) {
+                            val path = c.getString(idx) ?: continue
+                            mediaStoreFiles += File(path)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("VeilFrame.Library", "MediaStore merge unavailable: ${e.message}")
+            }
+
+            val allFiles = (exportDirs
                 .filter { it.exists() && it.isDirectory }
-                .flatMap { it.listFiles()?.toList() ?: emptyList() }
+                .flatMap { it.listFiles()?.toList() ?: emptyList() } + mediaStoreFiles)
                 .filter { it.isFile && it.length() > 0 }
+                .distinctBy { it.absolutePath }
                 .sortedByDescending { it.lastModified() }
 
             val savedSessions = com.veilframe.app.document.DocumentSession.listSavedSessions(this@MainActivity)

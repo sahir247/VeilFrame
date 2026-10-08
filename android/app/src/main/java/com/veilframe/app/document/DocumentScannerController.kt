@@ -142,6 +142,10 @@ class DocumentScannerController(
             updateUi()
         }
 
+        binding.btnDocPageAdjust.setOnClickListener {
+            showPageAdjustDialog()
+        }
+
         binding.btnDocPageDuplicate.setOnClickListener {
             session.duplicatePage(session.activePageIndex, activity)
             persistSession()
@@ -705,6 +709,91 @@ class DocumentScannerController(
                 onErr = { err ->
                     android.util.Log.w("VeilFrame.DocScanner", "Filter $mode failed for page ${page.id} [${err.code}]: ${err.message}")
                     Toast.makeText(activity, "Filter could not be applied", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+    }
+
+    /**
+     * v2.3.0: per-page Adjust (exposure/contrast/saturation) — device feedback said the
+     * page screen only offered colour filters and auto-crop. Wires the dormant
+     * [com.veilframe.app.cv.color.ColorEngine] under CvEngine governance (ADR 0006).
+     */
+    private fun showPageAdjustDialog() {
+        val page = session.currentPage ?: run {
+            Toast.makeText(activity, "No page selected", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val dlgBinding = com.veilframe.app.databinding.DialogPageAdjustBinding
+            .inflate(activity.layoutInflater)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(
+            activity,
+            com.veilframe.app.R.style.ThemeOverlay_VeilFrame_MaterialAlertDialog
+        )
+            .setTitle("Adjust Page ${session.activePageIndex + 1}")
+            .setView(dlgBinding.root)
+            .create()
+
+        fun resetSliders() {
+            dlgBinding.sliderAdjustExposure.value = 0f
+            dlgBinding.sliderAdjustContrast.value = 1f
+            dlgBinding.sliderAdjustSaturation.value = 1f
+        }
+        dlgBinding.btnAdjustReset.setOnClickListener { resetSliders() }
+        dlgBinding.btnAdjustApply.setOnClickListener {
+            dialog.dismiss()
+            applyPageAdjust(
+                exposureStops = dlgBinding.sliderAdjustExposure.value.toDouble(),
+                contrast = dlgBinding.sliderAdjustContrast.value.toDouble(),
+                saturation = dlgBinding.sliderAdjustSaturation.value.toDouble(),
+            )
+        }
+        dialog.show()
+    }
+
+    private fun applyPageAdjust(exposureStops: Double, contrast: Double, saturation: Double) {
+        val page = session.currentPage ?: return
+        val baseBmp = page.originalBitmapCache ?: page.processedBitmapCache ?: return
+        if (exposureStops == 0.0 && contrast == 1.0 && saturation == 1.0) return
+
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(baseBmp.width, baseBmp.height, 3)
+        scope.launch {
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "doc-page-adjust",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+                timeoutMs = 15_000L,
+            ) { ctx ->
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
+                val srcMat = BitmapBridge.toMat(baseBmp)
+                try {
+                    val colorEngine = com.veilframe.app.cv.color.ColorEngine
+                    val exposed = colorEngine.exposure(srcMat, exposureStops)
+                    val contrasted = colorEngine.contrast(exposed, contrast)
+                    if (contrasted !== exposed && exposed !== srcMat) exposed.release()
+                    val saturated = colorEngine.saturation(contrasted, saturation)
+                    if (saturated !== contrasted && contrasted !== srcMat) contrasted.release()
+                    try {
+                        BitmapBridge.toBitmap(saturated)
+                    } finally {
+                        if (saturated !== srcMat) saturated.release()
+                    }
+                } finally {
+                    srcMat.release() // CV-4
+                }
+            }
+
+            job.await().fold(
+                onOk = { adjusted ->
+                    page.processedBitmapCache = adjusted
+                    persistSession()
+                    updateUi()
+                    Toast.makeText(activity, "Adjustments applied", Toast.LENGTH_SHORT).show()
+                },
+                onErr = { err ->
+                    android.util.Log.w("VeilFrame.DocScanner", "Page adjust failed [${err.code}]: ${err.message}")
+                    Toast.makeText(activity, "Adjust failed: ${err.message}", Toast.LENGTH_LONG).show()
                 }
             )
         }

@@ -151,6 +151,15 @@ enum class WorkspaceRoute(
         status = WorkspaceStatus.STABLE,
         aliases = listOf("provenance", "verify", "signature", "ed25519", "sha256", "hash", "cert"),
         iconRes = R.drawable.ic_check_circle
+    ),
+    MOTION_LAB(
+        id = "motion_lab",
+        title = "Motion Lab",
+        description = "Optical-flow frame interpolation — render 2×/4× smoother motion from any video",
+        category = WorkspaceCategory.CREATE_EDIT,
+        status = WorkspaceStatus.ALPHA,
+        aliases = listOf("optical flow", "motion", "interpolation", "slow motion", "frame rate", "fps", "frames", "smooth"),
+        iconRes = R.drawable.ic_speed
     );
 
     companion object {

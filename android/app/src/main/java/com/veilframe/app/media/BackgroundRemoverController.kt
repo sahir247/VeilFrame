@@ -1,5 +1,9 @@
 package com.veilframe.app.media
 
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
@@ -368,7 +372,9 @@ class BackgroundRemoverController(
         }
 
         scope.launch(Dispatchers.IO) {
-            val exportDir = File(activity.cacheDir, "exports").apply { mkdirs() }
+            // v2.3.0 fix ("bg removing image is not saving"): persistent app dir (cache is
+            // purgeable and SAF handoff died silently on devices) — see gallery save below.
+            val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
             val outFile = File(exportDir, "Cutout_${System.currentTimeMillis()}.png")
 
             val finalExportBmp = when (binding.splitViewBgCompare.backgroundMode) {
@@ -389,11 +395,44 @@ class BackgroundRemoverController(
                 else -> bmp
             }
 
-            FileOutputStream(outFile).use { fos ->
-                finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
-            }
-            withContext(Dispatchers.Main) {
-                onExportPngRequest(outFile)
+            try {
+                FileOutputStream(outFile).use { fos ->
+                    finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                }
+
+                // Real gallery save (MediaStore) instead of the SAF launcher handoff.
+                val resolver = activity.contentResolver
+                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                } else {
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, outFile.name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                }
+                val savedUri = resolver.insert(collection, values)
+                    ?: throw java.io.IOException("MediaStore insert refused")
+                resolver.openOutputStream(savedUri)?.use { out ->
+                    outFile.inputStream().use { inp -> inp.copyTo(out) }
+                } ?: throw java.io.IOException("openOutputStream returned null")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(savedUri, values, null, null)
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("VeilFrame.BgRemover", "Gallery save failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

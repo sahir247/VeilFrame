@@ -1166,7 +1166,7 @@
                     android:id="@+id/btnLinkGithub"
                     style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="GitHub"
@@ -1180,7 +1180,7 @@
                     android:id="@+id/btnLinkDocs"
                     style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="Docs"
@@ -1194,7 +1194,7 @@
                     android:id="@+id/btnLinkChangelog"
                     style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="Changelog"
@@ -1208,7 +1208,7 @@
                     android:id="@+id/btnLinkAbout"
                     style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="About"
                     android:padding="0dp"
@@ -1437,7 +1437,7 @@
                                 android:id="@+id/btnChangeTarget"
                                 style="@style/Widget.VeilFrame.Button.Utility"
                                 android:layout_width="0dp"
-                                android:layout_height="38dp"
+                                android:layout_height="wrap_content"
                                 android:minHeight="38dp"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="4dp"
@@ -1456,7 +1456,7 @@
                                 android:id="@+id/btnClearTarget"
                                 style="@style/Widget.VeilFrame.Button.Utility"
                                 android:layout_width="0dp"
-                                android:layout_height="38dp"
+                                android:layout_height="wrap_content"
                                 android:minHeight="38dp"
                                 android:layout_weight="1"
                                 android:layout_marginStart="4dp"
@@ -1917,7 +1917,7 @@
                         android:id="@+id/btnToggleConsole"
                         style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="match_parent"
-                        android:layout_height="38dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="18dp"
                         android:text="View Technical Logs"
                         android:textColor="@color/vf_secondary"
@@ -2074,7 +2074,7 @@
                         android:id="@+id/btnResultPreview"
                         style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="match_parent"
-                        android:layout_height="40dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
                         android:text="Preview Markdown"
                         android:textColor="@color/vf_primary"
@@ -2095,7 +2095,7 @@
                             android:id="@+id/btnResultSave"
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="0dp"
-                            android:layout_height="40dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
                             android:text="Save As..."
@@ -2110,7 +2110,7 @@
                             android:id="@+id/btnResultShare"
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="0dp"
-                            android:layout_height="40dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginStart="4dp"
                             android:text="Share File"
@@ -2203,6 +2203,13 @@
         layout="@layout/layout_provenance" />
 
     <!-- ================================================================= -->
+    <!-- 14. MOTION LAB WORKSPACE (optical-flow interpolation, Alpha)      -->
+    <!-- ================================================================= -->
+    <include
+        android:id="@+id/layoutMotionLab"
+        layout="@layout/layout_motion_lab" />
+
+    <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->
     <!-- ================================================================= -->
     <com.google.android.material.card.MaterialCardView
@@ -2243,7 +2250,7 @@
             <!-- Tier 2: Secondary Actions (50/50 Split, Single-Line Labels) -->
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton

@@ -32,7 +32,7 @@
                 android:id="@+id/btnDocExportPdf"
                 style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
                 android:text="Export PDF"
@@ -199,6 +199,14 @@
                         app:icon="@drawable/ic_rotate" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnDocPageAdjust"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Adjust page"
+                        app:icon="@drawable/ic_edit" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageDuplicate"
                         style="@style/Widget.VeilFrame.IconButton.Toolbar"
                         android:layout_width="wrap_content"
@@ -293,7 +301,7 @@
                     android:id="@+id/btnDocAddCamera"
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:text="+ Camera"
@@ -304,7 +312,7 @@
                     android:id="@+id/btnDocAddPhotos"
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
                     android:layout_marginEnd="3dp"
@@ -315,7 +323,7 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnDocAutoDetect"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:text="Auto Crop"
@@ -506,7 +514,7 @@
                 android:id="@+id/btnDocCamDone"
                 style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:text="Done (0)"
                 app:icon="@drawable/ic_done" />
         </LinearLayout>

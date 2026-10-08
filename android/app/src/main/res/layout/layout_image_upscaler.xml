@@ -134,7 +134,7 @@
                     android:id="@+id/btnUpscalerPickImage"
                     style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="wrap_content"
-                    android:layout_height="44dp"
+                    android:layout_height="wrap_content"
                     android:text="Choose Image"
                     app:icon="@drawable/ic_add" />
             </LinearLayout>
@@ -216,7 +216,7 @@
                             android:id="@+id/btnUpscalerChangeImage"
                             style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Change"
                             android:textColor="@color/vf_primary" />
                     </LinearLayout>
@@ -360,7 +360,7 @@
                             android:id="@+id/btnUpscalerChangeModel"
                             style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
-                            android:layout_height="32dp"
+                            android:layout_height="wrap_content"
                             android:text="Change Model"
                             android:textColor="@color/vf_primary" />
                     </LinearLayout>
@@ -424,7 +424,7 @@
                             android:id="@+id/btnScale2x"
                             style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="2× Scale"
                             android:checked="true" />
@@ -433,7 +433,7 @@
                             android:id="@+id/btnScale4x"
                             style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="4× Scale" />
 
@@ -441,7 +441,7 @@
                             android:id="@+id/btnScale8x"
                             style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="8× Hybrid" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -496,7 +496,7 @@
                         android:id="@+id/btnUpscalerCancel"
                         style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
-                        android:layout_height="36dp"
+                        android:layout_height="wrap_content"
                         android:layout_gravity="end"
                         android:text="Cancel"
                         android:textColor="@color/vf_accent_red" />
@@ -516,7 +516,7 @@
                     android:id="@+id/btnUpscalerSave"
                     style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="8dp"
                     android:text="Save"
@@ -526,7 +526,7 @@
                     android:id="@+id/btnUpscalerShare"
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="Share"
                     app:icon="@drawable/ic_action_share"
@@ -629,7 +629,7 @@
                             android:id="@+id/btnRunUpscaleBenchmark"
                             style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Run Calibration Benchmark"
                             android:textColor="@color/vf_primary"
                             app:strokeColor="@color/vf_surface_stroke" />
@@ -642,7 +642,7 @@
                 android:id="@+id/btnUpscalerExecute"
                 style="@style/Widget.VeilFrame.Button.Primary"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
+                android:layout_height="wrap_content"
                 android:text="UPSCALE"
                 app:icon="@drawable/ic_resize"
                 android:layout_marginBottom="8dp" />

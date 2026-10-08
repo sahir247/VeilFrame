@@ -177,7 +177,7 @@
             android:id="@+id/qr_scan_gallery_btn"
             style="@style/Widget.VeilFrame.Button.Elevated"
             android:layout_width="wrap_content"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:elevation="4dp"
             app:elevation="4dp"

@@ -9,7 +9,7 @@
     <!-- Dialog Header -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"
@@ -181,7 +181,7 @@
                             android:id="@+id/btnDeleteModel2x"
                             style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Delete"
                             android:textColor="@color/vf_accent_red"
                             android:visibility="gone" />
@@ -190,7 +190,7 @@
                             android:id="@+id/btnDownloadModel2x"
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Download (33.8 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
@@ -274,7 +274,7 @@
                             android:id="@+id/btnDeleteModel4x"
                             style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Delete"
                             android:textColor="@color/vf_accent_red"
                             android:visibility="gone" />
@@ -283,7 +283,7 @@
                             android:id="@+id/btnDownloadModel4x"
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Download (33.8 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"
@@ -367,7 +367,7 @@
                             android:id="@+id/btnDeleteModelAnime"
                             style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Delete"
                             android:textColor="@color/vf_accent_red"
                             android:visibility="gone" />
@@ -376,7 +376,7 @@
                             android:id="@+id/btnDownloadModelAnime"
                             style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Download (9.1 MB)"
                             android:textColor="@color/vf_primary"
                             app:icon="@drawable/ic_system_update"

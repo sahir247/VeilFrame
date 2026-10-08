@@ -178,6 +178,10 @@ class MainNavigationController(
             binding.layoutImageQuality.layoutImageQualityRoot.visibility = View.GONE
             binding.layoutImageQuality.layoutImageQualityRoot.translationX = 0f
         }
+        if (activeView != binding.layoutMotionLab.layoutMotionLabRoot) {
+            binding.layoutMotionLab.layoutMotionLabRoot.visibility = View.GONE
+            binding.layoutMotionLab.layoutMotionLabRoot.translationX = 0f
+        }
         if (activeView != binding.layoutProvenance.layoutProvenanceRoot) {
             binding.layoutProvenance.layoutProvenanceRoot.visibility = View.GONE
             binding.layoutProvenance.layoutProvenanceRoot.translationX = 0f
@@ -205,6 +209,7 @@ class MainNavigationController(
             ScreenState.DOCUMENT_SCANNER_EXPORT -> binding.layoutDocumentScanner.layoutDocumentScannerRoot
             ScreenState.BACKGROUND_REMOVER -> binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot
             ScreenState.IMAGE_QUALITY -> binding.layoutImageQuality.layoutImageQualityRoot
+            ScreenState.MOTION_LAB -> binding.layoutMotionLab.layoutMotionLabRoot
             ScreenState.PROVENANCE -> binding.layoutProvenance.layoutProvenanceRoot
             ScreenState.HOME -> null
         }
@@ -534,6 +539,36 @@ class MainNavigationController(
             binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.alpha = 1.0f
             binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.translationX = 0f
             hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
+        }
+    }
+
+    fun showMotionLabScreen() {
+        onPauseVideoPlayback()
+        if (currentScreen == ScreenState.TOOL) {
+            onSaveActiveToolState()
+        }
+        val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
+        previousScreen = currentScreen
+        currentScreen = ScreenState.MOTION_LAB
+
+        binding.toolbarHome.visibility = View.GONE
+        binding.toolbarTool.visibility = View.GONE
+        binding.cardCleanerActionDock.visibility = View.GONE
+        binding.bottomActionDock.visibility = View.GONE
+        setAdaptiveNavigationVisibility(false)
+
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
+            hideAllToolViewsExcept(binding.layoutMotionLab.layoutMotionLabRoot)
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = binding.layoutMotionLab.layoutMotionLabRoot
+            )
+        } else {
+            binding.scrollHome.visibility = View.GONE
+            binding.layoutMotionLab.layoutMotionLabRoot.visibility = View.VISIBLE
+            binding.layoutMotionLab.layoutMotionLabRoot.alpha = 1.0f
+            binding.layoutMotionLab.layoutMotionLabRoot.translationX = 0f
+            hideAllToolViewsExcept(binding.layoutMotionLab.layoutMotionLabRoot)
         }
     }
 
