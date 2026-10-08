@@ -3,7 +3,7 @@
 ## Status
 
 Status: Accepted
-Implementation Baseline: `v2.3.0-rc1` (branch `release/v2.3.0-expressive-rc1`)
+Implementation Baseline: `v2.2.9` (branch `main`)
 Date: October 2026
 Implements: `docs/CV_RELIABILITY_UPGRADE_PLAN.md` (Phases A–C) and
 `docs/UPSCALER_STABILITY_FIX_PLAN.md` (F1–F11)

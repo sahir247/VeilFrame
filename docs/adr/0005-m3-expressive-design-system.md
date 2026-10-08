@@ -3,7 +3,7 @@
 ## Status
 
 Status: Accepted
-Implementation Baseline: `v2.3.0-rc1` (branch `release/v2.3.0-expressive-rc1`)
+Implementation Baseline: `v2.2.9` (branch `main`)
 Date: October 2026
 Supersedes-in-part: ADR 0004 (UI redesign architecture — remains binding: no Compose rewrite)
 
