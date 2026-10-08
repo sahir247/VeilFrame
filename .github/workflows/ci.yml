@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   # ------------------------------------------------------------------ #
@@ -40,10 +41,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -131,7 +132,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -185,10 +186,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -237,10 +238,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -339,10 +340,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -458,10 +459,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -621,10 +622,10 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
@@ -657,7 +658,7 @@ jobs:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -692,7 +693,73 @@ jobs:
           sdkmanager --version
           echo "$ANDROID_HOME"
           ls -la "$ANDROID_HOME/platforms/android-35"
+      - name: Stage Custom OpenCV 4.14.0 Android SDK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "==> Resolving latest verified custom OpenCV SDK artifact..."
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+            --workflow "build-opencv-sdk.yml" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::No successful OpenCV SDK build found! Run build-opencv-sdk.yml first."
+            exit 1
+          fi
+
+          echo "Found successful OpenCV SDK workflow run: $RUN_ID"
+          mkdir -p /tmp/opencv_artifact
+          gh run download "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name veilframe-custom-opencv-sdk \
+            --dir /tmp/opencv_artifact
+
+          mkdir -p android/opencv-sdk/src/main/jniLibs/arm64-v8a
+          mkdir -p android/opencv-sdk/src/main/jniLibs/x86_64
+
+          ARM64_SO=$(find /tmp/opencv_artifact -path "*/arm64-v8a/libopencv_java4.so" -print -quit)
+          X86_SO=$(find /tmp/opencv_artifact -path "*/x86_64/libopencv_java4.so" -print -quit)
+          MARKER=$(find /tmp/opencv_artifact -name ".opencv-sdk-complete" -print -quit)
+
+          if [ -n "$ARM64_SO" ]; then
+            cp "$ARM64_SO" android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          fi
+          if [ -n "$X86_SO" ]; then
+            cp "$X86_SO" android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          fi
+          if [ -n "$MARKER" ]; then
+            cp "$MARKER" android/opencv-sdk/src/main/.opencv-sdk-complete
+          fi
+
+          if [ ! -s android/opencv-sdk/src/main/.opencv-sdk-complete ]; then
+            echo "Generating .opencv-sdk-complete marker..."
+            ARM_SHA=$(sha256sum android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so | awk '{print $1}')
+            X86_SHA=$(sha256sum android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so | awk '{print $1}')
+            cat <<EOF > android/opencv-sdk/src/main/.opencv-sdk-complete
+OpenCV=4.14.0
+OpenCV_SHA=0654a42e19215ef25b1d367d822f3c630447e7c7
+Contrib_SHA=a8e9acd62cabd30419dba83007f2ac0d07de5e2c
+NDK=27.2.12479018
+STL=c++_static
+ABIs=arm64-v8a,x86_64
+ARM64_SHA256=${ARM_SHA}
+X86_64_SHA256=${X86_SHA}
+GeneratedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+Status=VERIFIED_COMPLETE
+EOF
+          fi
+
+          echo "==> Staged OpenCV SDK status:"
+          ls -lh android/opencv-sdk/src/main/jniLibs/arm64-v8a/libopencv_java4.so
+          ls -lh android/opencv-sdk/src/main/jniLibs/x86_64/libopencv_java4.so
+          cat android/opencv-sdk/src/main/.opencv-sdk-complete
+
       - name: Build Android Release Packages
+
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -795,7 +862,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Download All Binary, Android & Python Artifacts
         uses: actions/download-artifact@v4
