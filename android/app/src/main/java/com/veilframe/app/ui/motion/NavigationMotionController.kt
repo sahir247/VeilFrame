@@ -24,6 +24,15 @@ object NavigationMotionController {
     private const val SETTINGS_DURATION_MS = 280L
 
     /**
+     * Hero-polish: the card that triggered a workspace open, consumed by the
+     * next [showTool] as the container-transform origin. Set by click sites
+     * right before navigation; always cleared on consume and on [hideTool],
+     * so a stale value can never fire on an unrelated transition.
+     */
+    @Volatile
+    var nextOriginView: View? = null
+
+    /**
      * Navigates from Home screen to a Tool container.
      */
     fun showTool(
@@ -32,12 +41,23 @@ object NavigationMotionController {
         onComplete: (() -> Unit)? = null
     ) {
         val context = toolView.context
+        val origin = nextOriginView
+        nextOriginView = null
+
         if (ExpressiveMotion.isReducedMotion(context)) {
             homeView.isVisible = false
             toolView.isVisible = true
             toolView.alpha = 1f
             toolView.translationX = 0f
             onComplete?.invoke()
+            return
+        }
+
+        // Container-transform (card → workspace) with guaranteed slide fallback:
+        // navigation must never break because a transition failed.
+        if (origin != null && origin.isAttachedToWindow &&
+            tryContainerTransform(homeView, toolView, origin, onComplete)
+        ) {
             return
         }
 
@@ -80,6 +100,59 @@ object NavigationMotionController {
     }
 
     /**
+     * Material container transform: the clicked card morphs into the workspace
+     * surface (theme easing/duration, scrim, corner interpolation handled by
+     * the Material library). Returns false on ANY problem so showTool falls
+     * back to the classic directional slide.
+     */
+    private fun tryContainerTransform(
+        homeView: View,
+        toolView: View,
+        origin: View,
+        onComplete: (() -> Unit)?
+    ): Boolean {
+        return try {
+            val parent = toolView.parent as? android.view.ViewGroup ?: return false
+            if (origin.parent == null) return false
+
+            val transform = com.google.android.material.transition.MaterialContainerTransform().apply {
+                startView = origin
+                endView = toolView
+                fadeMode = com.google.android.material.transition.MaterialContainerTransform.FADE_MODE_THROUGH
+                isElevationShadowEnabled = false
+                startContainerColor = com.google.android.material.color.MaterialColors.getColor(
+                    origin, com.google.android.material.R.attr.colorSurfaceContainer
+                )
+                endContainerColor = com.google.android.material.color.MaterialColors.getColor(
+                    toolView, android.R.attr.colorBackground
+                )
+                scrimColor = android.graphics.Color.argb(96, 0, 0, 0)
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        homeView.isVisible = false
+                        onComplete?.invoke()
+                    }
+                })
+            }
+
+            toolView.isVisible = true
+            androidx.transition.TransitionManager.beginDelayedTransition(parent, transform)
+            true
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "VeilFrame.NavMotion",
+                "container transform unavailable; falling back to slide",
+                t
+            )
+            // Undo partial visibility changes so the fallback starts clean.
+            toolView.isVisible = false
+            toolView.alpha = 1f
+            toolView.translationX = 0f
+            false
+        }
+    }
+
+    /**
      * Navigates from a Tool container back to Home.
      */
     fun hideTool(
@@ -87,6 +160,7 @@ object NavigationMotionController {
         toolView: View,
         onComplete: (() -> Unit)? = null
     ) {
+        nextOriginView = null
         val context = homeView.context
         if (ExpressiveMotion.isReducedMotion(context)) {
             toolView.isVisible = false

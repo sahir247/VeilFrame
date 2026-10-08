@@ -747,63 +747,73 @@ class MainActivity : AppCompatActivity() {
 
         // Home Dashboard Tool Cards - DISTINCT CLEANER WORKFLOWS
         binding.cardToolAi.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolAi
             openTool(ToolMode.AI_BUNDLE)
         }
 
         binding.cardToolVideo.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolVideo
             openTool(ToolMode.VIDEO_CLEANER) // Dedicated Video Sanitizer
         }
 
         binding.cardToolImage.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolImage
             openTool(ToolMode.IMAGE_CLEANER) // Dedicated Image Cleaner
         }
 
         binding.cardToolFolder.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolFolder
             openTool(ToolMode.FOLDER_SCANNER)
         }
 
         // Image Studio & Video Studio Dashboard Cards - DISTINCT STUDIO WORKFLOWS
         binding.cardToolImageStudio.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolImageStudio
             openImageStudio()
         }
 
         binding.cardToolVideoStudio.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolVideoStudio
             openVideoStudio()
         }
 
         binding.cardToolImageUpscaler.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolImageUpscaler
             openImageUpscaler()
         }
 
         binding.cardToolQr.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolQr
             openQrStudio()
         }
 
         binding.cardHeroUpscaler.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHeroUpscaler
             openImageUpscaler()
         }
 
         binding.cardHomeDocScanner.setOnClickListener {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeDocScanner
             openDocumentScanner()
         }
 
         // Tools Catalogue Workspace Card Clicks (All 13 Canonical Workspaces)
-        binding.layoutToolsCatalogue.cardToolImageStudio.setOnClickListener { openImageStudio() }
-        binding.layoutToolsCatalogue.cardToolVideoStudio.setOnClickListener { openVideoStudio() }
-        binding.layoutToolsCatalogue.cardToolQrStudio.setOnClickListener { openQrStudio() }
-        binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { openDocumentScanner() }
-        binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { openBackgroundRemover() }
-        binding.layoutToolsCatalogue.cardToolAiUpscaler.setOnClickListener { openImageUpscaler() }
-        binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { openTool(ToolMode.IMAGE_CLEANER) }
-        binding.layoutToolsCatalogue.cardToolVideoCleaner.setOnClickListener { openTool(ToolMode.VIDEO_CLEANER) }
-        binding.layoutToolsCatalogue.cardToolImageQuality.setOnClickListener { openImageQuality() }
-        binding.layoutToolsCatalogue.cardToolFolderAnalyzer.setOnClickListener { openTool(ToolMode.FOLDER_SCANNER) }
-        binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { openTool(ToolMode.AI_BUNDLE) }
+        binding.layoutToolsCatalogue.cardToolImageStudio.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolImageStudio; openImageStudio() }
+        binding.layoutToolsCatalogue.cardToolVideoStudio.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolVideoStudio; openVideoStudio() }
+        binding.layoutToolsCatalogue.cardToolQrStudio.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolQrStudio; openQrStudio() }
+        binding.layoutToolsCatalogue.cardToolDocScanner.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolDocScanner; openDocumentScanner() }
+        binding.layoutToolsCatalogue.cardToolBgRemover.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolBgRemover; openBackgroundRemover() }
+        binding.layoutToolsCatalogue.cardToolAiUpscaler.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolAiUpscaler; openImageUpscaler() }
+        binding.layoutToolsCatalogue.cardToolPrivacyScrubber.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolPrivacyScrubber; openTool(ToolMode.IMAGE_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolVideoCleaner.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolVideoCleaner; openTool(ToolMode.VIDEO_CLEANER) }
+        binding.layoutToolsCatalogue.cardToolImageQuality.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolImageQuality; openImageQuality() }
+        binding.layoutToolsCatalogue.cardToolFolderAnalyzer.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolFolderAnalyzer; openTool(ToolMode.FOLDER_SCANNER) }
+        binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolAiBundler; openTool(ToolMode.AI_BUNDLE) }
         binding.layoutToolsCatalogue.cardToolMarkdownStudio.setOnClickListener {
             navigationController.showMarkdownViewerScreen()
             markdownViewerController.createNewDocument()
         }
-        binding.layoutToolsCatalogue.cardToolProvenance.setOnClickListener { openProvenance() }
+        binding.layoutToolsCatalogue.cardToolProvenance.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolProvenance; openProvenance() }
 
         // Library Explore Button & Filters
         binding.layoutLibrary.btnLibraryExploreTools.setOnClickListener {
