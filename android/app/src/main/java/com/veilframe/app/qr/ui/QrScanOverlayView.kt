@@ -19,7 +19,7 @@ class QrScanOverlayView @JvmOverloads constructor(
 
     private val themePrimaryColor: Int = com.google.android.material.color.MaterialColors.getColor(
         context,
-        com.google.android.material.R.attr.colorPrimary,
+        androidx.appcompat.R.attr.colorPrimary,
         0xFF00BCD4.toInt()
     )
 

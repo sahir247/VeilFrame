@@ -125,4 +125,58 @@ object DocumentScanner {
         val cloned = source.clone()
         return enhance(cloned, mode)
     }
+
+    /** Applies a document enhancement mode in place and returns [image]. */
+    fun enhance(image: Mat, mode: DocumentMode): Mat = when (mode) {
+        DocumentMode.ORIGINAL -> image
+
+        DocumentMode.GRAYSCALE -> {
+            val gray = Preprocessor.grayscale(image)
+            gray.copyTo(image)
+            gray.release()
+            image
+        }
+
+        DocumentMode.BLACK_AND_WHITE -> {
+            val gray = Preprocessor.grayscale(image)
+            val binary = Preprocessor.adaptiveThreshold(gray, blockSize = 31, c = 12.0)
+            binary.copyTo(image)
+            gray.release()
+            binary.release()
+            image
+        }
+
+        DocumentMode.ENHANCED -> {
+            val normalized = Preprocessor.normalize(image, clipLimit = 2.5)
+            val denoised = Preprocessor.denoise(normalized, strength = 3, method = com.veilframe.app.cv.preprocess.DenoiseMethod.BILATERAL)
+            denoised.copyTo(image)
+            normalized.release()
+            denoised.release()
+            image
+        }
+
+        DocumentMode.RECEIPT -> {
+            val normalized = Preprocessor.normalize(image, clipLimit = 3.0)
+            val sharpened = Preprocessor.sharpen(normalized, amount = 0.6, radius = 1.0)
+            val warmed = Mat()
+            sharpened.convertTo(warmed, -1, 1.08, 6.0)
+            warmed.copyTo(image)
+            normalized.release()
+            sharpened.release()
+            warmed.release()
+            image
+        }
+
+        DocumentMode.ID_DOCUMENT -> {
+            val normalized = Preprocessor.normalize(image, clipLimit = 1.8)
+            val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
+                normalized,
+                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.8, radius = 1.0, threshold = 3.0),
+            )
+            sharpened.copyTo(image)
+            normalized.release()
+            sharpened.release()
+            image
+        }
+    }
 }

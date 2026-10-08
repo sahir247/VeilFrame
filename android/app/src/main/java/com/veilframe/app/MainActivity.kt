@@ -1277,7 +1277,7 @@ class MainActivity : AppCompatActivity() {
                         val btnContinue = com.google.android.material.button.MaterialButton(
                             this@MainActivity,
                             null,
-                            com.google.android.material.R.attr.borderlessButtonStyle
+                            androidx.appcompat.R.attr.borderlessButtonStyle
                         ).apply {
                             text = "Continue"
                             textSize = 12f
@@ -1291,7 +1291,7 @@ class MainActivity : AppCompatActivity() {
                         val btnDelete = com.google.android.material.button.MaterialButton(
                             this@MainActivity,
                             null,
-                            com.google.android.material.R.attr.borderlessButtonStyle
+                            androidx.appcompat.R.attr.borderlessButtonStyle
                         ).apply {
                             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
                             setIconResource(R.drawable.ic_action_clear)
@@ -1392,7 +1392,7 @@ class MainActivity : AppCompatActivity() {
                         val btnShare = com.google.android.material.button.MaterialButton(
                             this@MainActivity,
                             null,
-                            com.google.android.material.R.attr.borderlessButtonStyle
+                            androidx.appcompat.R.attr.borderlessButtonStyle
                         ).apply {
                             layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
                             setIconResource(R.drawable.ic_action_share)
@@ -1408,7 +1408,7 @@ class MainActivity : AppCompatActivity() {
                         val btnDelete = com.google.android.material.button.MaterialButton(
                             this@MainActivity,
                             null,
-                            com.google.android.material.R.attr.borderlessButtonStyle
+                            androidx.appcompat.R.attr.borderlessButtonStyle
                         ).apply {
                             layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
                             setIconResource(R.drawable.ic_action_clear)

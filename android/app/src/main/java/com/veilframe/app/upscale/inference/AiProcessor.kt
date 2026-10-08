@@ -566,7 +566,7 @@ class AiProcessor(
         val topRows = if (shouldBlendTop) minOf(blendWidth, height) else 0
         val leftCols = if (shouldBlendLeft) minOf(blendWidth, width) else 0
         for (localY in 0 until height) {
-            ensureActive()
+            kotlin.coroutines.coroutineContext.ensureActive()
             val mixTop = localY < topRows
             val xEnd = if (mixTop) width else leftCols
             for (localX in 0 until xEnd) {
