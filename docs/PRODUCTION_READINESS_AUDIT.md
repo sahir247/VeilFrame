@@ -29,7 +29,7 @@
 | Control group | Path | Backend evidence | Label |
 |---|---|---|---|
 | Trim/scale/speed/audio/aspect/color/presets | VideoStudioController → FFmpegKit | `FFmpegKit` sessions, cancel by session id; WhatsApp-status pipeline (analyzer/rate-control/validator) | 🟢 REAL |
-| **Motion-aware denoise / frame interpolation / temporal consistency** | — | `cv/motion/**` (DIS + Farnebäck + FlowConsistency + FrameSynthesizer + FlowInterpolator) complete & contract-tested but **zero production consumers** | ⬜ UNWIRED (Phase 4; wiring contract in `cv/motion/README.md`: CvEngine VIDEO lane, ensureActive, ThermalGovernor, golden tests) |
+| **Motion-aware denoise / frame interpolation / temporal consistency** | Motion Lab workspace (round 10) | `cv/motion/**` consumed by `media/MotionLabController`: FFmpegKit extract → `FrameSynthesizer` (DIS/Farnebäck, governed internally per ADR 0006) → libx264 re-encode at 2×/4× fps. FrameSynthesizer/FlowEstimator path REAL; FlowConsistency/FrameInterpolator/MotionDetector still without consumers | 🟢 REAL (Alpha tool) / ⬜ remainder UNWIRED |
 | Image Cleaner / Video Cleaner | ToolSessionManager → ImageMetadataSanitizer / VideoMetadataSanitizer + FFmpeg repack | EXIF/GPS/maker-notes scrub, PRNU mitigation path, privacy impact summary | 🟢 REAL |
 | Folder Scanner / AI Bundle | ToolExecutionController → FolderScannerEngine (SAF tree scan) / AiBundleEngine | lock-file condensing, token budgeting, bundle export | 🟢 REAL |
 | Image Studio (crop/resize/rotate/filters/EXIF/watermark/compress) | ImageStudioController → ImageTransformEngine + ImageCompressionEngine + dialog controllers | deterministic transform plan; iterative binary-search target size | 🟢 REAL |
@@ -48,11 +48,19 @@
 | Provenance & verify | ProvenanceController → Ed25519 signature validation + manifest forensics | | 🟢 REAL |
 | Markdown viewer | MarkdownViewerController → offline WebView (marked/katex/mermaid/highlight bundled), security policy | | 🟢 REAL |
 | Library (recents/sessions/exports) | MainActivity rendering over DocumentSession disk state + file listings | | 🟢 REAL |
-| Tools catalogue search w/ synonym aliases (ADR 0004 §2.4) | no alias index found in code | browse + navigation real; **search/synonyms not found** | ⚪ MOCK-risk → treat as UNWIRED until verified on device |
+| Tools catalogue search w/ synonym aliases (ADR 0004 §2.4) | `WorkspaceRoute.search()` + per-route `aliases` (MainActivity catalogue filter) | Round-10 source trace: search IS implemented (title/description/alias matching, live TextWatcher + category chips). Earlier "not found" was a grep miss — corrected here | 🟢 REAL |
 
 ## 5. Tally
 
-🟢 REAL: 22 control groups · 🟡 PARTIAL: 3 (capture-crash confirmation pending, BG-remover AI segmenter, none user-blocking) · ⬜ UNWIRED: 5 (optical flow, smart crop, MODNet, quality handoff, tools search) · ⚪ MOCK: 0 found · 🔴 BROKEN: 0 remaining (insets + detection flicker + capture races were the 🔴s; all three treated this pass).
+🟢 REAL: 24 control groups (round 10: + Motion Lab optical-flow path; tools search re-verified as REAL) · 🟡 PARTIAL: 3 (capture-crash confirmation pending, BG-remover AI segmenter, none user-blocking) · ⬜ UNWIRED: 3 (smart crop, MODNet, quality handoff; motion remainder: FlowConsistency/FrameInterpolator/MotionDetector) · ⚪ MOCK: 0 found · 🔴 BROKEN: 0 remaining (insets + detection flicker + capture races were the 🔴s; all three treated this pass).
+
+### Round-10 addendum (device-feedback batch, commit 311d88c)
+
+- **BG-remover save** reclassified 🔴→🟢: SAF-launcher handoff (silent on-device failure) replaced by MediaStore gallery save + persistent `filesDir/exports` copy.
+- **Library ↔ storage coherence** 🔴→🟢: `refreshLibrary` now merges MediaStore `*/VeilFrame/*` results with app-dir exports (deduped, date-sorted).
+- **ColorEngine** ⬜→🟢: per-page Adjust dialog in Document Scanner (exposure/contrast/saturation, INTERACTIVE lane, identity-safe Mat chain).
+- **Clipping class** (button/text): 126 buttons + 22 rows swept from fixed heights to `wrap_content`.
+- Still open: camera capture crash log (guards in place, root confirmation pending user logcat), Phase-4 flow consumers beyond Motion Lab, smart-crop/MODNet/quality-handoff wiring.
 
 **Verdict on the "UI ahead of engine" thesis:** mostly *integration maturity*, confirmed — the engines are real and now governed (CvEngine lanes, admission, telemetry, thermal). The genuine UI-ahead-of-engine items are exactly the ⬜ rows, each with a documented wiring contract. No mock backends were found.
 

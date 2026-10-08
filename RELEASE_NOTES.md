@@ -10,6 +10,13 @@
 - **Containment:** hero card on brightest surface with 48dp top rounding; dock on 32dp XL+ card; cards tokenized to container/outline-variant.
 - **Accessibility:** reduced-motion spring collapse retained, 48dp secondary actions, semantic status = container+icon+text, haptics vocabulary centralized (API 26-safe).
 
+**Device-feedback batch (round 10) — stabilization follow-ups from real-device runs.**
+- **NEW: Motion Lab (Alpha)** — optical flow is now its own tool: pick a video, synthesize intermediate frames with the governed `cv/motion` stack (DIS fast / Farnebäck quality), re-encode at 2×/4× frame rate with original audio, save to Gallery + Library. Honest Alpha limits: ≤30 s / ≤900 frames, mixed-resolution refusal, every failure surfaced.
+- **Document scanning:** per-page **Adjust** dialog (exposure/contrast/saturation) wiring the previously dormant `ColorEngine` under CvEngine governance — editing beyond colour filters and auto-crop.
+- **Background remover:** "image not saving" fixed — SAF handoff replaced with a direct MediaStore gallery save (`Pictures/VeilFrame`) plus a persistent `filesDir/exports` copy.
+- **Library:** now merges MediaStore saves (`*/VeilFrame/*` — upscaler, background remover, Motion Lab) with app-dir exports, so the Library shows what was actually stored.
+- **Clipping sweep:** 126 fixed-height text buttons → `wrap_content`, 22 fixed-height text/button rows → `wrap_content`; the expressive type scale no longer fights hardcoded heights.
+
 ## v2.2.9 — October 2026 (Stable)
 
 **OpenCV 4.14.0 native SDK, Computer Vision subsystem & UI redesign architecture.**
