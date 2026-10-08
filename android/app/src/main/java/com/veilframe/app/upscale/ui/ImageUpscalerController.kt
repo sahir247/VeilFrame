@@ -30,6 +30,7 @@ import com.veilframe.app.upscale.inference.BitmapSource
 import com.veilframe.app.upscale.inference.SourceAccess
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.inference.UpscaleInferenceParams
+import com.veilframe.app.upscale.inference.OnnxSessionManager
 import com.veilframe.app.upscale.inference.UpscaleMemoryException
 import com.veilframe.app.upscale.inference.UriRegionSource
 import com.veilframe.app.upscale.model.ModelType
@@ -97,6 +98,9 @@ class ImageUpscalerController(
     var inferenceParams: UpscaleInferenceParams = UpscaleInferenceParams()
 
     fun init() {
+        // F11: thermal awareness for the whole workspace session.
+        com.veilframe.app.runtime.ThermalGovernor.register(activity)
+
         // Apply Material 3 Expressive tactile touch bounce across all interactive controls
         val interactiveBounceViews = listOf(
             upscalerBinding.btnUpscalerBack,
@@ -391,8 +395,11 @@ class ImageUpscalerController(
         val cpuCores = Runtime.getRuntime().availableProcessors()
 
         upscalerBinding.tvDiagHardware.text = "Device: ${Build.MANUFACTURER} ${Build.MODEL} • $cpuCores CPU cores (~${availMb}MB / ${totalMb}MB RAM)"
-        upscalerBinding.tvDiagBackend.text = "Active Backend: Multi-Threaded CPU ($cpuCores threads)"
-        upscalerBinding.tvDiagExecutionProfile.text = "Engine: VeilFrame SOTA ONNX (Dynamic Tiling & NIO Tensors)"
+        upscalerBinding.tvDiagBackend.text =
+            "Active Backend: auto-select (NNAPI → XNNPACK → CPU) • last: ${OnnxSessionManager.lastBackend}"
+        upscalerBinding.tvDiagExecutionProfile.text =
+            "Engine: VeilFrame ONNX (region-streamed dynamic tiling) • thermal: " +
+                com.veilframe.app.runtime.ThermalGovernor.statusName()
         upscalerBinding.tvDiagThroughput.text = "Throughput: Idle"
 
         var isExpanded = false
@@ -692,12 +699,30 @@ class ImageUpscalerController(
             onLog("[UPSCALER] Starting upscale: ${model.name}, scale=${scale}×, input=${src.width}×${src.height}")
             val startTime = System.currentTimeMillis()
 
+            // F3 + F11: device-class profile, then thermal/battery efficiency overrides.
+            var jobParams = UpscaleInferenceParams.forDevice(activity, scale)
+            when {
+                com.veilframe.app.runtime.ThermalGovernor.isThrottled -> {
+                    jobParams = jobParams.copy(
+                        parallelWorkers = 1,
+                        chunkSize = (jobParams.chunkSize / 2).coerceAtLeast(128)
+                    )
+                    onLog(
+                        "[UPSCALER] Thermal ${com.veilframe.app.runtime.ThermalGovernor.statusName()}" +
+                            " — efficiency profile chunk=${jobParams.chunkSize} workers=1"
+                    )
+                }
+                com.veilframe.app.runtime.ThermalGovernor.batteryConstrained(activity) -> {
+                    jobParams = jobParams.copy(parallelWorkers = 1)
+                    onLog("[UPSCALER] Battery constrained — efficiency profile workers=1")
+                }
+            }
+
             val result = inferenceEngine.upscale(
                 source = src,
                 model = model,
                 targetScale = scale,
-                // F3: device-class chunk/workers instead of the fixed 512px/4-worker default.
-                params = UpscaleInferenceParams.forDevice(activity, scale),
+                params = jobParams,
                 listener = object : UpscaleInferenceEngine.InferenceProgressListener {
                     override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
                         scope.launch(Dispatchers.Main) {
@@ -781,6 +806,13 @@ class ImageUpscalerController(
                         if (err is UpscaleMemoryException) {
                             // F4: honest degrade offer instead of a crash or a silent no-op.
                             showMemoryDegradeDialog()
+                        } else if (err is com.veilframe.app.upscale.inference.ThermalShutdownException) {
+                            // F11: honest thermal stop — user decides when to retry.
+                            Toast.makeText(
+                                activity,
+                                "Stopped — device temperature is critical. Let it cool down, then retry.",
+                                Toast.LENGTH_LONG
+                            ).show()
                         } else {
                             Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
                         }
@@ -1167,5 +1199,6 @@ class ImageUpscalerController(
         downloadJob?.cancel()
         scope.cancel()
         sourceAccess?.close()
+        com.veilframe.app.runtime.ThermalGovernor.unregister()
     }
 }

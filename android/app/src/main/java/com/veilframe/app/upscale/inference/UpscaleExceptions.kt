@@ -21,6 +21,11 @@ class TileIOException(
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
+/** Job aborted cooperatively because the device reached CRITICAL thermal status (F11). */
+class ThermalShutdownException(
+    message: String,
+) : Exception(message)
+
 /** Not enough free cache storage to stream tile outputs. */
 class InsufficientDiskSpaceException(
     message: String,

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -216,7 +217,7 @@ class AiProcessor(
         requestedWorkers: Int,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
-    ) = coroutineScope {
+    ) {
         val workers = resolveParallelWorkers(
             requestedWorkers = requestedWorkers,
             tileCount = tiles.size
@@ -228,6 +229,12 @@ class AiProcessor(
 
         suspend fun processTile(tile: Tile) {
             ensureActive()
+            // F11: cooperative abort before the OS hard-throttles the whole device.
+            if (com.veilframe.app.runtime.ThermalGovernor.isCritical) {
+                throw ThermalShutdownException(
+                    "Device thermal status CRITICAL — job stopped to protect the device"
+                )
+            }
             // F1/F9-partial: region-decode the tile input (streams from Uri for
             // huge sources), run inference, stream the OUTPUT tile to the job dir.
             val tileBitmap = source.region(
@@ -261,20 +268,44 @@ class AiProcessor(
             onStatus?.invoke("Tile $done of ${tiles.size}")
         }
 
-        if (workers <= 1) {
-            tiles.forEach { tile ->
-                processTile(tile)
+        // F8: inference runs on a DEDICATED executor whose threads carry
+        // THREAD_PRIORITY_BACKGROUND — the UI thread and system compositor keep
+        // the fast cores, so the phone stays responsive during upscaling.
+        // (Previously tiles ran on the shared Dispatchers.Default pool at
+        // default priority, saturating every core.)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(workers) { runnable ->
+            Thread {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                runnable.run()
+            }.apply {
+                name = "vf-ort-tile"
+                isDaemon = true
             }
-        } else {
-            val gate = Semaphore(workers)
-
-            tiles.forEach { tile ->
-                launch {
-                    gate.withPermit {
-                        processTile(tile)
+        }
+        try {
+            val dispatcher = executor.asCoroutineDispatcher()
+            // coroutineScope suspends until ALL tile children complete, so the
+            // executor is only shut down after every dispatch has run.
+            coroutineScope {
+                if (workers <= 1) {
+                    withContext(dispatcher) {
+                        tiles.forEach { tile ->
+                            processTile(tile)
+                        }
+                    }
+                } else {
+                    val gate = Semaphore(workers)
+                    tiles.forEach { tile ->
+                        launch(dispatcher) {
+                            gate.withPermit {
+                                processTile(tile)
+                            }
+                        }
                     }
                 }
             }
+        } finally {
+            executor.shutdown()
         }
     }
 
@@ -399,26 +430,31 @@ class AiProcessor(
         val pixels = IntArray(outputSize.pixelCount)
         val planeSize = outputSize.pixelCount
 
-        for (index in pixels.indices) {
+        // F10-lite: nested loops with per-ROW ensureActive (was per-PIXEL —
+        // millions of coroutine checks per tile) and direct y/x alpha indexing
+        // (was a division + modulo per pixel).
+        for (y in 0 until outputSize.height) {
             ensureActive()
-            val alphaValue = alpha?.let {
-                val sourceY = ((index / outputSize.width) / scaleFactor)
-                    .coerceIn(0, sourceSize.height - 1)
-                val sourceX = ((index % outputSize.width) / scaleFactor)
-                    .coerceIn(0, sourceSize.width - 1)
-                clamp255(it[sourceY * sourceSize.width + sourceX] * AiExtensions.OPAQUE)
-            } ?: AiExtensions.OPAQUE
+            val rowBase = y * outputSize.width
+            val alphaSourceY = if (alpha != null) (y / scaleFactor).coerceIn(0, sourceSize.height - 1) else 0
+            for (x in 0 until outputSize.width) {
+                val index = rowBase + x
+                val alphaValue = alpha?.let {
+                    val sourceX = (x / scaleFactor).coerceIn(0, sourceSize.width - 1)
+                    clamp255(it[alphaSourceY * sourceSize.width + sourceX] * AiExtensions.OPAQUE)
+                } ?: AiExtensions.OPAQUE
 
-            pixels[index] = if (channels == 1) {
-                val gray = clamp255(values[index] * AiExtensions.OPAQUE)
-                Color.argb(alphaValue, gray, gray, gray)
-            } else {
-                Color.argb(
-                    alphaValue,
-                    clamp255(values[index] * AiExtensions.OPAQUE),
-                    clamp255(values[planeSize + index] * AiExtensions.OPAQUE),
-                    clamp255(values[planeSize * 2 + index] * AiExtensions.OPAQUE)
-                )
+                pixels[index] = if (channels == 1) {
+                    val gray = clamp255(values[index] * AiExtensions.OPAQUE)
+                    Color.argb(alphaValue, gray, gray, gray)
+                } else {
+                    Color.argb(
+                        alphaValue,
+                        clamp255(values[index] * AiExtensions.OPAQUE),
+                        clamp255(values[planeSize + index] * AiExtensions.OPAQUE),
+                        clamp255(values[planeSize * 2 + index] * AiExtensions.OPAQUE)
+                    )
+                }
             }
         }
 
@@ -459,13 +495,17 @@ class AiProcessor(
 
         tileBitmap.getPixels(incoming, 0, width, 0, 0, width, height)
 
+        // F10-lite: iterate only the overlap strips (top rows fully, left
+        // columns for the remaining rows) instead of every pixel with continue.
+        val topRows = if (shouldBlendTop) minOf(blendWidth, height) else 0
+        val leftCols = if (shouldBlendLeft) minOf(blendWidth, width) else 0
         for (localY in 0 until height) {
-            for (localX in 0 until width) {
-                ensureActive()
-
-                val mixLeft = shouldBlendLeft && localX < blendWidth
-                val mixTop = shouldBlendTop && localY < blendWidth
-                if (!mixLeft && !mixTop) continue
+            ensureActive()
+            val mixTop = localY < topRows
+            val xEnd = if (mixTop) width else leftCols
+            for (localX in 0 until xEnd) {
+                val mixLeft = localX < leftCols
+                if (!mixTop && !mixLeft) continue
 
                 val blend = minOf(
                     if (mixLeft) smoothStep(localX, blendWidth) else 1f,

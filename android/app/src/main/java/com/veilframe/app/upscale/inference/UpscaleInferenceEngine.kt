@@ -147,7 +147,8 @@ class UpscaleInferenceEngine(
                     listener?.onStage("Loading Model", 0, 1)
 
                     val session = withContext(Dispatchers.IO) {
-                        OnnxSessionManager.createSession(modelFile)
+                        // F7: EP ladder (NNAPI -> XNNPACK -> CPU), cached per model.
+                        OnnxSessionManager.createSession(modelFile, context)
                     }
 
                     try {
@@ -155,7 +156,7 @@ class UpscaleInferenceEngine(
                         val processor = AiProcessor(context)
                         val scalePlan = HybridScalePlan.create(targetScale, model.nativeScale)
 
-                        listener?.onStatus("Running ${model.name}...")
+                        listener?.onStatus("Running ${model.name} via ${OnnxSessionManager.lastBackend}...")
                         listener?.onStage("Neural Inference", 0, 1)
 
                         // F4: bounded OOM retry with halved tiles, then typed failure.
