@@ -42,7 +42,7 @@ object ImageQualityAnalyzer {
             // B6: each metric is a full-image pass; checkpoints between stages
             // keep a 16 MP analysis cancellable at ~100 ms granularity.
             context?.ensureActive()
-            val varianceOfLaplacian = varianceOfLaplacian(luma)
+            val laplacianVarValue = varianceOfLaplacian(luma)
             context?.ensureActive()
             val noiseSigma = estimateNoiseSigma(luma)
             context?.ensureActive()
@@ -51,27 +51,27 @@ object ImageQualityAnalyzer {
             val clippedHighlightRatio = clippedRatio(luma, high = true)
             val clippedShadowRatio = clippedRatio(luma, high = false)
             context?.ensureActive()
-            val contrastRms = contrastRms(luma)
+            val contrastRmsValue = contrastRms(luma)
             context?.ensureActive()
             val lumaSpreadP5P95 = percentileSpread(luma)
             context?.ensureActive()
             val saturationMean = meanSaturation(source)
             context?.ensureActive()
-            val blockiness = blockiness(luma)
+            val blockinessValue = blockiness(luma)
             context?.ensureActive()
-            val ringing = ringing(luma)
+            val ringingValue = ringing(luma)
 
             val raw = QualityRawMeasurements(
-                varianceOfLaplacian = varianceOfLaplacian,
+                varianceOfLaplacian = laplacianVarValue,
                 noiseSigma = noiseSigma,
                 meanLuma = meanLuma,
                 clippedHighlightRatio = clippedHighlightRatio,
                 clippedShadowRatio = clippedShadowRatio,
-                contrastRms = contrastRms,
+                contrastRms = contrastRmsValue,
                 lumaSpreadP5P95 = lumaSpreadP5P95,
                 saturationMean = saturationMean,
-                blockiness = blockiness,
-                ringing = ringing,
+                blockiness = blockinessValue,
+                ringing = ringingValue,
             )
             return QualityScore.evaluate(raw, weights)
         } finally {

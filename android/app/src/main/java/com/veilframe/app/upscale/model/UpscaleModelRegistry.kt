@@ -630,15 +630,16 @@ object UpscaleModelRegistry {
         require(model.precision != ModelPrecision.FP32) {
             "quantized variant must declare FP16 or INT8 precision: ${model.id}"
         }
-        require(!model.variantOf.isNullOrEmpty()) {
+        val baseId = model.variantOf
+        require(!baseId.isNullOrEmpty()) {
             "quantized variant must declare variantOf (base FP32 model id): ${model.id}"
         }
         require(model.sha256.isNotEmpty() && model.downloadUrl.isNotEmpty()) {
             "quantized variant must be published with a real downloadUrl and sha256 " +
                 "(fail-closed; placeholder entries are refused): ${model.id}"
         }
-        require(getModelById(model.variantOf) != null) {
-            "quantized variant ${model.id} references unknown base model ${model.variantOf}"
+        require(getModelById(baseId) != null) {
+            "quantized variant ${model.id} references unknown base model $baseId"
         }
         quantizedVariants[model.id] = model
     }
