@@ -419,25 +419,25 @@ All 16 deliverables specified in the calibration protocol have been generated, v
 
 | # | Deliverable File | Description | SHA-256 Checksum |
 | :-: | :--- | :--- | :--- |
-| 1 | [`corpus_inventory.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/corpus_inventory.json) | Complete 144-item corpus inventory | `062e15e3a9a40bf9b05f230063b5ccc0678a54e783dfdb19f4a1424ef269c2c6` |
-| 2 | [`corpus_inventory.csv`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/corpus_inventory.csv) | Tabular inventory spreadsheet | `5c4e39b3391ceacdfbb9882e465f3a1222f0bf3145ee04a92a960c373d6964be` |
-| 3 | [`provenance_license_ledger.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/provenance_license_ledger.json) | Authoritative license & origin ledger | `7646d62e96988cf16044e79588e04ce275f985a0ea6928ebaa62a84d4d26bb73` |
-| 4 | [`calibration_corpus/manifest.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/calibration_corpus/manifest.json) | Frozen calibration manifest v2 | `06cea3c5520d969cff85360c7283932b55135dc82ab831d22f79ebbe673528e9` |
-| 5 | [`vmaf_corpus_results.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/vmaf_corpus_results.json) | Consolidated 128-pair raw results | `90f12b27e2a3045799b80387c4d878145764601081ed0ff0966a6433d35dd797` |
-| 6 | [`calibration_corpus/evidence/`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/calibration_corpus/evidence/) | 120 raw VMAF evidence JSON files | Directory (120 individual JSONs) |
-| 7 | [`calibration_analysis.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/calibration_analysis.json) | Scientific threshold sweep & decision | `b8e4647b53c0be10e04aaaae1bd32b56d245d621f1908c326c1005359d5000dc` |
-| 8 | [`calibration_report.md`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/calibration_report.md) | Full calibration study report | Current Document |
-| 9 | [`threshold_sweep.csv`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/threshold_sweep.csv) | Operating curves [70.0, 100.0] | `7c9afee4dbce408a883a470e46788dfc5dbe659bc5f7cb0221e334162f865418` |
-| 10 | [`development_split.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/development_split.json) | Development partition (9 groups) | `38f8ae7c4d5e8d6d7217baed24b57f36e71d8d5a69a76a508ad4c740903cc6a7` |
-| 11 | [`heldout_split.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/heldout_split.json) | Held-out partition (4 groups) | `5021e1d4e97bd476cef58f05694c8891266dbe4c016452889b6988c11da95a7a` |
-| 12 | [`data_quality_report.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/data_quality_report.json) | Data quality & confidence audit | `88e91e5760259e42fbfef4f94e8f7b440cfe38b94580730c32eb2d6c55e727dc` |
-| 13 | [`excluded_samples.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/excluded_samples.json) | Complete quarantine log (HDR & 720p) | `a14a56f3001b262bd922ac55e165da6ea4d74ec1ece429b88556c090034b8652` |
-| 14 | [`sequence_group_report.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/sequence_group_report.json) | Sequence group accounting report | `b3e110ad1d483ff775ac5b5b639f1c05daf4bafd2dfb5ed7287d842b249f699b` |
-| 15 | [`model_provenance_report.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/model_provenance_report.json) | Cryptographic model verification | `4310849d634e001e99b63b2405ada78a829d3ac734c1e96e5f79f5b3dba39d7a` |
-| 16 | [`calibration_summary.md`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/calibration_summary.md) | Executive briefing document | `calibration_summary.md` |
-| 17 | [`duration_sensitivity.csv`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/duration_sensitivity.csv) | Duration experiment raw dataset | `3f2ff59f839067ed839d44302a2b4de888de72ac4adc6dee6f57df7688f18995` |
-| 18 | [`duration_sensitivity.json`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/duration_sensitivity.json) | Duration study records & metrics | `4d3eb5cbc9f7ab99b4590cea15b5c838557c2f338ac8811c57e574dff31b3bc2` |
-| 19 | [`duration_sensitivity_report.md`](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/duration_sensitivity_report.md) | Duration scientific comparison report | `752de1e6ec8ef1152ca50f0781cf348b99185461e5b366ec30073dd6089870ca` |
+| 1 | [`corpus_inventory.json`](corpus_inventory.json) | Complete 144-item corpus inventory | `062e15e3a9a40bf9b05f230063b5ccc0678a54e783dfdb19f4a1424ef269c2c6` |
+| 2 | [`corpus_inventory.csv`](corpus_inventory.csv) | Tabular inventory spreadsheet | `5c4e39b3391ceacdfbb9882e465f3a1222f0bf3145ee04a92a960c373d6964be` |
+| 3 | [`provenance_license_ledger.json`](provenance_license_ledger.json) | Authoritative license & origin ledger | `7646d62e96988cf16044e79588e04ce275f985a0ea6928ebaa62a84d4d26bb73` |
+| 4 | [`calibration_corpus/manifest.json`](calibration_corpus/manifest.json) | Frozen calibration manifest v2 | `06cea3c5520d969cff85360c7283932b55135dc82ab831d22f79ebbe673528e9` |
+| 5 | [`vmaf_corpus_results.json`](vmaf_corpus_results.json) | Consolidated 128-pair raw results | `90f12b27e2a3045799b80387c4d878145764601081ed0ff0966a6433d35dd797` |
+| 6 | [`calibration_corpus/evidence/`](calibration_corpus/evidence/) | 120 raw VMAF evidence JSON files | Directory (120 individual JSONs) |
+| 7 | [`calibration_analysis.json`](calibration_analysis.json) | Scientific threshold sweep & decision | `b8e4647b53c0be10e04aaaae1bd32b56d245d621f1908c326c1005359d5000dc` |
+| 8 | [`calibration_report.md`](calibration_report.md) | Full calibration study report | Current Document |
+| 9 | [`threshold_sweep.csv`](threshold_sweep.csv) | Operating curves [70.0, 100.0] | `7c9afee4dbce408a883a470e46788dfc5dbe659bc5f7cb0221e334162f865418` |
+| 10 | [`development_split.json`](development_split.json) | Development partition (9 groups) | `38f8ae7c4d5e8d6d7217baed24b57f36e71d8d5a69a76a508ad4c740903cc6a7` |
+| 11 | [`heldout_split.json`](heldout_split.json) | Held-out partition (4 groups) | `5021e1d4e97bd476cef58f05694c8891266dbe4c016452889b6988c11da95a7a` |
+| 12 | [`data_quality_report.json`](data_quality_report.json) | Data quality & confidence audit | `88e91e5760259e42fbfef4f94e8f7b440cfe38b94580730c32eb2d6c55e727dc` |
+| 13 | [`excluded_samples.json`](excluded_samples.json) | Complete quarantine log (HDR & 720p) | `a14a56f3001b262bd922ac55e165da6ea4d74ec1ece429b88556c090034b8652` |
+| 14 | [`sequence_group_report.json`](sequence_group_report.json) | Sequence group accounting report | `b3e110ad1d483ff775ac5b5b639f1c05daf4bafd2dfb5ed7287d842b249f699b` |
+| 15 | [`model_provenance_report.json`](model_provenance_report.json) | Cryptographic model verification | `4310849d634e001e99b63b2405ada78a829d3ac734c1e96e5f79f5b3dba39d7a` |
+| 16 | [`calibration_summary.md`](calibration_summary.md) | Executive briefing document | `calibration_summary.md` |
+| 17 | [`duration_sensitivity.csv`](duration_sensitivity.csv) | Duration experiment raw dataset | `3f2ff59f839067ed839d44302a2b4de888de72ac4adc6dee6f57df7688f18995` |
+| 18 | [`duration_sensitivity.json`](duration_sensitivity.json) | Duration study records & metrics | `4d3eb5cbc9f7ab99b4590cea15b5c838557c2f338ac8811c57e574dff31b3bc2` |
+| 19 | [`duration_sensitivity_report.md`](duration_sensitivity_report.md) | Duration scientific comparison report | `752de1e6ec8ef1152ca50f0781cf348b99185461e5b366ec30073dd6089870ca` |
 
 ---
 

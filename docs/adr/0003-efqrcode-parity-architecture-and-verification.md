@@ -137,7 +137,7 @@ To guarantee that VeilFrame's vector export and rasterization engines produce vi
    - Sub-pixel registration and diagnostic bounds: RMSE < 30.0 and PSNR > 18.0 dB across composite image QR modules.
    - **Headless-Safe Execution**: 100% pure JVM execution using `DecodedPngImage` and Unsafe bitmap allocation without Android runtime or AWT dependencies.
 
-- **Verification Suite**: Implemented in [Tier5GoldenPixelAndSvgDiffTest.kt](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/app/src/test/java/com/veilframe/app/qr/Tier5GoldenPixelAndSvgDiffTest.kt) (13/13 tests passing, 100% success rate).
+- **Verification Suite**: Implemented in [Tier5GoldenPixelAndSvgDiffTest.kt](../../android/app/src/test/java/com/veilframe/app/qr/Tier5GoldenPixelAndSvgDiffTest.kt) (13/13 tests passing, 100% success rate).
 
 ---
 

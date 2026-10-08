@@ -143,13 +143,13 @@ Result                : BUILD SUCCESSFUL in 1m 56s (0 errors)
 
 ## 6. Deliverables & File Index
 
-- **Module**: `android/opencv-sdk/` ([build.gradle.kts](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/opencv-sdk/build.gradle.kts), [consumer-rules.pro](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/opencv-sdk/consumer-rules.pro), [AndroidManifest.xml](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/opencv-sdk/src/main/AndroidManifest.xml))
+- **Module**: `android/opencv-sdk/` ([build.gradle.kts](android/opencv-sdk/build.gradle.kts), [consumer-rules.pro](android/opencv-sdk/consumer-rules.pro), [AndroidManifest.xml](android/opencv-sdk/src/main/AndroidManifest.xml))
 - **Assets**: `android/app/src/main/assets/cv/wechat_qr/` (4 Caffe model files)
 - **Sources**: `android/app/src/main/java/com/veilframe/app/cv/` (33 files)
-- **Decoder**: [WeChatQrDecoder.kt](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/app/src/main/java/com/veilframe/app/qr/decoder/WeChatQrDecoder.kt)
+- **Decoder**: [WeChatQrDecoder.kt](android/app/src/main/java/com/veilframe/app/qr/decoder/WeChatQrDecoder.kt)
 - **App Integrations**:
-  - [VeilFrameApplication.kt](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/app/src/main/java/com/veilframe/app/VeilFrameApplication.kt)
-  - [ScanabilityValidator.kt](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/app/src/main/java/com/veilframe/app/qr/validation/ScanabilityValidator.kt)
-  - [QrScanner.kt](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/android/app/src/main/java/com/veilframe/app/qr/scanner/QrScanner.kt)
+  - [VeilFrameApplication.kt](android/app/src/main/java/com/veilframe/app/VeilFrameApplication.kt)
+  - [ScanabilityValidator.kt](android/app/src/main/java/com/veilframe/app/qr/validation/ScanabilityValidator.kt)
+  - [QrScanner.kt](android/app/src/main/java/com/veilframe/app/qr/scanner/QrScanner.kt)
 - **Tests**: `android/app/src/test/java/com/veilframe/app/cv/` (4 test suites) & `android/app/src/androidTest/java/com/veilframe/app/cv/`
-- **Documentation**: [docs/cv/VEILFRAME_CV_ENGINE.md](file:///c:/Users/parve/Downloads/PrivacyVideoCleaner_v1_source/docs/cv/VEILFRAME_CV_ENGINE.md)
+- **Documentation**: [docs/cv/VEILFRAME_CV_ENGINE.md](docs/cv/VEILFRAME_CV_ENGINE.md)
