@@ -382,6 +382,31 @@ class MainActivity : AppCompatActivity() {
             }
             binding.bottomNavigation.setPadding(0, 0, 0, navBarBottom)
             binding.navigationRail.setPadding(navBarLeft, statusBarTop, 0, navBarBottom)
+
+            // Phase-1 stabilization (production-readiness audit gap #1):
+            // ONE insets contract for every workspace root — toolbars no
+            // longer sit under the status bar, bottom controls no longer sit
+            // under the gesture handle or keyboard. Per-workspace opt-outs go
+            // through WorkspaceInsets.Contract (e.g. future immersive camera).
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            listOf(
+                binding.layoutImageStudio.root,
+                binding.layoutVideoStudio.root,
+                binding.layoutMarkdownViewer.root,
+                binding.layoutImageUpscaler.root,
+                binding.layoutToolsCatalogue.root,
+                binding.layoutLibrary.root,
+                binding.layoutDocumentScanner.root,
+                binding.layoutBackgroundRemover.root,
+                binding.layoutImageQuality.root,
+                binding.layoutProvenance.root,
+                binding.fragmentQrStudio,
+                binding.scrollTool
+            ).forEach { root ->
+                com.veilframe.app.ui.insets.WorkspaceInsets.apply(
+                    root, statusBarTop, navBarBottom, imeBottom
+                )
+            }
             insets
         }
 

@@ -33,6 +33,7 @@ import com.google.android.material.card.MaterialCardView
 import com.veilframe.app.R
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.document.DocumentScanner
+import com.veilframe.app.cv.document.QuadStabilizer
 import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.SheetDocumentExportBinding
 import com.veilframe.app.storage.SafStorageManager
@@ -250,6 +251,10 @@ class DocumentScannerController(
     }
 
     fun closeCameraViewfinder() {
+        // Phase 2/3: no stale tracks or capture flags across sessions.
+        quadStabilizer.reset()
+        lastStabState = QuadStabilizer.State.SEARCHING
+        isCapturing = false
         try {
             cameraProvider?.unbindAll()
         } catch (_: Exception) {}
@@ -349,6 +354,13 @@ class DocumentScannerController(
             return
         }
 
+        // Phase 2: freeze analysis while a capture is in flight (shared
+        // single-thread executor + full-res JPEG work owns the lane).
+        if (isCapturing) {
+            imageProxy.close()
+            return
+        }
+
         // B4: thermal governor — drop every other frame when the device is
         // throttled, stop analysis entirely when critical (battery + heat).
         if (com.veilframe.app.runtime.ThermalGovernor.isCritical) {
@@ -387,14 +399,25 @@ class DocumentScannerController(
             val frameW = mat.cols()
             val frameH = mat.rows()
 
-            val detectedPts = if (corners.size == 4) {
-                corners.map { pt -> PointF(pt.x.toFloat(), pt.y.toFloat()) }
-            } else null
+            // Phase 3: EMA-smoothed quad with hysteresis — the overlay stops
+            // flickering and "Ready" requires consecutive matched frames.
+            val stable = quadStabilizer.update(if (corners.size == 4) corners else null)
+            val detectedPts = stable?.map { pt -> PointF(pt.x.toFloat(), pt.y.toFloat()) }
+            val stabState = quadStabilizer.state
+            val becameStable = stabState == QuadStabilizer.State.STABLE &&
+                lastStabState != QuadStabilizer.State.STABLE
+            lastStabState = stabState
 
             activity.runOnUiThread {
                 binding.docQuadOverlayView.setDetectedQuad(detectedPts, frameW, frameH)
-                binding.tvDocCamStatus.text =
-                    if (detectedPts != null) "Document detected" else "Align document inside frame"
+                binding.tvDocCamStatus.text = when (stabState) {
+                    QuadStabilizer.State.STABLE -> "Ready — tap shutter"
+                    QuadStabilizer.State.TRACKING -> "Document detected — hold still"
+                    QuadStabilizer.State.SEARCHING -> "Align document inside frame"
+                }
+                if (becameStable) {
+                    binding.docQuadOverlayView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
             }
         } catch (t: Throwable) {
             // Honest, rate-limited logging — silent per-frame catch-alls hid
@@ -415,6 +438,17 @@ class DocumentScannerController(
     private var lastFrameErrorLogMs = 0L
 
     private var frameSeq = 0L
+
+    // Phase 3: temporal stabilization of the live quad (anti-flicker +
+    // hit-count hysteresis before "Ready").
+    private val quadStabilizer = QuadStabilizer()
+    private var lastStabState = QuadStabilizer.State.SEARCHING
+
+    // Phase 2: capture discipline — analysis pauses during capture so the
+    // shared single-thread executor is never double-booked, and teardown
+    // never races an in-flight shutter.
+    @Volatile
+    private var isCapturing = false
 
     /** Camera Y (luma) plane -> CV_8UC1 Mat, decimated to <=1024px on the long edge. */
     private fun yPlaneToGrayMat(mediaImage: android.media.Image): org.opencv.core.Mat? {
@@ -477,13 +511,18 @@ class DocumentScannerController(
     private fun takeCameraScan() {
         val capture = imageCapture ?: return
         binding.btnDocCamShutter.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        isCapturing = true
 
         capture.takePicture(
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
-                    val bitmap = imageProxyToBitmap(image)
-                    image.close()
+                    val bitmap = try {
+                        imageProxyToBitmap(image)
+                    } finally {
+                        image.close()
+                        isCapturing = false
+                    }
 
                     if (bitmap != null) {
                         activity.runOnUiThread {
@@ -499,6 +538,8 @@ class DocumentScannerController(
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    isCapturing = false
+                    android.util.Log.w("VeilFrame.DocScanner", "Capture failed", exception)
                     activity.runOnUiThread {
                         Toast.makeText(activity, "Capture failed: ${exception.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -965,16 +1006,27 @@ class DocumentScannerController(
         val out = ByteArrayOutputStream()
         yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
         val imageBytes = out.toByteArray()
-        val bmp = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return null
+        val bmp = try {
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+        } catch (oom: OutOfMemoryError) {
+            android.util.Log.e("VeilFrame.DocScanner", "Capture decode OOM", oom)
+            null
+        } ?: return null
 
         val rotation = image.imageInfo.rotationDegrees
-        return if (rotation != 0) {
-            val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-            val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+        return try {
+            if (rotation != 0) {
+                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+                val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+                bmp.recycle()
+                rotated
+            } else {
+                bmp
+            }
+        } catch (oom: OutOfMemoryError) {
+            android.util.Log.e("VeilFrame.DocScanner", "Capture rotation OOM", oom)
             bmp.recycle()
-            rotated
-        } else {
-            bmp
+            null
         }
     }
 }
