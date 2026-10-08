@@ -32,6 +32,16 @@ class TestDepsAndEnvironment(unittest.TestCase):
         from tests.conftest import get_or_create_test_qapp
         self.app = get_or_create_test_qapp()
 
+    def tearDown(self):
+        if getattr(self, "app", None):
+            for widget in list(QApplication.topLevelWidgets()):
+                try:
+                    widget.close()
+                    widget.deleteLater()
+                except Exception:
+                    pass
+            self.app.processEvents()
+
     def test_audit_environment(self):
         """audit_environment should return a populated EnvironmentReport."""
         report = audit_environment()

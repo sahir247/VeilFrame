@@ -30,6 +30,16 @@ class TestGUIControlsAndUX(unittest.TestCase):
         from tests.conftest import get_or_create_test_qapp
         self.app = get_or_create_test_qapp()
 
+    def tearDown(self):
+        if getattr(self, "app", None):
+            for widget in list(QApplication.topLevelWidgets()):
+                try:
+                    widget.close()
+                    widget.deleteLater()
+                except Exception:
+                    pass
+            self.app.processEvents()
+
     def _create_wheel_event(self, delta: int = 120) -> QWheelEvent:
         return QWheelEvent(
             QPointF(10, 10),

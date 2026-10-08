@@ -83,6 +83,20 @@ class TestGuiSmoke(unittest.TestCase):
         self.assertTrue(window.image_processing_panel.isHidden())
 
         window.close()
+        window.deleteLater()
+        if self.app:
+            self.app.processEvents()
+
+    def tearDown(self):
+        if getattr(self, "app", None):
+            from PySide6.QtWidgets import QApplication
+            for widget in list(QApplication.topLevelWidgets()):
+                try:
+                    widget.close()
+                    widget.deleteLater()
+                except Exception:
+                    pass
+            self.app.processEvents()
 
 
 if __name__ == "__main__":
