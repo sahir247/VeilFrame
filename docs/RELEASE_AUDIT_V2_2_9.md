@@ -151,6 +151,17 @@ BUILD SUCCESSFUL in 25s
 Target: VeilFrame-debug.apk
 ```
 
+### 7.1 Native APK Size Optimization & ABI Partitioning
+- **Phase 1 (Production vs Emulator ABI Partitioning)**:
+  - `release`: Restricts `abiFilters` exclusively to `arm64-v8a`, eliminating ~25+ MB duplicate x86_64 OpenCV, FFmpegKit, and ONNX Runtime binaries from user downloads.
+  - `debug`: Retains `arm64-v8a` + `x86_64` for Android Studio emulators and developer workflows.
+  - Granular control via `-PtargetAbi=<abi>` flag for custom targets.
+- **Phase 2 (Release Symbol Stripping via AGP Variant API)**:
+  - `debug`: Configured via `androidComponents.onVariants(selector().withBuildType("debug"))` to retain native symbols for crash stack unwinding and debugging.
+  - `release`: Strips unneeded `.so` debug symbols automatically via AGP's `stripReleaseDebugSymbols`.
+- **C++ Runtime Investigation (`c++_static` vs `c++_shared`)**:
+  - Investigated `ANDROID_STL=c++_static` vs `c++_shared`. VeilFrame bundles multiple independent native dependencies (`libopencv_java4.so`, `ffmpeg-kit-full-gpl`, and `onnxruntime-android`). Using `c++_shared` across multiple independently-compiled AARs introduces serious risks of ODR (One Definition Rule) violations, incompatible libc++ ABI collisions, and `SIGSEGV` during static initialization. Preserving `c++_static` with symbol stripping is the safest, standard production architecture.
+
 ---
 
 ## 8. Architectural Records (ADRs) Inventory

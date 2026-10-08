@@ -17,7 +17,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            val customAbi = project.findProperty("targetAbi") as String?
+            if (!customAbi.isNullOrBlank()) {
+                abiFilters += customAbi
+            } else {
+                abiFilters += "arm64-v8a"
+            }
         }
     }
 
@@ -65,10 +70,19 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
+            // Production release builds package only arm64-v8a to eliminate emulator ABI bloat
+            ndk {
+                abiFilters.clear()
+                abiFilters.add("arm64-v8a")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            // Debug & local development builds retain x86_64 for Android Studio emulators
+            ndk {
+                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            }
         }
     }
 
@@ -91,9 +105,7 @@ android {
     }
 
     packaging {
-        jniLibs {
-            keepDebugSymbols += listOf("**/*.so")
-        }
+        // Base packaging configuration
     }
 
     testOptions {
@@ -102,6 +114,11 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
+    }
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
