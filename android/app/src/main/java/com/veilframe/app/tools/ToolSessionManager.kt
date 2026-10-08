@@ -229,7 +229,7 @@ class ToolSessionManager(
         when (mode) {
             ToolMode.AI_BUNDLE -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "AI BUNDLE"
+                binding.tvToolTitle.text = "AI Bundle"
                 binding.tvToolSubtitle.text = "Package source code into LLM-ready context bundles"
                 binding.btnPickFolder.text = "Project Folder"
                 binding.btnPickFile.text = "Single File"
@@ -263,7 +263,7 @@ class ToolSessionManager(
                 binding.btnPickFile.text = "Single Video"
 
                 binding.layoutToolSlider.visibility = View.VISIBLE
-                binding.tvToolSliderTitle.text = "CRF COMPRESSION FACTOR (LOWER = HIGHER QUALITY)"
+                binding.tvToolSliderTitle.text = "CRF compression factor (lower = higher quality)"
                 binding.sliderToolIntensity.valueFrom = 18f
                 binding.sliderToolIntensity.valueTo = 36f
                 binding.sliderToolIntensity.stepSize = 1f
@@ -302,7 +302,7 @@ class ToolSessionManager(
                 binding.btnPickFile.text = "Single Image"
 
                 binding.layoutToolSlider.visibility = View.VISIBLE
-                binding.tvToolSliderTitle.text = "IMAGE FIDELITY & QUALITY"
+                binding.tvToolSliderTitle.text = "Image fidelity & quality"
                 binding.sliderToolIntensity.valueFrom = 50f
                 binding.sliderToolIntensity.valueTo = 100f
                 binding.sliderToolIntensity.stepSize = 5f
@@ -642,7 +642,7 @@ class ToolSessionManager(
             ToolMode.AI_BUNDLE -> {
                 binding.tvPrivacyProfileBadge.text = "LLM Packaging"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "• Raw credentials unmasked (masking disabled)"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Test suites, mocks & fixtures excluded from context" else "• Full source directory included"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Dependency manifests compressed to reduce prompt tokens" else "• Manifest compression disabled"
@@ -656,7 +656,7 @@ class ToolSessionManager(
                 }
                 binding.tvPrivacyProfileBadge.text = "$noiseLevel DEFENSE".uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Camera EXIF, GPS coordinates & device serials purged" else "• EXIF & GPS retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Audio stream stripped completely" else "• Audio stream preserved (metadata tags scrubbed)"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked (PRNU sensor pattern noise mitigated)" else "• Stream remuxed without pixel alteration"
@@ -664,7 +664,7 @@ class ToolSessionManager(
             ToolMode.IMAGE_CLEANER -> {
                 binding.tvPrivacyProfileBadge.text = "Metadata Strip"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• Embedded preview thumbnails & caches eliminated" else "• Thumbnails preserved"
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• ICC color profile sanitized to standard sRGB" else "• ICC profile preserved"
@@ -677,7 +677,7 @@ class ToolSessionManager(
                 }
                 binding.tvPrivacyProfileBadge.text = mode.uppercase()
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Recursive directory traversal across all subprojects" else "• Top-level directory only"
                 binding.tvPrivacyImpact2.text = if (binding.switchOption2.isChecked) "• SHA-256 cryptographic hashing active" else "• SHA-256 calculation skipped (low CPU/battery)"
             }
@@ -686,7 +686,7 @@ class ToolSessionManager(
             ToolMode.IMAGE_UPSCALER -> {
                 binding.tvPrivacyProfileBadge.text = "Media Studio"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPrivacyProfileBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvPrivacyImpact1.text = "• Visual optimization & size reduction"
                 binding.tvPrivacyImpact2.text = "• Metadata scrubbing & privacy protection"
                 binding.tvPrivacyImpact3.text = "• Target platform profile matching"
@@ -708,23 +708,23 @@ class ToolSessionManager(
         when (state) {
             JobState.IDLE -> {
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_secondary))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_surface_variant)
+                binding.tvPhaseBadge.setBackgroundResource(R.drawable.bg_badge_neutral)
                 binding.tvToolStatusBadge.setTextColor(activity.getColor(R.color.vf_secondary))
             }
             JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING -> {
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_warn_bg)
+                binding.tvPhaseBadge.setBackgroundResource(R.drawable.bg_badge_warn)
                 binding.tvToolStatusBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
             }
             JobState.COMPLETE -> {
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_pass_bg)
+                binding.tvPhaseBadge.setBackgroundResource(R.drawable.bg_badge_pass)
                 binding.tvToolStatusBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 ExpressiveMotion.playJellyBounce(binding.btnExecute)
             }
             JobState.FAILED, JobState.CANCELLED -> {
                 binding.tvPhaseBadge.setTextColor(activity.getColor(R.color.vf_accent_red))
-                binding.tvPhaseBadge.setBackgroundResource(R.color.vf_status_fail_bg)
+                binding.tvPhaseBadge.setBackgroundResource(R.drawable.bg_badge_fail)
                 binding.tvToolStatusBadge.setTextColor(activity.getColor(R.color.vf_accent_red))
             }
         }

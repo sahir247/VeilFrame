@@ -71,21 +71,70 @@ object AlgorithmicUpscaler {
             return sinc(absX) * sinc(absX / a)
         }
 
+        // Audit fix (perf): tap weights are precomputed once per destination
+        // row/column. The old loop re-evaluated two sin() calls per tap per
+        // output pixel (~billions of sin() calls at 4x of a 12 MP image —
+        // minutes of pure kernel math on the degrade/refinement paths).
+        // Weights use the identical formula, tap order and accumulation order,
+        // so output stays bit-identical — just hoisted.
+        val colTapIdx: Array<IntArray>
+        val colTapW: Array<FloatArray>
+        run {
+            val ratio = srcW.toFloat() / targetWidth.toFloat()
+            colTapIdx = Array(targetWidth) { IntArray(0) }
+            colTapW = Array(targetWidth) { FloatArray(0) }
+            for (x in 0 until targetWidth) {
+                val center = (x + 0.5f) * ratio - 0.5f
+                val minS = (center - a).toInt().coerceAtLeast(0)
+                val maxS = (center + a).toInt().coerceAtMost(srcW - 1)
+                val idx = ArrayList<Int>(2 * a + 1)
+                val ws = ArrayList<Float>(2 * a + 1)
+                for (s in minS..maxS) {
+                    val w = lanczosKernel(center - s.toFloat())
+                    if (w != 0.0f) {
+                        idx.add(s)
+                        ws.add(w)
+                    }
+                }
+                colTapIdx[x] = idx.toIntArray()
+                colTapW[x] = ws.toFloatArray()
+            }
+        }
+        val rowTapIdx: Array<IntArray>
+        val rowTapW: Array<FloatArray>
+        run {
+            val ratio = srcH.toFloat() / targetHeight.toFloat()
+            rowTapIdx = Array(targetHeight) { IntArray(0) }
+            rowTapW = Array(targetHeight) { FloatArray(0) }
+            for (y in 0 until targetHeight) {
+                val center = (y + 0.5f) * ratio - 0.5f
+                val minS = (center - a).toInt().coerceAtLeast(0)
+                val maxS = (center + a).toInt().coerceAtMost(srcH - 1)
+                val idx = ArrayList<Int>(2 * a + 1)
+                val ws = ArrayList<Float>(2 * a + 1)
+                for (s in minS..maxS) {
+                    val w = lanczosKernel(center - s.toFloat())
+                    if (w != 0.0f) {
+                        idx.add(s)
+                        ws.add(w)
+                    }
+                }
+                rowTapIdx[y] = idx.toIntArray()
+                rowTapW[y] = ws.toFloatArray()
+            }
+        }
+
         val srcPixels = IntArray(srcW * srcH)
         source.getPixels(srcPixels, 0, srcW, 0, 0, srcW, srcH)
 
         // Pass 1: Horizontal resampling to intermediate primitive buffer.
-        // Memory-efficient contiguous primitive array (zero per-pixel object allocations).
         val interPixels = FloatArray(targetWidth * srcH * 4)
-        val xRatio = srcW.toFloat() / targetWidth.toFloat()
-
         for (y in 0 until srcH) {
             val srcRowOffset = y * srcW
             val dstRowOffset = y * targetWidth
             for (x in 0 until targetWidth) {
-                val center = (x + 0.5f) * xRatio - 0.5f
-                val minX = (center - a).toInt().coerceAtLeast(0)
-                val maxX = (center + a).toInt().coerceAtMost(srcW - 1)
+                val taps = colTapIdx[x]
+                val weights = colTapW[x]
 
                 var sumWeight = 0.0f
                 var r = 0.0f
@@ -93,21 +142,14 @@ object AlgorithmicUpscaler {
                 var b = 0.0f
                 var alpha = 0.0f
 
-                for (sx in minX..maxX) {
-                    val w = lanczosKernel(center - sx.toFloat())
-                    if (w != 0.0f) {
-                        val c = srcPixels[srcRowOffset + sx]
-                        val pxA = ((c ushr 24) and 0xff).toFloat()
-                        val pxR = ((c ushr 16) and 0xff).toFloat()
-                        val pxG = ((c ushr 8) and 0xff).toFloat()
-                        val pxB = (c and 0xff).toFloat()
-
-                        alpha += pxA * w
-                        r += pxR * w
-                        g += pxG * w
-                        b += pxB * w
-                        sumWeight += w
-                    }
+                for (k in taps.indices) {
+                    val w = weights[k]
+                    val c = srcPixels[srcRowOffset + taps[k]]
+                    alpha += ((c ushr 24) and 0xff).toFloat() * w
+                    r += ((c ushr 16) and 0xff).toFloat() * w
+                    g += ((c shr 8) and 0xff).toFloat() * w
+                    b += (c and 0xff).toFloat() * w
+                    sumWeight += w
                 }
 
                 val outBase = (dstRowOffset + x) * 4
@@ -120,37 +162,27 @@ object AlgorithmicUpscaler {
             }
         }
 
-        // Pass 2: Vertical resampling to destination pixels
+        // Pass 2: Vertical resampling to destination pixels.
         val dstPixels = IntArray(targetWidth * targetHeight)
-        val yRatio = srcH.toFloat() / targetHeight.toFloat()
-
-        for (x in 0 until targetWidth) {
-            for (y in 0 until targetHeight) {
-                val center = (y + 0.5f) * yRatio - 0.5f
-                val minY = (center - a).toInt().coerceAtLeast(0)
-                val maxY = (center + a).toInt().coerceAtMost(srcH - 1)
-
+        for (y in 0 until targetHeight) {
+            val taps = rowTapIdx[y]
+            val weights = rowTapW[y]
+            val dstRow = y * targetWidth
+            for (x in 0 until targetWidth) {
                 var sumWeight = 0.0f
                 var r = 0.0f
                 var g = 0.0f
                 var b = 0.0f
                 var alpha = 0.0f
 
-                for (sy in minY..maxY) {
-                    val w = lanczosKernel(center - sy.toFloat())
-                    if (w != 0.0f) {
-                        val srcIdx = (sy * targetWidth + x) * 4
-                        val pxA = interPixels[srcIdx]
-                        val pxR = interPixels[srcIdx + 1]
-                        val pxG = interPixels[srcIdx + 2]
-                        val pxB = interPixels[srcIdx + 3]
-
-                        alpha += pxA * w
-                        r += pxR * w
-                        g += pxG * w
-                        b += pxB * w
-                        sumWeight += w
-                    }
+                for (k in taps.indices) {
+                    val w = weights[k]
+                    val srcIdx = (taps[k] * targetWidth + x) * 4
+                    alpha += interPixels[srcIdx] * w
+                    r += interPixels[srcIdx + 1] * w
+                    g += interPixels[srcIdx + 2] * w
+                    b += interPixels[srcIdx + 3] * w
+                    sumWeight += w
                 }
 
                 if (sumWeight > 0.0f) {
@@ -158,7 +190,7 @@ object AlgorithmicUpscaler {
                     val finalR = (r / sumWeight).toInt().coerceIn(0, 255)
                     val finalG = (g / sumWeight).toInt().coerceIn(0, 255)
                     val finalB = (b / sumWeight).toInt().coerceIn(0, 255)
-                    dstPixels[y * targetWidth + x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
+                    dstPixels[dstRow + x] = (finalA shl 24) or (finalR shl 16) or (finalG shl 8) or finalB
                 }
             }
         }

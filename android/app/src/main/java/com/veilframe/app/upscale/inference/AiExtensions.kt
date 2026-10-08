@@ -235,7 +235,9 @@ suspend fun Bitmap.readModelInput(
 
     FloatArray(channels * size.pixelCount).also { output ->
         for (index in pixels.indices) {
-            ensureActive()
+            // Audit fix: cancellation check every 4096 px, not every pixel
+            // (millions of coroutine checks per tile were pure overhead).
+            if ((index and 4095) == 0) ensureActive()
             val color = pixels[index]
             if (channels == 1) {
                 output[index] = (

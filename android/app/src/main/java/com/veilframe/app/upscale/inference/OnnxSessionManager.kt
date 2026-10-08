@@ -45,7 +45,16 @@ object OnnxSessionManager {
     var lastBackend: Backend = Backend.CPU
         private set
 
-    private val defaultOrder: List<Backend> = listOf(Backend.NNAPI, Backend.XNNPACK, Backend.CPU)
+    /**
+     * XNNPACK first: NNAPI is officially DEPRECATED as of Android 15 ("we
+     * expect the majority of devices in the future to use the CPU backend" —
+     * developer.android.com/ndk/guides/neuralnetworks), and ORT's own NNAPI
+     * docs warn that unsupported ops silently partition back to CPU with
+     * extra overhead — a documented pitfall for ESRGAN-family models
+     * (onnxruntime#22346). So the order is a starting point only; the
+     * benchmark below makes the real decision.
+     */
+    private val defaultOrder: List<Backend> = listOf(Backend.XNNPACK, Backend.NNAPI, Backend.CPU)
 
     fun createSession(modelFile: File, context: Context? = null): OrtSession {
         val modelName = modelFile.name
@@ -53,29 +62,98 @@ object OnnxSessionManager {
         val cached = prefs?.getString(KEY_BACKEND_PREFIX + modelName, null)?.let { name ->
             runCatching { Backend.valueOf(name) }.getOrNull()
         }
-        val candidates = if (cached != null) {
-            listOf(cached) + defaultOrder.filter { it != cached }
-        } else {
-            defaultOrder
+
+        if (cached != null && isUsable(cached)) {
+            try {
+                val session = buildSession(modelFile, modelName, cached)
+                lastBackend = cached
+                Log.i(TAG, "ONNX session for $modelName on cached backend $cached")
+                return session
+            } catch (e: Exception) {
+                Log.w(TAG, "Cached backend $cached failed for $modelName; re-selecting", e)
+                prefs?.edit()?.remove(KEY_BACKEND_PREFIX + modelName)?.apply()
+            }
         }
 
+        // First run for this model: build every viable candidate and MEASURE.
+        // Audit fix: "session creation succeeded" does NOT mean "fast" — NNAPI
+        // happily creates sessions whose ops mostly fall back to CPU with
+        // partitioning overhead. One small synthetic run per candidate
+        // (256px tile, warm-up + timed) decides; the choice is cached per
+        // model, so the cost is paid once.
+        val built = LinkedHashMap<Backend, OrtSession>()
+        val timings = LinkedHashMap<Backend, Double>()
         var lastError: Exception? = null
-        for (backend in candidates) {
-            if (backend == Backend.NNAPI && Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) {
-                continue // NNAPI EP requires API 27+ (minSdk is 26)
-            }
+        for (backend in defaultOrder) {
+            if (!isUsable(backend)) continue
             try {
                 val session = buildSession(modelFile, modelName, backend)
-                lastBackend = backend
-                prefs?.edit()?.putString(KEY_BACKEND_PREFIX + modelName, backend.name)?.apply()
-                Log.i(TAG, "ONNX session for $modelName created on $backend")
-                return session
+                built[backend] = session
+                benchmark(session, modelName)?.let { timings[backend] = it }
             } catch (e: Exception) {
                 Log.w(TAG, "$backend backend unavailable for $modelName: ${e.message}")
                 lastError = e
             }
         }
-        throw lastError ?: IllegalStateException("No usable ONNX backend for $modelName")
+        if (built.isEmpty()) {
+            throw lastError ?: IllegalStateException("No usable ONNX backend for $modelName")
+        }
+
+        val winner = timings.minByOrNull { it.value }?.key ?: built.keys.first()
+        built.forEach { (backend, session) ->
+            if (backend != winner) runCatching { session.close() }
+        }
+        lastBackend = winner
+        prefs?.edit()?.putString(KEY_BACKEND_PREFIX + modelName, winner.name)?.apply()
+        Log.i(
+            TAG,
+            "Backend selection for $modelName: $winner " +
+                "(timings: ${timings.entries.joinToString { "${it.key}=${"%,.0f".format(it.value)}ms" }})"
+        )
+        return built.getValue(winner)
+    }
+
+    private fun isUsable(backend: Backend): Boolean = when (backend) {
+        Backend.NNAPI -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 // API 27+ (minSdk is 26)
+        else -> true
+    }
+
+    /**
+     * Synthetic timing run on a 256px tile (warm-up + measured pass).
+     * Returns null when the model refuses the synthetic input — the candidate
+     * stays selectable but unranked (creation-gated fallback).
+     */
+    private fun benchmark(session: OrtSession, modelName: String): Double? {
+        val tensors = linkedMapOf<String, OnnxTensor>()
+        return try {
+            val info = ModelInfo(
+                session = session,
+                modelName = modelName,
+                explicitScale = null,
+                chunkSize = 256,
+                overlap = 0
+            )
+            val size = info.tensorSizeFor(TensorSize(256, 256))
+            val data = FloatArray(info.inputChannels * size.pixelCount) // zeros
+            val shape = longArrayOf(
+                1,
+                info.inputChannels.toLong(),
+                size.height.toLong(),
+                size.width.toLong()
+            )
+            tensors[info.inputName] = createInputTensor(data, shape, info.isFp16)
+            appendControlInputs(tensors, info)
+
+            session.run(tensors).use { } // warm-up (lazy EP compilation)
+            val t0 = System.nanoTime()
+            session.run(tensors).use { }
+            (System.nanoTime() - t0) / 1_000_000.0
+        } catch (t: Throwable) {
+            Log.w(TAG, "Benchmark failed for $modelName: ${t.message}")
+            null
+        } finally {
+            tensors.values.forEach { runCatching { it.close() } }
+        }
     }
 
     private fun buildSession(modelFile: File, modelName: String, backend: Backend): OrtSession {

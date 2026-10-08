@@ -107,6 +107,18 @@ class ImageUpscalerController(
         // F11: thermal awareness for the whole workspace session.
         com.veilframe.app.runtime.ThermalGovernor.register(activity)
 
+        // Audit fix: prune stale streamed outputs (crashed/killed jobs leave
+        // full-size PNGs in cache; 24h is far beyond any save/share window).
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val dir = File(activity.cacheDir, "upscale_outputs")
+                val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+                dir.listFiles()?.forEach { f ->
+                    if (f.isFile && f.lastModified() < cutoff) f.delete()
+                }
+            }
+        }
+
         // Apply Material 3 Expressive tactile touch bounce across all interactive controls
         val interactiveBounceViews = listOf(
             upscalerBinding.btnUpscalerBack,
@@ -786,7 +798,7 @@ class ImageUpscalerController(
                         }
                         resultOutput = output
                         resultFile = (output as? UpscaleOutput.Streamed)?.file
-                        upscalerBinding.imgUpscalerPreview.setImageBitmap(output.previewBitmap())
+                        upscalerBinding.imgUpscalerPreview.setImageBitmap(displayBitmapFor(output))
                         val resolvedModel = getResolvedModel()
                         val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(scale, resolvedModel.nativeScale)
                         val badgeText = if (resolvedModel.type == com.veilframe.app.upscale.model.ModelType.AI_ONNX && scalePlan.requiresRefinement) {
@@ -1190,6 +1202,24 @@ class ImageUpscalerController(
                 }
             }
         }
+    }
+
+    /**
+     * Audit fix: never hand a >4096px bitmap to an ImageView — it exceeds GPU
+     * max-texture limits on many devices (blank preview / RenderThread crash).
+     * In-memory results keep the full bitmap for saving; the view gets a copy.
+     */
+    private fun displayBitmapFor(output: com.veilframe.app.upscale.inference.UpscaleOutput): Bitmap {
+        val bmp = output.previewBitmap()
+        val maxEdge = maxOf(bmp.width, bmp.height)
+        if (maxEdge <= 4096) return bmp
+        val scale = 4096f / maxEdge
+        return Bitmap.createScaledBitmap(
+            bmp,
+            (bmp.width * scale).toInt().coerceAtLeast(1),
+            (bmp.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
     }
 
     /** Writes the output as PNG: in-memory compress, or a byte copy of the streamed file. */

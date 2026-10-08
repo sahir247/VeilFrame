@@ -14,6 +14,13 @@ suspend fun extractOutputArray(
     Log.d(AiExtensions.LOG_TAG, "ONNX output payload: ${outputValue.javaClass.name}")
 
     when (outputValue) {
+        is java.nio.FloatBuffer -> {
+            // Audit fix (perf): ORT can hand back a flat FloatBuffer; bulk-copy
+            // instead of the nested float[][][][] element-by-element path.
+            val flat = FloatArray(outputValue.remaining())
+            outputValue.duplicate().get(flat)
+            flat to channels
+        }
         is FloatArray -> outputValue to channels
         is ShortArray -> FloatArray(outputValue.size) { index ->
             float16ToFloat(outputValue[index])
@@ -84,9 +91,12 @@ private suspend fun copyNestedFloatOutput(
     val flattened = FloatArray(channelsToCopy * height * width)
     for (channel in 0 until channelsToCopy) {
         for (y in 0 until height) {
+            // Audit fix: per-row cancellation check (was per-pixel).
+            ensureActive()
+            val rowBase = channel * height * width + y * width
+            val srcRow = tensor[0][channel][y]
             for (x in 0 until width) {
-                ensureActive()
-                flattened[channel * height * width + y * width + x] = tensor[0][channel][y][x]
+                flattened[rowBase + x] = srcRow[x]
             }
         }
     }
@@ -111,10 +121,12 @@ private suspend fun copyNestedHalfOutput(
     val flattened = FloatArray(channelsToCopy * height * width)
     for (channel in 0 until channelsToCopy) {
         for (y in 0 until height) {
+            // Audit fix: per-row cancellation check (was per-pixel).
+            ensureActive()
+            val rowBase = channel * height * width + y * width
+            val srcRow = tensor[0][channel][y]
             for (x in 0 until width) {
-                ensureActive()
-                flattened[channel * height * width + y * width + x] =
-                    float16ToFloat(tensor[0][channel][y][x])
+                flattened[rowBase + x] = float16ToFloat(srcRow[x])
             }
         }
     }

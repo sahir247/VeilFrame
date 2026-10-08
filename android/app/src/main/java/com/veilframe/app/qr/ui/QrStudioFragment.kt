@@ -82,6 +82,9 @@ class QrStudioFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Expressive polish: tactile spring feedback across this surface.
+        com.veilframe.app.ui.motion.VeilFrameInteraction.bindWorkspace(view)
+
         val toolbar = view.findViewById<MaterialToolbar>(R.id.qr_toolbar)
         val tabs = view.findViewById<TabLayout>(R.id.qr_tabs)
         val pager = view.findViewById<ViewPager2>(R.id.qr_pager)
@@ -368,6 +371,9 @@ class QrGenerateTabFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Expressive polish: tactile spring feedback across this surface.
+        com.veilframe.app.ui.motion.VeilFrameInteraction.bindWorkspace(view)
 
         val previewCard        = view.findViewById<MaterialCardView>(R.id.qr_preview_card)
         val previewImage       = view.findViewById<ImageView>(R.id.qr_preview_image)
@@ -2444,6 +2450,9 @@ class QrScanTabFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Expressive polish: tactile spring feedback across this surface.
+        com.veilframe.app.ui.motion.VeilFrameInteraction.bindWorkspace(view)
 
         previewView               = view.findViewById(R.id.qr_camera_preview)
         scanOverlay               = view.findViewById(R.id.qr_scan_overlay)

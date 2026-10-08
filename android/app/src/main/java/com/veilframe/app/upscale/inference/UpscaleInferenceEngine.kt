@@ -162,15 +162,24 @@ class UpscaleInferenceEngine(
                         // dynamic budget cannot hold them (suggests 4x / smaller source).
                         if (scalePlan.requiresRefinement) {
                             val budget = processor.inRamOutputBudget()
-                            val aiBytes = srcW.toLong() * model.nativeScale *
-                                (srcH.toLong() * model.nativeScale) * 4L
+                            val aiPixels = srcW.toLong() * model.nativeScale *
+                                (srcH.toLong() * model.nativeScale)
+                            val aiBytes = aiPixels * 4L
                             val finalBytes = srcW.toLong() * targetScale *
                                 (srcH.toLong() * targetScale) * 4L
-                            if (aiBytes > budget || finalBytes > budget) {
+                            // Audit fix: the scalar Lanczos pass peaks at
+                            // intermediate FloatArray(aiW·refine × aiH × 4) plus
+                            // src/dst IntArrays — budget that too, or the job
+                            // burns minutes before dying with OOM.
+                            val lanczosPeak = aiPixels * scalePlan.refinementScale * 16L +
+                                aiPixels * 8L + finalBytes
+                            val heap = Runtime.getRuntime().maxMemory()
+                            if (aiBytes > budget || finalBytes > budget || lanczosPeak > heap * 80 / 100) {
                                 return@withContext Result.failure(
                                     UpscaleMemoryException(
-                                        "Hybrid ${targetScale}× refinement needs ~${finalBytes / (1024 * 1024)} MB " +
-                                            "in memory (budget ${budget / (1024 * 1024)} MB). " +
+                                        "Hybrid ${targetScale}× refinement needs ~${finalBytes / (1024 * 1024)} MB output " +
+                                            "with ~${lanczosPeak / (1024 * 1024)} MB peak working set " +
+                                            "(budget ${budget / (1024 * 1024)} MB, heap ${heap / (1024 * 1024)} MB). " +
                                             "Use ${model.nativeScale}× or a smaller source."
                                     )
                                 )

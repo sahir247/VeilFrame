@@ -420,9 +420,17 @@ class AiProcessor(
 
             session.runCancellable(tensors).use { result ->
                 val modelOutputSize = tensorSize.scaledBy(info.scaleFactor)
+                // Audit fix (perf): for fp32 outputs prefer the flat FloatBuffer
+                // (bulk copy) over getValue()'s nested float[][][][] boxing.
+                val outputTensor = result[0] as? OnnxTensor
+                val outputPayload: Any = if (!info.isFp16 && outputTensor != null) {
+                    runCatching { outputTensor.floatBuffer }.getOrNull() ?: result[0].value
+                } else {
+                    result[0].value
+                }
                 val (outputFloats, actualChannels) = withContext(Dispatchers.Default) {
                     extractOutputArray(
-                        outputValue = result[0].value,
+                        outputValue = outputPayload,
                         channels = info.outputChannels,
                         h = modelOutputSize.height,
                         w = modelOutputSize.width
@@ -630,8 +638,14 @@ class AiProcessor(
 
                 val band = Bitmap.createBitmap(outW, bandH, Bitmap.Config.ARGB_8888)
                 try {
+                    // The carried rows are the PREVIOUS band's deferred zone —
+                    // global rows [rowTop(this), rowTop(this)+blendPx) — so they
+                    // belong at y_local [topSkip, topSkip+blendPx), exactly where
+                    // this band's tiles start and read their blend "existing"
+                    // content. (Placing them at [0, topSkip) shifted every seam
+                    // by one overlap — caught in the round-2 self-audit.)
                     if (topSkip > 0) {
-                        prevTail?.let { band.setPixels(it, 0, outW, 0, 0, outW, topSkip) }
+                        prevTail?.let { band.setPixels(it, 0, outW, 0, topSkip, outW, topSkip) }
                     }
                     for (tile in rowTiles) {
                         ensureActive()

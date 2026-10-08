@@ -68,6 +68,9 @@ class MarkdownViewerController(
     private var watchdogRunnable: Runnable? = null
 
     fun init() {
+        // Expressive polish: tactile spring feedback across the viewer chrome.
+        com.veilframe.app.ui.motion.VeilFrameInteraction.bindWorkspace(binding.root)
+
         state.lifecycleState = ViewerLifecycleState.LOADING_VIEWER
         setupWebView()
         setupToolbar()
