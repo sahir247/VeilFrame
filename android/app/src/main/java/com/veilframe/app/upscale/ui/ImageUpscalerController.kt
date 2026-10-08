@@ -18,7 +18,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
-import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.databinding.DialogModelRequiredBinding
 import com.veilframe.app.databinding.DialogUpscaleModelManagerBinding
 import com.veilframe.app.databinding.DialogUpscaleModelSelectorBinding
@@ -55,7 +54,7 @@ import java.util.Locale
  */
 class ImageUpscalerController(
     private val activity: AppCompatActivity,
-    private val binding: ActivityMainBinding,
+    private val upscalerBinding: LayoutImageUpscalerBinding,
     private val onBackRequested: () -> Unit,
     private val onPickImageRequested: () -> Unit,
     private val onLog: (String) -> Unit = {}
@@ -66,9 +65,6 @@ class ImageUpscalerController(
         /** Hard output cap (~200 MP) — beyond this even band-streaming is refused. */
         private const val OUTPUT_PIXEL_CAP = 200_000_000L
     }
-
-    private val upscalerBinding: LayoutImageUpscalerBinding
-        get() = binding.layoutImageUpscaler
 
     val repository: UpscaleModelRepository = UpscaleModelRepository(activity)
     val downloadManager: ModelDownloadManager = ModelDownloadManager(activity, repository)

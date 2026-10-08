@@ -24,6 +24,11 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
+import com.veilframe.app.databinding.LayoutDocumentScannerBinding
+import com.veilframe.app.databinding.LayoutImageUpscalerBinding
+import com.veilframe.app.databinding.LayoutMotionLabBinding
+import com.veilframe.app.databinding.LayoutProvenanceBinding
 import com.veilframe.app.logging.ConsoleLogController
 import com.veilframe.app.markdown.MarkdownViewerController
 import com.veilframe.app.document.DocumentScannerController
@@ -41,6 +46,7 @@ import com.veilframe.app.navigation.WorkspaceRoute
 import com.veilframe.app.navigation.WorkspaceCategory
 import com.veilframe.app.ui.picker.SharedSourcePickerSheet
 import com.veilframe.app.upscale.ui.ImageUpscalerController
+import com.veilframe.app.workspace.WorkspaceHost
 import com.veilframe.app.storage.CreateDocumentWithMime
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.tools.JobState
@@ -71,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     // Modular Sub-Controllers
     private lateinit var safStorageManager: SafStorageManager
     private lateinit var consoleLogController: ConsoleLogController
+    private lateinit var workspaceHost: WorkspaceHost
     private lateinit var navigationController: MainNavigationController
     private lateinit var toolSessionManager: ToolSessionManager
     private lateinit var toolExecutionController: ToolExecutionController
@@ -216,7 +223,10 @@ class MainActivity : AppCompatActivity() {
     private val motionLabPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) motionLabController.setSource(uri)
+        if (uri != null) {
+            workspaceHost.getOrInflateMotionLab()
+            motionLabController.setSource(uri)
+        }
     }
 
     private val vidStudioAddMoreLauncher = registerForActivityResult(
@@ -247,6 +257,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
+            workspaceHost.getOrInflateImageUpscaler()
             imageUpscalerController.handleImageSelected(uri)
         }
     }
@@ -255,6 +266,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
+            workspaceHost.getOrInflateImageUpscaler()
             imageUpscalerController.handleCustomModelImport(uri)
         }
     }
@@ -291,6 +303,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
+            workspaceHost.getOrInflateDocScanner()
             docScannerController.handleCameraPhotoCaptured(bitmap)
         }
     }
@@ -299,6 +312,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
+            workspaceHost.getOrInflateDocScanner()
             docScannerController.handlePhotosImported(uris)
         }
     }
@@ -323,6 +337,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
+            workspaceHost.getOrInflateBackgroundRemover()
             backgroundRemoverController.handleImageSelected(uri)
         }
     }
@@ -357,6 +372,7 @@ class MainActivity : AppCompatActivity() {
     ) { uri ->
         if (uri != null) {
             safStorageManager.persistReadPermission(uri)
+            workspaceHost.getOrInflateProvenance()
             provenanceController.handleFileSelected(uri)
         }
     }
@@ -406,8 +422,7 @@ class MainActivity : AppCompatActivity() {
                 binding.layoutLibrary.root,
                 binding.layoutImageStudio.root,
                 binding.layoutVideoStudio.root,
-                binding.layoutMarkdownViewer.root,
-                binding.layoutImageUpscaler.root
+                binding.layoutMarkdownViewer.root
             ).forEach { root ->
                 com.veilframe.app.ui.insets.WorkspaceInsets.apply(
                     root = root,
@@ -423,11 +438,7 @@ class MainActivity : AppCompatActivity() {
             // 2. Full-screen / custom-toolbar workspaces spanning full window:
             //    Apply DEFAULT (padTop = true, padBottom = true) additively to initial padding.
             listOf(
-                binding.layoutDocumentScanner.root,
-                binding.layoutBackgroundRemover.root,
                 binding.layoutImageQuality.root,
-                binding.layoutProvenance.root,
-                binding.layoutMotionLab.root,
                 binding.fragmentQrStudio
             ).forEach { root ->
                 com.veilframe.app.ui.insets.WorkspaceInsets.apply(
@@ -440,6 +451,15 @@ class MainActivity : AppCompatActivity() {
                     contract = com.veilframe.app.ui.insets.WorkspaceInsets.DEFAULT
                 )
             }
+
+            // 3. Secondary offline workspaces (lazy-inflated via WorkspaceHost):
+            workspaceHost.updateInsets(
+                statusBarTop = statusBarTop,
+                navBarBottom = navBarBottom,
+                imeBottom = imeBottom,
+                navBarLeft = navBarLeft,
+                navBarRight = navBarRight
+            )
             insets
         }
 
@@ -524,6 +544,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        workspaceHost.pause()
         if (::docScannerController.isInitialized) {
             docScannerController.closeCameraViewfinder()
         }
@@ -531,6 +552,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        workspaceHost.onDestroy()
         appUpdateManager.onDestroy()
         if (::docScannerController.isInitialized) {
             docScannerController.closeCameraViewfinder()
@@ -571,9 +593,29 @@ class MainActivity : AppCompatActivity() {
         )
         consoleLogController.init()
 
+        workspaceHost = WorkspaceHost(
+            binding = binding,
+            onImageUpscalerInflated = { upscalerBinding ->
+                initImageUpscaler(upscalerBinding)
+            },
+            onDocScannerInflated = { docBinding ->
+                initDocScanner(docBinding)
+            },
+            onBackgroundRemoverInflated = { bgBinding ->
+                initBackgroundRemover(bgBinding)
+            },
+            onMotionLabInflated = { motionBinding ->
+                initMotionLab(motionBinding)
+            },
+            onProvenanceInflated = { provBinding ->
+                initProvenance(provBinding)
+            }
+        )
+
         navigationController = MainNavigationController(
             activity = this,
             binding = binding,
+            workspaceHost = workspaceHost,
             onSaveActiveToolState = { toolSessionManager.saveCurrentToolState() },
             onPauseVideoPlayback = { pauseVideoPlayback() },
             onHomeScreenEntered = { scheduleBackClearWork() },
@@ -665,7 +707,10 @@ class MainActivity : AppCompatActivity() {
                 shareStudioFile(file, mime)
             },
             onNavigateHome = { navigationController.showHomeScreen() },
-            onOpenModelManager = { imageUpscalerController.showModelManagerDialog() }
+            onOpenModelManager = {
+                workspaceHost.getOrInflateImageUpscaler()
+                imageUpscalerController.showModelManagerDialog()
+            }
         )
 
         videoStudioController = VideoStudioController(
@@ -688,72 +733,8 @@ class MainActivity : AppCompatActivity() {
             onNavigateHome = { navigationController.showHomeScreen() }
         )
 
-        imageUpscalerController = ImageUpscalerController(
-            activity = this,
-            binding = binding,
-            onBackRequested = { navigationController.showHomeScreen() },
-            onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
-            onLog = { msg -> consoleLogController.log(msg) }
-        ).apply {
-            onImportCustomModelRequested = { modelPickerLauncher.launch("*/*") }
-        }
-
         imageStudioController.initWorkspace()
         videoStudioController.initWorkspace()
-        imageUpscalerController.init()
-
-        docScannerController = DocumentScannerController(
-            activity = this,
-            binding = binding.layoutDocumentScanner,
-            safStorageManager = safStorageManager,
-            scope = lifecycleScope,
-            onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
-            onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
-            onExportFileRequest = { file, mime ->
-                pendingExportFile = file
-                docScannerExportLauncher.launch(file.name to mime)
-            },
-            onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
-                }
-            }
-        ).apply { init() }
-
-        motionLabController = MotionLabController(
-            activity = this,
-            binding = binding.layoutMotionLab,
-            scope = lifecycleScope,
-            onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
-            onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
-                }
-            }
-        )
-
-        backgroundRemoverController = BackgroundRemoverController(
-            activity = this,
-            binding = binding.layoutBackgroundRemover,
-            scope = lifecycleScope,
-            onPickImageRequest = { bgRemoverPickerLauncher.launch("image/*") },
-            onExportPngRequest = { file ->
-                pendingExportFile = file
-                val mime = safStorageManager.getExportMimeType(file)
-                bgRemoverExportLauncher.launch(file.name to mime)
-            },
-            onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
-                }
-            }
-        ).apply { init() }
 
         imageQualityController = ImageQualityController(
             activity = this,
@@ -776,10 +757,84 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         ).apply { init() }
+    }
 
+    private fun initImageUpscaler(upscalerBinding: LayoutImageUpscalerBinding) {
+        imageUpscalerController = ImageUpscalerController(
+            activity = this,
+            upscalerBinding = upscalerBinding,
+            onBackRequested = { navigationController.showHomeScreen() },
+            onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
+            onLog = { msg -> consoleLogController.log(msg) }
+        ).apply {
+            onImportCustomModelRequested = { modelPickerLauncher.launch("*/*") }
+        }
+        imageUpscalerController.init()
+    }
+
+    private fun initDocScanner(docBinding: LayoutDocumentScannerBinding) {
+        docScannerController = DocumentScannerController(
+            activity = this,
+            binding = docBinding,
+            safStorageManager = safStorageManager,
+            scope = lifecycleScope,
+            onTakePhotoRequest = { docScannerController.openCameraViewfinder() },
+            onChoosePhotosRequest = { docScannerPhotosLauncher.launch("image/*") },
+            onExportFileRequest = { file, mime ->
+                pendingExportFile = file
+                docScannerExportLauncher.launch(file.name to mime)
+            },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
+    }
+
+    private fun initMotionLab(motionBinding: LayoutMotionLabBinding) {
+        motionLabController = MotionLabController(
+            activity = this,
+            binding = motionBinding,
+            scope = lifecycleScope,
+            onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        )
+    }
+
+    private fun initBackgroundRemover(bgBinding: LayoutBackgroundRemoverBinding) {
+        backgroundRemoverController = BackgroundRemoverController(
+            activity = this,
+            binding = bgBinding,
+            scope = lifecycleScope,
+            onPickImageRequest = { bgRemoverPickerLauncher.launch("image/*") },
+            onExportPngRequest = { file ->
+                pendingExportFile = file
+                val mime = safStorageManager.getExportMimeType(file)
+                bgRemoverExportLauncher.launch(file.name to mime)
+            },
+            onNavigateBack = {
+                if (navigationController.previousScreen == ScreenState.TOOLS) {
+                    navigationController.showToolsScreen()
+                } else {
+                    navigationController.showHomeScreen()
+                }
+            }
+        ).apply { init() }
+    }
+
+    private fun initProvenance(provBinding: LayoutProvenanceBinding) {
         provenanceController = ProvenanceController(
             activity = this,
-            binding = binding.layoutProvenance,
+            binding = provBinding,
             safStorageManager = safStorageManager,
             scope = lifecycleScope,
             onPickFileRequest = { provenancePickerLauncher.launch(arrayOf("*/*")) },
@@ -1986,11 +2041,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
         savedInstanceState.getString(KEY_UPSCALER_URI)?.let { uriStr ->
+            if (targetScreen == ScreenState.IMAGE_UPSCALER) {
+                workspaceHost.getOrInflateImageUpscaler()
+            }
             if (::imageUpscalerController.isInitialized) {
                 imageUpscalerController.handleImageSelected(Uri.parse(uriStr))
             }
         }
         savedInstanceState.getString(KEY_MOTION_LAB_URI)?.let { uriStr ->
+            if (targetScreen == ScreenState.MOTION_LAB) {
+                workspaceHost.getOrInflateMotionLab()
+            }
             if (::motionLabController.isInitialized) {
                 motionLabController.setSource(Uri.parse(uriStr))
             }

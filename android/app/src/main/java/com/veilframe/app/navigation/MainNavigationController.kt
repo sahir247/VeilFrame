@@ -5,6 +5,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
+import com.veilframe.app.workspace.SecondaryWorkspace
+import com.veilframe.app.workspace.WorkspaceHost
 
 /**
  * Controller orchestrating top-level screen navigation, view visibility toggles,
@@ -13,6 +15,7 @@ import com.veilframe.app.databinding.ActivityMainBinding
 class MainNavigationController(
     private val activity: AppCompatActivity,
     private val binding: ActivityMainBinding,
+    private val workspaceHost: WorkspaceHost,
     private val onSaveActiveToolState: () -> Unit,
     private val onPauseVideoPlayback: () -> Unit,
     private val onHomeScreenEntered: () -> Unit,
@@ -150,9 +153,11 @@ class MainNavigationController(
             binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.GONE
             binding.layoutMarkdownViewer.layoutMarkdownRoot.translationX = 0f
         }
-        if (activeView != binding.layoutImageUpscaler.scrollImageUpscaler) {
-            binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.GONE
-            binding.layoutImageUpscaler.scrollImageUpscaler.translationX = 0f
+        workspaceHost.imageUpscalerRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
         }
         if (activeView != binding.fragmentQrStudio) {
             binding.fragmentQrStudio.visibility = View.GONE
@@ -166,25 +171,33 @@ class MainNavigationController(
             binding.layoutLibrary.scrollLibrary.visibility = View.GONE
             binding.layoutLibrary.scrollLibrary.translationX = 0f
         }
-        if (activeView != binding.layoutDocumentScanner.layoutDocumentScannerRoot) {
-            binding.layoutDocumentScanner.layoutDocumentScannerRoot.visibility = View.GONE
-            binding.layoutDocumentScanner.layoutDocumentScannerRoot.translationX = 0f
+        workspaceHost.docScannerRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
         }
-        if (activeView != binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot) {
-            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.visibility = View.GONE
-            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.translationX = 0f
+        workspaceHost.backgroundRemoverRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
         }
         if (activeView != binding.layoutImageQuality.layoutImageQualityRoot) {
             binding.layoutImageQuality.layoutImageQualityRoot.visibility = View.GONE
             binding.layoutImageQuality.layoutImageQualityRoot.translationX = 0f
         }
-        if (activeView != binding.layoutMotionLab.layoutMotionLabRoot) {
-            binding.layoutMotionLab.layoutMotionLabRoot.visibility = View.GONE
-            binding.layoutMotionLab.layoutMotionLabRoot.translationX = 0f
+        workspaceHost.motionLabRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
         }
-        if (activeView != binding.layoutProvenance.layoutProvenanceRoot) {
-            binding.layoutProvenance.layoutProvenanceRoot.visibility = View.GONE
-            binding.layoutProvenance.layoutProvenanceRoot.translationX = 0f
+        workspaceHost.provenanceRoot?.let { view ->
+            if (activeView != view) {
+                view.visibility = View.GONE
+                view.translationX = 0f
+            }
         }
     }
 
@@ -197,7 +210,7 @@ class MainNavigationController(
             ScreenState.TOOL -> binding.scrollTool
             ScreenState.IMAGE_STUDIO -> binding.layoutImageStudio.root
             ScreenState.VIDEO_STUDIO -> binding.layoutVideoStudio.root
-            ScreenState.IMAGE_UPSCALER -> binding.layoutImageUpscaler.scrollImageUpscaler
+            ScreenState.IMAGE_UPSCALER -> workspaceHost.imageUpscalerRoot
             ScreenState.MARKDOWN_VIEWER -> binding.layoutMarkdownViewer.layoutMarkdownRoot
             ScreenState.QR_STUDIO -> binding.fragmentQrStudio
             ScreenState.TOOLS -> binding.layoutToolsCatalogue.scrollToolsCatalogue
@@ -206,11 +219,11 @@ class MainNavigationController(
             ScreenState.DOCUMENT_SCANNER_CAMERA,
             ScreenState.DOCUMENT_SCANNER_PAGES,
             ScreenState.DOCUMENT_SCANNER_EDITOR,
-            ScreenState.DOCUMENT_SCANNER_EXPORT -> binding.layoutDocumentScanner.layoutDocumentScannerRoot
-            ScreenState.BACKGROUND_REMOVER -> binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot
+            ScreenState.DOCUMENT_SCANNER_EXPORT -> workspaceHost.docScannerRoot
+            ScreenState.BACKGROUND_REMOVER -> workspaceHost.backgroundRemoverRoot
             ScreenState.IMAGE_QUALITY -> binding.layoutImageQuality.layoutImageQualityRoot
-            ScreenState.MOTION_LAB -> binding.layoutMotionLab.layoutMotionLabRoot
-            ScreenState.PROVENANCE -> binding.layoutProvenance.layoutProvenanceRoot
+            ScreenState.MOTION_LAB -> workspaceHost.motionLabRoot
+            ScreenState.PROVENANCE -> workspaceHost.provenanceRoot
             ScreenState.HOME -> null
         }
         previousScreen = currentScreen
@@ -437,18 +450,20 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         setAdaptiveNavigationVisibility(false)
 
+        val upscalerRoot = workspaceHost.activate(SecondaryWorkspace.IMAGE_UPSCALER)
+
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutImageUpscaler.scrollImageUpscaler)
+            hideAllToolViewsExcept(upscalerRoot)
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
-                toolView = binding.layoutImageUpscaler.scrollImageUpscaler
+                toolView = upscalerRoot
             )
         } else {
             binding.scrollHome.visibility = View.GONE
-            binding.layoutImageUpscaler.scrollImageUpscaler.visibility = View.VISIBLE
-            binding.layoutImageUpscaler.scrollImageUpscaler.alpha = 1.0f
-            binding.layoutImageUpscaler.scrollImageUpscaler.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutImageUpscaler.scrollImageUpscaler)
+            upscalerRoot.visibility = View.VISIBLE
+            upscalerRoot.alpha = 1.0f
+            upscalerRoot.translationX = 0f
+            hideAllToolViewsExcept(upscalerRoot)
         }
     }
 
@@ -497,18 +512,20 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         setAdaptiveNavigationVisibility(false)
 
+        val docRoot = workspaceHost.activate(SecondaryWorkspace.DOCUMENT_SCANNER)
+
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutDocumentScanner.layoutDocumentScannerRoot)
+            hideAllToolViewsExcept(docRoot)
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
-                toolView = binding.layoutDocumentScanner.layoutDocumentScannerRoot
+                toolView = docRoot
             )
         } else {
             binding.scrollHome.visibility = View.GONE
-            binding.layoutDocumentScanner.layoutDocumentScannerRoot.visibility = View.VISIBLE
-            binding.layoutDocumentScanner.layoutDocumentScannerRoot.alpha = 1.0f
-            binding.layoutDocumentScanner.layoutDocumentScannerRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutDocumentScanner.layoutDocumentScannerRoot)
+            docRoot.visibility = View.VISIBLE
+            docRoot.alpha = 1.0f
+            docRoot.translationX = 0f
+            hideAllToolViewsExcept(docRoot)
         }
     }
 
@@ -527,18 +544,20 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         setAdaptiveNavigationVisibility(false)
 
+        val bgRoot = workspaceHost.activate(SecondaryWorkspace.BACKGROUND_REMOVER)
+
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
+            hideAllToolViewsExcept(bgRoot)
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
-                toolView = binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot
+                toolView = bgRoot
             )
         } else {
             binding.scrollHome.visibility = View.GONE
-            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.visibility = View.VISIBLE
-            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.alpha = 1.0f
-            binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutBackgroundRemover.layoutBackgroundRemoverRoot)
+            bgRoot.visibility = View.VISIBLE
+            bgRoot.alpha = 1.0f
+            bgRoot.translationX = 0f
+            hideAllToolViewsExcept(bgRoot)
         }
     }
 
@@ -557,18 +576,20 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         setAdaptiveNavigationVisibility(false)
 
+        val motionRoot = workspaceHost.activate(SecondaryWorkspace.MOTION_LAB)
+
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutMotionLab.layoutMotionLabRoot)
+            hideAllToolViewsExcept(motionRoot)
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
-                toolView = binding.layoutMotionLab.layoutMotionLabRoot
+                toolView = motionRoot
             )
         } else {
             binding.scrollHome.visibility = View.GONE
-            binding.layoutMotionLab.layoutMotionLabRoot.visibility = View.VISIBLE
-            binding.layoutMotionLab.layoutMotionLabRoot.alpha = 1.0f
-            binding.layoutMotionLab.layoutMotionLabRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutMotionLab.layoutMotionLabRoot)
+            motionRoot.visibility = View.VISIBLE
+            motionRoot.alpha = 1.0f
+            motionRoot.translationX = 0f
+            hideAllToolViewsExcept(motionRoot)
         }
     }
 
@@ -617,18 +638,20 @@ class MainNavigationController(
         binding.bottomActionDock.visibility = View.GONE
         setAdaptiveNavigationVisibility(false)
 
+        val provRoot = workspaceHost.activate(SecondaryWorkspace.PROVENANCE)
+
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutProvenance.layoutProvenanceRoot)
+            hideAllToolViewsExcept(provRoot)
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
-                toolView = binding.layoutProvenance.layoutProvenanceRoot
+                toolView = provRoot
             )
         } else {
             binding.scrollHome.visibility = View.GONE
-            binding.layoutProvenance.layoutProvenanceRoot.visibility = View.VISIBLE
-            binding.layoutProvenance.layoutProvenanceRoot.alpha = 1.0f
-            binding.layoutProvenance.layoutProvenanceRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutProvenance.layoutProvenanceRoot)
+            provRoot.visibility = View.VISIBLE
+            provRoot.alpha = 1.0f
+            provRoot.translationX = 0f
+            hideAllToolViewsExcept(provRoot)
         }
     }
 }

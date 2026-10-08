@@ -2143,9 +2143,12 @@
     <!-- ================================================================= -->
     <!-- 7. IMAGE UPSCALER WORKSPACE (AI Super-Resolution & Tiled Inference) -->
     <!-- ================================================================= -->
-    <include
-        android:id="@+id/layoutImageUpscaler"
-        layout="@layout/layout_image_upscaler" />
+    <ViewStub
+        android:id="@+id/stubImageUpscaler"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:layout="@layout/layout_image_upscaler" />
 
     <!-- ================================================================= -->
     <!-- QR STUDIO — 8th tool (Fragment host)                              -->
@@ -2173,16 +2176,20 @@
     <!-- ================================================================= -->
     <!-- 10. DOCUMENT SCANNER WORKSPACE                                    -->
     <!-- ================================================================= -->
-    <include
-        android:id="@+id/layoutDocumentScanner"
-        layout="@layout/layout_document_scanner" />
+    <ViewStub
+        android:id="@+id/stubDocumentScanner"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_document_scanner" />
 
     <!-- ================================================================= -->
     <!-- 11. BACKGROUND REMOVER WORKSPACE                                  -->
     <!-- ================================================================= -->
-    <include
-        android:id="@+id/layoutBackgroundRemover"
-        layout="@layout/layout_background_remover" />
+    <ViewStub
+        android:id="@+id/stubBackgroundRemover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_background_remover" />
 
     <!-- ================================================================= -->
     <!-- 12. IMAGE QUALITY WORKSPACE                                       -->
@@ -2194,16 +2201,20 @@
     <!-- ================================================================= -->
     <!-- 13. PROVENANCE & VERIFY WORKSPACE                                 -->
     <!-- ================================================================= -->
-    <include
-        android:id="@+id/layoutProvenance"
-        layout="@layout/layout_provenance" />
+    <ViewStub
+        android:id="@+id/stubProvenance"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_provenance" />
 
     <!-- ================================================================= -->
     <!-- 14. MOTION LAB WORKSPACE (optical-flow interpolation, Alpha)      -->
     <!-- ================================================================= -->
-    <include
-        android:id="@+id/layoutMotionLab"
-        layout="@layout/layout_motion_lab" />
+    <ViewStub
+        android:id="@+id/stubMotionLab"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout="@layout/layout_motion_lab" />
 
     <!-- ================================================================= -->
     <!-- 3. STICKY 2-TIER ACTION DOCK (Tool Mode Only)                     -->
