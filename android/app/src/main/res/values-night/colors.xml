@@ -1,45 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ VeilFrame Expressive Design System v3.0 — "Quiet Intensity" (NIGHT)
+  ~ Charcoal matte dark palette. AMOLED overlay (themes) provides true-black deltas.
+  ~ All legacy vf_* names retained for code/layout compatibility.
+-->
 <resources>
-    <!-- VeilFrame Minimal Monochrome Dark Theme Palette -->
-    <!-- Base Surfaces (Charcoal matte dark mode surfaces; AMOLED overlay provides true #000000) -->
+    <!-- Base Surfaces -->
     <color name="vf_bg_dark">#121214</color>
     <color name="vf_background">#121214</color>
     <color name="vf_surface">#1C1C20</color>
     <color name="vf_surface_variant">#27272A</color>
     <color name="vf_surface_stroke">#3F3F46</color>
-    
+
+    <!-- Expressive surface-container ladder (NEW) -->
+    <color name="vf_container_lowest">#0E0E10</color>
+    <color name="vf_container_low">#16161A</color>
+    <color name="vf_container">#1C1C20</color>
+    <color name="vf_container_high">#242428</color>
+    <color name="vf_container_highest">#2C2C32</color>
+
     <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
     <color name="vf_primary">#E4E4E7</color>
     <color name="vf_primary_container">#27272A</color>
     <color name="vf_on_primary">#121214</color>
-    
+    <color name="vf_on_primary_container">#F4F4F5</color>
+
     <color name="vf_secondary">#A1A1AA</color>
     <color name="vf_secondary_container">#27272A</color>
-    <color name="vf_on_secondary">#F4F4F5</color>
-    
-    <!-- Less Saturated Matte Status Colors (Muted Characteristic Tones) -->
-    <!-- Pass / Success: Desaturated matte sage green -->
+    <color name="vf_on_secondary">#121214</color>
+    <color name="vf_on_secondary_container">#F4F4F5</color>
+
+    <!-- Tertiary — editorial neutral voice (NEW) -->
+    <color name="vf_tertiary">#D4D4D8</color>
+    <color name="vf_tertiary_container">#2C2C32</color>
+    <color name="vf_on_tertiary">#121214</color>
+    <color name="vf_on_tertiary_container">#F4F4F5</color>
+
+    <!-- Outline roles (NEW) -->
+    <color name="vf_outline">#52525B</color>
+    <color name="vf_outline_variant">#3F3F46</color>
+
+    <!-- Less Saturated Matte Status Colors -->
     <color name="vf_accent_green">#6AA878</color>
     <color name="vf_status_pass_bg">#18261D</color>
-    
-    <!-- Warning / In-Progress: Desaturated matte warm ochre / amber -->
+
     <color name="vf_accent_amber">#C9944D</color>
     <color name="vf_status_warn_bg">#292014</color>
-    
-    <!-- Error / Fail: Desaturated matte terracotta / brick red -->
+
     <color name="vf_accent_red">#BA5D60</color>
     <color name="vf_status_fail_bg">#291617</color>
-    
-    <!-- Info / Neutral: Desaturated matte steel blue -->
+
     <color name="vf_status_info">#7E95AC</color>
     <color name="vf_status_info_bg">#16202A</color>
-    
+    <color name="vf_accent_blue">#7E95AC</color>
+
     <!-- Text Hierarchy -->
     <color name="vf_text_primary">#F4F4F5</color>
     <color name="vf_text_secondary">#A1A1AA</color>
     <color name="vf_text_muted">#71717A</color>
-    
-    <!-- Console / Telemetry (Deep matte background & calm monospace text) -->
+
+    <!-- Console / Telemetry -->
     <color name="vf_console_bg">#141418</color>
     <color name="vf_console_text">#D4D4D8</color>
     <color name="ic_launcher_background">#121214</color>
@@ -47,4 +67,6 @@
     <!-- Brand Emblem Vectors -->
     <color name="vf_brand_shield">#E4E4E7</color>
     <color name="vf_brand_inner">#1E1E24</color>
+    <!-- Modal scrim (tokenized, was hardcoded #99000000) -->
+    <color name="vf_scrim">#B3000000</color>
 </resources>

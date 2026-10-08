@@ -27,9 +27,9 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnModelReqClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -62,14 +62,13 @@
             android:layout_marginBottom="16dp" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
             android:id="@+id/progressModelReq"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             android:indeterminate="true"
-            android:visibility="gone"
-            app:indicatorColor="@color/vf_primary"
-            app:trackColor="@color/vf_surface_variant" />
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvModelReqProgressStatus"
@@ -83,28 +82,24 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnModelReqDownload"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:text="Download &amp; Upscale"
-            android:textColor="@color/vf_on_primary"
-            app:backgroundTint="@color/vf_primary"
             app:icon="@drawable/ic_system_update"
-            app:iconTint="@color/vf_on_primary"
             android:layout_marginBottom="8dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnModelReqUseLanczos"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.VeilFrame.Button.Action"
             android:layout_width="match_parent"
             android:layout_height="44dp"
             android:text="Use Built-in Lanczos Instead"
-            android:textColor="@color/vf_text_primary"
             android:layout_marginBottom="4dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnModelReqCancel"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="match_parent"
             android:layout_height="40dp"
             android:text="Cancel"

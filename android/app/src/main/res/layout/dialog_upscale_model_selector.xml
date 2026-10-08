@@ -27,9 +27,9 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnModelSelectorClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -130,13 +130,11 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnModelSelectorApply"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.VeilFrame.Button.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginTop="16dp"
-                android:text="Select Model"
-                android:textColor="@color/vf_on_primary"
-                app:backgroundTint="@color/vf_primary" />
+                android:text="Select Model" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </LinearLayout>

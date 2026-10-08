@@ -34,9 +34,9 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnThemeSettingsClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -58,7 +58,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="THEME MODE"
+                android:text="Theme mode"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.1"
@@ -139,8 +139,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
                         android:text="Derive accent colors from system wallpaper (Android 12+). Takes precedence over custom palettes."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
@@ -160,7 +160,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ACCENT PALETTE (WHEN DYNAMIC COLOR IS OFF)"
+                android:text="Accent palette (when Dynamic Color is off)"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.1"
@@ -229,7 +229,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TYPOGRAPHY STYLE"
+                android:text="Typography style"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.1"
@@ -284,7 +284,6 @@
             android:id="@+id/btnApplyTheme"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Done"
-            app:cornerRadius="8dp" />
+            android:text="Done" />
     </LinearLayout>
 </LinearLayout>

@@ -31,9 +31,9 @@
         android:singleLine="true"
         android:maxLines="1"
             android:id="@+id/btnTrimClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close Trim Dialog"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -97,14 +97,11 @@
                 <!-- Interactive Play / Pause Overlay Button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnTrimPlayPause"
-                    style="@style/Widget.Material3.Button.IconButton"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
                     android:layout_width="52dp"
                     android:layout_height="52dp"
                     android:layout_gravity="center"
                     app:icon="@drawable/ic_action_play"
-                    app:iconSize="28dp"
-                    app:iconTint="@color/vf_on_primary"
-                    app:backgroundTint="@color/vf_primary"
                     android:alpha="0.85"
                     android:contentDescription="Play or Pause Trim Preview" />
 
@@ -146,7 +143,7 @@
                         android:layout_height="wrap_content"
                         android:text="START TIME"
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="10sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -175,7 +172,7 @@
                         android:layout_height="wrap_content"
                         android:text="CLIP DURATION"
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
 
                     <TextView
                         android:id="@+id/tvTrimDuration"
@@ -199,7 +196,7 @@
                         android:layout_height="wrap_content"
                         android:text="END TIME"
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="10sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -221,9 +218,7 @@
                 android:valueFrom="0"
                 android:valueTo="100"
                 app:values="@array/initial_slider_range"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
+                app:thumbColor="@color/vf_primary" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -231,10 +226,8 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp"
                 android:text="QUICK TIMELINE PRESETS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Quick Presets -->
             <HorizontalScrollView
@@ -290,7 +283,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTrimReset"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -309,7 +302,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTrimCancel"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -324,7 +317,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTrimApply"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -333,8 +326,6 @@
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="Apply Trim"
-            android:textColor="@color/vf_on_primary"
-            app:backgroundTint="@color/vf_primary" />
+            android:text="Apply Trim" />
     </LinearLayout>
 </LinearLayout>

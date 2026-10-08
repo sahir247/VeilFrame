@@ -55,7 +55,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Current"
-                    android:textSize="10sp"
+                    android:textSize="11sp"
                     android:layout_marginTop="2dp"
                     android:textColor="?attr/colorOutline" />
             </LinearLayout>
@@ -86,7 +86,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="New"
-                    android:textSize="10sp"
+                    android:textSize="11sp"
                     android:layout_marginTop="2dp"
                     android:textColor="?attr/colorOutline" />
             </LinearLayout>
@@ -321,7 +321,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/picker_cancel_btn"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.VeilFrame.Button.Quiet"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"
@@ -329,7 +329,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/picker_apply_btn"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.VeilFrame.Button.Primary"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Apply Color" />

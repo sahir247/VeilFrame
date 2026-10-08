@@ -28,25 +28,23 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBgResetCompare"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_gravity="end"
                 android:layout_marginEnd="8dp"
                 android:visibility="gone"
                 android:contentDescription="Reset comparison"
-                app:icon="@drawable/ic_reset"
-                app:iconSize="20dp" />
+                app:icon="@drawable/ic_reset" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBgSavePng"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
                 android:text="Save PNG"
-                android:textSize="12sp"
                 app:icon="@drawable/ic_action_save"
                 app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
@@ -213,13 +211,12 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBgChangeImage"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="48dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:text="Change Image"
-                    android:textSize="13sp"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="18dp" />
 
@@ -230,7 +227,6 @@
                     android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:text="Remove Background"
-                    android:textSize="13sp"
                     app:icon="@drawable/ic_crop"
                     app:iconSize="18dp" />
             </LinearLayout>

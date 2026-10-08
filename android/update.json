@@ -1,15 +1,15 @@
 {
-  "versionCode": 229,
-  "versionName": "2.2.9",
-  "tag": "v2.2.9",
+  "versionCode": 230,
+  "versionName": "2.3.0",
+  "tag": "v2.3.0",
   "apk": "VeilFrame-android-arm64.apk",
   "sha256": "",
   "mandatory": false,
   "changelog": [
-    "OpenCV 4.14.0 SDK: In-tree native integration with WeChatQRCode and Videoio",
-    "Computer Vision Subsystem: Added QuadDetector, TemplateMatcher, and Farneback FlowEstimator",
-    "Compiler & Build Stability: In-process Kotlin compilation and preserved native debug symbols",
-    "Modern Toolchain: Updated Android SDK command-line tools to latest standards",
-    "UI Redesign Baseline: Architecture foundation for upcoming multi-workspace shell"
+    "Material 3 Expressive design system v3.0 (Quiet Intensity): spring-physics motion, emphasized typography, container hierarchy",
+    "Expressive components: 64dp navigation bar with pill indicator, thick & wavy progress indicators, 5-tier button sizes with shape morph",
+    "Monochrome-first theming extended with tertiary accents, full surface-container ladders (light/dark/AMOLED) and Dynamic Color role mapping",
+    "Accessibility: 40dp+ icon button targets, 48dp secondary actions, 11sp text floor, reduced-motion spring collapse",
+    "AI Upscaler stability & performance program (see docs/UPSCALER_STABILITY_FIX_PLAN.md)"
   ]
 }

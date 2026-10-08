@@ -50,54 +50,50 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="VeilFrame"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:visibility="gone"
                         android:text="Privacy Forensics &amp; AI Bundler"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="10sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvVersionBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@color/vf_surface_variant"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
-                    android:text="v2.2.9"
-                    android:textColor="@color/vf_secondary"
-                    android:textSize="10sp"
+                    android:background="@drawable/bg_badge_pill"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="v2.3.0"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="11sp"
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnToggleTheme"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="6dp"
                     android:contentDescription="Toggle Light/Dark Theme"
                     app:icon="@drawable/ic_theme_toggle"
-                    app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSettings"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
                     android:contentDescription="Appearance and Customization Settings"
                     app:icon="@drawable/ic_settings"
-                    app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
@@ -124,9 +120,9 @@
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnBackToHome"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:contentDescription="Back to Home Dashboard"
                     app:icon="@drawable/ic_arrow_back"
                     app:iconTint="@color/vf_primary" />
@@ -142,19 +138,17 @@
                         android:id="@+id/tvToolTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="AI BUNDLE"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:text="AI Bundle"
+                        android:textAppearance="?attr/textAppearanceTitleLargeEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:id="@+id/tvToolSubtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Package source code for LLM analysis"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="10sp"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:maxLines="1"
                         android:ellipsize="end" />
                 </LinearLayout>
@@ -163,36 +157,34 @@
                     android:id="@+id/tvToolStatusBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@color/vf_surface_variant"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp"
+                    android:background="@drawable/bg_badge_pill"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
                     android:text="READY"
                     android:textColor="@color/vf_accent_green"
-                    android:textSize="10sp"
+                    android:textSize="11sp"
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnToolToggleTheme"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
                     android:contentDescription="Toggle Light/Dark Theme"
                     app:icon="@drawable/ic_theme_toggle"
-                    app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnToolSettings"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:layout_marginStart="4dp"
                     android:contentDescription="Appearance and Customization Settings"
                     app:icon="@drawable/ic_settings"
-                    app:iconSize="18dp"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
@@ -225,10 +217,7 @@
                 android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="20dp"
-                app:strokeColor="@color/vf_primary"
-                app:strokeWidth="1.5dp">
+                style="@style/Widget.VeilFrame.Card.Hero">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -246,23 +235,21 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="OFFLINE AI ENHANCEMENT"
-                            android:textColor="@color/vf_primary"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.08" />
+                            android:text="Offline AI enhancement"
+                            android:textAppearance="?attr/textAppearanceLabelSmall"
+                            android:textColor="?attr/colorTertiary" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:background="@color/vf_surface_variant"
-                            android:paddingStart="6dp"
-                            android:paddingEnd="6dp"
-                            android:paddingTop="2dp"
-                            android:paddingBottom="2dp"
+                            android:background="@drawable/bg_badge_pill"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
                             android:text="Private &amp; Offline"
-                            android:textColor="@color/vf_secondary"
-                            android:textSize="10sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="11sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -271,17 +258,16 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="AI Image Upscaler"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="18sp"
-                        android:textStyle="bold" />
+                        android:textAppearance="?attr/textAppearanceTitleLargeEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:text="Offline AI super-resolution &amp; restoration (2x / 4x) without cloud data leakage."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="12sp" />
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -291,11 +277,10 @@
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.VeilFrame.Button.CTA"
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
+                            android:layout_height="wrap_content"
                             android:text="Launch Upscaler"
-                            android:textSize="12sp"
                             android:clickable="false"
                             app:icon="@drawable/ic_resize"
                             app:iconSize="16dp" />
@@ -310,7 +295,7 @@
                             android:layout_height="20dp"
                             android:src="@drawable/ic_arrow_forward"
                             android:contentDescription="Launch"
-                            app:tint="@color/vf_primary" />
+                            app:tint="?attr/colorPrimary" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -320,11 +305,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:text="MEDIA STUDIOS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="Media studios"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Tool 1: Video Studio & Visual Trimmer -->
             <com.google.android.material.card.MaterialCardView
@@ -334,9 +317,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -351,7 +334,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_trim"
                         android:contentDescription="Video Studio Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -364,19 +347,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="VIDEO STUDIO &amp; COMPRESSOR"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Video Studio &amp; Compressor"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Trim, scale, rotate &amp; compress video"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -384,7 +365,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Video Studio"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -396,9 +377,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -413,7 +394,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_crop"
                         android:contentDescription="Image Studio Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -426,19 +407,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="IMAGE STUDIO &amp; COMPRESSOR"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Image Studio &amp; Compressor"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Crop, filter presets, EXIF &amp; compression"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -446,7 +425,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Image Studio"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -458,9 +437,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -475,7 +454,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_resize"
                         android:contentDescription="AI Image Upscaler Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -488,19 +467,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="IMAGE UPSCALER (AI)"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Image Upscaler (AI)"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Offline AI super-resolution (Real-ESRGAN)"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -508,7 +485,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Image Upscaler"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -520,9 +497,9 @@
                 android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -537,7 +514,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tool_qr"
                         android:contentDescription="QR Code Studio Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -550,19 +527,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="QR CODE STUDIO"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="QR Code Studio"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="11 artistic styles, presets &amp; safe scanner"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -570,7 +545,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open QR Studio"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -582,9 +557,9 @@
                 android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -599,7 +574,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_camera"
                         android:contentDescription="Document Scanner Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -612,19 +587,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="DOCUMENT SCANNER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Document Scanner"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Multi-page intake, corner detection &amp; PDF export"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -632,7 +605,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Document Scanner"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -641,11 +614,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:text="PRIVACY CLEANERS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="Privacy cleaners"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Tool 5: Video Cleaner -->
             <com.google.android.material.card.MaterialCardView
@@ -655,9 +626,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -672,7 +643,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_video"
                         android:contentDescription="Video Cleaner Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -685,19 +656,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="VIDEO CLEANER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Video Cleaner"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Scrub bitstream metadata &amp; sensor noise"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -705,7 +674,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Video Cleaner"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -717,9 +686,9 @@
                 android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -734,7 +703,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_image"
                         android:contentDescription="Image Cleaner Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -747,19 +716,17 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="IMAGE CLEANER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:text="Image Cleaner"
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Strip EXIF, GPS &amp; camera maker notes"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -767,7 +734,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Image Cleaner"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -776,11 +743,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:text="FORENSICS &amp; AI"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="Forensics &amp; AI"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Tool 7: Folder Scanner -->
             <com.google.android.material.card.MaterialCardView
@@ -790,9 +755,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -807,7 +772,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_folder"
                         android:contentDescription="Folder Scanner Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -821,18 +786,16 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="FOLDER SCANNER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Forensic audits, secrets &amp; duplicate hunt"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -840,7 +803,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Folder Scanner"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -852,9 +815,9 @@
                 android:layout_marginBottom="10dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -869,7 +832,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_tab_bundle"
                         android:contentDescription="AI Bundle Tool"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -883,18 +846,16 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="AI BUNDLE"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Source code LLM analysis bundler"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -902,7 +863,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open AI Bundle"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -914,9 +875,9 @@
                 android:layout_marginBottom="16dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -931,7 +892,7 @@
                         android:layout_height="36dp"
                         android:src="@drawable/ic_text"
                         android:contentDescription="Markdown Viewer"
-                        app:tint="@color/vf_primary" />
+                        app:tint="?attr/colorPrimary" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -945,18 +906,16 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="MARKDOWN VIEWER"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="GFM preview, Mermaid, KaTeX &amp; editor"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <ImageView
@@ -964,7 +923,7 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_arrow_forward"
                         android:contentDescription="Open Markdown Viewer"
-                        app:tint="@color/vf_secondary" />
+                        app:tint="?attr/colorSecondary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -973,19 +932,17 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:text="CORE GUARANTEES"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="Core guarantees"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                app:cardBackgroundColor="@color/vf_surface"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
                 app:cardCornerRadius="16dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1014,8 +971,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="Zero cloud telemetry"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -1037,8 +994,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:text="SHA-256 verified"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1048,19 +1005,17 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="ABOUT &amp; IN-APP UPDATES"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="About &amp; in-app updates"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                app:cardBackgroundColor="@color/vf_surface"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
                 app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1091,8 +1046,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
                             android:text="Installed: v2.2.7 • Local Engine"
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
                     <!-- Separate Balanced Horizontal Action Row Below -->
@@ -1105,7 +1060,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRepairApp"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:minHeight="40dp"
@@ -1115,9 +1070,7 @@
                             android:paddingEnd="4dp"
                             android:text="Repair"
                             android:textColor="@color/vf_accent_amber"
-                            android:textSize="11sp"
                             app:strokeColor="@color/vf_accent_amber"
-                            app:cornerRadius="8dp"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
                             app:icon="@drawable/ic_reset"
@@ -1126,7 +1079,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnCheckUpdates"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:minHeight="40dp"
@@ -1136,9 +1089,6 @@
                             android:paddingEnd="4dp"
                             android:text="Check Updates"
                             android:textColor="@color/vf_primary"
-                            android:textSize="11sp"
-                            app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="8dp"
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
                             app:icon="@drawable/ic_system_update"
@@ -1147,14 +1097,14 @@
                     </LinearLayout>
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
                         android:id="@+id/progressUpdateCheck"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
                         android:indeterminate="true"
                         android:visibility="gone"
-                        app:indicatorColor="@color/vf_accent_green"
-                        app:trackColor="@color/vf_surface_variant" />
+                        app:indicatorColor="@color/vf_accent_green" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -1164,19 +1114,17 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="WHAT'S NEW IN v2.2.9"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="What's new in v2.3.0"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="24dp"
-                app:cardBackgroundColor="@color/vf_surface"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
                 app:cardCornerRadius="12dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1189,9 +1137,9 @@
                         android:id="@+id/tvWhatsNewContent"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="• Adaptive AI inference engine with benchmark-driven parallelism\n• Material 3 Expressive tactile transitions and AMOLED true black"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp"
+                        android:text="• Material 3 Expressive design system v3.0 — spring motion, wavy progress, emphasized typography\n• Monochrome-first themes, tertiary accents, container hierarchy &amp; AMOLED true black"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:lineSpacingExtra="5dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -1201,11 +1149,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:text="RESOURCES &amp; COMMUNITY"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:text="Resources &amp; community"
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -1218,67 +1164,55 @@
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnLinkGithub"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="GitHub"
-                    android:textColor="@color/vf_secondary"
-                    android:textSize="10sp"
                     android:padding="0dp"
-                    app:cornerRadius="8dp"
-                    app:strokeColor="@color/vf_surface_stroke" />
+                    app:strokeColor="?attr/colorOutlineVariant" />
 
                 <com.google.android.material.button.MaterialButton
         android:ellipsize="end"
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnLinkDocs"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="Docs"
-                    android:textColor="@color/vf_secondary"
-                    android:textSize="10sp"
                     android:padding="0dp"
-                    app:cornerRadius="8dp"
-                    app:strokeColor="@color/vf_surface_stroke" />
+                    app:strokeColor="?attr/colorOutlineVariant" />
 
                 <com.google.android.material.button.MaterialButton
         android:ellipsize="end"
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnLinkChangelog"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="4dp"
                     android:text="Changelog"
-                    android:textColor="@color/vf_secondary"
-                    android:textSize="10sp"
                     android:padding="0dp"
-                    app:cornerRadius="8dp"
-                    app:strokeColor="@color/vf_surface_stroke" />
+                    app:strokeColor="?attr/colorOutlineVariant" />
 
                 <com.google.android.material.button.MaterialButton
         android:ellipsize="end"
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnLinkAbout"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="0dp"
                     android:layout_height="40dp"
                     android:layout_weight="1"
                     android:text="About"
-                    android:textColor="@color/vf_secondary"
-                    android:textSize="10sp"
                     android:padding="0dp"
-                    app:cornerRadius="8dp"
-                    app:strokeColor="@color/vf_surface_stroke" />
+                    app:strokeColor="?attr/colorOutlineVariant" />
             </LinearLayout>
 
         </LinearLayout>
@@ -1309,9 +1243,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1335,10 +1269,8 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="Target Selection"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.04" />
+                            android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
 
                     <!-- State A: Empty State (Shown when no target is selected) -->
@@ -1357,7 +1289,7 @@
                             android:layout_height="40dp"
                             android:src="@drawable/ic_folder_pick"
                             android:contentDescription="Select Target Icon"
-                            app:tint="@color/vf_primary" />
+                            app:tint="?attr/colorPrimary" />
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -1386,7 +1318,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnPickFolder"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.VeilFrame.Button.Action"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:minHeight="42dp"
@@ -1396,12 +1328,9 @@
                                 android:paddingEnd="8dp"
                                 android:text="Select Folder"
                                 android:textColor="@color/vf_primary"
-                                android:textSize="11sp"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
-                                app:backgroundTint="@color/vf_surface_variant"
-                                app:cornerRadius="21dp"
                                 app:icon="@drawable/ic_folder_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
@@ -1409,7 +1338,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnPickFile"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.VeilFrame.Button.Action"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:minHeight="42dp"
@@ -1419,12 +1348,9 @@
                                 android:paddingEnd="8dp"
                                 android:text="Select File"
                                 android:textColor="@color/vf_primary"
-                                android:textSize="11sp"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
-                                app:backgroundTint="@color/vf_surface_variant"
-                                app:cornerRadius="21dp"
                                 app:icon="@drawable/ic_file_pick"
                                 app:iconSize="16dp"
                                 app:iconPadding="6dp"
@@ -1467,7 +1393,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="READY"
                                 android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -1498,7 +1424,7 @@
                                 android:layout_marginTop="4dp"
                                 android:text="Select a target below to begin processing"
                                 android:textColor="@color/vf_accent_green"
-                                android:textSize="10sp" />
+                                android:textSize="11sp" />
                         </LinearLayout>
 
                         <!-- Action Buttons when Mounted: Change or Clear -->
@@ -1509,7 +1435,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnChangeTarget"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.VeilFrame.Button.Utility"
                                 android:layout_width="0dp"
                                 android:layout_height="38dp"
                                 android:minHeight="38dp"
@@ -1517,12 +1443,9 @@
                                 android:layout_marginEnd="4dp"
                                 android:text="Change"
                                 android:textColor="@color/vf_primary"
-                                android:textSize="11sp"
-                                android:textStyle="bold"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
-                                app:cornerRadius="19dp"
                                 app:strokeColor="@color/vf_primary"
                                 app:strokeWidth="1dp"
                                 app:icon="@drawable/ic_folder_pick"
@@ -1531,7 +1454,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnClearTarget"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.VeilFrame.Button.Utility"
                                 android:layout_width="0dp"
                                 android:layout_height="38dp"
                                 android:minHeight="38dp"
@@ -1539,12 +1462,9 @@
                                 android:layout_marginStart="4dp"
                                 android:text="Clear"
                                 android:textColor="@color/vf_accent_red"
-                                android:textSize="11sp"
-                                android:textStyle="bold"
                                 android:maxLines="1"
                                 android:singleLine="true"
                                 android:ellipsize="end"
-                                app:cornerRadius="19dp"
                                 app:strokeColor="@color/vf_accent_red"
                                 app:strokeWidth="1dp"
                                 app:icon="@drawable/ic_action_clear"
@@ -1561,9 +1481,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1577,7 +1497,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="12dp"
-                        android:text="TOOL CONFIGURATION"
+                        android:text="Tool configuration"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:textStyle="bold"
@@ -1632,9 +1552,7 @@
                             android:valueFrom="0"
                             android:valueTo="100"
                             android:value="95"
-                            app:thumbColor="@color/vf_primary"
-                            app:trackColorActive="@color/vf_primary"
-                            app:trackColorInactive="@color/vf_surface_variant" />
+                            app:thumbColor="@color/vf_primary" />
                     </LinearLayout>
 
                     <!-- Primary Setting Row -->
@@ -1655,7 +1573,7 @@
                         android:layout_marginBottom="6dp"
                         android:text="Configure primary parameters for this tool."
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
 
                     <!-- Wrapping Responsive Chip Group -->
                     <com.google.android.material.chip.ChipGroup
@@ -1684,7 +1602,7 @@
                         android:layout_marginBottom="6dp"
                         android:text="Select the format for the generated artifact."
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="10sp" />
+                        android:textSize="11sp" />
 
                     <!-- Wrapping Responsive Chip Group -->
                     <com.google.android.material.chip.ChipGroup
@@ -1730,7 +1648,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="Description 1"
                                     android:textColor="@color/vf_text_muted"
-                                    android:textSize="10sp" />
+                                    android:textSize="11sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
@@ -1770,7 +1688,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="Description 2"
                                     android:textColor="@color/vf_text_muted"
-                                    android:textSize="10sp" />
+                                    android:textSize="11sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
@@ -1810,7 +1728,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="Description 3"
                                     android:textColor="@color/vf_text_muted"
-                                    android:textSize="10sp" />
+                                    android:textSize="11sp" />
                             </LinearLayout>
 
                             <com.google.android.material.materialswitch.MaterialSwitch
@@ -1830,9 +1748,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1869,7 +1787,7 @@
                             android:paddingBottom="2dp"
                             android:text="HIGH PROTECTION"
                             android:textColor="@color/vf_accent_green"
-                            android:textSize="10sp"
+                            android:textSize="11sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -1896,8 +1814,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="• 100% on-device execution (zero cloud telemetry)"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -1907,9 +1825,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -1947,21 +1865,20 @@
                             android:paddingBottom="3dp"
                             android:text="IDLE"
                             android:textColor="@color/vf_secondary"
-                            android:textSize="10sp"
+                            android:textSize="11sp"
                             android:textStyle="bold" />
                     </LinearLayout>
 
                     <!-- Linear Progress Bar -->
                     <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Thick"
                         android:id="@+id/progressIndicator"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:visibility="invisible"
-                        app:trackCornerRadius="4dp"
                         app:trackThickness="8dp"
-                        app:indicatorColor="@color/vf_accent_green"
-                        app:trackColor="@color/vf_surface_variant" />
+                        app:indicatorColor="@color/vf_accent_green" />
 
                     <!-- Status & Metrics Row (Fixed/stable container so live path updates never jitter layout) -->
                     <LinearLayout
@@ -1980,8 +1897,8 @@
                             android:maxLines="2"
                             android:ellipsize="middle"
                             android:text="Ready for execution."
-                            android:textColor="@color/vf_text_secondary"
-                            android:textSize="11sp" />
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <TextView
                             android:id="@+id/tvProgressDetails"
@@ -1998,16 +1915,14 @@
                     <!-- Collapsible Accordion Header for Technical Logs (Extended gap between monitor and console) -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnToggleConsole"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="match_parent"
                         android:layout_height="38dp"
                         android:layout_marginTop="18dp"
                         android:text="View Technical Logs"
                         android:textColor="@color/vf_secondary"
-                        android:textSize="11sp"
                         app:icon="@drawable/ic_expand_more"
                         app:iconSize="16dp"
-                        app:iconTint="@color/vf_secondary"
                         app:iconGravity="textEnd" />
 
                     <!-- Collapsible Technical Console Body -->
@@ -2031,7 +1946,7 @@
                                 android:layout_weight="1"
                                 android:text="RAW CONSOLE TELEMETRY"
                                 android:textColor="@color/vf_text_muted"
-                                android:textSize="10sp"
+                                android:textSize="11sp"
                                 android:fontFamily="monospace" />
 
                             <com.google.android.material.button.MaterialButton
@@ -2039,39 +1954,33 @@
         android:singleLine="true"
         android:maxLines="1"
                                 android:id="@+id/btnCopyLogs"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:contentDescription="Copy Logs"
-                                app:icon="@drawable/ic_action_copy"
-                                app:iconTint="@color/vf_secondary"
-                                app:iconSize="13dp" />
+                                app:icon="@drawable/ic_action_copy" />
 
                             <com.google.android.material.button.MaterialButton
         android:ellipsize="end"
         android:singleLine="true"
         android:maxLines="1"
                                 android:id="@+id/btnClearLogs"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:contentDescription="Clear Logs"
-                                app:icon="@drawable/ic_action_clear"
-                                app:iconTint="@color/vf_secondary"
-                                app:iconSize="13dp" />
+                                app:icon="@drawable/ic_action_clear" />
 
                             <com.google.android.material.button.MaterialButton
         android:ellipsize="end"
         android:singleLine="true"
         android:maxLines="1"
                                 android:id="@+id/btnExpandLogs"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="28dp"
-                                android:layout_height="28dp"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:contentDescription="Toggle Log Height"
-                                app:icon="@drawable/ic_action_expand"
-                                app:iconTint="@color/vf_secondary"
-                                app:iconSize="13dp" />
+                                app:icon="@drawable/ic_action_expand" />
                         </LinearLayout>
 
                         <!-- Scrollable Monospace Terminal -->
@@ -2090,7 +1999,7 @@
                                 android:lineSpacingExtra="2dp"
                                 android:text="[SYS] Initializing VeilFrame forensic core...\n[SYS] Ready for execution."
                                 android:textColor="@color/vf_console_text"
-                                android:textSize="10sp" />
+                                android:textSize="11sp" />
                         </androidx.core.widget.NestedScrollView>
                     </LinearLayout>
                 </LinearLayout>
@@ -2103,8 +2012,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 android:visibility="gone"
-                app:cardBackgroundColor="@color/vf_surface"
-                app:cardCornerRadius="24dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="16dp"
                 app:strokeColor="@color/vf_accent_green"
                 app:strokeWidth="1dp">
 
@@ -2158,21 +2067,18 @@
                         android:layout_marginTop="4dp"
                         android:layout_marginBottom="8dp"
                         android:text="Output ready in local cache"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnResultPreview"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="match_parent"
                         android:layout_height="40dp"
                         android:layout_marginBottom="8dp"
                         android:text="Preview Markdown"
                         android:textColor="@color/vf_primary"
-                        android:textSize="12sp"
                         android:visibility="gone"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="20dp"
                         app:icon="@drawable/ic_visibility"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
@@ -2187,16 +2093,12 @@
         android:singleLine="true"
         android:maxLines="1"
                             android:id="@+id/btnResultSave"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="0dp"
                             android:layout_height="40dp"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
                             android:text="Save As..."
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="11sp"
-                            app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="20dp"
                             app:icon="@drawable/ic_action_save"
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
@@ -2206,16 +2108,12 @@
         android:singleLine="true"
         android:maxLines="1"
                             android:id="@+id/btnResultShare"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="0dp"
                             android:layout_height="40dp"
                             android:layout_weight="1"
                             android:layout_marginStart="4dp"
                             android:text="Share File"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="11sp"
-                            app:backgroundTint="@color/vf_surface_variant"
-                            app:cornerRadius="20dp"
                             app:icon="@drawable/ic_action_share"
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
@@ -2315,11 +2213,7 @@
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
-        app:cardCornerRadius="28dp"
-        app:cardElevation="10dp"
-        app:cardBackgroundColor="@color/vf_surface"
-        app:strokeColor="@color/vf_surface_stroke"
-        app:strokeWidth="1dp"
+        style="@style/Widget.VeilFrame.Dock"
         android:visibility="gone">
 
         <LinearLayout
@@ -2335,33 +2229,26 @@
             <!-- Tier 1: Primary Execution Action (Full Width, Bold) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnExecute"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.VeilFrame.Button.Execute"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginBottom="6dp"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
                 android:ellipsize="end"
-                android:letterSpacing="0.06"
                 android:maxLines="1"
                 android:singleLine="true"
-                android:text="EXECUTE"
-                android:textColor="@color/vf_on_primary"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                app:backgroundTint="@color/vf_primary"
-                app:cornerRadius="24dp"
+                android:text="Execute"
                 app:icon="@drawable/ic_action_play"
-                app:iconGravity="textStart"
-                app:iconTint="@color/vf_on_primary" />
+                app:iconGravity="textStart" />
 
             <!-- Tier 2: Secondary Actions (50/50 Split, Single-Line Labels) -->
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="42dp"
+                android:layout_height="48dp"
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnExportResult"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_marginEnd="4dp"
@@ -2371,17 +2258,12 @@
                     android:maxLines="1"
                     android:singleLine="true"
                     android:text="Save Result"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="12sp"
-                    app:backgroundTint="@color/vf_surface_variant"
-                    app:cornerRadius="21dp"
                     app:icon="@drawable/ic_action_save"
-                    app:iconGravity="textStart"
-                    app:iconTint="@color/vf_secondary" />
+                    app:iconGravity="textStart" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnShareResult"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_marginStart="4dp"
@@ -2391,13 +2273,8 @@
                     android:maxLines="1"
                     android:singleLine="true"
                     android:text="Share"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="12sp"
-                    app:backgroundTint="@color/vf_surface_variant"
-                    app:cornerRadius="21dp"
                     app:icon="@drawable/ic_action_share"
-                    app:iconGravity="textStart"
-                    app:iconTint="@color/vf_secondary" />
+                    app:iconGravity="textStart" />
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
@@ -2413,8 +2290,6 @@
         android:background="?attr/colorSurface"
         android:visibility="gone"
         app:elevation="8dp"
-        app:itemIconTint="@color/bottom_nav_color_selector"
-        app:itemTextColor="@color/bottom_nav_color_selector"
         app:menu="@menu/bottom_nav_menu" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
@@ -2425,8 +2300,6 @@
         android:background="?attr/colorSurface"
         android:visibility="visible"
         app:elevation="8dp"
-        app:itemIconTint="@color/bottom_nav_color_selector"
-        app:itemTextColor="@color/bottom_nav_color_selector"
         app:menu="@menu/bottom_nav_menu" />
 
     <!-- 8. SETTINGS SLIDE-OVER OVERLAY                                    -->
@@ -2435,7 +2308,7 @@
         android:id="@+id/scrimSettings"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#99000000"
+        android:background="@color/vf_scrim"
         android:visibility="gone"
         android:elevation="20dp" />
 

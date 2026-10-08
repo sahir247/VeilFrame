@@ -30,13 +30,12 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocExportPdf"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
                 android:text="Export PDF"
-                android:textSize="12sp"
                 app:icon="@drawable/ic_action_save"
                 app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
@@ -97,7 +96,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocEmptyImport"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/Widget.VeilFrame.Button.Utility"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
@@ -177,49 +176,44 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageMoveLeft"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:contentDescription="Move Left"
-                        app:icon="@drawable/ic_arrow_back"
-                        app:iconSize="20dp" />
+                        app:icon="@drawable/ic_arrow_back" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageMoveRight"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:contentDescription="Move Right"
-                        app:icon="@drawable/ic_arrow_forward"
-                        app:iconSize="20dp" />
+                        app:icon="@drawable/ic_arrow_forward" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageRotate"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:contentDescription="Rotate 90"
-                        app:icon="@drawable/ic_rotate"
-                        app:iconSize="20dp" />
+                        app:icon="@drawable/ic_rotate" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageDuplicate"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:contentDescription="Duplicate Page"
-                        app:icon="@drawable/ic_action_copy"
-                        app:iconSize="20dp" />
+                        app:icon="@drawable/ic_action_copy" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDocPageDelete"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                         android:contentDescription="Delete Page"
                         app:icon="@drawable/ic_action_clear"
-                        app:iconTint="@android:color/holo_red_light"
-                        app:iconSize="20dp" />
+                        app:iconTint="@android:color/holo_red_light" />
                 </LinearLayout>
 
                 <!-- Processing / Filter Chips -->
@@ -297,26 +291,24 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnDocAddCamera"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:text="+ Camera"
-                    android:textSize="12sp"
                     app:icon="@drawable/ic_camera"
                     app:iconSize="16dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnDocAddPhotos"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:layout_marginStart="3dp"
                     android:layout_marginEnd="3dp"
                     android:text="+ Photos"
-                    android:textSize="12sp"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="16dp" />
 
@@ -327,7 +319,6 @@
                     android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:text="Auto Crop"
-                    android:textSize="12sp"
                     app:icon="@drawable/ic_crop"
                     app:iconSize="16dp" />
             </LinearLayout>
@@ -366,9 +357,9 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamClose"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:contentDescription="Close Camera"
                 app:icon="@drawable/ic_close"
                 app:iconTint="@color/vf_text_primary" />
@@ -390,9 +381,9 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamFlip"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_marginEnd="4dp"
                 android:contentDescription="Flip Camera"
                 app:icon="@drawable/ic_rotate"
@@ -400,9 +391,9 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamFlash"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:contentDescription="Toggle Flash"
                 app:icon="@drawable/ic_flash_off"
                 app:iconTint="@color/vf_text_primary" />
@@ -482,9 +473,9 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamImport"
-                style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:contentDescription="Import Photos"
                 app:icon="@drawable/ic_tab_image"
                 app:iconTint="@color/vf_text_primary" />
@@ -513,11 +504,10 @@
             <!-- Done / Page Counter Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDocCamDone"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
                 android:text="Done (0)"
-                android:textSize="12sp"
                 app:icon="@drawable/ic_done" />
         </LinearLayout>
     </FrameLayout>

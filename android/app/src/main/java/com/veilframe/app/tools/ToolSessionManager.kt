@@ -215,13 +215,13 @@ class ToolSessionManager(
     }
 
     fun getToolExecuteText(mode: ToolMode): String = when (mode) {
-        ToolMode.AI_BUNDLE -> "GENERATE AI BUNDLE"
-        ToolMode.VIDEO_CLEANER -> "SANITIZE VIDEO"
-        ToolMode.IMAGE_CLEANER -> "SCRUB IMAGE METADATA"
-        ToolMode.FOLDER_SCANNER -> "START FORENSIC AUDIT"
-        ToolMode.IMAGE_COMPRESSOR -> "COMPRESS IMAGE"
-        ToolMode.VIDEO_COMPRESSOR -> "COMPRESS VIDEO"
-        ToolMode.IMAGE_UPSCALER -> "UPSCALE IMAGE"
+        ToolMode.AI_BUNDLE -> "Generate AI bundle"
+        ToolMode.VIDEO_CLEANER -> "Sanitize video"
+        ToolMode.IMAGE_CLEANER -> "Scrub image metadata"
+        ToolMode.FOLDER_SCANNER -> "Start forensic audit"
+        ToolMode.IMAGE_COMPRESSOR -> "Compress image"
+        ToolMode.VIDEO_COMPRESSOR -> "Compress video"
+        ToolMode.IMAGE_UPSCALER -> "Upscale image"
     }
 
     fun configureToolUI(mode: ToolMode) {
@@ -253,11 +253,11 @@ class ToolSessionManager(
                     switch3Title = "Compress Dependency Manifests",
                     switch3Desc = "Condense package-lock, poetry.lock, and cargo.lock files",
                     switch3Checked = true,
-                    executeText = "GENERATE AI BUNDLE"
+                    executeText = "Generate AI bundle"
                 )
             }
             ToolMode.VIDEO_CLEANER -> {
-                binding.tvToolTitle.text = "VIDEO CLEANER"
+                binding.tvToolTitle.text = "Video Cleaner"
                 binding.tvToolSubtitle.text = "Remove forensic identifiers & camera sensor noise"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Video"
@@ -292,11 +292,11 @@ class ToolSessionManager(
                     switch3Title = "Re-encode Bitstream (Watermark Defense)",
                     switch3Desc = "Repacks video bitstream while preserving source original",
                     switch3Checked = true,
-                    executeText = "SANITIZE VIDEO"
+                    executeText = "Sanitize video"
                 )
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvToolTitle.text = "IMAGE CLEANER"
+                binding.tvToolTitle.text = "Image Cleaner"
                 binding.tvToolSubtitle.text = "Strip metadata, camera maker notes, and trace artifacts"
                 binding.btnPickFolder.text = "Batch Folder"
                 binding.btnPickFile.text = "Single Image"
@@ -331,12 +331,12 @@ class ToolSessionManager(
                     switch3Title = "Sanitize ICC Color Profile Metadata",
                     switch3Desc = "Strips proprietary tags while preserving standard sRGB color",
                     switch3Checked = false,
-                    executeText = "SCRUB IMAGE METADATA"
+                    executeText = "Scrub image metadata"
                 )
             }
             ToolMode.FOLDER_SCANNER -> {
                 binding.layoutToolSlider.visibility = View.GONE
-                binding.tvToolTitle.text = "FOLDER SCANNER"
+                binding.tvToolTitle.text = "Folder Scanner"
                 binding.tvToolSubtitle.text = "Perform structural directory audits, secret scans & duplicate hunts"
                 binding.btnPickFolder.text = "Select Folder"
                 binding.btnPickFile.text = "Select File"
@@ -360,7 +360,7 @@ class ToolSessionManager(
                     switch3Title = "Detect Leaked Secrets & API Keys",
                     switch3Desc = "Scan bitstreams for high-entropy tokens and credentials",
                     switch3Checked = false,
-                    executeText = "START FORENSIC AUDIT",
+                    executeText = "Start forensic audit",
                     onPrimaryChipSelected = { selectedIndex ->
                         when (selectedIndex) {
                             0 -> { // Quick Audit
@@ -603,7 +603,7 @@ class ToolSessionManager(
     fun updatePrimaryActionDock(state: ToolSessionState) {
         when (state.jobState) {
             JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING -> {
-                binding.btnExecute.text = "CANCEL PROCESSING"
+                binding.btnExecute.text = "Cancel processing"
                 binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
                 binding.btnExecute.isEnabled = true
                 binding.btnExecute.alpha = 1.0f
@@ -611,7 +611,7 @@ class ToolSessionManager(
                 binding.btnShareResult.isEnabled = false
             }
             JobState.COMPLETE -> {
-                binding.btnExecute.text = "RUN ANOTHER TASK"
+                binding.btnExecute.text = "Run another task"
                 binding.btnExecute.setIconResource(R.drawable.ic_action_play)
                 binding.btnExecute.isEnabled = true
                 binding.btnExecute.alpha = 1.0f
@@ -623,7 +623,7 @@ class ToolSessionManager(
                 binding.btnExportResult.isEnabled = false
                 binding.btnShareResult.isEnabled = false
                 if (state.selectedUri == null) {
-                    binding.btnExecute.text = "SELECT TARGET TO BEGIN"
+                    binding.btnExecute.text = "Select target to begin"
                     binding.btnExecute.setIconResource(R.drawable.ic_folder_pick)
                     binding.btnExecute.isEnabled = true
                     binding.btnExecute.alpha = 1.0f
@@ -640,7 +640,7 @@ class ToolSessionManager(
     fun updatePrivacySummaryUI() {
         when (currentToolMode) {
             ToolMode.AI_BUNDLE -> {
-                binding.tvPrivacyProfileBadge.text = "LLM PACKAGING"
+                binding.tvPrivacyProfileBadge.text = "LLM Packaging"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• Sensitive passwords, OpenAI/AWS tokens & credentials masked" else "• Raw credentials unmasked (masking disabled)"
@@ -662,7 +662,7 @@ class ToolSessionManager(
                 binding.tvPrivacyImpact3.text = if (binding.switchOption3.isChecked) "• Bitstream repacked (PRNU sensor pattern noise mitigated)" else "• Stream remuxed without pixel alteration"
             }
             ToolMode.IMAGE_CLEANER -> {
-                binding.tvPrivacyProfileBadge.text = "METADATA STRIP"
+                binding.tvPrivacyProfileBadge.text = "Metadata Strip"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvPrivacyImpact1.text = if (binding.switchOption1.isChecked) "• EXIF, GPS location & camera maker notes scrubbed" else "• EXIF retained"
@@ -684,7 +684,7 @@ class ToolSessionManager(
             ToolMode.IMAGE_COMPRESSOR,
             ToolMode.VIDEO_COMPRESSOR,
             ToolMode.IMAGE_UPSCALER -> {
-                binding.tvPrivacyProfileBadge.text = "MEDIA STUDIO"
+                binding.tvPrivacyProfileBadge.text = "Media Studio"
                 binding.tvPrivacyProfileBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
                 binding.tvPrivacyProfileBadge.setBackgroundResource(R.color.vf_status_pass_bg)
                 binding.tvPrivacyImpact1.text = "• Visual optimization & size reduction"

@@ -42,9 +42,9 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnUpscalerBack"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:contentDescription="Navigate Back"
                     app:icon="@drawable/ic_arrow_back"
                     app:iconTint="@color/vf_primary" />
@@ -70,15 +70,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="AI Super-Resolution &amp; Tiled Inference"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnUpscalerModelManager"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:contentDescription="Model Manager"
                     app:icon="@drawable/ic_system_update"
                     app:iconTint="@color/vf_primary" />
@@ -132,14 +132,11 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnUpscalerPickImage"
-                    style="@style/Widget.Material3.Button"
+                    style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="wrap_content"
                     android:layout_height="44dp"
                     android:text="Choose Image"
-                    android:textColor="@color/vf_on_primary"
-                    app:backgroundTint="@color/vf_primary"
-                    app:icon="@drawable/ic_add"
-                    app:iconTint="@color/vf_on_primary" />
+                    app:icon="@drawable/ic_add" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -194,7 +191,7 @@
                             android:paddingBottom="3dp"
                             android:text="ORIGINAL"
                             android:textColor="@color/vf_accent_blue"
-                            android:textSize="10sp"
+                            android:textSize="11sp"
                             android:textStyle="bold" />
                     </FrameLayout>
 
@@ -217,11 +214,10 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnUpscalerChangeImage"
-                            style="@style/Widget.Material3.Button.TextButton"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
                             android:layout_height="36dp"
                             android:text="Change"
-                            android:textSize="12sp"
                             android:textColor="@color/vf_primary" />
                     </LinearLayout>
                 </LinearLayout>
@@ -357,18 +353,15 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="AI MODEL"
-                            android:textColor="@color/vf_text_muted"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.06" />
+                            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnUpscalerChangeModel"
-                            style="@style/Widget.Material3.Button.TextButton"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
                             android:layout_height="32dp"
                             android:text="Change Model"
-                            android:textSize="11sp"
                             android:textColor="@color/vf_primary" />
                     </LinearLayout>
 
@@ -429,31 +422,28 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnScale2x"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
                             android:text="2× Scale"
-                            android:textSize="12sp"
                             android:checked="true" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnScale4x"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
-                            android:text="4× Scale"
-                            android:textSize="12sp" />
+                            android:text="4× Scale" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnScale8x"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
-                            android:text="8× Hybrid"
-                            android:textSize="12sp" />
+                            android:text="8× Hybrid" />
                     </com.google.android.material.button.MaterialButtonToggleGroup>
 
                     <TextView
@@ -494,23 +484,22 @@
                         android:layout_marginBottom="8dp" />
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
                         android:id="@+id/progressUpscaler"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:indeterminate="true"
-                        app:indicatorColor="@color/vf_primary"
                         app:trackColor="@color/vf_surface"
                         android:layout_marginBottom="10dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnUpscalerCancel"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
                         android:layout_gravity="end"
                         android:text="Cancel"
-                        android:textColor="@color/vf_accent_red"
-                        android:textSize="12sp" />
+                        android:textColor="@color/vf_accent_red" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -525,25 +514,21 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnUpscalerSave"
-                    style="@style/Widget.Material3.Button"
+                    style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="0dp"
                     android:layout_height="48dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="8dp"
                     android:text="Save"
-                    android:textColor="@color/vf_on_primary"
-                    app:backgroundTint="@color/vf_primary"
-                    app:icon="@drawable/ic_action_save"
-                    app:iconTint="@color/vf_on_primary" />
+                    app:icon="@drawable/ic_action_save" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnUpscalerShare"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="Share"
-                    android:textColor="@color/vf_text_primary"
                     app:icon="@drawable/ic_action_share"
                     app:iconTint="@color/vf_text_primary" />
             </LinearLayout>
@@ -579,10 +564,8 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="PERFORMANCE DIAGNOSTICS"
-                            android:textColor="@color/vf_text_muted"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:letterSpacing="0.06" />
+                            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <ImageView
                             android:id="@+id/imgDiagnosticsChevron"
@@ -644,14 +627,12 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnRunUpscaleBenchmark"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.VeilFrame.Button.Utility"
                             android:layout_width="wrap_content"
                             android:layout_height="36dp"
                             android:text="Run Calibration Benchmark"
-                            android:textSize="11sp"
                             android:textColor="@color/vf_primary"
-                            app:strokeColor="@color/vf_surface_stroke"
-                            app:cornerRadius="8dp" />
+                            app:strokeColor="@color/vf_surface_stroke" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -659,17 +640,11 @@
             <!-- Main Execute Action Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnUpscalerExecute"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.VeilFrame.Button.Primary"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
                 android:text="UPSCALE"
-                android:textColor="@color/vf_on_primary"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.04"
-                app:backgroundTint="@color/vf_primary"
                 app:icon="@drawable/ic_resize"
-                app:iconTint="@color/vf_on_primary"
                 android:layout_marginBottom="8dp" />
 
             <!-- Offline Privacy Guarantee -->

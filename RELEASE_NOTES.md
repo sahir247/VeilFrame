@@ -1,5 +1,15 @@
 # VeilFrame Release Notes
 
+## v2.3.0-rc1 — October 2026 (Release Candidate: M3 Expressive UI)
+
+**Material 3 Expressive design system v3.0 "Quiet Intensity" — full UI/UX migration ([ADR 0005](docs/adr/0005-m3-expressive-design-system.md)).**
+- **Expressive foundation:** Material Components 1.12.0 → 1.14.0; theme re-parented to `Theme.Material3Expressive.DayNight.NoActionBar`; spring-physics motion core (`VfSprings`) replacing overshoot interpolators; hand-copied motion tokens deleted (library is source of truth).
+- **Monochrome-first color system:** full surface-container ladders in light + dark, new tertiary editorial voice for all 5 palettes, outline roles, tokenized scrims; widgets migrated from raw `@color/vf_*` pins to theme roles so Dynamic Color finally flows everywhere.
+- **Components:** all 290 buttons remapped to expressive role styles (XL Execute pill, 48dp tonal actions, 40dp icon buttons — fixing 38dp targets); 64dp expressive navigation bar with pill indicator (custom tint selector deleted); thick 8dp + wavy progress indicators; expressive Medium sliders.
+- **Typography:** emphasized type scale for chrome (title-case section headers, BodyLargeEmphasized card titles); 9–10sp text eliminated (11sp floor); telemetry keeps terminal caps identity.
+- **Containment:** hero card on brightest surface with 48dp top rounding; dock on 32dp XL+ card; cards tokenized to container/outline-variant.
+- **Accessibility:** reduced-motion spring collapse retained, 48dp secondary actions, semantic status = container+icon+text, haptics vocabulary centralized (API 26-safe).
+
 ## v2.2.9 — October 2026 (Stable)
 
 **OpenCV 4.14.0 native SDK, Computer Vision subsystem & UI redesign architecture.**

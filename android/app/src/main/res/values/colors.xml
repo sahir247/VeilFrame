@@ -1,46 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ VeilFrame Expressive Design System v3.0 — "Quiet Intensity" (LIGHT)
+  ~ Monochrome Classic flagship palette + full surface-container ladder + tertiary voice.
+  ~ All legacy vf_* names retained for code/layout compatibility.
+-->
 <resources>
-    <!-- VeilFrame Minimal Monochrome Light Theme Palette -->
-    <!-- Base Surfaces (Clean crisp light gray & white) -->
-    <color name="vf_bg_dark">#F4F4F6</color>
-    <color name="vf_background">#F4F4F6</color>
+    <!-- Base Surfaces -->
+    <color name="vf_bg_dark">#FAFAFB</color>
+    <color name="vf_background">#FAFAFB</color>
     <color name="vf_surface">#FFFFFF</color>
     <color name="vf_surface_variant">#EAEAEA</color>
     <color name="vf_surface_stroke">#D4D4D8</color>
-    
+
+    <!-- Expressive surface-container ladder (NEW) -->
+    <color name="vf_container_lowest">#FFFFFF</color>
+    <color name="vf_container_low">#FAFAFB</color>
+    <color name="vf_container">#F4F4F6</color>
+    <color name="vf_container_high">#EEEEF0</color>
+    <color name="vf_container_highest">#E8E8EB</color>
+
     <!-- Monochrome Core (Deep matte black & crisp contrast) -->
     <color name="vf_primary">#18181B</color>
     <color name="vf_primary_container">#E4E4E7</color>
     <color name="vf_on_primary">#FFFFFF</color>
-    
+    <color name="vf_on_primary_container">#18181B</color>
+
     <color name="vf_secondary">#52525B</color>
     <color name="vf_secondary_container">#E4E4E7</color>
-    <color name="vf_on_secondary">#18181B</color>
-    
-    <!-- Less Saturated Status Colors -->
+    <color name="vf_on_secondary">#FAFAFA</color>
+    <color name="vf_on_secondary_container">#18181B</color>
+
+    <!-- Tertiary — editorial neutral voice (NEW) -->
+    <color name="vf_tertiary">#3F3F46</color>
+    <color name="vf_tertiary_container">#D4D4D8</color>
+    <color name="vf_on_tertiary">#FAFAFA</color>
+    <color name="vf_on_tertiary_container">#18181B</color>
+
+    <!-- Outline roles (NEW) -->
+    <color name="vf_outline">#A1A1AA</color>
+    <color name="vf_outline_variant">#D4D4D8</color>
+
+    <!-- Less Saturated Status Colors (semantic, palette-invariant) -->
     <!-- Pass / Success: Clean sage green -->
     <color name="vf_accent_green">#2E7D32</color>
     <color name="vf_status_pass_bg">#E8F5E9</color>
-    
+
     <!-- Warning / In-Progress: Warm amber -->
     <color name="vf_accent_amber">#B45309</color>
     <color name="vf_status_warn_bg">#FEF3C7</color>
-    
+
     <!-- Error / Fail: Terracotta red -->
     <color name="vf_accent_red">#C53030</color>
     <color name="vf_status_fail_bg">#FED7D7</color>
-    
+
     <!-- Info / Neutral: Steel blue -->
     <color name="vf_status_info">#2B6CB0</color>
     <color name="vf_status_info_bg">#EBF8FF</color>
     <color name="vf_accent_blue">#2B6CB0</color>
-    
+
     <!-- Text Hierarchy -->
     <color name="vf_text_primary">#09090B</color>
     <color name="vf_text_secondary">#52525B</color>
     <color name="vf_text_muted">#71717A</color>
-    
-    <!-- Console / Telemetry (Retain terminal dark aesthetic for telemetry) -->
+
+    <!-- Console / Telemetry (terminal aesthetic retained) -->
     <color name="vf_console_bg">#18181B</color>
     <color name="vf_console_text">#F4F4F5</color>
     <color name="ic_launcher_background">#101012</color>
@@ -48,4 +71,6 @@
     <!-- Brand Emblem Vectors -->
     <color name="vf_brand_shield">#18181B</color>
     <color name="vf_brand_inner">#E4E4E7</color>
+    <!-- Modal scrim (tokenized, was hardcoded #99000000) -->
+    <color name="vf_scrim">#99000000</color>
 </resources>

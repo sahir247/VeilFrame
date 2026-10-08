@@ -47,7 +47,7 @@
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeColor="?attr/colorOutlineVariant"
             app:cardBackgroundColor="@color/vf_surface_variant"
             android:clickable="true"
             android:focusable="true">
@@ -88,7 +88,7 @@
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeColor="?attr/colorOutlineVariant"
             app:cardBackgroundColor="@color/vf_surface_variant"
             android:clickable="true"
             android:focusable="true">
@@ -128,7 +128,7 @@
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
-            app:strokeColor="@color/vf_surface_stroke"
+            app:strokeColor="?attr/colorOutlineVariant"
             app:cardBackgroundColor="@color/vf_surface_variant"
             android:clickable="true"
             android:focusable="true">
@@ -162,7 +162,7 @@
     <!-- Cancel Button -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnPickerCancel"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.VeilFrame.Button.Quiet"
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:text="Cancel"

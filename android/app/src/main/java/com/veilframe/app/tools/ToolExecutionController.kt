@@ -66,7 +66,7 @@ class ToolExecutionController(
             return
         }
 
-        binding.btnExecute.text = "CANCEL PROCESSING"
+        binding.btnExecute.text = "Cancel processing"
         binding.btnExecute.setIconResource(R.drawable.ic_action_clear)
         binding.btnExportResult.isEnabled = false
         binding.btnShareResult.isEnabled = false

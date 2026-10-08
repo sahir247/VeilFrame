@@ -136,8 +136,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
                         android:text="All exports remain on your device and are never uploaded to any server."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -180,12 +180,11 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnLibraryExploreTools"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:text="Explore Tools"
-                app:cornerRadius="18dp"
                 app:icon="@drawable/ic_nav_tools"
                 app:iconTint="@color/vf_primary" />
         </LinearLayout>
@@ -202,7 +201,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ACTIVE SESSIONS"
+                android:text="Active sessions"
                 android:textColor="@color/vf_text_secondary"
                 android:textSize="11sp"
                 android:textStyle="bold"

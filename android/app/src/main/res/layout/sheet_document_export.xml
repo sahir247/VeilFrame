@@ -46,7 +46,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="EXPORT SCOPE"
+            android:text="Export scope"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -80,7 +80,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="OUTPUT FORMAT"
+            android:text="Output format"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -121,7 +121,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="PAPER SIZE"
+            android:text="Paper size"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -197,7 +197,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="ORIENTATION"
+            android:text="Orientation"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -238,7 +238,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="PAGE FITTING &amp; MARGINS"
+            android:text="Page fitting &amp; margins"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -293,7 +293,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="IMAGE COMPRESSION"
+            android:text="Image compression"
             android:textColor="@color/vf_primary"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -336,9 +336,6 @@
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:text="Export Document"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            app:cornerRadius="16dp"
             app:icon="@drawable/ic_action_save"
             app:iconGravity="textStart"
             app:iconSize="20dp" />

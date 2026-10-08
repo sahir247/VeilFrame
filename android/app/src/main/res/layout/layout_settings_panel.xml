@@ -21,9 +21,9 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettingsClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close Settings"
             app:icon="@drawable/ic_arrow_back"
             app:iconTint="@color/vf_primary" />
@@ -58,13 +58,11 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettingsDone"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.VeilFrame.Button.Action"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:minHeight="36dp"
             android:text="Done"
-            android:textSize="12sp"
-            app:cornerRadius="8dp"
             android:insetTop="0dp"
             android:insetBottom="0dp" />
     </LinearLayout>
@@ -91,7 +89,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="THEME MODE"
+                android:text="Theme mode"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
@@ -172,8 +170,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
                         android:text="Derive accent colors from system wallpaper (Android 12+). Takes precedence over custom palettes."
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
@@ -193,7 +191,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ACCENT PALETTE (WHEN DYNAMIC COLOR IS OFF)"
+                android:text="Accent palette (when Dynamic Color is off)"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
@@ -262,7 +260,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TYPOGRAPHY STYLE"
+                android:text="Typography style"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
@@ -312,7 +310,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="AI ENGINE &amp; HARDWARE DIAGNOSTICS"
+                android:text="AI engine &amp; hardware diagnostics"
                 android:textColor="@color/vf_accent_green"
                 android:textSize="11sp"
                 android:letterSpacing="0.08"
@@ -325,7 +323,7 @@
                 android:layout_marginBottom="24dp"
                 app:cardBackgroundColor="@color/vf_surface_variant"
                 app:cardCornerRadius="10dp"
-                app:strokeColor="@color/vf_surface_stroke"
+                app:strokeColor="?attr/colorOutlineVariant"
                 app:strokeWidth="1dp">
 
                 <LinearLayout

@@ -31,9 +31,9 @@
         android:singleLine="true"
         android:maxLines="1"
             android:id="@+id/btnRotateClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close Rotate Dialog"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -103,9 +103,7 @@
                 android:valueTo="180"
                 android:value="0"
                 android:stepSize="1"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
+                app:thumbColor="@color/vf_primary" />
 
             <!-- Quick Rotation Buttons -->
             <LinearLayout
@@ -116,7 +114,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnRotateMinus90"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
@@ -125,14 +123,12 @@
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:text="-90°"
-                    android:textColor="@color/vf_text_primary"
-                    app:backgroundTint="@color/vf_surface_variant"
                     app:icon="@drawable/ic_rotate"
                     app:iconTint="@color/vf_primary" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnRotatePlus90"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
@@ -141,8 +137,6 @@
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:text="+90°"
-                    android:textColor="@color/vf_text_primary"
-                    app:backgroundTint="@color/vf_surface_variant"
                     app:icon="@drawable/ic_rotate"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>
@@ -154,10 +148,8 @@
                 android:layout_marginTop="14dp"
                 android:layout_marginBottom="6dp"
                 android:text="FLIP ORIENTATION"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -166,7 +158,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFlipHorizontal"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
@@ -175,15 +167,12 @@
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:text="Flip Horizontal"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="12sp"
-                    app:backgroundTint="@color/vf_surface_variant"
                     app:icon="@drawable/ic_rotate"
                     app:iconTint="@color/vf_primary" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnFlipVertical"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
                     android:layout_weight="1"
@@ -192,9 +181,6 @@
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:text="Flip Vertical"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="12sp"
-                    app:backgroundTint="@color/vf_surface_variant"
                     app:icon="@drawable/ic_rotate"
                     app:iconTint="@color/vf_primary" />
             </LinearLayout>
@@ -211,7 +197,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRotateReset"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -230,7 +216,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRotateCancel"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginEnd="8dp"
@@ -245,7 +231,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnRotateApply"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -254,8 +240,6 @@
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="Apply"
-            android:textColor="@color/vf_on_primary"
-            app:backgroundTint="@color/vf_primary" />
+            android:text="Apply" />
     </LinearLayout>
 </LinearLayout>

@@ -170,7 +170,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
-                android:text="CREATE &amp; EDIT"
+                android:text="Create &amp; edit"
                 android:textColor="@color/vf_secondary"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -234,7 +234,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -310,7 +310,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -396,7 +396,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -472,7 +472,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Beta"
                                 android:textColor="@color/vf_accent_amber"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -558,7 +558,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Alpha"
                                 android:textColor="@color/vf_accent_amber"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -634,7 +634,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -671,7 +671,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
-                android:text="PRIVACY &amp; REDACT"
+                android:text="Privacy &amp; redact"
                 android:textColor="@color/vf_secondary"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -735,7 +735,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -811,7 +811,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -848,7 +848,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
-                android:text="ANALYZE &amp; QUALITY"
+                android:text="Analyze &amp; quality"
                 android:textColor="@color/vf_secondary"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -912,7 +912,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Beta"
                                 android:textColor="@color/vf_accent_amber"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -988,7 +988,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -1025,7 +1025,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="8dp"
-                android:text="DEVELOPER &amp; FORENSICS"
+                android:text="Developer &amp; forensics"
                 android:textColor="@color/vf_secondary"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -1089,7 +1089,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -1165,7 +1165,7 @@
                                 android:paddingBottom="2dp"
                                 android:text="Stable"
                                 android:textColor="@color/vf_secondary"
-                                android:textSize="9sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
 
@@ -1260,7 +1260,7 @@
                                     android:paddingBottom="2dp"
                                     android:text="Stable"
                                     android:textColor="@color/vf_secondary"
-                                    android:textSize="9sp"
+                                    android:textSize="11sp"
                                     android:textStyle="bold" />
                             </LinearLayout>
 
@@ -1269,8 +1269,8 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="3dp"
                                 android:text="Ed25519 digital signature validation, SHA-256 integrity, audit manifests"
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp" />
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>

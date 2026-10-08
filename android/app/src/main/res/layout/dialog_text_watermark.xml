@@ -28,9 +28,9 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnWatermarkClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close Watermark Dialog"
             android:maxLines="1"
             android:singleLine="true"
@@ -138,10 +138,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
                 android:text="POSITION"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <HorizontalScrollView
                 android:layout_width="match_parent"
@@ -256,9 +254,7 @@
                 android:valueTo="72"
                 android:value="32"
                 android:stepSize="2"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
+                app:thumbColor="@color/vf_primary" />
 
             <!-- Watermark Opacity -->
             <LinearLayout
@@ -296,9 +292,7 @@
                 android:valueTo="100"
                 android:value="100"
                 android:stepSize="5"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
+                app:thumbColor="@color/vf_primary" />
 
             <!-- Font Family Selection -->
             <TextView
@@ -307,10 +301,8 @@
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="6dp"
                 android:text="FONT STYLE"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupWatermarkFont"
@@ -412,10 +404,8 @@
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="6dp"
                 android:text="TEXT COLOR"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupWatermarkColor"
@@ -595,7 +585,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnWatermarkReset"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -614,7 +604,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnWatermarkCancel"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:layout_marginEnd="8dp"
@@ -629,7 +619,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnWatermarkApply"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -638,8 +628,6 @@
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="Apply"
-            android:textColor="@color/vf_on_primary"
-            app:backgroundTint="@color/vf_primary" />
+            android:text="Apply" />
     </LinearLayout>
 </LinearLayout>

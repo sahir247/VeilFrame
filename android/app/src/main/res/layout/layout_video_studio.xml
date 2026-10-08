@@ -49,9 +49,9 @@
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnVidStudioMenu"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:contentDescription="Navigation Menu"
                     app:icon="@drawable/ic_menu"
                     app:iconTint="@color/vf_primary" />
@@ -79,8 +79,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Visual Video Studio &amp; Compressor"
-                        android:textColor="@color/vf_text_secondary"
-                        android:textSize="11sp" />
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -88,12 +88,11 @@
         android:singleLine="true"
         android:maxLines="1"
                     android:id="@+id/btnVidStudioFavorite"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:contentDescription="Favorite Action"
-                    app:icon="@drawable/ic_favorite"
-                    app:iconTint="@color/vf_secondary" />
+                    app:icon="@drawable/ic_favorite" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -129,19 +128,16 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Files"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidClearAll"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
                         android:text="Clear all"
                         android:textColor="@color/vf_text_muted"
-                        android:textSize="12sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
@@ -169,16 +165,13 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSelectVideo"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="wrap_content"
                         android:layout_height="44dp"
                         android:text="Select video to edit"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="13sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
-                        app:backgroundTint="@color/vf_surface_variant"
                         app:icon="@drawable/ic_file_pick"
                         app:iconTint="@color/vf_primary" />
                 </LinearLayout>
@@ -210,16 +203,13 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnVidAddMore"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.VeilFrame.Button.Action"
                             android:layout_width="wrap_content"
                             android:layout_height="36dp"
                             android:text="Add more"
-                            android:textColor="@color/vf_text_primary"
-                            android:textSize="12sp"
                             android:maxLines="1"
                             android:singleLine="true"
                             android:ellipsize="end"
-                            app:backgroundTint="@color/vf_surface_variant"
                             app:icon="@drawable/ic_add"
                             app:iconTint="@color/vf_primary"
                             app:iconSize="14dp" />
@@ -242,12 +232,11 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnVidPrev"
-                            style="@style/Widget.Material3.Button.IconButton"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             android:contentDescription="Previous Video"
                             app:icon="@drawable/ic_arrow_back"
-                            app:iconSize="18dp"
                             app:iconTint="@color/vf_primary"
                             android:enabled="false" />
 
@@ -264,12 +253,11 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnVidNext"
-                            style="@style/Widget.Material3.Button.IconButton"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             android:contentDescription="Next Video"
                             app:icon="@drawable/ic_arrow_forward"
-                            app:iconSize="18dp"
                             app:iconTint="@color/vf_primary"
                             android:enabled="false" />
                     </LinearLayout>
@@ -339,8 +327,8 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
                                     android:text="14.2 MB • 00:24.0 • 1080p"
-                                    android:textColor="@color/vf_text_secondary"
-                                    android:textSize="11sp" />
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:textColor="?attr/colorOnSurfaceVariant" />
                             </LinearLayout>
 
                             <com.google.android.material.button.MaterialButton
@@ -348,13 +336,11 @@
         android:singleLine="true"
         android:maxLines="1"
                                 android:id="@+id/btnVidRemoveFile"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="36dp"
-                                android:layout_height="36dp"
+                                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
                                 android:contentDescription="Remove File"
-                                app:icon="@drawable/ic_close"
-                                app:iconTint="@color/vf_secondary"
-                                app:iconSize="18dp" />
+                                app:icon="@drawable/ic_close" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
@@ -393,19 +379,16 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Live preview"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                        android:textColor="?attr/colorOnSurface" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidResetPreview"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
                         android:text="Reset"
                         android:textColor="@color/vf_text_secondary"
-                        android:textSize="12sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
@@ -457,14 +440,11 @@
                     <!-- Center Play/Pause Action Button -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnPlayerPlayPause"
-                        style="@style/Widget.Material3.Button.IconButton.Filled"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar.Filled"
                         android:layout_width="54dp"
                         android:layout_height="54dp"
                         android:layout_gravity="center"
-                        app:backgroundTint="@color/vf_primary"
                         app:icon="@drawable/ic_action_play"
-                        app:iconTint="@color/vf_on_primary"
-                        app:iconSize="28dp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
@@ -481,12 +461,11 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnPlayerReplay"
-                            style="@style/Widget.Material3.Button.IconButton"
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
+                            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             app:icon="@drawable/ic_reset"
                             app:iconTint="@color/vf_text_primary"
-                            app:iconSize="18dp"
                             android:maxLines="1"
                             android:singleLine="true"
                             android:ellipsize="end"
@@ -514,12 +493,11 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnPlayerMute"
-                            style="@style/Widget.Material3.Button.IconButton"
-                            android:layout_width="38dp"
-                            android:layout_height="38dp"
+                            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
                             app:icon="@drawable/ic_audio_volume"
                             app:iconTint="@color/vf_text_primary"
-                            app:iconSize="18dp"
                             android:maxLines="1"
                             android:singleLine="true"
                             android:ellipsize="end"
@@ -574,8 +552,7 @@
                     android:valueTo="100"
                     android:value="0"
                     app:thumbColor="@color/vf_accent_green"
-                    app:trackColorActive="@color/vf_accent_green"
-                    app:trackColorInactive="@color/vf_surface_variant" />
+                    app:trackColorActive="@color/vf_accent_green" />
 
 
 
@@ -589,7 +566,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidTrim"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -601,21 +578,17 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Trim"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_trim"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidScale"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -628,21 +601,17 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Scale"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_resize"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidColor"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -654,14 +623,10 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Colour"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_color_filter"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
@@ -676,7 +641,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidSpeed"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -688,21 +653,17 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Speed"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_speed"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidAspect"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -715,21 +676,17 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Aspect"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_aspect_ratio"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/toolVidAudio"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
@@ -741,14 +698,10 @@
                         android:insetRight="0dp"
                         app:iconPadding="4dp"
                         android:text="Audio"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:enabled="false"
-                        app:backgroundTint="@color/vf_surface_variant"
-                        app:cornerRadius="8dp"
                         app:icon="@drawable/ic_audio_volume"
                         app:iconTint="@color/vf_primary"
                         app:iconSize="16dp" />
@@ -779,7 +732,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="BEFORE"
                                 android:textColor="@color/vf_text_muted"
-                                android:textSize="10sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
 
                             <TextView
@@ -787,8 +740,8 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="No video selected"
-                                android:textColor="@color/vf_text_secondary"
-                                android:textSize="11sp" />
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
 
                         <ImageView
@@ -811,7 +764,7 @@
                                 android:layout_height="wrap_content"
                                 android:text="ESTIMATED / ACTUAL"
                                 android:textColor="@color/vf_text_muted"
-                                android:textSize="10sp"
+                                android:textSize="11sp"
                                 android:textStyle="bold" />
 
                             <TextView
@@ -869,19 +822,16 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="EDIT SUMMARY"
-                        android:textColor="@color/vf_text_muted"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.06" />
+                        android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnVidResetAllEdits"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
                         android:text="Reset all edits"
                         android:textColor="@color/vf_secondary"
-                        android:textSize="12sp"
                         android:maxLines="1"
                         android:singleLine="true"
                         android:ellipsize="end" />
@@ -1336,9 +1286,7 @@
                     android:value="26"
                     android:stepSize="1"
                     android:layout_marginBottom="12dp"
-                    app:thumbColor="@color/vf_primary"
-                    app:trackColorActive="@color/vf_primary"
-                    app:trackColorInactive="@color/vf_surface_variant" />
+                    app:thumbColor="@color/vf_primary" />
 
                 <!-- Resolution Selection -->
                 <TextView
@@ -1478,12 +1426,11 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnVidChangeDestination"
-                            style="@style/Widget.Material3.Button.TextButton"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
                             android:layout_height="36dp"
                             android:text="Change"
                             android:textColor="@color/vf_primary"
-                            android:textSize="12sp"
                             android:maxLines="1"
                             android:singleLine="true"
                             android:ellipsize="end" />
@@ -1512,22 +1459,15 @@
         <!-- ============================================================= -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVidExecute"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginBottom="12dp"
             android:text="Select video"
-            android:textColor="@color/vf_on_primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.06"
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            app:backgroundTint="@color/vf_primary"
-            app:cornerRadius="10dp"
             app:icon="@drawable/ic_compress"
-            app:iconTint="@color/vf_on_primary"
             app:iconGravity="textStart" />
 
         <!-- Processing Progress -->
@@ -1539,12 +1479,11 @@
             android:visibility="gone">
 
             <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
                 android:id="@+id/progressVidStudio"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:indeterminate="true"
-                app:indicatorColor="@color/vf_primary"
-                app:trackColor="@color/vf_surface_variant" />
+                android:indeterminate="true" />
 
             <TextView
                 android:id="@+id/tvVidProgressStatus"
@@ -1568,33 +1507,29 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnVidSaveResult"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="0dp"
                 android:layout_height="44dp"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
                 android:text="Save Video"
-                android:textColor="@color/vf_text_primary"
                 android:maxLines="1"
                 android:singleLine="true"
                 android:ellipsize="end"
-                app:backgroundTint="@color/vf_surface_variant"
                 app:icon="@drawable/ic_action_save"
                 app:iconTint="@color/vf_primary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnVidShareResult"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="0dp"
                 android:layout_height="44dp"
                 android:layout_weight="1"
                 android:layout_marginStart="4dp"
                 android:text="Share"
-                android:textColor="@color/vf_text_primary"
                 android:maxLines="1"
                 android:singleLine="true"
                 android:ellipsize="end"
-                app:backgroundTint="@color/vf_surface_variant"
                 app:icon="@drawable/ic_action_share"
                 app:iconTint="@color/vf_primary" />
         </LinearLayout>
@@ -1628,29 +1563,20 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnFloatingExecute"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.VeilFrame.Button.Primary"
                 android:layout_width="wrap_content"
                 android:layout_height="44dp"
                 android:text="Execute"
-                android:textColor="@color/vf_on_primary"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                app:backgroundTint="@color/vf_primary"
-                app:cornerRadius="22dp"
                 app:icon="@drawable/ic_compress"
-                app:iconTint="@color/vf_on_primary"
                 app:iconSize="18dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnFloatingShare"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="44dp"
                 android:layout_marginStart="8dp"
                 android:text="Share"
-                android:textColor="@color/vf_text_primary"
-                android:textSize="13sp"
-                app:cornerRadius="22dp"
                 app:icon="@drawable/ic_action_share"
                 app:iconTint="@color/vf_primary"
                 app:iconSize="18dp"

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ VeilFrame Expressive component styles v3.0 (Material Components 1.14.0+)
+  ~
+  ~ Strategy: inherit library expressive defaults; VeilFrame styles pin ROLE
+  ~ (size / shape / color-config), never raw values, so Dynamic Color and all
+  ~ accent palettes flow through automatically.
+-->
+<resources>
+
+    <!-- ================= BUTTONS ================= -->
+
+    <!-- Default filled (inherits expressive filled; Small=40dp default size) -->
+    <style name="Widget.VeilFrame.Button.Primary" parent="Widget.Material3Expressive.Button" />
+
+    <!-- Hero Moment #1: full-width EXECUTE (XL pill, emphasized label) -->
+    <style name="Widget.VeilFrame.Button.Execute" parent="Widget.Material3Expressive.Button">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Xlarge</item>
+        <item name="android:textAppearance">?attr/textAppearanceLabelLargeEmphasized</item>
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <!-- Primary CTA (hero card launch buttons, empty states) -->
+    <style name="Widget.VeilFrame.Button.CTA" parent="Widget.Material3Expressive.Button">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Large</item>
+    </style>
+
+    <!-- Secondary actions (Save / Share / Apply): tonal, Medium 48dp -->
+    <style name="Widget.VeilFrame.Button.Action" parent="Widget.Material3Expressive.Button.TonalButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Medium</item>
+    </style>
+
+    <!-- Utility actions: outlined Small; square variant for deliberate shape tension -->
+    <style name="Widget.VeilFrame.Button.Utility" parent="Widget.Material3Expressive.Button.OutlinedButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+    </style>
+    <style name="Widget.VeilFrame.Button.Utility.Square" parent="Widget.VeilFrame.Button.Utility">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small.Square</item>
+    </style>
+
+    <!-- Quiet actions (dialogs, inline links, overflow rows) -->
+    <style name="Widget.VeilFrame.Button.Quiet" parent="Widget.Material3Expressive.Button.TextButton" />
+
+    <!-- Elevated (rare; kept for legacy parity) -->
+    <style name="Widget.VeilFrame.Button.Elevated" parent="Widget.Material3Expressive.Button.ElevatedButton" />
+
+    <!-- Icon buttons: toolbar 40dp / workspace 48dp (fixes legacy 38dp targets) -->
+    <style name="Widget.VeilFrame.IconButton.Toolbar" parent="Widget.Material3Expressive.Button.IconButton.Standard">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.IconButton.Small</item>
+    </style>
+    <style name="Widget.VeilFrame.IconButton.Workspace" parent="Widget.Material3Expressive.Button.IconButton.Standard">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.IconButton.Medium</item>
+    </style>
+    <style name="Widget.VeilFrame.IconButton.Toolbar.Filled" parent="Widget.Material3Expressive.Button.IconButton.Filled">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.IconButton.Small</item>
+    </style>
+
+    <!-- Connected groups (export modes, aspect ratios, edit scope) -->
+    <style name="Widget.VeilFrame.ButtonGroup.Connected" parent="Widget.Material3Expressive.MaterialButtonGroup.Connected" />
+
+    <!-- ================= PROGRESS (living waits) ================= -->
+
+    <!-- Determinate default: thick 8dp rounded -->
+    <style name="Widget.VeilFrame.Progress.Thick" parent="Widget.Material3Expressive.LinearProgressIndicator">
+        <item name="trackThickness">8dp</item>
+        <item name="trackCornerRadius">4dp</item>
+        <item name="trackColor">?attr/colorSurfaceContainerHighest</item>
+        <item name="indicatorColor">?attr/colorPrimary</item>
+    </style>
+
+    <!-- Indeterminate waits >2s (AI upscale, transcode, model download): wavy -->
+    <style name="Widget.VeilFrame.Progress.Wavy" parent="Widget.Material3Expressive.LinearProgressIndicator.Wavy">
+        <item name="trackCornerRadius">4dp</item>
+        <item name="trackThickness">8dp</item>
+        <item name="indicatorColor">?attr/colorTertiary</item>
+    </style>
+
+    <!-- Inline busy states: circular wavy -->
+    <style name="Widget.VeilFrame.Progress.Circular.Wavy" parent="Widget.Material3Expressive.CircularProgressIndicator.Wavy">
+        <item name="android:indeterminate">true</item>
+        <item name="indicatorSize">48dp</item>
+        <item name="indicatorColor">?attr/colorTertiary</item>
+    </style>
+
+    <!-- ================= SLIDERS ================= -->
+    <style name="Widget.VeilFrame.Slider" parent="Widget.Material3Expressive.Slider.Medium" />
+    <style name="Widget.VeilFrame.Slider.Hero" parent="Widget.Material3Expressive.Slider.Large" />
+    <style name="Widget.VeilFrame.Slider.Dense" parent="Widget.Material3Expressive.Slider.Small" />
+
+    <!-- ================= CARDS / CONTAINMENT ================= -->
+
+    <!-- Hero Moment container (Home upscaler card): XXL top rounding, brightest surface -->
+    <style name="Widget.VeilFrame.Card.Hero" parent="Widget.Material3.CardView">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.HeroTop</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerHighest</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- Standard workspace/list card -->
+    <style name="Widget.VeilFrame.Card.Workspace" parent="Widget.Material3.CardView">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.L</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">?attr/colorOutlineVariant</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <!-- Segment wrapper (Library / catalogue groups) -->
+    <style name="Widget.VeilFrame.Card.Segment" parent="Widget.Material3.CardView">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XL</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+        <item name="cardElevation">0dp</item>
+    </style>
+
+    <!-- Floating action dock (Hero Moment #1 shell) -->
+    <style name="Widget.VeilFrame.Dock" parent="Widget.Material3.CardView">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.XLPlus</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerHigh</item>
+        <item name="cardElevation">10dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- ================= BADGES / STATUS PILLS ================= -->
+    <style name="Widget.VeilFrame.Badge" parent="Widget.Material3.Chip.Assist">
+        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Pill</item>
+        <item name="chipBackgroundColor">?attr/colorSurfaceContainerHighest</item>
+        <item name="android:textAppearance">?attr/textAppearanceLabelSmall</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+        <item name="chipMinTouchTargetSize">0dp</item>
+        <item name="android:checkable">false</item>
+        <item name="ensureMinTouchTargetSize">false</item>
+    </style>
+
+    <!-- ================= SHELL / NAV / SHEETS =================
+         Bottom nav & rail intentionally use expressive THEME DEFAULTS.
+         Do NOT set itemIconTint/itemTextColor (custom selectors break the
+         secondary-colored active labels + 56dp pill indicator). -->
+
+    <style name="Widget.VeilFrame.SearchBar" parent="Widget.Material3Expressive.SearchBar" />
+
+    <style name="ThemeOverlay.VeilFrame.BottomSheet" parent="">
+        <item name="bottomSheetStyle">@style/Widget.VeilFrame.BottomSheet.Modal</item>
+    </style>
+    <style name="Widget.VeilFrame.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.VeilFrame.SheetTop</item>
+        <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+    </style>
+
+    <!-- FABs: doc-scanner shutter = Hero Moment #2 -->
+    <style name="Widget.VeilFrame.Fab.Shutter" parent="Widget.Material3Expressive.FloatingActionButton.Large">
+        <item name="backgroundTint">?attr/colorPrimary</item>
+        <item name="tint">?attr/colorOnPrimary</item>
+    </style>
+</resources>

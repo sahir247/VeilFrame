@@ -28,13 +28,12 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnQualityExportReport"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.VeilFrame.Button.Action"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
                 android:text="Share Report"
-                android:textSize="12sp"
                 app:icon="@drawable/ic_action_share"
                 app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
@@ -219,13 +218,12 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnQualityPickImage"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="0dp"
                     android:layout_height="48dp"
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp"
                     android:text="Select Image"
-                    android:textSize="13sp"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="18dp" />
 
@@ -236,7 +234,6 @@
                     android:layout_weight="1"
                     android:layout_marginStart="6dp"
                     android:text="Evaluate Quality"
-                    android:textSize="13sp"
                     app:icon="@drawable/ic_visibility"
                     app:iconSize="18dp" />
             </LinearLayout>

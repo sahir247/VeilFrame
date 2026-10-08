@@ -30,9 +30,9 @@
         android:singleLine="true"
         android:maxLines="1"
             android:id="@+id/btnVideoPresetClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close Target Size Dialog"
             app:icon="@drawable/ic_close"
             app:iconTint="@color/vf_text_secondary" />
@@ -65,10 +65,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
                 android:text="PLATFORM SIZE LIMITS"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Platform presets -->
             <com.google.android.material.chip.ChipGroup
@@ -128,10 +126,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
                 android:text="VIDEO CODEC"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupVideoCodecDialog"
@@ -176,10 +172,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
                 android:text="OUTPUT CONTAINER"
-                android:textColor="@color/vf_text_muted"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.06" />
+                android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupVideoContainerDialog"
@@ -266,16 +260,14 @@
                 android:valueTo="38"
                 android:value="28"
                 android:stepSize="1"
-                app:thumbColor="@color/vf_primary"
-                app:trackColorActive="@color/vf_primary"
-                app:trackColorInactive="@color/vf_surface_variant" />
+                app:thumbColor="@color/vf_primary" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Lower CRF = Higher Quality / Larger File. Higher CRF = High Compression."
                 android:textColor="@color/vf_text_muted"
-                android:textSize="10sp" />
+                android:textSize="11sp" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
@@ -289,7 +281,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVideoPresetReset"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -308,7 +300,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVideoPresetCancel"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -323,7 +315,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnVideoPresetApply"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
             android:minWidth="0dp"
@@ -332,8 +324,6 @@
             android:maxLines="1"
             android:singleLine="true"
             android:ellipsize="end"
-            android:text="Apply"
-            android:textColor="@color/vf_on_primary"
-            app:backgroundTint="@color/vf_primary" />
+            android:text="Apply" />
     </LinearLayout>
 </LinearLayout>

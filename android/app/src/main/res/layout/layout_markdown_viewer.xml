@@ -24,13 +24,12 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownBack"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Back"
             app:icon="@drawable/ic_arrow_back"
-            app:iconTint="@color/vf_text_primary"
-            app:iconSize="20dp" />
+            app:iconTint="@color/vf_text_primary" />
 
         <TextView
             android:id="@+id/tvMarkdownTitle"
@@ -48,33 +47,30 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownToc"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Table of Contents"
             app:icon="@drawable/ic_toc"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="20dp" />
+            app:iconTint="@color/vf_text_secondary" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSearch"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Find in document"
             app:icon="@drawable/ic_search"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="20dp" />
+            app:iconTint="@color/vf_text_secondary" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownMenu"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="More options"
             app:icon="@drawable/ic_menu"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="20dp" />
+            app:iconTint="@color/vf_text_secondary" />
     </LinearLayout>
 
     <!-- Sub-Toolbar: Mode Switcher (GitHub-style Write / Preview) & Actions -->
@@ -98,30 +94,24 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarkdownTabPreview"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.VeilFrame.Button.Utility"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:paddingStart="10dp"
                 android:paddingEnd="10dp"
                 android:text="Preview"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="@color/vf_text_primary"
                 app:icon="@drawable/ic_visibility"
                 app:iconSize="14dp"
                 app:iconTint="@color/vf_text_primary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMarkdownTabWrite"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.VeilFrame.Button.Utility"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:paddingStart="10dp"
                 android:paddingEnd="10dp"
                 android:text="Write"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                android:textColor="@color/vf_text_primary"
                 app:icon="@drawable/ic_edit"
                 app:iconSize="14dp"
                 app:iconTint="@color/vf_text_primary" />
@@ -135,14 +125,12 @@
         <!-- Save (In-place Overwrite) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSave"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.VeilFrame.Button.Action"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:text="Save"
-            android:textSize="11sp"
-            android:textStyle="bold"
             app:icon="@drawable/ic_action_save"
             app:iconSize="14dp"
             android:visibility="gone" />
@@ -150,14 +138,13 @@
         <!-- Save As (Export New Document) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSaveAs"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
             android:layout_marginStart="4dp"
             android:paddingStart="8dp"
             android:paddingEnd="8dp"
             android:text="Save As"
-            android:textSize="11sp"
             android:textColor="@color/vf_text_secondary"
             android:visibility="gone" />
 
@@ -200,44 +187,41 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSearchPrev"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Previous match"
             app:icon="@drawable/ic_expand_less"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="18dp" />
+            app:iconTint="@color/vf_text_secondary" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSearchNext"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Next match"
             app:icon="@drawable/ic_expand_more"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="18dp" />
+            app:iconTint="@color/vf_text_secondary" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMarkdownSearchClose"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:contentDescription="Close search"
             app:icon="@drawable/ic_close"
-            app:iconTint="@color/vf_text_secondary"
-            app:iconSize="18dp" />
+            app:iconTint="@color/vf_text_secondary" />
     </LinearLayout>
 
     <!-- Document Loading Progress Indicator -->
     <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
         android:id="@+id/progressMarkdownLoading"
         android:layout_width="match_parent"
         android:layout_height="3dp"
         android:indeterminate="true"
         android:visibility="gone"
-        app:indicatorColor="@color/vf_accent_green"
-        app:trackColor="@color/vf_surface_variant" />
+        app:indicatorColor="@color/vf_accent_green" />
 
     <!-- Content Frame: WebView vs Live Editor vs Error State -->
     <FrameLayout
@@ -324,7 +308,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnMarkdownRetry"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Retry"
@@ -333,7 +317,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnMarkdownSwitchToEditor"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="12dp"

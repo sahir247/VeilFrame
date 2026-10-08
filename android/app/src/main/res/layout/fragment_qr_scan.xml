@@ -87,7 +87,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_allow_camera_btn"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -95,7 +95,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_open_settings_btn"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -104,7 +104,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_permission_import_gallery_btn"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -148,7 +148,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_camera_retry_btn"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -156,7 +156,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_error_import_gallery_btn"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.VeilFrame.Button.Quiet"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -175,13 +175,12 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/qr_scan_gallery_btn"
-            style="@style/Widget.Material3.Button.ElevatedButton"
+            style="@style/Widget.VeilFrame.Button.Elevated"
             android:layout_width="wrap_content"
             android:layout_height="52dp"
             android:layout_gravity="center_horizontal"
             android:elevation="4dp"
             app:elevation="4dp"
-            app:cornerRadius="26dp"
             android:paddingHorizontal="24dp"
             app:icon="@drawable/ic_tab_image"
             app:iconGravity="textStart"
@@ -232,7 +231,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_result_toggle_pwd_btn"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         app:icon="@drawable/ic_visibility"
@@ -247,7 +246,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_scan_another_btn"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
@@ -255,10 +254,9 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_result_action_btn"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.VeilFrame.Button.Action"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        app:cornerRadius="16dp"
                         android:text="Open" />
                 </LinearLayout>
 

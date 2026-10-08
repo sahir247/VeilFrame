@@ -1,142 +1,216 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ VeilFrame Expressive Design System v3.0 — "Quiet Intensity"
+  ~ Root theme on Theme.Material3Expressive (Material Components 1.14.0+).
+  ~
+  ~ Theme architecture (unchanged contract, see ThemeSettingsManager):
+  ~   Theme.VeilFrame (base roles + component defaults)
+  ~     + ThemeOverlay.VeilFrame.Palette.{Monochrome|Sage|Ocean|Amber|Violet}  (or Dynamic Colors)
+  ~     + ThemeOverlay.VeilFrame.Dark | ThemeOverlay.VeilFrame.Amoled          (night only)
+  ~
+  ~ All legacy style names are retained for Kotlin/layout compatibility.
+-->
 <resources>
-    <style name="Theme.VeilFrame" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Primary Brand Colors -->
+
+    <!-- ============ ROOT THEME ============ -->
+    <style name="Theme.VeilFrame" parent="Theme.Material3Expressive.DayNight.NoActionBar">
+        <!-- Primary Brand Colors (Monochrome base; palette overlays re-point these) -->
         <item name="colorPrimary">@color/vf_primary</item>
         <item name="colorOnPrimary">@color/vf_on_primary</item>
         <item name="colorPrimaryContainer">@color/vf_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/vf_text_primary</item>
+        <item name="colorOnPrimaryContainer">@color/vf_on_primary_container</item>
 
-        <!-- Secondary Accents -->
+        <!-- Secondary -->
         <item name="colorSecondary">@color/vf_secondary</item>
         <item name="colorOnSecondary">@color/vf_on_secondary</item>
         <item name="colorSecondaryContainer">@color/vf_secondary_container</item>
-        <item name="colorOnSecondaryContainer">@color/vf_text_primary</item>
+        <item name="colorOnSecondaryContainer">@color/vf_on_secondary_container</item>
 
-        <!-- Surfaces & Backgrounds -->
-        <item name="android:windowBackground">@color/vf_bg_dark</item>
+        <!-- Tertiary — editorial accent voice (NEW in v3.0) -->
+        <item name="colorTertiary">@color/vf_tertiary</item>
+        <item name="colorOnTertiary">@color/vf_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/vf_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/vf_on_tertiary_container</item>
+
+        <!-- Surfaces & full container ladder (NEW in light mode) -->
+        <item name="android:windowBackground">@color/vf_background</item>
+        <item name="android:colorBackground">@color/vf_background</item>
         <item name="colorSurface">@color/vf_surface</item>
         <item name="colorSurfaceVariant">@color/vf_surface_variant</item>
         <item name="colorOnSurface">@color/vf_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
+        <item name="colorSurfaceContainerLowest">@color/vf_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/vf_container_low</item>
+        <item name="colorSurfaceContainer">@color/vf_container</item>
+        <item name="colorSurfaceContainerHigh">@color/vf_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/vf_container_highest</item>
+        <item name="colorOutline">@color/vf_outline</item>
+        <item name="colorOutlineVariant">@color/vf_outline_variant</item>
 
-        <!-- Status & Navigation Bars -->
-        <item name="android:statusBarColor">@color/vf_bg_dark</item>
-        <item name="android:navigationBarColor">@color/vf_bg_dark</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Edge-to-edge system bars -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
 
-        <!-- Material 3 Expressive Dialog & Components Styling -->
+        <!-- Component defaults → VeilFrame expressive flavors -->
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.VeilFrame.MaterialAlertDialog</item>
+        <item name="linearProgressIndicatorStyle">@style/Widget.VeilFrame.Progress.Thick</item>
+        <item name="sliderStyle">@style/Widget.VeilFrame.Slider</item>
     </style>
 
-    <!-- Material 3 Expressive Dialog Overlay (28dp extra large shape, surface container) -->
+    <!-- ============ DIALOG OVERLAY (28dp XL shape retained — expressive-aligned) ============ -->
     <style name="ThemeOverlay.VeilFrame.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Dialog</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.VeilFrame.Dialog</item>
-        <item name="colorSurface">@color/vf_surface</item>
-        <item name="colorOnSurface">@color/vf_text_primary</item>
+        <item name="colorSurface">?attr/colorSurfaceContainerHigh</item>
         <item name="buttonBarPositiveButtonStyle">@style/Widget.VeilFrame.Button.Pill</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.VeilFrame.Button.Text</item>
     </style>
 
-    <style name="ShapeAppearance.VeilFrame.Dialog" parent="ShapeAppearance.Material3.Corner.ExtraLarge">
-        <item name="cornerSize">28dp</item>
+    <!-- Legacy names retained (referenced by dialog overlay + code paths) -->
+    <style name="Widget.VeilFrame.Button.Pill" parent="Widget.Material3Expressive.Button">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+    </style>
+    <style name="Widget.VeilFrame.Button.Text" parent="Widget.Material3Expressive.Button.TextButton">
+        <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+    </style>
+    <style name="Widget.VeilFrame.LinearProgressIndicator" parent="Widget.VeilFrame.Progress.Thick" />
+
+    <!-- ============ SHAPE SCALE (expressive: 0/4/8/12/16/20/28/32/48/full) ============ -->
+    <style name="ShapeAppearance.VeilFrame.XS" parent="ShapeAppearance.Material3.Corner.ExtraSmall"><item name="cornerSize">4dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.S" parent="ShapeAppearance.Material3.Corner.Small"><item name="cornerSize">8dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.M" parent="ShapeAppearance.Material3.Corner.Medium"><item name="cornerSize">12dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.L" parent="ShapeAppearance.Material3.Corner.Large"><item name="cornerSize">16dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.LPlus" parent="ShapeAppearance.Material3.Corner.Large"><item name="cornerSize">20dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.XL" parent="ShapeAppearance.Material3.Corner.ExtraLarge"><item name="cornerSize">28dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.XLPlus" parent="ShapeAppearance.Material3.Corner.ExtraLarge"><item name="cornerSize">32dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.XXL" parent="ShapeAppearance.Material3.Corner.ExtraLarge"><item name="cornerSize">48dp</item></style>
+    <style name="ShapeAppearance.VeilFrame.Pill" parent="ShapeAppearance.Material3.Corner.Full"><item name="cornerSize">50%</item></style>
+    <style name="ShapeAppearance.VeilFrame.Dialog" parent="ShapeAppearance.VeilFrame.XL" />
+    <style name="ShapeAppearance.VeilFrame.HeroTop" parent="ShapeAppearance.VeilFrame.XXL">
+        <item name="cornerSizeBottomLeft">16dp</item>
+        <item name="cornerSizeBottomRight">16dp</item>
+    </style>
+    <style name="ShapeAppearance.VeilFrame.SheetTop" parent="ShapeAppearance.VeilFrame.XLPlus">
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
     </style>
 
-    <style name="Widget.VeilFrame.Button.Pill" parent="Widget.Material3.Button">
-        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Pill</item>
-    </style>
+    <!-- ============ SEMANTIC TYPOGRAPHY (emphasized scale) ============ -->
+    <style name="TextAppearance.VeilFrame.Display.Hero" parent="TextAppearance.Material3.DisplaySmall.Emphasized" />
+    <style name="TextAppearance.VeilFrame.Title.Workspace" parent="TextAppearance.Material3.TitleLarge.Emphasized" />
+    <style name="TextAppearance.VeilFrame.Title.Section" parent="TextAppearance.Material3.TitleSmall.Emphasized" />
+    <style name="TextAppearance.VeilFrame.Card.Title" parent="TextAppearance.Material3.BodyLarge.Emphasized" />
+    <style name="TextAppearance.VeilFrame.Body" parent="TextAppearance.Material3.BodyMedium" />
+    <style name="TextAppearance.VeilFrame.Body.Sub" parent="TextAppearance.Material3.BodySmall" />
+    <style name="TextAppearance.VeilFrame.Label" parent="TextAppearance.Material3.LabelLarge" />
+    <style name="TextAppearance.VeilFrame.Label.Small" parent="TextAppearance.Material3.LabelSmall" />
 
-    <style name="Widget.VeilFrame.Button.Text" parent="Widget.Material3.Button.TextButton">
-        <item name="shapeAppearance">@style/ShapeAppearance.VeilFrame.Pill</item>
-    </style>
-
-    <style name="ShapeAppearance.VeilFrame.Pill" parent="ShapeAppearance.Material3.Corner.Full">
-        <item name="cornerSize">50%</item>
-    </style>
-
-    <!-- Dark Mode Charcoal Overlay (Ensures clean contrast against AMOLED #000000) -->
+    <!-- ============ DARK / AMOLED OVERLAYS (day-variant definitions; night overrides) ============ -->
     <style name="ThemeOverlay.VeilFrame.Dark" parent="">
-        <item name="android:windowBackground">@color/vf_bg_dark</item>
-        <item name="android:colorBackground">@color/vf_bg_dark</item>
+        <item name="android:windowBackground">@color/vf_background</item>
+        <item name="android:colorBackground">@color/vf_background</item>
         <item name="colorSurface">@color/vf_surface</item>
         <item name="colorSurfaceVariant">@color/vf_surface_variant</item>
-        <item name="colorSurfaceContainer">#1C1C20</item>
-        <item name="colorSurfaceContainerLow">#16161A</item>
-        <item name="colorSurfaceContainerLowest">#0E0E10</item>
-        <item name="colorSurfaceContainerHigh">#242428</item>
-        <item name="colorSurfaceContainerHighest">#2C2C32</item>
+        <item name="colorSurfaceContainerLowest">@color/vf_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/vf_container_low</item>
+        <item name="colorSurfaceContainer">@color/vf_container</item>
+        <item name="colorSurfaceContainerHigh">@color/vf_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/vf_container_highest</item>
         <item name="colorOnSurface">@color/vf_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
-        <item name="android:statusBarColor">@color/vf_bg_dark</item>
-        <item name="android:navigationBarColor">@color/vf_bg_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- AMOLED True Black Overlay (meaningful only in night mode, but defined for consistency) -->
     <style name="ThemeOverlay.VeilFrame.Amoled" parent="">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:colorBackground">@android:color/black</item>
         <item name="colorSurface">#000000</item>
         <item name="colorSurfaceVariant">#0A0A0C</item>
-        <item name="colorSurfaceContainer">#000000</item>
-        <item name="colorSurfaceContainerLow">#000000</item>
         <item name="colorSurfaceContainerLowest">#000000</item>
+        <item name="colorSurfaceContainerLow">#000000</item>
+        <item name="colorSurfaceContainer">#000000</item>
         <item name="colorSurfaceContainerHigh">#0B0B0E</item>
         <item name="colorSurfaceContainerHighest">#121216</item>
         <item name="colorOnSurface">@color/vf_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="colorOutlineVariant">#2C2C32</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- Palette Overlays (Light variants) -->
+    <!-- ============ PALETTE OVERLAYS (light; night variants in values-night) ============ -->
     <style name="ThemeOverlay.VeilFrame.Palette.Monochrome" parent="">
         <item name="colorPrimary">@color/vf_primary</item>
         <item name="colorOnPrimary">@color/vf_on_primary</item>
         <item name="colorPrimaryContainer">@color/vf_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/vf_on_primary_container</item>
         <item name="colorSecondary">@color/vf_secondary</item>
         <item name="colorOnSecondary">@color/vf_on_secondary</item>
         <item name="colorSecondaryContainer">@color/vf_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/vf_on_secondary_container</item>
+        <item name="colorTertiary">@color/vf_tertiary</item>
+        <item name="colorOnTertiary">@color/vf_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/vf_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/vf_on_tertiary_container</item>
     </style>
 
     <style name="ThemeOverlay.VeilFrame.Palette.Sage" parent="">
         <item name="colorPrimary">#2E7D32</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorPrimaryContainer">#C8E6C9</item>
-        <item name="colorSecondary">#388E3C</item>
+        <item name="colorOnPrimaryContainer">#10240F</item>
+        <item name="colorSecondary">#5B7261</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorSecondaryContainer">#C8E6C9</item>
+        <item name="colorSecondaryContainer">#DCE8DE</item>
+        <item name="colorOnSecondaryContainer">#16211A</item>
+        <item name="colorTertiary">#7D6B2F</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#EFE6C8</item>
+        <item name="colorOnTertiaryContainer">#241D08</item>
     </style>
 
     <style name="ThemeOverlay.VeilFrame.Palette.Ocean" parent="">
         <item name="colorPrimary">#1976D2</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorPrimaryContainer">#BBDEFB</item>
-        <item name="colorSecondary">#1E88E5</item>
+        <item name="colorOnPrimaryContainer">#0A1929</item>
+        <item name="colorSecondary">#51688A</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorSecondaryContainer">#BBDEFB</item>
+        <item name="colorSecondaryContainer">#D8E3F0</item>
+        <item name="colorOnSecondaryContainer">#12203A</item>
+        <item name="colorTertiary">#0E7490</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#CFF3F8</item>
+        <item name="colorOnTertiaryContainer">#0A2E36</item>
     </style>
 
     <style name="ThemeOverlay.VeilFrame.Palette.Amber" parent="">
-        <item name="colorPrimary">#D97706</item>
+        <item name="colorPrimary">#B45309</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorPrimaryContainer">#FDE68A</item>
-        <item name="colorSecondary">#F59E0B</item>
+        <item name="colorOnPrimaryContainer">#291A08</item>
+        <item name="colorSecondary">#7A6248</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorSecondaryContainer">#FDE68A</item>
+        <item name="colorSecondaryContainer">#EBDFCE</item>
+        <item name="colorOnSecondaryContainer">#2B2013</item>
+        <item name="colorTertiary">#2C6E69</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#CFE9E6</item>
+        <item name="colorOnTertiaryContainer">#10312F</item>
     </style>
 
     <style name="ThemeOverlay.VeilFrame.Palette.Violet" parent="">
         <item name="colorPrimary">#7C3AED</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorPrimaryContainer">#DDD6FE</item>
-        <item name="colorSecondary">#8B5CF6</item>
+        <item name="colorOnPrimaryContainer">#1A0E33</item>
+        <item name="colorSecondary">#68598C</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorSecondaryContainer">#DDD6FE</item>
-    </style>
-
-    <style name="Widget.VeilFrame.LinearProgressIndicator" parent="Widget.Material3.LinearProgressIndicator">
-        <item name="trackCornerRadius">8dp</item>
+        <item name="colorSecondaryContainer">#E4DEF2</item>
+        <item name="colorOnSecondaryContainer">#1E1633</item>
+        <item name="colorTertiary">#A33E8C</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#F8D7EC</item>
+        <item name="colorOnTertiaryContainer">#3B1130</item>
     </style>
 </resources>
-
