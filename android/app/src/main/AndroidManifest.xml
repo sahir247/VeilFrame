@@ -119,6 +119,13 @@
             android:exported="false"
             android:foregroundServiceType="mediaProcessing|dataSync" />
 
+        <!-- Loads the OpenCV native library before Application.onCreate (CV-2 fix) -->
+        <provider
+            android:name=".cv.core.OpenCVInitProvider"
+            android:authorities="${applicationId}.opencv-init"
+            android:exported="false"
+            android:initOrder="100" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

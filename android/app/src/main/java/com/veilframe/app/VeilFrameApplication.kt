@@ -10,6 +10,8 @@ class VeilFrameApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         com.veilframe.app.settings.ThemeSettingsManager.init(this)
+        // CV native bootstrap (idempotent — OpenCVInitProvider normally ran first).
+        runCatching { com.veilframe.app.cv.core.CvRuntime.initialize() }
         // Initialise the primary QR engine (cv::wechat_qrcode::WeChatQRCode):
         // extracts detector + super-resolution models from assets and loads the
         // native engine. Safe to call in tests / stripped builds — degrades to

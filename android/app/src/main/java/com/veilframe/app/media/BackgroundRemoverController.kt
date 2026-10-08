@@ -2,6 +2,7 @@ package com.veilframe.app.media
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import android.net.Uri
 import android.view.View
 import android.widget.Toast
@@ -14,6 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.veilframe.app.cv.core.CvPriority
+import com.veilframe.app.cv.core.CvRuntime
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Rect
@@ -41,6 +44,13 @@ class BackgroundRemoverController(
 ) {
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
+
+    /** Last honest failure reason (never masked by a fake result). */
+    private var lastFailure: String? = null
+
+    private companion object {
+        const val TAG = "VeilFrame.BgRemover"
+    }
 
     fun init() {
         binding.toolbarBgRemover.setNavigationOnClickListener {
@@ -91,11 +101,45 @@ class BackgroundRemoverController(
 
     fun handleImageSelected(uri: Uri) {
         scope.launch(Dispatchers.IO) {
+            // Decode bounds first; refuse images whose uncompressed size exceeds
+            // the process heap budget instead of OOM-crashing (or silently
+            // "succeeding" with a fake cutout) downstream.
+            var boundsW = 0
+            var boundsH = 0
+            try {
+                activity.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeStream(stream, null, bounds)
+                    boundsW = bounds.outWidth
+                    boundsH = bounds.outHeight
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Bounds decode failed", e)
+            }
+
+            val heapBytes = Runtime.getRuntime().maxMemory()
+            val estBytes = boundsW.toLong() * boundsH.toLong() * 4L
+            if (boundsW > 0 && estBytes > heapBytes * 45 / 100) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        activity,
+                        "Image too large for on-device segmentation (${boundsW}×${boundsH} ≈ " +
+                            "${estBytes / (1024 * 1024)} MB in memory). Choose a smaller image.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return@launch
+            }
+
             val bmp = try {
                 activity.contentResolver.openInputStream(uri)?.use { stream ->
                     BitmapFactory.decodeStream(stream)
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Decode failed", e)
+                null
+            } catch (oom: OutOfMemoryError) {
+                Log.e(TAG, "Decode OOM for ${boundsW}x${boundsH}", oom)
                 null
             }
 
@@ -103,6 +147,7 @@ class BackgroundRemoverController(
                 if (bmp != null) {
                     sourceBitmap = bmp
                     resultBitmap = null
+                    lastFailure = null
                     updateUi()
                     executeRemoval()
                 } else {
@@ -127,44 +172,78 @@ class BackgroundRemoverController(
             else -> 2.5
         }
 
-        scope.launch(Dispatchers.IO) {
-            var cutoutBmp: Bitmap? = null
-            try {
+        // A2: governed execution — INTERACTIVE lane + memory admission instead
+        // of raw Dispatchers.IO. Admission rejections arrive as typed
+        // CvResult.Err(OUT_OF_MEMORY) with a suggested tier, not as a crash.
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(srcBmp.width, srcBmp.height, 6)
+        scope.launch {
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "background-removal",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+            ) { ctx ->
+                // A1 gate: typed NATIVE_UNAVAILABLE instead of UnsatisfiedLinkError.
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(srcBmp)
+                try {
+                    // Multi-pass foreground segmentation:
+                    // 1. GrabCut algorithm with bounding box prior & configurable iterations
+                    // 2. Downscaled working resolution for responsive performance (<200ms)
+                    // 3. Bilinear upsampling and binary thresholding
+                    // 4. Morphological hole filling & edge feathering via BackgroundRemover
+                    val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
+                        computeForegroundMask(img, iterations)
+                    }
+                    ctx.reportProgress(0.15f)
 
-                // Multi-pass foreground segmentation:
-                // 1. GrabCut algorithm with bounding box prior & configurable iterations
-                // 2. Downscaled working resolution for responsive performance (<200ms)
-                // 3. Bilinear upsampling and binary thresholding
-                // 4. Morphological hole filling & edge feathering via BackgroundRemover
-                val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
-                    computeForegroundMask(img, iterations)
-                }
-
-                val removalResult = BackgroundRemover.removeBackground(
-                    srcMat,
-                    segmenter,
-                    BackgroundRemover.Options(
-                        cleanupKernel = 5,
-                        fillHoles = true,
-                        refineEdges = true,
-                        featherRadius = feather
+                    val removalResult = BackgroundRemover.removeBackground(
+                        srcMat,
+                        segmenter,
+                        BackgroundRemover.Options(
+                            cleanupKernel = 5,
+                            fillHoles = true,
+                            refineEdges = true,
+                            featherRadius = feather
+                        )
                     )
-                )
 
-                cutoutBmp = BitmapBridge.toBitmap(removalResult.output)
-                removalResult.output.release()
-                removalResult.mask.release()
-                srcMat.release()
-            } catch (e: Throwable) {
-                // Fallback: simple copy if native CV encountered an issue
-                cutoutBmp = srcBmp
+                    ctx.reportProgress(0.8f)
+                    val cutout = try {
+                        BitmapBridge.toBitmap(removalResult.output)
+                    } finally {
+                        // CV-4: released on every path, including toBitmap failures.
+                        removalResult.output.release()
+                        removalResult.mask.release()
+                    }
+                    ctx.reportProgress(1f)
+                    cutout
+                } finally {
+                    srcMat.release() // CV-4
+                }
             }
 
-            withContext(Dispatchers.Main) {
-                resultBitmap = cutoutBmp
-                updateUi()
-            }
+            job.await().fold(
+                onOk = { cutoutBmp ->
+                    resultBitmap = cutoutBmp
+                    lastFailure = null
+                    updateUi()
+                },
+                onErr = { err ->
+                    // CV-3 honest failure: the ORIGINAL image is never presented
+                    // as a cutout. Save stays disabled; the user is told why.
+                    Log.e(TAG, "Removal failed [${err.code}]: ${err.message}", err.cause)
+                    resultBitmap = null
+                    lastFailure = err.message
+                    Toast.makeText(
+                        activity,
+                        "Background removal failed (${err.code.name.lowercase(java.util.Locale.US)}): " +
+                            "${err.message}. Source shown unchanged.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    updateUi()
+                }
+            )
         }
     }
 
@@ -240,12 +319,31 @@ class BackgroundRemoverController(
             fullMask.release()
             return finalMask
         } catch (e: Exception) {
-            // Robust fallback: Otsu thresholding + morphological cleanup
+            // Robust fallback: Otsu thresholding + morphological cleanup.
+            // Channel-count aware: BitmapBridge mats are 4-channel (BGRA/RGBA);
+            // the old unconditional COLOR_BGR2GRAY threw here, escaping to the
+            // caller's catch-all and producing a fake "cutout" (CV-3 root cause).
+            Log.w(TAG, "GrabCut failed; falling back to Otsu segmentation", e)
             val gray = Mat()
-            Imgproc.cvtColor(img, gray, Imgproc.COLOR_BGR2GRAY)
+            when (img.channels()) {
+                1 -> img.copyTo(gray)
+                4 -> {
+                    val bgr = Mat()
+                    try {
+                        Imgproc.cvtColor(img, bgr, Imgproc.COLOR_RGBA2BGR)
+                        Imgproc.cvtColor(bgr, gray, Imgproc.COLOR_BGR2GRAY)
+                    } finally {
+                        bgr.release()
+                    }
+                }
+                else -> Imgproc.cvtColor(img, gray, Imgproc.COLOR_BGR2GRAY)
+            }
             val fallbackMask = Mat()
-            Imgproc.threshold(gray, fallbackMask, 0.0, 255.0, Imgproc.THRESH_BINARY_INV or Imgproc.THRESH_OTSU)
-            gray.release()
+            try {
+                Imgproc.threshold(gray, fallbackMask, 0.0, 255.0, Imgproc.THRESH_BINARY_INV or Imgproc.THRESH_OTSU)
+            } finally {
+                gray.release()
+            }
             return fallbackMask
         } finally {
             bgrImg.release()
@@ -256,8 +354,13 @@ class BackgroundRemoverController(
     }
 
     private fun exportPng() {
-        val bmp = resultBitmap ?: sourceBitmap ?: run {
-            Toast.makeText(activity, "No image to save", Toast.LENGTH_SHORT).show()
+        val bmp = resultBitmap ?: run {
+            Toast.makeText(
+                activity,
+                if (lastFailure != null) "No cutout to save — removal failed ($lastFailure)"
+                else "No cutout to save yet",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 

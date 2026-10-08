@@ -76,7 +76,10 @@ class DocumentScannerController(
     private var isBackCamera = true
     private var currentZoomRatio = 1.0f
     private var scaleGestureDetector: ScaleGestureDetector? = null
-    private val cameraExecutor = Executors.newSingleThreadExecutor()
+    // App-scoped shared executor (CV-7): per-controller executors leaked a
+    // non-daemon thread on every activity recreate (e.g. theme change).
+    private val cameraExecutor: java.util.concurrent.ExecutorService =
+        com.veilframe.app.cv.core.CvRuntime.cameraExecutor
 
     @SuppressLint("ClickableViewAccessibility")
     fun init() {
@@ -336,37 +339,112 @@ class DocumentScannerController(
     }
 
     private fun analyzeFrameForDocument(imageProxy: ImageProxy) {
-        val frameBitmap = imageProxyToBitmap(imageProxy)
+        // Fast bail-out when the CV engine is unavailable: never burn frames
+        // converting JPEGs just to swallow UnsatisfiedLinkError per frame (CV-6).
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
+            imageProxy.close()
+            return
+        }
+
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+
+        // Direct Y-plane -> grayscale Mat, decimated to <=1024px (CV-5).
+        // Replaces the old NV21 -> JPEG(85) -> decode -> Bitmap -> Mat round-trip
+        // that ran at full camera resolution on EVERY frame. QuadDetector
+        // grayscales internally and accepts single-channel input natively.
+        val grayMat = try {
+            yPlaneToGrayMat(mediaImage)
+        } catch (t: Throwable) {
+            android.util.Log.w("VeilFrame.DocScanner", "Frame conversion failed", t)
+            null
+        }
         imageProxy.close()
-        if (frameBitmap == null) return
+        val mat = grayMat ?: return
 
         try {
-            val srcMat = BitmapBridge.toMat(frameBitmap)
-            val corners = DocumentScanner.findCorners(srcMat)
-            srcMat.release()
+            val corners = DocumentScanner.findCorners(mat)
+            val frameW = mat.cols()
+            val frameH = mat.rows()
 
             val detectedPts = if (corners.size == 4) {
                 corners.map { PointF(it.x.toFloat(), it.y.toFloat()) }
             } else null
 
             activity.runOnUiThread {
-                binding.docQuadOverlayView.setDetectedQuad(
-                    detectedPts,
-                    frameBitmap.width,
-                    frameBitmap.height
-                )
-                if (detectedPts != null) {
-                    binding.tvDocCamStatus.text = "Document detected"
-                } else {
-                    binding.tvDocCamStatus.text = "Align document inside frame"
-                }
+                binding.docQuadOverlayView.setDetectedQuad(detectedPts, frameW, frameH)
+                binding.tvDocCamStatus.text =
+                    if (detectedPts != null) "Document detected" else "Align document inside frame"
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            // Honest, rate-limited logging — silent per-frame catch-alls hid
+            // dead-CV battery drain (CV-6).
+            if (System.currentTimeMillis() - lastFrameErrorLogMs > 5_000L) {
+                lastFrameErrorLogMs = System.currentTimeMillis()
+                android.util.Log.w("VeilFrame.DocScanner", "Frame analysis failed", t)
+            }
             activity.runOnUiThread {
                 binding.docQuadOverlayView.clear()
             }
         } finally {
-            frameBitmap.recycle()
+            mat.release() // CV-4: released even when findCorners throws
+        }
+    }
+
+    @Volatile
+    private var lastFrameErrorLogMs = 0L
+
+    /** Camera Y (luma) plane -> CV_8UC1 Mat, decimated to <=1024px on the long edge. */
+    private fun yPlaneToGrayMat(mediaImage: android.media.Image): org.opencv.core.Mat? {
+        val plane = mediaImage.planes.firstOrNull() ?: return null
+        val width = mediaImage.width
+        val height = mediaImage.height
+        if (width <= 0 || height <= 0) return null
+        val buffer = plane.buffer.duplicate()
+        val rowStride = plane.rowStride
+        val data = ByteArray(width * height)
+        try {
+            if (rowStride == width) {
+                buffer.position(0)
+                buffer.get(data, 0, width * height)
+            } else {
+                var offset = 0
+                for (row in 0 until height) {
+                    buffer.position(row * rowStride)
+                    buffer.get(data, offset, width)
+                    offset += width
+                }
+            }
+        } catch (_: Throwable) {
+            return null
+        }
+        val full = org.opencv.core.Mat(height, width, org.opencv.core.CvType.CV_8UC1)
+        full.put(0, 0, data)
+        val maxEdge = maxOf(width, height)
+        if (maxEdge <= 1024) return full
+        val scaled = org.opencv.core.Mat()
+        return try {
+            val scale = 1024.0 / maxEdge
+            org.opencv.imgproc.Imgproc.resize(
+                full,
+                scaled,
+                org.opencv.core.Size(
+                    maxOf(1, Math.round(width * scale).toInt()).toDouble(),
+                    maxOf(1, Math.round(height * scale).toInt()).toDouble(),
+                ),
+                0.0,
+                0.0,
+                org.opencv.imgproc.Imgproc.INTER_AREA,
+            )
+            scaled
+        } catch (t: Throwable) {
+            scaled.release()
+            throw t
+        } finally {
+            full.release() // CV-4: released on BOTH success and failure paths
         }
     }
 
@@ -393,6 +471,10 @@ class DocumentScannerController(
                             handleCameraPhotoCaptured(bitmap)
                             updateCameraDoneBadge()
                             Toast.makeText(activity, "Page ${session.pageCount} captured", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        activity.runOnUiThread {
+                            Toast.makeText(activity, "Could not process captured frame — try again", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -480,25 +562,49 @@ class DocumentScannerController(
         val page = session.currentPage ?: return
         val bmp = page.getDisplayBitmap(activity) ?: return
 
-        scope.launch(Dispatchers.IO) {
-            try {
+        // A2: governed execution — INTERACTIVE lane + memory admission.
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(bmp.width, bmp.height, 3)
+        scope.launch {
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "doc-auto-crop",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+            ) { ctx ->
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(bmp)
-                val corners = DocumentScanner.findCorners(srcMat)
+                try {
+                    val corners = DocumentScanner.findCorners(srcMat)
+                    if (corners.size != 4) {
+                        null
+                    } else {
+                        val croppedMat = DocumentScanner.warpPerspective(srcMat, corners)
+                        val croppedBmp = try {
+                            BitmapBridge.toBitmap(croppedMat)
+                        } finally {
+                            croppedMat.release()
+                        }
+                        croppedBmp to corners
+                    }
+                } finally {
+                    srcMat.release() // CV-4: released on every path
+                }
+            }
 
-                if (corners.size == 4) {
-                    val croppedMat = DocumentScanner.warpPerspective(srcMat, corners)
-                    val croppedBmp = BitmapBridge.toBitmap(croppedMat)
-                    croppedMat.release()
-
-                    withContext(Dispatchers.Main) {
-                        page.processedBitmapCache = croppedBmp
-                        page.appliedQuad = corners
+            job.await().fold(
+                onOk = { outcome ->
+                    if (outcome != null) {
+                        page.processedBitmapCache = outcome.first
+                        page.corners = outcome.second
                         persistSession()
                         updateUi()
                     }
+                },
+                onErr = { err ->
+                    android.util.Log.w("VeilFrame.DocScanner", "Auto-crop failed for page ${page.id} [${err.code}]: ${err.message}")
+                    Toast.makeText(activity, "Auto-crop unavailable — page kept as captured", Toast.LENGTH_SHORT).show()
                 }
-                srcMat.release()
-            } catch (_: Throwable) {}
+            )
         }
     }
 
@@ -506,22 +612,41 @@ class DocumentScannerController(
         val page = session.currentPage ?: return
         val baseBmp = page.originalBitmapCache ?: page.processedBitmapCache ?: return
 
-        scope.launch(Dispatchers.IO) {
-            try {
+        // A2: governed execution — INTERACTIVE lane + memory admission.
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(baseBmp.width, baseBmp.height, 3)
+        scope.launch {
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "doc-enhance-filter",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+            ) { ctx ->
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(baseBmp)
-                val filteredMat = DocumentScanner.process(srcMat, mode)
-                val filteredBmp = BitmapBridge.toBitmap(filteredMat)
+                try {
+                    val filteredMat = DocumentScanner.process(srcMat, mode)
+                    try {
+                        BitmapBridge.toBitmap(filteredMat)
+                    } finally {
+                        filteredMat.release()
+                    }
+                } finally {
+                    srcMat.release() // CV-4
+                }
+            }
 
-                filteredMat.release()
-                srcMat.release()
-
-                withContext(Dispatchers.Main) {
+            job.await().fold(
+                onOk = { filteredBmp ->
                     page.processedBitmapCache = filteredBmp
-                    page.appliedFilter = mode.name
+                    page.mode = mode
                     persistSession()
                     updateUi()
+                },
+                onErr = { err ->
+                    android.util.Log.w("VeilFrame.DocScanner", "Filter $mode failed for page ${page.id} [${err.code}]: ${err.message}")
+                    Toast.makeText(activity, "Filter could not be applied", Toast.LENGTH_SHORT).show()
                 }
-            } catch (_: Throwable) {}
+            )
         }
     }
 

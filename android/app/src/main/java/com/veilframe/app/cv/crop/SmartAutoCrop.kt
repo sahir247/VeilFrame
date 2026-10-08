@@ -122,9 +122,13 @@ object SmartAutoCrop {
             // Integral image search: window of (paddedW x paddedH) with max energy.
             val integral = Mat()
             val squared = Mat()
-            Imgproc.integral2(importance, integral, squared)
-            squared.release()
+            try {
+                Imgproc.integral2(importance, integral, squared)
+            } finally {
+                squared.release()
+            }
 
+            try { // CV-11: integral released even when the search throws
             var bestX = (width - paddedW) / 2
             var bestY = (height - paddedH) / 2
             var bestEnergy = -1.0
@@ -147,7 +151,9 @@ object SmartAutoCrop {
             // Clamp to bounds after stepping.
             bestX = bestX.coerceIn(0, width - paddedW)
             bestY = bestY.coerceIn(0, height - paddedH)
-            integral.release()
+            } finally {
+                integral.release()
+            }
 
             val totalEnergy = Core.sumElems(importance).`val`[0]
             val rect = CropRect(bestX, bestY, paddedW, paddedH)

@@ -252,10 +252,11 @@ class QrScanner(
         val full = org.opencv.core.Mat(height, width, org.opencv.core.CvType.CV_8UC1)
         full.put(0, 0, data)
         val maxEdge = maxOf(width, height)
-        return if (maxEdge <= 1024) {
-            full
-        } else {
-            val scaled = org.opencv.core.Mat()
+        if (maxEdge <= 1024) {
+            return full
+        }
+        val scaled = org.opencv.core.Mat()
+        return try {
             val scale = 1024.0 / maxEdge
             org.opencv.imgproc.Imgproc.resize(
                 full,
@@ -266,8 +267,13 @@ class QrScanner(
                 ),
                 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA,
             )
-            full.release()
             scaled
+        } catch (t: Throwable) {
+            scaled.release()
+            throw t
+        } finally {
+            // CV-4: previously leaked the full-size Mat when resize threw.
+            full.release()
         }
     }
 

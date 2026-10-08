@@ -47,6 +47,9 @@ enum class CvErrorCode {
     /** The algorithm itself failed or produced no usable output. */
     ALGORITHM_FAILURE,
 
+    /** The OpenCV native library could not be loaded on this device. */
+    NATIVE_UNAVAILABLE,
+
     /** Anything unexpected. */
     INTERNAL,
 }
@@ -91,6 +94,17 @@ class CvCancellation {
 
 /** Thrown by [CvCancellation.ensureActive]. */
 class CvCancelled(val detail: String) : Exception("cancelled: $detail")
+
+/**
+ * Thrown by CvRuntime.requireAvailable() when the OpenCV native library is not
+ * loaded. Mapped to [CvErrorCode.NATIVE_UNAVAILABLE] by CvFailureMapper so
+ * callers surface an honest "CV engine unavailable" state instead of crashing
+ * with UnsatisfiedLinkError or silently fabricating results.
+ */
+class CvNativeUnavailableException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /** Bytes actually touched by a job, for observability. */
 data class MemoryFootprint(

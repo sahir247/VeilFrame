@@ -30,17 +30,26 @@ object BitmapBridge {
 
     /** Copies bitmap pixels into a new Mat. */
     fun toMat(bitmap: Bitmap): Mat {
-        val source = if (bitmap.config == Bitmap.Config.ARGB_8888 ||
-            bitmap.config == Bitmap.Config.RGB_565 ||
-            bitmap.config == Bitmap.Config.ALPHA_8
-        ) {
-            bitmap
-        } else {
-            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+        require(bitmap.config != Bitmap.Config.HARDWARE) {
+            "HARDWARE bitmaps have no CPU-readable pixels; re-decode with a software config " +
+                "(or Bitmap.copy(ARGB_8888)) before converting to Mat"
         }
-        val mat = createMatFor(source)
-        Utils.bitmapToMat(source, mat)
-        return mat
+        val needsCopy = bitmap.config != Bitmap.Config.ARGB_8888 &&
+            bitmap.config != Bitmap.Config.RGB_565 &&
+            bitmap.config != Bitmap.Config.ALPHA_8
+        val source = if (needsCopy) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+        } else {
+            bitmap
+        }
+        try {
+            val mat = createMatFor(source)
+            Utils.bitmapToMat(source, mat)
+            return mat
+        } finally {
+            // CV-9: the intermediate copy used to leak (never recycled).
+            if (needsCopy && source !== bitmap) source.recycle()
+        }
     }
 
     /**

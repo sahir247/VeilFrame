@@ -102,6 +102,38 @@ object DocumentScanner {
      */
     fun enhanceFullFrame(source: Mat, mode: DocumentMode): Mat = enhance(source.clone(), mode)
 
+    // ---------------------------------------------------------------------
+    // Convenience API consumed by DocumentScannerController / DocumentSession.
+    // (Restored in v2.3.0-rc1: call sites existed but these wrappers were
+    // missing from the object — main@8f090a7 did not compile.)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Detects the document quadrilateral. Returns TL, TR, BR, BL in SOURCE
+     * coordinates, or an empty list when no plausible quad was found.
+     * Accepts color OR single-channel (camera Y-plane) input.
+     */
+    fun findCorners(source: Mat): List<org.opencv.core.Point> {
+        require(!source.empty()) { "source is empty" }
+        return com.veilframe.app.cv.geometry.QuadDetector.detect(source)?.corners ?: emptyList()
+    }
+
+    /** Warps [source] so the quad defined by [corners] fills the output. Caller owns the returned Mat. */
+    fun warpPerspective(source: Mat, corners: List<org.opencv.core.Point>): Mat {
+        require(!source.empty()) { "source is empty" }
+        require(corners.size == 4) { "exactly 4 corners required, got ${corners.size}" }
+        return com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(source, corners)
+    }
+
+    /**
+     * Applies [mode] enhancement to a COPY of [source] and returns the new Mat
+     * (source is untouched — callers release both independently).
+     */
+    fun process(source: Mat, mode: DocumentMode): Mat {
+        require(!source.empty()) { "source is empty" }
+        return enhance(source.clone(), mode)
+    }
+
     /** Applies a document enhancement mode in place and returns [image]. */
     fun enhance(image: Mat, mode: DocumentMode): Mat = when (mode) {
         DocumentMode.ORIGINAL -> image

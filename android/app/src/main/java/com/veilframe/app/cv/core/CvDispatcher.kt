@@ -279,6 +279,11 @@ object CvFailureMapper {
      */
     fun <T> toResult(t: Throwable): CvResult<T> = when (t) {
         is CvCancelled -> CvResult.Err(CvErrorCode.CANCELLED, t.detail, t)
+        is CvNativeUnavailableException -> CvResult.Err(
+            CvErrorCode.NATIVE_UNAVAILABLE,
+            t.message ?: "OpenCV native library unavailable",
+            t,
+        )
         is CancellationException -> CvResult.Err(CvErrorCode.CANCELLED, t.message ?: "cancelled", t)
         is OutOfMemoryError -> CvResult.Err(CvErrorCode.OUT_OF_MEMORY, "native/heap OOM: ${t.message}", t)
         is IllegalArgumentException -> CvResult.Err(CvErrorCode.INVALID_INPUT, t.message ?: "invalid input", t)

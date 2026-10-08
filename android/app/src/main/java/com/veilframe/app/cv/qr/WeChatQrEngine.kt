@@ -167,13 +167,8 @@ class WeChatQrEngine private constructor(
             // app start, but explicit init keeps engine setup self-contained.
             // The outcome is RECORDED, not swallowed: a failed initLocal() is a
             // diagnosis fact even when the provider already loaded the lib.
-            val initOutcome = runCatching { org.opencv.android.OpenCVLoader.initLocal() }
-            val initError: Throwable? = initOutcome.exceptionOrNull()
-                ?: if (initOutcome.getOrNull() == false) {
-                    IllegalStateException("OpenCVLoader.initLocal() returned false")
-                } else {
-                    null
-                }
+            com.veilframe.app.cv.core.CvRuntime.initialize()
+            val initError: Throwable? = com.veilframe.app.cv.core.CvRuntime.initError
             val engine = try {
                 val detectorModels = extractModel(appContext, DETECTOR_PROTOTXT) to
                     extractModel(appContext, DETECTOR_CAFFEMODEL)
