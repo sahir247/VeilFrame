@@ -140,3 +140,20 @@ External audit of merged `main` rated the UI ~8/10 ("serious modern app, not pro
 | **6. Motion ubiquity** | `VeilFrameInteraction` now **excludes Chips from scale-bounce** (dense, high-frequency controls keep library ripple + state morphs). Bounce remains on deliberate actions (buttons/FABs/icon buttons) and subtle 0.98 depression on cards; jelly stays reserved for completion events. Motion semantics: micro→component→transformational tiers unchanged. | Done |
 
 Verification: zero `<SeekBar`/`MaterialComponents` matches in layouts; zero dangling `seekbar_*` references; all touched files balance-checked; governance ratchet PASS; XML well-formed. Compiler gate = maintainer run (rc7).
+
+
+---
+
+## 10. Round 6 — P0 runtime crash RCA: VfSprings final-position bug (device-found)
+
+**Symptom (device runtime):** `UnsupportedOperationException: Final position of the spring cannot be greater than the max value` inside `VfSprings.springScaleTo` — i.e., on the **first press-bounce of any button/card**. Unit tests (899) could never catch it: no instrumentation touches real animation starts.
+
+**Root cause (maintainer-side source analysis, confirmed against androidx):**
+`SpringAnimation(view, prop, finalPosition)` stores the target on the *default* `SpringForce` it creates; `setSpring(force)` then assigns `mSpring = force` **verbatim** — the final position is not copied. Our themed template forces from `MotionUtils.resolveThemeSpringForce` carry only damping/stiffness, so `start()`'s sanity check saw an unset final position. Secondary defect: one **mutable** `SpringForce` instance was shared between the SCALE_X and SCALE_Y animations (start()/updateValueAndVelocity mutate force state → cross-axis corruption).
+
+**Fix (architecture, not patch) — `VfSprings` v3.1:**
+- New immutable `SpringSpec(dampingRatio, stiffness)` is what theme resolution returns; every animation calls `spec.create(finalPosition)` → a **fresh `SpringForce` per axis per animation** with the target baked in. Both defect classes are structurally impossible now.
+- All spring paths converted: press bounce (0.94/0.98), release (1.0), jelly (0.35/380 → 1f), translationY (default/slow spatial), staggerRise (fast spatial + fast effects). Motion parameters, scales, and reduced-motion behavior are **byte-for-byte unchanged** — same Material spring feel, no UI behavior change.
+- Bonus hardening: springs are now **tracked per view** (`vf_tag_spring_anims` id) so `cancel()/cancelAll()` genuinely stop in-flight animations instead of fighting them with property resets (pre-existing gap since v3.0).
+
+**Lesson recorded:** blind-written code against verified *signatures* can still violate verified *semantics* (object ownership/lifecycle). The device gate is irreplaceable; every SpringAnimation construction site in the repo now follows one audited pattern (`spec.create(target)`), grep-checkable: no `.setSpring(` call receives a shared instance.

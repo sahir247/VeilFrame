@@ -12,55 +12,86 @@ import androidx.dynamicanimation.animation.SpringForce
 import com.google.android.material.motion.MotionUtils
 
 /**
- * VeilFrame Expressive Motion v3.0 — spring-physics core.
+ * VeilFrame Expressive Motion v3.1 — spring-physics core.
  *
- * Replaces ViewPropertyAnimator + OvershootInterpolator physics with themed
- * Material 3 Expressive springs resolved from the activity theme
- * (fast/default/slow × spatial/effects). Public API mirrors the legacy
- * [ExpressiveMotion] object so call sites migrate one-for-one.
+ * Themed Material 3 Expressive spring parameters (fast/default/slow ×
+ * spatial/effects) are resolved from the activity theme via
+ * [MotionUtils.resolveThemeSpringForce] and carried as IMMUTABLE [SpringSpec]
+ * values. Every animation gets its OWN [SpringForce] instance created with an
+ * explicit final position.
  *
- * Dependencies: androidx.dynamicanimation:dynamicanimation:1.0.0
- *               com.google.android.material:material:1.14.0+
+ * Why the spec/force split matters (v3.1 crash fix):
+ * `SpringAnimation(view, prop, finalPosition).setSpring(force)` DISCARDS the
+ * constructor's final position — `setSpring` assigns `mSpring = force` verbatim
+ * (androidx source). A themed template force has no final position, so
+ * `start()` failed its sanity check with
+ * "Final position of the spring cannot be greater than the max value" on every
+ * press-bounce. Additionally, a single mutable SpringForce shared between the
+ * X and Y animations corrupts state (start()/updateValueAndVelocity mutate the
+ * force's thresholds/velocity). [SpringSpec.create] eliminates both classes:
+ * fresh force, per axis, per animation, final position baked in.
  *
- * Reduced-motion contract (ANIMATOR_DURATION_SCALE == 0):
- * springs collapse to instant state changes; haptics are ALWAYS retained.
+ * Reduced-motion contract (ANIMATOR_DURATION_SCALE == 0): springs collapse to
+ * instant state changes; haptics are ALWAYS retained.
  */
 object VfSprings {
 
     // ------------------------------------------------------------------
-    // Theme-resolved spring forces (cached per Context configuration)
+    // Immutable spring configuration (damping + stiffness only)
     // ------------------------------------------------------------------
 
-    fun fastSpatial(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringFastSpatial, 0.6f, 800f)
+    /** Immutable spring parameters resolved from the theme (or fallbacks). */
+    data class SpringSpec(
+        val dampingRatio: Float,
+        val stiffness: Float,
+    ) {
+        /**
+         * Creates a FRESH [SpringForce] with [finalPosition] baked in.
+         * Never share SpringForce instances between animations.
+         */
+        fun create(finalPosition: Float): SpringForce =
+            SpringForce(finalPosition)
+                .setDampingRatio(dampingRatio)
+                .setStiffness(stiffness)
+    }
 
-    fun fastEffects(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringFastEffects, 1f, 3800f)
+    fun fastSpatial(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringFastSpatial, 0.6f, 800f)
 
-    fun defaultSpatial(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringDefaultSpatial, 0.8f, 380f)
+    fun fastEffects(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringFastEffects, 1f, 3800f)
 
-    fun defaultEffects(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringDefaultEffects, 1f, 1600f)
+    fun defaultSpatial(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringDefaultSpatial, 0.8f, 380f)
 
-    fun slowSpatial(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringSlowSpatial, 0.8f, 200f)
+    fun defaultEffects(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringDefaultEffects, 1f, 1600f)
 
-    fun slowEffects(context: Context): SpringForce =
-        resolve(context, com.google.android.material.R.attr.motionSpringSlowEffects, 1f, 800f)
+    fun slowSpatial(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringSlowSpatial, 0.8f, 200f)
 
-    private fun resolve(context: Context, attr: Int, fallbackDamping: Float, fallbackStiffness: Float): SpringForce {
-        // Expressive themes provide these; fallback keeps pre-upgrade builds alive.
-        // Signature: resolveThemeSpringForce(context, @AttrRes attr, @StyleRes defStyleRes)
+    fun slowEffects(context: Context): SpringSpec =
+        resolveSpec(context, com.google.android.material.R.attr.motionSpringSlowEffects, 1f, 800f)
+
+    private fun resolveSpec(
+        context: Context,
+        attr: Int,
+        fallbackDamping: Float,
+        fallbackStiffness: Float,
+    ): SpringSpec {
+        // Signature (1.14.0-verified): resolveThemeSpringForce(Context, @AttrRes int, @StyleRes int).
+        // Expressive themes provide the springy values; fallbacks keep
+        // pre-upgrade/non-expressive themes alive.
         val themed = try {
             MotionUtils.resolveThemeSpringForce(context, attr, 0)
         } catch (_: Throwable) {
             null
         }
-        return (themed ?: SpringForce().apply {
-            dampingRatio = fallbackDamping
-            stiffness = fallbackStiffness
-        })
+        return if (themed != null) {
+            SpringSpec(themed.dampingRatio, themed.stiffness)
+        } else {
+            SpringSpec(fallbackDamping, fallbackStiffness)
+        }
     }
 
     fun isReducedMotion(context: Context): Boolean = try {
@@ -80,7 +111,7 @@ object VfSprings {
     private const val PRESS_SCALE_BUTTON = 0.94f
     private const val PRESS_SCALE_CARD = 0.98f
 
-    /** Tactile spring bounce for buttons/FABs/chips (does not consume touch events). */
+    /** Tactile spring bounce for buttons/FABs (does not consume touch events). */
     fun applyTouchBounce(view: View) = applyPressSpring(view, PRESS_SCALE_BUTTON)
 
     /** Subtle spring depression for cards. */
@@ -91,10 +122,10 @@ object VfSprings {
             if (!v.isEnabled) return@setOnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN ->
-                    springScaleTo(v, pressScale, fastSpatial(v.context), fastEffects(v.context))
+                    springScaleTo(v, pressScale, fastSpatial(v.context))
 
                 MotionEvent.ACTION_UP ->
-                    springScaleTo(v, 1f, fastSpatial(v.context), fastEffects(v.context))
+                    springScaleTo(v, 1f, fastSpatial(v.context))
 
                 MotionEvent.ACTION_CANCEL ->
                     springScaleTo(v, 1f, fastSpatial(v.context))
@@ -109,29 +140,48 @@ object VfSprings {
         }
     }
 
-    private fun springScaleTo(
-        view: View,
-        target: Float,
-        spatial: SpringForce,
-        effects: SpringForce? = null
-    ) {
+    /**
+     * Scales [view] to [target] on both axes with the given spatial spec.
+     * Each axis gets its own SpringForce with the final position baked in
+     * (v3.1 crash fix — see class KDoc).
+     */
+    private fun springScaleTo(view: View, target: Float, spatial: SpringSpec) {
         if (isReducedMotion(view.context)) {
             view.scaleX = target
             view.scaleY = target
             return
         }
-        listOf(
-            SpringAnimation(view, DynamicAnimation.SCALE_X, target),
-            SpringAnimation(view, DynamicAnimation.SCALE_Y, target)
-        ).forEach { it.setSpring(spatial).start() }
-        // Alpha/state-color effects ride the effects spring when provided.
-        effects?.let { /* components animate their own color via fast-effects internally */ }
+        fun axis(property: DynamicAnimation.ViewProperty) {
+            track(view, SpringAnimation(view, property).setSpring(spatial.create(target))).start()
+        }
+
+        axis(DynamicAnimation.SCALE_X)
+        axis(DynamicAnimation.SCALE_Y)
+    }
+
+    // ------------------------------------------------------------------
+    // Per-view animation tracking so cancel()/cancelAll() actually stop
+    // in-flight springs (previously resets fought running animations).
+    // ------------------------------------------------------------------
+
+    @Suppress("UNCHECKED_CAST")
+    private fun animList(view: View): MutableList<SpringAnimation> =
+        (view.getTag(com.veilframe.app.R.id.vf_tag_spring_anims) as? MutableList<SpringAnimation>)
+            ?: mutableListOf<SpringAnimation>().also {
+                view.setTag(com.veilframe.app.R.id.vf_tag_spring_anims, it)
+            }
+
+    private fun track(view: View, animation: SpringAnimation): SpringAnimation {
+        val list = animList(view)
+        list.removeAll { !it.isRunning }
+        list.add(animation)
+        return animation
     }
 
     // ------------------------------------------------------------------
     // Signature completion flourish: jelly (kept — it IS the VeilFrame voice)
-    // Implemented as an underdamped spring instead of hand-tuned keyframes:
-    // damping < 1 naturally oscillates 1.0 → overshoot → settle.
+    // Underdamped spring (damping 0.35) naturally oscillates 0.95 → ~1.045 → 1.0,
+    // reproducing the legacy keyframe feel with real physics.
     // ------------------------------------------------------------------
 
     fun playJellyBounce(view: View, onComplete: (() -> Unit)? = null) {
@@ -142,33 +192,41 @@ object VfSprings {
             view.scaleX = 1f; view.scaleY = 1f
             onComplete?.invoke(); return
         }
-        view.scaleX = 0.95f; view.scaleY = 0.95f
-        val jelly = SpringForce().apply {
-            dampingRatio = 0.35f   // ~2 visible oscillations, matching legacy keyframes
-            stiffness = 380f        // ≈ default-spatial tempo (320ms settle)
-        }
+        view.scaleX = 0.95f
+        view.scaleY = 0.95f
+
+        val jelly = SpringSpec(dampingRatio = 0.35f, stiffness = 380f)
         var pending = 2
-        val end = { if (--pending == 0) onComplete?.invoke() }
-        SpringAnimation(view, DynamicAnimation.SCALE_X, 1f).setSpring(jelly)
-            .addEndListener { _, _, _, _ -> end() }.start()
-        SpringAnimation(view, DynamicAnimation.SCALE_Y, 1f).setSpring(jelly)
-            .addEndListener { _, _, _, _ -> end() }.start()
+        val finished = {
+            pending--
+            if (pending == 0) onComplete?.invoke()
+        }
+        track(view, SpringAnimation(view, DynamicAnimation.SCALE_X)
+            .setSpring(jelly.create(1f))
+            .addEndListener { _, _, _, _ -> finished() })
+            .start()
+        track(view, SpringAnimation(view, DynamicAnimation.SCALE_Y)
+            .setSpring(jelly.create(1f))
+            .addEndListener { _, _, _, _ -> finished() })
+            .start()
     }
 
     // ------------------------------------------------------------------
-    // Surfaces: sheets / dialogs / settings slide-over settle on default-spatial
+    // Surfaces: sheets / dialogs / slide-overs settle on default-spatial
     // ------------------------------------------------------------------
 
     fun springTranslationY(view: View, targetY: Float, fullScreen: Boolean = false) {
         if (isReducedMotion(view.context)) {
-            view.translationY = targetY; return
+            view.translationY = targetY
+            return
         }
-        SpringAnimation(view, DynamicAnimation.TRANSLATION_Y, targetY)
-            .setSpring(if (fullScreen) slowSpatial(view.context) else defaultSpatial(view.context))
+        val spec = if (fullScreen) slowSpatial(view.context) else defaultSpatial(view.context)
+        track(view, SpringAnimation(view, DynamicAnimation.TRANSLATION_Y)
+            .setSpring(spec.create(targetY)))
             .start()
     }
 
-    /** Home → workspace surface rise (content stagger helper). */
+    /** Home → workspace content stagger helper (first frame only). */
     fun staggerRise(container: ViewGroup, childOffsetPx: Float = 28f, staggerMs: Long = 40L) {
         if (isReducedMotion(container.context)) return
         for (i in 0 until container.childCount) {
@@ -176,10 +234,12 @@ object VfSprings {
             child.alpha = 0f
             child.translationY = childOffsetPx * child.resources.displayMetrics.density
             child.postDelayed({
-                SpringAnimation(child, DynamicAnimation.TRANSLATION_Y, 0f)
-                    .setSpring(fastSpatial(child.context)).start()
-                SpringAnimation(child, DynamicAnimation.ALPHA, 1f)
-                    .setSpring(fastEffects(child.context)).start()
+                val spatial = fastSpatial(child.context)
+                val effects = fastEffects(child.context)
+                track(child, SpringAnimation(child, DynamicAnimation.TRANSLATION_Y)
+                    .setSpring(spatial.create(0f))).start()
+                track(child, SpringAnimation(child, DynamicAnimation.ALPHA)
+                    .setSpring(effects.create(1f))).start()
             }, i * staggerMs)
         }
     }
@@ -191,7 +251,7 @@ object VfSprings {
     object Haptics {
         fun selectionTick(view: View) = view.performHapticFeedbackSafe(HapticFeedbackConstants.CONTEXT_CLICK) // API 23+
         fun confirm(view: View) = view.performHapticFeedbackSafe(HapticFeedbackConstants.KEYBOARD_TAP)
-        fun success(view: View) = view.performHapticFeedbackSafe(HapticFeedbackConstants.KEYBOARD_TAP) // CONFIRM is API30+; double-tap below for minSdk 26 safety
+        fun success(view: View) = view.performHapticFeedbackSafe(HapticFeedbackConstants.KEYBOARD_TAP) // CONFIRM is API30+; kept API26-safe
         fun warn(view: View) = view.performHapticFeedbackSafe(HapticFeedbackConstants.LONG_PRESS)
         fun error(view: View) {
             view.performHapticFeedbackSafe(HapticFeedbackConstants.LONG_PRESS)
@@ -203,14 +263,18 @@ object VfSprings {
         }
     }
 
-    /** Cancel + neutralize a view (parity with legacy ExpressiveMotion.cancel). */
+    /**
+     * Neutralizes a view: cancels tracked in-flight springs AND
+     * ViewPropertyAnimators, then resets transforms.
+     */
     fun cancel(view: View) {
-        SpringAnimation(view, DynamicAnimation.SCALE_X).cancel()
-        SpringAnimation(view, DynamicAnimation.SCALE_Y).cancel()
-        SpringAnimation(view, DynamicAnimation.TRANSLATION_Y).cancel()
+        animList(view).forEach { runCatching { if (it.isRunning) it.cancel() } }
+        animList(view).clear()
         view.animate().cancel()
-        view.scaleX = 1f; view.scaleY = 1f
-        view.translationX = 0f; view.translationY = 0f
+        view.scaleX = 1f
+        view.scaleY = 1f
+        view.translationX = 0f
+        view.translationY = 0f
         view.alpha = 1f
     }
 
