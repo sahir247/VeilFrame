@@ -27,4 +27,46 @@ data class UpscaleInferenceParams(
         require(strength in 0f..100f) { "strength must be between 0 and 100: $strength" }
         require(parallelWorkers in 0..8) { "parallelWorkers must be in 0..8: $parallelWorkers" }
     }
+
+    companion object {
+        /**
+         * F3 (device-class tile sizing): replaces the fixed 512px/4-worker
+         * default that spiked ~100 MB per worker on 4x models and thrashed
+         * 8-core SoCs into thermal throttling.
+         *
+         * Invariant enforced by the tier table:
+         *   workers x perTilePeak(chunk x scale) <= ~40% of the app heap,
+         *   where perTilePeak ~= (chunk*scale)^2 x 20 bytes (float planes +
+         *   int pixels + output bitmap + blend buffers).
+         */
+        fun forDevice(context: android.content.Context, targetScale: Int): UpscaleInferenceParams {
+            val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+                as? android.app.ActivityManager
+            val heapMb = (am?.largeMemoryClass ?: am?.memoryClass ?: 256)
+            val lowRam = am?.isLowRamDevice ?: false
+            val bigScale = targetScale >= 4
+
+            val chunk: Int
+            val workers: Int
+            when {
+                lowRam || heapMb < 256 -> {
+                    chunk = if (bigScale) 160 else 256
+                    workers = 1
+                }
+                heapMb < 512 -> {
+                    chunk = if (bigScale) 256 else 384
+                    workers = 1
+                }
+                else -> {
+                    chunk = if (bigScale) 384 else 512
+                    workers = 2
+                }
+            }
+            return UpscaleInferenceParams(
+                chunkSize = chunk,
+                overlap = minOf(32, chunk / 4),
+                parallelWorkers = workers,
+            )
+        }
+    }
 }

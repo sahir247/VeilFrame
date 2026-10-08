@@ -26,8 +26,13 @@ class AiProcessor(
         private const val TAG = "VeilFrame.AiProcessor"
     }
 
-    private val chunksDir: File
-        get() = File(context.cacheDir, "processing_chunks").apply(File::mkdirs)
+    /**
+     * F5: per-job working directory. The old shared `processing_chunks` dir was
+     * deleted wholesale in `finally` — concurrent jobs corrupted each other and
+     * null tile reads crashed with a bare error(). Each job now owns a UUID dir.
+     */
+    private fun newJobDir(): File =
+        File(context.cacheDir, "processing_chunks/${java.util.UUID.randomUUID()}").apply(File::mkdirs)
 
     suspend fun processImage(
         session: OrtSession,
@@ -39,28 +44,24 @@ class AiProcessor(
         onStatus: ((String) -> Unit)? = null
     ): Bitmap = processImage(
         session = session,
-        inputBitmap = inputBitmap,
+        source = BitmapSource(inputBitmap) as SourceAccess,
         modelName = modelName,
         scaleFactor = scaleFactor,
-        chunkSize = params.chunkSize,
-        overlap = params.overlap,
-        strength = params.strength,
-        disableChunking = !params.enableChunking,
-        parallelWorkers = params.parallelWorkers,
+        params = params,
         onProgress = onProgress,
         onStatus = onStatus
     )
 
+    /**
+     * Primary entry point (F1): the source is a [SourceAccess], so huge images
+     * stream tiles from disk instead of living in the Java heap.
+     */
     suspend fun processImage(
         session: OrtSession,
-        inputBitmap: Bitmap,
+        source: SourceAccess,
         modelName: String,
         scaleFactor: Int? = null,
-        chunkSize: Int = 512,
-        overlap: Int = 16,
-        strength: Float = 65f,
-        disableChunking: Boolean = false,
-        parallelWorkers: Int = 0,
+        params: UpscaleInferenceParams = UpscaleInferenceParams(),
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
     ): Bitmap = withContext(Dispatchers.Default) {
@@ -68,30 +69,33 @@ class AiProcessor(
             session = session,
             modelName = modelName,
             explicitScale = scaleFactor,
-            chunkSize = chunkSize,
-            overlap = overlap,
-            strength = strength,
-            disableChunking = disableChunking
+            chunkSize = params.chunkSize,
+            overlap = params.overlap,
+            strength = params.strength,
+            disableChunking = !params.enableChunking
         )
 
+        val jobDir = newJobDir()
         try {
             renderBitmap(
                 session = session,
-                source = inputBitmap,
+                source = source,
                 info = info,
-                parallelWorkers = parallelWorkers,
+                jobDir = jobDir,
+                parallelWorkers = params.parallelWorkers,
                 onProgress = onProgress,
                 onStatus = onStatus
             )
         } finally {
-            chunksDir.deleteRecursively()
+            jobDir.deleteRecursively()
         }
     }
 
     private suspend fun renderBitmap(
         session: OrtSession,
-        source: Bitmap,
+        source: SourceAccess,
         info: ModelInfo,
+        jobDir: File,
         parallelWorkers: Int,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
@@ -105,6 +109,7 @@ class AiProcessor(
                 session = session,
                 source = source,
                 info = info,
+                jobDir = jobDir,
                 tileLimit = tileLimit,
                 requestedWorkers = parallelWorkers,
                 onProgress = onProgress,
@@ -121,25 +126,23 @@ class AiProcessor(
 
     private suspend fun renderSingleBitmap(
         session: OrtSession,
-        source: Bitmap,
+        source: SourceAccess,
         info: ModelInfo
     ): Bitmap = withContext(Dispatchers.Default) {
-        val workingCopy = source.copy(Bitmap.Config.ARGB_8888, true)
-        try {
-            runModelOnBitmap(
-                session = session,
-                bitmap = workingCopy,
-                info = info
-            )
-        } finally {
-            workingCopy.recycle()
-        }
+        // runModelOnBitmap never mutates its input, so the old defensive
+        // full-size copy (up to 192 MB on 48 MP sources) is dropped.
+        runModelOnBitmap(
+            session = session,
+            bitmap = source.full(),
+            info = info
+        )
     }
 
     private suspend fun renderByTiles(
         session: OrtSession,
-        source: Bitmap,
+        source: SourceAccess,
         info: ModelInfo,
+        jobDir: File,
         tileLimit: Int,
         requestedWorkers: Int,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
@@ -154,46 +157,60 @@ class AiProcessor(
 
         Log.d(
             TAG,
-            "Tile mode ${source.width}x${source.height}, limit=$tileLimit, step=${grid.step}, grid=${grid.columns}x${grid.rows}, overlap=${info.overlap}"
+            "Tile mode ${source.width}x${source.height}, limit=$tileLimit, step=${grid.step}, grid=${grid.columns}x${grid.rows}, overlap=${info.overlap}, jobDir=${jobDir.name}"
         )
+
+        // F5: refuse up-front when the cache cannot hold the streamed tile outputs.
+        val outputPixels = source.width.toLong() * info.scaleFactor *
+            (source.height.toLong() * info.scaleFactor)
+        ensureDiskBudget(jobDir, outputPixels)
 
         val tiles = grid.tiles { index ->
             TileFiles(
-                input = File(chunksDir, "ai_tile_$index.png"),
-                output = File(chunksDir, "ai_tile_${index}_out.png")
+                // Input PNGs are gone (F9-partial): tiles are region-decoded
+                // straight from the source. Path kept for struct compatibility.
+                input = File(jobDir, "ai_tile_$index.src"),
+                output = File(jobDir, "ai_tile_${index}_out.png")
             )
         }
 
-        try {
-            writeSourceTiles(source, tiles)
-            Log.d(TAG, "Stored ${tiles.size} tile(s) for AI processing")
+        if (tiles.size > 1) {
+            onProgress?.invoke(0, tiles.size)
+        }
 
-            if (tiles.size > 1) {
-                onProgress?.invoke(0, tiles.size)
-            }
+        processTiles(
+            session = session,
+            source = source,
+            tiles = tiles,
+            info = info,
+            requestedWorkers = requestedWorkers,
+            onProgress = onProgress,
+            onStatus = onStatus
+        )
 
-            processTiles(
-                session = session,
-                tiles = tiles,
-                info = info,
-                requestedWorkers = requestedWorkers,
-                onProgress = onProgress,
-                onStatus = onStatus
+        composeTiles(
+            tiles = tiles,
+            imageSize = TensorSize(source.width, source.height),
+            overlap = info.overlap,
+            scaleFactor = info.scaleFactor
+        )
+    }
+
+    /** F5: typed, honest disk-space refusal instead of mid-job write failures. */
+    private fun ensureDiskBudget(jobDir: File, outputPixels: Long) {
+        val estimateBytes = (outputPixels * 4.0 * 0.6).toLong() + 64L * 1024L * 1024L
+        val usableBytes = android.os.StatFs(jobDir.absolutePath).usableBytes
+        if (usableBytes < estimateBytes) {
+            throw InsufficientDiskSpaceException(
+                "Need ~${estimateBytes / (1024 * 1024)} MB of cache storage for tiled inference; " +
+                    "only ${usableBytes / (1024 * 1024)} MB free"
             )
-
-            composeTiles(
-                tiles = tiles,
-                imageSize = TensorSize(source.width, source.height),
-                overlap = info.overlap,
-                scaleFactor = info.scaleFactor
-            )
-        } finally {
-            chunksDir.deleteRecursively()
         }
     }
 
     private suspend fun processTiles(
         session: OrtSession,
+        source: SourceAccess,
         tiles: List<Tile>,
         info: ModelInfo,
         requestedWorkers: Int,
@@ -211,11 +228,31 @@ class AiProcessor(
 
         suspend fun processTile(tile: Tile) {
             ensureActive()
-            transformStoredTile(
-                session = session,
-                tile = tile,
-                info = info
+            // F1/F9-partial: region-decode the tile input (streams from Uri for
+            // huge sources), run inference, stream the OUTPUT tile to the job dir.
+            val tileBitmap = source.region(
+                tile.area.x,
+                tile.area.y,
+                tile.area.width,
+                tile.area.height
             )
+            val transformed = try {
+                runModelOnBitmap(
+                    session = session,
+                    bitmap = tileBitmap,
+                    info = info
+                )
+            } finally {
+                tileBitmap.recycle()
+            }
+            try {
+                savePng(
+                    bitmap = transformed,
+                    file = tile.files.output
+                )
+            } finally {
+                transformed.recycle()
+            }
 
             val done = completedTiles.incrementAndGet()
             if (tiles.size > 1) {
@@ -238,64 +275,6 @@ class AiProcessor(
                     }
                 }
             }
-        }
-    }
-
-    private suspend fun writeSourceTiles(
-        source: Bitmap,
-        tiles: List<Tile>
-    ) = coroutineScope {
-        tiles.forEach { tile ->
-            ensureActive()
-            val extracted = Bitmap.createBitmap(
-                source,
-                tile.area.x,
-                tile.area.y,
-                tile.area.width,
-                tile.area.height
-            )
-
-            try {
-                savePng(
-                    bitmap = extracted,
-                    file = tile.files.input
-                )
-            } finally {
-                extracted.recycle()
-            }
-        }
-    }
-
-    private suspend fun transformStoredTile(
-        session: OrtSession,
-        tile: Tile,
-        info: ModelInfo
-    ) {
-        val tileBitmap = loadBitmap(
-            file = tile.files.input,
-            label = "tile ${tile.index}"
-        )
-
-        val transformed = try {
-            runModelOnBitmap(
-                session = session,
-                bitmap = tileBitmap,
-                info = info
-            )
-        } finally {
-            tileBitmap.recycle()
-        }
-
-        try {
-            savePng(
-                bitmap = transformed,
-                file = tile.files.output
-            )
-            withContext(Dispatchers.IO) {
-                tile.files.input.delete()
-            }
-        } finally {
-            transformed.recycle()
         }
     }
 
@@ -536,5 +515,5 @@ class AiProcessor(
         label: String
     ): Bitmap = withContext(Dispatchers.IO) {
         BitmapFactory.decodeFile(file.absolutePath)
-    } ?: error("Could not read $label")
+    } ?: throw TileIOException("Could not read $label from ${file.name}")
 }

@@ -71,10 +71,25 @@ class UpscaleInferenceEngine(
         model: UpscaleModel,
         targetScale: Int,
         listener: InferenceProgressListener?
-    ): Result<Bitmap> = upscale(source, model, targetScale, UpscaleInferenceParams(), listener)
+    ): Result<Bitmap> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, UpscaleInferenceParams(), listener)
 
     suspend fun upscale(
         source: Bitmap,
+        model: UpscaleModel,
+        targetScale: Int,
+        params: UpscaleInferenceParams = UpscaleInferenceParams(),
+        listener: InferenceProgressListener? = null
+    ): Result<Bitmap> = upscale(BitmapSource(source) as SourceAccess, model, targetScale, params, listener)
+
+    /**
+     * F1 primary entry point: streams the source via [SourceAccess] so huge
+     * photos never need to live fully in the Java heap.
+     * F4: neural inference is retried once with halved tiles on OutOfMemoryError
+     * before failing with a typed [UpscaleMemoryException] (the controller then
+     * offers an honest Lanczos degrade instead of crashing).
+     */
+    suspend fun upscale(
+        source: SourceAccess,
         model: UpscaleModel,
         targetScale: Int,
         params: UpscaleInferenceParams = UpscaleInferenceParams(),
@@ -96,12 +111,15 @@ class UpscaleInferenceEngine(
                     listener?.onStatus("Applying ${model.name}...")
                     listener?.onProgress(0, 1, 0)
                     listener?.onStage("Rescaling", 0, 1)
+                    // Controller budget-checks full() eligibility before choosing
+                    // an algorithmic model on a streaming source.
+                    val fullSource = source.full()
                     val targetW = srcW * targetScale
                     val targetH = srcH * targetScale
                     val res = when (model.id) {
-                        "nearest" -> AlgorithmicUpscaler.scaleNearest(source, targetW, targetH)
-                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(source, targetW, targetH)
-                        else -> AlgorithmicUpscaler.scaleLanczos3(source, targetW, targetH)
+                        "nearest" -> AlgorithmicUpscaler.scaleNearest(fullSource, targetW, targetH)
+                        "bicubic" -> AlgorithmicUpscaler.scaleBicubic(fullSource, targetW, targetH)
+                        else -> AlgorithmicUpscaler.scaleLanczos3(fullSource, targetW, targetH)
                     }
                     listener?.onProgress(1, 1, 100)
                     listener?.onStage("Complete", 1, 1)
@@ -140,28 +158,63 @@ class UpscaleInferenceEngine(
                         listener?.onStatus("Running ${model.name}...")
                         listener?.onStage("Neural Inference", 0, 1)
 
-                        val aiBitmap = processor.processImage(
-                            session = session,
-                            inputBitmap = source,
-                            modelName = modelFile.name,
-                            scaleFactor = model.nativeScale,
-                            params = params,
-                            onProgress = { current, total ->
-                                val pct = if (total > 0) (current * 100) / total else 0
-                                listener?.onProgress(current, total, pct)
-                                listener?.onStage("Neural Inference", current, total)
-                            },
-                            onStatus = { msg ->
-                                listener?.onStatus(msg)
+                        // F4: bounded OOM retry with halved tiles, then typed failure.
+                        var attemptParams = params
+                        var aiBitmap: Bitmap? = null
+                        var lastOom: OutOfMemoryError? = null
+                        var attempt = 0
+                        while (attempt < 2 && aiBitmap == null) {
+                            try {
+                                aiBitmap = processor.processImage(
+                                    session = session,
+                                    source = source,
+                                    modelName = modelFile.name,
+                                    scaleFactor = model.nativeScale,
+                                    params = attemptParams,
+                                    onProgress = { current, total ->
+                                        val pct = if (total > 0) (current * 100) / total else 0
+                                        listener?.onProgress(current, total, pct)
+                                        listener?.onStage("Neural Inference", current, total)
+                                    },
+                                    onStatus = { msg ->
+                                        listener?.onStatus(msg)
+                                    }
+                                )
+                            } catch (oom: OutOfMemoryError) {
+                                lastOom = oom
+                                attempt++
+                                if (attemptParams.chunkSize <= 128) break
+                                attemptParams = attemptParams.copy(
+                                    chunkSize = (attemptParams.chunkSize / 2).coerceAtLeast(128),
+                                    parallelWorkers = 1
+                                )
+                                Log.w(TAG, "Inference OOM; retrying with chunk=${attemptParams.chunkSize}")
+                                listener?.onStatus("Memory pressure — retrying with ${attemptParams.chunkSize}px tiles")
+                                listener?.onStage("Neural Inference (reduced tiles)", 0, 1)
                             }
-                        )
+                        }
+                        if (aiBitmap == null) {
+                            return@withContext Result.failure(
+                                UpscaleMemoryException(
+                                    "Neural inference exceeded this device's memory budget " +
+                                        "(tiles reduced to ${attemptParams.chunkSize}px)",
+                                    lastOom
+                                )
+                            )
+                        }
 
                         if (scalePlan.requiresRefinement) {
                             listener?.onStatus("Applying Lanczos refinement (${scalePlan.refinementScale}×)...")
                             listener?.onStage("Refinement", 1, 1)
                             val refinedW = aiBitmap.width * scalePlan.refinementScale
                             val refinedH = aiBitmap.height * scalePlan.refinementScale
-                            val refinedBitmap = AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH)
+                            val refinedBitmap = try {
+                                AlgorithmicUpscaler.scaleLanczos3(aiBitmap, refinedW, refinedH)
+                            } catch (oom: OutOfMemoryError) {
+                                return@withContext Result.failure(
+                                    UpscaleMemoryException("Lanczos refinement exceeded the memory budget", oom)
+                                )
+                            }
                             if (!aiBitmap.isRecycled) {
                                 aiBitmap.recycle()
                             }

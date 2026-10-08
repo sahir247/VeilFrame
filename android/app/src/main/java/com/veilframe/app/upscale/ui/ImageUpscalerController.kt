@@ -26,8 +26,12 @@ import com.veilframe.app.databinding.LayoutImageUpscalerBinding
 import com.veilframe.app.ui.motion.ExpressiveMotion
 import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.upscale.download.ModelDownloadManager
+import com.veilframe.app.upscale.inference.BitmapSource
+import com.veilframe.app.upscale.inference.SourceAccess
 import com.veilframe.app.upscale.inference.UpscaleInferenceEngine
 import com.veilframe.app.upscale.inference.UpscaleInferenceParams
+import com.veilframe.app.upscale.inference.UpscaleMemoryException
+import com.veilframe.app.upscale.inference.UriRegionSource
 import com.veilframe.app.upscale.model.ModelType
 import com.veilframe.app.upscale.model.UpscaleModel
 import com.veilframe.app.upscale.model.UpscaleModelRegistry
@@ -70,7 +74,18 @@ class ImageUpscalerController(
     // Active state
     var selectedUri: Uri? = null
         private set
+
+    /** Full-resolution source; null when the image streams from disk (F1). */
     private var sourceBitmap: Bitmap? = null
+
+    /** Sampled display preview (<=2048px) — the ImageView never holds 192 MB again. */
+    private var previewBitmap: Bitmap? = null
+
+    /** Always-present source accessor (in-memory or region-streaming). */
+    private var sourceAccess: SourceAccess? = null
+    private var sourceW: Int = 0
+    private var sourceH: Int = 0
+
     private var resultBitmap: Bitmap? = null
     private var activePreset: UpscalePreset = UpscalePresetRegistry.PHOTO
     private var targetScale: Int = 2
@@ -135,7 +150,7 @@ class ImageUpscalerController(
         // Execution button (morphs to required dialog if needed, or handles select / cancel)
         upscalerBinding.btnUpscalerExecute.setOnClickListener {
             when {
-                sourceBitmap == null -> onPickImageRequested()
+                sourceAccess == null -> onPickImageRequested()
                 inferenceJob?.isActive == true || downloadJob?.isActive == true -> cancelActiveOperations()
                 else -> startUpscalingFlow(upscalerBinding.btnUpscalerExecute)
             }
@@ -162,10 +177,10 @@ class ImageUpscalerController(
         resultBitmap = null
         scope.launch(Dispatchers.IO) {
             try {
-                var stream: InputStream? = activity.contentResolver.openInputStream(uri)
                 val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeStream(stream, null, boundsOptions)
-                stream?.close()
+                activity.contentResolver.openInputStream(uri)?.use { s ->
+                    BitmapFactory.decodeStream(s, null, boundsOptions)
+                }
 
                 val origW = boundsOptions.outWidth
                 val origH = boundsOptions.outHeight
@@ -176,37 +191,64 @@ class ImageUpscalerController(
                     return@launch
                 }
 
-                // Decode source bitmap safely
-                stream = activity.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(stream)
-                stream?.close()
+                val heapBytes = Runtime.getRuntime().maxMemory()
+                val sourceBudget = heapBytes * 35 / 100
+                val fullBytes = origW.toLong() * origH.toLong() * 4L
 
-                if (bitmap == null) {
+                // F1: the preview is ALWAYS sampled (<=2048px). The full bitmap
+                // is decoded only when it fits the source budget; otherwise the
+                // pipeline streams tiles from the Uri (UriRegionSource) and the
+                // 192 MB-class source bitmap never exists.
+                val preview = decodeSampledPreview(uri, 2048)
+                if (preview == null) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(activity, "Failed to load image", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
 
-                sourceBitmap = bitmap
+                var fullBitmap: Bitmap? = null
+                if (fullBytes <= sourceBudget) {
+                    fullBitmap = try {
+                        activity.contentResolver.openInputStream(uri)?.use { s ->
+                            BitmapFactory.decodeStream(s)
+                        }
+                    } catch (oom: OutOfMemoryError) {
+                        Log.e(TAG, "Full decode OOM at ${origW}x${origH}; falling back to streaming", oom)
+                        null
+                    }
+                }
+                val access: SourceAccess = if (fullBitmap != null) {
+                    BitmapSource(fullBitmap)
+                } else {
+                    UriRegionSource(activity, uri, origW, origH)
+                }
+
+                sourceBitmap = fullBitmap
+                sourceAccess = access
+                previewBitmap = preview
+                sourceW = origW
+                sourceH = origH
 
                 withContext(Dispatchers.Main) {
                     upscalerBinding.cardUpscalerSelectImage.visibility = View.GONE
                     upscalerBinding.layoutUpscalerWorkspace.visibility = View.VISIBLE
                     upscalerBinding.layoutUpscalerResults.visibility = View.GONE
-                    upscalerBinding.imgUpscalerPreview.setImageBitmap(bitmap)
+                    upscalerBinding.imgUpscalerPreview.setImageBitmap(preview)
                     upscalerBinding.tvUpscalerBadge.text = "ORIGINAL"
                     upscalerBinding.tvUpscalerBadge.setTextColor(activity.getColor(R.color.vf_accent_blue))
 
                     val sizeBytes = getUriFileSize(uri)
                     val sizeFormatted = String.format(Locale.US, "%.1f MB", sizeBytes / (1024.0 * 1024.0))
                     val filename = uri.lastPathSegment ?: "image"
-                    upscalerBinding.tvUpscalerSourceInfo.text = "$filename • ${bitmap.width}×${bitmap.height} • $sizeFormatted"
+                    val streamingNote = if (fullBitmap == null) " • streamed" else ""
+                    upscalerBinding.tvUpscalerSourceInfo.text =
+                        "$filename • ${origW}×${origH} • $sizeFormatted$streamingNote"
 
                     updateTargetDimensions()
                     updateModelDisplay()
                     updateUIState()
-                    onLog("[UPSCALER] Loaded source image ${bitmap.width}×${bitmap.height}")
+                    onLog("[UPSCALER] Loaded source image ${origW}×${origH} (in-memory=${fullBitmap != null})")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading image: ${e.message}", e)
@@ -214,6 +256,34 @@ class ImageUpscalerController(
                     Toast.makeText(activity, "Error loading image: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    /** F1: power-of-two sampled decode for display-only previews. */
+    private fun decodeSampledPreview(uri: Uri, maxEdge: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            activity.contentResolver.openInputStream(uri)?.use { s ->
+                BitmapFactory.decodeStream(s, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            activity.contentResolver.openInputStream(uri)?.use { s ->
+                BitmapFactory.decodeStream(s, null, opts)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Preview decode failed", e)
+            null
+        } catch (oom: OutOfMemoryError) {
+            Log.e(TAG, "Preview decode OOM", oom)
+            null
         }
     }
 
@@ -368,10 +438,9 @@ class ImageUpscalerController(
     }
 
     private fun updateTargetDimensions() {
-        val src = sourceBitmap
-        if (src != null) {
-            val targetW = src.width * targetScale
-            val targetH = src.height * targetScale
+        if (sourceAccess != null && sourceW > 0 && sourceH > 0) {
+            val targetW = sourceW * targetScale
+            val targetH = sourceH * targetScale
             val mp = (targetW * targetH) / 1_000_000.0
             val model = getResolvedModel()
             val scalePlan = com.veilframe.app.upscale.inference.HybridScalePlan.create(targetScale, model.nativeScale)
@@ -416,7 +485,7 @@ class ImageUpscalerController(
     }
 
     private fun updateUIState() {
-        val hasImage = (sourceBitmap != null)
+        val hasImage = (sourceAccess != null)
         val isProcessing = (inferenceJob?.isActive == true || downloadJob?.isActive == true)
         val hasResult = (resultBitmap != null)
         val model = getResolvedModel()
@@ -469,17 +538,69 @@ class ImageUpscalerController(
     }
 
     private fun startUpscalingFlow(originView: View? = null) {
-        val src = sourceBitmap ?: run {
+        val src = sourceAccess ?: run {
             Toast.makeText(activity, "Please select an image first", Toast.LENGTH_SHORT).show()
             return
         }
 
         val model = getResolvedModel()
+
+        // F2: output memory budget — refuse honestly instead of OOM-crashing.
+        // (Band-streaming compose lifts this cap in a follow-up; see fix plan F2.)
+        val heapBytes = Runtime.getRuntime().maxMemory()
+        val outputBudget = minOf(heapBytes * 45 / 100, 220L * 1024L * 1024L)
+        val outputBytes = sourceW.toLong() * targetScale * (sourceH.toLong() * targetScale) * 4L
+        if (outputBytes > outputBudget) {
+            showOutputTooLargeDialog(outputBytes, outputBudget)
+            return
+        }
+
+        // Algorithmic models need the full source in memory (no tiling).
+        if (model.type == com.veilframe.app.upscale.model.ModelType.ALGORITHMIC && sourceBitmap == null) {
+            val srcBytes = sourceW.toLong() * sourceH.toLong() * 4L
+            if (srcBytes > heapBytes * 35 / 100) {
+                Toast.makeText(
+                    activity,
+                    "Lanczos/Bicubic needs the whole image in memory — too large on this device. " +
+                        "Use an AI model (streams from disk) or a smaller source.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+        }
+
         if (repository.isModelInstalled(model)) {
             executeUpscaling(src, model, targetScale)
         } else {
             showModelRequiredDialog(model, originView)
         }
+    }
+
+    private fun showOutputTooLargeDialog(outputBytes: Long, budgetBytes: Long) {
+        val outMp = (sourceW.toLong() * targetScale) * (sourceH.toLong() * targetScale) / 1_000_000.0
+        val builder = MaterialAlertDialogBuilder(activity)
+            .setTitle("Output too large for this device")
+            .setMessage(
+                String.format(
+                    Locale.US,
+                    "A %d× upscale of this %d×%d source produces ~%.0f MP (~%d MB in memory), " +
+                        "exceeding the safe budget (~%d MB).\n\nUse a smaller scale or crop the source first.",
+                    targetScale, sourceW, sourceH, outMp,
+                    outputBytes / (1024 * 1024), budgetBytes / (1024 * 1024)
+                )
+            )
+            .setNegativeButton("Cancel", null)
+        if (targetScale > 2) {
+            builder.setPositiveButton("Switch to 2×") { _, _ ->
+                targetScale = 2
+                upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale2x)
+                startUpscalingFlow()
+            }
+        } else {
+            builder.setPositiveButton("OK", null)
+        }
+        builder.show()
+        onLog("[UPSCALER] Refused: output ${outputBytes / (1024 * 1024)} MB > budget ${budgetBytes / (1024 * 1024)} MB")
     }
 
     private fun showModelRequiredDialog(model: UpscaleModel, originView: View? = null) {
@@ -505,7 +626,7 @@ class ImageUpscalerController(
             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             explicitModel = UpscaleModelRegistry.LANCZOS
             updateModelDisplay()
-            sourceBitmap?.let { src -> executeUpscaling(src, UpscaleModelRegistry.LANCZOS, targetScale) }
+            sourceAccess?.let { src -> executeUpscaling(src, UpscaleModelRegistry.LANCZOS, targetScale) }
         }
 
         dialogBinding.btnModelReqDownload.setOnClickListener {
@@ -539,7 +660,7 @@ class ImageUpscalerController(
                             MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
                             updateModelDisplay()
                             onLog("[UPSCALER] Model ${m.name} successfully downloaded and verified.")
-                            sourceBitmap?.let { src -> executeUpscaling(src, m, targetScale) }
+                            sourceAccess?.let { src -> executeUpscaling(src, m, targetScale) }
                         }
                     }
 
@@ -560,7 +681,7 @@ class ImageUpscalerController(
         MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
     }
 
-    private fun executeUpscaling(src: Bitmap, model: UpscaleModel, scale: Int) {
+    private fun executeUpscaling(src: SourceAccess, model: UpscaleModel, scale: Int) {
         upscalerBinding.layoutUpscalerProgress.visibility = View.VISIBLE
         upscalerBinding.layoutUpscalerResults.visibility = View.GONE
         upscalerBinding.progressUpscaler.isIndeterminate = true
@@ -575,7 +696,8 @@ class ImageUpscalerController(
                 source = src,
                 model = model,
                 targetScale = scale,
-                params = inferenceParams,
+                // F3: device-class chunk/workers instead of the fixed 512px/4-worker default.
+                params = UpscaleInferenceParams.forDevice(activity, scale),
                 listener = object : UpscaleInferenceEngine.InferenceProgressListener {
                     override fun onProgress(currentTile: Int, totalTiles: Int, percent: Int) {
                         scope.launch(Dispatchers.Main) {
@@ -656,12 +778,51 @@ class ImageUpscalerController(
                     onFailure = { err ->
                         Log.e(TAG, "Upscale failed: ${err.message}", err)
                         onLog("[UPSCALER] Error: ${err.message}")
-                        Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
+                        if (err is UpscaleMemoryException) {
+                            // F4: honest degrade offer instead of a crash or a silent no-op.
+                            showMemoryDegradeDialog()
+                        } else {
+                            Toast.makeText(activity, "Upscale failed: ${err.message}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 )
                 updateUIState()
             }
         }
+    }
+
+    private fun showMemoryDegradeDialog() {
+        val canLanczos = sourceBitmap != null
+        val builder = MaterialAlertDialogBuilder(activity)
+            .setTitle("Neural upscale ran out of memory")
+            .setNegativeButton("Cancel", null)
+        if (canLanczos) {
+            builder.setMessage(
+                "The AI pipeline exceeded this device's memory budget even with reduced tiles.\n\n" +
+                    "Apply Lanczos 3 resampling instead? It is fast and memory-safe, with softer " +
+                    "detail than the neural model."
+            ).setPositiveButton("Apply Lanczos 3") { _, _ ->
+                explicitModel = UpscaleModelRegistry.LANCZOS
+                updateModelDisplay()
+                sourceAccess?.let { executeUpscaling(it, UpscaleModelRegistry.LANCZOS, targetScale) }
+            }
+        } else if (targetScale > 2) {
+            builder.setMessage(
+                "The AI pipeline exceeded this device's memory budget even with reduced tiles. " +
+                    "This source is streamed from disk, so the in-memory Lanczos fallback is also unavailable."
+            ).setPositiveButton("Retry at 2×") { _, _ ->
+                targetScale = 2
+                upscalerBinding.toggleGroupUpscalerScale.check(R.id.btnScale2x)
+                startUpscalingFlow()
+            }
+        } else {
+            builder.setMessage(
+                "The AI pipeline exceeded this device's memory budget even with reduced tiles. " +
+                    "Try a smaller source image."
+            ).setPositiveButton("OK", null)
+        }
+        builder.show()
+        onLog("[UPSCALER] Memory degrade offered (lanczos=$canLanczos)")
     }
 
     private fun cancelActiveOperations() {
@@ -1005,5 +1166,6 @@ class ImageUpscalerController(
         inferenceJob?.cancel()
         downloadJob?.cancel()
         scope.cancel()
+        sourceAccess?.close()
     }
 }
