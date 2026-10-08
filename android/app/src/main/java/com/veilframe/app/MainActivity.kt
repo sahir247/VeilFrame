@@ -522,9 +522,22 @@ class MainActivity : AppCompatActivity() {
         pauseVideoPlayback()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (::docScannerController.isInitialized) {
+            docScannerController.closeCameraViewfinder()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         appUpdateManager.onDestroy()
+        if (::docScannerController.isInitialized) {
+            docScannerController.closeCameraViewfinder()
+        }
+        if (::motionLabController.isInitialized) {
+            motionLabController.cancel()
+        }
         if (::imageStudioController.isInitialized) {
             imageStudioController.release()
         }

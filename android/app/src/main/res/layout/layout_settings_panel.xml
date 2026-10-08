@@ -61,10 +61,8 @@
             style="@style/Widget.VeilFrame.Button.Action"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:minHeight="36dp"
-            android:text="Done"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
+            android:minHeight="48dp"
+            android:text="Done" />
     </LinearLayout>
 
     <View

@@ -79,6 +79,12 @@ class MotionLabController(
         // Insets: applied centrally by MainActivity's single listener (Phase-1 contract).
     }
 
+    fun cancel() {
+        cancelRequested = true
+        job?.cancel()
+        FFmpegKit.cancel()
+    }
+
     fun setSource(uri: Uri) {
         if (job?.isActive == true) return
         sourceUri = uri

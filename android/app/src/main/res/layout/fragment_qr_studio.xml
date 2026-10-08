@@ -25,6 +25,7 @@
             android:id="@+id/qr_toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:paddingStart="16dp"
             android:paddingEnd="16dp"
             app:title="QR Studio"
             app:titleCentered="false"
