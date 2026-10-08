@@ -100,3 +100,25 @@ fallback knowledge; expressive variant now used).
 
 **Merge state:** branch now contains `origin/main@1716798` (OpenCV in-tree bindings, CI
 rework, DocumentSession dedup) — merging this branch into `main` is a **fast-forward**.
+
+
+---
+
+## 8. Round 4 — the branch COMPILED: real-toolchain gate results & absorbed feedback
+
+The maintainer merged rc4 into `main`, ran the gates, and reported:
+**`compileDebugKotlin` 0 errors · `testDebugUnitTest` 899/899 passed · `assembleDebug` clean** — pushed as `1716798..a6b846e`. The M3 Expressive RC, upscaler P0/P1/F2/F6, and CV Phase A/A2/B/C code is therefore **compiler-proven** (the container-transform, spring, streaming-PNG, and FGS code all built and unit-tested green).
+
+Their five residual harmonization fixes, root-caused honestly:
+
+| Fix (theirs) | Whose defect | Root cause |
+|---|---|---|
+| `borderlessButtonStyle` → `androidx.appcompat.R.attr` (MainActivity ×4) | pre-existing code, **surfaced by our 1.14.0 upgrade** | Material 1.14 is built with non-transitive R: appcompat-owned attrs no longer re-exported through `com.google.android.material.R` |
+| `colorPrimary` → `androidx.appcompat.R.attr` (QrScanOverlayView) | same class | same |
+| SmartAutoCrop `bestX/bestY/bestEnergy` scope hoist | **ours** (round-1 CV-11 fix) | our inserted `try {` wrapped the declarations while later code referenced them — blind-edit hazard, caught by their compiler |
+| `DocumentScanner.enhance` restore | **ours** (round-3 dedupe text-slice) | already independently found & fixed in rc5; both restorations collided on merge → deduped in `3f6a9e5`, keeping the B6-instrumented superset |
+| `blendTileInto` → `coroutineContext.ensureActive()` | **ours** (F10-lite extraction) | extracted helper left the `withContext` receiver scope |
+
+Lesson recorded: three of five were blind-edit defects in *our* patches — exactly the risk class the "compile gate on maintainer hardware" step exists for; all were mechanical, none architectural. The design/behavior of every subsystem was validated unchanged by the 899-test suite.
+
+**rc6 = branch state after absorbing `a6b846e`** (merge `ebc37f2`, dedupe `3f6a9e5`, pre-compile hardening `4d1669f` for the not-yet-compiled B6/F15 delta: self-named metric locals renamed, registry smart-cast hardened). FF-mergeable over current `main`.
