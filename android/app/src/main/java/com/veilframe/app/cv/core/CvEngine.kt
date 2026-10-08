@@ -33,6 +33,7 @@ class CvEngine(
         name: String,
         priority: CvPriority = CvPriority.INTERACTIVE,
         memoryEstimate: Long = 0L,
+        timeoutMs: Long = 0L,
         block: (CvContext) -> T,
     ): CvJob<T> {
         val reservation = if (memoryEstimate > 0L) {
@@ -60,6 +61,7 @@ class CvEngine(
                 memoryEstimate = memoryEstimate,
                 reservation = reservation,
                 pool = pool,
+                timeoutMs = timeoutMs,
                 block = block,
             )
         } catch (e: Exception) {

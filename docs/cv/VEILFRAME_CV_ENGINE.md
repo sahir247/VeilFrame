@@ -150,3 +150,29 @@ are never all run on every frame.
 
 Video boundary stays as planned: FFmpeg owns demux/decode/encode; the CV engine
 only analyses/interpolates decoded frames.
+
+
+## Runtime status (v2.3.0-rc1, ADR 0006)
+
+Wiring reality as of the expressive RC (the class KDocs previously overclaimed):
+
+- **Governed by CvEngine (lanes + memory admission + watchdog + telemetry):**
+  background removal, image-quality analysis, document auto-crop, document
+  enhance/filter — all submit `INTERACTIVE` jobs with memory estimates and
+  timeouts; failures surface as typed `CvResult.Err` (honest UI, never
+  fabricated results).
+- **CvRuntime-gated, dedicated executors (by design):** camera viewfinder
+  quad analysis (shared `CvRuntime.cameraExecutor`, direct Y-plane → Mat,
+  thermally gated) and QR decode (frame-token pipeline, WeChatQRCode primary
+  + MLKit fallback).
+- **Native bootstrap:** `OpenCVInitProvider` (manifest, `initOrder=100`) loads
+  OpenCV before `Application.onCreate`; `CvRuntime.requireAvailable()` gates
+  every entry point with a typed `NATIVE_UNAVAILABLE` failure.
+- **Telemetry:** every governed job appends to `cache/cv_runs.jsonl`
+  (private, on-device, rotated at 512 KB; no network).
+- **Dormant (compiled, tested, not wired):** `cv/motion/**`, `SmartAutoCrop`,
+  `NoiseReducer`, `ColorEngine`, `TemplateMatcher`, `QrRecoveryEngine` — see
+  `cv/motion/README.md` and ADR 0006 for the wiring contract before any of
+  these may be used in production paths.
+- **CI ratchet:** `android/scripts/check_cv_governance.sh` fails the build if a
+  new consumer touches `cv.*` without CvRuntime/engine governance.

@@ -23,6 +23,8 @@ class OpenCVInitProvider : ContentProvider() {
 
     override fun onCreate(): Boolean {
         CvRuntime.initialize()
+        // B2: private on-device CV telemetry (cache/cv_runs.jsonl, rotated at 512 KB).
+        context?.cacheDir?.let { CvTelemetry.init(java.io.File(it, "cv_runs.jsonl")) }
         return true
     }
 

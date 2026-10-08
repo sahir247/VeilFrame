@@ -2,6 +2,7 @@ package com.veilframe.app.cv.core
 
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -15,7 +16,12 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * CvDispatcher — the only place CV work runs.
+ * CvDispatcher — the governed executor for heavy CV work.
+ *
+ * Reality (v2.3.0): the heavy one-shot chains (background removal, image
+ * quality, document warp/enhance) submit here through CvEngine. The camera
+ * viewfinder path runs on CvRuntime.cameraExecutor by design (per-frame lane
+ * churn is not worth it), and QR decode keeps its own frame-token pipeline.
  *
  * Three lanes, as required by the CV plan:
  *   INTERACTIVE  user-visible, lowest latency, always has free slots
@@ -45,6 +51,7 @@ class CvDispatcher(
         memoryEstimate: Long = 0L,
         reservation: MemoryReservation? = null,
         pool: MatPool = MatPool.default,
+        timeoutMs: Long = 0L,
         block: (CvContext) -> T,
     ): CvJob<T> {
         // A lane configured with 0 slots is DISABLED: submitting to a
@@ -80,6 +87,26 @@ class CvDispatcher(
             }
         }
 
+        // B1: watchdog. Cooperative — a blocked native call cannot be preempted,
+        // but every primitive hits ctx.ensureActive() checkpoints, so a wedged
+        // job is cancelled at its next checkpoint and the lane permit freed.
+        if (timeoutMs > 0L) {
+            scope.launch {
+                delay(timeoutMs)
+                if (!deferred.isCompleted && !cancellation.isCancelled) {
+                    CvTelemetry.record(
+                        linkedMapOf(
+                            "ts" to System.currentTimeMillis(),
+                            "job" to name,
+                            "event" to "watchdog",
+                            "timeoutMs" to timeoutMs,
+                        )
+                    )
+                    cancellation.cancel("watchdog timeout after ${timeoutMs}ms")
+                }
+            }
+        }
+
         // Keep the engine's result and the coroutine result in sync.
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             result.complete(runCatching { deferred.await() }.getOrElse {
@@ -99,7 +126,8 @@ class CvDispatcher(
         val lane = laneSemaphores.getValue(priority)
         return async {
             lane.acquire()
-            try {
+            val startedAt = System.currentTimeMillis()
+            val outcome: CvResult<T> = try {
                 if (context.cancellation.isCancelled) {
                     CvResult.Err(CvErrorCode.CANCELLED, context.cancellation.reason() ?: "cancelled")
                 } else {
@@ -113,6 +141,22 @@ class CvDispatcher(
                 reservation?.close()
                 lane.release()
             }
+            // B2: private on-device telemetry (no-op until CvTelemetry.init).
+            CvTelemetry.record(
+                linkedMapOf(
+                    "ts" to startedAt,
+                    "job" to context.name,
+                    "lane" to priority.name,
+                    "estimateBytes" to context.memoryEstimate,
+                    "ms" to (System.currentTimeMillis() - startedAt),
+                    "outcome" to when (outcome) {
+                        is CvResult.Ok<*> -> "ok"
+                        is CvResult.Err -> outcome.code.name
+                    },
+                    "error" to (outcome as? CvResult.Err)?.message,
+                )
+            )
+            outcome
         }
     }
 

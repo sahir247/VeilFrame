@@ -160,6 +160,10 @@ jobs:
           git status --porcelain android/app/src/test/resources/tier4_upstream_oracle_matrices.json
           git diff --exit-code android/app/src/test/resources/tier4_upstream_oracle_matrices.json
 
+      - name: CV Governance Ratchet
+        working-directory: android
+        run: bash scripts/check_cv_governance.sh
+
       - name: Run Tier 4 Bit-for-Bit Android Test Suite
         working-directory: android
         run: |

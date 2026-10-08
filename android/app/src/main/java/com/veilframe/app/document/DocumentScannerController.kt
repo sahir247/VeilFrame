@@ -83,6 +83,9 @@ class DocumentScannerController(
 
     @SuppressLint("ClickableViewAccessibility")
     fun init() {
+        // B4: thermal awareness for the sustained viewfinder pipeline.
+        com.veilframe.app.runtime.ThermalGovernor.register(activity)
+
         binding.toolbarDocScanner.setNavigationOnClickListener {
             onNavigateBack()
         }
@@ -346,6 +349,20 @@ class DocumentScannerController(
             return
         }
 
+        // B4: thermal governor — drop every other frame when the device is
+        // throttled, stop analysis entirely when critical (battery + heat).
+        if (com.veilframe.app.runtime.ThermalGovernor.isCritical) {
+            imageProxy.close()
+            return
+        }
+        if (com.veilframe.app.runtime.ThermalGovernor.isThrottled) {
+            frameSeq++
+            if (frameSeq % 2L == 1L) {
+                imageProxy.close()
+                return
+            }
+        }
+
         val mediaImage = imageProxy.image
         if (mediaImage == null) {
             imageProxy.close()
@@ -396,6 +413,8 @@ class DocumentScannerController(
 
     @Volatile
     private var lastFrameErrorLogMs = 0L
+
+    private var frameSeq = 0L
 
     /** Camera Y (luma) plane -> CV_8UC1 Mat, decimated to <=1024px on the long edge. */
     private fun yPlaneToGrayMat(mediaImage: android.media.Image): org.opencv.core.Mat? {
@@ -569,6 +588,7 @@ class DocumentScannerController(
                 name = "doc-auto-crop",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
                 memoryEstimate = estimate,
+                timeoutMs = 15_000L, // B1 watchdog
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()
@@ -619,6 +639,7 @@ class DocumentScannerController(
                 name = "doc-enhance-filter",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
                 memoryEstimate = estimate,
+                timeoutMs = 15_000L, // B1 watchdog
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()

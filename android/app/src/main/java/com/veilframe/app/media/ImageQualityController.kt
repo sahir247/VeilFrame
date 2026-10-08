@@ -47,9 +47,7 @@ class ImageQualityController(
 
     private companion object {
         const val TAG = "VeilFrame.ImageQuality"
-
-        /** Metrics are computed at ≤16 MP working resolution (bounded Mat + bitmap ≈128 MB). */
-        const val WORKING_PIXEL_CAP = 16_000_000
+        // Working-resolution cap lives in MediaDecoder.ANALYSIS_PIXEL_CAP (≤16 MP).
     }
 
     fun init() {
@@ -83,39 +81,20 @@ class ImageQualityController(
 
     fun handleImageSelected(uri: Uri) {
         scope.launch(Dispatchers.IO) {
-            var sampled: Bitmap? = null
-            var origW = 0
-            var origH = 0
-            try {
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeStream(stream, null, bounds)
-                    origW = bounds.outWidth
-                    origH = bounds.outHeight
-                }
-
-                if (origW > 0 && origH > 0) {
-                    // Power-of-two sampling down to the working-resolution cap.
-                    // Downsampled metrics are DISCLOSED in the report — never
-                    // presented as full-resolution forensics.
-                    var sample = 1
-                    while ((origW.toLong() / sample) * (origH.toLong() / sample) > WORKING_PIXEL_CAP) {
-                        sample *= 2
-                    }
-                    val opts = BitmapFactory.Options().apply {
-                        inSampleSize = sample
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }
-                    sampled = activity.contentResolver.openInputStream(uri)?.use { stream ->
-                        BitmapFactory.decodeStream(stream, null, opts)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Decode failed", e)
-                sampled = null
-            } catch (oom: OutOfMemoryError) {
-                Log.e(TAG, "Decode OOM", oom)
-                sampled = null
+            // B5: shared sampled-decode policy (MediaDecoder) — the ONE place
+            // working-resolution decisions are made. Downsampled metrics are
+            // DISCLOSED in the report, never presented as full-res forensics.
+            val bounds = com.veilframe.app.media.MediaDecoder.bounds(activity.contentResolver, uri)
+            val origW = bounds?.width ?: 0
+            val origH = bounds?.height ?: 0
+            val sampled = if (bounds != null) {
+                com.veilframe.app.media.MediaDecoder.decodeSampled(
+                    activity.contentResolver,
+                    uri,
+                    com.veilframe.app.media.MediaDecoder.ANALYSIS_PIXEL_CAP
+                )
+            } else {
+                null
             }
 
             withContext(Dispatchers.Main) {
@@ -144,6 +123,7 @@ class ImageQualityController(
                 name = "image-quality-analysis",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
                 memoryEstimate = estimate,
+                timeoutMs = 20_000L, // B1 watchdog
             ) { ctx ->
                 CvRuntime.requireAvailable()
                 ctx.ensureActive()

@@ -30,6 +30,7 @@ object ThermalGovernor {
 
     private var powerManager: PowerManager? = null
     private var listener: Any? = null
+    private var registrations = 0
     private val executor by lazy {
         Executors.newSingleThreadExecutor { r ->
             Thread(r, "vf-thermal").apply { isDaemon = true }
@@ -39,6 +40,7 @@ object ThermalGovernor {
     @Synchronized
     fun register(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        registrations++
         if (listener != null) return
         val pm = context.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
         val l = PowerManager.OnThermalStatusChangedListener { newStatus ->
@@ -55,6 +57,8 @@ object ThermalGovernor {
     @Synchronized
     fun unregister() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        registrations = (registrations - 1).coerceAtLeast(0)
+        if (registrations > 0) return // another workspace still needs the listener
         val pm = powerManager
         val l = listener
         if (pm != null && l != null) {

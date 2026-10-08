@@ -181,6 +181,7 @@ class BackgroundRemoverController(
                 name = "background-removal",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
                 memoryEstimate = estimate,
+                timeoutMs = 30_000L, // B1 watchdog
             ) { ctx ->
                 // A1 gate: typed NATIVE_UNAVAILABLE instead of UnsatisfiedLinkError.
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
