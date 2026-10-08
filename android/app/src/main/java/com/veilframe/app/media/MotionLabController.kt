@@ -50,6 +50,7 @@ class MotionLabController(
     }
 
     private var sourceUri: Uri? = null
+    val currentSourceUri: Uri? get() = sourceUri
     private var multiplier = 2
     private var qualityMode = false
     private var job: Job? = null

@@ -1,53 +1,84 @@
 package com.veilframe.app.ui.insets
 
 import android.view.View
+import com.veilframe.app.R
 
 /**
- * WorkspaceInsets — the ONE edge-to-edge contract for every workspace root.
+ * WorkspaceInsets — the authoritative edge-to-edge insets contract for every workspace root.
  *
- * Phase-1 stabilization fix (production-readiness audit): the shell inset
- * listener only padded shell chrome (app bar, dock, nav bar/rail, settings),
- * so workspace roots placed their toolbars at y=0 — under the status bar —
- * and bottom controls under the gesture handle / navigation bar. Instead of
- * 15 per-layout hacks, MainActivity applies this contract to every workspace
- * root on each inset dispatch:
+ * Additive Inset Architecture (P0 Architectural Inset Resolution):
+ * Rather than destructively overwriting XML-defined base padding, WorkspaceInsets records
+ * the view's initial layout padding on first dispatch and computes effective padding additively:
  *
- *   Root Activity (CoordinatorLayout)
- *    └── Workspace root            ← top: status bar · bottom: max(nav, IME)
- *         ├── toolbar              (now below the status bar)
- *         ├── scroll/content
- *         └── bottom action area   (now above the nav handle / keyboard)
+ *   effectiveTop = initial.top + (if (contract.padTop) statusBarTop else 0)
+ *   effectiveBottom = initial.bottom + (if (contract.padBottom) maxOf(navBarBottom, imeBottom) else 0)
+ *   effectiveLeft = initial.left + (if (contract.padLeft) navBarLeft else 0)
+ *   effectiveRight = initial.right + (if (contract.padRight) navBarRight else 0)
  *
- * [Contract] allows per-workspace opt-outs (e.g. a future immersive camera
- * screen sets padTop=false). Idempotent: paddings are absolute, safe to
- * re-apply on every dispatch (rotation, IME, 3-button ⇄ gesture switch).
+ * This guarantees:
+ *  1. XML clearances (such as the 160dp bottom dock clearance on scrollTool) are permanently
+ *     preserved across all navigation bar / IME keyboard transitions.
+ *  2. Workspaces scrolled under AppBarLayout via CoordinatorLayout's scrolling behavior
+ *     use [SCROLLED_APPBAR] (`padTop = false`) to prevent double status-bar top gaps.
+ *  3. Inset dispatches are strictly idempotent and non-compounding.
  */
 object WorkspaceInsets {
 
     data class Contract(
         val padTop: Boolean = true,
         val padBottom: Boolean = true,
+        val padLeft: Boolean = false,
+        val padRight: Boolean = false,
     )
 
-    val DEFAULT = Contract()
+    /** Full-screen / custom-toolbar workspaces spanning full window (pads top + bottom). */
+    val DEFAULT = Contract(padTop = true, padBottom = true)
+
+    /** Workspaces positioned below AppBarLayout via appbar_scrolling_view_behavior. */
+    val SCROLLED_APPBAR = Contract(padTop = false, padBottom = true)
+
+    /** Full-bleed immersive views (camera viewfinders, full canvases). */
+    val IMMERSIVE = Contract(padTop = false, padBottom = false)
+
+    internal data class InitialPadding(
+        val left: Int,
+        val top: Int,
+        val right: Int,
+        val bottom: Int,
+    )
 
     /**
-     * Applies the contract to [root], preserving its horizontal padding.
-     * Bottom padding uses max(navigationBar, ime) so keyboards and gesture
-     * handles never overlap bottom action areas.
+     * Applies the contract to [root], adding insets to the view's initial base padding.
      */
     fun apply(
         root: View?,
         statusBarTop: Int,
         navBarBottom: Int,
         imeBottom: Int,
+        navBarLeft: Int = 0,
+        navBarRight: Int = 0,
         contract: Contract = DEFAULT,
     ) {
         root ?: return
-        val top = if (contract.padTop) statusBarTop else 0
-        val bottom = if (contract.padBottom) maxOf(navBarBottom, imeBottom) else 0
-        if (root.paddingTop != top || root.paddingBottom != bottom) {
-            root.setPadding(root.paddingLeft, top, root.paddingRight, bottom)
+        val initial = root.getTag(R.id.vf_tag_initial_padding) as? InitialPadding
+            ?: InitialPadding(
+                root.paddingLeft,
+                root.paddingTop,
+                root.paddingRight,
+                root.paddingBottom
+            ).also {
+                root.setTag(R.id.vf_tag_initial_padding, it)
+            }
+
+        val top = initial.top + if (contract.padTop) statusBarTop else 0
+        val bottom = initial.bottom + if (contract.padBottom) maxOf(navBarBottom, imeBottom) else 0
+        val left = initial.left + if (contract.padLeft) navBarLeft else 0
+        val right = initial.right + if (contract.padRight) navBarRight else 0
+
+        if (root.paddingTop != top || root.paddingBottom != bottom ||
+            root.paddingLeft != left || root.paddingRight != right
+        ) {
+            root.setPadding(left, top, right, bottom)
         }
     }
 }

@@ -2,4 +2,6 @@
 <resources>
     <!-- View tag key: in-flight VfSprings SpringAnimations (for real cancellation) -->
     <item name="vf_tag_spring_anims" type="id" />
+    <!-- View tag key: initial base padding for additive WorkspaceInsets -->
+    <item name="vf_tag_initial_padding" type="id" />
 </resources>

@@ -59,6 +59,8 @@ class MarkdownViewerController(
     }
 
     private val state = MarkdownViewerState()
+    val currentDocumentUri: Uri? get() = state.documentUri
+    val currentDocumentFile: File? get() = state.documentFile
     private val resourceResolver = MarkdownResourceResolver(activity)
     private var isPageLoaded = false
     private var pendingRenderTask: (() -> Unit)? = null

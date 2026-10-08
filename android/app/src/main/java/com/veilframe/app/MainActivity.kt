@@ -392,29 +392,52 @@ class MainActivity : AppCompatActivity() {
             binding.bottomNavigation.setPadding(0, 0, 0, navBarBottom)
             binding.navigationRail.setPadding(navBarLeft, statusBarTop, 0, navBarBottom)
 
-            // Phase-1 stabilization (production-readiness audit gap #1):
-            // ONE insets contract for every workspace root — toolbars no
-            // longer sit under the status bar, bottom controls no longer sit
-            // under the gesture handle or keyboard. Per-workspace opt-outs go
-            // through WorkspaceInsets.Contract (e.g. future immersive camera).
             val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            val navBarRight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).right
+
+            // Additive Inset Architecture (P0 Architectural Inset Resolution):
+            // 1. Workspaces scrolled under AppBarLayout via appbar_scrolling_view_behavior:
+            //    CoordinatorLayout + AppBarLayout already positions these below the status bar.
+            //    Apply SCROLLED_APPBAR (padTop = false) to prevent double top status-bar gaps,
+            //    while additively preserving XML base bottom clearances (e.g. 160dp on scrollTool).
             listOf(
+                binding.scrollTool,
+                binding.layoutToolsCatalogue.root,
+                binding.layoutLibrary.root,
                 binding.layoutImageStudio.root,
                 binding.layoutVideoStudio.root,
                 binding.layoutMarkdownViewer.root,
-                binding.layoutImageUpscaler.root,
-                binding.layoutToolsCatalogue.root,
-                binding.layoutLibrary.root,
+                binding.layoutImageUpscaler.root
+            ).forEach { root ->
+                com.veilframe.app.ui.insets.WorkspaceInsets.apply(
+                    root = root,
+                    statusBarTop = statusBarTop,
+                    navBarBottom = navBarBottom,
+                    imeBottom = imeBottom,
+                    navBarLeft = navBarLeft,
+                    navBarRight = navBarRight,
+                    contract = com.veilframe.app.ui.insets.WorkspaceInsets.SCROLLED_APPBAR
+                )
+            }
+
+            // 2. Full-screen / custom-toolbar workspaces spanning full window:
+            //    Apply DEFAULT (padTop = true, padBottom = true) additively to initial padding.
+            listOf(
                 binding.layoutDocumentScanner.root,
                 binding.layoutBackgroundRemover.root,
                 binding.layoutImageQuality.root,
                 binding.layoutProvenance.root,
                 binding.layoutMotionLab.root,
-                binding.fragmentQrStudio,
-                binding.scrollTool
+                binding.fragmentQrStudio
             ).forEach { root ->
                 com.veilframe.app.ui.insets.WorkspaceInsets.apply(
-                    root, statusBarTop, navBarBottom, imeBottom
+                    root = root,
+                    statusBarTop = statusBarTop,
+                    navBarBottom = navBarBottom,
+                    imeBottom = imeBottom,
+                    navBarLeft = navBarLeft,
+                    navBarRight = navBarRight,
+                    contract = com.veilframe.app.ui.insets.WorkspaceInsets.DEFAULT
                 )
             }
             insets
@@ -431,7 +454,11 @@ class MainActivity : AppCompatActivity() {
         consoleLogController.log("[SYS] Initialized VeilFrame ${BuildConfig.VERSION_NAME} Native Core Runtime")
         consoleLogController.log("[SYS] Native Media3, FFmpegKit 8.1.7, and AndroidX Privacy Engine active.")
 
-        navigationController.showHomeScreen()
+        if (savedInstanceState != null) {
+            restoreInstanceState(savedInstanceState)
+        } else {
+            navigationController.showHomeScreen()
+        }
 
         // Asynchronous, non-blocking update check on launch
         appUpdateManager.checkForUpdates(isUserInitiated = false)
@@ -1855,5 +1882,141 @@ class MainActivity : AppCompatActivity() {
             )
             .setPositiveButton("Close", null)
             .show()
+    }
+
+    companion object {
+        private const val KEY_SCREEN_STATE = "key_screen_state"
+        private const val KEY_PREVIOUS_SCREEN_STATE = "key_previous_screen_state"
+        private const val KEY_TOOL_MODE = "key_tool_mode"
+        private const val KEY_SELECTED_FILE_URI = "key_selected_file_uri"
+        private const val KEY_IS_FOLDER_SELECTED = "key_is_folder_selected"
+        private const val KEY_STUDIO_IMAGE_URIS = "key_studio_image_uris"
+        private const val KEY_STUDIO_VIDEO_URIS = "key_studio_video_uris"
+        private const val KEY_UPSCALER_URI = "key_upscaler_uri"
+        private const val KEY_MOTION_LAB_URI = "key_motion_lab_uri"
+        private const val KEY_MARKDOWN_URI = "key_markdown_uri"
+        private const val KEY_MARKDOWN_FILE_PATH = "key_markdown_file_path"
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_SCREEN_STATE, navigationController.currentScreen.name)
+        outState.putString(KEY_PREVIOUS_SCREEN_STATE, navigationController.previousScreen.name)
+        outState.putString(KEY_TOOL_MODE, toolSessionManager.currentToolMode.name)
+
+        // Save active Tool session state
+        val toolState = toolSessionManager.currentState
+        toolState.selectedUri?.let { uri ->
+            outState.putString(KEY_SELECTED_FILE_URI, uri.toString())
+            outState.putBoolean(KEY_IS_FOLDER_SELECTED, toolState.isFolderSelected)
+        }
+
+        // Save lightweight media references
+        if (::imageStudioController.isInitialized && imageStudioController.selectedMediaList.isNotEmpty()) {
+            val uris = ArrayList(imageStudioController.selectedMediaList.map { it.uri.toString() })
+            outState.putStringArrayList(KEY_STUDIO_IMAGE_URIS, uris)
+        }
+        if (::videoStudioController.isInitialized && videoStudioController.selectedMediaList.isNotEmpty()) {
+            val uris = ArrayList(videoStudioController.selectedMediaList.map { it.uri.toString() })
+            outState.putStringArrayList(KEY_STUDIO_VIDEO_URIS, uris)
+        }
+        if (::imageUpscalerController.isInitialized) {
+            imageUpscalerController.selectedUri?.let {
+                outState.putString(KEY_UPSCALER_URI, it.toString())
+            }
+        }
+        if (::motionLabController.isInitialized) {
+            motionLabController.currentSourceUri?.let {
+                outState.putString(KEY_MOTION_LAB_URI, it.toString())
+            }
+        }
+        if (::markdownViewerController.isInitialized) {
+            markdownViewerController.currentDocumentUri?.let {
+                outState.putString(KEY_MARKDOWN_URI, it.toString())
+            }
+            markdownViewerController.currentDocumentFile?.let {
+                outState.putString(KEY_MARKDOWN_FILE_PATH, it.absolutePath)
+            }
+        }
+    }
+
+    private fun restoreInstanceState(savedInstanceState: Bundle) {
+        val screenStateName = savedInstanceState.getString(KEY_SCREEN_STATE)
+        val targetScreen = screenStateName?.let { runCatching { ScreenState.valueOf(it) }.getOrNull() } ?: ScreenState.HOME
+        val toolModeName = savedInstanceState.getString(KEY_TOOL_MODE)
+        val toolMode = toolModeName?.let { runCatching { ToolMode.valueOf(it) }.getOrNull() } ?: ToolMode.VIDEO_CLEANER
+        toolSessionManager.currentToolMode = toolMode
+
+        // Restore active Tool URI if present
+        val toolUriStr = savedInstanceState.getString(KEY_SELECTED_FILE_URI)
+        val isFolder = savedInstanceState.getBoolean(KEY_IS_FOLDER_SELECTED, false)
+        if (toolUriStr != null) {
+            val uri = Uri.parse(toolUriStr)
+            if (isFolder) {
+                handleFolderSelected(uri)
+            } else {
+                handleSingleFileSelected(uri)
+            }
+        }
+
+        // Restore Media Studio items if present
+        savedInstanceState.getStringArrayList(KEY_STUDIO_IMAGE_URIS)?.let { uriStrings ->
+            val uris = uriStrings.map { Uri.parse(it) }
+            if (uris.isNotEmpty() && ::imageStudioController.isInitialized) {
+                imageStudioController.handleImagesSelected(uris)
+            }
+        }
+        savedInstanceState.getStringArrayList(KEY_STUDIO_VIDEO_URIS)?.let { uriStrings ->
+            val uris = uriStrings.map { Uri.parse(it) }
+            if (uris.isNotEmpty() && ::videoStudioController.isInitialized) {
+                videoStudioController.handleVideosSelected(uris)
+            }
+        }
+        savedInstanceState.getString(KEY_UPSCALER_URI)?.let { uriStr ->
+            if (::imageUpscalerController.isInitialized) {
+                imageUpscalerController.handleImageSelected(Uri.parse(uriStr))
+            }
+        }
+        savedInstanceState.getString(KEY_MOTION_LAB_URI)?.let { uriStr ->
+            if (::motionLabController.isInitialized) {
+                motionLabController.setSource(Uri.parse(uriStr))
+            }
+        }
+
+        // Navigate back to the active screen
+        when (targetScreen) {
+            ScreenState.HOME -> navigationController.showHomeScreen()
+            ScreenState.TOOLS -> navigationController.showToolsScreen()
+            ScreenState.LIBRARY -> navigationController.showLibraryScreen()
+            ScreenState.TOOL -> {
+                toolSessionManager.configureToolUI(toolMode)
+                toolSessionManager.restoreToolState(toolSessionManager.currentState)
+                navigationController.showToolScreen()
+            }
+            ScreenState.IMAGE_STUDIO -> openImageStudio()
+            ScreenState.VIDEO_STUDIO -> openVideoStudio()
+            ScreenState.QR_STUDIO -> openQrStudio()
+            ScreenState.IMAGE_UPSCALER -> openImageUpscaler()
+            ScreenState.DOCUMENT_SCANNER_ENTRY,
+            ScreenState.DOCUMENT_SCANNER_CAMERA,
+            ScreenState.DOCUMENT_SCANNER_PAGES,
+            ScreenState.DOCUMENT_SCANNER_EDITOR,
+            ScreenState.DOCUMENT_SCANNER_EXPORT -> openDocumentScanner()
+            ScreenState.BACKGROUND_REMOVER -> openBackgroundRemover()
+            ScreenState.IMAGE_QUALITY -> openImageQuality()
+            ScreenState.MOTION_LAB -> openMotionLab()
+            ScreenState.PROVENANCE -> openProvenance()
+            ScreenState.MARKDOWN_VIEWER -> {
+                val mdUriStr = savedInstanceState.getString(KEY_MARKDOWN_URI)
+                val mdFilePath = savedInstanceState.getString(KEY_MARKDOWN_FILE_PATH)
+                if (mdUriStr != null) {
+                    openMarkdownViewer(Uri.parse(mdUriStr))
+                } else if (mdFilePath != null) {
+                    openMarkdownViewer(File(mdFilePath))
+                } else {
+                    navigationController.showMarkdownViewerScreen()
+                }
+            }
+        }
     }
 }
