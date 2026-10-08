@@ -187,4 +187,28 @@ object DocumentScanner {
             image
         }
     }
+
+    /**
+     * Detects 4 document corners in [source] image coordinates.
+     * Returns empty list if no valid quadrilateral was detected.
+     */
+    fun findCorners(source: Mat): List<org.opencv.core.Point> {
+        val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(source)
+        return detection?.corners ?: emptyList()
+    }
+
+    /**
+     * Warps [source] by perspective transformation based on [corners].
+     */
+    fun warpPerspective(source: Mat, corners: List<org.opencv.core.Point>): Mat {
+        return com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(source, corners)
+    }
+
+    /**
+     * Enhances [source] according to [mode] and returns a new Mat.
+     */
+    fun process(source: Mat, mode: DocumentMode): Mat {
+        val cloned = source.clone()
+        return enhance(cloned, mode)
+    }
 }

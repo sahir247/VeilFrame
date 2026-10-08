@@ -281,6 +281,13 @@
                     android:text="Normal Margins" />
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipMarginCompact"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Compact Margins" />
+
+                <com.google.android.material.chip.Chip
                     android:id="@+id/chipMarginZero"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"
