@@ -24,6 +24,13 @@ data class ScannedPage(
     var rotationDegrees: Int = 0,
     var mode: DocumentScanner.DocumentMode = DocumentScanner.DocumentMode.ENHANCED,
     var corners: List<org.opencv.core.Point>? = null,
+    var exposureStops: Double = 0.0,
+    var contrast: Double = 1.0,
+    var saturation: Double = 1.0,
+    var adjustSharpen: Double = 0.0,
+    var adjustDenoise: Double = 0.0,
+    // Revision counter to discard stale async render jobs
+    var editVersion: Long = 0L,
     // Transient in-memory cached bitmaps for smooth rendering
     @Transient var originalBitmapCache: Bitmap? = null,
     @Transient var processedBitmapCache: Bitmap? = null,
@@ -42,6 +49,7 @@ data class ScannedPage(
                 DocumentScanner.DocumentMode.ENHANCED
             }
         }
+
     fun getDisplayBitmap(context: Context): Bitmap? {
         if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
             return processedBitmapCache
@@ -49,6 +57,10 @@ data class ScannedPage(
         if (processedImagePath != null && File(processedImagePath!!).exists()) {
             processedBitmapCache = BitmapFactory.decodeFile(processedImagePath)
             return processedBitmapCache
+        }
+        val rendered = render(context)
+        if (rendered != null) {
+            return rendered
         }
         return getOriginalBitmap(context)
     }
@@ -64,37 +76,149 @@ data class ScannedPage(
         return null
     }
 
+    /**
+     * Deterministic, non-destructive render pipeline.
+     * Starts from the immutable original image and executes:
+     * 1. Perspective warp crop (if valid 4 corners exist in original coordinates)
+     * 2. Output rotation
+     * 3. Document enhancement mode (ENHANCED, BLACK_AND_WHITE, GRAYSCALE, etc.)
+     * 4. Fine adjustments (exposure, contrast, saturation, sharpen, denoise)
+     */
+    fun render(
+        context: Context,
+        cvContext: com.veilframe.app.cv.core.CvContext? = null
+    ): Bitmap? {
+        val orig = getOriginalBitmap(context) ?: return null
+        var currentMat = com.veilframe.app.cv.core.BitmapBridge.toMat(orig)
+        try {
+            cvContext?.ensureActive()
+
+            // 1. Perspective Warp Crop (if 4 corners specified in original image coordinates)
+            val quad = corners
+            if (quad != null && quad.size == 4) {
+                try {
+                    val warped = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(currentMat, quad)
+                    currentMat.release()
+                    currentMat = warped
+                } catch (_: Throwable) {
+                    // Fall back to unwarped image
+                }
+            }
+            cvContext?.ensureActive()
+
+            // 2. Rotation
+            val rotAngle = (rotationDegrees % 360 + 360) % 360
+            if (rotAngle != 0) {
+                val rotCode = when (rotAngle) {
+                    90 -> org.opencv.core.Core.ROTATE_90_CLOCKWISE
+                    180 -> org.opencv.core.Core.ROTATE_180
+                    270 -> org.opencv.core.Core.ROTATE_90_COUNTERCLOCKWISE
+                    else -> null
+                }
+                if (rotCode != null) {
+                    val rotMat = org.opencv.core.Mat()
+                    org.opencv.core.Core.rotate(currentMat, rotMat, rotCode)
+                    currentMat.release()
+                    currentMat = rotMat
+                }
+            }
+            cvContext?.ensureActive()
+
+            // 3. Document enhancement mode
+            if (mode != DocumentScanner.DocumentMode.ORIGINAL) {
+                val enhanced = DocumentScanner.process(currentMat, mode, cvContext)
+                currentMat.release()
+                currentMat = enhanced
+            }
+            cvContext?.ensureActive()
+
+            // 4. Color & Detail Adjustments
+            val colorEngine = com.veilframe.app.cv.color.ColorEngine
+            if (exposureStops != 0.0) {
+                val exposed = colorEngine.exposure(currentMat, exposureStops)
+                currentMat.release()
+                currentMat = exposed
+            }
+            if (contrast != 1.0) {
+                val contrasted = colorEngine.contrast(currentMat, contrast)
+                currentMat.release()
+                currentMat = contrasted
+            }
+            if (saturation != 1.0) {
+                val saturated = colorEngine.saturation(currentMat, saturation)
+                currentMat.release()
+                currentMat = saturated
+            }
+            if (adjustSharpen > 0.0) {
+                val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
+                    currentMat,
+                    com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = adjustSharpen, radius = 1.0)
+                )
+                currentMat.release()
+                currentMat = sharpened
+            }
+            if (adjustDenoise > 0.0) {
+                val strength = maxOf(1, adjustDenoise.toInt())
+                val denoised = com.veilframe.app.cv.preprocess.Preprocessor.denoise(
+                    currentMat,
+                    strength = strength,
+                    method = com.veilframe.app.cv.preprocess.DenoiseMethod.BILATERAL
+                )
+                currentMat.release()
+                currentMat = denoised
+            }
+            cvContext?.ensureActive()
+
+            val resultBmp = com.veilframe.app.cv.core.BitmapBridge.toBitmap(currentMat)
+            processedBitmapCache = resultBmp
+
+            // Generate thumbnail cache
+            val maxThumbDim = 200
+            val scale = (maxThumbDim.toFloat() / resultBmp.width.coerceAtLeast(resultBmp.height)).coerceAtMost(1f)
+            val thumbW = (resultBmp.width * scale).toInt().coerceAtLeast(1)
+            val thumbH = (resultBmp.height * scale).toInt().coerceAtLeast(1)
+            thumbnailBitmapCache = Bitmap.createScaledBitmap(resultBmp, thumbW, thumbH, true)
+
+            return resultBmp
+        } finally {
+            currentMat.release()
+        }
+    }
+
     fun saveBitmapsToDisk(context: Context, sessionDir: File) {
         sessionDir.mkdirs()
-        // Save original bitmap if present
-        if (originalBitmapCache != null) {
-            val origFile = File(sessionDir, "page_${id}_orig.jpg")
-            FileOutputStream(origFile).use { fos ->
-                originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+        // Save original bitmap if present and not on disk
+        val origFile = File(sessionDir, "page_${id}_orig.jpg")
+        if (originalBitmapCache != null && !originalBitmapCache!!.isRecycled) {
+            if (!origFile.exists() || originalImagePath.isEmpty()) {
+                FileOutputStream(origFile).use { fos ->
+                    originalBitmapCache!!.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+                }
+                originalImagePath = origFile.absolutePath
             }
-            originalImagePath = origFile.absolutePath
-
-            // Generate miniature thumbnail (max 200px)
-            val thumbFile = File(sessionDir, "page_${id}_thumb.jpg")
-            val maxThumbDim = 200
-            val scale = (maxThumbDim.toFloat() / originalBitmapCache!!.width.coerceAtLeast(originalBitmapCache!!.height)).coerceAtMost(1f)
-            val thumbW = (originalBitmapCache!!.width * scale).toInt().coerceAtLeast(1)
-            val thumbH = (originalBitmapCache!!.height * scale).toInt().coerceAtLeast(1)
-            val thumbBmp = Bitmap.createScaledBitmap(originalBitmapCache!!, thumbW, thumbH, true)
-            FileOutputStream(thumbFile).use { fos ->
-                thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)
-            }
-            thumbBmp.recycle()
-            thumbnailPath = thumbFile.absolutePath
         }
 
         // Save processed bitmap if present
-        if (processedBitmapCache != null) {
+        if (processedBitmapCache != null && !processedBitmapCache!!.isRecycled) {
             val procFile = File(sessionDir, "page_${id}_proc.png")
             FileOutputStream(procFile).use { fos ->
                 processedBitmapCache!!.compress(Bitmap.CompressFormat.PNG, 100, fos)
             }
             processedImagePath = procFile.absolutePath
+
+            // Save thumbnail
+            val thumbFile = File(sessionDir, "page_${id}_thumb.jpg")
+            val thumbBmp = thumbnailBitmapCache ?: run {
+                val maxThumbDim = 200
+                val scale = (maxThumbDim.toFloat() / processedBitmapCache!!.width.coerceAtLeast(processedBitmapCache!!.height)).coerceAtMost(1f)
+                val thumbW = (processedBitmapCache!!.width * scale).toInt().coerceAtLeast(1)
+                val thumbH = (processedBitmapCache!!.height * scale).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(processedBitmapCache!!, thumbW, thumbH, true)
+            }
+            FileOutputStream(thumbFile).use { fos ->
+                thumbBmp.compress(Bitmap.CompressFormat.JPEG, 80, fos)
+            }
+            thumbnailPath = thumbFile.absolutePath
         }
     }
 }
@@ -191,7 +315,12 @@ class DocumentSession(
             processedBitmapCache = copyProc,
             rotationDegrees = src.rotationDegrees,
             mode = src.mode,
-            corners = src.corners
+            corners = src.corners?.map { org.opencv.core.Point(it.x, it.y) },
+            exposureStops = src.exposureStops,
+            contrast = src.contrast,
+            saturation = src.saturation,
+            adjustSharpen = src.adjustSharpen,
+            adjustDenoise = src.adjustDenoise
         )
         insertPage(index + 1, newPage)
         return newPage
@@ -201,15 +330,7 @@ class DocumentSession(
         val page = _pages.getOrNull(index) ?: return
         page.rotationDegrees = (page.rotationDegrees + degreesDelta) % 360
         if (page.rotationDegrees < 0) page.rotationDegrees += 360
-
-        // Rotate in-memory bitmaps
-        val matrix = Matrix().apply { postRotate(degreesDelta.toFloat()) }
-        page.getOriginalBitmap(context)?.let { bmp ->
-            page.originalBitmapCache = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
-        }
-        page.processedBitmapCache?.let { bmp ->
-            page.processedBitmapCache = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
-        }
+        page.editVersion++
         lastModifiedAt = System.currentTimeMillis()
     }
 
@@ -265,6 +386,22 @@ class DocumentSession(
                         put("thumbnailPath", page.thumbnailPath ?: "")
                         put("rotationDegrees", page.rotationDegrees)
                         put("mode", page.mode.name)
+                        put("exposureStops", page.exposureStops)
+                        put("contrast", page.contrast)
+                        put("saturation", page.saturation)
+                        put("adjustSharpen", page.adjustSharpen)
+                        put("adjustDenoise", page.adjustDenoise)
+                        page.corners?.let { pts ->
+                            val cornersArray = JSONArray()
+                            for (pt in pts) {
+                                val ptObj = JSONObject().apply {
+                                    put("x", pt.x)
+                                    put("y", pt.y)
+                                }
+                                cornersArray.put(ptObj)
+                            }
+                            put("corners", cornersArray)
+                        }
                     }
                     pagesArray.put(pageJson)
                 }
@@ -313,13 +450,28 @@ class DocumentSession(
                         DocumentScanner.DocumentMode.ENHANCED
                     }
 
+                    val cornersList = p.optJSONArray("corners")?.let { arr ->
+                        val list = mutableListOf<org.opencv.core.Point>()
+                        for (j in 0 until arr.length()) {
+                            val ptObj = arr.getJSONObject(j)
+                            list.add(org.opencv.core.Point(ptObj.getDouble("x"), ptObj.getDouble("y")))
+                        }
+                        if (list.size == 4) list else null
+                    }
+
                     val page = ScannedPage(
                         id = p.getString("id"),
                         originalImagePath = p.optString("originalImagePath", ""),
                         processedImagePath = p.optString("processedImagePath", "").takeIf { it.isNotEmpty() },
                         thumbnailPath = p.optString("thumbnailPath", "").takeIf { it.isNotEmpty() },
                         rotationDegrees = p.optInt("rotationDegrees", 0),
-                        mode = mode
+                        mode = mode,
+                        corners = cornersList,
+                        exposureStops = p.optDouble("exposureStops", 0.0),
+                        contrast = p.optDouble("contrast", 1.0),
+                        saturation = p.optDouble("saturation", 1.0),
+                        adjustSharpen = p.optDouble("adjustSharpen", 0.0),
+                        adjustDenoise = p.optDouble("adjustDenoise", 0.0)
                     )
                     loadedPages.add(page)
                 }

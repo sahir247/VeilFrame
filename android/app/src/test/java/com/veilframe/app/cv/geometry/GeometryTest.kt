@@ -74,4 +74,39 @@ class GeometryTest {
         assertEquals(75.0, scaled[1].x, 0.001)
         assertEquals(100.0, scaled[1].y, 0.001)
     }
+
+    @Test
+    fun `test outputSizeFor respects dimension bounds and aspect limits`() {
+        // Enormous corners
+        val largeCorners = listOf(
+            Point(0.0, 0.0),
+            Point(10000.0, 0.0),
+            Point(10000.0, 15000.0),
+            Point(0.0, 15000.0)
+        )
+        val (w, h) = Geometry.outputSizeFor(largeCorners, maxDimensionCap = 4000)
+        assertTrue("Output width capped at 4000", w <= 4000)
+        assertTrue("Output height capped at 4000", h <= 4000)
+        assertTrue("Output dimensions above minimum", w >= 100 && h >= 100)
+    }
+
+    @Test
+    fun `test isValidQuad rejects degenerate or concave polygons`() {
+        val validQuad = listOf(
+            Point(10.0, 10.0),
+            Point(200.0, 15.0),
+            Point(195.0, 300.0),
+            Point(15.0, 290.0)
+        )
+        assertTrue("Valid quad accepted", Geometry.isValidQuad(validQuad))
+
+        // Degenerate zero-area line
+        val degenerateLine = listOf(
+            Point(10.0, 10.0),
+            Point(20.0, 20.0),
+            Point(30.0, 30.0),
+            Point(40.0, 40.0)
+        )
+        org.junit.Assert.assertFalse("Collinear points rejected", Geometry.isValidQuad(degenerateLine))
+    }
 }

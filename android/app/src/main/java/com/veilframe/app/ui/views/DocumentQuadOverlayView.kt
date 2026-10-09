@@ -84,12 +84,18 @@ class DocumentQuadOverlayView @JvmOverloads constructor(
         val viewH = height.toFloat()
         if (viewW <= 0f || viewH <= 0f) return
 
-        // Scale coordinates from camera frame space into overlay view coordinates
-        val scaleX = viewW / frameWidth.toFloat()
-        val scaleY = viewH / frameHeight.toFloat()
+        // CameraX PreviewView with FILL_CENTER uniformly scales the camera stream to fill view
+        // dimensions and symmetrically crops any overflow along the longer axis.
+        val fw = frameWidth.toFloat().coerceAtLeast(1f)
+        val fh = frameHeight.toFloat().coerceAtLeast(1f)
+        val scale = maxOf(viewW / fw, viewH / fh)
+        val scaledW = fw * scale
+        val scaledH = fh * scale
+        val offsetX = (viewW - scaledW) / 2f
+        val offsetY = (viewH - scaledH) / 2f
 
         quadPath.reset()
-        val pts = currentCorners.map { PointF(it.x * scaleX, it.y * scaleY) }
+        val pts = currentCorners.map { PointF(it.x * scale + offsetX, it.y * scale + offsetY) }
 
         quadPath.moveTo(pts[0].x, pts[0].y)
         quadPath.lineTo(pts[1].x, pts[1].y)

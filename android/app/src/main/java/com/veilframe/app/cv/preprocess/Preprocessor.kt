@@ -115,6 +115,60 @@ object Preprocessor {
         }
     }
 
+    /**
+     * Estimates slowly-varying background illumination and compensates shading
+     * to remove uneven shadows across paper documents.
+     */
+    fun removeShadows(source: Mat, kernelSize: Int = 25): Mat {
+        val isGray = source.channels() == 1
+        val bgr = Mat()
+        if (isGray) Imgproc.cvtColor(source, bgr, Imgproc.COLOR_GRAY2BGR) else source.copyTo(bgr)
+
+        val channels = ArrayList<Mat>()
+        val resultChannels = ArrayList<Mat>()
+        val merged = Mat()
+        val safeKernel = if (kernelSize % 2 == 1) kernelSize else kernelSize + 1
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(safeKernel.toDouble(), safeKernel.toDouble()))
+        try {
+            Core.split(bgr, channels)
+            for (ch in channels) {
+                val bg = Mat()
+                val diff = Mat()
+                val normCh = Mat()
+                val normalized = Mat()
+                try {
+                    // Dilation expands background paper over text lines
+                    Imgproc.morphologyEx(ch, bg, Imgproc.MORPH_DILATE, kernel)
+                    Imgproc.medianBlur(bg, bg, safeKernel)
+                    // Compute absolute difference and invert: diff = 255 - (bg - ch)
+                    Core.absdiff(ch, bg, diff)
+                    Core.bitwise_not(diff, normCh)
+                    // Stretch to full 0..255 dynamic range
+                    Core.normalize(normCh, normalized, 0.0, 255.0, Core.NORM_MINMAX, CvType.CV_8UC1)
+                    resultChannels.add(normalized)
+                } finally {
+                    bg.release()
+                    diff.release()
+                    normCh.release()
+                }
+            }
+            Core.merge(resultChannels, merged)
+            return if (isGray) {
+                val gray = Mat()
+                Imgproc.cvtColor(merged, gray, Imgproc.COLOR_BGR2GRAY)
+                gray
+            } else {
+                merged.clone()
+            }
+        } finally {
+            bgr.release()
+            kernel.release()
+            channels.forEach { it.release() }
+            resultChannels.forEach { it.release() }
+            merged.release()
+        }
+    }
+
     /** Content-agnostic fast denoise (Gaussian / Median / Bilateral). */
     fun denoise(source: Mat, strength: Int = 5, method: DenoiseMethod = DenoiseMethod.BILATERAL): Mat {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")

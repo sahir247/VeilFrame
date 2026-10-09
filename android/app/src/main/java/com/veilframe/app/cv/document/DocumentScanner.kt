@@ -111,40 +111,68 @@ object DocumentScanner {
         DocumentMode.ORIGINAL -> image
 
         DocumentMode.GRAYSCALE -> {
-            val gray = Preprocessor.grayscale(image)
-            gray.copyTo(image)
+            context?.ensureActive()
+            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            context?.ensureActive()
+            val gray = Preprocessor.grayscale(shadowFree)
+            val normalized = Preprocessor.normalize(gray, clipLimit = 2.0)
+            val sharpened = Preprocessor.sharpen(normalized, amount = 0.4, radius = 1.0)
+            sharpened.copyTo(image)
+            shadowFree.release()
             gray.release()
+            normalized.release()
+            sharpened.release()
             image
         }
 
         DocumentMode.BLACK_AND_WHITE -> {
-            val gray = Preprocessor.grayscale(image)
-            val binary = Preprocessor.adaptiveThreshold(gray, blockSize = 31, c = 12.0)
+            context?.ensureActive()
+            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            context?.ensureActive()
+            val gray = Preprocessor.grayscale(shadowFree)
+            val binary = Preprocessor.adaptiveThreshold(gray, blockSize = 31, c = 10.0)
             binary.copyTo(image)
+            shadowFree.release()
             gray.release()
             binary.release()
             image
         }
 
         DocumentMode.ENHANCED -> {
-            context?.ensureActive() // B6
-            val normalized = Preprocessor.normalize(image, clipLimit = 2.5)
             context?.ensureActive()
+            // 1. Remove uneven shadows & background illumination gradient
+            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            context?.ensureActive()
+            // 2. Normalize contrast via CLAHE on L-channel
+            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 2.2)
+            context?.ensureActive()
+            // 3. Bilateral filter to smooth paper grain while retaining crisp character edges
             val denoised = Preprocessor.denoise(normalized, strength = 3, method = com.veilframe.app.cv.preprocess.DenoiseMethod.BILATERAL)
-            denoised.copyTo(image)
+            context?.ensureActive()
+            // 4. Controlled unsharp masking to make printed & handwritten text pop
+            val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
+                denoised,
+                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.5, radius = 1.0, threshold = 2.0),
+            )
+            sharpened.copyTo(image)
+            shadowFree.release()
             normalized.release()
             denoised.release()
+            sharpened.release()
             image
         }
 
         DocumentMode.RECEIPT -> {
-            context?.ensureActive() // B6
-            val normalized = Preprocessor.normalize(image, clipLimit = 3.0)
             context?.ensureActive()
-            val sharpened = Preprocessor.sharpen(normalized, amount = 0.6, radius = 1.0)
+            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            context?.ensureActive()
+            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 2.8)
+            context?.ensureActive()
+            val sharpened = Preprocessor.sharpen(normalized, amount = 0.7, radius = 1.0)
             val warmed = Mat()
-            sharpened.convertTo(warmed, -1, 1.08, 6.0)
+            sharpened.convertTo(warmed, -1, 1.05, 4.0)
             warmed.copyTo(image)
+            shadowFree.release()
             normalized.release()
             sharpened.release()
             warmed.release()
@@ -152,14 +180,17 @@ object DocumentScanner {
         }
 
         DocumentMode.ID_DOCUMENT -> {
-            context?.ensureActive() // B6
-            val normalized = Preprocessor.normalize(image, clipLimit = 1.8)
+            context?.ensureActive()
+            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            context?.ensureActive()
+            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 1.8)
             context?.ensureActive()
             val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
                 normalized,
-                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.8, radius = 1.0, threshold = 3.0),
+                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.7, radius = 1.0, threshold = 2.5),
             )
             sharpened.copyTo(image)
+            shadowFree.release()
             normalized.release()
             sharpened.release()
             image

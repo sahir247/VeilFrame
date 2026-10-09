@@ -93,7 +93,7 @@ object QuadDetector {
                 val approxMat = MatOfPoint(*points.toTypedArray())
                 val isConvex = Imgproc.isContourConvex(approxMat)
                 approxMat.release()
-                if (!isConvex) {
+                if (!isConvex || !Geometry.isValidQuad(points)) {
                     approx.release()
                     contour2f.release()
                     continue
@@ -101,6 +101,12 @@ object QuadDetector {
                 val ordered = Geometry.ordered(points)
                 val area = Geometry.quadArea(ordered)
                 val coverage = area / workingArea
+                // Reject quads covering > 98% of the frame (camera frame border contours)
+                if (coverage > 0.98) {
+                    approx.release()
+                    contour2f.release()
+                    continue
+                }
                 val confidence = shapeConfidence(ordered, area)
                 val candidate = Detection(
                     corners = Geometry.scalePoints(ordered, scale),
@@ -125,8 +131,8 @@ object QuadDetector {
     private fun Detection.score(): Double = confidence * (0.5 + 0.5 * coverage)
 
     /**
-     * Regularity score: penalises quads that are extremely thin or have
-     * grossly unequal opposite edges (typical of false contour matches).
+     * Regularity score: penalises quads that are extremely thin, have
+     * grossly unequal opposite edges, or deviate excessively from rectangular corners.
      */
     private fun shapeConfidence(quad: List<Point>, area: Double): Double {
         val (tl, tr, br, bl) = quad
@@ -137,10 +143,33 @@ object QuadDetector {
         val widthRatio = minOf(top, bottom) / maxOf(top, bottom).coerceAtLeast(1e-6)
         val heightRatio = minOf(left, right) / maxOf(left, right).coerceAtLeast(1e-6)
         val aspect = maxOf(top, bottom) / maxOf(left, right).coerceAtLeast(1e-6)
-        val aspectPenalty = if (aspect > 4.0 || aspect < 0.25) 0.5 else 1.0
+        val aspectPenalty = when {
+            aspect in 0.5..2.5 -> 1.0 // Standard paper/card/receipt range
+            aspect in 0.3..3.5 -> 0.8
+            else -> 0.4
+        }
         val areaScore = (area / ((top + bottom) * (left + right) / 4.0).coerceAtLeast(1e-6))
             .coerceIn(0.0, 1.0)
-        return (0.35 * widthRatio + 0.35 * heightRatio + 0.3 * areaScore) * aspectPenalty
+
+        // Corner orthogonality score: average cosine deviation from 90 degrees
+        var orthogonalScore = 0.0
+        val pts = listOf(tl, tr, br, bl)
+        for (i in 0 until 4) {
+            val prev = pts[(i + 3) % 4]
+            val curr = pts[i]
+            val next = pts[(i + 1) % 4]
+            val v1x = prev.x - curr.x
+            val v1y = prev.y - curr.y
+            val v2x = next.x - curr.x
+            val v2y = next.y - curr.y
+            val l1 = kotlin.math.sqrt(v1x * v1x + v1y * v1y).coerceAtLeast(1e-6)
+            val l2 = kotlin.math.sqrt(v2x * v2x + v2y * v2y).coerceAtLeast(1e-6)
+            val cosAngle = kotlin.math.abs((v1x * v2x + v1y * v2y) / (l1 * l2))
+            orthogonalScore += (1.0 - cosAngle).coerceIn(0.0, 1.0)
+        }
+        val avgOrthogonal = orthogonalScore / 4.0
+
+        return (0.25 * widthRatio + 0.25 * heightRatio + 0.25 * areaScore + 0.25 * avgOrthogonal) * aspectPenalty
     }
 
     private val CvType8u: Int get() = org.opencv.core.CvType.CV_8UC1
