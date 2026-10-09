@@ -149,6 +149,7 @@ object VideoProcessor {
                     trimDurationSec = trimDurationSec,
                     resolutionStr = resolutionStr,
                     aspectStr = aspectStr,
+                    dynamicCropFilter = editState.dynamicCropFilter,
                     speed = editState.speed,
                     colorProfile = editState.colorProfile,
                     audioAction = audioActionStr,
@@ -202,6 +203,7 @@ object VideoProcessor {
             trimDurationSec = trimDurationSec,
             resolutionStr = resolutionStr,
             aspectStr = aspectStr,
+            dynamicCropFilter = editState.dynamicCropFilter,
             speed = editState.speed,
             colorProfile = editState.colorProfile,
             audioAction = audioActionStr,
@@ -249,6 +251,7 @@ object VideoProcessor {
         trimDurationSec: Double,
         resolutionStr: String?,
         aspectStr: String?,
+        dynamicCropFilter: String? = null,
         speed: Float,
         colorProfile: String = "Original",
         audioAction: String,
@@ -298,7 +301,9 @@ object VideoProcessor {
             // Video filters
             val vfFilters = mutableListOf<String>()
 
-            if (aspectStr != null) {
+            if (!dynamicCropFilter.isNullOrBlank()) {
+                vfFilters.add(dynamicCropFilter)
+            } else if (aspectStr != null) {
                 when (aspectStr) {
                     "9:16" -> vfFilters.add("crop=trunc(min(iw\\,ih*9/16)/2)*2:trunc(min(ih\\,iw*16/9)/2)*2")
                     "1:1" -> vfFilters.add("crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2")

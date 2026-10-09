@@ -707,6 +707,22 @@
                         app:iconSize="16dp" />
                 </LinearLayout>
 
+                <!-- Smart Auto-Reframe (9:16) AI Tool Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnVidAutoReframe"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:text="Smart Auto-Reframe (9:16)"
+                    android:maxLines="1"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:enabled="false"
+                    app:icon="@drawable/ic_aspect_ratio"
+                    app:iconTint="@color/vf_primary"
+                    app:iconSize="18dp" />
+
                 <!-- Comparison Summary: Before -> After -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"

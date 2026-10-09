@@ -83,6 +83,13 @@
                     android:text="9:16 (Reel / Shorts / TikTok)" />
 
                 <com.google.android.material.chip.Chip
+                    android:id="@+id/chipAspectAutoReframe"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Smart Auto-Reframe (9:16)" />
+
+                <com.google.android.material.chip.Chip
                     android:id="@+id/chipAspect11"
                     style="@style/Widget.Material3.Chip.Filter"
                     android:layout_width="wrap_content"

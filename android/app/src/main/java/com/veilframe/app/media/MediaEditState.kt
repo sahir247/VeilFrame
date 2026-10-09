@@ -210,7 +210,8 @@ data class VideoEditState(
     var rotationAngle: Int = 0, // 0, 90, 180, 270
     var customCropPercent: Int = 0,
     var fps: Int? = null,
-    var colorProfile: String = "Original"
+    var colorProfile: String = "Original",
+    var dynamicCropFilter: String? = null
 ) {
     fun hasEdits(): Boolean {
         return (trimStartMs > 0L) ||
@@ -226,7 +227,8 @@ data class VideoEditState(
                 flipV ||
                 (rotationAngle != 0) ||
                 (customCropPercent > 0) ||
-                (fps != null)
+                (fps != null) ||
+                (!dynamicCropFilter.isNullOrBlank())
     }
 
     fun hasVideoTransforms(): Boolean {
@@ -238,7 +240,8 @@ data class VideoEditState(
                 flipV ||
                 (rotationAngle != 0) ||
                 (customCropPercent > 0) ||
-                (fps != null && fps!! > 0)
+                (fps != null && fps!! > 0) ||
+                (!dynamicCropFilter.isNullOrBlank())
     }
 
     val trimmedDurationMs: Long
@@ -266,6 +269,7 @@ data class VideoEditState(
         rotationAngle = 0
         customCropPercent = 0
         fps = null
+        dynamicCropFilter = null
     }
 }
 

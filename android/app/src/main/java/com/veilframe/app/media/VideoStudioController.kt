@@ -36,6 +36,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.veilframe.app.cv.core.CvRuntime
+import com.veilframe.app.cv.motion.VideoReframeEngine
+import com.veilframe.app.privacy.PiiOnnxEngine
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -87,6 +90,20 @@ class VideoStudioController(
     private var activeGeneration: Long = 0L
     private val loadToken = java.util.concurrent.atomic.AtomicLong(0L)
     private lateinit var floatingDockController: FloatingDockStateController
+
+    private val TAG = "VeilFrame.VideoStudio"
+    private var piiEngine: PiiOnnxEngine? = null
+
+    private fun getOrInitPiiEngine(): PiiOnnxEngine? {
+        if (piiEngine == null) {
+            try {
+                piiEngine = PiiOnnxEngine(activity)
+            } catch (t: Throwable) {
+                Log.w(TAG, "PiiOnnxEngine initialization failed: ${t.message}")
+            }
+        }
+        return piiEngine
+    }
 
     fun initWorkspace() {
         binding.btnVidStudioMenu.setOnClickListener { onNavigateHome() }
@@ -360,6 +377,7 @@ class VideoStudioController(
         binding.toolVidSpeed.setOnClickListener { showSpeedDialog(binding.toolVidSpeed) }
         binding.toolVidAspect.setOnClickListener { showAspectDialog(binding.toolVidAspect) }
         binding.toolVidAudio.setOnClickListener { showAudioDialog(binding.toolVidAudio) }
+        binding.btnVidAutoReframe.setOnClickListener { applySmartAutoReframe() }
 
         // Compression execution
         binding.btnVidExecute.setOnClickListener { handleExecute() }
@@ -632,6 +650,8 @@ class VideoStudioController(
                 binding.toolVidSpeed.alpha = 1.0f
                 binding.toolVidAspect.isEnabled = true
                 binding.toolVidAspect.alpha = 1.0f
+                binding.btnVidAutoReframe.isEnabled = true
+                binding.btnVidAutoReframe.alpha = 1.0f
                 val isGif = outputConfig.outputMode == VideoOutputMode.GIF
                 binding.toolVidAudio.isEnabled = !isGif
                 binding.toolVidAudio.alpha = if (isGif) 0.38f else 1.0f
@@ -778,7 +798,7 @@ class VideoStudioController(
             val containerH = container.height.takeIf { it > 0 } ?: (240 * activity.resources.displayMetrics.density).toInt()
 
             when (editState.aspect) {
-                "9:16 (Reel / Shorts / TikTok)", "9:16" -> {
+                "9:16 (Reel / Shorts / TikTok)", "9:16", "Smart Auto-Reframe (9:16)" -> {
                     val h = containerH
                     val w = (h.toFloat() * 9f / 16f).toInt().coerceAtMost(containerW)
                     params.width = w
@@ -1112,7 +1132,11 @@ class VideoStudioController(
 
             if (editState.aspect != "Original") {
                 binding.tvVidSummaryAspect.visibility = View.VISIBLE
-                val cropInfo = if (editState.aspect == "Custom Crop") " (${editState.customCropPercent}%)" else ""
+                val cropInfo = when (editState.aspect) {
+                    "Custom Crop" -> " (${editState.customCropPercent}%)"
+                    "Smart Auto-Reframe (9:16)" -> if (editState.dynamicCropFilter != null) " (Dynamic AI Trajectory)" else " (AI Tracking)"
+                    else -> ""
+                }
                 binding.tvVidSummaryAspect.text = "• Aspect: ${editState.aspect}$cropInfo"
             } else {
                 binding.tvVidSummaryAspect.visibility = View.GONE
@@ -1410,6 +1434,8 @@ class VideoStudioController(
         binding.toolVidSpeed.alpha = 0.38f
         binding.toolVidAspect.isEnabled = false
         binding.toolVidAspect.alpha = 0.38f
+        binding.btnVidAutoReframe.isEnabled = false
+        binding.btnVidAutoReframe.alpha = 0.38f
         binding.toolVidAudio.isEnabled = false
         binding.toolVidAudio.alpha = 0.38f
 
@@ -1834,6 +1860,7 @@ class VideoStudioController(
         var draftFlipV = editState.flipV
 
         when (draftAspect) {
+            "Smart Auto-Reframe (9:16)" -> dialogBinding.chipAspectAutoReframe.isChecked = true
             "9:16 (Reel / Shorts / TikTok)" -> dialogBinding.chipAspect916.isChecked = true
             "1:1 (Square Feed)" -> dialogBinding.chipAspect11.isChecked = true
             "16:9 (Landscape YouTube)" -> dialogBinding.chipAspect169.isChecked = true
@@ -1893,9 +1920,14 @@ class VideoStudioController(
             editState.rotationAngle = draftRotation
             editState.flipH = draftFlipH
             editState.flipV = draftFlipV
-            applyAspectRatioPreview()
-            refreshStats()
-            updateEditSummary()
+            if (draftAspect == "Smart Auto-Reframe (9:16)") {
+                applySmartAutoReframe()
+            } else {
+                editState.dynamicCropFilter = null
+                applyAspectRatioPreview()
+                refreshStats()
+                updateEditSummary()
+            }
             dialog.dismiss()
         }
 
@@ -1905,6 +1937,7 @@ class VideoStudioController(
             draftRotation = 0
             draftFlipH = false
             draftFlipV = false
+            editState.dynamicCropFilter = null
             dialogBinding.chipAspectOrig.isChecked = true
             dialogBinding.layoutVideoCustomCrop.visibility = View.GONE
             dialogBinding.sliderCustomCrop.value = 0f
@@ -1920,6 +1953,65 @@ class VideoStudioController(
             morph.requestDismiss(dialog, originView, dialogBinding.root)
         }
         morph.showMorphDialog(activity, originView, dialog, dialogBinding.root)
+    }
+
+    fun applySmartAutoReframe(originView: View? = null) {
+        val item = currentItem ?: run {
+            Toast.makeText(activity, "Please select a video first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // CV Governance native availability check
+        val isNative = CvRuntime.isNativeAvailable
+        Log.d(TAG, "Initiating Smart Auto-Reframe (9:16) [CvRuntime native: $isNative]")
+
+        editState.aspect = "Smart Auto-Reframe (9:16)"
+        applyAspectRatioPreview()
+        refreshStats()
+        updateEditSummary()
+        if (::floatingDockController.isInitialized) {
+            floatingDockController.onEditApplied()
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(activity, "Analyzing video trajectory for Smart Auto-Reframe...", Toast.LENGTH_SHORT).show()
+                }
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(item.file.absolutePath)
+                    val pii = getOrInitPiiEngine()
+                    val reframeEngine = VideoReframeEngine(piiEngine = pii, targetAspect = 9f / 16f)
+                    val durationMs = item.durationMs.coerceAtLeast(1000L)
+                    val trajectory = reframeEngine.generateTrajectoryFromRetriever(
+                        retriever = retriever,
+                        durationMs = durationMs,
+                        fps = 30.0,
+                        sampleIntervalMs = 500L
+                    )
+                    if (trajectory.isNotEmpty()) {
+                        val cropFilter = VideoReframeEngine.generateFfmpegCropFilter(
+                            trajectory = trajectory,
+                            origW = item.width.takeIf { it > 0 } ?: 1920,
+                            origH = item.height.takeIf { it > 0 } ?: 1080,
+                            targetAspect = 9f / 16f
+                        )
+                        editState.dynamicCropFilter = cropFilter
+                        Log.i(TAG, "Smart Auto-Reframe dynamic crop filter ready: $cropFilter")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(activity, "Smart Auto-Reframe (9:16) trajectory ready", Toast.LENGTH_SHORT).show()
+                            updateEditSummary()
+                        }
+                    }
+                } finally {
+                    retriever.release()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Trajectory generation failed, defaulting to static 9:16 framing", e)
+                editState.dynamicCropFilter = null
+            }
+        }
     }
 
     private fun showAudioDialog(originView: View? = null) {
