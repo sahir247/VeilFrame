@@ -162,7 +162,7 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
 
     // ONNX Runtime Android for AI image super-resolution inference (Plugin EP ABI compatible)
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
 
     // ZXing — QR code encode & decode (QR Studio: generator + scanner)
     implementation("com.google.zxing:core:3.5.3")
@@ -186,7 +186,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("org.json:json:20240303")
-    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.27.0")
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.30.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
