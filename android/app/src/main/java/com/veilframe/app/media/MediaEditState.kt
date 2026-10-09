@@ -117,7 +117,7 @@ data class ImageEditState(
     var exifSoftware: String = "",
     var exifDateTime: String = "",
     var exifGps: String = "",
-    var piiDetections: List<com.veilframe.app.cv.privacy.PiiDetection> = emptyList()
+    var piiDetections: List<com.veilframe.app.privacy.PiiDetection> = emptyList()
 ) {
     fun isCropped(): Boolean {
         return (cropAspect != "Free" && cropAspect != "Original") ||

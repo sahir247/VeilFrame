@@ -1,4 +1,4 @@
-package com.veilframe.app.cv.privacy
+package com.veilframe.app.privacy
 
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import com.veilframe.app.cv.core.CvRuntime
 import org.json.JSONArray
 import org.json.JSONObject
 import org.opencv.core.CvType
@@ -225,12 +226,14 @@ class PiiOnnxEngine(
 
         /**
          * Applies Layer C (Isolated Solid Redaction) masks onto an OpenCV [Mat].
+         * Safely gated through [CvRuntime.isNativeAvailable].
          */
         fun applySolidRedaction(
             source: Mat,
             detections: List<PiiDetection>,
             fillColor: Scalar = Scalar(0.0, 0.0, 0.0)
         ): Mat {
+            if (!CvRuntime.isNativeAvailable) return source
             val out = source.clone()
             for (det in detections) {
                 Imgproc.rectangle(
@@ -413,8 +416,10 @@ class PiiOnnxEngine(
 
     /**
      * Preprocesses a 640x640 RGB/BGR [Mat] into the pre-allocated planar float buffer.
+     * Safely gated through [CvRuntime.isNativeAvailable].
      */
     fun preprocessToBuffer(mat: Mat) {
+        if (!CvRuntime.isNativeAvailable) return
         val planeSize = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE
         val gOffset = planeSize
         val bOffset = planeSize * 2
@@ -489,12 +494,14 @@ class PiiOnnxEngine(
 
     /**
      * Runs automated PII detection on an OpenCV [Mat].
+     * Safely gated through [CvRuntime.isNativeAvailable].
      */
     fun detect(
         sourceMat: Mat,
         confThreshold: Float = 0.40f,
         iouThreshold: Float = 0.45f
     ): List<PiiDetection> {
+        if (!CvRuntime.isNativeAvailable) return emptyList()
         val resized = Mat()
         try {
             if (sourceMat.cols() == MODEL_INPUT_SIZE && sourceMat.rows() == MODEL_INPUT_SIZE) {

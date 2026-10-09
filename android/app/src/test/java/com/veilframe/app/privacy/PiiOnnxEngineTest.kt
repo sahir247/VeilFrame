@@ -1,4 +1,4 @@
-package com.veilframe.app.cv.privacy
+package com.veilframe.app.privacy
 
 import android.graphics.Bitmap
 import android.graphics.Color

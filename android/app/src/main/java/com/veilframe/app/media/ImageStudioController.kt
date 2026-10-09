@@ -22,8 +22,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.veilframe.app.cv.privacy.PiiOnnxEngine
-import com.veilframe.app.cv.privacy.PiiDetection
+import com.veilframe.app.privacy.PiiOnnxEngine
+import com.veilframe.app.privacy.PiiDetection
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
