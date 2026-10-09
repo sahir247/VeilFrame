@@ -59,6 +59,20 @@ class FrameBufferPool(
     val blurredMat: Mat? = createMat(analysisHeight, analysisWidth, CvType.CV_8UC1)
     val edgesMat: Mat? = createMat(analysisHeight, analysisWidth, CvType.CV_8UC1)
 
+    private fun createMatOfDouble(): org.opencv.core.MatOfDouble? {
+        return when {
+            matFactory != null -> matFactory.invoke(1, 1, CvType.CV_64FC1) as? org.opencv.core.MatOfDouble
+            CvRuntime.isNativeAvailable -> org.opencv.core.MatOfDouble()
+            else -> null
+        }
+    }
+
+    // Pre-allocated Mats for real-time quality analysis (Sharpness, Glare, Exposure)
+    val laplacianMat: Mat? = createMat(analysisHeight, analysisWidth, CvType.CV_32F)
+    val glareMaskMat: Mat? = createMat(analysisHeight, analysisWidth, CvType.CV_8UC1)
+    val meanMat: org.opencv.core.MatOfDouble? = createMatOfDouble()
+    val stddevMat: org.opencv.core.MatOfDouble? = createMatOfDouble()
+
     @Volatile
     var isReleased = false
         private set
@@ -133,6 +147,10 @@ class FrameBufferPool(
                 rawMat?.release()
                 blurredMat?.release()
                 edgesMat?.release()
+                laplacianMat?.release()
+                glareMaskMat?.release()
+                meanMat?.release()
+                stddevMat?.release()
             } catch (_: Throwable) {}
         }
     }

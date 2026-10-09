@@ -1,5 +1,6 @@
 package com.veilframe.app.document
 
+import com.veilframe.app.cv.document.QualityMetrics
 import com.veilframe.app.cv.document.QuadStabilizer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,12 +14,12 @@ class ScanResultModelTest {
     @Test
     fun testQualityMetricsDefaultValues() {
         val defaultMetrics = QualityMetrics.DEFAULT
-        assertEquals(0.0, defaultMetrics.sharpnessScore, 0.001)
         assertTrue(defaultMetrics.isSharp)
-        assertEquals(0.0, defaultMetrics.glarePercentage, 0.001)
+        assertEquals(100.0, defaultMetrics.sharpnessVariance, 0.001)
+        assertFalse(defaultMetrics.isTooDark)
+        assertEquals(128.0, defaultMetrics.meanLuma, 0.001)
         assertFalse(defaultMetrics.hasGlare)
-        assertTrue(defaultMetrics.isReadyForCapture)
-        assertEquals("", defaultMetrics.statusMessage)
+        assertEquals(0.0, defaultMetrics.glarePercentage, 0.001)
     }
 
     @Test
@@ -30,12 +31,12 @@ class ScanResultModelTest {
             Point(10.0, 200.0)
         )
         val metrics = QualityMetrics(
-            sharpnessScore = 145.0,
             isSharp = true,
-            glarePercentage = 0.02,
+            sharpnessVariance = 210.0,
+            isTooDark = false,
+            meanLuma = 145.0,
             hasGlare = false,
-            isReadyForCapture = true,
-            statusMessage = "Ready — tap shutter"
+            glarePercentage = 0.5
         )
         val result = ScanResult(
             corners = corners,
@@ -51,8 +52,11 @@ class ScanResultModelTest {
         assertEquals(1080, result.frameWidth)
         assertEquals(1920, result.frameHeight)
         assertEquals(QuadStabilizer.State.STABLE, result.stabilizerState)
-        assertEquals(145.0, result.quality.sharpnessScore, 0.001)
-        assertTrue(result.quality.isReadyForCapture)
+        assertEquals(210.0, result.quality.sharpnessVariance, 0.001)
+        assertEquals(145.0, result.quality.meanLuma, 0.001)
+        assertTrue(result.quality.isSharp)
+        assertFalse(result.quality.isTooDark)
+        assertFalse(result.quality.hasGlare)
     }
 
     @Test

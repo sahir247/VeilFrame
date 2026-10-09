@@ -39,6 +39,8 @@ import com.veilframe.app.databinding.SheetDocumentExportBinding
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.cv.document.FrameBufferPool
+import com.veilframe.app.cv.document.QualityAnalyzer
+import com.veilframe.app.cv.document.QualityMetrics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,22 +70,6 @@ data class ScanResult(
     val frameHeight: Int = 0,
     val stabilizerState: QuadStabilizer.State = QuadStabilizer.State.SEARCHING,
 )
-
-/**
- * Quality indicators for the live viewfinder quality gate (sharpness, glare).
- */
-data class QualityMetrics(
-    val sharpnessScore: Double = 0.0,
-    val isSharp: Boolean = true,
-    val glarePercentage: Double = 0.0,
-    val hasGlare: Boolean = false,
-    val isReadyForCapture: Boolean = true,
-    val statusMessage: String = "",
-) {
-    companion object {
-        val DEFAULT = QualityMetrics()
-    }
-}
 
 /**
  * Controller orchestrating the dedicated Document Scanner workspace:
@@ -440,11 +426,22 @@ class DocumentScannerController(
                     sourceHeight = result.frameHeight,
                     frameId = result.frameId,
                 )
-                binding.tvDocCamStatus.text = when (result.stabilizerState) {
-                    QuadStabilizer.State.STABLE -> "Ready — tap shutter"
-                    QuadStabilizer.State.TRACKING -> "Document detected — hold still"
-                    QuadStabilizer.State.SEARCHING -> "Align document inside frame"
+                val statusText = buildString {
+                    // Prioritize critical environmental errors
+                    when {
+                        result.quality.hasGlare -> append("⚠️ Glare detected — adjust angle")
+                        result.quality.isTooDark -> append("⚠️ Too dark — add light")
+                        !result.quality.isSharp -> append("⚠️ Hold steady — blurry")
+                        else -> {
+                            when (result.stabilizerState) {
+                                QuadStabilizer.State.STABLE -> append("✅ Ready — tap shutter")
+                                QuadStabilizer.State.TRACKING -> append("🔍 Document detected — hold still")
+                                QuadStabilizer.State.SEARCHING -> append("📄 Align document inside frame")
+                            }
+                        }
+                    }
                 }
+                binding.tvDocCamStatus.text = statusText
             }
         }
     }
@@ -564,10 +561,25 @@ class DocumentScannerController(
                     }
                 }
 
+                // --- Run Zero-Allocation Quality Analysis ---
+                val quality = if (pool.laplacianMat != null &&
+                    pool.glareMaskMat != null && pool.meanMat != null && pool.stddevMat != null
+                ) {
+                    QualityAnalyzer.analyze(
+                        source = pool.analysisMat,
+                        laplacianMat = pool.laplacianMat,
+                        glareMaskMat = pool.glareMaskMat,
+                        meanMat = pool.meanMat,
+                        stddevMat = pool.stddevMat,
+                    )
+                } else {
+                    QualityMetrics.DEFAULT
+                }
+
                 _scannerState.emit(
                     ScanResult(
                         corners = stable,
-                        quality = QualityMetrics.DEFAULT,
+                        quality = quality,
                         frameId = currentFrameId,
                         frameWidth = frameW,
                         frameHeight = frameH,
