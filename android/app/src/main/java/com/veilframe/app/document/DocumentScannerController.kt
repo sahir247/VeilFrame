@@ -1,6 +1,7 @@
 package com.veilframe.app.document
 
 import android.annotation.SuppressLint
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
@@ -426,21 +427,46 @@ class DocumentScannerController(
                     sourceHeight = result.frameHeight,
                     frameId = result.frameId,
                 )
-                val statusText = buildString {
-                    // Prioritize critical environmental errors
-                    when {
-                        result.quality.hasGlare -> append("⚠️ Glare detected — adjust angle")
-                        result.quality.isTooDark -> append("⚠️ Too dark — add light")
-                        !result.quality.isSharp -> append("⚠️ Hold steady — blurry")
-                        else -> {
-                            when (result.stabilizerState) {
-                                QuadStabilizer.State.STABLE -> append("✅ Ready — tap shutter")
-                                QuadStabilizer.State.TRACKING -> append("🔍 Document detected — hold still")
-                                QuadStabilizer.State.SEARCHING -> append("📄 Align document inside frame")
-                            }
+                val (iconRes, iconTintRes, statusText) = when {
+                    result.quality.hasGlare -> Triple(
+                        R.drawable.ic_warning,
+                        R.color.vf_accent_amber,
+                        "Glare detected — adjust angle"
+                    )
+                    result.quality.isTooDark -> Triple(
+                        R.drawable.ic_warning,
+                        R.color.vf_accent_amber,
+                        "Too dark — add light"
+                    )
+                    !result.quality.isSharp -> Triple(
+                        R.drawable.ic_warning,
+                        R.color.vf_accent_amber,
+                        "Hold steady — blurry"
+                    )
+                    else -> {
+                        when (result.stabilizerState) {
+                            QuadStabilizer.State.STABLE -> Triple(
+                                R.drawable.ic_check_circle,
+                                R.color.vf_accent_green,
+                                "Ready — tap shutter"
+                            )
+                            QuadStabilizer.State.TRACKING -> Triple(
+                                R.drawable.ic_search,
+                                R.color.vf_accent_blue,
+                                "Document detected — hold still"
+                            )
+                            QuadStabilizer.State.SEARCHING -> Triple(
+                                R.drawable.ic_crop,
+                                R.color.vf_text_secondary,
+                                "Align document inside frame"
+                            )
                         }
                     }
                 }
+                binding.ivDocCamStatusIcon.setImageResource(iconRes)
+                binding.ivDocCamStatusIcon.imageTintList = ColorStateList.valueOf(
+                    ContextCompat.getColor(activity, iconTintRes)
+                )
                 binding.tvDocCamStatus.text = statusText
             }
         }

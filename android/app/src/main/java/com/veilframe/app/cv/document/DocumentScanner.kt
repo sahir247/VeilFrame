@@ -130,7 +130,7 @@ object DocumentScanner {
             val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
             context?.ensureActive()
             val gray = Preprocessor.grayscale(shadowFree)
-            val binary = Preprocessor.adaptiveThreshold(gray, blockSize = 31, c = 10.0)
+            val binary = Preprocessor.sauvola(gray, windowSize = 51, k = 0.2, R = 128.0)
             binary.copyTo(image)
             shadowFree.release()
             gray.release()

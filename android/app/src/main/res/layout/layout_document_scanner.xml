@@ -437,11 +437,20 @@
                 app:icon="@drawable/ic_close"
                 app:iconTint="@color/vf_text_primary" />
 
+            <ImageView
+                android:id="@+id/ivDocCamStatusIcon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginStart="8dp"
+                android:importantForAccessibility="no"
+                app:srcCompat="@drawable/ic_crop"
+                app:tint="@color/vf_text_secondary" />
+
             <TextView
                 android:id="@+id/tvDocCamStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:text="Align document inside frame"
                 android:textColor="@color/vf_text_primary"
                 android:textSize="12sp"

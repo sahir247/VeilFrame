@@ -5,6 +5,7 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Rect
+import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
@@ -233,6 +234,118 @@ object Preprocessor {
                 gray, out, 255.0,
                 Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, type, blockSize, c,
             )
+            return out
+        } finally {
+            if (gray !== source) gray.release()
+        }
+    }
+
+    /**
+     * Mathematical formula for Sauvola threshold:
+     *   T = m * [1 + k * (s/R - 1)]
+     * Pure evaluator for testing and validation.
+     */
+    fun sauvolaThreshold(m: Double, s: Double, k: Double = 0.2, R: Double = 128.0): Double {
+        return m * (1.0 + k * ((s / R) - 1.0))
+    }
+
+    /**
+     * Sauvola Local Binarization.
+     * Computes a dynamic threshold for every pixel based on local mean and variance:
+     *   T(x,y) = m(x,y) * [1 + k * (s(x,y)/R - 1)]
+     * Uses O(1) Box Filters (Imgproc.blur) via statistical identity Var = E[X^2] - (E[X])^2
+     * for high performance on mobile devices.
+     *
+     * @param src Single-channel 8-bit grayscale Mat (CV_8UC1).
+     * @param dst Destination Mat to write binary output (CV_8UC1, 0 for ink, 255 for paper).
+     * @param windowSize Local window width/height (must be odd and >= 3, default 51).
+     * @param k Dynamic range sensitivity factor (typically 0.2 to 0.5, default 0.2).
+     * @param R Dynamic range of standard deviation (default 128.0 for 8-bit images).
+     */
+    fun sauvolaBinarize(
+        src: Mat,
+        dst: Mat,
+        windowSize: Int = 51,
+        k: Double = 0.2,
+        R: Double = 128.0,
+    ) {
+        require(windowSize % 2 == 1 && windowSize >= 3) { "windowSize must be odd and >= 3" }
+
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
+            return
+        }
+
+        require(src.channels() == 1 && src.type() == CvType.CV_8UC1) { "Requires 8UC1 grayscale" }
+
+        val srcFloat = Mat()
+        src.convertTo(srcFloat, CvType.CV_32F)
+
+        val localMean = Mat()
+        val localMeanSq = Mat()
+        val srcSquared = Mat()
+        val localMeanSqCalc = Mat()
+        val localVar = Mat()
+        val localStddev = Mat()
+        val term1 = Mat()
+        val threshold = Mat()
+        val diff = Mat()
+        val threshFloat = Mat()
+
+        try {
+            val kSize = Size(windowSize.toDouble(), windowSize.toDouble())
+
+            // 1. Local Mean (m) via O(1) Box Filter
+            Imgproc.blur(srcFloat, localMean, kSize)
+
+            // 2. Local Mean of Squares (m2)
+            Core.multiply(srcFloat, srcFloat, srcSquared)
+            Imgproc.blur(srcSquared, localMeanSq, kSize)
+
+            // 3. Local Variance (var = m2 - m^2)
+            Core.multiply(localMean, localMean, localMeanSqCalc)
+            Core.subtract(localMeanSq, localMeanSqCalc, localVar)
+
+            // Clamp variance to 0 to avoid NaN from sqrt of tiny negative floats
+            Core.max(localVar, Scalar(0.0), localVar)
+
+            // 4. Local Standard Deviation (s = sqrt(var))
+            Core.sqrt(localVar, localStddev)
+
+            // 5. Calculate Threshold: T = m * (1 + k * (s/R - 1))
+            Core.divide(localStddev, Scalar(R), term1)
+            Core.subtract(term1, Scalar(1.0), term1)
+            Core.multiply(term1, Scalar(k), term1)
+            Core.add(term1, Scalar(1.0), term1)
+            Core.multiply(localMean, term1, threshold)
+
+            // 6. Binarize: diff = src - T
+            Core.subtract(srcFloat, threshold, diff)
+
+            // 7. Apply standard thresholding on the difference map
+            // > 0 becomes 255 (Paper), <= 0 becomes 0 (Ink)
+            Imgproc.threshold(diff, threshFloat, 0.0, 255.0, Imgproc.THRESH_BINARY)
+            threshFloat.convertTo(dst, CvType.CV_8UC1)
+        } finally {
+            listOf(
+                srcFloat, localMean, localMeanSq, srcSquared, localMeanSqCalc,
+                localVar, localStddev, term1, threshold, diff, threshFloat
+            ).forEach { it.release() }
+        }
+    }
+
+    /**
+     * Functional wrapper for [sauvolaBinarize] returning a new CV_8UC1 Mat.
+     */
+    fun sauvola(
+        source: Mat,
+        windowSize: Int = 51,
+        k: Double = 0.2,
+        R: Double = 128.0,
+    ): Mat {
+        val gray = toGray8(source)
+        val out = Mat()
+        try {
+            sauvolaBinarize(gray, out, windowSize, k, R)
             return out
         } finally {
             if (gray !== source) gray.release()
