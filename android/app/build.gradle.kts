@@ -140,7 +140,7 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     // Spring physics for M3 Expressive motion (VfSprings)
-    implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
+    implementation("androidx.dynamicanimation:dynamicanimation:1.1.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
