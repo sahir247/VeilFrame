@@ -140,8 +140,8 @@ object DocumentScanner {
 
         DocumentMode.ENHANCED -> {
             context?.ensureActive()
-            // 1. Remove uneven shadows & background illumination gradient
-            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            // 1. Homomorphic filtering: frequency-domain illumination flattening & shadow removal
+            val shadowFree = Preprocessor.homomorphicFilter(image, gammaL = 0.4, gammaH = 1.4, c = 1.0, d0 = 35.0)
             context?.ensureActive()
             // 2. Normalize contrast via CLAHE on L-channel
             val normalized = Preprocessor.normalize(shadowFree, clipLimit = 2.2)
