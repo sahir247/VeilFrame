@@ -713,13 +713,29 @@
                     style="@style/Widget.VeilFrame.Button.Action"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="8dp"
                     android:text="Smart Auto-Reframe (9:16)"
                     android:maxLines="1"
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:enabled="false"
                     app:icon="@drawable/ic_aspect_ratio"
+                    app:iconTint="@color/vf_primary"
+                    app:iconSize="18dp" />
+
+                <!-- Electronic Image Stabilization (EIS) Tool Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnVidStabilize"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:text="Stabilize Footage (EIS)"
+                    android:maxLines="1"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:enabled="false"
+                    app:icon="@drawable/ic_focus_ring"
                     app:iconTint="@color/vf_primary"
                     app:iconSize="18dp" />
 
@@ -919,6 +935,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="Colour     Original"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tvVidSummaryStabilization"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Stabilization  Active (EIS 5% Zoom)"
                         android:textColor="@color/vf_text_primary"
                         android:textSize="12sp"
                         android:visibility="gone" />

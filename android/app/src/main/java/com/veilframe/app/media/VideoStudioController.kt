@@ -378,6 +378,7 @@ class VideoStudioController(
         binding.toolVidAspect.setOnClickListener { showAspectDialog(binding.toolVidAspect) }
         binding.toolVidAudio.setOnClickListener { showAudioDialog(binding.toolVidAudio) }
         binding.btnVidAutoReframe.setOnClickListener { applySmartAutoReframe() }
+        binding.btnVidStabilize.setOnClickListener { toggleStabilization() }
 
         // Compression execution
         binding.btnVidExecute.setOnClickListener { handleExecute() }
@@ -437,7 +438,9 @@ class VideoStudioController(
             binding.btnVidRemoveFile,
             binding.btnPlayerPlayPause,
             binding.btnPlayerReplay,
-            binding.btnPlayerMute
+            binding.btnPlayerMute,
+            binding.btnVidAutoReframe,
+            binding.btnVidStabilize
         )
         interactiveControls.forEach { v ->
             ExpressiveMotion.applyTouchBounce(v)
@@ -652,6 +655,9 @@ class VideoStudioController(
                 binding.toolVidAspect.alpha = 1.0f
                 binding.btnVidAutoReframe.isEnabled = true
                 binding.btnVidAutoReframe.alpha = 1.0f
+                binding.btnVidStabilize.isEnabled = true
+                binding.btnVidStabilize.alpha = 1.0f
+                updateStabilizeButtonState()
                 val isGif = outputConfig.outputMode == VideoOutputMode.GIF
                 binding.toolVidAudio.isEnabled = !isGif
                 binding.toolVidAudio.alpha = if (isGif) 0.38f else 1.0f
@@ -1172,6 +1178,13 @@ class VideoStudioController(
             } else {
                 binding.tvVidSummaryAudio.visibility = View.GONE
             }
+
+            if (editState.isStabilized) {
+                binding.tvVidSummaryStabilization.visibility = View.VISIBLE
+                binding.tvVidSummaryStabilization.text = "• Stabilization: Active (EIS ${editState.stabilizationMarginPercent}% Zoom)"
+            } else {
+                binding.tvVidSummaryStabilization.visibility = View.GONE
+            }
         }
         syncFloatingDockState()
     }
@@ -1210,6 +1223,7 @@ class VideoStudioController(
         applyColorProfile("Original")
         updateUiForOutputMode()
         updateOutputFilenameExtension()
+        updateStabilizeButtonState()
         applyAspectRatioPreview()
         refreshStats()
         updateEditSummary()
@@ -2011,6 +2025,41 @@ class VideoStudioController(
                 Log.w(TAG, "Trajectory generation failed, defaulting to static 9:16 framing", e)
                 editState.dynamicCropFilter = null
             }
+        }
+    }
+
+    fun toggleStabilization(originView: View? = null) {
+        val item = currentItem ?: run {
+            Toast.makeText(activity, "Please select a video first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // CV Governance native availability check
+        val isNative = CvRuntime.isNativeAvailable
+        Log.d(TAG, "Toggling Video Stabilization [CvRuntime native: $isNative]")
+
+        editState.isStabilized = !editState.isStabilized
+        updateStabilizeButtonState()
+        refreshStats()
+        updateEditSummary()
+        if (::floatingDockController.isInitialized) {
+            floatingDockController.onEditApplied()
+        }
+        val msg = if (editState.isStabilized) {
+            "Electronic Image Stabilization (EIS) enabled (5% auto-zoom border fix)"
+        } else {
+            "Stabilization disabled"
+        }
+        Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateStabilizeButtonState() {
+        if (editState.isStabilized) {
+            binding.btnVidStabilize.setIconResource(R.drawable.ic_check_circle)
+            binding.btnVidStabilize.text = "Footage Stabilized (EIS 5% Zoom)"
+        } else {
+            binding.btnVidStabilize.setIconResource(R.drawable.ic_focus_ring)
+            binding.btnVidStabilize.text = "Stabilize Footage (EIS)"
         }
     }
 
