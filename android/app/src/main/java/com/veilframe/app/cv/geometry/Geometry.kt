@@ -145,6 +145,162 @@ object Geometry {
     /** Point ordering with the project convention TL, TR, BR, BL. */
     fun ordered(points: List<Point>): List<Point> = orderCorners(points)
 
+    /**
+     * Refines corner positions with sub-pixel precision using gradient descent
+     * ([Imgproc.cornerSubPix]).
+     *
+     * @param image Grayscale or color source Mat.
+     * @param corners 4 initial corner estimates.
+     * @param winSize Half of the side length of the search window (default 5x5).
+     * @param maxDrift Maximum allowed movement in pixels before falling back to original estimate (default 15px).
+     * @return Refined sub-pixel corners.
+     */
+    fun refineCornersSubPix(
+        image: Mat,
+        corners: List<Point>,
+        winSize: org.opencv.core.Size = org.opencv.core.Size(5.0, 5.0),
+        maxDrift: Double = 15.0
+    ): List<Point> {
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || image.nativeObj == 0L || corners.size != 4) return corners
+
+        // Ensure single-channel grayscale input for cornerSubPix
+        val gray = if (image.channels() == 1) {
+            image
+        } else {
+            val g = Mat()
+            Imgproc.cvtColor(image, g, Imgproc.COLOR_BGR2GRAY)
+            g
+        }
+
+        try {
+            val w = gray.cols().toDouble()
+            val h = gray.rows().toDouble()
+            val marginX = winSize.width + 1.0
+            val marginY = winSize.height + 1.0
+
+            // Clamp initial corners inside search window margins
+            val clamped = corners.map { pt ->
+                Point(
+                    pt.x.coerceIn(marginX, w - 1.0 - marginX),
+                    pt.y.coerceIn(marginY, h - 1.0 - marginY)
+                )
+            }
+
+            val cornersMat = MatOfPoint2f(*clamped.toTypedArray())
+            val criteria = org.opencv.core.TermCriteria(
+                org.opencv.core.TermCriteria.EPS + org.opencv.core.TermCriteria.COUNT,
+                30,
+                0.05
+            )
+
+            try {
+                Imgproc.cornerSubPix(
+                    gray,
+                    cornersMat,
+                    winSize,
+                    org.opencv.core.Size(-1.0, -1.0),
+                    criteria
+                )
+                val refinedArray = cornersMat.toArray()
+                // Safeguard: verify drift distance from original points
+                return corners.indices.map { i ->
+                    val orig = corners[i]
+                    val ref = refinedArray[i]
+                    val dist = distance(orig, ref)
+                    if (dist <= maxDrift && !ref.x.isNaN() && !ref.y.isNaN()) {
+                        ref
+                    } else {
+                        orig
+                    }
+                }
+            } catch (_: Throwable) {
+                return corners
+            } finally {
+                cornersMat.release()
+            }
+        } finally {
+            if (gray !== image) {
+                gray.release()
+            }
+        }
+    }
+
+    /**
+     * Estimates the dominant text line skew angle in degrees using morphological
+     * baseline elongation and Hough line transform.
+     * Returns angle in degrees in range [-maxAngle, maxAngle], or 0.0 if no dominant
+     * text lines are detected.
+     */
+    fun detectSkewAngle(
+        image: Mat,
+        maxAngleDegrees: Double = 15.0
+    ): Double {
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || image.nativeObj == 0L) return 0.0
+
+        val gray = if (image.channels() == 1) {
+            image
+        } else {
+            val g = Mat()
+            Imgproc.cvtColor(image, g, Imgproc.COLOR_BGR2GRAY)
+            g
+        }
+
+        val edges = Mat()
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, org.opencv.core.Size(25.0, 1.0))
+        val textBands = Mat()
+        val lines = Mat()
+
+        try {
+            Imgproc.Canny(gray, edges, 50.0, 150.0)
+            Imgproc.morphologyEx(edges, textBands, Imgproc.MORPH_CLOSE, kernel)
+
+            Imgproc.HoughLinesP(
+                textBands,
+                lines,
+                1.0,
+                Math.PI / 180.0,
+                80,
+                50.0,
+                15.0
+            )
+
+            if (lines.rows() == 0) return 0.0
+
+            var totalWeight = 0.0
+            var weightedAngleSum = 0.0
+            val maxAngleRad = Math.toRadians(maxAngleDegrees)
+
+            for (i in 0 until lines.rows()) {
+                val vec = lines.get(i, 0) ?: continue
+                val x1 = vec[0]
+                val y1 = vec[1]
+                val x2 = vec[2]
+                val y2 = vec[3]
+                val dx = x2 - x1
+                val dy = y2 - y1
+                val length = kotlin.math.sqrt(dx * dx + dy * dy)
+                if (length < 20.0) continue
+
+                val angleRad = kotlin.math.atan2(dy, dx)
+                if (kotlin.math.abs(angleRad) <= maxAngleRad) {
+                    weightedAngleSum += Math.toDegrees(angleRad) * length
+                    totalWeight += length
+                }
+            }
+
+            if (totalWeight <= 0.0) return 0.0
+            return weightedAngleSum / totalWeight
+        } catch (_: Throwable) {
+            return 0.0
+        } finally {
+            edges.release()
+            kernel.release()
+            textBands.release()
+            lines.release()
+            if (gray !== image) gray.release()
+        }
+    }
+
     private fun distance(a: Point, b: Point): Double {
         val dx = a.x - b.x
         val dy = a.y - b.y

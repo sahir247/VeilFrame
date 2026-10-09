@@ -109,4 +109,34 @@ class GeometryTest {
         )
         org.junit.Assert.assertFalse("Collinear points rejected", Geometry.isValidQuad(degenerateLine))
     }
+
+    private fun allocateDummyMat(): org.opencv.core.Mat {
+        val unsafeClass = Class.forName("sun.misc.Unsafe")
+        val field = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }
+        val unsafe = field.get(null)
+        val allocate = unsafeClass.getMethod("allocateInstance", Class::class.java)
+        return allocate.invoke(unsafe, org.opencv.core.Mat::class.java) as org.opencv.core.Mat
+    }
+
+    @Test
+    fun `test refineCornersSubPix safely returns corners on empty image`() {
+        val dummy = allocateDummyMat()
+        val originalCorners = listOf(
+            Point(10.0, 10.0),
+            Point(200.0, 10.0),
+            Point(200.0, 300.0),
+            Point(10.0, 300.0)
+        )
+        val refined = Geometry.refineCornersSubPix(dummy, originalCorners)
+        assertEquals(4, refined.size)
+        assertEquals(originalCorners[0].x, refined[0].x, 0.001)
+        assertEquals(originalCorners[0].y, refined[0].y, 0.001)
+    }
+
+    @Test
+    fun `test detectSkewAngle safely returns zero on empty image`() {
+        val dummy = allocateDummyMat()
+        val angle = Geometry.detectSkewAngle(dummy)
+        assertEquals(0.0, angle, 0.001)
+    }
 }
