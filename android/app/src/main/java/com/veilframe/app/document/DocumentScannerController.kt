@@ -38,8 +38,15 @@ import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.SheetDocumentExportBinding
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.ui.motion.VeilFrameInteraction
+import com.veilframe.app.cv.document.FrameBufferPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.core.Point
@@ -48,6 +55,35 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Live document scanning output emitted from decoupled background analyzer.
+ */
+data class ScanResult(
+    val corners: List<Point>?,
+    val quality: QualityMetrics = QualityMetrics.DEFAULT,
+    val frameId: Long = 0L,
+    val frameWidth: Int = 0,
+    val frameHeight: Int = 0,
+    val stabilizerState: QuadStabilizer.State = QuadStabilizer.State.SEARCHING,
+)
+
+/**
+ * Quality indicators for the live viewfinder quality gate (sharpness, glare).
+ */
+data class QualityMetrics(
+    val sharpnessScore: Double = 0.0,
+    val isSharp: Boolean = true,
+    val glarePercentage: Double = 0.0,
+    val hasGlare: Boolean = false,
+    val isReadyForCapture: Boolean = true,
+    val statusMessage: String = "",
+) {
+    companion object {
+        val DEFAULT = QualityMetrics()
+    }
+}
 
 /**
  * Controller orchestrating the dedicated Document Scanner workspace:
@@ -68,6 +104,19 @@ class DocumentScannerController(
     private val onNavigateBack: () -> Unit
 ) {
     val session = DocumentSession()
+
+    // Decoupled live analyzer flow: 60fps UI observation without GC pressure
+    private val _scannerState = MutableSharedFlow<ScanResult>(
+        replay = 1,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val scannerState: SharedFlow<ScanResult> = _scannerState.asSharedFlow()
+
+    private val isProcessing = AtomicBoolean(false)
+    private var bufferPool: FrameBufferPool? = null
+    private var frameIdCounter = 0L
+    private var scannerJob: Job? = null
 
     // CameraX runtime
     private var cameraProvider: ProcessCameraProvider? = null
@@ -253,6 +302,8 @@ class DocumentScannerController(
         binding.containerDocCamera.visibility = View.VISIBLE
         updateCameraDoneBadge()
 
+        startScannerStateCollection()
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(activity)
         cameraProviderFuture.addListener({
             cameraProvider = cameraProviderFuture.get()
@@ -261,10 +312,13 @@ class DocumentScannerController(
     }
 
     fun closeCameraViewfinder() {
-        // Phase 2/3: no stale tracks or capture flags across sessions.
+        stopScannerStateCollection()
         quadStabilizer.reset()
         lastStabState = QuadStabilizer.State.SEARCHING
         isCapturing = false
+        isProcessing.set(false)
+        bufferPool?.release()
+        bufferPool = null
         try {
             cameraProvider?.unbindAll()
         } catch (_: Exception) {}
@@ -298,7 +352,7 @@ class DocumentScannerController(
             .build()
 
         imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-            analyzeFrameForDocument(imageProxy)
+            processFrameAsync(imageProxy)
         }
 
         val viewPort = binding.docCameraPreviewView.viewPort
@@ -376,8 +430,43 @@ class DocumentScannerController(
         }
     }
 
+    private fun startScannerStateCollection() {
+        scannerJob?.cancel()
+        scannerJob = scope.launch(Dispatchers.Main) {
+            scannerState.collect { result ->
+                binding.docQuadOverlayView.setCorners(
+                    corners = result.corners,
+                    sourceWidth = result.frameWidth,
+                    sourceHeight = result.frameHeight,
+                    frameId = result.frameId,
+                )
+                binding.tvDocCamStatus.text = when (result.stabilizerState) {
+                    QuadStabilizer.State.STABLE -> "Ready — tap shutter"
+                    QuadStabilizer.State.TRACKING -> "Document detected — hold still"
+                    QuadStabilizer.State.SEARCHING -> "Align document inside frame"
+                }
+            }
+        }
+    }
+
+    private fun stopScannerStateCollection() {
+        scannerJob?.cancel()
+        scannerJob = null
+    }
+
+    private fun obtainBufferPool(width: Int, height: Int, rotation: Int): FrameBufferPool {
+        val current = bufferPool
+        if (current != null && current.matches(width, height, rotation)) {
+            return current
+        }
+        current?.release()
+        val newPool = FrameBufferPool(width, height, rotation)
+        bufferPool = newPool
+        return newPool
+    }
+
     @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
-    private fun analyzeFrameForDocument(imageProxy: ImageProxy) {
+    private fun processFrameAsync(imageProxy: ImageProxy) {
         // Fast bail-out when the CV engine is unavailable: never burn frames
         // converting JPEGs just to swallow UnsatisfiedLinkError per frame (CV-6).
         if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
@@ -406,63 +495,96 @@ class DocumentScannerController(
             }
         }
 
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
+        // Concurrency gate: If background thread is currently crunching a frame,
+        // drop this frame immediately to maintain a non-blocking 60fps CameraX stream
+        // without backpressure queue accumulation.
+        if (!isProcessing.compareAndSet(false, true)) {
             imageProxy.close()
             return
         }
 
-        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            isProcessing.set(false)
+            imageProxy.close()
+            return
+        }
 
-        // Direct Y-plane -> grayscale Mat, rotated upright and decimated to <=1024px.
-        // Rotated Mat matches the exact portrait/landscape orientation and FOV
-        // of both CameraX PreviewView and the captured still photo.
-        val grayMat = try {
-            yPlaneToGrayMat(mediaImage, rotationDegrees)
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        val width = imageProxy.width
+        val height = imageProxy.height
+
+        // Pre-allocated zero-allocation buffer pool
+        val pool = obtainBufferPool(width, height, rotation)
+
+        // --- PHASE A: EXTRACTION (Fast, on CameraX thread) ---
+        val analysisMat = try {
+            pool.extractFrame(mediaImage)
         } catch (t: Throwable) {
-            android.util.Log.w("VeilFrame.DocScanner", "Frame conversion failed", t)
+            android.util.Log.w("VeilFrame.DocScanner", "Frame extraction failed", t)
             null
         }
+
+        val currentFrameId = frameIdCounter++
+
+        // CLOSE PROXY IMMEDIATELY to release the camera hardware buffer!
         imageProxy.close()
-        val mat = grayMat ?: return
 
-        try {
-            val corners = DocumentScanner.findCorners(mat)
-            val frameW = mat.cols()
-            val frameH = mat.rows()
+        if (analysisMat == null || analysisMat.empty()) {
+            isProcessing.set(false)
+            return
+        }
 
-            // Phase 3: EMA-smoothed quad with hysteresis — the overlay stops
-            // flickering and "Ready" requires consecutive matched frames.
-            val stable = quadStabilizer.update(if (corners.size == 4) corners else null)
-            val detectedPts = stable?.map { pt -> PointF(pt.x.toFloat(), pt.y.toFloat()) }
-            val stabState = quadStabilizer.state
-            val becameStable = stabState == QuadStabilizer.State.STABLE &&
-                lastStabState != QuadStabilizer.State.STABLE
-            lastStabState = stabState
+        // --- PHASE B: PROCESSING (Heavy, on Background Thread) ---
+        scope.launch(Dispatchers.Default) {
+            try {
+                ensureActive()
 
-            activity.runOnUiThread {
-                binding.docQuadOverlayView.setDetectedQuad(detectedPts, frameW, frameH)
-                binding.tvDocCamStatus.text = when (stabState) {
-                    QuadStabilizer.State.STABLE -> "Ready — tap shutter"
-                    QuadStabilizer.State.TRACKING -> "Document detected — hold still"
-                    QuadStabilizer.State.SEARCHING -> "Align document inside frame"
-                }
+                // Run heavy OpenCV pipeline using ONLY pooled Mats
+                val corners = DocumentScanner.findCorners(
+                    source = pool.analysisMat ?: return@launch,
+                    blurredMat = pool.blurredMat,
+                    edgesMat = pool.edgesMat,
+                )
+
+                val frameW = pool.analysisMat?.cols() ?: 1
+                val frameH = pool.analysisMat?.rows() ?: 1
+
+                // Phase 3: EMA-smoothed quad with hysteresis — the overlay stops
+                // flickering and "Ready" requires consecutive matched frames.
+                val stable = quadStabilizer.update(if (corners.size == 4) corners else null)
+                val stabState = quadStabilizer.state
+                val becameStable = stabState == QuadStabilizer.State.STABLE &&
+                    lastStabState != QuadStabilizer.State.STABLE
+                lastStabState = stabState
+
                 if (becameStable) {
-                    binding.docQuadOverlayView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    withContext(Dispatchers.Main) {
+                        binding.docQuadOverlayView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
                 }
+
+                _scannerState.emit(
+                    ScanResult(
+                        corners = stable,
+                        quality = QualityMetrics.DEFAULT,
+                        frameId = currentFrameId,
+                        frameWidth = frameW,
+                        frameHeight = frameH,
+                        stabilizerState = stabState,
+                    )
+                )
+            } catch (t: Throwable) {
+                if (System.currentTimeMillis() - lastFrameErrorLogMs > 5_000L) {
+                    lastFrameErrorLogMs = System.currentTimeMillis()
+                    android.util.Log.w("VeilFrame.DocScanner", "Frame analysis failed", t)
+                }
+                withContext(Dispatchers.Main) {
+                    binding.docQuadOverlayView.clear()
+                }
+            } finally {
+                isProcessing.set(false)
             }
-        } catch (t: Throwable) {
-            // Honest, rate-limited logging — silent per-frame catch-alls hid
-            // dead-CV battery drain (CV-6).
-            if (System.currentTimeMillis() - lastFrameErrorLogMs > 5_000L) {
-                lastFrameErrorLogMs = System.currentTimeMillis()
-                android.util.Log.w("VeilFrame.DocScanner", "Frame analysis failed", t)
-            }
-            activity.runOnUiThread {
-                binding.docQuadOverlayView.clear()
-            }
-        } finally {
-            mat.release() // CV-4: released even when findCorners throws
         }
     }
 
@@ -481,73 +603,6 @@ class DocumentScannerController(
     // never races an in-flight shutter.
     @Volatile
     private var isCapturing = false
-
-    /** Camera Y (luma) plane -> CV_8UC1 Mat, rotated upright and decimated to <=1024px on the long edge. */
-    private fun yPlaneToGrayMat(mediaImage: android.media.Image, rotationDegrees: Int = 0): org.opencv.core.Mat? {
-        val plane = mediaImage.planes.firstOrNull() ?: return null
-        val width = mediaImage.width
-        val height = mediaImage.height
-        if (width <= 0 || height <= 0) return null
-        val buffer = plane.buffer.duplicate()
-        val rowStride = plane.rowStride
-        val data = ByteArray(width * height)
-        try {
-            if (rowStride == width) {
-                buffer.position(0)
-                buffer.get(data, 0, width * height)
-            } else {
-                var offset = 0
-                for (row in 0 until height) {
-                    buffer.position(row * rowStride)
-                    buffer.get(data, offset, width)
-                    offset += width
-                }
-            }
-        } catch (_: Throwable) {
-            return null
-        }
-        val full = org.opencv.core.Mat(height, width, org.opencv.core.CvType.CV_8UC1)
-        full.put(0, 0, data)
-
-        // Rotate to upright orientation so OpenCV coordinates map 1:1 with PreviewView
-        val upright = if (rotationDegrees != 0) {
-            val rot = org.opencv.core.Mat()
-            when (rotationDegrees) {
-                90 -> org.opencv.core.Core.rotate(full, rot, org.opencv.core.Core.ROTATE_90_CLOCKWISE)
-                180 -> org.opencv.core.Core.rotate(full, rot, org.opencv.core.Core.ROTATE_180)
-                270 -> org.opencv.core.Core.rotate(full, rot, org.opencv.core.Core.ROTATE_90_COUNTERCLOCKWISE)
-                else -> full.copyTo(rot)
-            }
-            full.release()
-            rot
-        } else {
-            full
-        }
-
-        val maxEdge = maxOf(upright.cols(), upright.rows())
-        if (maxEdge <= 1024) return upright
-        val scaled = org.opencv.core.Mat()
-        return try {
-            val scale = 1024.0 / maxEdge
-            org.opencv.imgproc.Imgproc.resize(
-                upright,
-                scaled,
-                org.opencv.core.Size(
-                    maxOf(1, Math.round(upright.cols() * scale).toInt()).toDouble(),
-                    maxOf(1, Math.round(upright.rows() * scale).toInt()).toDouble(),
-                ),
-                0.0,
-                0.0,
-                org.opencv.imgproc.Imgproc.INTER_AREA,
-            )
-            scaled
-        } catch (t: Throwable) {
-            scaled.release()
-            throw t
-        } finally {
-            upright.release()
-        }
-    }
 
     private fun toggleFlash() {
         val cam = camera ?: return

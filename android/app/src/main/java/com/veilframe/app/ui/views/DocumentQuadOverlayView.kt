@@ -70,6 +70,17 @@ class DocumentQuadOverlayView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
+    /** Convenience setter accepting OpenCV Point list and optional frameId. */
+    fun setCorners(
+        corners: List<org.opencv.core.Point>?,
+        sourceWidth: Int = frameWidth,
+        sourceHeight: Int = frameHeight,
+        frameId: Long = 0L,
+    ) {
+        val pts = corners?.map { PointF(it.x.toFloat(), it.y.toFloat()) }
+        setDetectedQuad(pts, sourceWidth, sourceHeight)
+    }
+
     fun clear() {
         targetCorners = null
         currentCorners.clear()

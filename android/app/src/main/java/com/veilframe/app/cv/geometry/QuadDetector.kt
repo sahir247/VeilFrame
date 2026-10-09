@@ -44,6 +44,30 @@ object QuadDetector {
         cannyLow: Double = 40.0,
         cannyHigh: Double = 140.0,
         context: com.veilframe.app.cv.core.CvContext? = null,
+    ): Detection? = detectWithBuffers(
+        source = source,
+        blurredMat = null,
+        edgesMat = null,
+        workingMaxEdge = workingMaxEdge,
+        minCoverage = minCoverage,
+        cannyLow = cannyLow,
+        cannyHigh = cannyHigh,
+        context = context,
+    )
+
+    /**
+     * Detects the dominant document-like quad using optional pre-allocated buffers.
+     * When [blurredMat] and [edgesMat] are provided, intermediate Mat allocations are eliminated.
+     */
+    fun detectWithBuffers(
+        source: Mat,
+        blurredMat: Mat? = null,
+        edgesMat: Mat? = null,
+        workingMaxEdge: Int = 1280,
+        minCoverage: Double = 0.08,
+        cannyLow: Double = 40.0,
+        cannyHigh: Double = 140.0,
+        context: com.veilframe.app.cv.core.CvContext? = null,
     ): Detection? {
         com.veilframe.app.cv.core.CvContracts.requireNonEmpty(source, "source")
         com.veilframe.app.cv.core.CvContracts.requirePositive(workingMaxEdge, "workingMaxEdge")
@@ -53,15 +77,19 @@ object QuadDetector {
         require(cannyHigh >= cannyLow) { "cannyHigh ($cannyHigh) must be >= cannyLow ($cannyLow)" }
 
         context?.ensureActive() // B6: checkpoint before the heavy stage chain
-        val working = workingImage(source, workingMaxEdge)
+        val isAlreadyWorkingRes = maxOf(source.cols(), source.rows()) <= workingMaxEdge
+        val working = if (isAlreadyWorkingRes) source else workingImage(source, workingMaxEdge)
         val scale = source.cols().toDouble() / working.cols()
-        val gray = Mat()
-        val blurred = Mat()
-        val edges = Mat()
+
+        val isWorkingGray = working.channels() == 1
+        val gray = if (isWorkingGray) working else Mat()
+        val blurred = blurredMat ?: Mat()
+        val edges = edgesMat ?: Mat()
         val contours = ArrayList<MatOfPoint>()
         try {
-            if (working.channels() == 1) working.copyTo(gray)
-            else Imgproc.cvtColor(working, gray, grayCode(working))
+            if (!isWorkingGray) {
+                Imgproc.cvtColor(working, gray, grayCode(working))
+            }
             Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
             Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
             // Close small gaps in the document border before contouring.
@@ -120,10 +148,10 @@ object QuadDetector {
             }
             return best
         } finally {
-            working.release()
-            gray.release()
-            blurred.release()
-            edges.release()
+            if (working !== source) working.release()
+            if (gray !== working) gray.release()
+            if (blurredMat == null) blurred.release()
+            if (edgesMat == null) edges.release()
             contours.forEach { it.release() }
         }
     }

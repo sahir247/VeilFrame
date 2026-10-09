@@ -199,13 +199,21 @@ object DocumentScanner {
 
     /**
      * Detects 4 document corners in [source] image coordinates.
+     * When [blurredMat] and [edgesMat] are provided from a pool, zero intermediate allocations occur.
      * Returns empty list if no valid quadrilateral was detected.
      */
     fun findCorners(
         source: Mat,
+        blurredMat: Mat? = null,
+        edgesMat: Mat? = null,
         context: com.veilframe.app.cv.core.CvContext? = null,
     ): List<org.opencv.core.Point> {
-        val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(source, context = context)
+        val detection = com.veilframe.app.cv.geometry.QuadDetector.detectWithBuffers(
+            source = source,
+            blurredMat = blurredMat,
+            edgesMat = edgesMat,
+            context = context,
+        )
         return detection?.corners ?: emptyList()
     }
 
