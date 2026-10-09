@@ -609,6 +609,8 @@ class ToolSessionManager(
                 binding.btnExecute.alpha = 1.0f
                 binding.btnExportResult.isEnabled = false
                 binding.btnShareResult.isEnabled = false
+                binding.btnExportResult.visibility = android.view.View.GONE
+                binding.btnShareResult.visibility = android.view.View.GONE
             }
             JobState.COMPLETE -> {
                 binding.btnExecute.text = "Run another task"
@@ -618,10 +620,14 @@ class ToolSessionManager(
                 val hasValidOutput = (state.lastGeneratedFile != null && state.lastGeneratedFile!!.exists())
                 binding.btnExportResult.isEnabled = hasValidOutput
                 binding.btnShareResult.isEnabled = hasValidOutput
+                binding.btnExportResult.visibility = if (hasValidOutput) android.view.View.VISIBLE else android.view.View.GONE
+                binding.btnShareResult.visibility = if (hasValidOutput) android.view.View.VISIBLE else android.view.View.GONE
             }
             else -> {
                 binding.btnExportResult.isEnabled = false
                 binding.btnShareResult.isEnabled = false
+                binding.btnExportResult.visibility = android.view.View.GONE
+                binding.btnShareResult.visibility = android.view.View.GONE
                 if (state.selectedUri == null) {
                     binding.btnExecute.text = "Select target to begin"
                     binding.btnExecute.setIconResource(R.drawable.ic_folder_pick)

@@ -31,7 +31,8 @@
             app:titleCentered="false"
             app:contentInsetStartWithNavigation="0dp"
             app:titleTextAppearance="?attr/textAppearanceTitleLarge"
-            app:navigationIcon="@drawable/ic_arrow_back" />
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:layout_scrollFlags="scroll|enterAlways" />
 
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/qr_tabs"

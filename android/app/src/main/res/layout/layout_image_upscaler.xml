@@ -91,7 +91,8 @@
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardUpscalerSelectImage"
             android:layout_width="match_parent"
-            android:layout_height="220dp"
+            android:layout_height="wrap_content"
+            android:minHeight="210dp"
             android:layout_marginBottom="16dp"
             app:cardBackgroundColor="@color/vf_surface"
             app:cardCornerRadius="16dp"
@@ -100,7 +101,7 @@
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center"
                 android:orientation="vertical"
                 android:padding="24dp">
@@ -135,6 +136,11 @@
                     style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:singleLine="true"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:includeFontPadding="true"
+                    app:iconGravity="textStart"
                     android:text="Choose Image"
                     app:icon="@drawable/ic_add" />
             </LinearLayout>

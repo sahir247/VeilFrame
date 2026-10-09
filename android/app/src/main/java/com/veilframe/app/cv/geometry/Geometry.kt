@@ -16,11 +16,23 @@ object Geometry {
     /** Orders 4 arbitrary points into TL, TR, BR, BL. */
     fun orderCorners(points: List<Point>): List<Point> {
         require(points.size == 4) { "expected 4 corners, got ${points.size}" }
-        val sorted = points.sortedWith(compareBy({ it.x + it.y }, { it.x - it.y }))
-        val tl = sorted.first()
-        val br = sorted.last()
-        val rest = sorted.subList(1, 3)
-        val (tr, bl) = if (rest[0].y < rest[1].y) rest[0] to rest[1] else rest[1] to rest[0]
+        val cx = points.sumOf { it.x } / 4.0
+        val cy = points.sumOf { it.y } / 4.0
+
+        // Order points clockwise around polygon centroid
+        val clockwise = points.sortedBy { pt ->
+            kotlin.math.atan2(pt.y - cy, pt.x - cx)
+        }
+
+        // Top-left is the point with minimum (x + y)
+        val tlIndex = clockwise.indices.minByOrNull { i ->
+            clockwise[i].x + clockwise[i].y
+        } ?: 0
+
+        val tl = clockwise[tlIndex]
+        val tr = clockwise[(tlIndex + 1) % 4]
+        val br = clockwise[(tlIndex + 2) % 4]
+        val bl = clockwise[(tlIndex + 3) % 4]
         return listOf(tl, tr, br, bl)
     }
 

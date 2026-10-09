@@ -53,13 +53,8 @@ object NavigationMotionController {
             return
         }
 
-        // Container-transform (card → workspace) with guaranteed slide fallback:
-        // navigation must never break because a transition failed.
-        if (origin != null && origin.isAttachedToWindow &&
-            tryContainerTransform(homeView, toolView, origin, onComplete)
-        ) {
-            return
-        }
+        // Hardware-accelerated directional slide + crossfade transition:
+        // Provides instant 60/120fps response and eliminates container-transform ghost freezing
 
         val density = context.resources.displayMetrics.density
         val offsetPx = SLIDE_OFFSET_DP * density

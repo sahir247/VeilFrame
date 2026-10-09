@@ -535,6 +535,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         appUpdateManager.onResume()
+        updateHeroBanner()
     }
 
     override fun onPause() {
@@ -931,10 +932,7 @@ class MainActivity : AppCompatActivity() {
             openQrStudio()
         }
 
-        binding.cardHeroUpscaler.setOnClickListener {
-            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHeroUpscaler
-            openImageUpscaler()
-        }
+        updateHeroBanner()
 
         binding.cardHomeDocScanner.setOnClickListener {
             com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHomeDocScanner
@@ -1033,6 +1031,28 @@ class MainActivity : AppCompatActivity() {
         // Multi-Format Export Action (Save As to device storage)
         binding.btnExportResult.setOnClickListener { launchExportCurrentArtifact() }
         binding.btnShareResult.setOnClickListener { toolExecutionController.shareLastResult() }
+    }
+
+    private fun updateHeroBanner() {
+        val topTool = com.veilframe.app.tools.ToolUsageTracker.getMostUsedTool(this)
+        binding.tvHeroCategory.text = topTool.category
+        binding.tvHeroBadge.text = topTool.badge
+        binding.tvHeroTitle.text = topTool.title
+        binding.tvHeroDescription.text = topTool.description
+        binding.btnHeroLaunch.text = topTool.buttonText
+        binding.btnHeroLaunch.setIconResource(topTool.iconRes)
+        val launchAction = {
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardHeroUpscaler
+            when (topTool) {
+                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_UPSCALER -> openImageUpscaler()
+                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.DOCUMENT_SCANNER -> openDocumentScanner()
+                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.QR_STUDIO -> openQrStudio()
+                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.VIDEO_STUDIO -> openVideoStudio()
+                com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_STUDIO -> openImageStudio()
+            }
+        }
+        binding.cardHeroUpscaler.setOnClickListener { launchAction() }
+        binding.btnHeroLaunch.setOnClickListener { launchAction() }
     }
 
     private fun setupToolsCatalogueFiltering() {
@@ -1146,32 +1166,32 @@ class MainActivity : AppCompatActivity() {
      * Uses a simple alpha + translationY animation consistent with the rest of the Motion system.
      */
     private fun setupToolScrollDockBehavior() {
+        val thresholdPx = com.veilframe.app.ui.motion.MotionSpec.DOCK_THRESHOLD_DP * resources.displayMetrics.density
+        var lastScrollY = 0
+
         binding.scrollTool.setOnScrollChangeListener(
             androidx.core.widget.NestedScrollView.OnScrollChangeListener { sv, _, scrollY, _, _ ->
+                if (navigationController.currentScreen != ScreenState.TOOL) return@OnScrollChangeListener
+                val diff = kotlin.math.abs(scrollY - lastScrollY)
+                if (diff < com.veilframe.app.ui.motion.MotionSpec.SCROLL_DEADZONE_PX) return@OnScrollChangeListener
+                lastScrollY = scrollY
+
                 val child = sv.getChildAt(0) ?: return@OnScrollChangeListener
-                // 120px ≈ 48dp — dock starts hiding when this close to the bottom
-                val atBottom = scrollY >= child.height - sv.height - 120
-                val dock = binding.cardCleanerActionDock
-                if (dock.visibility != android.view.View.VISIBLE) return@OnScrollChangeListener
-                if (atBottom) {
-                    // Slide + fade out
-                    dock.animate()
-                        .translationY(dock.height.toFloat() + 32f)
-                        .alpha(0f)
-                        .setDuration(220)
-                        .setInterpolator(android.view.animation.DecelerateInterpolator())
-                        .withEndAction { dock.visibility = android.view.View.INVISIBLE }
-                        .start()
+                val scrollBottom = scrollY + sv.height
+                val totalHeight = child.height
+                val distanceToBottom = totalHeight - scrollBottom
+
+                val progress = (1.0f - (distanceToBottom / thresholdPx)).coerceIn(0.0f, 1.0f)
+                val targetDocked = if (binding.cardResultSummary.visibility == android.view.View.VISIBLE) {
+                    binding.btnResultSave
                 } else {
-                    // Slide + fade in
-                    dock.visibility = android.view.View.VISIBLE
-                    dock.animate()
-                        .translationY(0f)
-                        .alpha(1f)
-                        .setDuration(250)
-                        .setInterpolator(android.view.animation.DecelerateInterpolator())
-                        .start()
+                    binding.cardPrivacySummary
                 }
+                com.veilframe.app.ui.motion.ExpressiveMotion.updateDockProgress(
+                    floatingDock = binding.cardCleanerActionDock,
+                    dockedActions = targetDocked,
+                    progress = progress
+                )
             }
         )
     }
@@ -1203,6 +1223,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
+        com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
@@ -1215,6 +1236,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
+        com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.VIDEO_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
@@ -1227,6 +1249,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
+        com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.IMAGE_UPSCALER)
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
@@ -1239,6 +1262,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
+        com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.QR_STUDIO)
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }
@@ -1279,6 +1303,7 @@ class MainActivity : AppCompatActivity() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
+        com.veilframe.app.tools.ToolUsageTracker.recordToolLaunch(this, com.veilframe.app.tools.ToolUsageTracker.TrackedTool.DOCUMENT_SCANNER)
         if (navigationController.currentScreen == ScreenState.TOOL) {
             toolSessionManager.saveCurrentToolState()
         }

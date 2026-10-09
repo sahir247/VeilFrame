@@ -153,6 +153,10 @@ class DocumentScannerController(
             Toast.makeText(activity, "Page duplicated", Toast.LENGTH_SHORT).show()
         }
 
+        binding.btnDocPageResetCrop.setOnClickListener {
+            resetCropOnCurrentPage()
+        }
+
         binding.btnDocPageDelete.setOnClickListener {
             if (!session.isEmpty) {
                 session.removePage(session.activePageIndex)
@@ -226,6 +230,7 @@ class DocumentScannerController(
                     R.id.chipFilterBw -> DocumentScanner.DocumentMode.BLACK_AND_WHITE
                     R.id.chipFilterGrayscale -> DocumentScanner.DocumentMode.GRAYSCALE
                     R.id.chipFilterReceipt -> DocumentScanner.DocumentMode.RECEIPT
+                    R.id.chipFilterIdDoc -> DocumentScanner.DocumentMode.ID_DOCUMENT
                     else -> DocumentScanner.DocumentMode.ENHANCED
                 }
                 applyFilterToCurrentPage(mode)
@@ -638,8 +643,10 @@ class DocumentScannerController(
                 ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(bmp)
                 try {
-                    val corners = DocumentScanner.findCorners(srcMat, ctx) // B6
-                    if (corners.size != 4) {
+                    val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(srcMat, context = ctx)
+                    val corners = detection?.corners ?: emptyList()
+                    // Sanity check: require 4 corners and at least 10% document coverage to avoid false sliver crop
+                    if (corners.size != 4 || (detection != null && detection.coverage < 0.10)) {
                         null
                     } else {
                         val croppedMat = DocumentScanner.warpPerspective(srcMat, corners)
@@ -662,6 +669,8 @@ class DocumentScannerController(
                         page.corners = outcome.second
                         persistSession()
                         updateUi()
+                    } else {
+                        Toast.makeText(activity, "Document boundaries uncertain — full photo retained", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onErr = { err ->
@@ -669,6 +678,19 @@ class DocumentScannerController(
                     Toast.makeText(activity, "Auto-crop unavailable — page kept as captured", Toast.LENGTH_SHORT).show()
                 }
             )
+        }
+    }
+
+    private fun resetCropOnCurrentPage() {
+        val page = session.currentPage ?: return
+        val orig = page.getOriginalBitmap(activity)
+        if (orig != null) {
+            page.processedBitmapCache = orig
+            page.corners = null
+            page.processedImagePath = null
+            persistSession()
+            updateUi()
+            Toast.makeText(activity, "Reset to full photo", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -739,6 +761,8 @@ class DocumentScannerController(
             dlgBinding.sliderAdjustExposure.value = 0f
             dlgBinding.sliderAdjustContrast.value = 1f
             dlgBinding.sliderAdjustSaturation.value = 1f
+            dlgBinding.sliderAdjustSharpen.value = 0f
+            dlgBinding.sliderAdjustDenoise.value = 0f
         }
         dlgBinding.btnAdjustReset.setOnClickListener { resetSliders() }
         dlgBinding.btnAdjustApply.setOnClickListener {
@@ -747,15 +771,23 @@ class DocumentScannerController(
                 exposureStops = dlgBinding.sliderAdjustExposure.value.toDouble(),
                 contrast = dlgBinding.sliderAdjustContrast.value.toDouble(),
                 saturation = dlgBinding.sliderAdjustSaturation.value.toDouble(),
+                sharpen = dlgBinding.sliderAdjustSharpen.value.toDouble(),
+                denoise = dlgBinding.sliderAdjustDenoise.value.toDouble(),
             )
         }
         dialog.show()
     }
 
-    private fun applyPageAdjust(exposureStops: Double, contrast: Double, saturation: Double) {
+    private fun applyPageAdjust(
+        exposureStops: Double,
+        contrast: Double,
+        saturation: Double,
+        sharpen: Double = 0.0,
+        denoise: Double = 0.0
+    ) {
         val page = session.currentPage ?: return
         val baseBmp = page.originalBitmapCache ?: page.processedBitmapCache ?: return
-        if (exposureStops == 0.0 && contrast == 1.0 && saturation == 1.0) return
+        if (exposureStops == 0.0 && contrast == 1.0 && saturation == 1.0 && sharpen == 0.0 && denoise == 0.0) return
 
         val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(baseBmp.width, baseBmp.height, 3)
         scope.launch {
@@ -770,15 +802,44 @@ class DocumentScannerController(
                 val srcMat = BitmapBridge.toMat(baseBmp)
                 try {
                     val colorEngine = com.veilframe.app.cv.color.ColorEngine
-                    val exposed = colorEngine.exposure(srcMat, exposureStops)
-                    val contrasted = colorEngine.contrast(exposed, contrast)
-                    if (contrasted !== exposed && exposed !== srcMat) exposed.release()
-                    val saturated = colorEngine.saturation(contrasted, saturation)
-                    if (saturated !== contrasted && contrasted !== srcMat) contrasted.release()
+                    var current = srcMat
+                    if (exposureStops != 0.0) {
+                        val exposed = colorEngine.exposure(current, exposureStops)
+                        if (current !== srcMat) current.release()
+                        current = exposed
+                    }
+                    if (contrast != 1.0) {
+                        val contrasted = colorEngine.contrast(current, contrast)
+                        if (current !== srcMat) current.release()
+                        current = contrasted
+                    }
+                    if (saturation != 1.0) {
+                        val saturated = colorEngine.saturation(current, saturation)
+                        if (current !== srcMat) current.release()
+                        current = saturated
+                    }
+                    if (sharpen > 0.0) {
+                        val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
+                            current,
+                            com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = sharpen, radius = 1.0)
+                        )
+                        if (current !== srcMat) current.release()
+                        current = sharpened
+                    }
+                    if (denoise > 0.0) {
+                        val strength = maxOf(1, denoise.toInt())
+                        val denoised = com.veilframe.app.cv.preprocess.Preprocessor.denoise(
+                            current,
+                            strength = strength,
+                            method = com.veilframe.app.cv.preprocess.DenoiseMethod.BILATERAL
+                        )
+                        if (current !== srcMat) current.release()
+                        current = denoised
+                    }
                     try {
-                        BitmapBridge.toBitmap(saturated)
+                        BitmapBridge.toBitmap(current)
                     } finally {
-                        if (saturated !== srcMat) saturated.release()
+                        if (current !== srcMat) current.release()
                     }
                 } finally {
                     srcMat.release() // CV-4
@@ -1079,43 +1140,62 @@ class DocumentScannerController(
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
         val planes = image.planes
-        val yBuffer = planes[0].buffer
-        val uBuffer = planes[1].buffer
-        val vBuffer = planes[2].buffer
+        if (planes.isEmpty()) return null
 
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
+        val bmp: Bitmap? = if (image.format == ImageFormat.JPEG || planes.size == 1) {
+            val buffer = planes[0].buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+            try {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } catch (oom: OutOfMemoryError) {
+                android.util.Log.e("VeilFrame.DocScanner", "Capture decode OOM", oom)
+                null
+            }
+        } else {
+            try {
+                image.toBitmap()
+            } catch (t: Throwable) {
+                try {
+                    val yBuffer = planes[0].buffer
+                    val uBuffer = planes[1].buffer
+                    val vBuffer = planes[2].buffer
+                    val ySize = yBuffer.remaining()
+                    val uSize = uBuffer.remaining()
+                    val vSize = vBuffer.remaining()
+                    val nv21 = ByteArray(ySize + uSize + vSize)
+                    yBuffer.get(nv21, 0, ySize)
+                    vBuffer.get(nv21, ySize, vSize)
+                    uBuffer.get(nv21, ySize + vSize, uSize)
+                    val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
+                    val out = ByteArrayOutputStream()
+                    yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
+                    val imageBytes = out.toByteArray()
+                    BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                } catch (oom: OutOfMemoryError) {
+                    android.util.Log.e("VeilFrame.DocScanner", "Capture decode OOM", oom)
+                    null
+                } catch (e: Exception) {
+                    android.util.Log.e("VeilFrame.DocScanner", "Fallback decode failed", e)
+                    null
+                }
+            }
+        }
 
-        val nv21 = ByteArray(ySize + uSize + vSize)
-        yBuffer.get(nv21, 0, ySize)
-        vBuffer.get(nv21, ySize, vSize)
-        uBuffer.get(nv21, ySize + vSize, uSize)
-
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
-        val imageBytes = out.toByteArray()
-        val bmp = try {
-            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-        } catch (oom: OutOfMemoryError) {
-            android.util.Log.e("VeilFrame.DocScanner", "Capture decode OOM", oom)
-            null
-        } ?: return null
-
+        val decoded = bmp ?: return null
         val rotation = image.imageInfo.rotationDegrees
         return try {
             if (rotation != 0) {
                 val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-                val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
-                bmp.recycle()
+                val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                decoded.recycle()
                 rotated
             } else {
-                bmp
+                decoded
             }
         } catch (oom: OutOfMemoryError) {
             android.util.Log.e("VeilFrame.DocScanner", "Capture rotation OOM", oom)
-            bmp.recycle()
+            decoded.recycle()
             null
         }
     }

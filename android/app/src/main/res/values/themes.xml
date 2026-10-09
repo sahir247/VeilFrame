@@ -70,9 +70,17 @@
     <!-- Legacy names retained (referenced by dialog overlay + code paths) -->
     <style name="Widget.VeilFrame.Button.Pill" parent="Widget.Material3Expressive.Button">
         <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+        <item name="iconGravity">textStart</item>
+        <item name="android:includeFontPadding">true</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
     </style>
     <style name="Widget.VeilFrame.Button.Text" parent="Widget.Material3Expressive.Button.TextButton">
         <item name="materialSizeOverlay">@style/SizeOverlay.Material3Expressive.Button.Small</item>
+        <item name="iconGravity">textStart</item>
+        <item name="android:includeFontPadding">true</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
     </style>
     <style name="Widget.VeilFrame.LinearProgressIndicator" parent="Widget.VeilFrame.Progress.Thick" />
 
