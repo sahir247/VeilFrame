@@ -116,7 +116,8 @@ data class ImageEditState(
     var exifModel: String = "",
     var exifSoftware: String = "",
     var exifDateTime: String = "",
-    var exifGps: String = ""
+    var exifGps: String = "",
+    var piiDetections: List<com.veilframe.app.cv.privacy.PiiDetection> = emptyList()
 ) {
     fun isCropped(): Boolean {
         return (cropAspect != "Free" && cropAspect != "Original") ||
@@ -138,7 +139,8 @@ data class ImageEditState(
                 exifModel.isNotEmpty() ||
                 exifSoftware.isNotEmpty() ||
                 exifDateTime.isNotEmpty() ||
-                exifGps.isNotEmpty()
+                exifGps.isNotEmpty() ||
+                piiDetections.isNotEmpty()
     }
 
     fun reset() {
@@ -168,6 +170,7 @@ data class ImageEditState(
         exifSoftware = ""
         exifDateTime = ""
         exifGps = ""
+        piiDetections = emptyList()
     }
 
     fun deepCopy(): ImageEditState {

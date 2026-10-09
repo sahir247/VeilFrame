@@ -101,6 +101,18 @@ object ImageTransformEngine {
     ): Bitmap {
         var result = src
 
+        // 0. Layer C Isolated Solid Redaction (AI PII Auto-Redactor)
+        if (state.piiDetections.isNotEmpty()) {
+            val scaledDetections = com.veilframe.app.cv.privacy.PiiOnnxEngine.scaleDetections(
+                detections = state.piiDetections,
+                srcW = origFullW,
+                srcH = origFullH,
+                dstW = result.width,
+                dstH = result.height
+            )
+            result = com.veilframe.app.cv.privacy.PiiOnnxEngine.applySolidRedaction(result, scaledDetections)
+        }
+
         // 1. Crop
         if (state.isCropped()) {
             val cropL = (state.cropLeft * result.width).toInt().coerceIn(0, result.width - 1)
