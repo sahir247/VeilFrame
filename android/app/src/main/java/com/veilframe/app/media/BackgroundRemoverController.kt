@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.veilframe.app.cv.core.BitmapBridge
 import com.veilframe.app.cv.segmentation.BackgroundRemover
+import com.veilframe.app.cv.segmentation.BgRemovalOnnxEngine
 import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
 import com.veilframe.app.ui.motion.VeilFrameInteraction
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,42 @@ class BackgroundRemoverController(
 
     /** Last honest failure reason (never masked by a fake result). */
     private var lastFailure: String? = null
+
+    private var bgRemovalEngine: BgRemovalOnnxEngine? = null
+
+    private fun getOrInitBgRemovalEngine(): BgRemovalOnnxEngine? {
+        if (bgRemovalEngine != null) return bgRemovalEngine
+        return try {
+            val assets = activity.assets.list("") ?: emptyArray()
+            val modelName = when {
+                assets.contains(BgRemovalOnnxEngine.DEFAULT_ASSET_NAME) -> BgRemovalOnnxEngine.DEFAULT_ASSET_NAME
+                assets.contains(BgRemovalOnnxEngine.MODNET_ASSET_NAME) -> BgRemovalOnnxEngine.MODNET_ASSET_NAME
+                else -> null
+            }
+            if (modelName != null) {
+                val targetSize = if (modelName == BgRemovalOnnxEngine.MODNET_ASSET_NAME) {
+                    BgRemovalOnnxEngine.MODNET_TARGET_SIZE
+                } else {
+                    BgRemovalOnnxEngine.DEFAULT_TARGET_SIZE
+                }
+                bgRemovalEngine = BgRemovalOnnxEngine(activity, modelName, targetSize)
+                Log.i(TAG, "Initialized neural alpha matting engine ($modelName, size=$targetSize)")
+                bgRemovalEngine
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Neural background removal engine not initialized (${e.message}); using classical GrabCut")
+            null
+        }
+    }
+
+    fun cleanup() {
+        try {
+            bgRemovalEngine?.close()
+        } catch (ignored: Throwable) {}
+        bgRemovalEngine = null
+    }
 
     private companion object {
         const val TAG = "VeilFrame.BgRemover"
@@ -197,9 +234,17 @@ class BackgroundRemoverController(
                     // 2. Downscaled working resolution for responsive performance (<200ms)
                     // 3. Bilinear upsampling and binary thresholding
                     // 4. Morphological hole filling & edge feathering via BackgroundRemover
+                    val neuralEngine = getOrInitBgRemovalEngine()
                     val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
-                        ctx.ensureActive() // B6: GrabCut is the longest stage
-                        computeForegroundMask(img, iterations)
+                        ctx.ensureActive()
+                        val neuralMask = neuralEngine?.segment(img)
+                        if (neuralMask != null) {
+                            Log.d(TAG, "Applied neural alpha matting segmentation mask")
+                            neuralMask
+                        } else {
+                            Log.d(TAG, "Neural model unavailable; falling back to classical GrabCut")
+                            computeForegroundMask(img, iterations)
+                        }
                     }
                     ctx.reportProgress(0.15f)
 

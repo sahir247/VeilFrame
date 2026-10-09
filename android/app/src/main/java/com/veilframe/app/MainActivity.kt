@@ -576,6 +576,9 @@ class MainActivity : AppCompatActivity() {
         if (::markdownViewerController.isInitialized) {
             markdownViewerController.clear()
         }
+        if (::backgroundRemoverController.isInitialized) {
+            backgroundRemoverController.cleanup()
+        }
     }
 
     private fun initSubControllers() {
