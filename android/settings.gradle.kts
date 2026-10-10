@@ -27,7 +27,7 @@ buildscript {
             classpath("org.jdom:jdom2:2.0.6.1")
             classpath("commons-io:commons-io:2.18.0")
             classpath("org.apache.commons:commons-compress:1.27.1")
-            classpath("org.bitbucket.b_c:jose4j:0.9.6")
+            classpath("org.bitbucket.b_c:jose4j:0.9.7")
         }
     }
 }
