@@ -185,7 +185,7 @@ dependencies {
     implementation(project(":opencv-sdk"))
 
     // TensorFlow Lite runtime for neural document segmentation (FairScan SOTA model)
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")
