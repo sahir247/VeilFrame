@@ -23,20 +23,34 @@
             app:navigationIconTint="@color/vf_text_primary"
             app:title="Background Remover"
             app:titleTextColor="@color/vf_text_primary"
-            app:subtitle="Offline Subject Segmentation"
+            app:subtitle="On-Device Neural Matting"
             app:subtitleTextColor="@color/vf_text_secondary">
 
+            <!-- Model Manager Action Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBgModelManager"
+                style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="4dp"
+                android:contentDescription="AI Model Manager"
+                app:icon="@drawable/ic_system_update"
+                app:iconTint="@color/vf_text_primary" />
+
+            <!-- Reset Comparison Zoom/Pan -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBgResetCompare"
                 style="@style/Widget.VeilFrame.IconButton.Toolbar"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="end"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="4dp"
                 android:visibility="gone"
                 android:contentDescription="Reset comparison"
                 app:icon="@drawable/ic_reset" />
 
+            <!-- Save Action Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnBgSavePng"
                 style="@style/Widget.VeilFrame.Button.Action"
@@ -44,19 +58,19 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
-                android:text="Save PNG"
+                android:text="Save"
                 app:icon="@drawable/ic_action_save"
                 app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
 
-        <!-- Preview Area -->
+        <!-- Preview Area Frame -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:padding="16dp">
 
-            <!-- Empty State -->
+            <!-- Empty State Hero (Cel-Android layout + VeilFrame M3 Expressive tokens) -->
             <LinearLayout
                 android:id="@+id/containerBgEmptyState"
                 android:layout_width="match_parent"
@@ -64,36 +78,89 @@
                 android:gravity="center"
                 android:orientation="vertical">
 
+                <!-- Value Proposition Badges -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginBottom="20dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_pass"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="On-Device AI"
+                        android:textColor="@color/vf_accent_green"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_neutral"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="Zero Cloud"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_neutral"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="100% Private"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
                 <ImageView
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:src="@drawable/ic_crop"
-                    app:tint="@color/vf_text_secondary"
+                    app:tint="@color/vf_primary"
                     android:contentDescription="Select Image" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
-                    android:text="Select an Image"
+                    android:text="Remove Backgrounds in One Tap"
                     android:textColor="@color/vf_text_primary"
-                    android:textSize="18sp"
+                    android:textSize="20sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Isolate foreground subjects and create clean transparent cutouts on-device."
+                    android:text="Private, fast, and high-precision subject matting with SOTA ONNX models."
                     android:textColor="@color/vf_text_secondary"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:maxWidth="300dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBgPickImage"
+                    style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:text="Choose Image"
+                    android:layout_marginTop="24dp"
+                    android:text="Choose Photo"
                     app:icon="@drawable/ic_tab_image" />
             </LinearLayout>
 
@@ -103,94 +170,366 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:visibility="gone" />
+
+            <!-- Processing Overlay HUD -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardBgProcessingOverlay"
+                style="@style/Widget.Material3.CardView.Filled"
+                android:layout_width="280dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/vf_surface"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="10dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/vf_surface_stroke">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp"
+                    android:gravity="center_horizontal">
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        style="@style/Widget.VeilFrame.Progress.Wavy"
+                        android:id="@+id/progressBgInference"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:indeterminate="false"
+                        android:max="100" />
+
+                    <TextView
+                        android:id="@+id/tvBgProgressPercent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="45%"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvBgProgressMessage"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Removing background…"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="12sp"
+                        android:gravity="center" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
         </FrameLayout>
 
-        <!-- Backdrop & Refinement Controls Strip (Visible when image is loaded) -->
-        <LinearLayout
+        <!-- Controls Strip (Visible when image is loaded) -->
+        <androidx.core.widget.NestedScrollView
             android:id="@+id/containerBgControls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="6dp"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:fillViewport="true">
 
-            <!-- Backdrop Mode -->
-            <HorizontalScrollView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:scrollbars="none">
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="4dp">
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupBgBackdrop"
-                    android:layout_width="wrap_content"
+                <!-- Active Model Selection Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardBgActiveModel"
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:singleLine="true"
-                    app:singleSelection="true">
+                    android:layout_marginBottom="8dp"
+                    app:cardBackgroundColor="@color/vf_surface"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="@color/vf_surface_stroke"
+                    app:strokeWidth="1dp">
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipBackdropTransparent"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="Transparent" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="12dp">
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipBackdropWhite"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="White Backdrop" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipBackdropBlack"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Black Backdrop" />
-                </com.google.android.material.chip.ChipGroup>
-            </HorizontalScrollView>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="AI MODEL"
+                                android:textColor="@color/vf_text_muted"
+                                android:textSize="10sp"
+                                android:textStyle="bold"
+                                android:letterSpacing="0.06" />
 
-            <!-- Edge Refinement Mode -->
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:scrollbars="none"
-                android:layout_marginTop="2dp">
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="2dp">
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/chipGroupBgRefinement"
-                    android:layout_width="wrap_content"
+                                <TextView
+                                    android:id="@+id/tvBgCurrentModelName"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="BiRefNet Lite"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tvBgModelBadge"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:background="@drawable/bg_badge_pass"
+                                    android:paddingStart="6dp"
+                                    android:paddingEnd="6dp"
+                                    android:paddingTop="2dp"
+                                    android:paddingBottom="2dp"
+                                    android:text="Ready"
+                                    android:textColor="@color/vf_accent_green"
+                                    android:textSize="10sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnBgChangeModel"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Manage"
+                            app:icon="@drawable/ic_system_update"
+                            app:iconSize="16dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Processing Options Card (Tighten, Feather, Trim) -->
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:singleLine="true"
-                    app:singleSelection="true">
+                    android:layout_marginBottom="8dp"
+                    app:cardBackgroundColor="@color/vf_surface"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="@color/vf_surface_stroke"
+                    app:strokeWidth="1dp">
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipRefineLow"
-                        style="@style/Widget.Material3.Chip.Filter"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="PROCESSING OPTIONS"
+                            android:textColor="@color/vf_text_muted"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.06"
+                            android:layout_marginBottom="6dp" />
+
+                        <!-- Tighten Edges (1px) -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="4dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Tighten edges (1 px)"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Erodes mask to eliminate leftover background fringe"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchTightenEdges"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <!-- Feather Edges (1px) -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="4dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Feather edges (1 px)"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Softens the boundary after tightening"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchFeatherEdges"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <!-- Trim Transparent Borders -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="4dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Trim transparent borders"
+                                    android:textColor="@color/vf_text_primary"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Crops empty margin space around cutout"
+                                    android:textColor="@color/vf_text_secondary"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.materialswitch.MaterialSwitch
+                                android:id="@+id/switchTrimTransparent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="false" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Backdrop & Export Selector Strip -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="6dp">
+
+                    <!-- Backdrop Mode -->
+                    <HorizontalScrollView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:scrollbars="none">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/chipGroupBgBackdrop"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:singleLine="true"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipBackdropTransparent"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="Transparent" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipBackdropWhite"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="White BG" />
+
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chipBackdropBlack"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Black BG" />
+                        </com.google.android.material.chip.ChipGroup>
+                    </HorizontalScrollView>
+
+                    <!-- Export Format Toggle -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chipGroupBgExportFormat"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Fast Edge" />
+                        android:layout_marginStart="8dp"
+                        app:singleLine="true"
+                        app:singleSelection="true">
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipRefineBalanced"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true"
-                        android:text="Balanced Edge" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormatPng"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="PNG" />
 
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipRefineHigh"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Precision Edge" />
-                </com.google.android.material.chip.ChipGroup>
-            </HorizontalScrollView>
-        </LinearLayout>
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipFormatJpg"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="JPG" />
+                    </com.google.android.material.chip.ChipGroup>
+                </LinearLayout>
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
 
         <!-- Action Dock -->
         <com.google.android.material.card.MaterialCardView
@@ -221,7 +560,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
-                    android:text="Change Image"
+                    android:text="Change Photo"
                     app:icon="@drawable/ic_tab_image"
                     app:iconSize="18dp" />
 

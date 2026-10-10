@@ -1,43 +1,50 @@
 package com.veilframe.app.media
 
 import android.content.ContentValues
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Log
-import android.net.Uri
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.veilframe.app.cv.core.BitmapBridge
-import com.veilframe.app.cv.segmentation.BackgroundRemover
-import com.veilframe.app.cv.segmentation.BgRemovalOnnxEngine
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.veilframe.app.R
+import com.veilframe.app.cv.segmentation.rembg.CelBackgroundRemover
+import com.veilframe.app.cv.segmentation.rembg.OnnxSessionManager
+import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
+import com.veilframe.app.cv.segmentation.rembg.RembgImageUtils
+import com.veilframe.app.cv.segmentation.rembg.RembgModel
+import com.veilframe.app.cv.segmentation.rembg.RembgModelDownloadManager
+import com.veilframe.app.cv.segmentation.rembg.RembgModelRepository
+import com.veilframe.app.databinding.DialogRembgModelManagerBinding
 import com.veilframe.app.databinding.LayoutBackgroundRemoverBinding
+import com.veilframe.app.ui.motion.MorphDialogController
 import com.veilframe.app.ui.motion.VeilFrameInteraction
+import com.veilframe.app.ui.views.BeforeAfterSplitView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.veilframe.app.cv.core.CvPriority
-import com.veilframe.app.cv.core.CvRuntime
-import org.opencv.core.CvType
-import org.opencv.core.Mat
-import org.opencv.core.Rect
-import org.opencv.core.Scalar
-import org.opencv.core.Size
-import org.opencv.imgproc.Imgproc
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.max
+import java.util.Locale
 
 /**
- * Controller managing the dedicated Background Remover workspace:
- * - Image selection and display
- * - Multi-pass GrabCut foreground segmentation pipeline with border refinement
- * - Interactive Before / After Split comparison slider with shared pan/zoom
- * - Transparent PNG export
+ * Controller managing the on-device AI Background Remover workspace:
+ * - 1:1 adoption of Cel-Android neural background removal pipeline
+ * - SOTA ONNX models: BiRefNet Lite, ISNet General, U2Net Human
+ * - On-demand model download & management (no models bundled with APK)
+ * - M3 Expressive Model Manager dialog with download, delete, redownload, storage accounting
+ * - Edge post-processing: tighten edges (1px alpha erosion), feather edges (1px blur), trim transparent
+ * - Interactive Before / After Split comparison slider with synchronized pan & zoom
+ * - Transparent PNG & White-backdrop JPG export to Gallery
  */
 class BackgroundRemoverController(
     private val activity: AppCompatActivity,
@@ -47,47 +54,22 @@ class BackgroundRemoverController(
     private val onExportPngRequest: (File) -> Unit,
     private val onNavigateBack: () -> Unit
 ) {
+    private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
+    private var sourceFileName: String = "image"
 
-    /** Last honest failure reason (never masked by a fake result). */
+    /** Selected AI model (defaults to recommended BiRefNet Lite) */
+    private var currentModel: RembgModel = RembgModel.DEFAULT
+
+    /** Last error message if processing failed */
     private var lastFailure: String? = null
 
-    private var bgRemovalEngine: BgRemovalOnnxEngine? = null
-
-    private fun getOrInitBgRemovalEngine(): BgRemovalOnnxEngine? {
-        if (bgRemovalEngine != null) return bgRemovalEngine
-        return try {
-            val assets = activity.assets.list("") ?: emptyArray()
-            val modelName = when {
-                assets.contains(BgRemovalOnnxEngine.DEFAULT_ASSET_NAME) -> BgRemovalOnnxEngine.DEFAULT_ASSET_NAME
-                assets.contains(BgRemovalOnnxEngine.MODNET_ASSET_NAME) -> BgRemovalOnnxEngine.MODNET_ASSET_NAME
-                else -> null
-            }
-            if (modelName != null) {
-                val targetSize = if (modelName == BgRemovalOnnxEngine.MODNET_ASSET_NAME) {
-                    BgRemovalOnnxEngine.MODNET_TARGET_SIZE
-                } else {
-                    BgRemovalOnnxEngine.DEFAULT_TARGET_SIZE
-                }
-                bgRemovalEngine = BgRemovalOnnxEngine(activity, modelName, targetSize)
-                Log.i(TAG, "Initialized neural alpha matting engine ($modelName, size=$targetSize)")
-                bgRemovalEngine
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Neural background removal engine not initialized (${e.message}); using classical GrabCut")
-            null
-        }
-    }
-
-    fun cleanup() {
-        try {
-            bgRemovalEngine?.close()
-        } catch (ignored: Throwable) {}
-        bgRemovalEngine = null
-    }
+    /** Model storage and execution subsystems */
+    private val repository = RembgModelRepository(activity)
+    private val downloadManager = RembgModelDownloadManager(activity, repository)
+    private val sessionManager = OnnxSessionManager(repository)
+    private val remover = CelBackgroundRemover(sessionManager)
 
     private companion object {
         const val TAG = "VeilFrame.BgRemover"
@@ -96,6 +78,14 @@ class BackgroundRemoverController(
     fun init() {
         binding.toolbarBgRemover.setNavigationOnClickListener {
             onNavigateBack()
+        }
+
+        binding.btnBgModelManager.setOnClickListener {
+            showModelManagerDialog(binding.btnBgModelManager)
+        }
+
+        binding.btnBgChangeModel.setOnClickListener {
+            showModelManagerDialog(binding.btnBgChangeModel)
         }
 
         binding.btnBgPickImage.setOnClickListener {
@@ -115,297 +105,387 @@ class BackgroundRemoverController(
         }
 
         binding.btnBgSavePng.setOnClickListener {
-            exportPng()
+            exportImage()
         }
 
         binding.chipGroupBgBackdrop.setOnCheckedStateChangeListener { _, checkedIds ->
             val mode = when {
                 checkedIds.contains(binding.chipBackdropWhite.id) ->
-                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_WHITE
+                    BeforeAfterSplitView.BackgroundMode.PURE_WHITE
                 checkedIds.contains(binding.chipBackdropBlack.id) ->
-                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_BLACK
+                    BeforeAfterSplitView.BackgroundMode.PURE_BLACK
                 else ->
-                    com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.TRANSPARENT_CHECKERBOARD
+                    BeforeAfterSplitView.BackgroundMode.TRANSPARENT_CHECKERBOARD
             }
             binding.splitViewBgCompare.backgroundMode = mode
         }
 
-        binding.chipGroupBgRefinement.setOnCheckedStateChangeListener { _, _ ->
-            if (sourceBitmap != null) {
+        // Re-execute when edge options change if an image is loaded and already processed
+        binding.switchTightenEdges.setOnCheckedChangeListener { _, _ ->
+            if (sourceBytes != null && resultBitmap != null) {
+                executeRemoval()
+            }
+        }
+        binding.switchFeatherEdges.setOnCheckedChangeListener { _, _ ->
+            if (sourceBytes != null && resultBitmap != null) {
+                executeRemoval()
+            }
+        }
+        binding.switchTrimTransparent.setOnCheckedChangeListener { _, _ ->
+            if (sourceBytes != null && resultBitmap != null) {
                 executeRemoval()
             }
         }
 
         VeilFrameInteraction.bindWorkspace(binding.root)
+        updateActiveModelBadge()
         updateUi()
+    }
+
+    fun cleanup() {
+        try {
+            sessionManager.closeAll()
+            downloadManager.cancelDownload()
+        } catch (ignored: Throwable) {}
     }
 
     fun handleImageSelected(uri: Uri) {
         scope.launch(Dispatchers.IO) {
-            // Decode bounds first; refuse images whose uncompressed size exceeds
-            // the process heap budget instead of OOM-crashing (or silently
-            // "succeeding" with a fake cutout) downstream.
-            var boundsW = 0
-            var boundsH = 0
-            try {
+            val bytes = try {
                 activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeStream(stream, null, bounds)
-                    boundsW = bounds.outWidth
-                    boundsH = bounds.outHeight
+                    stream.readBytes()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Bounds decode failed", e)
+                Log.e(TAG, "Failed reading image stream", e)
+                null
             }
 
-            val heapBytes = Runtime.getRuntime().maxMemory()
-            val estBytes = boundsW.toLong() * boundsH.toLong() * 4L
-            if (boundsW > 0 && estBytes > heapBytes * 45 / 100) {
+            if (bytes == null || bytes.isEmpty()) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        activity,
-                        "Image too large for on-device segmentation (${boundsW}×${boundsH} ≈ " +
-                            "${estBytes / (1024 * 1024)} MB in memory). Choose a smaller image.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(activity, "Could not open selected image", Toast.LENGTH_SHORT).show()
                 }
                 return@launch
             }
 
-            val bmp = try {
-                activity.contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
+            val decoded = try {
+                RembgImageUtils.decodeOrientedBitmap(bytes)
             } catch (e: Exception) {
-                Log.e(TAG, "Decode failed", e)
-                null
-            } catch (oom: OutOfMemoryError) {
-                Log.e(TAG, "Decode OOM for ${boundsW}x${boundsH}", oom)
+                Log.e(TAG, "Decoding oriented bitmap failed", e)
                 null
             }
 
             withContext(Dispatchers.Main) {
-                if (bmp != null) {
-                    sourceBitmap = bmp
+                if (decoded != null) {
+                    sourceBytes = bytes
+                    sourceBitmap = decoded
                     resultBitmap = null
                     lastFailure = null
+                    sourceFileName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
                     updateUi()
-                    executeRemoval()
+
+                    // Automatically begin removal if model is installed; otherwise open manager
+                    if (repository.isModelReady(currentModel)) {
+                        executeRemoval()
+                    } else {
+                        Toast.makeText(
+                            activity,
+                            "AI model ${currentModel.displayName} needs to be downloaded first",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showModelManagerDialog(binding.cardBgActiveModel)
+                    }
                 } else {
-                    Toast.makeText(activity, "Could not open image", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "Could not decode image", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
     private fun executeRemoval() {
-        val srcBmp = sourceBitmap ?: return
-        Toast.makeText(activity, "Extracting foreground subject...", Toast.LENGTH_SHORT).show()
-
-        val iterations = when {
-            binding.chipRefineHigh.isChecked -> 5
-            binding.chipRefineLow.isChecked -> 1
-            else -> 3
-        }
-        val feather = when {
-            binding.chipRefineHigh.isChecked -> 3.5
-            binding.chipRefineLow.isChecked -> 1.0
-            else -> 2.5
+        val bytes = sourceBytes ?: return
+        if (!repository.isModelReady(currentModel)) {
+            Toast.makeText(
+                activity,
+                "Model ${currentModel.displayName} is not downloaded yet",
+                Toast.LENGTH_SHORT
+            ).show()
+            showModelManagerDialog(binding.cardBgActiveModel)
+            return
         }
 
-        // A2: governed execution — INTERACTIVE lane + memory admission instead
-        // of raw Dispatchers.IO. Admission rejections arrive as typed
-        // CvResult.Err(OUT_OF_MEMORY) with a suggested tier, not as a crash.
-        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(srcBmp.width, srcBmp.height, 6)
+        binding.cardBgProcessingOverlay.visibility = View.VISIBLE
+        binding.progressBgInference.isIndeterminate = false
+        binding.progressBgInference.progress = 10
+        binding.tvBgProgressPercent.text = "10%"
+        binding.tvBgProgressMessage.text = "Loading ${currentModel.displayName}…"
+
+        val trim = binding.switchTrimTransparent.isChecked
+        val tighten = binding.switchTightenEdges.isChecked
+        val feather = binding.switchFeatherEdges.isChecked
+
         scope.launch {
-            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
-                name = "background-removal",
-                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
-                memoryEstimate = estimate,
-                timeoutMs = 30_000L, // B1 watchdog
-            ) { ctx ->
-                // A1 gate: typed NATIVE_UNAVAILABLE instead of UnsatisfiedLinkError.
-                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
-                ctx.ensureActive()
-                val srcMat = BitmapBridge.toMat(srcBmp)
-                try {
-                    // Multi-pass foreground segmentation:
-                    // 1. GrabCut algorithm with bounding box prior & configurable iterations
-                    // 2. Downscaled working resolution for responsive performance (<200ms)
-                    // 3. Bilinear upsampling and binary thresholding
-                    // 4. Morphological hole filling & edge feathering via BackgroundRemover
-                    val neuralEngine = getOrInitBgRemovalEngine()
-                    val segmenter = BackgroundRemover.ForegroundSegmenter { img ->
-                        ctx.ensureActive()
-                        val neuralMask = neuralEngine?.segment(img)
-                        if (neuralMask != null) {
-                            Log.d(TAG, "Applied neural alpha matting segmentation mask")
-                            neuralMask
-                        } else {
-                            Log.d(TAG, "Neural model unavailable; falling back to classical GrabCut")
-                            computeForegroundMask(img, iterations)
+            try {
+                val result = remover.removeBackground(
+                    imageBytes = bytes,
+                    model = currentModel,
+                    trim = trim,
+                    tightenEdges = tighten,
+                    featherEdges = feather,
+                    onProgress = { progress ->
+                        withContext(Dispatchers.Main) {
+                            binding.progressBgInference.progress = progress.percent
+                            binding.tvBgProgressPercent.text = "${progress.percent}%"
+                            binding.tvBgProgressMessage.text = progress.message
                         }
                     }
-                    ctx.reportProgress(0.15f)
+                )
 
-                    val removalResult = BackgroundRemover.removeBackground(
-                        srcMat,
-                        segmenter,
-                        BackgroundRemover.Options(
-                            cleanupKernel = 5,
-                            fillHoles = true,
-                            refineEdges = true,
-                            featherRadius = feather
-                        ),
-                        context = ctx
-                    )
+                resultBitmap = result.cutoutBitmap
+                lastFailure = null
+                binding.cardBgProcessingOverlay.visibility = View.GONE
+                updateUi()
 
-                    ctx.reportProgress(0.8f)
-                    val cutout = try {
-                        BitmapBridge.toBitmap(removalResult.output)
-                    } finally {
-                        // CV-4: released on every path, including toBitmap failures.
-                        removalResult.output.release()
-                        removalResult.mask.release()
-                    }
-                    ctx.reportProgress(1f)
-                    cutout
-                } finally {
-                    srcMat.release() // CV-4
+                if (result.warnings.isNotEmpty()) {
+                    Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Background removal failed", e)
+                lastFailure = e.message ?: "Processing error"
+                binding.cardBgProcessingOverlay.visibility = View.GONE
+                Toast.makeText(
+                    activity,
+                    "Removal failed: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+                updateUi()
             }
-
-            job.await().fold(
-                onOk = { cutoutBmp ->
-                    resultBitmap = cutoutBmp
-                    lastFailure = null
-                    updateUi()
-                },
-                onErr = { err ->
-                    // CV-3 honest failure: the ORIGINAL image is never presented
-                    // as a cutout. Save stays disabled; the user is told why.
-                    Log.e(TAG, "Removal failed [${err.code}]: ${err.message}", err.cause)
-                    resultBitmap = null
-                    lastFailure = err.message
-                    Toast.makeText(
-                        activity,
-                        "Background removal failed (${err.code.name.lowercase(java.util.Locale.US)}): " +
-                            "${err.message}. Source shown unchanged.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    updateUi()
-                }
-            )
         }
     }
 
-    private fun computeForegroundMask(img: Mat, iterations: Int = 3): Mat {
-        val rows = img.rows()
-        val cols = img.cols()
+    fun showModelManagerDialog(originView: View? = null) {
+        val dialogBinding = DialogRembgModelManagerBinding.inflate(LayoutInflater.from(activity))
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setView(dialogBinding.root)
+            .setCancelable(true)
+            .create()
 
-        // Downscale to max dimension 640px for responsive GrabCut execution
-        val maxDim = max(rows, cols)
-        val scale = if (maxDim > 640) 640.0 / maxDim else 1.0
-        val workingCols = (cols * scale).toInt().coerceAtLeast(10)
-        val workingRows = (rows * scale).toInt().coerceAtLeast(10)
+        dialogBinding.btnModelManagerClose.setOnClickListener {
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
+        }
 
-        val workingImg = Mat()
-        Imgproc.resize(img, workingImg, Size(workingCols.toDouble(), workingRows.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        fun refreshCards() {
+            val usedBytes = repository.getTotalStorageUsedBytes()
+            val availBytes = repository.getAvailableStorageBytes()
+            val usedMb = String.format(Locale.US, "%.1f MB", usedBytes / (1024.0 * 1024.0))
+            val availGb = String.format(Locale.US, "%.1f GB", availBytes / (1024.0 * 1024.0 * 1024.0))
+            dialogBinding.tvModelStorageSummary.text = "Models Storage: $usedMb used • $availGb available"
 
-        // Convert to BGR if needed
-        val bgrImg = Mat()
-        if (workingImg.channels() == 4) {
-            Imgproc.cvtColor(workingImg, bgrImg, Imgproc.COLOR_RGBA2BGR)
-        } else if (workingImg.channels() == 1) {
-            Imgproc.cvtColor(workingImg, bgrImg, Imgproc.COLOR_GRAY2BGR)
+            val readyCount = repository.listReadyModels().size
+            dialogBinding.tvModelCountSummary.text = "$readyCount of 3 AI Models Installed"
+
+            // Card 1: BiRefNet Lite
+            val isBiRefNetReady = repository.isModelReady(RembgModel.BIREFNET_GENERAL_LITE)
+            if (isBiRefNetReady) {
+                dialogBinding.tvModelStatusBiRefNet.text = "Installed"
+                dialogBinding.tvModelStatusBiRefNet.setTextColor(activity.getColor(R.color.vf_accent_green))
+                dialogBinding.btnDownloadModelBiRefNet.visibility = View.GONE
+                dialogBinding.btnDeleteModelBiRefNet.visibility = View.VISIBLE
+                dialogBinding.btnRedownloadModelBiRefNet.visibility = View.VISIBLE
+                dialogBinding.btnSelectModelBiRefNet.visibility = View.VISIBLE
+                if (currentModel == RembgModel.BIREFNET_GENERAL_LITE) {
+                    dialogBinding.btnSelectModelBiRefNet.text = "Active"
+                    dialogBinding.btnSelectModelBiRefNet.isEnabled = false
+                } else {
+                    dialogBinding.btnSelectModelBiRefNet.text = "Select"
+                    dialogBinding.btnSelectModelBiRefNet.isEnabled = true
+                }
+            } else {
+                dialogBinding.tvModelStatusBiRefNet.text = "Not Installed"
+                dialogBinding.tvModelStatusBiRefNet.setTextColor(activity.getColor(R.color.vf_text_muted))
+                dialogBinding.btnDownloadModelBiRefNet.visibility = View.VISIBLE
+                dialogBinding.btnDeleteModelBiRefNet.visibility = View.GONE
+                dialogBinding.btnRedownloadModelBiRefNet.visibility = View.GONE
+                dialogBinding.btnSelectModelBiRefNet.visibility = View.GONE
+            }
+
+            // Card 2: ISNet General
+            val isIsNetReady = repository.isModelReady(RembgModel.ISNET_GENERAL)
+            if (isIsNetReady) {
+                dialogBinding.tvModelStatusIsNet.text = "Installed"
+                dialogBinding.tvModelStatusIsNet.setTextColor(activity.getColor(R.color.vf_accent_green))
+                dialogBinding.btnDownloadModelIsNet.visibility = View.GONE
+                dialogBinding.btnDeleteModelIsNet.visibility = View.VISIBLE
+                dialogBinding.btnRedownloadModelIsNet.visibility = View.VISIBLE
+                dialogBinding.btnSelectModelIsNet.visibility = View.VISIBLE
+                if (currentModel == RembgModel.ISNET_GENERAL) {
+                    dialogBinding.btnSelectModelIsNet.text = "Active"
+                    dialogBinding.btnSelectModelIsNet.isEnabled = false
+                } else {
+                    dialogBinding.btnSelectModelIsNet.text = "Select"
+                    dialogBinding.btnSelectModelIsNet.isEnabled = true
+                }
+            } else {
+                dialogBinding.tvModelStatusIsNet.text = "Not Installed"
+                dialogBinding.tvModelStatusIsNet.setTextColor(activity.getColor(R.color.vf_text_muted))
+                dialogBinding.btnDownloadModelIsNet.visibility = View.VISIBLE
+                dialogBinding.btnDeleteModelIsNet.visibility = View.GONE
+                dialogBinding.btnRedownloadModelIsNet.visibility = View.GONE
+                dialogBinding.btnSelectModelIsNet.visibility = View.GONE
+            }
+
+            // Card 3: U2Net Human
+            val isU2NetReady = repository.isModelReady(RembgModel.U2NET_HUMAN)
+            if (isU2NetReady) {
+                dialogBinding.tvModelStatusU2Net.text = "Installed"
+                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_accent_green))
+                dialogBinding.btnDownloadModelU2Net.visibility = View.GONE
+                dialogBinding.btnDeleteModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnRedownloadModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnSelectModelU2Net.visibility = View.VISIBLE
+                if (currentModel == RembgModel.U2NET_HUMAN) {
+                    dialogBinding.btnSelectModelU2Net.text = "Active"
+                    dialogBinding.btnSelectModelU2Net.isEnabled = false
+                } else {
+                    dialogBinding.btnSelectModelU2Net.text = "Select"
+                    dialogBinding.btnSelectModelU2Net.isEnabled = true
+                }
+            } else {
+                dialogBinding.tvModelStatusU2Net.text = "Not Installed"
+                dialogBinding.tvModelStatusU2Net.setTextColor(activity.getColor(R.color.vf_text_muted))
+                dialogBinding.btnDownloadModelU2Net.visibility = View.VISIBLE
+                dialogBinding.btnDeleteModelU2Net.visibility = View.GONE
+                dialogBinding.btnRedownloadModelU2Net.visibility = View.GONE
+                dialogBinding.btnSelectModelU2Net.visibility = View.GONE
+            }
+        }
+
+        fun download(model: RembgModel, progressView: com.google.android.material.progressindicator.LinearProgressIndicator, triggerButton: View) {
+            progressView.visibility = View.VISIBLE
+            progressView.isIndeterminate = true
+            triggerButton.isEnabled = false
+
+            scope.launch {
+                val result = downloadManager.downloadModel(model, object : RembgModelDownloadManager.DownloadListener {
+                    override fun onProgress(downloadedBytes: Long, totalBytes: Long, speedBytesPerSec: Long) {
+                        scope.launch(Dispatchers.Main) {
+                            if (totalBytes > 0) {
+                                progressView.isIndeterminate = false
+                                progressView.progress = ((downloadedBytes * 100) / totalBytes).toInt()
+                            }
+                        }
+                    }
+
+                    override fun onSuccess(model: RembgModel, destinationFile: File) {
+                        scope.launch(Dispatchers.Main) {
+                            progressView.visibility = View.GONE
+                            triggerButton.isEnabled = true
+                            refreshCards()
+                            updateActiveModelBadge()
+                            Toast.makeText(activity, "${model.displayName} ready!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    override fun onError(error: String) {
+                        scope.launch(Dispatchers.Main) {
+                            progressView.visibility = View.GONE
+                            triggerButton.isEnabled = true
+                            Toast.makeText(activity, "Download failed: $error", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                })
+
+                if (result.isSuccess) {
+                    currentModel = model
+                    updateActiveModelBadge()
+                }
+            }
+        }
+
+        // BiRefNet Lite listeners
+        dialogBinding.btnDownloadModelBiRefNet.setOnClickListener {
+            download(RembgModel.BIREFNET_GENERAL_LITE, dialogBinding.progressModelBiRefNet, dialogBinding.btnDownloadModelBiRefNet)
+        }
+        dialogBinding.btnRedownloadModelBiRefNet.setOnClickListener {
+            repository.deleteModel(RembgModel.BIREFNET_GENERAL_LITE)
+            sessionManager.closeSession(RembgModel.BIREFNET_GENERAL_LITE)
+            download(RembgModel.BIREFNET_GENERAL_LITE, dialogBinding.progressModelBiRefNet, dialogBinding.btnRedownloadModelBiRefNet)
+        }
+        dialogBinding.btnDeleteModelBiRefNet.setOnClickListener {
+            repository.deleteModel(RembgModel.BIREFNET_GENERAL_LITE)
+            sessionManager.closeSession(RembgModel.BIREFNET_GENERAL_LITE)
+            refreshCards()
+            updateActiveModelBadge()
+        }
+        dialogBinding.btnSelectModelBiRefNet.setOnClickListener {
+            currentModel = RembgModel.BIREFNET_GENERAL_LITE
+            refreshCards()
+            updateActiveModelBadge()
+            if (sourceBytes != null) executeRemoval()
+        }
+
+        // ISNet General listeners
+        dialogBinding.btnDownloadModelIsNet.setOnClickListener {
+            download(RembgModel.ISNET_GENERAL, dialogBinding.progressModelIsNet, dialogBinding.btnDownloadModelIsNet)
+        }
+        dialogBinding.btnRedownloadModelIsNet.setOnClickListener {
+            repository.deleteModel(RembgModel.ISNET_GENERAL)
+            sessionManager.closeSession(RembgModel.ISNET_GENERAL)
+            download(RembgModel.ISNET_GENERAL, dialogBinding.progressModelIsNet, dialogBinding.btnRedownloadModelIsNet)
+        }
+        dialogBinding.btnDeleteModelIsNet.setOnClickListener {
+            repository.deleteModel(RembgModel.ISNET_GENERAL)
+            sessionManager.closeSession(RembgModel.ISNET_GENERAL)
+            refreshCards()
+            updateActiveModelBadge()
+        }
+        dialogBinding.btnSelectModelIsNet.setOnClickListener {
+            currentModel = RembgModel.ISNET_GENERAL
+            refreshCards()
+            updateActiveModelBadge()
+            if (sourceBytes != null) executeRemoval()
+        }
+
+        // U2Net Human listeners
+        dialogBinding.btnDownloadModelU2Net.setOnClickListener {
+            download(RembgModel.U2NET_HUMAN, dialogBinding.progressModelU2Net, dialogBinding.btnDownloadModelU2Net)
+        }
+        dialogBinding.btnRedownloadModelU2Net.setOnClickListener {
+            repository.deleteModel(RembgModel.U2NET_HUMAN)
+            sessionManager.closeSession(RembgModel.U2NET_HUMAN)
+            download(RembgModel.U2NET_HUMAN, dialogBinding.progressModelU2Net, dialogBinding.btnRedownloadModelU2Net)
+        }
+        dialogBinding.btnDeleteModelU2Net.setOnClickListener {
+            repository.deleteModel(RembgModel.U2NET_HUMAN)
+            sessionManager.closeSession(RembgModel.U2NET_HUMAN)
+            refreshCards()
+            updateActiveModelBadge()
+        }
+        dialogBinding.btnSelectModelU2Net.setOnClickListener {
+            currentModel = RembgModel.U2NET_HUMAN
+            refreshCards()
+            updateActiveModelBadge()
+            if (sourceBytes != null) executeRemoval()
+        }
+
+        refreshCards()
+        MorphDialogController.showWithMorph(dialog, dialogBinding.root, originView)
+    }
+
+    private fun updateActiveModelBadge() {
+        binding.tvBgCurrentModelName.text = currentModel.displayName
+        val isReady = repository.isModelReady(currentModel)
+        if (isReady) {
+            binding.tvBgModelBadge.text = "Ready"
+            binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_green))
+            binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_pass)
         } else {
-            workingImg.copyTo(bgrImg)
-        }
-        workingImg.release()
-
-        // Inset rectangle by 5% as foreground region prior
-        val marginX = (workingCols * 0.05).toInt().coerceAtLeast(1)
-        val marginY = (workingRows * 0.05).toInt().coerceAtLeast(1)
-        val rect = Rect(
-            marginX,
-            marginY,
-            (workingCols - 2 * marginX).coerceAtLeast(1),
-            (workingRows - 2 * marginY).coerceAtLeast(1)
-        )
-
-        val maskMat = Mat()
-        val bgdModel = Mat()
-        val fgdModel = Mat()
-
-        try {
-            // Run GrabCut iterations
-            Imgproc.grabCut(
-                bgrImg,
-                maskMat,
-                rect,
-                bgdModel,
-                fgdModel,
-                iterations,
-                Imgproc.GC_INIT_WITH_RECT
-            )
-
-            // Extract foreground: GC_FGD (1) and GC_PR_FGD (3)
-            val binaryMask = Mat(maskMat.size(), CvType.CV_8UC1)
-            val maskData = ByteArray(maskMat.rows() * maskMat.cols())
-            maskMat.get(0, 0, maskData)
-            val binData = ByteArray(maskData.size)
-            for (i in maskData.indices) {
-                val v = maskData[i].toInt()
-                binData[i] = if (v == Imgproc.GC_FGD || v == Imgproc.GC_PR_FGD) 255.toByte() else 0.toByte()
-            }
-            binaryMask.put(0, 0, binData)
-
-            // Upscale mask back to original image size
-            val fullMask = Mat()
-            Imgproc.resize(binaryMask, fullMask, Size(cols.toDouble(), rows.toDouble()), 0.0, 0.0, Imgproc.INTER_LINEAR)
-            // Ensure strict binary threshold
-            val finalMask = Mat()
-            Imgproc.threshold(fullMask, finalMask, 127.0, 255.0, Imgproc.THRESH_BINARY)
-
-            binaryMask.release()
-            fullMask.release()
-            return finalMask
-        } catch (e: Exception) {
-            // Robust fallback: Otsu thresholding + morphological cleanup.
-            // Channel-count aware: BitmapBridge mats are 4-channel (BGRA/RGBA);
-            // the old unconditional COLOR_BGR2GRAY threw here, escaping to the
-            // caller's catch-all and producing a fake "cutout" (CV-3 root cause).
-            Log.w(TAG, "GrabCut failed; falling back to Otsu segmentation", e)
-            val gray = Mat()
-            when (img.channels()) {
-                1 -> img.copyTo(gray)
-                4 -> {
-                    val bgr = Mat()
-                    try {
-                        Imgproc.cvtColor(img, bgr, Imgproc.COLOR_RGBA2BGR)
-                        Imgproc.cvtColor(bgr, gray, Imgproc.COLOR_BGR2GRAY)
-                    } finally {
-                        bgr.release()
-                    }
-                }
-                else -> Imgproc.cvtColor(img, gray, Imgproc.COLOR_BGR2GRAY)
-            }
-            val fallbackMask = Mat()
-            try {
-                Imgproc.threshold(gray, fallbackMask, 0.0, 255.0, Imgproc.THRESH_BINARY_INV or Imgproc.THRESH_OTSU)
-            } finally {
-                gray.release()
-            }
-            return fallbackMask
-        } finally {
-            bgrImg.release()
-            maskMat.release()
-            bgdModel.release()
-            fgdModel.release()
+            binding.tvBgModelBadge.text = "Download Needed"
+            binding.tvBgModelBadge.setTextColor(activity.getColor(R.color.vf_accent_amber))
+            binding.tvBgModelBadge.setBackgroundResource(R.drawable.bg_badge_warn)
         }
     }
 
-    private fun exportPng() {
+    private fun exportImage() {
         val bmp = resultBitmap ?: run {
             Toast.makeText(
                 activity,
@@ -416,36 +496,53 @@ class BackgroundRemoverController(
             return
         }
 
+        val isJpg = binding.chipFormatJpg.isChecked
         scope.launch(Dispatchers.IO) {
-            // v2.3.0 fix ("bg removing image is not saving"): persistent app dir (cache is
-            // purgeable and SAF handoff died silently on devices) — see gallery save below.
             val exportDir = File(activity.filesDir, "exports").apply { mkdirs() }
-            val outFile = File(exportDir, "Cutout_${System.currentTimeMillis()}.png")
+            val ext = if (isJpg) "jpg" else "png"
+            val mimeType = if (isJpg) "image/jpeg" else "image/png"
+            val outFile = File(exportDir, "${sourceFileName}_BGREMOVED_${System.currentTimeMillis()}.$ext")
 
-            val finalExportBmp = when (binding.splitViewBgCompare.backgroundMode) {
-                com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> {
-                    val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(comp)
-                    canvas.drawColor(android.graphics.Color.WHITE)
-                    canvas.drawBitmap(bmp, 0f, 0f, null)
-                    comp
+            val finalExportBmp = if (isJpg) {
+                val flat = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(flat)
+                val bgColor = when (binding.splitViewBgCompare.backgroundMode) {
+                    BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> Color.BLACK
+                    else -> Color.WHITE
                 }
-                com.veilframe.app.ui.views.BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> {
-                    val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(comp)
-                    canvas.drawColor(android.graphics.Color.BLACK)
-                    canvas.drawBitmap(bmp, 0f, 0f, null)
-                    comp
+                canvas.drawColor(bgColor)
+                canvas.drawBitmap(bmp, 0f, 0f, null)
+                flat
+            } else {
+                when (binding.splitViewBgCompare.backgroundMode) {
+                    BeforeAfterSplitView.BackgroundMode.PURE_WHITE -> {
+                        val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(comp)
+                        canvas.drawColor(Color.WHITE)
+                        canvas.drawBitmap(bmp, 0f, 0f, null)
+                        comp
+                    }
+                    BeforeAfterSplitView.BackgroundMode.PURE_BLACK -> {
+                        val comp = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(comp)
+                        canvas.drawColor(Color.BLACK)
+                        canvas.drawBitmap(bmp, 0f, 0f, null)
+                        comp
+                    }
+                    else -> bmp
                 }
-                else -> bmp
             }
 
             try {
                 FileOutputStream(outFile).use { fos ->
-                    finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    if (isJpg) {
+                        finalExportBmp.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+                    } else {
+                        finalExportBmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    }
                 }
 
-                // Real gallery save (MediaStore) instead of the SAF launcher handoff.
+                // MediaStore gallery save
                 val resolver = activity.contentResolver
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -454,7 +551,7 @@ class BackgroundRemoverController(
                 }
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, outFile.name)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
                         put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -470,11 +567,13 @@ class BackgroundRemoverController(
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
                     resolver.update(savedUri, values, null, null)
                 }
+
+                onExportPngRequest(outFile)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("VeilFrame.BgRemover", "Gallery save failed", e)
+                Log.e(TAG, "Gallery save failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -483,6 +582,7 @@ class BackgroundRemoverController(
     }
 
     private fun updateUi() {
+        updateActiveModelBadge()
         if (sourceBitmap == null) {
             binding.containerBgEmptyState.visibility = View.VISIBLE
             binding.splitViewBgCompare.visibility = View.GONE
