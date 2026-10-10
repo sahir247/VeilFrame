@@ -18,7 +18,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
+import android.util.Size
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -27,8 +36,14 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import com.veilframe.app.cv.geometry.CameraIntrinsics
+import com.veilframe.app.cv.geometry.OpticalMeasures
+import kotlin.math.max
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.card.MaterialCardView
 import com.veilframe.app.R
@@ -123,6 +138,12 @@ class DocumentScannerController(
     private val cameraExecutor: java.util.concurrent.ExecutorService =
         com.veilframe.app.cv.core.CvRuntime.cameraExecutor
     private var isSyncingFilterChips = false
+
+    // FairScan optical measures & camera intrinsics
+    private var cameraIntrinsics: CameraIntrinsics? = null
+    private var canUseFocusDistance = false
+    @Volatile
+    private var lastFocusDistanceDiopters: Float? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun init() {
@@ -329,23 +350,58 @@ class DocumentScannerController(
         val provider = cameraProvider ?: return
         provider.unbindAll()
 
+        val ratio43 = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .build()
+
         val cameraSelector = if (isBackCamera) {
             CameraSelector.DEFAULT_BACK_CAMERA
         } else {
             CameraSelector.DEFAULT_FRONT_CAMERA
         }
 
-        val preview = Preview.Builder().build().also {
-            it.setSurfaceProvider(binding.docCameraPreviewView.surfaceProvider)
-        }
+        val preview = Preview.Builder()
+            .setResolutionSelector(ratio43)
+            .build().also {
+                it.setSurfaceProvider(binding.docCameraPreviewView.surfaceProvider)
+            }
 
-        val capture = ImageCapture.Builder()
+        val imageCaptureBuilder = ImageCapture.Builder()
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(4400, 3300),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                        )
+                    )
+                    .setAspectRatioStrategy(
+                        AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
+                    )
+                    .build()
+            )
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-            .build()
+
+        Camera2Interop.Extender(imageCaptureBuilder)
+            .setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    result: TotalCaptureResult
+                ) {
+                    result.get(CaptureResult.LENS_FOCUS_DISTANCE)?.let {
+                        lastFocusDistanceDiopters = it
+                    }
+                }
+            })
+
+        val capture = imageCaptureBuilder.build()
         imageCapture = capture
 
         val imageAnalysis = ImageAnalysis.Builder()
+            .setResolutionSelector(ratio43)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
 
         imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
@@ -363,26 +419,53 @@ class DocumentScannerController(
         val useCaseGroup = useCaseGroupBuilder.build()
 
         try {
-            camera = provider.bindToLifecycle(
+            val cam = provider.bindToLifecycle(
                 activity,
                 cameraSelector,
                 useCaseGroup
             )
+            camera = cam
+            updateCameraCharacteristics(Camera2CameraInfo.from(cam.cameraInfo))
             setCameraZoom(currentZoomRatio)
         } catch (e: Exception) {
             try {
-                camera = provider.bindToLifecycle(
+                val cam = provider.bindToLifecycle(
                     activity,
                     cameraSelector,
                     preview,
                     capture,
                     imageAnalysis
                 )
+                camera = cam
+                updateCameraCharacteristics(Camera2CameraInfo.from(cam.cameraInfo))
                 setCameraZoom(currentZoomRatio)
             } catch (fallbackEx: Exception) {
                 Toast.makeText(activity, "Camera binding error: ${fallbackEx.message}", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun updateCameraCharacteristics(cameraInfo: Camera2CameraInfo) {
+        val focalLengths = cameraInfo.getCameraCharacteristic(
+            CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS
+        )
+        val sensorSize = cameraInfo.getCameraCharacteristic(
+            CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE
+        )
+        cameraIntrinsics = if (focalLengths == null || focalLengths.size != 1 || sensorSize == null) {
+            null
+        } else {
+            CameraIntrinsics(
+                focalLengths[0],
+                max(sensorSize.width, sensorSize.height)
+            )
+        }
+        val calibration = cameraInfo.getCameraCharacteristic(
+            CameraCharacteristics.LENS_INFO_FOCUS_DISTANCE_CALIBRATION
+        )
+        canUseFocusDistance =
+            calibration == CameraMetadata.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_CALIBRATED ||
+            calibration == CameraMetadata.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_APPROXIMATE
     }
 
     private fun setCameraZoom(ratio: Float) {
@@ -513,24 +596,17 @@ class DocumentScannerController(
         return newPool
     }
 
-    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun processFrameAsync(imageProxy: ImageProxy) {
-        // Fast bail-out when the CV engine is unavailable: never burn frames
-        // converting JPEGs just to swallow UnsatisfiedLinkError per frame (CV-6).
         if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
             imageProxy.close()
             return
         }
 
-        // Phase 2: freeze analysis while a capture is in flight (shared
-        // single-thread executor + full-res JPEG work owns the lane).
         if (isCapturing) {
             imageProxy.close()
             return
         }
 
-        // B4: thermal governor — drop every other frame when the device is
-        // throttled, stop analysis entirely when critical (battery + heat).
         if (com.veilframe.app.runtime.ThermalGovernor.isCritical) {
             imageProxy.close()
             return
@@ -543,17 +619,7 @@ class DocumentScannerController(
             }
         }
 
-        // Concurrency gate: If background thread is currently crunching a frame,
-        // drop this frame immediately to maintain a non-blocking 60fps CameraX stream
-        // without backpressure queue accumulation.
         if (!isProcessing.compareAndSet(false, true)) {
-            imageProxy.close()
-            return
-        }
-
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
-            isProcessing.set(false)
             imageProxy.close()
             return
         }
@@ -561,68 +627,48 @@ class DocumentScannerController(
         val rotation = imageProxy.imageInfo.rotationDegrees
         val width = imageProxy.width
         val height = imageProxy.height
-
-        // Pre-allocated zero-allocation buffer pool
-        val pool = obtainBufferPool(width, height, rotation)
-
-        // --- PHASE A: EXTRACTION (Fast, on CameraX thread) ---
-        val analysisMat = try {
-            pool.extractFrame(mediaImage)
-        } catch (t: Throwable) {
-            android.util.Log.w("VeilFrame.DocScanner", "Frame extraction failed", t)
-            null
-        }
-
         val currentFrameId = frameIdCounter++
 
-        // CLOSE PROXY IMMEDIATELY to release the camera hardware buffer!
-        imageProxy.close()
-
-        if (analysisMat == null || analysisMat.empty()) {
-            isProcessing.set(false)
-            return
-        }
-
-        val safeAnalysisMat = try {
-            analysisMat.clone()
+        val frameBitmap = try {
+            imageProxy.toBitmap()
         } catch (_: Throwable) {
             null
+        } finally {
+            imageProxy.close()
         }
 
-        if (safeAnalysisMat == null) {
+        if (frameBitmap == null) {
             isProcessing.set(false)
             return
         }
 
         val currentSession = viewfinderSessionId.get()
 
-        // --- PHASE B: PROCESSING (Heavy, on Background Thread) ---
         val job = scope.launch(Dispatchers.Default) {
             try {
                 ensureActive()
-                if (viewfinderSessionId.get() != currentSession || pool.isReleased) {
+                if (viewfinderSessionId.get() != currentSession) {
                     return@launch
                 }
 
-                // Run FairScan neural segmentation & OpenCV pipeline
-                val corners = DocumentScanner.findCornersAsync(
-                    source = safeAnalysisMat,
-                    blurredMat = if (!pool.isReleased) pool.blurredMat else null,
-                    edgesMat = if (!pool.isReleased) pool.edgesMat else null,
-                    segmentationService = segmentationService,
-                    isCaptureMode = false,
-                )
+                // FairScan Live Analysis: MobileNetV2 neural segmentation inference
+                val segResult = segmentationService.runSegmentation(frameBitmap)
 
-                if (viewfinderSessionId.get() != currentSession || pool.isReleased) {
+                if (viewfinderSessionId.get() != currentSession) {
                     return@launch
                 }
 
-                val frameW = safeAnalysisMat.cols()
-                val frameH = safeAnalysisMat.rows()
+                val corners = if (segResult != null) {
+                    com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                        segmentation = segResult.segmentation,
+                        originalWidth = width,
+                        originalHeight = height,
+                        isCaptureMode = false
+                    )
+                } else null
 
-                // Phase 3: EMA-smoothed quad with hysteresis — the overlay stops
-                // flickering and "Ready" requires consecutive matched frames.
-                val stable = quadStabilizer.update(if (corners.size == 4) corners else null)
+                // FairScan live quad stabilization with EMA smoothing
+                val stable = quadStabilizer.update(if (corners != null && corners.size == 4) corners else null)
                 val stabState = quadStabilizer.state
                 val becameStable = stabState == QuadStabilizer.State.STABLE &&
                     lastStabState != QuadStabilizer.State.STABLE
@@ -634,21 +680,6 @@ class DocumentScannerController(
                     }
                 }
 
-                // --- Run Zero-Allocation Quality Analysis ---
-                val quality = if (!pool.isReleased && pool.laplacianMat != null &&
-                    pool.glareMaskMat != null && pool.meanMat != null && pool.stddevMat != null
-                ) {
-                    QualityAnalyzer.analyze(
-                        source = safeAnalysisMat,
-                        laplacianMat = pool.laplacianMat,
-                        glareMaskMat = pool.glareMaskMat,
-                        meanMat = pool.meanMat,
-                        stddevMat = pool.stddevMat,
-                    )
-                } else {
-                    QualityMetrics.DEFAULT
-                }
-
                 if (viewfinderSessionId.get() != currentSession) {
                     return@launch
                 }
@@ -656,10 +687,10 @@ class DocumentScannerController(
                 _scannerState.emit(
                     ScanResult(
                         corners = stable,
-                        quality = quality,
+                        quality = QualityMetrics.DEFAULT,
                         frameId = currentFrameId,
-                        frameWidth = frameW,
-                        frameHeight = frameH,
+                        frameWidth = width,
+                        frameHeight = height,
                         stabilizerState = stabState,
                     )
                 )
@@ -672,7 +703,7 @@ class DocumentScannerController(
                     binding.docQuadOverlayView.clear()
                 }
             } finally {
-                safeAnalysisMat.release()
+                frameBitmap.recycle()
                 isProcessing.set(false)
             }
         }
@@ -711,6 +742,14 @@ class DocumentScannerController(
             cameraExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
+                    val diopters = lastFocusDistanceDiopters
+                    val subjectDistanceMm = if (canUseFocusDistance && diopters != null && diopters != 0.0f) {
+                        1000f / diopters
+                    } else null
+                    val opticalMeasures = cameraIntrinsics?.let {
+                        OpticalMeasures(it, subjectDistanceMm)
+                    }
+
                     val bitmap = try {
                         imageProxyToBitmap(image)
                     } finally {
@@ -720,9 +759,9 @@ class DocumentScannerController(
 
                     if (bitmap != null) {
                         activity.runOnUiThread {
-                            handleCameraPhotoCaptured(bitmap)
+                            processCapturedPhotoThroughFirstPipeline(bitmap, opticalMeasures)
                             updateCameraDoneBadge()
-                            Toast.makeText(activity, "Page ${session.pageCount} captured", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(activity, "Page ${session.pageCount + 1} captured", Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         activity.runOnUiThread {
@@ -751,14 +790,107 @@ class DocumentScannerController(
     // =========================================================================
 
     fun handleCameraPhotoCaptured(bitmap: Bitmap) {
+        processCapturedPhotoThroughFirstPipeline(bitmap, null)
+    }
+
+    fun processCapturedPhotoThroughFirstPipeline(
+        sourceBitmap: Bitmap,
+        opticalMeasures: OpticalMeasures? = null
+    ) {
         val page = ScannedPage(
-            originalBitmapCache = bitmap,
-            processedBitmapCache = bitmap
+            originalBitmapCache = sourceBitmap,
+            processedBitmapCache = sourceBitmap
         )
         session.addPage(page)
         persistSession()
         updateUi()
-        runAutoCropOnCurrentPage()
+
+        val pageId = page.id
+        val targetVersion = ++page.editVersion
+        val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(sourceBitmap.width, sourceBitmap.height, 3)
+
+        scope.launch {
+            // Step 1: FairScan MobileNetV2 Neural Segmentation (run inside coroutine)
+            val segResult = segmentationService.runSegmentation(sourceBitmap)
+
+            val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
+                name = "doc-first-pipeline",
+                priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+                timeoutMs = 15_000L,
+            ) { ctx ->
+                com.veilframe.app.cv.core.CvRuntime.requireAvailable()
+                ctx.ensureActive()
+
+                // Step 2: Continuous Probability-Map Quad Detection
+                val corners = if (segResult != null) {
+                    com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                        segmentation = segResult.segmentation,
+                        originalWidth = sourceBitmap.width,
+                        originalHeight = sourceBitmap.height,
+                        isCaptureMode = true
+                    )
+                } else null
+
+                val srcMat = BitmapBridge.toMat(sourceBitmap)
+                try {
+                    ctx.ensureActive()
+                    if (corners != null && corners.size == 4) {
+                        // Step 3: CIELab Chroma Auto Color Mode Detection
+                        val colorMode = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, corners)
+                        ctx.ensureActive()
+
+                        // Step 4: Single-View Metrology & Perspective Rectification
+                        val warpedMat = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
+                            image = srcMat,
+                            sourceCorners = corners,
+                            opticalMeasures = opticalMeasures,
+                        )
+
+                        ctx.ensureActive()
+                        // Step 5: Multi-Scale Retinex / Log Retinex Enhancement
+                        val docMode = if (colorMode == com.veilframe.app.cv.document.DocumentColorMode.COLOR) {
+                            DocumentScanner.DocumentMode.ENHANCED
+                        } else {
+                            DocumentScanner.DocumentMode.GRAYSCALE
+                        }
+                        val enhancedMat = DocumentScanner.enhance(warpedMat, docMode, ctx)
+                        val resultBitmap = BitmapBridge.toBitmap(enhancedMat)
+                        if (enhancedMat !== warpedMat) {
+                            enhancedMat.release()
+                        }
+                        warpedMat.release()
+                        Triple(corners, docMode, resultBitmap)
+                    } else {
+                        null
+                    }
+                } finally {
+                    srcMat.release()
+                }
+            }
+
+            job.await().fold(
+                onOk = { result ->
+                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
+                        if (result != null) {
+                            page.corners = result.first
+                            page.mode = result.second
+                            page.processedBitmapCache = result.third
+                        } else {
+                            page.corners = null
+                        }
+                        persistSession()
+                        updateUi()
+                    }
+                },
+                onErr = { err ->
+                    android.util.Log.w("VeilFrame.DocScanner", "First pipeline failed for page $pageId: ${err.message}")
+                    if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
+                        updateUi()
+                    }
+                }
+            )
+        }
     }
 
     fun handlePhotosImported(uris: List<Uri>) {
@@ -857,6 +989,8 @@ class DocumentScannerController(
         // A2: governed execution — INTERACTIVE lane + memory admission.
         val estimate = com.veilframe.app.cv.core.CvRuntime.estimateBytes(origBmp.width, origBmp.height, 3)
         scope.launch {
+            val segResult = segmentationService.runSegmentation(origBmp)
+
             val job = com.veilframe.app.cv.core.CvRuntime.engine.submit(
                 name = "doc-auto-crop",
                 priority = com.veilframe.app.cv.core.CvPriority.INTERACTIVE,
@@ -865,15 +999,18 @@ class DocumentScannerController(
             ) { ctx ->
                 com.veilframe.app.cv.core.CvRuntime.requireAvailable()
                 ctx.ensureActive()
+                val corners = if (segResult != null) {
+                    com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                        segmentation = segResult.segmentation,
+                        originalWidth = origBmp.width,
+                        originalHeight = origBmp.height,
+                        isCaptureMode = true
+                    )
+                } else null
+
                 val srcMat = BitmapBridge.toMat(origBmp)
                 try {
-                    val corners = DocumentScanner.findCorners(
-                        source = srcMat,
-                        segmentationService = segmentationService,
-                        isCaptureMode = true,
-                        context = ctx,
-                    )
-                    if (corners.size == 4) {
+                    if (corners != null && corners.size == 4) {
                         val autoColor = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, corners)
                         Pair(corners, autoColor)
                     } else {

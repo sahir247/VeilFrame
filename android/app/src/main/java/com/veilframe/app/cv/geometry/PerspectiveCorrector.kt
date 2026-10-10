@@ -46,6 +46,7 @@ object PerspectiveCorrector {
         interpolation: Int = Imgproc.INTER_LINEAR,
         refineSubPix: Boolean = true,
         autoSkewCorrection: Boolean = true,
+        opticalMeasures: OpticalMeasures? = null,
     ): Mat {
         require(!image.empty()) { "image is empty" }
         val orderedCorners = Geometry.ordered(sourceCorners)
@@ -58,7 +59,8 @@ object PerspectiveCorrector {
             val estimated = PerspectiveMetrology.estimateRealDimensions(
                 corners,
                 image.cols(),
-                image.rows()
+                image.rows(),
+                opticalMeasures = opticalMeasures,
             ).snapToStandardFormat()
             val (wDouble, hDouble) = estimated.toPixelDimensions(corners)
             var w = Math.round(wDouble).toInt()
