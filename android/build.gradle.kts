@@ -5,14 +5,14 @@ buildscript {
     }
     dependencies {
         constraints {
-            classpath("io.netty:netty-codec-http2:4.1.118.Final")
-            classpath("io.netty:netty-codec-http:4.1.118.Final")
-            classpath("io.netty:netty-handler:4.1.118.Final")
-            classpath("io.netty:netty-codec:4.1.118.Final")
-            classpath("io.netty:netty-common:4.1.118.Final")
-            classpath("io.netty:netty-buffer:4.1.118.Final")
-            classpath("io.netty:netty-transport:4.1.118.Final")
-            classpath("io.netty:netty-handler-proxy:4.1.118.Final")
+            classpath("io.netty:netty-codec-http2:4.2.19.Final")
+            classpath("io.netty:netty-codec-http:4.2.19.Final")
+            classpath("io.netty:netty-handler:4.2.19.Final")
+            classpath("io.netty:netty-codec:4.2.19.Final")
+            classpath("io.netty:netty-common:4.2.19.Final")
+            classpath("io.netty:netty-buffer:4.2.19.Final")
+            classpath("io.netty:netty-transport:4.2.19.Final")
+            classpath("io.netty:netty-handler-proxy:4.2.19.Final")
             classpath("org.bouncycastle:bcprov-jdk18on:1.79")
             classpath("org.bouncycastle:bcpkix-jdk18on:1.79")
             classpath("com.google.protobuf:protobuf-java:3.25.5")
