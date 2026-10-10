@@ -149,7 +149,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // Full Mobile FFmpegKit GPL with all audio/video encoders (including libx264 and libx265)
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full-gpl:8.1.7")
@@ -191,7 +191,7 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.json:json:20240303")
     testImplementation("com.microsoft.onnxruntime:onnxruntime:1.27.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
