@@ -274,133 +274,22 @@ object QuadDetector {
     ): List<Point>? {
         if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) return null
 
-        val probMat = segmentation.toProbMat()
-        if (probMat.empty()) return null
+        val mode = if (isCaptureMode) com.veilframe.app.cv.document.Mode.CAPTURE else com.veilframe.app.cv.document.Mode.LIVE_ANALYSIS
+        val originalSize = ImageSize(originalWidth, originalHeight)
+        val quadInMask = com.veilframe.app.cv.document.detectDocumentQuad(segmentation, originalSize, mode) ?: return null
 
-        val probU8 = Mat()
-        probMat.convertTo(probU8, org.opencv.core.CvType.CV_8U, 255.0)
-
-        val probSmooth = Mat()
-        Imgproc.GaussianBlur(probU8, probSmooth, Size(3.0, 3.0), 0.0)
-
-        val thresholds = if (!isCaptureMode) {
-            listOf(0.9)
-        } else {
-            listOf(0.5, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95)
-        }
-
-        var bestQuad: List<Point>? = null
-        var bestScore = 0.0
-        val maskWidth = segmentation.width.toDouble()
-        val maskHeight = segmentation.height.toDouble()
-
-        for (thr in thresholds) {
-            val bin = Mat()
-            Imgproc.threshold(probSmooth, bin, thr * 255.0, 255.0, Imgproc.THRESH_BINARY)
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
-            Imgproc.morphologyEx(bin, bin, Imgproc.MORPH_CLOSE, kernel)
-            kernel.release()
-
-            val contour = findBiggestContour(bin)
-            if (contour != null) {
-                val scaleX = originalWidth.toDouble() / maskWidth
-                val scaleY = originalHeight.toDouble() / maskHeight
-
-                // Scale contour to original aspect ratio for accurate angle calculation
-                val scaledContour = contour.map { Point(it.x * scaleX, it.y * scaleY) }
-                val quadScaled = ContourOrientation.findQuadFromContourOrientation(scaledContour)
-                if (quadScaled != null && quadScaled.size == 4) {
-                    val quadInMask = quadScaled.map { Point(it.x / scaleX, it.y / scaleY) }
-                    val score = scoreQuadAgainstProbmap(quadInMask, probMat, minQuadAreaRatio = 0.02)
-                    if (score > bestScore) {
-                        bestScore = score
-                        bestQuad = quadScaled
-                    }
-                }
-            }
-            bin.release()
-        }
-
-        // Fallback: minAreaRect for capture mode
-        if (bestQuad == null && isCaptureMode) {
-            val bin = Mat()
-            Imgproc.threshold(probSmooth, bin, 0.7 * 255.0, 255.0, Imgproc.THRESH_BINARY)
-            val contour = findBiggestContour(bin)
-            if (contour != null) {
-                val scaleX = originalWidth.toDouble() / maskWidth
-                val scaleY = originalHeight.toDouble() / maskHeight
-                val scaledContour = contour.map { Point(it.x * scaleX, it.y * scaleY) }
-                val minRect = MinAreaRect.minAreaRect(scaledContour, originalWidth, originalHeight)
-                if (minRect != null && minRect.size == 4) {
-                    bestQuad = minRect
-                }
-            }
-            bin.release()
-        }
-
-        probSmooth.release()
-        probU8.release()
-        probMat.release()
-
-        return if (bestQuad != null && bestQuad.size == 4) {
-            val ordered = Geometry.orderCorners(bestQuad)
-            if (Geometry.isValidQuad(ordered)) ordered else null
-        } else {
-            null
-        }
-    }
-
-    private fun findBiggestContour(binMat: Mat): List<Point>? {
-        val contours = mutableListOf<MatOfPoint>()
-        val hierarchy = Mat()
-        Imgproc.findContours(binMat, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_NONE)
-        hierarchy.release()
-
-        var biggest: List<Point>? = null
-        var maxArea = 0.0
-        for (c in contours) {
-            val area = kotlin.math.abs(Imgproc.contourArea(c))
-            if (area > maxArea) {
-                maxArea = area
-                biggest = c.toList()
-            }
-            c.release()
-        }
-        return biggest
-    }
-
-    /**
-     * Compute correspondence score between quad and continuous probability map.
-     */
-    fun scoreQuadAgainstProbmap(
-        quad: List<Point>,
-        probmap: Mat,
-        minQuadAreaRatio: Double = 0.02
-    ): Double {
-        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || probmap.empty() || quad.size != 4) return 0.0
-
-        val mask = Mat.zeros(probmap.size(), org.opencv.core.CvType.CV_8U)
-        val pts = MatOfPoint(*quad.toTypedArray())
-        Imgproc.fillPoly(mask, listOf(pts), org.opencv.core.Scalar(1.0))
-
-        val maskFloat = Mat()
-        mask.convertTo(maskFloat, org.opencv.core.CvType.CV_32F)
-        val masked = Mat()
-        Core.multiply(probmap, maskFloat, masked)
-
-        val sumMaskedScalar = Core.sumElems(masked)
-        val sumMaskScalar = Core.sumElems(maskFloat)
-        val sumMaskedVal: Double = sumMaskedScalar.`val`[0]
-        val sumMaskVal: Double = sumMaskScalar.`val`[0]
-
-        val meanProb: Double = if (sumMaskVal > 0.0) sumMaskedVal / sumMaskVal else 0.0
-        val areaRatio: Double = sumMaskVal / (probmap.rows().toDouble() * probmap.cols().toDouble())
-
-        mask.release()
-        maskFloat.release()
-        masked.release()
-        pts.release()
-
-        return if (areaRatio < minQuadAreaRatio) 0.0 else meanProb * (0.7 + 0.3 * areaRatio)
+        val scaledQuad = quadInMask.scaledTo(
+            fromWidth = segmentation.width,
+            fromHeight = segmentation.height,
+            toWidth = originalWidth,
+            toHeight = originalHeight
+        )
+        val pts = listOf(
+            scaledQuad.topLeft.toCv(),
+            scaledQuad.topRight.toCv(),
+            scaledQuad.bottomRight.toCv(),
+            scaledQuad.bottomLeft.toCv()
+        )
+        return Geometry.orderCorners(pts)
     }
 }

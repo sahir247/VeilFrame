@@ -1,5 +1,6 @@
 package com.veilframe.app.cv.segmentation
 
+import com.veilframe.app.cv.core.CvRuntime
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,11 +22,13 @@ class DocumentSegmentationServiceTest {
         assertEquals(256, seg.height)
         assertEquals(0.85f, seg.get(10, 20), 0.001f)
 
-        val probMat = seg.toProbMat()
-        assertNotNull(probMat)
+        if (CvRuntime.isNativeAvailable) {
+            val probMat = seg.toProbMat()
+            assertNotNull(probMat)
 
-        val binMat = seg.toBinaryMat(0.5f)
-        assertNotNull(binMat)
+            val binMat = seg.toBinaryMat(0.5f)
+            assertNotNull(binMat)
+        }
     }
 
     @Test
@@ -33,9 +36,11 @@ class DocumentSegmentationServiceTest {
         val service = DocumentSegmentationService(context = null)
         assertFalse("Model must be unavailable without context or model file", service.isModelAvailable)
 
-        val dummyMat = Mat()
-        val result = service.runSegmentation(dummyMat)
-        assertNull("Inference must return null when model is unavailable", result)
+        if (CvRuntime.isNativeAvailable) {
+            val dummyMat = Mat()
+            val result = service.runSegmentation(dummyMat)
+            assertNull("Inference must return null when model is unavailable", result)
+        }
 
         assertEquals("fairscan-segmentation-model.tflite", DocumentSegmentationService.MODEL_ASSET_NAME)
         assertEquals(256, DocumentSegmentationService.INPUT_WIDTH)

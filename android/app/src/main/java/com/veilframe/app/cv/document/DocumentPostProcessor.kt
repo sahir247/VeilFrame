@@ -24,6 +24,20 @@ import kotlin.math.sqrt
  * 3. Sauvola local dynamic binarization with flatFill hole protection for crisp Black & White text,
  *    preventing solid black headers/logos from turning white in the center.
  */
+enum class ColorMode {
+    COLOR,
+    GRAYSCALE,
+    BLACK_AND_WHITE,
+}
+
+fun enhanceCapturedImage(img: Mat, colorMode: ColorMode, maxPixels: Long = 0L): Mat {
+    return when (colorMode) {
+        ColorMode.COLOR -> DocumentPostProcessor.multiScaleRetinexOnL(img)
+        ColorMode.GRAYSCALE -> DocumentPostProcessor.enhanceGrayscaleImage(img)
+        ColorMode.BLACK_AND_WHITE -> DocumentPostProcessor.binarizeDocument(img, maxPixels)
+    }
+}
+
 object DocumentPostProcessor {
 
     /**
@@ -183,15 +197,17 @@ object DocumentPostProcessor {
      * Crisp black-and-white binarization using Sauvola dynamic local thresholding
      * with flatFill protection for large ink blocks and hole filling.
      */
-    fun binarizeDocument(img: Mat): Mat {
+    fun binarizeDocument(img: Mat, upscaleTo: Long = 0L): Mat {
         if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable || img.nativeObj == 0L) return img
 
         val flattened = flattenedGrayscale(img)
-        val window = sauvolaWindow(max(flattened.cols(), flattened.rows()))
+        val gray = upscaleToPixels(flattened, upscaleTo)
+        flattened.release()
+        val window = sauvolaWindow(max(gray.cols(), gray.rows()))
 
         val src = Mat()
-        flattened.convertTo(src, CvType.CV_32F)
-        flattened.release()
+        gray.convertTo(src, CvType.CV_32F)
+        gray.release()
 
         val binary = sauvolaThreshold(src, window)
         val fill = flatFill(src, window)
@@ -520,6 +536,16 @@ object DocumentPostProcessor {
         val scale = sqrt(maxPixels / pixels)
         val out = Mat()
         Imgproc.resize(img, out, Size(img.cols() * scale, img.rows() * scale), 0.0, 0.0, Imgproc.INTER_NEAREST)
+        return out
+    }
+
+    private fun upscaleToPixels(img: Mat, targetPixels: Long): Mat {
+        if (targetPixels <= 0L) return img.clone()
+        val pixels = img.cols().toLong() * img.rows().toLong()
+        if (targetPixels <= pixels) return img.clone()
+        val scale = sqrt(targetPixels.toDouble() / pixels)
+        val out = Mat()
+        Imgproc.resize(img, out, Size(img.cols() * scale, img.rows() * scale), 0.0, 0.0, Imgproc.INTER_CUBIC)
         return out
     }
 }

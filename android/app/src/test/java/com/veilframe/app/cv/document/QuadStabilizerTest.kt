@@ -1,5 +1,6 @@
 package com.veilframe.app.cv.document
 
+import com.veilframe.app.cv.geometry.createQuad
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -104,5 +105,36 @@ class QuadStabilizerTest {
         val res = stabilizer.update(null)
         assertNull("Stale quad older than maxAgeMs must expire immediately", res)
         assertEquals(QuadStabilizer.State.SEARCHING, stabilizer.state)
+    }
+
+    @Test
+    fun testUpdateQuadAndLerpHelpers() {
+        val p1 = com.veilframe.app.cv.geometry.Point(0.0, 0.0)
+        val p2 = com.veilframe.app.cv.geometry.Point(10.0, 20.0)
+        val mid = lerp(p1, p2, 0.5f)
+        assertEquals(5.0, mid.x, 0.001)
+        assertEquals(10.0, mid.y, 0.001)
+
+        val quad1 = createQuad(listOf(
+            com.veilframe.app.cv.geometry.Point(0.0, 0.0),
+            com.veilframe.app.cv.geometry.Point(100.0, 0.0),
+            com.veilframe.app.cv.geometry.Point(100.0, 100.0),
+            com.veilframe.app.cv.geometry.Point(0.0, 100.0)
+        ))
+        val quad2 = createQuad(listOf(
+            com.veilframe.app.cv.geometry.Point(10.0, 10.0),
+            com.veilframe.app.cv.geometry.Point(110.0, 10.0),
+            com.veilframe.app.cv.geometry.Point(110.0, 110.0),
+            com.veilframe.app.cv.geometry.Point(10.0, 110.0)
+        ))
+        val lerped = lerpQuad(quad1, quad2, 0.5f)
+        assertEquals(5.0, lerped.topLeft.x, 0.001)
+        assertEquals(5.0, lerped.topLeft.y, 0.001)
+
+        val stabilizer = QuadStabilizer()
+        val quadRes = stabilizer.updateQuad(quad1)
+        assertNotNull(quadRes)
+        val nullRes = stabilizer.updateQuad(null)
+        assertNotNull(nullRes)
     }
 }

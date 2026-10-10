@@ -1,6 +1,13 @@
 package com.veilframe.app.cv.geometry
 
+import com.veilframe.app.cv.document.ColorMode
+import com.veilframe.app.cv.document.enhanceCapturedImage
+import org.opencv.core.Core
+import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
 import kotlin.math.absoluteValue
 import kotlin.math.hypot
@@ -184,4 +191,98 @@ object PerspectiveMetrology {
             EstimatedDimensions.Ratio(realW, realH)
         }
     }
+
+    fun estimateRealDimensions(
+        quad: Quad,
+        imageWidth: Int,
+        imageHeight: Int,
+        opticalMeasures: OpticalMeasures? = null,
+    ): EstimatedDimensions = estimateRealDimensions(
+        listOf(quad.topLeft.toCv(), quad.topRight.toCv(), quad.bottomRight.toCv(), quad.bottomLeft.toCv()),
+        imageWidth,
+        imageHeight,
+        opticalMeasures
+    )
+}
+
+fun EstimatedDimensions.toPixelDimensions(quad: Quad): Pair<Double, Double> {
+    val w = (norm(quad.topLeft, quad.topRight) + norm(quad.bottomLeft, quad.bottomRight)) / 2
+    val h = (norm(quad.topLeft, quad.bottomLeft) + norm(quad.topRight, quad.bottomRight)) / 2
+    val projectedArea = w * h
+
+    val ratio = aspectRatio
+    val targetWidth = sqrt(projectedArea / ratio)
+    val targetHeight = targetWidth * ratio
+    return Pair(targetWidth, targetHeight)
+}
+
+fun extractDocument(
+    inputMat: Mat,
+    quad: Quad,
+    rotationDegrees: Int,
+    colorMode: com.veilframe.app.cv.document.ColorMode,
+    maxPixels: Long,
+    opticalMeasures: OpticalMeasures? = null,
+): Mat {
+    val estimatedDimensions = PerspectiveMetrology.estimateRealDimensions(
+        quad,
+        inputMat.cols(),
+        inputMat.rows(),
+        opticalMeasures,
+    ).snapToStandardFormat()
+    val (targetWidth, targetHeight) = estimatedDimensions.toPixelDimensions(quad)
+    val srcPoints = MatOfPoint2f(
+        quad.topLeft.toCv(),
+        quad.topRight.toCv(),
+        quad.bottomRight.toCv(),
+        quad.bottomLeft.toCv(),
+    )
+    val dstPoints = MatOfPoint2f(
+        org.opencv.core.Point(0.0, 0.0),
+        org.opencv.core.Point(targetWidth, 0.0),
+        org.opencv.core.Point(targetWidth, targetHeight),
+        org.opencv.core.Point(0.0, targetHeight)
+    )
+    val transform = Imgproc.getPerspectiveTransform(srcPoints, dstPoints)
+
+    val warped = Mat()
+    val outputSize = Size(targetWidth, targetHeight)
+    Imgproc.warpPerspective(inputMat, warped, transform, outputSize)
+
+    val resized = resizeForMaxPixels(warped, maxPixels.toDouble())
+    val enhanced = com.veilframe.app.cv.document.enhanceCapturedImage(resized, colorMode, maxPixels)
+    val rotated = rotate(enhanced, rotationDegrees)
+
+    warped.release()
+    resized.release()
+    enhanced.release()
+    srcPoints.release()
+    dstPoints.release()
+    transform.release()
+
+    return rotated
+}
+
+fun rotate(input: Mat, degrees: Int): Mat {
+    val output = Mat()
+    when ((degrees % 360 + 360) % 360) {
+        0 -> input.copyTo(output)
+        90 -> Core.rotate(input, output, Core.ROTATE_90_CLOCKWISE)
+        180 -> Core.rotate(input, output, Core.ROTATE_180)
+        270 -> Core.rotate(input, output, Core.ROTATE_90_COUNTERCLOCKWISE)
+        else -> throw IllegalArgumentException("Only 0, 90, 180, 270 degrees are supported")
+    }
+    return output
+}
+
+fun resizeForMaxPixels(img: Mat, maxPixels: Double, interpolation: Int = Imgproc.INTER_AREA): Mat {
+    val origPixels = img.width() * img.height()
+    if (origPixels <= maxPixels) {
+        return img.clone()
+    }
+    val scale = sqrt(maxPixels / origPixels)
+    val size = Size(img.width() * scale, img.height() * scale)
+    val resizedImg = Mat()
+    Imgproc.resize(img, resizedImg, size, 0.0, 0.0, interpolation)
+    return resizedImg
 }

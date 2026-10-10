@@ -54,9 +54,6 @@ import com.veilframe.app.databinding.LayoutDocumentScannerBinding
 import com.veilframe.app.databinding.SheetDocumentExportBinding
 import com.veilframe.app.storage.SafStorageManager
 import com.veilframe.app.ui.motion.VeilFrameInteraction
-import com.veilframe.app.cv.document.FrameBufferPool
-import com.veilframe.app.cv.document.QualityAnalyzer
-import com.veilframe.app.cv.document.QualityMetrics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,7 +77,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 data class ScanResult(
     val corners: List<Point>?,
-    val quality: QualityMetrics = QualityMetrics.DEFAULT,
     val frameId: Long = 0L,
     val frameWidth: Int = 0,
     val frameHeight: Int = 0,
@@ -118,7 +114,6 @@ class DocumentScannerController(
     private val isProcessing = AtomicBoolean(false)
     private val viewfinderSessionId = java.util.concurrent.atomic.AtomicLong(0L)
     private var activeAnalysisJob: Job? = null
-    private var bufferPool: FrameBufferPool? = null
     private var frameIdCounter = 0L
     private var scannerJob: Job? = null
     private val segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService by lazy {
@@ -334,9 +329,6 @@ class DocumentScannerController(
         lastStabState = QuadStabilizer.State.SEARCHING
         isCapturing = false
         isProcessing.set(false)
-        val oldPool = bufferPool
-        bufferPool = null
-        oldPool?.release()
         try {
             cameraProvider?.unbindAll()
         } catch (_: Exception) {}
@@ -520,56 +512,22 @@ class DocumentScannerController(
                     sourceHeight = result.frameHeight,
                     frameId = result.frameId,
                 )
-                val (iconRes, iconTintRes, statusText) = when {
-                    !result.quality.isAvailable -> {
-                        when (result.stabilizerState) {
-                            QuadStabilizer.State.TRACKING,
-                            QuadStabilizer.State.STABLE -> Triple(
-                                R.drawable.ic_search,
-                                R.color.vf_accent_blue,
-                                "Document detected — hold still"
-                            )
-                            QuadStabilizer.State.SEARCHING -> Triple(
-                                R.drawable.ic_crop,
-                                R.color.vf_text_secondary,
-                                "Align document inside frame"
-                            )
-                        }
-                    }
-                    result.quality.hasGlare -> Triple(
-                        R.drawable.ic_warning,
-                        R.color.vf_accent_amber,
-                        "Glare detected — adjust angle"
+                val (iconRes, iconTintRes, statusText) = when (result.stabilizerState) {
+                    QuadStabilizer.State.STABLE -> Triple(
+                        R.drawable.ic_check_circle,
+                        R.color.vf_accent_green,
+                        "Ready — tap shutter"
                     )
-                    result.quality.isTooDark -> Triple(
-                        R.drawable.ic_warning,
-                        R.color.vf_accent_amber,
-                        "Too dark — add light"
+                    QuadStabilizer.State.TRACKING -> Triple(
+                        R.drawable.ic_search,
+                        R.color.vf_accent_blue,
+                        "Document detected — hold still"
                     )
-                    !result.quality.isSharp -> Triple(
-                        R.drawable.ic_warning,
-                        R.color.vf_accent_amber,
-                        "Hold steady — blurry"
+                    QuadStabilizer.State.SEARCHING -> Triple(
+                        R.drawable.ic_crop,
+                        R.color.vf_text_secondary,
+                        "Align document inside frame"
                     )
-                    else -> {
-                        when (result.stabilizerState) {
-                            QuadStabilizer.State.STABLE -> Triple(
-                                R.drawable.ic_check_circle,
-                                R.color.vf_accent_green,
-                                "Ready — tap shutter"
-                            )
-                            QuadStabilizer.State.TRACKING -> Triple(
-                                R.drawable.ic_search,
-                                R.color.vf_accent_blue,
-                                "Document detected — hold still"
-                            )
-                            QuadStabilizer.State.SEARCHING -> Triple(
-                                R.drawable.ic_crop,
-                                R.color.vf_text_secondary,
-                                "Align document inside frame"
-                            )
-                        }
-                    }
                 }
                 binding.ivDocCamStatusIcon.setImageResource(iconRes)
                 binding.ivDocCamStatusIcon.imageTintList = ColorStateList.valueOf(
@@ -583,17 +541,6 @@ class DocumentScannerController(
     private fun stopScannerStateCollection() {
         scannerJob?.cancel()
         scannerJob = null
-    }
-
-    private fun obtainBufferPool(width: Int, height: Int, rotation: Int): FrameBufferPool {
-        val current = bufferPool
-        if (current != null && current.matches(width, height, rotation)) {
-            return current
-        }
-        current?.release()
-        val newPool = FrameBufferPool(width, height, rotation)
-        bufferPool = newPool
-        return newPool
     }
 
     private fun processFrameAsync(imageProxy: ImageProxy) {
@@ -687,7 +634,6 @@ class DocumentScannerController(
                 _scannerState.emit(
                     ScanResult(
                         corners = stable,
-                        quality = QualityMetrics.DEFAULT,
                         frameId = currentFrameId,
                         frameWidth = width,
                         frameHeight = height,

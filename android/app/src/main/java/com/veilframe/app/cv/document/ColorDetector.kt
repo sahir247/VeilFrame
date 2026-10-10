@@ -2,6 +2,7 @@ package com.veilframe.app.cv.document
 
 import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.geometry.Geometry
+import com.veilframe.app.cv.geometry.toCv
 import com.veilframe.app.cv.segmentation.DocumentSegmentation
 import org.opencv.core.Core
 import org.opencv.core.CvType
@@ -129,6 +130,30 @@ object ColorDetector {
         } else {
             DocumentColorMode.GRAYSCALE
         }
+    }
+
+    /**
+     * FairScan 1:1 autoColorMode overload accepting Mask and Quad, returning ColorMode.
+     */
+    fun autoColorMode(
+        img: Mat,
+        mask: Mask,
+        quad: com.veilframe.app.cv.geometry.Quad,
+        chromaThreshold: Double = 17.5,
+        proportionThreshold: Double = 0.0003,
+        luminanceMin: Double = 40.0,
+        luminanceMax: Double = 180.0
+    ): ColorMode {
+        val docMode = autoColorMode(
+            img = img,
+            quad = listOf(quad.topLeft.toCv(), quad.topRight.toCv(), quad.bottomRight.toCv(), quad.bottomLeft.toCv()),
+            segmentation = null,
+            chromaThreshold = chromaThreshold,
+            proportionThreshold = proportionThreshold,
+            luminanceMin = luminanceMin,
+            luminanceMax = luminanceMax
+        )
+        return if (docMode == DocumentColorMode.COLOR) ColorMode.COLOR else ColorMode.GRAYSCALE
     }
 
     private fun computeChroma(a: Mat, b: Mat): Mat {

@@ -24,10 +24,12 @@ import java.nio.channels.FileChannel
  */
 data class DocumentSegmentation(
     val probmap: FloatArray,
-    val width: Int = 256,
-    val height: Int = 256
-) {
+    override val width: Int = 256,
+    override val height: Int = 256
+) : com.veilframe.app.cv.document.Mask {
     fun get(x: Int, y: Int): Float = probmap[y * width + x]
+
+    override fun toMat(): Mat = toProbMat()
 
     /**
      * Converts the continuous probability buffer to an OpenCV CV_32FC1 Mat.

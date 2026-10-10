@@ -120,6 +120,37 @@ class QuadStabilizer(
         return (total / 4.0) <= matchTolerancePx
     }
 
+    fun updateQuad(rawQuad: com.veilframe.app.cv.geometry.Quad?): com.veilframe.app.cv.geometry.Quad? {
+        val cvPts: List<org.opencv.core.Point>? = if (rawQuad != null) {
+            listOf(
+                org.opencv.core.Point(rawQuad.topLeft.x, rawQuad.topLeft.y),
+                org.opencv.core.Point(rawQuad.topRight.x, rawQuad.topRight.y),
+                org.opencv.core.Point(rawQuad.bottomRight.x, rawQuad.bottomRight.y),
+                org.opencv.core.Point(rawQuad.bottomLeft.x, rawQuad.bottomLeft.y)
+            )
+        } else null
+        val res = update(cvPts)
+        return if (res != null && res.size == 4) {
+            com.veilframe.app.cv.geometry.createQuad(res.map { com.veilframe.app.cv.geometry.Point(it.x, it.y) })
+        } else null
+    }
+
     private fun toPoints(pts: Array<DoubleArray>): List<org.opencv.core.Point> =
         pts.map { org.opencv.core.Point(it[0], it[1]) }
+}
+
+fun lerp(a: com.veilframe.app.cv.geometry.Point, b: com.veilframe.app.cv.geometry.Point, alpha: Float): com.veilframe.app.cv.geometry.Point {
+    return com.veilframe.app.cv.geometry.Point(
+        x = a.x + alpha * (b.x - a.x),
+        y = a.y + alpha * (b.y - a.y)
+    )
+}
+
+fun lerpQuad(a: com.veilframe.app.cv.geometry.Quad, b: com.veilframe.app.cv.geometry.Quad, alpha: Float): com.veilframe.app.cv.geometry.Quad {
+    return com.veilframe.app.cv.geometry.Quad(
+        topLeft = lerp(a.topLeft, b.topLeft, alpha),
+        topRight = lerp(a.topRight, b.topRight, alpha),
+        bottomRight = lerp(a.bottomRight, b.bottomRight, alpha),
+        bottomLeft = lerp(a.bottomLeft, b.bottomLeft, alpha),
+    )
 }
