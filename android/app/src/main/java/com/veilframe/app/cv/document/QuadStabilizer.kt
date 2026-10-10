@@ -33,6 +33,11 @@ class QuadStabilizer(
     private val matchTolerancePx: Double = 48.0,
     /** Consecutive matched frames before STABLE. */
     private val stableHits: Int = 4,
+    /** Maximum consecutive frames without detection before resetting track. */
+    private val maxConsecutiveMisses: Int = 2,
+    /** Maximum duration in ms a stale track can be held before expiring. */
+    private val maxAgeMs: Long = 400L,
+    private val timeProvider: () -> Long = { System.currentTimeMillis() },
 ) {
 
     enum class State { SEARCHING, TRACKING, STABLE }
@@ -40,8 +45,14 @@ class QuadStabilizer(
     var state: State = State.SEARCHING
         private set
 
+    /** True if the returned quad was carried over from a previous frame rather than observed freshly. */
+    var isPredicted: Boolean = false
+        private set
+
     private var smoothed: Array<DoubleArray>? = null
     private var hits = 0
+    private var consecutiveMisses = 0
+    private var lastDetectionTimestampMs = 0L
 
     /**
      * Feeds one frame's detection result.
@@ -49,18 +60,25 @@ class QuadStabilizer(
      * @return the smoothed quad (4 points) while tracking/stable, else null.
      */
     fun update(raw: List<org.opencv.core.Point>?): List<org.opencv.core.Point>? {
+        val now = timeProvider()
         if (raw == null || raw.size != 4) {
-            // One missed frame shouldn't destroy a track (camera hiccups are
-            // normal); two consecutive misses restart.
-            if (smoothed != null && hits > 0) {
+            consecutiveMisses++
+            val ageMs = if (lastDetectionTimestampMs > 0L) now - lastDetectionTimestampMs else Long.MAX_VALUE
+            // One or two missed frames can be held to prevent overlay flicker;
+            // consecutive misses > maxConsecutiveMisses or elapsed time > maxAgeMs immediately reset.
+            if (smoothed != null && hits > 0 && consecutiveMisses <= maxConsecutiveMisses && ageMs <= maxAgeMs) {
                 hits--
-                if (hits <= 0) reset()
-                state = if (smoothed == null) State.SEARCHING else State.TRACKING
+                state = State.TRACKING
+                isPredicted = true
                 return smoothed?.let { toPoints(it) }
             }
             reset()
             return null
         }
+
+        consecutiveMisses = 0
+        lastDetectionTimestampMs = now
+        isPredicted = false
 
         val prev = smoothed
         if (prev == null || !matches(prev, raw)) {
@@ -86,6 +104,9 @@ class QuadStabilizer(
     fun reset() {
         smoothed = null
         hits = 0
+        consecutiveMisses = 0
+        lastDetectionTimestampMs = 0L
+        isPredicted = false
         state = State.SEARCHING
     }
 

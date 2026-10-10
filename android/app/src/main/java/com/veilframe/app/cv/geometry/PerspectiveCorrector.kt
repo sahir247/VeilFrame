@@ -54,7 +54,24 @@ object PerspectiveCorrector {
         } else {
             orderedCorners
         }
-        val (width, height) = outputSize ?: Geometry.outputSizeFor(corners)
+        val (width, height) = outputSize ?: run {
+            val estimated = PerspectiveMetrology.estimateRealDimensions(
+                corners,
+                image.cols(),
+                image.rows()
+            ).snapToStandardFormat()
+            val (wDouble, hDouble) = estimated.toPixelDimensions(corners)
+            var w = Math.round(wDouble).toInt()
+            var h = Math.round(hDouble).toInt()
+            val maxCap = 4096
+            val maxEdge = maxOf(w, h)
+            if (maxEdge > maxCap) {
+                val scale = maxCap.toDouble() / maxEdge
+                w = Math.round(w * scale).toInt()
+                h = Math.round(h * scale).toInt()
+            }
+            w.coerceIn(100, maxCap) to h.coerceIn(100, maxCap)
+        }
         require(width > 0 && height > 0) { "invalid output size ${width}x$height" }
 
         val dstCorners = listOf(
@@ -72,7 +89,8 @@ object PerspectiveCorrector {
                 transform,
                 Size(width.toDouble(), height.toDouble()),
                 interpolation,
-                Core.BORDER_REPLICATE,
+                Core.BORDER_CONSTANT,
+                org.opencv.core.Scalar(255.0, 255.0, 255.0)
             )
             if (autoSkewCorrection) {
                 val leveled = correctSkew(out)

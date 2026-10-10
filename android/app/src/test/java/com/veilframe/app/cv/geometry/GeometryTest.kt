@@ -139,4 +139,41 @@ class GeometryTest {
         val angle = Geometry.detectSkewAngle(dummy)
         assertEquals(0.0, angle, 0.001)
     }
+
+    @Test
+    fun `test orderCorners correctly orders steep perspective trapezoid`() {
+        // Document viewed from below at steep angle (narrow top, wide bottom)
+        val expectedTL = Point(150.0, 50.0)
+        val expectedTR = Point(450.0, 50.0)
+        val expectedBR = Point(580.0, 700.0)
+        val expectedBL = Point(20.0, 700.0)
+
+        // Scramble in reverse order
+        val scrambled = listOf(expectedBR, expectedTR, expectedTL, expectedBL)
+        val ordered = Geometry.orderCorners(scrambled)
+
+        assertEquals("TL must be top-left", expectedTL.x, ordered[0].x, 0.001)
+        assertEquals("TL must be top-left", expectedTL.y, ordered[0].y, 0.001)
+
+        assertEquals("TR must be top-right", expectedTR.x, ordered[1].x, 0.001)
+        assertEquals("TR must be top-right", expectedTR.y, ordered[1].y, 0.001)
+
+        assertEquals("BR must be bottom-right", expectedBR.x, ordered[2].x, 0.001)
+        assertEquals("BR must be bottom-right", expectedBR.y, ordered[2].y, 0.001)
+
+        assertEquals("BL must be bottom-left", expectedBL.x, ordered[3].x, 0.001)
+        assertEquals("BL must be bottom-left", expectedBL.y, ordered[3].y, 0.001)
+    }
+
+    @Test
+    fun `test isValidQuad accepts steep perspective receipt with sharp internal angles`() {
+        // Narrow long receipt under perspective
+        val receiptQuad = listOf(
+            Point(80.0, 20.0),
+            Point(200.0, 25.0),
+            Point(240.0, 750.0),
+            Point(40.0, 740.0)
+        )
+        assertTrue("Steep receipt quad accepted", Geometry.isValidQuad(receiptQuad))
+    }
 }

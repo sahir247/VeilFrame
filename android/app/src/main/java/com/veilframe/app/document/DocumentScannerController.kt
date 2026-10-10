@@ -101,6 +101,8 @@ class DocumentScannerController(
     val scannerState: SharedFlow<ScanResult> = _scannerState.asSharedFlow()
 
     private val isProcessing = AtomicBoolean(false)
+    private val viewfinderSessionId = java.util.concurrent.atomic.AtomicLong(0L)
+    private var activeAnalysisJob: Job? = null
     private var bufferPool: FrameBufferPool? = null
     private var frameIdCounter = 0L
     private var scannerJob: Job? = null
@@ -285,6 +287,7 @@ class DocumentScannerController(
     // =========================================================================
 
     fun openCameraViewfinder() {
+        viewfinderSessionId.incrementAndGet()
         binding.containerDocMainFlow.visibility = View.GONE
         binding.containerDocCamera.visibility = View.VISIBLE
         updateCameraDoneBadge()
@@ -299,13 +302,17 @@ class DocumentScannerController(
     }
 
     fun closeCameraViewfinder() {
+        viewfinderSessionId.incrementAndGet()
+        activeAnalysisJob?.cancel()
+        activeAnalysisJob = null
         stopScannerStateCollection()
         quadStabilizer.reset()
         lastStabState = QuadStabilizer.State.SEARCHING
         isCapturing = false
         isProcessing.set(false)
-        bufferPool?.release()
+        val oldPool = bufferPool
         bufferPool = null
+        oldPool?.release()
         try {
             cameraProvider?.unbindAll()
         } catch (_: Exception) {}
@@ -428,6 +435,21 @@ class DocumentScannerController(
                     frameId = result.frameId,
                 )
                 val (iconRes, iconTintRes, statusText) = when {
+                    !result.quality.isAvailable -> {
+                        when (result.stabilizerState) {
+                            QuadStabilizer.State.TRACKING,
+                            QuadStabilizer.State.STABLE -> Triple(
+                                R.drawable.ic_search,
+                                R.color.vf_accent_blue,
+                                "Document detected — hold still"
+                            )
+                            QuadStabilizer.State.SEARCHING -> Triple(
+                                R.drawable.ic_crop,
+                                R.color.vf_text_secondary,
+                                "Align document inside frame"
+                            )
+                        }
+                    }
                     result.quality.hasGlare -> Triple(
                         R.drawable.ic_warning,
                         R.color.vf_accent_amber,
@@ -569,17 +591,26 @@ class DocumentScannerController(
             return
         }
 
+        val currentSession = viewfinderSessionId.get()
+
         // --- PHASE B: PROCESSING (Heavy, on Background Thread) ---
-        scope.launch(Dispatchers.Default) {
+        val job = scope.launch(Dispatchers.Default) {
             try {
                 ensureActive()
+                if (viewfinderSessionId.get() != currentSession || pool.isReleased) {
+                    return@launch
+                }
 
-                // Run heavy OpenCV pipeline using safe snapshot and pooled scratch Mats
+                // Run OpenCV pipeline using safe snapshot and pooled scratch Mats
                 val corners = DocumentScanner.findCorners(
                     source = safeAnalysisMat,
-                    blurredMat = pool.blurredMat,
-                    edgesMat = pool.edgesMat,
+                    blurredMat = if (!pool.isReleased) pool.blurredMat else null,
+                    edgesMat = if (!pool.isReleased) pool.edgesMat else null,
                 )
+
+                if (viewfinderSessionId.get() != currentSession || pool.isReleased) {
+                    return@launch
+                }
 
                 val frameW = safeAnalysisMat.cols()
                 val frameH = safeAnalysisMat.rows()
@@ -599,7 +630,7 @@ class DocumentScannerController(
                 }
 
                 // --- Run Zero-Allocation Quality Analysis ---
-                val quality = if (pool.laplacianMat != null &&
+                val quality = if (!pool.isReleased && pool.laplacianMat != null &&
                     pool.glareMaskMat != null && pool.meanMat != null && pool.stddevMat != null
                 ) {
                     QualityAnalyzer.analyze(
@@ -611,6 +642,10 @@ class DocumentScannerController(
                     )
                 } else {
                     QualityMetrics.DEFAULT
+                }
+
+                if (viewfinderSessionId.get() != currentSession) {
+                    return@launch
                 }
 
                 _scannerState.emit(
@@ -636,6 +671,7 @@ class DocumentScannerController(
                 isProcessing.set(false)
             }
         }
+        activeAnalysisJob = job
     }
 
     @Volatile

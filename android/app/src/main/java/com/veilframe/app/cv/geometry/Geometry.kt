@@ -15,45 +15,64 @@ object Geometry {
 
     /**
      * Orders 4 arbitrary points into canonical TL, TR, BR, BL order.
-     * Uses relative-angle clockwise sorting around polygon centroid to guarantee
-     * continuous non-inverting boundary traversal without branch-cut risks.
+     * Guaranteed convention:
+     * 1. Sorts corners in clockwise traversal order around the centroid.
+     * 2. Evaluates all 4 cyclic shifts to pick the permutation that maximizes alignment
+     *    with image axes (top edge pointing right, bottom edge pointing right,
+     *    left edge pointing down, right edge pointing down), using minimum (x + y) as tie-breaker.
+     * This guarantees consistent, unrotated, untwisted homography under any perspective distortion.
      */
     fun orderCorners(points: List<Point>): List<Point> {
         require(points.size == 4) { "expected 4 corners, got ${points.size}" }
         val cx = points.sumOf { it.x } / 4.0
         val cy = points.sumOf { it.y } / 4.0
 
-        // Reference vector from centroid to points[0]
-        val p0 = points[0]
-        val uX = p0.x - cx
-        val uY = p0.y - cy
-
-        // Sort all 4 points in strict clockwise order relative to p0
-        // In screen coordinates (+x right, +y down): cross product > 0 is clockwise
-        val clockwise = points.sortedBy { pt ->
-            val vX = pt.x - cx
-            val vY = pt.y - cy
-            val cross = uX * vY - uY * vX
-            val dot = uX * vX + uY * vY
-            var angle = kotlin.math.atan2(cross, dot)
-            if (angle < 0.0) angle += 2.0 * Math.PI
-            angle
+        // Sort by angle around centroid
+        var clockwise = points.sortedBy { pt ->
+            kotlin.math.atan2(pt.y - cy, pt.x - cx)
         }
 
-        // Top-left is the point minimizing distance to bounding box top-left (minX, minY)
-        val minX = points.minOf { it.x }
-        val minY = points.minOf { it.y }
-        val tlIndex = clockwise.indices.minByOrNull { i ->
-            val pt = clockwise[i]
-            val dx = pt.x - minX
-            val dy = pt.y - minY
-            dx * dx + dy * dy
-        } ?: 0
+        // Verify winding order in screen coordinates (+x right, +y down).
+        // For clockwise winding, cross product (b - a) x (c - b) > 0.
+        val a = clockwise[0]
+        val b = clockwise[1]
+        val c = clockwise[2]
+        val cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+        if (cross < 0.0) {
+            clockwise = clockwise.reversed()
+        }
 
-        val tl = clockwise[tlIndex]
-        val tr = clockwise[(tlIndex + 1) % 4]
-        val br = clockwise[(tlIndex + 2) % 4]
-        val bl = clockwise[(tlIndex + 3) % 4]
+        // Evaluate all 4 cyclic shifts:
+        // k defines: TL = c[k], TR = c[(k+1)%4], BR = c[(k+2)%4], BL = c[(k+3)%4].
+        var bestShift = 0
+        var bestScore = Double.NEGATIVE_INFINITY
+        for (k in 0 until 4) {
+            val candTL = clockwise[k]
+            val candTR = clockwise[(k + 1) % 4]
+            val candBR = clockwise[(k + 2) % 4]
+            val candBL = clockwise[(k + 3) % 4]
+
+            val dxTop = candTR.x - candTL.x
+            val dxBottom = candBR.x - candBL.x
+            val dyLeft = candBL.y - candTL.y
+            val dyRight = candBR.y - candTR.y
+
+            // Primary directional score: positive when edges follow image coordinate axes
+            val directionalScore = dxTop + dxBottom + dyLeft + dyRight
+
+            // Tie-breaking preference for top-left position (smaller x + y)
+            val score = directionalScore * 1000.0 - (candTL.x + candTL.y)
+
+            if (score > bestScore) {
+                bestScore = score
+                bestShift = k
+            }
+        }
+
+        val tl = clockwise[bestShift]
+        val tr = clockwise[(bestShift + 1) % 4]
+        val br = clockwise[(bestShift + 2) % 4]
+        val bl = clockwise[(bestShift + 3) % 4]
         return listOf(tl, tr, br, bl)
     }
 
@@ -98,13 +117,18 @@ object Geometry {
         if (corners.size != 4) return false
         val pts = ordered(corners)
         val area = quadArea(pts)
-        if (area <= 100.0) return false
+        if (area <= 50.0) return false
 
-        // Check that all 4 internal angles are reasonable for a document (between 35° and 145°)
+        // Check strict convexity and verify internal angles
         for (i in 0 until 4) {
             val prev = pts[(i + 3) % 4]
             val curr = pts[i]
             val next = pts[(i + 1) % 4]
+
+            // Convexity check: cross product must be strictly positive in clockwise screen coordinates
+            val cp = (curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x)
+            if (cp <= 0.0) return false
+
             val v1x = prev.x - curr.x
             val v1y = prev.y - curr.y
             val v2x = next.x - curr.x
@@ -113,7 +137,8 @@ object Geometry {
             val len2 = kotlin.math.sqrt(v2x * v2x + v2y * v2y)
             if (len1 < 5.0 || len2 < 5.0) return false
             val dot = (v1x * v2x + v1y * v2y) / (len1 * len2)
-            if (kotlin.math.abs(dot) > 0.88) return false
+            // Allow internal angles between ~20° and ~160° (cos <= 0.94) for steep perspective and receipts
+            if (kotlin.math.abs(dot) > 0.94) return false
         }
         return true
     }

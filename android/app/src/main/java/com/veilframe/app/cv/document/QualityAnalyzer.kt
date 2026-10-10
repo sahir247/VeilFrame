@@ -12,6 +12,7 @@ import org.opencv.imgproc.Imgproc
  * Image quality metrics for live document capture gating.
  */
 data class QualityMetrics(
+    val isAvailable: Boolean = true,
     val isSharp: Boolean,
     val sharpnessVariance: Double,
     val isTooDark: Boolean,
@@ -20,11 +21,17 @@ data class QualityMetrics(
     val glarePercentage: Double
 ) {
     companion object {
+        /**
+         * Returned when CV runtime is unavailable or input Mats are empty.
+         * Explicitly flagged as [isAvailable] = false so the UI never misinterprets
+         * a skipped measurement as a passing/ready quality gate.
+         */
         val DEFAULT = QualityMetrics(
-            isSharp = true,
-            sharpnessVariance = 100.0,
+            isAvailable = false,
+            isSharp = false,
+            sharpnessVariance = 0.0,
             isTooDark = false,
-            meanLuma = 128.0,
+            meanLuma = 0.0,
             hasGlare = false,
             glarePercentage = 0.0
         )

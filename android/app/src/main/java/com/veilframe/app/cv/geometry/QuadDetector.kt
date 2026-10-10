@@ -105,36 +105,62 @@ object QuadDetector {
 
             val workingArea = working.rows().toDouble() * working.cols()
             var best: Detection? = null
-            for (contour in contours) {
+
+            // Sort contours descending by area to check the most prominent document candidates first
+            val sortedContours = contours.sortedByDescending { Imgproc.contourArea(it) }
+
+            for (contour in sortedContours) {
                 // B6: noisy frames yield thousands of contours; stay cancellable.
                 context?.ensureActive()
-                if (Imgproc.contourArea(contour) < workingArea * minCoverage) continue
-                val approx = MatOfPoint2f()
-                val contour2f = MatOfPoint2f(*contour.toArray())
-                Imgproc.approxPolyDP(contour2f, approx, 0.02 * Imgproc.arcLength(contour2f, true), true)
-                val points = approx.toList()
-                if (points.size != 4) {
-                    approx.release()
-                    contour2f.release()
-                    continue
+                val contourArea = Imgproc.contourArea(contour)
+                if (contourArea < workingArea * minCoverage) continue
+
+                val contourPts = contour.toList()
+
+                // Cascade 1: FairScan ContourOrientation (dominant side orientation fitting & line intersection)
+                var candidatePoints: List<Point>? = ContourOrientation.findQuadFromContourOrientation(contourPts)
+                if (candidatePoints != null && (!Geometry.isValidQuad(candidatePoints) || !isInsideWorking(candidatePoints, working.cols(), working.rows()))) {
+                    candidatePoints = null
                 }
-                val approxMat = MatOfPoint(*points.toTypedArray())
-                val isConvex = Imgproc.isContourConvex(approxMat)
-                approxMat.release()
-                if (!isConvex || !Geometry.isValidQuad(points)) {
-                    approx.release()
+
+                // Cascade 2: Multi-epsilon approxPolyDP
+                if (candidatePoints == null) {
+                    val contour2f = MatOfPoint2f(*contourPts.toTypedArray())
+                    val arcLen = Imgproc.arcLength(contour2f, true)
+                    for (epsRatio in doubleArrayOf(0.02, 0.015, 0.03, 0.04)) {
+                        val approx = MatOfPoint2f()
+                        Imgproc.approxPolyDP(contour2f, approx, epsRatio * arcLen, true)
+                        val pts = approx.toList()
+                        approx.release()
+                        if (pts.size == 4) {
+                            val approxMat = MatOfPoint(*pts.toTypedArray())
+                            val isConvex = Imgproc.isContourConvex(approxMat)
+                            approxMat.release()
+                            if (isConvex && Geometry.isValidQuad(pts) && isInsideWorking(pts, working.cols(), working.rows())) {
+                                candidatePoints = pts
+                                break
+                            }
+                        }
+                    }
                     contour2f.release()
-                    continue
                 }
-                val ordered = Geometry.ordered(points)
+
+                // Cascade 3: MinAreaRect bounding quad fallback for high-coverage contours
+                if (candidatePoints == null && contourArea > workingArea * 0.15) {
+                    val minRect = MinAreaRect.minAreaRect(contourPts, working.cols(), working.rows())
+                    if (minRect != null && minRect.size == 4 && Geometry.isValidQuad(minRect)) {
+                        candidatePoints = minRect
+                    }
+                }
+
+                if (candidatePoints == null || candidatePoints.size != 4) continue
+
+                val ordered = Geometry.ordered(candidatePoints)
                 val area = Geometry.quadArea(ordered)
                 val coverage = area / workingArea
                 // Reject quads covering > 98% of the frame (camera frame border contours)
-                if (coverage > 0.98) {
-                    approx.release()
-                    contour2f.release()
-                    continue
-                }
+                if (coverage > 0.98 || coverage < minCoverage) continue
+
                 val confidence = shapeConfidence(ordered, area)
                 val candidate = Detection(
                     corners = Geometry.scalePoints(ordered, scale),
@@ -142,9 +168,9 @@ object QuadDetector {
                     confidence = confidence,
                     workingScale = scale,
                 )
-                if (best == null || candidate.score() > best.score()) best = candidate
-                approx.release()
-                contour2f.release()
+                if (best == null || candidate.score() > best.score()) {
+                    best = candidate
+                }
             }
             return best
         } finally {
@@ -155,6 +181,9 @@ object QuadDetector {
             contours.forEach { it.release() }
         }
     }
+
+    private fun isInsideWorking(pts: List<Point>, w: Int, h: Int): Boolean =
+        pts.all { it.x >= -5.0 && it.x <= w + 5.0 && it.y >= -5.0 && it.y <= h + 5.0 }
 
     private fun Detection.score(): Double = confidence * (0.5 + 0.5 * coverage)
 

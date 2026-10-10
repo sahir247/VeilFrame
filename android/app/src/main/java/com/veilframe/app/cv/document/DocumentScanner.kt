@@ -112,86 +112,52 @@ object DocumentScanner {
 
         DocumentMode.GRAYSCALE -> {
             context?.ensureActive()
-            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
-            context?.ensureActive()
-            val gray = Preprocessor.grayscale(shadowFree)
-            val normalized = Preprocessor.normalize(gray, clipLimit = 2.0)
-            val sharpened = Preprocessor.sharpen(normalized, amount = 0.4, radius = 1.0)
-            sharpened.copyTo(image)
-            shadowFree.release()
-            gray.release()
-            normalized.release()
-            sharpened.release()
+            val enhanced = DocumentPostProcessor.enhanceGrayscaleImage(image)
+            enhanced.copyTo(image)
+            enhanced.release()
             image
         }
 
         DocumentMode.BLACK_AND_WHITE -> {
             context?.ensureActive()
-            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
-            context?.ensureActive()
-            val gray = Preprocessor.grayscale(shadowFree)
-            val binary = Preprocessor.sauvola(gray, windowSize = 51, k = 0.2, R = 128.0)
+            val binary = DocumentPostProcessor.binarizeDocument(image)
             binary.copyTo(image)
-            shadowFree.release()
-            gray.release()
             binary.release()
             image
         }
 
         DocumentMode.ENHANCED -> {
             context?.ensureActive()
-            // 1. Homomorphic filtering: frequency-domain illumination flattening & shadow removal
-            val shadowFree = Preprocessor.homomorphicFilter(image, gammaL = 0.4, gammaH = 1.4, c = 1.0, d0 = 35.0)
-            context?.ensureActive()
-            // 2. Normalize contrast via CLAHE on L-channel
-            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 2.2)
-            context?.ensureActive()
-            // 3. Bilateral filter to smooth paper grain while retaining crisp character edges
-            val denoised = Preprocessor.denoise(normalized, strength = 3, method = com.veilframe.app.cv.preprocess.DenoiseMethod.BILATERAL)
-            context?.ensureActive()
-            // 4. Controlled unsharp masking to make printed & handwritten text pop
-            val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
-                denoised,
-                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.5, radius = 1.0, threshold = 2.0),
-            )
-            sharpened.copyTo(image)
-            shadowFree.release()
-            normalized.release()
-            denoised.release()
-            sharpened.release()
+            val enhanced = DocumentPostProcessor.multiScaleRetinexOnL(image)
+            enhanced.copyTo(image)
+            enhanced.release()
             image
         }
 
         DocumentMode.RECEIPT -> {
             context?.ensureActive()
-            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
+            val retinex = DocumentPostProcessor.multiScaleRetinexOnL(image)
             context?.ensureActive()
-            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 2.8)
+            val normalized = Preprocessor.normalize(retinex, clipLimit = 2.4)
             context?.ensureActive()
-            val sharpened = Preprocessor.sharpen(normalized, amount = 0.7, radius = 1.0)
-            val warmed = Mat()
-            sharpened.convertTo(warmed, -1, 1.05, 4.0)
-            warmed.copyTo(image)
-            shadowFree.release()
+            val sharpened = Preprocessor.sharpen(normalized, amount = 0.6, radius = 1.0)
+            sharpened.copyTo(image)
+            retinex.release()
             normalized.release()
             sharpened.release()
-            warmed.release()
             image
         }
 
         DocumentMode.ID_DOCUMENT -> {
             context?.ensureActive()
-            val shadowFree = Preprocessor.removeShadows(image, kernelSize = 25)
-            context?.ensureActive()
-            val normalized = Preprocessor.normalize(shadowFree, clipLimit = 1.8)
+            val retinex = DocumentPostProcessor.multiScaleRetinexOnL(image)
             context?.ensureActive()
             val sharpened = com.veilframe.app.cv.sharpen.SmartSharpener.sharpen(
-                normalized,
-                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.7, radius = 1.0, threshold = 2.5),
+                retinex,
+                com.veilframe.app.cv.sharpen.SmartSharpener.Params(amount = 0.6, radius = 1.0, threshold = 2.0),
             )
             sharpened.copyTo(image)
-            shadowFree.release()
-            normalized.release()
+            retinex.release()
             sharpened.release()
             image
         }

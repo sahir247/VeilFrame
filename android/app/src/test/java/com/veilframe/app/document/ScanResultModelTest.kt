@@ -14,10 +14,11 @@ class ScanResultModelTest {
     @Test
     fun testQualityMetricsDefaultValues() {
         val defaultMetrics = QualityMetrics.DEFAULT
-        assertTrue(defaultMetrics.isSharp)
-        assertEquals(100.0, defaultMetrics.sharpnessVariance, 0.001)
+        assertFalse("Default unanalyzed metrics must be flagged as unavailable", defaultMetrics.isAvailable)
+        assertFalse(defaultMetrics.isSharp)
+        assertEquals(0.0, defaultMetrics.sharpnessVariance, 0.001)
         assertFalse(defaultMetrics.isTooDark)
-        assertEquals(128.0, defaultMetrics.meanLuma, 0.001)
+        assertEquals(0.0, defaultMetrics.meanLuma, 0.001)
         assertFalse(defaultMetrics.hasGlare)
         assertEquals(0.0, defaultMetrics.glarePercentage, 0.001)
     }
