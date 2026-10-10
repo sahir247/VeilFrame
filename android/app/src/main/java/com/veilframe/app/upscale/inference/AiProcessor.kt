@@ -25,6 +25,7 @@ class AiProcessor(
 ) {
     companion object {
         private const val TAG = "VeilFrame.AiProcessor"
+        const val MAX_IN_MEMORY_PIXELS = 50_000_000L
     }
 
     /**
@@ -192,10 +193,14 @@ class AiProcessor(
         )
 
         val imageSize = TensorSize(source.width, source.height)
-        val outputBytes = imageSize.width.toLong() * info.scaleFactor *
-            (imageSize.height.toLong() * info.scaleFactor) * 4L
+        val outputBytes = outputPixels * 4L
+        val heap = Runtime.getRuntime().maxMemory()
 
-        if (outputBytes <= inRamOutputBudget()) {
+        val canUseInMemory = outputPixels <= MAX_IN_MEMORY_PIXELS &&
+            outputBytes <= (heap * 0.30).toLong() &&
+            outputBytes <= inRamOutputBudget()
+
+        if (canUseInMemory) {
             UpscaleOutput.InMemory(
                 composeTiles(
                     tiles = tiles,
@@ -206,7 +211,7 @@ class AiProcessor(
             )
         } else {
             // F2: band-streaming compose — the full-size output bitmap never exists.
-            Log.i(TAG, "Output ${outputBytes / (1024 * 1024)} MB exceeds RAM budget — streaming to PNG")
+            Log.i(TAG, "Output ${outputBytes / (1024 * 1024)} MB ($outputPixels px) exceeds RAM budget or 50MP cap — streaming to PNG")
             onStatus?.invoke("Composing output (streaming to disk)...")
             val outDir = File(context.cacheDir, "upscale_outputs").apply { mkdirs() }
             val outFile = File(outDir, "upscale_${System.currentTimeMillis()}.png")
@@ -223,7 +228,7 @@ class AiProcessor(
     /**
      * Dynamic in-RAM output budget (user policy: 6–16 GB devices with
      * fluctuating availability — neither too conservative nor too aggressive).
-     * min(45% of app heap, 220 MB, half of CURRENTLY available system memory).
+     * min(30% of app heap, 200 MB, half of CURRENTLY available system memory).
      */
     internal fun inRamOutputBudget(): Long {
         val heap = Runtime.getRuntime().maxMemory()
@@ -232,11 +237,11 @@ class AiProcessor(
         } catch (_: Throwable) {
             0L
         }
-        var budget = minOf(heap * 45 / 100, 220L * 1024L * 1024L)
+        var budget = minOf((heap * 0.30).toLong(), 200L * 1024L * 1024L)
         if (avail > 0L) {
             budget = minOf(budget, avail / 2)
         }
-        return budget.coerceAtLeast(48L * 1024L * 1024L)
+        return budget.coerceAtLeast(32L * 1024L * 1024L)
     }
 
     /** F5: typed, honest disk-space refusal instead of mid-job write failures. */

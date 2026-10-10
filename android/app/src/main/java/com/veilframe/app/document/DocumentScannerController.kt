@@ -558,20 +558,31 @@ class DocumentScannerController(
             return
         }
 
+        val safeAnalysisMat = try {
+            analysisMat.clone()
+        } catch (_: Throwable) {
+            null
+        }
+
+        if (safeAnalysisMat == null) {
+            isProcessing.set(false)
+            return
+        }
+
         // --- PHASE B: PROCESSING (Heavy, on Background Thread) ---
         scope.launch(Dispatchers.Default) {
             try {
                 ensureActive()
 
-                // Run heavy OpenCV pipeline using ONLY pooled Mats
+                // Run heavy OpenCV pipeline using safe snapshot and pooled scratch Mats
                 val corners = DocumentScanner.findCorners(
-                    source = pool.analysisMat ?: return@launch,
+                    source = safeAnalysisMat,
                     blurredMat = pool.blurredMat,
                     edgesMat = pool.edgesMat,
                 )
 
-                val frameW = pool.analysisMat?.cols() ?: 1
-                val frameH = pool.analysisMat?.rows() ?: 1
+                val frameW = safeAnalysisMat.cols()
+                val frameH = safeAnalysisMat.rows()
 
                 // Phase 3: EMA-smoothed quad with hysteresis — the overlay stops
                 // flickering and "Ready" requires consecutive matched frames.
@@ -592,7 +603,7 @@ class DocumentScannerController(
                     pool.glareMaskMat != null && pool.meanMat != null && pool.stddevMat != null
                 ) {
                     QualityAnalyzer.analyze(
-                        source = pool.analysisMat,
+                        source = safeAnalysisMat,
                         laplacianMat = pool.laplacianMat,
                         glareMaskMat = pool.glareMaskMat,
                         meanMat = pool.meanMat,
@@ -621,6 +632,7 @@ class DocumentScannerController(
                     binding.docQuadOverlayView.clear()
                 }
             } finally {
+                safeAnalysisMat.release()
                 isProcessing.set(false)
             }
         }

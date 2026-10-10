@@ -264,22 +264,24 @@ class BgRemovalOnnxEngine(
         ): Bitmap {
             val unletterboxedMat = unletterboxMaskMat(maskMat, meta)
             val smoothedMat = Mat()
-            Imgproc.GaussianBlur(unletterboxedMat, smoothedMat, Size(3.0, 3.0), 0.0)
-            unletterboxedMat.release()
-
+            val u8Mask = Mat()
             val width = originalBitmap.width
             val height = originalBitmap.height
-            val u8Mask = Mat()
-            if (smoothedMat.type() != CvType.CV_8UC1) {
-                smoothedMat.convertTo(u8Mask, CvType.CV_8UC1, 255.0)
-            } else {
-                smoothedMat.copyTo(u8Mask)
-            }
-            smoothedMat.release()
-
             val maskBytes = ByteArray(width * height)
-            u8Mask.get(0, 0, maskBytes)
-            u8Mask.release()
+
+            try {
+                Imgproc.GaussianBlur(unletterboxedMat, smoothedMat, Size(3.0, 3.0), 0.0)
+                if (smoothedMat.type() != CvType.CV_8UC1) {
+                    smoothedMat.convertTo(u8Mask, CvType.CV_8UC1, 255.0)
+                } else {
+                    smoothedMat.copyTo(u8Mask)
+                }
+                u8Mask.get(0, 0, maskBytes)
+            } finally {
+                unletterboxedMat.release()
+                smoothedMat.release()
+                u8Mask.release()
+            }
 
             val result = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
             val pixels = IntArray(width * height)
@@ -549,8 +551,11 @@ class BgRemovalOnnxEngine(
             val outputMask: FloatArray
             try {
                 val results = ortSession.run(mapOf(inputName to tensor))
-                outputMask = extractMaskFromOutput(results[0]?.value, targetSize)
-                results.close()
+                try {
+                    outputMask = extractMaskFromOutput(results[0]?.value, targetSize)
+                } finally {
+                    results.close()
+                }
             } finally {
                 tensor.close()
             }
@@ -581,8 +586,11 @@ class BgRemovalOnnxEngine(
                 val outputFloatArray: FloatArray
                 try {
                     val results = ortSession.run(mapOf(inputName to tensor))
-                    outputFloatArray = extractMaskFromOutput(results[0]?.value, targetSize)
-                    results.close()
+                    try {
+                        outputFloatArray = extractMaskFromOutput(results[0]?.value, targetSize)
+                    } finally {
+                        results.close()
+                    }
                 } finally {
                     tensor.close()
                 }
@@ -590,15 +598,19 @@ class BgRemovalOnnxEngine(
                 if (outputFloatArray.isEmpty()) return null
 
                 val maskMat = Mat(targetSize, targetSize, CvType.CV_32FC1)
-                maskMat.put(0, 0, outputFloatArray)
-
-                val unletterboxed = unletterboxMaskMat(maskMat, meta)
-                maskMat.release()
-
-                val u8Mask = Mat()
-                unletterboxed.convertTo(u8Mask, CvType.CV_8UC1, 255.0)
-                unletterboxed.release()
-                u8Mask
+                try {
+                    maskMat.put(0, 0, outputFloatArray)
+                    val unletterboxed = unletterboxMaskMat(maskMat, meta)
+                    try {
+                        val u8Mask = Mat()
+                        unletterboxed.convertTo(u8Mask, CvType.CV_8UC1, 255.0)
+                        u8Mask
+                    } finally {
+                        unletterboxed.release()
+                    }
+                } finally {
+                    maskMat.release()
+                }
             } finally {
                 letterboxedMat.release()
             }

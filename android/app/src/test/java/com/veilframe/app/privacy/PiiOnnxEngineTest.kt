@@ -92,6 +92,20 @@ class PiiOnnxEngineTest {
     }
 
     @Test
+    fun testApplyNMSChainedOverlapsSafeIteration() {
+        val detections = (0 until 5).map { i ->
+            PiiDetection(
+                rect = RectF(10f + i * 2f, 10f + i * 2f, 50f + i * 2f, 50f + i * 2f),
+                piiClass = PiiClass.FACE,
+                score = 0.90f - i * 0.05f
+            )
+        }
+        val kept = PiiOnnxEngine.applyNMS(detections, iouThreshold = 0.45f)
+        assertEquals(1, kept.size)
+        assertEquals(0.90f, kept[0].score, 0.0001f)
+    }
+
+    @Test
     fun testPostprocessDecodesAndScalesYoloOutput() {
         val numClasses = 5
         val totalRows = 4 + numClasses

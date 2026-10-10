@@ -418,9 +418,9 @@ object Preprocessor {
         val optRows = Core.getOptimalDFTSize(src.rows())
         val optCols = Core.getOptimalDFTSize(src.cols())
 
+        val paddedOrig = Mat()
         val srcFloat = Mat()
         val logMat = Mat()
-        val padded = Mat()
         val zeroPlane = Mat()
         val complexI = Mat()
         val hMat = Mat(optRows, optCols, CvType.CV_32FC1)
@@ -430,18 +430,20 @@ object Preprocessor {
         val expMat = Mat()
 
         try {
-            // 1. Float conversion & ln(1 + I)
-            src.convertTo(srcFloat, CvType.CV_32F)
+            // 1. Pad to optimal DFT dimensions with BORDER_REPLICATE BEFORE log transform
+            // Padding before log transform eliminates reflecting extreme negative logarithmic spikes near black pixels,
+            // preventing boundary ringing artifacts after IDFT.
+            Core.copyMakeBorder(src, paddedOrig, 0, optRows - src.rows(), 0, optCols - src.cols(), Core.BORDER_REPLICATE)
+
+            // 2. Float conversion & ln(1 + I) on padded spatial matrix
+            paddedOrig.convertTo(srcFloat, CvType.CV_32F)
             Core.add(srcFloat, Scalar(1.0), logMat)
             Core.log(logMat, logMat)
 
-            // 2. Pad to optimal DFT dimensions with BORDER_REFLECT to prevent boundary discontinuities
-            Core.copyMakeBorder(logMat, padded, 0, optRows - src.rows(), 0, optCols - src.cols(), Core.BORDER_REFLECT)
-
-            // 3. Forward DFT (complex: Real = padded, Imag = 0)
+            // 3. Forward DFT (complex: Real = logMat, Imag = 0)
             val planes = ArrayList<Mat>()
-            planes.add(padded)
-            zeroPlane.create(padded.size(), CvType.CV_32F)
+            planes.add(logMat)
+            zeroPlane.create(logMat.size(), CvType.CV_32F)
             zeroPlane.setTo(Scalar.all(0.0))
             planes.add(zeroPlane)
             Core.merge(planes, complexI)
@@ -494,7 +496,7 @@ object Preprocessor {
             }
         } finally {
             listOf(
-                srcFloat, logMat, padded, zeroPlane, complexI, hMat,
+                paddedOrig, srcFloat, logMat, zeroPlane, complexI, hMat,
                 spatial, expMat
             ).forEach { it.release() }
             dftPlanes.forEach { it.release() }

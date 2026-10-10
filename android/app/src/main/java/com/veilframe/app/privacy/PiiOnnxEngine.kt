@@ -70,9 +70,13 @@ class PiiOnnxEngine(
                 val best = sorted.removeAt(0)
                 keep.add(best)
 
-                // Discard overlapping bounding boxes of the same class
-                sorted.removeAll { other ->
-                    other.piiClass == best.piiClass && calculateIoU(best.rect, other.rect) > iouThreshold
+                // Discard overlapping bounding boxes of the same class using safe iterator deletion
+                val iterator = sorted.iterator()
+                while (iterator.hasNext()) {
+                    val other = iterator.next()
+                    if (other.piiClass == best.piiClass && calculateIoU(best.rect, other.rect) > iouThreshold) {
+                        iterator.remove()
+                    }
                 }
             }
             return keep

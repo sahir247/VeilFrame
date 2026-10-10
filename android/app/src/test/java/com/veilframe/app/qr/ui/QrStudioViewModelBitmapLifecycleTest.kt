@@ -249,4 +249,23 @@ class QrStudioViewModelBitmapLifecycleTest {
             vm.isBitmapQueuedForRetirement(bmp)
         )
     }
+
+    @Test
+    fun testTerminateSessionResetsActiveExportCountAndDrainsSupersededBitmaps() {
+        val app = Application()
+        val vm = QrStudioViewModel(app)
+
+        val bmp = createTestBitmap()
+        // Simulate a scenario where activeExportCount was incremented
+        vm.incrementActiveExportCount()
+        assertEquals(1, vm.getActiveExportCount())
+
+        vm.retireBitmap(bmp, generation = 1L)
+        assertTrue("Bitmap must be pinned while export count > 0", vm.isBitmapQueuedForRetirement(bmp))
+
+        vm.terminateSession()
+
+        assertEquals("terminateSession must reset activeExportCount to 0", 0, vm.getActiveExportCount())
+        assertFalse("terminateSession must immediately drain superseded bitmaps", vm.isBitmapQueuedForRetirement(bmp))
+    }
 }

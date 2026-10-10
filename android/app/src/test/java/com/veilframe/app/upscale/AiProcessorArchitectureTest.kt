@@ -78,4 +78,9 @@ class AiProcessorArchitectureTest {
         val b = mixed50 and 0xff
         assertTrue("Gray midpoint around 127/128", r in 127..128 && g in 127..128 && b in 127..128)
     }
+
+    @Test
+    fun testInMemoryTileCompositingBudgetCap() {
+        assertEquals("Max in-memory compose pixels must be capped at 50MP", 50_000_000L, com.veilframe.app.upscale.inference.AiProcessor.MAX_IN_MEMORY_PIXELS)
+    }
 }

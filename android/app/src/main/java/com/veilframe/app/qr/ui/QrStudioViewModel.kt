@@ -351,7 +351,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateContent(text: String) {
         _state.value = _state.value.copy(content = text, repairNotice = null)
-        regenerate(debounceMs = 150)
+        regenerate(debounceMs = 250)
     }
 
     fun updateGeometryPolicy(policy: com.veilframe.app.qr.model.QrGeometryPolicy) {
@@ -619,6 +619,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
         generateJob = null
         exportJob?.cancel()
         exportJob = null
+        activeExportCount.set(0)
 
         val s = _state.value
         val candidates = listOfNotNull(

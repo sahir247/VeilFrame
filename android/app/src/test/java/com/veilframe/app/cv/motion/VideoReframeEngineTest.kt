@@ -401,4 +401,52 @@ class VideoReframeEngineTest {
 
         bmps.forEach { it.recycle() }
     }
+
+    @Test
+    fun testTrackerFailureReleasesTrackerAndForcesKeyframeRedetection() {
+        if (!com.veilframe.app.cv.core.CvRuntime.isNativeAvailable) {
+            return
+        }
+        var releaseCount = 0
+        var trackerCreatedCount = 0
+
+        val failingTracker = object : BboxTracker {
+            override fun init(frame: Mat, bbox: Rect) {}
+            override fun update(frame: Mat, bbox: Rect): Boolean {
+                // Fail tracking on intermediate frame update
+                return false
+            }
+            override fun release() {
+                releaseCount++
+            }
+        }
+
+        val engine = VideoReframeEngine(
+            piiEngine = null,
+            targetAspect = 9f / 16f,
+            trackerProvider = {
+                trackerCreatedCount++
+                failingTracker
+            }
+        )
+
+        val mockFrames = (0 until 5).map {
+            Mat.zeros(100, 100, CvType.CV_8UC1)
+        }
+
+        try {
+            val trajectory = engine.generateTrajectory(
+                frames = mockFrames.asSequence(),
+                fps = 30.0,
+                frameW = 1920,
+                frameH = 1080,
+                keyframeInterval = 15
+            )
+
+            assertEquals(5, trajectory.size)
+            assertTrue("Tracker should be released upon update failure", releaseCount >= 1)
+        } finally {
+            mockFrames.forEach { it.release() }
+        }
+    }
 }

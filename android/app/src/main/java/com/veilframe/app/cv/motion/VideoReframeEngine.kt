@@ -320,11 +320,13 @@ class VideoReframeEngine(
                 // 2. Lightweight tracking on intermediate frames
                 if (currentBbox != null) {
                     val updatedBox = Rect(currentBbox.x, currentBbox.y, currentBbox.width, currentBbox.height)
-                    val success = activeTracker.update(frame, updatedBox)
+                    val success = activeTracker?.update(frame, updatedBox) ?: false
                     if (success) {
                         currentBbox = updatedBox
                     } else {
-                        // Lost track; force re-detection on next frame
+                        // Lost track; release and nullify tracker so corrupted internal state is discarded
+                        activeTracker?.release()
+                        activeTracker = null
                         framesSinceDetection = keyframeInterval
                     }
                 }
