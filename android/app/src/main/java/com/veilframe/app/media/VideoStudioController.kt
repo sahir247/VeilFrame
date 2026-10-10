@@ -1237,6 +1237,14 @@ class VideoStudioController(
     fun release() {
         compressionJob?.cancel()
         compressionJob = null
+        if (activeFFmpegSessionId >= 0L) {
+            FFmpegKit.cancel(activeFFmpegSessionId)
+            activeFFmpegSessionId = -1L
+        }
+        try {
+            piiEngine?.close()
+            piiEngine = null
+        } catch (ignored: Throwable) {}
     }
 
     private fun handleExecute() {

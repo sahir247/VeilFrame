@@ -47,7 +47,7 @@ object MaskPostprocessor {
             }
         }
         var minVal = Float.MAX_VALUE
-        var maxVal = Float.MIN_VALUE
+        var maxVal = -Float.MAX_VALUE
         for (value in rawMask) {
             minVal = min(minVal, value)
             maxVal = max(maxVal, value)
@@ -82,29 +82,45 @@ object MaskPostprocessor {
 
     /**
      * Crops empty space around the cutout to the non-zero alpha bounding box.
+     * Uses striped memory buffering to avoid huge contiguous heap allocations on large images.
      */
     fun trimTransparent(bitmap: Bitmap): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val stripe = IntArray(width * STRIPE_ROWS)
 
         var minX = width
         var minY = height
-        var maxX = 0
-        var maxY = 0
-        for (py in 0 until height) {
-            for (px in 0 until width) {
-                val alpha = pixels[py * width + px] ushr 24
-                if (alpha > 0) {
-                    minX = min(minX, px)
-                    minY = min(minY, py)
-                    maxX = max(maxX, px)
-                    maxY = max(maxY, py)
+        var maxX = -1
+        var maxY = -1
+
+        var y = 0
+        while (y < height) {
+            val rows = min(STRIPE_ROWS, height - y)
+            bitmap.getPixels(stripe, 0, width, 0, y, width, rows)
+
+            for (r in 0 until rows) {
+                val py = y + r
+                val rowOffset = r * width
+                for (px in 0 until width) {
+                    val alpha = stripe[rowOffset + px] ushr 24
+                    if (alpha > 0) {
+                        minX = min(minX, px)
+                        minY = min(minY, py)
+                        maxX = max(maxX, px)
+                        maxY = max(maxY, py)
+                    }
                 }
             }
+            y += rows
         }
+
+        // Entirely transparent image or no non-zero alpha pixels found
         if (maxX < minX || maxY < minY) return bitmap
+
+        // If the bounding box covers the entire original image, avoid redundant allocation
+        if (minX == 0 && minY == 0 && maxX == width - 1 && maxY == height - 1) return bitmap
+
         val rect = Rect(minX, minY, maxX + 1, maxY + 1)
         return Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height())
     }

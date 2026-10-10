@@ -781,15 +781,20 @@ class DocumentScannerController(
                 val srcMat = BitmapBridge.toMat(sourceBitmap)
                 try {
                     ctx.ensureActive()
-                    if (corners != null && corners.size == 4) {
+                    val resolvedCorners = if (corners != null && corners.size == 4) {
+                        corners
+                    } else {
+                        com.veilframe.app.cv.geometry.QuadDetector.detect(srcMat, context = ctx)?.corners
+                    }
+                    if (resolvedCorners != null && resolvedCorners.size == 4) {
                         // Step 3: CIELab Chroma Auto Color Mode Detection
-                        val colorMode = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, corners)
+                        val colorMode = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, resolvedCorners)
                         ctx.ensureActive()
 
                         // Step 4: Single-View Metrology & Perspective Rectification
                         val warpedMat = com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
                             image = srcMat,
-                            sourceCorners = corners,
+                            sourceCorners = resolvedCorners,
                             opticalMeasures = opticalMeasures,
                         )
 
@@ -806,7 +811,7 @@ class DocumentScannerController(
                             enhancedMat.release()
                         }
                         warpedMat.release()
-                        Triple(corners, docMode, resultBitmap)
+                        Triple(resolvedCorners, docMode, resultBitmap)
                     } else {
                         null
                     }
@@ -956,9 +961,14 @@ class DocumentScannerController(
 
                 val srcMat = BitmapBridge.toMat(origBmp)
                 try {
-                    if (corners != null && corners.size == 4) {
-                        val autoColor = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, corners)
-                        Pair(corners, autoColor)
+                    val resolvedCorners = if (corners != null && corners.size == 4) {
+                        corners
+                    } else {
+                        com.veilframe.app.cv.geometry.QuadDetector.detect(srcMat, context = ctx)?.corners
+                    }
+                    if (resolvedCorners != null && resolvedCorners.size == 4) {
+                        val autoColor = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, resolvedCorners)
+                        Pair(resolvedCorners, autoColor)
                     } else {
                         null
                     }

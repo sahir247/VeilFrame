@@ -148,6 +148,11 @@ class BackgroundRemoverController(
         try {
             sessionManager.closeAll()
             downloadManager.cancelDownload()
+            sourceBitmap?.recycle()
+            sourceBitmap = null
+            resultBitmap?.recycle()
+            resultBitmap = null
+            sourceBytes = null
         } catch (ignored: Throwable) {}
     }
 
@@ -178,11 +183,16 @@ class BackgroundRemoverController(
 
             withContext(Dispatchers.Main) {
                 if (decoded != null) {
+                    val oldSrc = sourceBitmap
+                    val oldRes = resultBitmap
                     sourceBytes = bytes
                     sourceBitmap = decoded
                     resultBitmap = null
+                    oldSrc?.recycle()
+                    oldRes?.recycle()
                     lastFailure = null
-                    sourceFileName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
+                    val rawName = uri.lastPathSegment?.substringAfterLast('/') ?: "photo"
+                    sourceFileName = rawName.substringBeforeLast('.', rawName)
                     updateUi()
 
                     // Automatically begin removal if model is installed; otherwise open manager
@@ -441,6 +451,9 @@ class BackgroundRemoverController(
         dialogBinding.btnDeleteModelBiRefNet.setOnClickListener {
             repository.deleteModel(RembgModel.BIREFNET_GENERAL_LITE)
             sessionManager.closeSession(RembgModel.BIREFNET_GENERAL_LITE)
+            if (currentModel == RembgModel.BIREFNET_GENERAL_LITE) {
+                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
+            }
             refreshCards()
             updateActiveModelBadge()
         }
@@ -448,6 +461,7 @@ class BackgroundRemoverController(
             currentModel = RembgModel.BIREFNET_GENERAL_LITE
             refreshCards()
             updateActiveModelBadge()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             if (sourceBytes != null) executeRemoval()
         }
 
@@ -463,6 +477,9 @@ class BackgroundRemoverController(
         dialogBinding.btnDeleteModelIsNet.setOnClickListener {
             repository.deleteModel(RembgModel.ISNET_GENERAL)
             sessionManager.closeSession(RembgModel.ISNET_GENERAL)
+            if (currentModel == RembgModel.ISNET_GENERAL) {
+                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
+            }
             refreshCards()
             updateActiveModelBadge()
         }
@@ -470,6 +487,7 @@ class BackgroundRemoverController(
             currentModel = RembgModel.ISNET_GENERAL
             refreshCards()
             updateActiveModelBadge()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             if (sourceBytes != null) executeRemoval()
         }
 
@@ -485,6 +503,9 @@ class BackgroundRemoverController(
         dialogBinding.btnDeleteModelU2Net.setOnClickListener {
             repository.deleteModel(RembgModel.U2NET_HUMAN)
             sessionManager.closeSession(RembgModel.U2NET_HUMAN)
+            if (currentModel == RembgModel.U2NET_HUMAN) {
+                currentModel = repository.listReadyModels().firstOrNull() ?: RembgModel.DEFAULT
+            }
             refreshCards()
             updateActiveModelBadge()
         }
@@ -492,6 +513,7 @@ class BackgroundRemoverController(
             currentModel = RembgModel.U2NET_HUMAN
             refreshCards()
             updateActiveModelBadge()
+            MorphDialogController.dismissWithMorph(dialog, dialogBinding.root, originView)
             if (sourceBytes != null) executeRemoval()
         }
 
@@ -561,6 +583,7 @@ class BackgroundRemoverController(
                 }
             }
 
+            var savedToGallery = false
             try {
                 FileOutputStream(outFile).use { fos ->
                     if (isJpg) {
@@ -595,15 +618,20 @@ class BackgroundRemoverController(
                     values.put(MediaStore.Images.Media.IS_PENDING, 0)
                     resolver.update(savedUri, values, null, null)
                 }
-
-                onExportPngRequest(outFile)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
-                }
+                savedToGallery = true
             } catch (e: Exception) {
-                Log.e(TAG, "Gallery save failed", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(activity, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e(TAG, "Gallery save failed, falling back to SAF", e)
+            } finally {
+                if (finalExportBmp !== bmp) {
+                    finalExportBmp.recycle()
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                if (savedToGallery) {
+                    Toast.makeText(activity, "Saved to Gallery (Pictures/VeilFrame)", Toast.LENGTH_SHORT).show()
+                } else {
+                    onExportPngRequest(outFile)
                 }
             }
         }

@@ -94,7 +94,7 @@ class MotionLabController(
             val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(activity, uri)
             val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull() ?: 30f
+            val captureFps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
             runCatching { retriever.release() } // release() is API 29+; minSdk 26
 
             val name = queryDisplayName(uri) ?: "video"
@@ -104,7 +104,8 @@ class MotionLabController(
                 binding.btnMotionLabRun.isEnabled = false
                 return
             }
-            binding.tvMotionLabSource.text = "$name · ${durationS}s · ~${"%.1f".format(fps)} fps"
+            val fpsLabel = if (captureFps != null) " · ~${"%.1f".format(captureFps)} fps" else ""
+            binding.tvMotionLabSource.text = "$name · ${durationS}s$fpsLabel"
             binding.btnMotionLabRun.isEnabled = true
         } catch (e: Exception) {
             Log.e(TAG, "setSource failed", e)
@@ -154,7 +155,8 @@ class MotionLabController(
 
                 val retriever = android.media.MediaMetadataRetriever()
                 retriever.setDataSource(inFile.absolutePath)
-                val fps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull() ?: 30f
+                val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                val captureFps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
                 runCatching { retriever.release() } // release() is API 29+; minSdk 26
 
                 setStatus("Extracting frames…")
@@ -168,6 +170,13 @@ class MotionLabController(
                     ?.sortedBy { it.name } ?: emptyList()
                 if (frames.size < 2) throw IllegalStateException("Need at least 2 frames (got ${frames.size})")
                 if (frames.size > MAX_FRAMES) throw IllegalStateException("${frames.size} frames exceeds the Alpha limit of $MAX_FRAMES")
+
+                val effectiveDurationS = if (durationMs > 0) minOf(durationMs / 1000.0, MAX_DURATION_S.toDouble()) else 0.0
+                val fps = if (effectiveDurationS > 0.1) {
+                    (frames.size / effectiveDurationS).toFloat().coerceIn(10f, 120f)
+                } else {
+                    captureFps ?: 30f
+                }
 
                 setStatus("Synthesising motion frames (${if (qualityMode) "Farnebäck" else "DIS"})…")
                 val estimator = com.veilframe.app.cv.motion.FlowEstimator(

@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
@@ -11,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
@@ -104,6 +106,10 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     }
     private val checkerDarkPaint = Paint().apply { color = 0xFF222226.toInt() }
     private val checkerLightPaint = Paint().apply { color = 0xFF2E2E34.toInt() }
+    private val whitePaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
+    private val blackPaint = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
+    private var checkerShader: BitmapShader? = null
+    private val checkerPaint = Paint()
 
     // Touch state
     private var isDraggingDivider = false
@@ -140,7 +146,6 @@ class BeforeAfterSplitView @JvmOverloads constructor(
     })
 
     init {
-        setLayerType(LAYER_TYPE_SOFTWARE, null) // Required for clear shadow layers on hardware canvas
         contentDescription = "Before and After comparison slider"
     }
 
@@ -303,41 +308,40 @@ class BeforeAfterSplitView @JvmOverloads constructor(
         drawBadge(canvas, "CUTOUT", w - dpToPx(76f), dpToPx(24f))
     }
 
+    private fun getOrCreateCheckerShader(): BitmapShader {
+        val existing = checkerShader
+        if (existing != null) return existing
+        val checkSize = dpToPx(10f).toInt().coerceAtLeast(1)
+        val tileBmp = Bitmap.createBitmap(checkSize * 2, checkSize * 2, Bitmap.Config.ARGB_8888)
+        val tileCanvas = Canvas(tileBmp)
+        tileCanvas.drawRect(0f, 0f, checkSize.toFloat(), checkSize.toFloat(), checkerDarkPaint)
+        tileCanvas.drawRect(checkSize.toFloat(), checkSize.toFloat(), (checkSize * 2).toFloat(), (checkSize * 2).toFloat(), checkerDarkPaint)
+        tileCanvas.drawRect(checkSize.toFloat(), 0f, (checkSize * 2).toFloat(), checkSize.toFloat(), checkerLightPaint)
+        tileCanvas.drawRect(0f, checkSize.toFloat(), checkSize.toFloat(), (checkSize * 2).toFloat(), checkerLightPaint)
+        val shader = BitmapShader(tileBmp, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        checkerShader = shader
+        checkerPaint.shader = shader
+        return shader
+    }
+
     private fun drawCheckerboard(canvas: Canvas, bounds: RectF) {
         val startX = bounds.left.coerceAtLeast(0f)
         val endX = bounds.right.coerceAtMost(width.toFloat())
         val startY = bounds.top.coerceAtLeast(0f)
         val endY = bounds.bottom.coerceAtMost(height.toFloat())
+        if (startX >= endX || startY >= endY) return
 
         when (backgroundMode) {
             BackgroundMode.PURE_WHITE -> {
-                canvas.drawRect(startX, startY, endX, endY, Paint().apply { color = Color.WHITE })
-                return
+                canvas.drawRect(startX, startY, endX, endY, whitePaint)
             }
             BackgroundMode.PURE_BLACK -> {
-                canvas.drawRect(startX, startY, endX, endY, Paint().apply { color = Color.BLACK })
-                return
+                canvas.drawRect(startX, startY, endX, endY, blackPaint)
             }
             BackgroundMode.TRANSPARENT_CHECKERBOARD -> {
-                // proceed with checkerboard
+                getOrCreateCheckerShader()
+                canvas.drawRect(startX, startY, endX, endY, checkerPaint)
             }
-        }
-
-        val checkSize = dpToPx(10f)
-
-        var y = startY
-        var row = 0
-        while (y < endY) {
-            var x = startX
-            var col = row % 2
-            while (x < endX) {
-                val p = if (col % 2 == 0) checkerDarkPaint else checkerLightPaint
-                canvas.drawRect(x, y, (x + checkSize).coerceAtMost(endX), (y + checkSize).coerceAtMost(endY), p)
-                x += checkSize
-                col++
-            }
-            y += checkSize
-            row++
         }
     }
 

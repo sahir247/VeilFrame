@@ -163,7 +163,11 @@ class CelBackgroundRemover(
                 sourceBitmap.height,
                 true,
             )
-            return applyFullResolutionColors(sourceBitmap, upscaledAlpha).also { upscaledAlpha.recycle() }
+            val fullRes = applyFullResolutionColors(sourceBitmap, upscaledAlpha)
+            if (upscaledAlpha !== maskedSmall) {
+                upscaledAlpha.recycle()
+            }
+            return fullRes
         } finally {
             sourceBitmap.recycle()
         }
@@ -210,29 +214,6 @@ class CelBackgroundRemover(
         )
     }
 
-    private fun applyFullResolutionColors(source: Bitmap, alphaSource: Bitmap): Bitmap {
-        val w = source.width
-        val h = source.height
-        val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val stripeRows = 256
-        val rgb = IntArray(w * stripeRows)
-        val alpha = IntArray(w * stripeRows)
-
-        var y = 0
-        while (y < h) {
-            val rows = Math.min(stripeRows, h - y)
-            val count = w * rows
-            source.getPixels(rgb, 0, w, 0, y, w, rows)
-            alphaSource.getPixels(alpha, 0, w, 0, y, w, rows)
-            for (i in 0 until count) {
-                rgb[i] = (rgb[i] and 0x00FFFFFF) or (alpha[i] and 0xFF000000.toInt())
-            }
-            output.setPixels(rgb, 0, w, 0, y, w, rows)
-            y += rows
-        }
-        return output
-    }
-
     fun analyzeSource(imageBytes: ByteArray): RembgSourceInfo {
         val (width, height) = RembgImageUtils.orientedDimensions(imageBytes)
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -257,5 +238,28 @@ class CelBackgroundRemover(
         private const val LOW_RES_FILE_SIZE_BYTES = 100 * 1024
         private const val LOW_RES_DIMENSION_PX = 800
         private const val LARGE_IMAGE_PIXELS = 3_000_000L
+
+        internal fun applyFullResolutionColors(source: Bitmap, alphaSource: Bitmap): Bitmap {
+            val w = source.width
+            val h = source.height
+            val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val stripeRows = 256
+            val rgb = IntArray(w * stripeRows)
+            val alpha = IntArray(w * stripeRows)
+
+            var y = 0
+            while (y < h) {
+                val rows = Math.min(stripeRows, h - y)
+                val count = w * rows
+                source.getPixels(rgb, 0, w, 0, y, w, rows)
+                alphaSource.getPixels(alpha, 0, w, 0, y, w, rows)
+                for (i in 0 until count) {
+                    rgb[i] = (rgb[i] and 0x00FFFFFF) or (alpha[i] and 0xFF000000.toInt())
+                }
+                output.setPixels(rgb, 0, w, 0, y, w, rows)
+                y += rows
+            }
+            return output
+        }
     }
 }

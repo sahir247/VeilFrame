@@ -83,4 +83,40 @@ class MaskPostprocessorTest {
         assertEquals(10, trimmed.height)
         assertEquals(Color.RED, trimmed.getPixel(0, 0))
     }
+
+    @Test
+    fun testNegativeMaskTensorNormalization() {
+        val src = Bitmap.createBitmap(5, 5, Bitmap.Config.ARGB_8888)
+        src.eraseColor(Color.GREEN)
+
+        // Raw mask with entirely negative values, e.g. logits from -10.0f to -2.0f
+        val rawMask = FloatArray(25) { i -> -10.0f + (i * (8.0f / 24.0f)) }
+        val output = MaskPostprocessor.applyMask(src, rawMask, 5, 5, applySigmoid = false)
+
+        // First pixel (-10.0f) should be normalized to min (alpha 0)
+        assertEquals(0, Color.alpha(output.getPixel(0, 0)))
+        // Last pixel (-2.0f) should be normalized to max (alpha 255)
+        assertEquals(255, Color.alpha(output.getPixel(4, 4)))
+    }
+
+    @Test
+    fun testTrimTransparentAllTransparent() {
+        val src = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888) // all transparent
+        val trimmed = MaskPostprocessor.trimTransparent(src)
+        assertEquals(20, trimmed.width)
+        assertEquals(20, trimmed.height)
+        assertEquals(0, Color.alpha(trimmed.getPixel(0, 0)))
+    }
+
+    @Test
+    fun testTrimTransparentMultiStripeScanning() {
+        // Test image taller than STRIPE_ROWS (256)
+        val src = Bitmap.createBitmap(20, 300, Bitmap.Config.ARGB_8888)
+        src.setPixel(5, 10, Color.BLUE)
+        src.setPixel(15, 290, Color.BLUE)
+
+        val trimmed = MaskPostprocessor.trimTransparent(src)
+        assertEquals(11, trimmed.width) // 15 - 5 + 1
+        assertEquals(281, trimmed.height) // 290 - 10 + 1
+    }
 }

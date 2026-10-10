@@ -243,24 +243,31 @@ fun extractDocument(
         org.opencv.core.Point(targetWidth, targetHeight),
         org.opencv.core.Point(0.0, targetHeight)
     )
-    val transform = Imgproc.getPerspectiveTransform(srcPoints, dstPoints)
+    var transform: Mat? = null
+    var warped: Mat? = null
+    var resized: Mat? = null
+    var enhanced: Mat? = null
+    try {
+        val t = Imgproc.getPerspectiveTransform(srcPoints, dstPoints)
+        transform = t
+        val w = Mat()
+        warped = w
+        val outputSize = Size(targetWidth, targetHeight)
+        Imgproc.warpPerspective(inputMat, w, t, outputSize)
 
-    val warped = Mat()
-    val outputSize = Size(targetWidth, targetHeight)
-    Imgproc.warpPerspective(inputMat, warped, transform, outputSize)
-
-    val resized = resizeForMaxPixels(warped, maxPixels.toDouble())
-    val enhanced = com.veilframe.app.cv.document.enhanceCapturedImage(resized, colorMode, maxPixels)
-    val rotated = rotate(enhanced, rotationDegrees)
-
-    warped.release()
-    resized.release()
-    enhanced.release()
-    srcPoints.release()
-    dstPoints.release()
-    transform.release()
-
-    return rotated
+        val r = resizeForMaxPixels(w, maxPixels.toDouble())
+        resized = r
+        val e = com.veilframe.app.cv.document.enhanceCapturedImage(r, colorMode, maxPixels)
+        enhanced = e
+        return rotate(e, rotationDegrees)
+    } finally {
+        enhanced?.release()
+        resized?.release()
+        warped?.release()
+        transform?.release()
+        dstPoints.release()
+        srcPoints.release()
+    }
 }
 
 fun rotate(input: Mat, degrees: Int): Mat {
