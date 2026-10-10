@@ -36,6 +36,9 @@ object DocumentScanner {
 
         /** ID / document mode: strong contrast, sharp text, minimal colour shift. */
         ID_DOCUMENT,
+
+        /** Auto color mode: CIELab chroma detection to pick between COLOR and GRAYSCALE. */
+        AUTO,
     }
 
     data class ScanResult(
@@ -50,6 +53,7 @@ object DocumentScanner {
         val mode: DocumentMode = DocumentMode.ENHANCED,
         val workingMaxEdge: Int = 1280,
         val minCoverage: Double = 0.08,
+        val segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
     )
 
     /**
@@ -59,24 +63,21 @@ object DocumentScanner {
      */
     fun scan(source: Mat, options: Options = Options()): ScanResult? {
         require(!source.empty()) { "source is empty" }
-        val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(
-            source,
-            workingMaxEdge = options.workingMaxEdge,
-            minCoverage = options.minCoverage,
-        ) ?: return null
+        val corners = findCorners(
+            source = source,
+            segmentationService = options.segmentationService,
+            isCaptureMode = true,
+        )
+        if (corners.size != 4) return null
 
         val warped = try {
-            // Detection corners are already in SOURCE coordinates (QuadDetector
-            // scales them back); warp directly — no second rescale.
             com.veilframe.app.cv.geometry.PerspectiveCorrector.correct(
                 source,
-                detection.corners,
+                corners,
             )
         } catch (e: org.opencv.core.CvException) {
-            // Native warp failure (e.g. degenerate quad from noise): no scan result.
             return null
         } catch (e: IllegalArgumentException) {
-            // Degenerate corner geometry rejected by PerspectiveCorrector.
             return null
         }
         var warpedToRelease: Mat? = warped
@@ -87,8 +88,8 @@ object DocumentScanner {
             }
             return ScanResult(
                 warped = enhanced,
-                corners = detection.corners,
-                confidence = detection.confidence,
+                corners = corners,
+                confidence = 1.0,
                 mode = options.mode,
             )
         } finally {
@@ -161,19 +162,96 @@ object DocumentScanner {
             sharpened.release()
             image
         }
+
+        DocumentMode.AUTO -> {
+            context?.ensureActive()
+            val detected = ColorDetector.autoColorMode(image, emptyList())
+            if (detected == DocumentColorMode.COLOR) {
+                val enhanced = DocumentPostProcessor.multiScaleRetinexOnL(image)
+                enhanced.copyTo(image)
+                enhanced.release()
+            } else {
+                val enhanced = DocumentPostProcessor.enhanceGrayscaleImage(image)
+                enhanced.copyTo(image)
+                enhanced.release()
+            }
+            image
+        }
     }
 
     /**
      * Detects 4 document corners in [source] image coordinates.
-     * When [blurredMat] and [edgesMat] are provided from a pool, zero intermediate allocations occur.
-     * Returns empty list if no valid quadrilateral was detected.
+     * When [segmentationService] is provided and available, evaluates the FairScan neural model
+     * first, falling back cleanly to the classical OpenCV contour cascade.
      */
     fun findCorners(
         source: Mat,
         blurredMat: Mat? = null,
         edgesMat: Mat? = null,
+        segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
+        isCaptureMode: Boolean = false,
         context: com.veilframe.app.cv.core.CvContext? = null,
     ): List<org.opencv.core.Point> {
+        if (segmentationService != null && segmentationService.isModelAvailable) {
+            val segResult = kotlinx.coroutines.runBlocking {
+                try {
+                    segmentationService.runSegmentation(source)
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            if (segResult != null) {
+                val neuralCorners = com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                    segmentation = segResult.segmentation,
+                    originalWidth = source.cols(),
+                    originalHeight = source.rows(),
+                    isCaptureMode = isCaptureMode
+                )
+                if (neuralCorners != null && neuralCorners.size == 4) {
+                    return neuralCorners
+                }
+            }
+        }
+
+        val detection = com.veilframe.app.cv.geometry.QuadDetector.detectWithBuffers(
+            source = source,
+            blurredMat = blurredMat,
+            edgesMat = edgesMat,
+            context = context,
+        )
+        return detection?.corners ?: emptyList()
+    }
+
+    /**
+     * Suspend non-blocking version of corner detection for coroutines.
+     */
+    suspend fun findCornersAsync(
+        source: Mat,
+        blurredMat: Mat? = null,
+        edgesMat: Mat? = null,
+        segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
+        isCaptureMode: Boolean = false,
+        context: com.veilframe.app.cv.core.CvContext? = null,
+    ): List<org.opencv.core.Point> {
+        if (segmentationService != null && segmentationService.isModelAvailable) {
+            val segResult = try {
+                segmentationService.runSegmentation(source)
+            } catch (_: Throwable) {
+                null
+            }
+            if (segResult != null) {
+                val neuralCorners = com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
+                    segmentation = segResult.segmentation,
+                    originalWidth = source.cols(),
+                    originalHeight = source.rows(),
+                    isCaptureMode = isCaptureMode
+                )
+                if (neuralCorners != null && neuralCorners.size == 4) {
+                    return neuralCorners
+                }
+            }
+        }
+
         val detection = com.veilframe.app.cv.geometry.QuadDetector.detectWithBuffers(
             source = source,
             blurredMat = blurredMat,

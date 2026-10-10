@@ -118,6 +118,10 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     packaging {
         // Base packaging configuration
     }
@@ -179,6 +183,9 @@ dependencies {
     // OpenCV — first-class VeilFrame CV Engine (com.veilframe.app.cv)
     // Provides org.opencv.* and org.opencv.wechat_qrcode.WeChatQRCode
     implementation(project(":opencv-sdk"))
+
+    // TensorFlow Lite runtime for neural document segmentation (FairScan SOTA model)
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     // ViewPager2 — tab pager in QrStudioFragment
     implementation("androidx.viewpager2:viewpager2:1.0.0")

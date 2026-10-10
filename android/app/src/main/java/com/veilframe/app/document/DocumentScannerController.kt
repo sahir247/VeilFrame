@@ -106,6 +106,9 @@ class DocumentScannerController(
     private var bufferPool: FrameBufferPool? = null
     private var frameIdCounter = 0L
     private var scannerJob: Job? = null
+    private val segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService by lazy {
+        com.veilframe.app.cv.segmentation.DocumentSegmentationService.getInstance(activity)
+    }
 
     // CameraX runtime
     private var cameraProvider: ProcessCameraProvider? = null
@@ -601,11 +604,13 @@ class DocumentScannerController(
                     return@launch
                 }
 
-                // Run OpenCV pipeline using safe snapshot and pooled scratch Mats
-                val corners = DocumentScanner.findCorners(
+                // Run FairScan neural segmentation & OpenCV pipeline
+                val corners = DocumentScanner.findCornersAsync(
                     source = safeAnalysisMat,
                     blurredMat = if (!pool.isReleased) pool.blurredMat else null,
                     edgesMat = if (!pool.isReleased) pool.edgesMat else null,
+                    segmentationService = segmentationService,
+                    isCaptureMode = false,
                 )
 
                 if (viewfinderSessionId.get() != currentSession || pool.isReleased) {
@@ -862,13 +867,17 @@ class DocumentScannerController(
                 ctx.ensureActive()
                 val srcMat = BitmapBridge.toMat(origBmp)
                 try {
-                    val detection = com.veilframe.app.cv.geometry.QuadDetector.detect(srcMat, context = ctx)
-                    val corners = detection?.corners ?: emptyList()
-                    // Sanity check: require 4 corners and at least 10% document coverage to avoid false sliver crop
-                    if (corners.size != 4 || (detection != null && detection.coverage < 0.10)) {
-                        null
+                    val corners = DocumentScanner.findCorners(
+                        source = srcMat,
+                        segmentationService = segmentationService,
+                        isCaptureMode = true,
+                        context = ctx,
+                    )
+                    if (corners.size == 4) {
+                        val autoColor = com.veilframe.app.cv.document.ColorDetector.autoColorMode(srcMat, corners)
+                        Pair(corners, autoColor)
                     } else {
-                        corners
+                        null
                     }
                 } finally {
                     srcMat.release() // CV-4: released on every path
@@ -876,10 +885,17 @@ class DocumentScannerController(
             }
 
             job.await().fold(
-                onOk = { detectedCorners ->
+                onOk = { result ->
                     if (session.currentPage?.id == pageId && page.editVersion == targetVersion) {
-                        if (detectedCorners != null && detectedCorners.size == 4) {
-                            page.corners = detectedCorners
+                        if (result != null) {
+                            page.corners = result.first
+                            if (page.mode == DocumentScanner.DocumentMode.AUTO) {
+                                page.mode = if (result.second == com.veilframe.app.cv.document.DocumentColorMode.COLOR) {
+                                    DocumentScanner.DocumentMode.ENHANCED
+                                } else {
+                                    DocumentScanner.DocumentMode.GRAYSCALE
+                                }
+                            }
                         } else {
                             page.corners = null
                             Toast.makeText(activity, "Document boundaries uncertain — full photo retained", Toast.LENGTH_SHORT).show()
@@ -1136,7 +1152,8 @@ class DocumentScannerController(
                     DocumentScanner.DocumentMode.GRAYSCALE -> binding.chipFilterGrayscale.isChecked = true
                     DocumentScanner.DocumentMode.RECEIPT -> binding.chipFilterReceipt.isChecked = true
                     DocumentScanner.DocumentMode.ID_DOCUMENT -> binding.chipFilterIdDoc.isChecked = true
-                    null -> {}
+                    DocumentScanner.DocumentMode.AUTO -> binding.chipFilterEnhanced.isChecked = true
+                    else -> {}
                 }
             } finally {
                 isSyncingFilterChips = false
