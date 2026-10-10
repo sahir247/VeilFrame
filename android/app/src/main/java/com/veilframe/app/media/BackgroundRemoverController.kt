@@ -15,6 +15,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.veilframe.app.R
+import com.veilframe.app.cv.core.CvPriority
+import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.cv.segmentation.rembg.CelBackgroundRemover
 import com.veilframe.app.cv.segmentation.rembg.OnnxSessionManager
 import com.veilframe.app.cv.segmentation.rembg.RembgExportFormat
@@ -223,41 +225,67 @@ class BackgroundRemoverController(
         val tighten = binding.switchTightenEdges.isChecked
         val feather = binding.switchFeatherEdges.isChecked
 
+        // Governed execution: INTERACTIVE lane + memory admission check via CvRuntime.
+        val srcBmp = sourceBitmap
+        val w = srcBmp?.width ?: 1024
+        val h = srcBmp?.height ?: 1024
+        val estimate = CvRuntime.estimateBytes(w, h, 4)
+
         scope.launch {
-            try {
-                val result = remover.removeBackground(
-                    imageBytes = bytes,
-                    model = currentModel,
-                    trim = trim,
-                    tightenEdges = tighten,
-                    featherEdges = feather,
-                    onProgress = { progress ->
-                        withContext(Dispatchers.Main) {
-                            binding.progressBgInference.progress = progress.percent
-                            binding.tvBgProgressPercent.text = "${progress.percent}%"
-                            binding.tvBgProgressMessage.text = progress.message
+            val job = CvRuntime.engine.submit(
+                name = "background-removal",
+                priority = CvPriority.INTERACTIVE,
+                memoryEstimate = estimate,
+                timeoutMs = 60_000L,
+            ) { ctx ->
+                // Native gate + cooperative cancellation checks
+                CvRuntime.requireAvailable()
+                ctx.ensureActive()
+
+                kotlinx.coroutines.runBlocking {
+                    remover.removeBackground(
+                        imageBytes = bytes,
+                        model = currentModel,
+                        trim = trim,
+                        tightenEdges = tighten,
+                        featherEdges = feather,
+                        onProgress = { progress ->
+                            ctx.ensureActive()
+                            ctx.reportProgress(progress.percent / 100f)
+                            withContext(Dispatchers.Main) {
+                                binding.progressBgInference.progress = progress.percent
+                                binding.tvBgProgressPercent.text = "${progress.percent}%"
+                                binding.tvBgProgressMessage.text = progress.message
+                            }
                         }
+                    )
+                }
+            }
+
+            val outcome = job.await()
+            withContext(Dispatchers.Main) {
+                binding.cardBgProcessingOverlay.visibility = View.GONE
+                outcome.fold(
+                    onOk = { result ->
+                        resultBitmap = result.cutoutBitmap
+                        lastFailure = null
+                        updateUi()
+
+                        if (result.warnings.isNotEmpty()) {
+                            Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onErr = { err ->
+                        Log.e(TAG, "Background removal failed: [${err.code}] ${err.message}")
+                        lastFailure = err.message
+                        Toast.makeText(
+                            activity,
+                            "Removal failed: ${err.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        updateUi()
                     }
                 )
-
-                resultBitmap = result.cutoutBitmap
-                lastFailure = null
-                binding.cardBgProcessingOverlay.visibility = View.GONE
-                updateUi()
-
-                if (result.warnings.isNotEmpty()) {
-                    Toast.makeText(activity, result.warnings.first(), Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Background removal failed", e)
-                lastFailure = e.message ?: "Processing error"
-                binding.cardBgProcessingOverlay.visibility = View.GONE
-                Toast.makeText(
-                    activity,
-                    "Removal failed: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-                updateUi()
             }
         }
     }
