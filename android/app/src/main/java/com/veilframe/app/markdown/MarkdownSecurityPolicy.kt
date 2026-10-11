@@ -46,6 +46,20 @@ object MarkdownSecurityPolicy {
         settings.cacheMode = WebSettings.LOAD_NO_CACHE
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
+
+        // Privacy offline-by-default: block remote network loads and images until user gives explicit consent
+        settings.blockNetworkImage = true
+        settings.blockNetworkLoads = true
+    }
+
+    fun setNetworkAccessEnabled(settings: WebSettings, enabled: Boolean) {
+        settings.blockNetworkImage = !enabled
+        settings.blockNetworkLoads = !enabled
+    }
+
+    fun hasRemoteImageResources(markdown: String): Boolean {
+        val pattern = Regex("""(?i)(<img[^>]+src=["']https?://|!\[.*?\]\(https?://)""")
+        return pattern.containsMatchIn(markdown)
     }
 
     fun handleExternalLink(context: Context, url: String): Boolean {

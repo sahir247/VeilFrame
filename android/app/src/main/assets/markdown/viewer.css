@@ -97,6 +97,27 @@ body.width-full #viewer-container {
   text-decoration: underline;
 }
 
+/* Center-aligned badge containers & inline image links */
+.markdown-body [align="center"],
+.markdown-body p[align="center"],
+[align="center"] {
+  text-align: center;
+}
+
+.markdown-body [align="center"] > a,
+.markdown-body p[align="center"] > a {
+  display: inline-block;
+  margin: 2px 3px;
+  vertical-align: middle;
+}
+
+.markdown-body a img {
+  display: inline-block;
+  vertical-align: middle;
+  border-style: none;
+  max-width: 100%;
+}
+
 /* Front Matter Card */
 .front-matter-card {
   background-color: var(--vf-card-bg);

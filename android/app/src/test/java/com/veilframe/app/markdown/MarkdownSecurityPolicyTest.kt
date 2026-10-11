@@ -54,4 +54,19 @@ class MarkdownSecurityPolicyTest {
         assertTrue(output.contains("<table>"))
         assertTrue(output.contains("<td>Cell</td>"))
     }
+
+    @Test
+    fun `detects remote image resources in HTML and markdown`() {
+        val badgeHtml = """<p align="center"><a href="https://github.com"><img src="https://img.shields.io/badge/version-2.2.9-blue.svg" alt="Version 2.2.9" /></a></p>"""
+        assertTrue(MarkdownSecurityPolicy.hasRemoteImageResources(badgeHtml))
+
+        val mdImage = "![Diagram](https://example.com/images/arch.png)"
+        assertTrue(MarkdownSecurityPolicy.hasRemoteImageResources(mdImage))
+
+        val localImage = "![Local](images/test.png)"
+        assertFalse(MarkdownSecurityPolicy.hasRemoteImageResources(localImage))
+
+        val noImages = "# Pure text document\nNo images here."
+        assertFalse(MarkdownSecurityPolicy.hasRemoteImageResources(noImages))
+    }
 }

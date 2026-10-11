@@ -13,6 +13,8 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.webkit.JavascriptInterface
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -23,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.veilframe.app.R
 import com.veilframe.app.databinding.LayoutMarkdownViewerBinding
+import com.veilframe.app.storage.SafStorageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,6 +71,8 @@ class MarkdownViewerController(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var watchdogStartTime: Long = 0L
     private var watchdogRunnable: Runnable? = null
+    private var hasPromptedNetworkAccess = false
+    private var networkAccessConsent = false
 
     fun init() {
         // Expressive polish: tactile spring feedback across the viewer chrome.
@@ -544,6 +549,7 @@ class MarkdownViewerController(
 
     override fun loadMarkdown(content: String, baseUri: Uri?, documentId: String?) {
         state.rawMarkdown = content
+        checkAndPromptRemoteContent(content)
         val sanitized = MarkdownSecurityPolicy.sanitizeMarkdown(content)
         val safeBaseUri = baseUri?.toString() ?: ""
 
@@ -737,8 +743,10 @@ class MarkdownViewerController(
         popup.menu.add(0, 2, 0, "Font Size...")
         popup.menu.add(0, 3, 0, if (state.theme == MarkdownTheme.DARK) "Theme: Light" else "Theme: Dark")
         popup.menu.add(0, 4, 0, "Copy Raw Markdown")
+        popup.menu.add(0, 30, 0, "Export as...")
         popup.menu.add(0, 5, 0, "Share Document...")
         popup.menu.add(0, 7, 0, "Open With...")
+        popup.menu.add(0, 31, 0, if (networkAccessConsent) "Internet Access: Enabled" else "Internet Access: Offline")
         popup.menu.add(0, 6, 0, "Reload")
 
         popup.setOnMenuItemClickListener { item ->
@@ -767,6 +775,10 @@ class MarkdownViewerController(
                     saveAsDocument()
                     true
                 }
+                30 -> {
+                    showExportAsDialog()
+                    true
+                }
                 1 -> {
                     val nextWidth = if (state.readingWidth == ReadingWidth.COMFORTABLE) ReadingWidth.FULL else ReadingWidth.COMFORTABLE
                     setReadingWidth(nextWidth)
@@ -793,6 +805,16 @@ class MarkdownViewerController(
                     openWithExternalApp()
                     true
                 }
+                31 -> {
+                    if (networkAccessConsent) {
+                        networkAccessConsent = false
+                        MarkdownSecurityPolicy.setNetworkAccessEnabled(binding.wvMarkdown.settings, false)
+                        Toast.makeText(activity, "Internet access disabled (Offline mode)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        enableInternetAccess()
+                    }
+                    true
+                }
                 6 -> {
                     reload()
                     true
@@ -801,6 +823,92 @@ class MarkdownViewerController(
             }
         }
         popup.show()
+    }
+
+    private fun checkAndPromptRemoteContent(content: String) {
+        if (!hasPromptedNetworkAccess && !networkAccessConsent && MarkdownSecurityPolicy.hasRemoteImageResources(content)) {
+            hasPromptedNetworkAccess = true
+            AlertDialog.Builder(activity)
+                .setTitle("Load Remote Images & Badges?")
+                .setMessage("This Markdown document contains external web images or badges (such as shields.io badges). VeilFrame keeps documents offline by default to protect your privacy. Would you like to enable internet access to load these external images?")
+                .setPositiveButton("Allow") { _, _ ->
+                    enableInternetAccess()
+                }
+                .setNegativeButton("Keep Offline", null)
+                .show()
+        }
+    }
+
+    private fun enableInternetAccess() {
+        networkAccessConsent = true
+        MarkdownSecurityPolicy.setNetworkAccessEnabled(binding.wvMarkdown.settings, true)
+        Toast.makeText(activity, "Internet access enabled for remote images", Toast.LENGTH_SHORT).show()
+        if (state.rawMarkdown.isNotEmpty()) {
+            val sanitized = MarkdownSecurityPolicy.sanitizeMarkdown(state.rawMarkdown)
+            val safeBaseUri = state.documentUri?.toString() ?: ""
+            val escapedContent = escapeJsString(sanitized)
+            val escapedBase = escapeJsString(safeBaseUri)
+            val js = "window.VeilFrameMarkdown.render('$escapedContent', '$escapedBase');"
+            binding.wvMarkdown.evaluateJavascript(js, null)
+        }
+    }
+
+    private fun showExportAsDialog() {
+        val options = arrayOf("PDF Document (Print Rendered)", "Word Document (.docx)")
+        AlertDialog.Builder(activity)
+            .setTitle("Export as...")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> exportRenderedToPdf()
+                    1 -> exportToDocx()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun exportRenderedToPdf() {
+        try {
+            val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+            if (printManager == null) {
+                Toast.makeText(activity, "Printing service unavailable on this device", Toast.LENGTH_SHORT).show()
+                return
+            }
+            val baseName = state.documentTitle.substringBeforeLast(".")
+            val jobName = "${baseName}_Rendered"
+            val printAdapter = binding.wvMarkdown.createPrintDocumentAdapter(jobName)
+            val printAttributes = PrintAttributes.Builder()
+                .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+                .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                .build()
+            printManager.print(jobName, printAdapter, printAttributes)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error printing rendered PDF: ${e.message}", e)
+            Toast.makeText(activity, "Failed to export PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun exportToDocx() {
+        try {
+            val content = if (state.isEditMode) binding.etMarkdownSource.text.toString() else state.rawMarkdown
+            val baseName = state.documentTitle.substringBeforeLast(".")
+            val docxFileName = "$baseName.docx"
+            val tempFile = File(activity.cacheDir, docxFileName)
+            MarkdownDocxExporter.exportToDocx(content, tempFile, state.documentTitle)
+            val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", tempFile)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, docxFileName)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivity(Intent.createChooser(intent, "Share DOCX Document"))
+            Toast.makeText(activity, "Exported $docxFileName", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error exporting DOCX: ${e.message}", e)
+            Toast.makeText(activity, "Failed to export DOCX: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openWithExternalApp() {

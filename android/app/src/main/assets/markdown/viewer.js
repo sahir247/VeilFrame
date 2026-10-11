@@ -246,6 +246,18 @@
 
         bodyEl.innerHTML = html;
 
+        // Resolve relative paths in raw HTML <img> tags if baseUri is provided
+        if (baseUri) {
+          const rawImgs = bodyEl.querySelectorAll('img');
+          for (let idx = 0; idx < rawImgs.length; idx++) {
+            const img = rawImgs[idx];
+            const rawSrc = img.getAttribute('src');
+            if (rawSrc && !rawSrc.startsWith('http://') && !rawSrc.startsWith('https://') && !rawSrc.startsWith('data:') && !rawSrc.startsWith('/__vf_resource__')) {
+              img.src = '/__vf_resource__?path=' + encodeURIComponent(rawSrc) + '&base=' + encodeURIComponent(baseUri);
+            }
+          }
+        }
+
         // 6. Notify TOC to Kotlin immediately
         if (window.VeilFrameBridge && typeof window.VeilFrameBridge.onTableOfContents === 'function') {
           window.VeilFrameBridge.onTableOfContents(JSON.stringify(currentToc));
