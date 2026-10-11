@@ -23,10 +23,13 @@ import java.util.concurrent.Executors
  */
 object ThermalGovernor {
 
-    /** Raw PowerManager.THERMAL_STATUS_* value (0 = NONE on API 29+). */
     @Volatile
     var status: Int = 0
         private set
+
+    @Volatile
+    @androidx.annotation.VisibleForTesting
+    internal var overrideThrottledForTesting: Boolean? = null
 
     private var powerManager: PowerManager? = null
     private var listener: Any? = null
@@ -72,8 +75,10 @@ object ThermalGovernor {
 
     /** MODERATE or worse → efficiency mode (workers 1, smaller chunks). */
     val isThrottled: Boolean
-        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+        get() = overrideThrottledForTesting ?: (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             status >= PowerManager.THERMAL_STATUS_MODERATE
+        )
 
     /** CRITICAL or worse → abort heavy jobs cooperatively (typed ThermalShutdownException). */
     val isCritical: Boolean

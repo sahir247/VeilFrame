@@ -1,5 +1,8 @@
 package com.veilframe.app.upscale
 
+import ai.onnxruntime.OnnxJavaType
+import com.veilframe.app.runtime.ThermalGovernor
+import com.veilframe.app.upscale.inference.AiProcessor
 import com.veilframe.app.upscale.inference.OnnxSessionManager
 import com.veilframe.app.upscale.inference.isRecognizedStrengthInput
 import org.junit.Assert.assertEquals
@@ -37,14 +40,116 @@ class InferenceOptimizationAndSafetyTest {
     }
 
     @Test
-    fun `control input semantic whitelisting accepts recognized quality inputs`() {
-        assertTrue(isRecognizedStrengthInput("strength", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("qf", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("q_factor", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("qfactor", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("quality", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("cond", "generic_model.onnx"))
-        assertTrue(isRecognizedStrengthInput("any_scalar", "fbcnn_color.onnx"))
+    fun `session manager cache key invalidates when weights change with identical length and timestamp`() {
+        val modelFile = File(tempFolder.root, "real_esrgan_x4.onnx")
+        modelFile.writeText("weights_alpha_01") // exactly 16 bytes
+        val fixedTimestamp = 1700000000000L
+        modelFile.setLastModified(fixedTimestamp)
+
+        val key1 = OnnxSessionManager.getCacheKey(modelFile)
+
+        // Overwrite file with different bytes but exactly identical length
+        modelFile.writeText("weights_beta__02") // exactly 16 bytes
+        modelFile.setLastModified(fixedTimestamp)
+
+        assertEquals("File lengths must be identical", 16L, modelFile.length())
+        assertEquals("File last modified must be identical", fixedTimestamp, modelFile.lastModified())
+
+        val key2 = OnnxSessionManager.getCacheKey(modelFile)
+
+        assertNotEquals(
+            "Cryptographic SHA-256 digest must prevent cache key collision when weights change despite same length and timestamp",
+            key1,
+            key2
+        )
+    }
+
+    @Test
+    fun `in-RAM budget strictly returns zero when available system memory is under 64 MB`() {
+        val lowRamProbe = object : com.veilframe.app.cv.core.MemoryProbe {
+            override fun totalMemoryBytes(): Long = 4L * 1024L * 1024L * 1024L
+            override fun availableMemoryBytes(): Long = 32L * 1024L * 1024L // 32 MB < 64 MB threshold
+        }
+
+        val budget = AiProcessor.inRamOutputBudget(lowRamProbe)
+        assertEquals("Budget must strictly return 0L under 64 MB available RAM (no coerceAtLeast floor)", 0L, budget)
+    }
+
+    @Test
+    fun `in-RAM budget scales with available memory and heap above safe threshold`() {
+        val healthyRamProbe = object : com.veilframe.app.cv.core.MemoryProbe {
+            override fun totalMemoryBytes(): Long = 8L * 1024L * 1024L * 1024L
+            override fun availableMemoryBytes(): Long = 2L * 1024L * 1024L * 1024L // 2 GB available
+        }
+
+        val budget = AiProcessor.inRamOutputBudget(healthyRamProbe)
+        assertTrue("Budget must be positive when ample RAM is available", budget > 0L)
+        assertTrue("Budget must not exceed 200 MB maximum cap", budget <= 200L * 1024L * 1024L)
+    }
+
+    @Test
+    fun `resolveParallelWorkers independently clamps worker count under constrained memory and thermal throttling`() {
+        val highWorkers = 8
+        val tileCount = 16
+        val chunkSize = 512
+        val scale = 4
+
+        // 1. Constrained available RAM probe (e.g. 50 MB available)
+        val constrainedRamProbe = object : com.veilframe.app.cv.core.MemoryProbe {
+            override fun totalMemoryBytes(): Long = 4L * 1024L * 1024L * 1024L
+            override fun availableMemoryBytes(): Long = 50L * 1024L * 1024L
+        }
+
+        val clampedWorkers = AiProcessor.resolveParallelWorkers(
+            requestedWorkers = highWorkers,
+            tileCount = tileCount,
+            chunkSize = chunkSize,
+            scaleFactor = scale,
+            memProbe = constrainedRamProbe
+        )
+        assertEquals("Worker count must clamp to 1 when per-tile peak memory exceeds 25% of available RAM", 1, clampedWorkers)
+
+        // 2. Thermal throttling clamp
+        try {
+            ThermalGovernor.overrideThrottledForTesting = true
+            val ampleRamProbe = object : com.veilframe.app.cv.core.MemoryProbe {
+                override fun totalMemoryBytes(): Long = 16L * 1024L * 1024L * 1024L
+                override fun availableMemoryBytes(): Long = 8L * 1024L * 1024L * 1024L
+            }
+            val throttledWorkers = AiProcessor.resolveParallelWorkers(
+                requestedWorkers = 6,
+                tileCount = tileCount,
+                chunkSize = 128,
+                scaleFactor = 1,
+                memProbe = ampleRamProbe
+            )
+            assertTrue("Worker count must be clamped to <= 2 under thermal throttling", throttledWorkers <= 2)
+        } finally {
+            ThermalGovernor.overrideThrottledForTesting = null
+        }
+    }
+
+    @Test
+    fun `control input semantic filtering validates exact names, tensor types, and shapes`() {
+        // Universal recognized names
+        assertTrue(isRecognizedStrengthInput("strength", "generic_model.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+        assertTrue(isRecognizedStrengthInput("qf", "generic_model.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+        assertTrue(isRecognizedStrengthInput("quality", "generic_model.onnx", OnnxJavaType.FLOAT16, longArrayOf(1L, 1L)))
+
+        // FBCNN recognized names
+        assertTrue(isRecognizedStrengthInput("qf", "fbcnn_color.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+        assertTrue(isRecognizedStrengthInput("qf_input", "fbcnn_color.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+        // FBCNN rejects arbitrary scalars now
+        assertFalse(isRecognizedStrengthInput("any_scalar", "fbcnn_color.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+        assertFalse(isRecognizedStrengthInput("temperature", "fbcnn_color.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L)))
+
+        // Non-float types are rejected
+        assertFalse(isRecognizedStrengthInput("qf", "fbcnn_color.onnx", OnnxJavaType.INT32, longArrayOf(1L, 1L)))
+        assertFalse(isRecognizedStrengthInput("strength", "generic_model.onnx", OnnxJavaType.INT64, longArrayOf(1L, 1L)))
+
+        // Non-scalar shapes are rejected
+        assertFalse(isRecognizedStrengthInput("strength", "generic_model.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 3L)))
+        assertFalse(isRecognizedStrengthInput("strength", "generic_model.onnx", OnnxJavaType.FLOAT, longArrayOf(1L, 1L, 1L)))
     }
 
     @Test

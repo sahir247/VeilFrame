@@ -9,7 +9,7 @@ import com.veilframe.app.upscale.inference.ImageTensor.Companion.firstImageTenso
 class ModelInfo(
     val strength: Float = 65f,
     val overlap: Int = 16,
-    chunkSize: Int = 512,
+    val chunkSize: Int = 512,
     disableChunking: Boolean = false,
     session: OrtSession,
     val modelName: String,
@@ -34,9 +34,11 @@ class ModelInfo(
     val isNonChunkable = disableChunking
 
     val supportsStrength: Boolean = inputInfoMap.any { (name, nodeInfo) ->
+        val tensorInfo = nodeInfo.info as? TensorInfo
+        val shape = tensorInfo?.shape?.withResolvedUnknowns()
         name != inputName &&
-            isRecognizedStrengthInput(name, modelName) &&
-            (nodeInfo.info as? TensorInfo)?.shape?.withResolvedUnknowns()?.contentEquals(longArrayOf(1L, 1L)) == true
+            isRecognizedStrengthInput(name, modelName, tensorInfo?.type, shape) &&
+            shape?.contentEquals(longArrayOf(1L, 1L)) == true
     }
 
     val minSpatialSize = spatialSizeMap.entries.find {

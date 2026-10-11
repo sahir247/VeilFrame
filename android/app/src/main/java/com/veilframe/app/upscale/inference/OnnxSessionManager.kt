@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import java.security.MessageDigest
 import kotlin.coroutines.resumeWithException
 
 /**
@@ -57,18 +58,39 @@ object OnnxSessionManager {
     private val defaultOrder: List<Backend> = listOf(Backend.XNNPACK, Backend.NNAPI, Backend.CPU)
 
     /**
+     * Computes a cryptographic SHA-256 digest of the model file contents.
+     * Prevents cache collisions where a model is replaced with different weights
+     * but identical filename, size, and lastModified timestamp.
+     */
+    fun computeContentDigest(file: File): String {
+        if (!file.exists() || !file.isFile) return "0"
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered(65536).use { input ->
+                val buffer = ByteArray(65536)
+                var bytesRead: Int
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Throwable) {
+            "${file.length()}_${file.lastModified()}".hashCode().toUInt().toString(16)
+        }
+    }
+
+    /**
      * Compute a cache key bound to:
      * 1. Model filename
-     * 2. Model file identity (file length + last modified timestamp)
+     * 2. Cryptographic SHA-256 content digest (first 16 hex chars)
      * 3. Hardware, OS, and build identity (to invalidate across driver/OS updates)
      */
     fun getCacheKey(modelFile: File): String {
         val modelName = modelFile.name
-        val fileFingerprint = "${modelFile.length()}_${modelFile.lastModified()}"
+        val contentDigest = computeContentDigest(modelFile)
         val deviceFingerprint = "${Build.HARDWARE}_${Build.VERSION.SDK_INT}_${Build.FINGERPRINT}"
-        val fileHash = fileFingerprint.hashCode().toUInt().toString(16)
         val devHash = deviceFingerprint.hashCode().toUInt().toString(16)
-        return "$KEY_BACKEND_PREFIX${modelName}_${fileHash}_$devHash"
+        return "$KEY_BACKEND_PREFIX${modelName}_${contentDigest.take(16)}_$devHash"
     }
 
     fun createSession(modelFile: File, context: Context? = null): OrtSession {

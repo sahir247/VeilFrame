@@ -154,15 +154,48 @@ fun createInputTensor(
     return OnnxTensor.createTensor(env, storage, shape, OnnxJavaType.FLOAT16)
 }
 
-private val RECOGNIZED_STRENGTH_INPUT_NAMES = setOf(
+private val UNIVERSAL_RECOGNIZED_STRENGTH_NAMES = setOf(
     "strength", "qf", "q_factor", "qfactor", "quality", "cond", "condition"
 )
 
-fun isRecognizedStrengthInput(name: String, modelName: String): Boolean {
+private val FBCNN_RECOGNIZED_NAMES = setOf(
+    "qf", "qf_input", "qfactor", "q_factor", "quality", "strength", "cond"
+)
+
+private val SCUNET_RECOGNIZED_NAMES = setOf(
+    "strength", "noise_level", "noise", "cond"
+)
+
+fun isRecognizedStrengthInput(
+    name: String,
+    modelName: String,
+    tensorType: OnnxJavaType? = null,
+    shape: LongArray? = null
+): Boolean {
     val lower = name.lowercase()
-    if (RECOGNIZED_STRENGTH_INPUT_NAMES.contains(lower)) return true
-    if (modelName.startsWith("fbcnn_", ignoreCase = true)) return true
-    return false
+
+    // 1. Validate tensor type if provided: must be 32-bit or 16-bit float
+    if (tensorType != null && tensorType != OnnxJavaType.FLOAT && tensorType != OnnxJavaType.FLOAT16) {
+        return false
+    }
+
+    // 2. Validate shape if provided: must be scalar [1, 1]
+    if (shape != null && !shape.contentEquals(longArrayOf(1L, 1L))) {
+        return false
+    }
+
+    // 3. Exact metadata check against model family
+    return when {
+        modelName.startsWith("fbcnn_", ignoreCase = true) -> {
+            FBCNN_RECOGNIZED_NAMES.contains(lower)
+        }
+        modelName.startsWith("scunet_", ignoreCase = true) -> {
+            SCUNET_RECOGNIZED_NAMES.contains(lower)
+        }
+        else -> {
+            UNIVERSAL_RECOGNIZED_STRENGTH_NAMES.contains(lower)
+        }
+    }
 }
 
 fun appendControlInputs(
@@ -178,19 +211,17 @@ fun appendControlInputs(
         val shape = tensorInfo.shape.withResolvedUnknowns()
 
         if (shape.contentEquals(longArrayOf(1L, 1L))) {
-            if (isRecognizedStrengthInput(name, info.modelName)) {
-                if (tensorInfo.type == OnnxJavaType.FLOAT || tensorInfo.type == OnnxJavaType.FLOAT16) {
-                    destination[name] = createStrengthTensor(
-                        env = env,
-                        strength = info.strength / 100f,
-                        shape = shape,
-                        type = tensorInfo.type
-                    )
-                }
+            if (isRecognizedStrengthInput(name, info.modelName, tensorInfo.type, shape)) {
+                destination[name] = createStrengthTensor(
+                    env = env,
+                    strength = info.strength / 100f,
+                    shape = shape,
+                    type = tensorInfo.type
+                )
             } else {
                 Log.w(
                     AiExtensions.LOG_TAG,
-                    "Model '${info.modelName}' contains unrecognized scalar input '$name' [1,1]. " +
+                    "Model '${info.modelName}' contains unrecognized scalar input '$name' [1,1] (${tensorInfo.type}). " +
                         "Skipping strength injection to prevent tensor semantic corruption."
                 )
             }

@@ -27,6 +27,84 @@ class AiProcessor(
     companion object {
         private const val TAG = "VeilFrame.AiProcessor"
         const val MAX_IN_MEMORY_PIXELS = 50_000_000L
+
+        /**
+         * Dynamic in-RAM output budget (user policy: 6–16 GB devices with
+         * fluctuating availability — neither too conservative nor too aggressive).
+         * Strictly refuses in-memory mode when available RAM is < 64 MB.
+         * Capped at half of currently available system memory and 30% of max heap.
+         */
+        internal fun inRamOutputBudget(
+            memProbe: com.veilframe.app.cv.core.MemoryProbe = com.veilframe.app.cv.core.MemInfoMemoryProbe()
+        ): Long {
+            val heap = Runtime.getRuntime().maxMemory()
+            val avail = try {
+                memProbe.availableMemoryBytes()
+            } catch (_: Throwable) {
+                0L
+            }
+            // In critically low available RAM (<64 MB), strictly refuse in-RAM mode
+            // to prevent OOM when combining tile retention, ONNX native buffers, and the composed output.
+            if (avail in 1L until (64L * 1024L * 1024L)) {
+                return 0L
+            }
+            var budget = minOf((heap * 0.30).toLong(), 200L * 1024L * 1024L)
+            if (avail > 0L) {
+                budget = minOf(budget, avail / 2)
+            }
+            return budget.coerceAtLeast(0L)
+        }
+
+        internal fun resolveParallelWorkers(
+            requestedWorkers: Int,
+            tileCount: Int,
+            chunkSize: Int = 256,
+            scaleFactor: Int = 1,
+            memProbe: com.veilframe.app.cv.core.MemoryProbe = com.veilframe.app.cv.core.MemInfoMemoryProbe()
+        ): Int {
+            val detectedCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val initialWorkers = if (requestedWorkers <= 0) {
+                when {
+                    detectedCores >= 8 -> 4
+                    detectedCores >= 6 -> 2
+                    else -> 1
+                }
+            } else {
+                requestedWorkers
+            }
+
+            var clamped = initialWorkers.coerceIn(1, minOf(detectedCores, tileCount.coerceAtLeast(1)))
+
+            // Enforce memory and thermal constraints regardless of caller request:
+            val availBytes = try {
+                memProbe.availableMemoryBytes()
+            } catch (_: Throwable) {
+                0L
+            }
+            val heapBytes = Runtime.getRuntime().maxMemory()
+            val perTilePeakBytes = UpscaleInferenceParams.estimatePeakTileMemory(chunkSize, scaleFactor)
+
+            val isThrottled = try {
+                com.veilframe.app.runtime.ThermalGovernor.isThrottled
+            } catch (_: Throwable) {
+                false
+            }
+            if (isThrottled && clamped > 1) {
+                clamped = minOf(clamped, 2)
+            }
+
+            if (availBytes > 0L) {
+                val maxByRam = (availBytes * 0.25 / perTilePeakBytes).toInt().coerceAtLeast(1)
+                clamped = minOf(clamped, maxByRam)
+            }
+
+            if (heapBytes > 0L) {
+                val maxByHeap = ((heapBytes * 0.35) / perTilePeakBytes).toInt().coerceAtLeast(1)
+                clamped = minOf(clamped, maxByHeap)
+            }
+
+            return clamped.coerceAtLeast(1)
+        }
     }
 
     /**
@@ -172,9 +250,24 @@ class AiProcessor(
         val outputBytes = outputPixels * 4L
         val heap = Runtime.getRuntime().maxMemory()
 
+        // Peak RAM estimate for in-memory processing must account for:
+        // 1. All retained tile output bitmaps (~1.25x outputBytes due to overlap)
+        // 2. The final composed bitmap allocation (1.0x outputBytes)
+        // 3. Peak working memory for active concurrent ONNX workers
+        val peakTileMemory = UpscaleInferenceParams.estimatePeakTileMemory(info.tileLimit, info.scaleFactor)
+        val estimatedActiveWorkers = resolveParallelWorkers(
+            requestedWorkers = requestedWorkers,
+            tileCount = grid.columns * grid.rows,
+            chunkSize = info.tileLimit,
+            scaleFactor = info.scaleFactor
+        )
+        val totalPeakRamEstimate = (outputBytes * 2.25).toLong() + (estimatedActiveWorkers * peakTileMemory)
+
+        val ramBudget = inRamOutputBudget()
         val canUseInMemory = outputPixels <= MAX_IN_MEMORY_PIXELS &&
-            outputBytes <= (heap * 0.30).toLong() &&
-            outputBytes <= inRamOutputBudget()
+            ramBudget > 0L &&
+            totalPeakRamEstimate <= (heap * 0.40).toLong() &&
+            totalPeakRamEstimate <= ramBudget
 
         if (!canUseInMemory) {
             ensureDiskBudget(jobDir, outputPixels)
@@ -239,25 +332,17 @@ class AiProcessor(
         }
     }
 
-    /**
-     * Dynamic in-RAM output budget (user policy: 6–16 GB devices with
-     * fluctuating availability — neither too conservative nor too aggressive).
-     * min(30% of app heap, 200 MB, half of CURRENTLY available system memory).
-     */
-    internal fun inRamOutputBudget(): Long {
-        val heap = Runtime.getRuntime().maxMemory()
-        val avail = try {
-            com.veilframe.app.cv.core.MemInfoMemoryProbe().availableMemoryBytes()
-        } catch (_: Throwable) {
-            0L
-        }
-        var budget = minOf((heap * 0.30).toLong(), 200L * 1024L * 1024L)
-        if (avail > 0L) {
-            budget = minOf(budget, avail / 2)
-        }
-        return budget.coerceAtLeast(32L * 1024L * 1024L)
-    }
+    fun inRamOutputBudget(
+        memProbe: com.veilframe.app.cv.core.MemoryProbe = com.veilframe.app.cv.core.MemInfoMemoryProbe()
+    ): Long = Companion.inRamOutputBudget(memProbe)
 
+    fun resolveParallelWorkers(
+        requestedWorkers: Int,
+        tileCount: Int,
+        chunkSize: Int = 256,
+        scaleFactor: Int = 1,
+        memProbe: com.veilframe.app.cv.core.MemoryProbe = com.veilframe.app.cv.core.MemInfoMemoryProbe()
+    ): Int = Companion.resolveParallelWorkers(requestedWorkers, tileCount, chunkSize, scaleFactor, memProbe)
     /** F5: typed, honest disk-space refusal instead of mid-job write failures. */
     private fun ensureDiskBudget(jobDir: File, outputPixels: Long) {
         val estimateBytes = (outputPixels * 4.0 * 0.6).toLong() + 64L * 1024L * 1024L
@@ -282,7 +367,9 @@ class AiProcessor(
     ) {
         val workers = resolveParallelWorkers(
             requestedWorkers = requestedWorkers,
-            tileCount = tiles.size
+            tileCount = tiles.size,
+            chunkSize = info.tileLimit,
+            scaleFactor = info.scaleFactor
         )
 
         Log.d(TAG, "Processing ${tiles.size} tile(s), workers=$workers, requested=$requestedWorkers, inMemory=${inMemoryTiles != null}")
@@ -383,14 +470,14 @@ class AiProcessor(
         imageSize: TensorSize,
         overlap: Int,
         scaleFactor: Int,
-        inMemoryTiles: Map<Int, Bitmap>? = null
+        inMemoryTiles: MutableMap<Int, Bitmap>? = null
     ): Bitmap = withContext(Dispatchers.Default) {
         val outputSize = imageSize.scaledBy(scaleFactor)
         val result = Bitmap.createBitmap(outputSize.width, outputSize.height, Bitmap.Config.ARGB_8888)
 
         tiles.forEach { tile ->
             ensureActive()
-            val inMemory = inMemoryTiles?.get(tile.index)
+            val inMemory = inMemoryTiles?.remove(tile.index)
             val tileBitmap = inMemory ?: loadBitmap(
                 file = tile.files.output,
                 label = "processed tile ${tile.index}"
@@ -405,13 +492,11 @@ class AiProcessor(
                     scaleFactor = scaleFactor
                 )
             } finally {
-                if (inMemory == null) {
-                    tileBitmap.recycle()
-                }
+                tileBitmap.recycle()
             }
         }
 
-        // Clean up all in-memory tile buffers once composited
+        // Clean up any remaining in-memory tile buffers once composited
         inMemoryTiles?.values?.forEach { runCatching { it.recycle() } }
 
         result
@@ -730,23 +815,7 @@ class AiProcessor(
         UpscaleOutput.Streamed(file = outFile, preview = preview, width = outW, height = outH)
     }
 
-    private fun resolveParallelWorkers(
-        requestedWorkers: Int,
-        tileCount: Int
-    ): Int {
-        val detectedCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        val workers = if (requestedWorkers <= 0) {
-            when {
-                detectedCores >= 8 -> 4
-                detectedCores >= 6 -> 2
-                else -> 1
-            }
-        } else {
-            requestedWorkers
-        }
 
-        return workers.coerceIn(1, minOf(detectedCores, tileCount.coerceAtLeast(1)))
-    }
 
     private suspend fun savePng(
         bitmap: Bitmap,

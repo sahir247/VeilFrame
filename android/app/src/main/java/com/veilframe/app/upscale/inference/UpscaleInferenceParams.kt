@@ -30,6 +30,16 @@ data class UpscaleInferenceParams(
 
     companion object {
         /**
+         * Scale-aware peak working memory per tile estimate:
+         * Input float planes + intermediate activations + output planes + output bitmap
+         * perTilePeakBytes ~= (chunk * targetScale)^2 * 16 bytes
+         */
+        fun estimatePeakTileMemory(chunkSize: Int, targetScale: Int): Long {
+            val outTileDim = chunkSize.toLong() * targetScale.coerceAtLeast(1)
+            return (outTileDim * outTileDim * 16L).coerceAtLeast(1L)
+        }
+
+        /**
          * F3 (device-class tile sizing): replaces the fixed 512px/4-worker
          * default that spiked ~100 MB per worker on 4x models and thrashed
          * 8-core SoCs into thermal throttling.
@@ -80,11 +90,7 @@ data class UpscaleInferenceParams(
                 chunk = ((chunk * 3 / 4) / 32 * 32).coerceAtLeast(128)
                 workers = 1
             } else if (availBytes >= 3_500_000_000L && heapMb >= 512) {
-                // Scale-aware peak working memory per tile estimate:
-                // Input float planes + intermediate activations + output planes + output bitmap
-                // perTilePeakBytes ~= (chunk * targetScale)^2 * 16 bytes
-                val outTileDim = chunk.toLong() * targetScale.coerceAtLeast(1)
-                val perTilePeakBytes = (outTileDim * outTileDim * 16L).coerceAtLeast(1L)
+                val perTilePeakBytes = estimatePeakTileMemory(chunk, targetScale)
                 val heapBytes = heapMb.toLong() * 1024L * 1024L
 
                 // Budget cap: concurrency must not exceed 25% of available system memory
