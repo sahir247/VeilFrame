@@ -56,10 +56,26 @@ object OnnxSessionManager {
      */
     private val defaultOrder: List<Backend> = listOf(Backend.XNNPACK, Backend.NNAPI, Backend.CPU)
 
+    /**
+     * Compute a cache key bound to:
+     * 1. Model filename
+     * 2. Model file identity (file length + last modified timestamp)
+     * 3. Hardware, OS, and build identity (to invalidate across driver/OS updates)
+     */
+    fun getCacheKey(modelFile: File): String {
+        val modelName = modelFile.name
+        val fileFingerprint = "${modelFile.length()}_${modelFile.lastModified()}"
+        val deviceFingerprint = "${Build.HARDWARE}_${Build.VERSION.SDK_INT}_${Build.FINGERPRINT}"
+        val fileHash = fileFingerprint.hashCode().toUInt().toString(16)
+        val devHash = deviceFingerprint.hashCode().toUInt().toString(16)
+        return "$KEY_BACKEND_PREFIX${modelName}_${fileHash}_$devHash"
+    }
+
     fun createSession(modelFile: File, context: Context? = null): OrtSession {
         val modelName = modelFile.name
+        val cacheKey = getCacheKey(modelFile)
         val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val cached = prefs?.getString(KEY_BACKEND_PREFIX + modelName, null)?.let { name ->
+        val cached = prefs?.getString(cacheKey, null)?.let { name ->
             runCatching { Backend.valueOf(name) }.getOrNull()
         }
 
@@ -67,20 +83,19 @@ object OnnxSessionManager {
             try {
                 val session = buildSession(modelFile, modelName, cached)
                 lastBackend = cached
-                Log.i(TAG, "ONNX session for $modelName on cached backend $cached")
+                Log.i(TAG, "ONNX session for $modelName on cached backend $cached (key=$cacheKey)")
                 return session
             } catch (e: Exception) {
                 Log.w(TAG, "Cached backend $cached failed for $modelName; re-selecting", e)
-                prefs?.edit()?.remove(KEY_BACKEND_PREFIX + modelName)?.apply()
+                prefs?.edit()?.remove(cacheKey)?.apply()
             }
         }
 
         // First run for this model: build every viable candidate and MEASURE.
         // Audit fix: "session creation succeeded" does NOT mean "fast" — NNAPI
         // happily creates sessions whose ops mostly fall back to CPU with
-        // partitioning overhead. One small synthetic run per candidate
-        // (256px tile, warm-up + timed) decides; the choice is cached per
-        // model, so the cost is paid once.
+        // partitioning overhead. Two warm-up passes and a median-of-3 timed runs
+        // decide; the choice is cached per model-version and device.
         val built = LinkedHashMap<Backend, OrtSession>()
         val timings = LinkedHashMap<Backend, Double>()
         var lastError: Exception? = null
@@ -104,7 +119,7 @@ object OnnxSessionManager {
             if (backend != winner) runCatching { session.close() }
         }
         lastBackend = winner
-        prefs?.edit()?.putString(KEY_BACKEND_PREFIX + modelName, winner.name)?.apply()
+        prefs?.edit()?.putString(cacheKey, winner.name)?.apply()
         Log.i(
             TAG,
             "Backend selection for $modelName: $winner " +
@@ -119,7 +134,8 @@ object OnnxSessionManager {
     }
 
     /**
-     * Synthetic timing run on a 256px tile (warm-up + measured pass).
+     * Synthetic timing run on a 256px tile with 2 warm-up passes and
+     * a 3-iteration median timed measurement to reject scheduler/frequency scaling noise.
      * Returns null when the model refuses the synthetic input — the candidate
      * stays selectable but unranked (creation-gated fallback).
      */
@@ -144,10 +160,20 @@ object OnnxSessionManager {
             tensors[info.inputName] = createInputTensor(data, shape, info.isFp16)
             appendControlInputs(tensors, info)
 
-            session.run(tensors).use { } // warm-up (lazy EP compilation)
-            val t0 = System.nanoTime()
-            session.run(tensors).use { }
-            (System.nanoTime() - t0) / 1_000_000.0
+            // Warm-up: 2 passes to trigger lazy EP compilation, kernel JIT, and thread allocation
+            repeat(2) {
+                session.run(tensors).use { }
+            }
+
+            // Timed runs: 3 iterations, take median to reject CPU governor & scheduling jitter
+            val samples = DoubleArray(3)
+            for (i in 0 until 3) {
+                val t0 = System.nanoTime()
+                session.run(tensors).use { }
+                samples[i] = (System.nanoTime() - t0) / 1_000_000.0
+            }
+            samples.sort()
+            samples[1] // median
         } catch (t: Throwable) {
             Log.w(TAG, "Benchmark failed for $modelName: ${t.message}")
             null

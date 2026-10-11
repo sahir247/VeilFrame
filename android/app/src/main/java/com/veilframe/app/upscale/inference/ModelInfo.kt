@@ -34,7 +34,9 @@ class ModelInfo(
     val isNonChunkable = disableChunking
 
     val supportsStrength: Boolean = inputInfoMap.any { (name, nodeInfo) ->
-        name != inputName && (nodeInfo.info as? TensorInfo)?.shape?.withResolvedUnknowns()?.contentEquals(longArrayOf(1L, 1L)) == true
+        name != inputName &&
+            isRecognizedStrengthInput(name, modelName) &&
+            (nodeInfo.info as? TensorInfo)?.shape?.withResolvedUnknowns()?.contentEquals(longArrayOf(1L, 1L)) == true
     }
 
     val minSpatialSize = spatialSizeMap.entries.find {

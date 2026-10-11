@@ -73,13 +73,38 @@ data class UpscaleInferenceParams(
             } catch (_: Throwable) {
                 0L
             }
+            val availableCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+
             if (availBytes in 1 until 1_500_000_000L) {
                 // Under ~1.5 GB available: step chunk down ~25% (snapped to 32px), single worker.
                 chunk = ((chunk * 3 / 4) / 32 * 32).coerceAtLeast(128)
                 workers = 1
-            } else if (availBytes >= 4_000_000_000L && heapMb >= 512 && !bigScale) {
-                // Plenty of headroom: keep the aggressive profile (2 workers).
-                workers = 2
+            } else if (availBytes >= 3_500_000_000L && heapMb >= 512) {
+                // Scale-aware peak working memory per tile estimate:
+                // Input float planes + intermediate activations + output planes + output bitmap
+                // perTilePeakBytes ~= (chunk * targetScale)^2 * 16 bytes
+                val outTileDim = chunk.toLong() * targetScale.coerceAtLeast(1)
+                val perTilePeakBytes = (outTileDim * outTileDim * 16L).coerceAtLeast(1L)
+                val heapBytes = heapMb.toLong() * 1024L * 1024L
+
+                // Budget cap: concurrency must not exceed 25% of available system memory
+                // or 40% of the app heap limit.
+                val maxWorkersByAvailRam = (availBytes / 4 / perTilePeakBytes).toInt()
+                val maxWorkersByHeap = ((heapBytes * 0.40) / perTilePeakBytes).toInt()
+                val memorySafeWorkers = minOf(maxWorkersByAvailRam, maxWorkersByHeap)
+
+                // Scale up concurrency to 3 or 4 workers when hardware cores and thermal headroom permit
+                val isThrottled = try {
+                    com.veilframe.app.runtime.ThermalGovernor.isThrottled
+                } catch (_: Throwable) {
+                    false
+                }
+
+                if (!isThrottled && memorySafeWorkers >= 3 && availableCores >= 6) {
+                    workers = minOf(availableCores - 2, memorySafeWorkers, 4).coerceAtLeast(2)
+                } else {
+                    workers = 2
+                }
             }
 
             return UpscaleInferenceParams(

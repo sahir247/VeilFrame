@@ -154,6 +154,17 @@ fun createInputTensor(
     return OnnxTensor.createTensor(env, storage, shape, OnnxJavaType.FLOAT16)
 }
 
+private val RECOGNIZED_STRENGTH_INPUT_NAMES = setOf(
+    "strength", "qf", "q_factor", "qfactor", "quality", "cond", "condition"
+)
+
+fun isRecognizedStrengthInput(name: String, modelName: String): Boolean {
+    val lower = name.lowercase()
+    if (RECOGNIZED_STRENGTH_INPUT_NAMES.contains(lower)) return true
+    if (modelName.startsWith("fbcnn_", ignoreCase = true)) return true
+    return false
+}
+
 fun appendControlInputs(
     destination: MutableMap<String, OnnxTensor>,
     info: ModelInfo
@@ -164,17 +175,29 @@ fun appendControlInputs(
         if (name == info.inputName) return@forEach
 
         val tensorInfo = nodeInfo.info as? TensorInfo ?: return@forEach
-        if (tensorInfo.type != OnnxJavaType.FLOAT && tensorInfo.type != OnnxJavaType.FLOAT16) {
-            return@forEach
-        }
-
         val shape = tensorInfo.shape.withResolvedUnknowns()
+
         if (shape.contentEquals(longArrayOf(1L, 1L))) {
-            destination[name] = createStrengthTensor(
-                env = env,
-                strength = info.strength / 100f,
-                shape = shape,
-                type = tensorInfo.type
+            if (isRecognizedStrengthInput(name, info.modelName)) {
+                if (tensorInfo.type == OnnxJavaType.FLOAT || tensorInfo.type == OnnxJavaType.FLOAT16) {
+                    destination[name] = createStrengthTensor(
+                        env = env,
+                        strength = info.strength / 100f,
+                        shape = shape,
+                        type = tensorInfo.type
+                    )
+                }
+            } else {
+                Log.w(
+                    AiExtensions.LOG_TAG,
+                    "Model '${info.modelName}' contains unrecognized scalar input '$name' [1,1]. " +
+                        "Skipping strength injection to prevent tensor semantic corruption."
+                )
+            }
+        } else {
+            Log.w(
+                AiExtensions.LOG_TAG,
+                "Model '${info.modelName}' contains non-scalar extra input '$name' with shape ${shape.contentToString()}."
             )
         }
     }

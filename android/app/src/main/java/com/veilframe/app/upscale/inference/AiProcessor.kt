@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 class AiProcessor(
@@ -167,7 +168,17 @@ class AiProcessor(
         // F5: refuse up-front when the cache cannot hold the streamed tile outputs.
         val outputPixels = source.width.toLong() * info.scaleFactor *
             (source.height.toLong() * info.scaleFactor)
-        ensureDiskBudget(jobDir, outputPixels)
+        val imageSize = TensorSize(source.width, source.height)
+        val outputBytes = outputPixels * 4L
+        val heap = Runtime.getRuntime().maxMemory()
+
+        val canUseInMemory = outputPixels <= MAX_IN_MEMORY_PIXELS &&
+            outputBytes <= (heap * 0.30).toLong() &&
+            outputBytes <= inRamOutputBudget()
+
+        if (!canUseInMemory) {
+            ensureDiskBudget(jobDir, outputPixels)
+        }
 
         val tiles = grid.tiles { index ->
             TileFiles(
@@ -182,23 +193,25 @@ class AiProcessor(
             onProgress?.invoke(0, tiles.size)
         }
 
-        processTiles(
-            session = session,
-            source = source,
-            tiles = tiles,
-            info = info,
-            requestedWorkers = requestedWorkers,
-            onProgress = onProgress,
-            onStatus = onStatus
-        )
+        // Bounded in-memory tile storage: bypasses disk PNG compression on the critical path
+        // when total tile outputs fit safely within RAM budget.
+        val inMemoryTiles = if (canUseInMemory) ConcurrentHashMap<Int, Bitmap>() else null
 
-        val imageSize = TensorSize(source.width, source.height)
-        val outputBytes = outputPixels * 4L
-        val heap = Runtime.getRuntime().maxMemory()
-
-        val canUseInMemory = outputPixels <= MAX_IN_MEMORY_PIXELS &&
-            outputBytes <= (heap * 0.30).toLong() &&
-            outputBytes <= inRamOutputBudget()
+        try {
+            processTiles(
+                session = session,
+                source = source,
+                tiles = tiles,
+                info = info,
+                requestedWorkers = requestedWorkers,
+                inMemoryTiles = inMemoryTiles,
+                onProgress = onProgress,
+                onStatus = onStatus
+            )
+        } catch (t: Throwable) {
+            inMemoryTiles?.values?.forEach { runCatching { it.recycle() } }
+            throw t
+        }
 
         if (canUseInMemory) {
             UpscaleOutput.InMemory(
@@ -206,7 +219,8 @@ class AiProcessor(
                     tiles = tiles,
                     imageSize = imageSize,
                     overlap = info.overlap,
-                    scaleFactor = info.scaleFactor
+                    scaleFactor = info.scaleFactor,
+                    inMemoryTiles = inMemoryTiles
                 )
             )
         } else {
@@ -262,6 +276,7 @@ class AiProcessor(
         tiles: List<Tile>,
         info: ModelInfo,
         requestedWorkers: Int,
+        inMemoryTiles: MutableMap<Int, Bitmap>? = null,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
         onStatus: ((String) -> Unit)? = null
     ) {
@@ -270,7 +285,7 @@ class AiProcessor(
             tileCount = tiles.size
         )
 
-        Log.d(TAG, "Processing ${tiles.size} tile(s), workers=$workers, requested=$requestedWorkers")
+        Log.d(TAG, "Processing ${tiles.size} tile(s), workers=$workers, requested=$requestedWorkers, inMemory=${inMemoryTiles != null}")
 
         val completedTiles = AtomicInteger(0)
 
@@ -284,7 +299,7 @@ class AiProcessor(
                 )
             }
             // F1/F9-partial: region-decode the tile input (streams from Uri for
-            // huge sources), run inference, stream the OUTPUT tile to the job dir.
+            // huge sources), run inference, stream or hold the OUTPUT tile.
             val tileBitmap = source.region(
                 tile.area.x,
                 tile.area.y,
@@ -300,13 +315,19 @@ class AiProcessor(
             } finally {
                 tileBitmap.recycle()
             }
-            try {
-                savePng(
-                    bitmap = transformed,
-                    file = tile.files.output
-                )
-            } finally {
-                transformed.recycle()
+
+            if (inMemoryTiles != null) {
+                // In-memory critical path optimization: bypass disk PNG compression entirely
+                inMemoryTiles[tile.index] = transformed
+            } else {
+                try {
+                    savePng(
+                        bitmap = transformed,
+                        file = tile.files.output
+                    )
+                } finally {
+                    transformed.recycle()
+                }
             }
 
             val done = completedTiles.incrementAndGet()
@@ -361,14 +382,16 @@ class AiProcessor(
         tiles: List<Tile>,
         imageSize: TensorSize,
         overlap: Int,
-        scaleFactor: Int
+        scaleFactor: Int,
+        inMemoryTiles: Map<Int, Bitmap>? = null
     ): Bitmap = withContext(Dispatchers.Default) {
         val outputSize = imageSize.scaledBy(scaleFactor)
         val result = Bitmap.createBitmap(outputSize.width, outputSize.height, Bitmap.Config.ARGB_8888)
 
         tiles.forEach { tile ->
             ensureActive()
-            val tileBitmap = loadBitmap(
+            val inMemory = inMemoryTiles?.get(tile.index)
+            val tileBitmap = inMemory ?: loadBitmap(
                 file = tile.files.output,
                 label = "processed tile ${tile.index}"
             )
@@ -382,9 +405,14 @@ class AiProcessor(
                     scaleFactor = scaleFactor
                 )
             } finally {
-                tileBitmap.recycle()
+                if (inMemory == null) {
+                    tileBitmap.recycle()
+                }
             }
         }
+
+        // Clean up all in-memory tile buffers once composited
+        inMemoryTiles?.values?.forEach { runCatching { it.recycle() } }
 
         result
     }
