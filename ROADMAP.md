@@ -11,17 +11,31 @@
 ## Release Milestones & Architecture Status
 
 ### v2.2.9 (Stable)
-- **In-Tree Custom OpenCV 4.14.0 SDK with WeChatQRCode & Videoio Integration**:
-  - Native build targeting NDK r27b for `arm64-v8a` and `x86_64`.
-  - `CameraBridgeViewBase` styled attributes in `:opencv-sdk/src/main/res/values/attrs.xml`.
-  - Fail-closed SHA-256 checksum verification in `:opencv-sdk/build.gradle.kts`.
-- **Computer Vision Subsystem**:
-  - Native CV engine with `QuadDetector`, `TemplateMatcher`, and `FlowEstimator`.
-  - In-process Kotlin compilation and preserved native library debug symbols.
-  - Android SDK command-line tools updated to latest standards.
-- **Android UI/UX Architecture Baseline**:
-  - Architectural lock extending XML + ViewBinding + Material Components foundation.
-  - Roadmap for 13-workspace catalogue, intent-first shell, Document Scanner, and Background Remover.
+- **14 Canonical Workspaces & Modular Shell Architecture ([ADR 0004](docs/adr/0004-android-ui-redesign-architecture.md))**:
+  - Full catalog: Image Studio, Video Studio, QR Code Studio, Document Scanner, Background Remover, AI Image Upscaler, Image Cleaner, Video Cleaner, Image Quality, Folder Scanner, AI Context Bundler, Offline Markdown Studio, Cryptographic Provenance, and Motion Lab.
+  - Intent-first launcher, responsive 2-column catalog grid with keyword synonym search, and unified Library.
+- **Material 3 Expressive UI v3.0 ("Quiet Intensity") ([ADR 0005](docs/adr/0005-m3-expressive-design-system.md))**:
+  - Material Components 1.14.0 foundation with surface-container ladders (Lowest to Highest) across light, dark, and true `#000000` AMOLED modes.
+  - Physics-based spring dynamics (`VfSprings v3.1` with immutable `SpringSpec` architecture) and reduced-motion contract.
+  - Centralized `WorkspaceInsets` contract applying edge-to-edge padding across all 14 workspace roots.
+- **Motion Lab (14th Native Workspace — Alpha) ([ADR 0007](docs/adr/0007-motion-lab-optical-flow-synthesis.md))**:
+  - Optical flow frame synthesis (DIS & Farnebäck) generating 2× and 4× FPS video interpolation.
+  - Pairwise flat memory management, temporary scratch cleanup, and direct export to MediaStore (`Movies/VeilFrame`).
+- **Video Studio & Compressor Modernization**:
+  - Sub-100ms instant preview via direct URI handoff to Media3 ExoPlayer.
+  - Guaranteed YUV420p output encoding (`-pix_fmt yuv420p`) across all export paths.
+- **QR Code Studio EFQRCode 7.0.3 Parity & Vector SVG ([ADR 0003](docs/adr/0003-efqrcode-parity-architecture-and-verification.md))**:
+  - Parity normalization (`effectiveDesignForMode()`), pure XML Vector SVG and Animated SVG export, on-device decode-first fallback, and 2×2 responsive action grid.
+- **Document Scanner QuadStabilizer & Adjust Dialog ([ADR 0008](docs/adr/0008-insets-contract-and-camera-stabilization.md))**:
+  - Real-time EMA corner smoothing (α=0.4) with 48px tolerance, and per-page interactive Adjust dialog (`ColorEngine`).
+- **AI Image Upscaler Streaming & Zero-QNN Governance ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
+  - Disk-backed band streaming (`StreamingPngWriter`), live `MemAvailable` memory governor, benchmark-gated EP selection, and quantization pipeline.
+- **AI Context Bundler Depth Bounds & Markdown Multi-Format Export**:
+  - Explicit `--max-depth` controls bounding recursive directory traversal.
+  - Unified "Save As" menu (MD/PDF/DOCX) and light/dark PDF theming.
+- **In-Tree Custom OpenCV 4.14.0 SDK & WeChatQRCode Integration**:
+  - Native build targeting NDK r27b for `arm64-v8a` and `x86_64` with fail-closed SHA-256 verification.
+  - 34 Phase B6 cancellation checkpoints across heavy vision loops.
 
 ### v2.2.8 (Previous Release)
 - **QR Code Studio (8th Tool)**: 11 artistic visual rendering styles, live CameraX viewfinder scanner, and 11-format safe payload parser.
@@ -127,18 +141,13 @@
 
 ---
 
-### v2.1 UPCOMING: Hardware Acceleration & High-Throughput Batch Processing
-- **Zero-Copy GPU Paths**: Direct GPU texture sharing for real-time video and image batch redaction.
-- **Async Cloud Batch Dispatcher**: Multi-threaded worker queue for large-scale directory and cloud bucket batch sanitization.
-- **Advanced Audio Neutralization**: Expanded harmonic notch filtering and acoustic watermark neutralization.
+### v2.3.0 & v3.0 Planned Milestones: Hardware Acceleration, ML Segmentation & Desktop Architecture
+- **Hardware Security Module (HSM) Integration**: Direct PKCS#11 HSM support for enterprise cryptographic audit signing of RFC 8785 manifests.
+- **Deep Learning Portrait Segmentation**: MODNet ONNX runtime model integration providing neural subject segmentation for Background Remover alongside GrabCut classical vision.
+- **Multi-Parser Container Consensus**: Multi-engine cross-validation of container syntax using `ffprobe`, `MediaInfo`, and native Rust bitstream parsers.
+- **Zero-Copy GPU Paths**: Direct GPU texture sharing and shader-based color transforms for high-throughput batch media processing.
+- **Audit Reproducibility CLI**: `veilframe audit-reproduce <audit_bundle_dir>` for 1-click deterministic re-verification of transformation manifests.
 
----
-
-### v2.2 UPCOMING: Advanced Forensic Consensus & Distributed Provenance
-- **Multi-Parser Consensus**: Cross-validation of container syntax using both `ffprobe`, `MediaInfo`, and native Rust parsers.
-- **ExifTool Deep Forensic Audit**: Optional deep-inspection pass for proprietary vendor metadata blocks.
-- **Hardware Security Module (HSM) Integration**: Direct PKCS#11 HSM support for enterprise cryptographic audit signing.
-- **Audit Reproducibility CLI**: `veilframe audit-reproduce <audit_bundle_dir>` for 1-click deterministic re-verification.
 
 ---
 

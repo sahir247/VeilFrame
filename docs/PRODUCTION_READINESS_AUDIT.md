@@ -28,10 +28,10 @@
 
 | Control group | Path | Backend evidence | Label |
 |---|---|---|---|
-| Trim/scale/speed/audio/aspect/color/presets | VideoStudioController → FFmpegKit | `FFmpegKit` sessions, cancel by session id; WhatsApp-status pipeline (analyzer/rate-control/validator) | 🟢 REAL |
+| Trim/scale/speed/audio/aspect/color/presets/preview | VideoStudioController → FFmpegKit & Media3 | `FFmpegKit` sessions, cancel by session id; sub-100ms instant preview via direct URI handoff to Media3 ExoPlayer; guaranteed YUV420p output encoding (`-pix_fmt yuv420p`); WhatsApp-status pipeline (analyzer/rate-control/validator) | 🟢 REAL |
 | **Motion-aware denoise / frame interpolation / temporal consistency** | Motion Lab workspace (round 10) | `cv/motion/**` consumed by `media/MotionLabController`: FFmpegKit extract → `FrameSynthesizer` (DIS/Farnebäck, governed internally per ADR 0006) → libx264 re-encode at 2×/4× fps. FrameSynthesizer/FlowEstimator path REAL; FlowConsistency/FrameInterpolator/MotionDetector still without consumers | 🟢 REAL (Alpha tool) / ⬜ remainder UNWIRED |
 | Image Cleaner / Video Cleaner | ToolSessionManager → ImageMetadataSanitizer / VideoMetadataSanitizer + FFmpeg repack | EXIF/GPS/maker-notes scrub, PRNU mitigation path, privacy impact summary | 🟢 REAL |
-| Folder Scanner / AI Bundle | ToolExecutionController → FolderScannerEngine (SAF tree scan) / AiBundleEngine | lock-file condensing, token budgeting, bundle export | 🟢 REAL |
+| Folder Scanner / AI Bundle | ToolExecutionController → FolderScannerEngine (SAF tree scan) / AiBundleEngine | lock-file condensing, token budgeting, explicit max depth limits (`max_depth`), bundle export | 🟢 REAL |
 | Image Studio (crop/resize/rotate/filters/EXIF/watermark/compress) | ImageStudioController → ImageTransformEngine + ImageCompressionEngine + dialog controllers | deterministic transform plan; iterative binary-search target size | 🟢 REAL |
 | Image Studio "smart" crop | SmartAutoCrop (importance map + integral search) | engine complete, leak-fixed, **no UI consumer** (manual CropOverlayView is what ships) | ⬜ UNWIRED |
 
@@ -39,14 +39,14 @@
 
 | Control group | Path | Backend | Label |
 |---|---|---|---|
-| QR generate (11 styles) / scan | QrStudioFragment → QrGenerator (EFQRCode-parity, Tier-4 oracle-tested) / QrScanner (WeChatQRCode primary + MLKit fallback, frame tokens) | 899-test suite covers parity | 🟢 REAL |
+| QR generate (11 styles) / scan / export | QrStudioFragment → QrGenerator (EFQRCode 7.0.3 parity, Tier-4 oracle-tested) / QrScanner (WeChatQRCode primary + MLKit fallback, frame tokens) | 899-test suite covers parity; Vector SVG / Animated SVG export; decode-first on-device validation fallback; 2×2 responsive action button layout | 🟢 REAL |
 | QR color picker | 4 Material Sliders (converted this pass from native SeekBars) + HSV gradient strips | | 🟢 REAL |
 | Image Quality forensics | ImageQualityController → ImageQualityAnalyzer (Laplacian/noise/exposure/… + QualityScore policy) via CvEngine, honest-failure UI | | 🟢 REAL |
 | Quality → Upscaler handoff (ADR 0004 Ph6) | — | recommendation gate not built | ⬜ UNWIRED |
 | Background remover | GrabCut@640 + MaskOps (cleanup/fill/refine/feather/composite) via CvEngine; before/after split w/ spring+haptics | classical CV is real; **ONNX MODNet segmenter SPI exists but no model wired** | 🟡 PARTIAL (classical REAL, AI segmentation ⬜) |
 | AI Upscaler | full pipeline: model manager (download+SHA-256), streaming SourceAccess, tiled ONNX (EP benchmark ladder), band-streaming PNG, FGS, thermal governor, degrade paths | **the 50.3 MP-on-11 GB case from the screenshots**: 50.3MP×4B ≈ 201MB vs budget min(45%·heap≈230MB, 220MB, ½·MemAvailable) → runs in-RAM when headroom exists, streams to disk when not, refuses >200MP — by design, dynamic | 🟢 REAL |
-| Provenance & verify | ProvenanceController → Ed25519 signature validation + manifest forensics | | 🟢 REAL |
-| Markdown viewer | MarkdownViewerController → offline WebView (marked/katex/mermaid/highlight bundled), security policy | | 🟢 REAL |
+| Provenance & verify | ProvenanceController → Ed25519 signature validation + manifest forensics | Neutral initial audit state; Ed25519-SHA512 verification card | 🟢 REAL |
+| Markdown studio & editor | MarkdownViewerController → offline WebView (marked/katex/mermaid/highlight bundled), security policy | Unified "Save As" menu (MD/PDF/DOCX); Light/Dark PDF printing themes via `@media print` CSS | 🟢 REAL |
 | Library (recents/sessions/exports) | MainActivity rendering over DocumentSession disk state + file listings | | 🟢 REAL |
 | Tools catalogue search w/ synonym aliases (ADR 0004 §2.4) | `WorkspaceRoute.search()` + per-route `aliases` (MainActivity catalogue filter) | Round-10 source trace: search IS implemented (title/description/alias matching, live TextWatcher + category chips). Earlier "not found" was a grep miss — corrected here | 🟢 REAL |
 

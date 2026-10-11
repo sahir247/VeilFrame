@@ -61,5 +61,5 @@ python tools/model_pipeline/quantize_upscale_models.py \
 - int8 dynamic quantization quality is model-dependent; anime models usually
   tolerate it better than general-photo models — gate per artifact, publish
   per artifact.
-- NNAPI/QNN delegation of fp16 graphs is vendor-dependent; the on-device
+- NNAPI/NPU delegation of fp16 graphs is vendor-dependent; the on-device
   benchmark ladder (OnnxSessionManager) measures the real winner per device.

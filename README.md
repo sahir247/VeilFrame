@@ -20,7 +20,7 @@
 
 ## Executive Overview
 
-**VeilFrame** is an offline-first, local-native multimedia engineering, signal transformation, and privacy compilation platform. Originally architected as a specialized bitstream privacy sanitizer, VeilFrame has evolved into a complete, standalone workstation spanning **10 specialized creative, computer vision, and forensic workspaces** across Mobile (Android) and Desktop (Windows, Linux, macOS).
+**VeilFrame** is an offline-first, local-native multimedia engineering, signal transformation, and privacy compilation platform. Originally architected as a specialized bitstream privacy sanitizer, VeilFrame has evolved into a complete, standalone workstation spanning **14 specialized creative, computer vision, and forensic workspaces** across Mobile (Android) and Desktop (Windows, Linux, macOS).
 
 VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sovereignty, and enforces strict mathematical boundaries across all operations.
 
@@ -35,25 +35,30 @@ VeilFrame requires zero cloud dependencies, guarantees 100% on-device data sover
         ▼                               ▼                               ▼
  [ Creative & Vision Studios ]   [ Privacy & Forensics ]       [ Developer & Docs ]
  • AI Image Upscaler (Streaming) • Video Privacy Sanitizer     • Folder Forensic Scanner
- • QR Code Studio (11 Modes)     • Image Privacy Compiler      • AI Context Bundler (.aibundle)
- • Document Scanner (Stabilized) • Background Remover (Gallery) • Offline Markdown Studio
- • Motion Lab (Optical Flow FPS)                               • Cryptographic Provenance
- • Video Studio & Trimmer
+ • QR Code Studio (EF Parity)    • Image Privacy Compiler      • AI Context Bundler (.aibundle)
+ • Document Scanner (Stabilized) • Image Quality Forensics     • Offline Markdown Studio
+ • Motion Lab (Optical Flow FPS) • Background Remover (Gallery)• Cryptographic Provenance
+ • Video Studio & Compressor
  • Image Studio & Compressor
 ```
 
 | Workspace | Domain | Key Technology | Core Capabilities |
 |---|---|---|---|
 | **1. AI Image Upscaler** | Creative / AI | ONNX Runtime, Band Streamer | Real-ESRGAN, Anime 4B, UltraSharp, FBCNN deblocking, SCUNet denoising, smoothstep tile blending, disk streaming, dynamic memory governor. |
-| **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, logo masking, background image embedding, live camera scanning, EF parity, safe intent dispatch. |
+| **2. QR Code Studio** | Creative / Utility | OpenCV WeChat, CameraX, Canvas | 11 artistic rendering modes, EFQRCode 7.0.3 parity, Vector & Animated SVG export, live camera scanning, decode-first validation, 2×2 action grid. |
 | **3. Document Scanner** | Vision / Docs | QuadStabilizer, OpenCV 4.14 | Real-time EMA corner stabilization, per-page exposure/contrast/saturation Adjust dialog, perspective correction, progressive PDF export. |
-| **4. Motion Lab** | Video / Vision | DIS & Farnebäck Optical Flow | Pairwise dense optical flow frame synthesis, 2× and 4× FPS interpolation, flat memory management, direct MediaStore gallery output. |
+| **4. Motion Lab** | Video / Vision | DIS & Farnebäck Optical Flow | Pairwise dense optical flow frame synthesis, 2× and 4× FPS interpolation, flat pairwise Mat management, direct MediaStore gallery output. |
 | **5. Background Remover** | Vision / Utility | GrabCut, MediaStore | Interactive foreground extraction, transparent PNG export directly to device gallery (`Pictures/VeilFrame`), persistent Library mirror. |
-| **6. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Visual timeline range trimming, target size ceilings (WhatsApp, Discord), rotation, aspect cropping, speed scaling. |
-| **7. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing. |
-| **8. Video & Image Cleaners** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate. |
-| **9. Folder Scanner** | Forensics / Storage | SQLite3, Parallel Hasher | Selective directory traversal, staged 3-tier duplicate file detector, wasted space calculation, full 64-char SHA-256. |
-| **10. AI Bundler & Markdown** | Developer / Docs | PathSpec, Marked.js, KaTeX | Polyglot heuristics (14+ languages), zero-truncation `.aibundle` v1, offline GFM editor with Mermaid diagrams and KaTeX formulas. |
+| **6. Video Studio** | Creative / Video | FFmpeg 8.1.7, Media3 ExoPlayer | Sub-100ms instant preview via direct URI, universal YUV420p output encoding, timeline range trimming, target size ceilings, rotation, crop. |
+| **7. Image Studio** | Creative / Image | AndroidX ExifInterface, Lanczos | Continuous quality compression (1-100%), aspect cropping, lossless rotation, color grading filters, EXIF scrubbing, passport 600×600 preset. |
+| **8. Video Privacy Sanitizer** | Privacy / Forensics | Orthogonal Signal Engine | Bitstream SEI NAL scrub, Bayer CFA PRNU dither, 2D DCT median shift, acoustic ENF mains notch, 3-tier QualityGate audit. |
+| **9. Image Privacy Compiler** | Privacy / Forensics | Deterministic Compiler | ConstantFill solid redaction, 8-bit sRGB quantization normalization, 7 Level-3 adversarial red-team probes, 5-contract QualityGate. |
+| **10. Image Quality Forensics**| Analyze / Vision | OpenCV Laplacian, Histograms | Component-wise sharpness, sensor noise, dynamic range, exposure, blur analysis, and honest diagnostic score cards. |
+| **11. Folder Scanner** | Forensics / Storage | SQLite3, Parallel Hasher | Selective directory traversal, staged 3-tier duplicate file detector, wasted space calculation, full 64-char SHA-256 integrity tables. |
+| **12. AI Context Bundler** | Developer / Docs | PathSpec, Knapsack Budgeter | Token-budgeted `.aibundle` v1, explicit max depth limits (`--max-depth`), modular secret masking, code outlining, multi-format export. |
+| **13. Offline Markdown Studio**| Developer / Docs | Marked.js, KaTeX, Mermaid | Offline GFM editor, live dual-pane preview, formula/diagram rendering, single "Save As" menu (MD/PDF/DOCX), Light/Dark PDF print theming. |
+| **14. Cryptographic Provenance**| Developer / Verify | Ed25519, RFC 8785 JCS | Neutral initial audit dashboard, Ed25519-SHA512 verification card, canonical JSON evidence manifests, and SHA-256 bitstream binding. |
+
 
 ---
 
@@ -87,9 +92,9 @@ VeilFrame provides 100% offline, on-device neural super-resolution and image res
 
 ---
 
-### 2. <img src="docs/images/icons/qr.svg" width="20" height="20" alt="" /> QR Code Studio (11 Artistic Modes & Scanner)
+### 2. <img src="docs/images/icons/qr.svg" width="20" height="20" alt="" /> QR Code Studio (EFQRCode Parity, 11 Modes & Scanner)
 
-VeilFrame includes a comprehensive QR Code Studio supporting 11 artistic visual rendering modes powered by the VeilFrame Art Engine, accompanied by a live CameraX scanner:
+VeilFrame includes a comprehensive QR Code Studio supporting 11 artistic visual rendering modes powered by the VeilFrame Art Engine, complete with EFQRCode 7.0.3 cleanroom parity:
 
 - **11 Visual Rendering Modes:**
   1. `Basic`: Square modules with customizable corner shapes (rectangles, rounded, planets).
@@ -103,21 +108,54 @@ VeilFrame includes a comprehensive QR Code Studio supporting 11 artistic visual 
   9. `Random Rectangle`: Seeded pseudo-random rectangular jitter for artistic layouts.
   10. `Function`: Procedural mathematical shape generation based on module coordinates.
   11. `Style Function`: Dynamic functional style compositing with secondary modulation.
-- **Live CameraX Viewfinder Scanner:**
-  - Real-time frame analysis using ZXing `PlanarYUVLuminanceSource`.
-  - Custom targeting reticle overlay with corner bracket animations (`QrScanOverlayView`).
-  - Static image decoding from device photo gallery.
+- **EFQRCode 7.0.3 Parity Normalization:**
+  - Authoritative Canonical Geometry IR (`effectiveDesignForMode()`) enforcing deterministic shape, quiet zone, and node order parity.
+  - Full vector XML `<path>` and `<rect>` SVG export without raster blurring, plus animated GIF/SVG generation.
+- **Live CameraX Viewfinder & Decode-First Validation:**
+  - Real-time frame analysis using WeChatQRCode CNN primary detector with fallback gating.
+  - Targeting reticle overlay with corner bracket animations (`QrScanOverlayView`) and gallery decoding.
 - **Comprehensive Payload Parser (11 Formats):**
   - Instant parsing and safe intent dispatch for Wi-Fi (`WIFI:T:...;S:...;P:...;;`), UPI payments (`upi://pay`), URLs (with IDN homograph phishing defense), Phone (`tel:`), SMS (`smsto:`), Email (`mailto:`), Geo coordinates (`geo:`), Contacts (vCard/MeCard), Calendar events, and OtpAuth tokens.
-  - User confirmation required before firing external action intents.
-- **Vector & Raster Export:** Direct export to high-resolution PNG, JPEG, SVG path data, and PDF.
+  - Mandatory user confirmation prior to firing external action intents; responsive 2×2 button layout.
 
 ---
 
-### 3. <img src="docs/images/icons/video_studio.svg" width="20" height="20" alt="" /> Video Studio & Visual Compressor
+### 3. <img src="docs/images/icons/camera.svg" width="20" height="20" alt="" /> Document Scanner & Progressive PDF Exporter
+
+Offline document capture and perspective correction powered by OpenCV 4.14.0:
+
+- **Real-Time QuadStabilizer:** Exponential Moving Average (EMA, $\alpha=0.4$) corner filtering with 48px tolerance and 4-hit hysteresis, eliminating viewfinder quad jitter and strobing.
+- **Per-Page Image Adjust Dialog:** Interactive per-page adjustment dialog for Exposure (−2..+2 stops), Contrast (0.5..2×), and Saturation (0..2×) backed by `cv/color/ColorEngine`.
+- **CameraX Capture Discipline:** Single-flight capture lock (`isCapturing`) and OOM-guarded bitmap decoding preventing camera executor race conditions.
+- **Progressive Export Sheet:** Multi-page PDF generation with configurable page sizes (A4, Letter, Legal), orientation, margins, and progressive disclosure options.
+
+---
+
+### 4. <img src="docs/images/icons/speed.svg" width="20" height="20" alt="" /> Motion Lab (Optical Flow Frame Synthesis)
+
+Zero-trust, on-device video frame interpolation powered by native OpenCV optical flow algorithms:
+
+- **Dual Estimation Algorithms:** DIS Optical Flow for fast mobile processing and Farnebäck Optical Flow for dense, high-accuracy motion vectors.
+- **2× and 4× Frame Synthesis:** Pairwise intermediate frame synthesis (`FrameSynthesizer`) yielding smooth 60fps/120fps motion without cloud uploads.
+- **Flat Memory Footprint:** Pairwise Mat memory lifecycle releasing native allocations after disk serialization; temporary frame scratch cleanup; direct export to MediaStore (`Movies/VeilFrame`).
+
+---
+
+### 5. <img src="docs/images/icons/crop.svg" width="20" height="20" alt="" /> Background Remover & Segmentation
+
+Interactive foreground extraction with transparent alpha output:
+
+- **GrabCut Classical Segmentation:** Fast 640px bounding box matting with morphological mask refinement, hole filling, edge feathering, and alpha compositing.
+- **Direct Gallery & Library Sync:** Direct export to device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, and persistent mirror to app storage for immediate Library visibility.
+
+---
+
+### 6. <img src="docs/images/icons/video_studio.svg" width="20" height="20" alt="" /> Video Studio & Visual Compressor
 
 Dedicated visual video compressor and editor powered by FFmpeg 8.1.7 and Media3 ExoPlayer:
 
+- **Sub-100ms Instant Preview:** Direct URI handoff to Media3 ExoPlayer eliminating intermediate disk copies and cache stalls.
+- **Guaranteed YUV420p Compatibility:** Universal `-pix_fmt yuv420p` encoding across all export paths, guaranteeing playback compatibility across older hardware decoders and messaging apps.
 - **Visual Timeline Range Trimmer:** Dual-thumb scrubber allowing arbitrary millisecond-accurate start/end range extraction with looping preview.
 - **Platform Delivery Presets:**
   - `WhatsApp Target (16 MB)`: Multi-pass two-tier bitrate budget calculation with AAC audio compression.
@@ -131,18 +169,19 @@ Dedicated visual video compressor and editor powered by FFmpeg 8.1.7 and Media3 
 
 ---
 
-### 4. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Image Studio & Creative Compressor
+### 7. <img src="docs/images/icons/image_studio.svg" width="20" height="20" alt="" /> Image Studio & Creative Compressor
 
 Deep image transformation and compression studio:
 
 - **Continuous Quality Compression:** Precision quality scaling (1% to 100%) with real-time empirical output size estimation.
 - **Dimension Scaling & Cropping:** Multi-lobe Lanczos resampling, arbitrary scaling, and aspect-ratio cropping (Free, 1:1, 4:3, 16:9, 9:16).
+- **Official Passport Preset:** Dedicated 600×600 px document export preset with strict 1:1 aspect constraint.
 - **Color Grading Presets:** Color matrix transforms for Grayscale, Sepia, Vintage, Cool, and Warm tone grading.
 - **Lossless Transform & EXIF Management:** 90-degree step rotations, arbitrary free rotation, alpha background fills, and zero-leakage metadata scrubbing.
 
 ---
 
-### 5. <img src="docs/images/icons/security.svg" width="20" height="20" alt="" /> Video Privacy & Bounded Forensic Disruption
+### 8. <img src="docs/images/icons/security.svg" width="20" height="20" alt="" /> Video Privacy & Bounded Forensic Disruption
 
 VeilFrame applies bounded, orthogonal signal perturbations across physical and transform domains to disrupt forensic re-identification while preserving perceptual visual quality:
 
@@ -161,7 +200,7 @@ VeilFrame applies bounded, orthogonal signal perturbations across physical and t
 
 ---
 
-### 6. <img src="docs/images/icons/pipelines.svg" width="20" height="20" alt="" /> Image Privacy Compiler
+### 9. <img src="docs/images/icons/pipelines.svg" width="20" height="20" alt="" /> Image Privacy Compiler
 
 A deterministic multi-layer privacy compiler audited against independent adversarial red-team probes:
 
@@ -178,7 +217,16 @@ A deterministic multi-layer privacy compiler audited against independent adversa
 
 ---
 
-### 7. <img src="docs/images/icons/folder.svg" width="20" height="20" alt="" /> Folder Forensics & Staged Duplicate Finder
+### 10. <img src="docs/images/icons/visibility.svg" width="20" height="20" alt="" /> Image Quality Forensics & Visual Audit
+
+Independent computer vision analysis evaluating image integrity and defects:
+
+- **Component-Wise Metric Scoring:** Evaluates Laplacian variance sharpness, Gaussian noise variance, dynamic range entropy, and exposure clipping.
+- **Honest Diagnostics:** Structured scoring cards with categorized verdicts (Excellent, Good, Fair, Poor) without fabricated score fallbacks.
+
+---
+
+### 11. <img src="docs/images/icons/folder.svg" width="20" height="20" alt="" /> Folder Forensics & Staged Duplicate Finder
 
 High-performance selective directory analyzer and cryptographic duplicate candidate detector:
 
@@ -192,25 +240,39 @@ High-performance selective directory analyzer and cryptographic duplicate candid
 
 ---
 
-### 8. <img src="docs/images/icons/ai.svg" width="20" height="20" alt="" /> AI Project Intelligence & Context Bundler (`.aibundle`)
+### 12. <img src="docs/images/icons/ai.svg" width="20" height="20" alt="" /> AI Project Intelligence & Context Bundler (`.aibundle`)
 
 Deterministic codebase packaging compiler designed for Large Language Models (LLMs) and autonomous AI coding agents:
 
 - **Zero-Truncation Guarantee:** Selected source files are delivered in their entirety; no arbitrary middle-slicing or truncated code fragments.
 - **Priority Knapsack Budgeting:** Operates under configurable token ceilings (`32k`, `64k`, `128k`, `200k`, `1M`, or `Unlimited`). Entry points and core architecture are prioritized over tests and secondary docs.
+- **Explicit Max Depth Limits:** Interactive UI depth controls and `--max-depth` CLI argument bounding recursive traversal depth.
 - **Modular Syntax-Preserving Secret Masking:** Language-specific regexes and Shannon entropy scanners mask credentials (AWS keys, GitHub tokens, private keys) with `[REDACTED]` while avoiding false positives on URLs or paths.
 - **Structural Outlining & Summaries:** AST signature extraction for Python, brace-language outlining (TypeScript, Go, Rust, Java, C++), lockfile condensation (`uv.lock`, `package-lock.json`), and SQLite schema extraction.
 - **Multi-Format Export:** Generates `.aibundle` v1, Markdown, interactive single-page HTML, structured JSON, and curated ZIP archives.
 
 ---
 
-### 9. <img src="docs/images/icons/markdown.svg" width="20" height="20" alt="" /> Offline Markdown Studio & Live Editor
+### 13. <img src="docs/images/icons/markdown.svg" width="20" height="20" alt="" /> Offline Markdown Studio & Multi-Format Exporter
 
 Integrated offline GitHub Flavored Markdown (GFM) workspace:
 
 - **Dual-Pane Live Preview:** Instant split-view or full-screen rendering of GFM documentation.
 - **Offline Diagram & Formula Rendering:** Embedded Mermaid diagram synthesis and KaTeX mathematical typesetting without internet access.
-- **Productivity Features:** Table of contents generator, document structure outlining, syntax-highlighted code blocks with 1-click clipboard copy, in-page search, dirty-state back navigation protection, and New Markdown Maker.
+- **Unified "Save As" Menu:** Streamlined single-action menu for exporting to Markdown (`.md`), PDF (`.pdf`), and Microsoft Word (`.docx`).
+- **Print & PDF Theming:** Specialized `@media print` CSS rules formatting documents with clean Light and Dark print styles, pagination, and math scaling.
+- **Productivity Features:** Table of contents generator, document structure outlining, syntax-highlighted code blocks with 1-click clipboard copy, in-page search, and New Markdown Maker.
+
+---
+
+### 14. <img src="docs/images/icons/manifest.svg" width="20" height="20" alt="" /> Cryptographic Provenance & Manifest Verification
+
+Zero-trust cryptographic evidence validation and bitstream verification:
+
+- **Neutral Initial Audit State:** Clean initial verification dashboard without pre-populated failure markers.
+- **RFC 8785 Canonical JSON Manifests:** Deterministic JCS canonicalization bound with Ed25519 digital signatures and SHA-256 bitstream digests.
+- **Ed25519-SHA512 Verification Card:** Instant validation of signed manifests, public key fingerprint verification, and input/output integrity checking.
+
 
 ---
 

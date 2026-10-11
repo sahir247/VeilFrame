@@ -1,8 +1,9 @@
 # Round 10 Report — Device-Feedback Batch: Motion Lab + 4 Named Fixes
 
-**Branch:** `release/v2.3.0-expressive-rc1` → tip `d66312c` (commits `311d88c` code, `d66312c` docs)
-**Base:** still fast-forwards onto your pushed `main@a6b846e` (delta prereq unchanged).
-**Inputs:** your five device observations — optical flow as a tool, document-scan editing gap, bg-remover not saving, Library not reflecting stored works, button/text clipping.
+**Branch:** `main` (Merged and verified in `v2.2.9` stable release)<br>
+**Base:** `main`
+**Inputs:** five device observations — optical flow as a tool, document-scan editing gap, bg-remover not saving, Library not reflecting stored works, button/text clipping.
+
 
 ---
 

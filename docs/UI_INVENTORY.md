@@ -13,7 +13,7 @@
 |---|---|---|
 | Top | `AppBarLayout` + **dual `MaterialToolbar`** (`toolbarHome`, `toolbarTool`) | 56dp, flat `colorSurface`, elevation 2dp. Home bar: brand logo + "VeilFrame" 16sp bold + version badge (square, unstyled bg) + theme-toggle & settings icon buttons (38dp). Tool bar: back (44dp) + title/subtitle + status badge + icons |
 | Body | `NestedScrollView` home dashboard | Hero card (`cardHeroUpscaler`, AI Upscaler promo) + section headers ("MEDIA STUDIOS", "PRIVACY CLEANERS", …) + full-width tool cards (icon + ALL-CAPS title + 1-line subtitle + chevron) |
-| Workspaces | 13 `<include>`d workspace layouts | image/video studio, QR fragment host, markdown viewer, upscaler, tools catalogue, library, document scanner, background remover, image quality, provenance |
+| Workspaces | 14 `<include>`d workspace layouts | image/video studio, QR fragment host, markdown viewer, upscaler, tools catalogue, library, document scanner, background remover, motion lab, image quality, provenance |
 | Action dock | `cardCleanerActionDock` — sticky 2-tier `MaterialCardView` (28dp radius, 10dp elevation, 1dp stroke) | Tier 1: `btnExecute` full-width filled 48dp, `cornerRadius=24dp`, ALL-CAPS "EXECUTE". Tier 2: `btnExportResult` + `btnShareResult` tonal 42dp, radius 21dp |
 | Nav (compact <600dp) | `BottomNavigationView` | 3 items (Home / Tools / Library), legacy 80dp height, custom `bottom_nav_color_selector` (checked → `vf_primary`), surface bg, elevation 8dp |
 | Nav (≥600dp) | `NavigationRailView` | Same menu/tint, toggled in `MainNavigationController` |
@@ -67,9 +67,9 @@ Insets: manual `setOnApplyWindowInsetsListener` padding on root/bottomNav/rail (
 
 ⚠️ All physics is `ViewPropertyAnimator`/`ObjectAnimator` with overshoot interpolators — **no real spring physics** (`DynamicAnimation` not used), and the declared `motion_tokens.xml` springs are not resolved via `MotionUtils`.
 
-## 5. Screen Inventory (13 workspaces + shell)
+## 5. Screen Inventory (14 workspaces + shell)
 
-HOME (intent dashboard) · TOOLS catalogue (2-col card grid + synonym search) · LIBRARY (recents/sessions/exports) · IMAGE STUDIO · VIDEO STUDIO · QR STUDIO (Fragment; 11 art styles) · DOCUMENT SCANNER (entry/camera/pages/editor/export) · BACKGROUND REMOVER (before/after split) · IMAGE QUALITY · IMAGE UPSCALER (model manager w/ download progress) · AI BUNDLE · MARKDOWN VIEWER · PROVENANCE · IMAGE/VIDEO CLEANER + 20 dialogs + settings panel + source-picker/export sheets.
+HOME (intent dashboard) · TOOLS catalogue (2-col card grid + synonym search) · LIBRARY (recents/sessions/exports) · IMAGE STUDIO · VIDEO STUDIO · QR STUDIO (Fragment; 11 art styles) · DOCUMENT SCANNER (entry/camera/pages/editor/export) · BACKGROUND REMOVER (before/after split) · MOTION LAB (optical flow synthesis) · IMAGE QUALITY · IMAGE UPSCALER (model manager w/ download progress) · AI BUNDLE · MARKDOWN VIEWER · PROVENANCE · IMAGE/VIDEO CLEANER + 20 dialogs + settings panel + source-picker/export sheets.
 
 ## 6. Debt & Gap List (drives the migration plan)
 

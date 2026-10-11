@@ -2,7 +2,7 @@
 
 > Scope: `app/upscale/**` (inference, controller), `app/cv/core/**` (memory policy), runtime-wide optimizations.
 > Symptoms addressed: **(1)** whole-phone lag during upscaling even on flagships, **(2)** app crashes (OOM/native kills), **(3)** general runtime sluggishness, **(4)** CV dependability for the intended offline super-resolution use.
-> Status: Plan (RC gate item). Every finding cites code evidence from `main@8f090a7`.
+> **Execution Status (v2.2.9)**: Fully executed and verified under ADR 0006. Streaming band processing (`StreamingPngWriter`), dynamic memory governance (`MemAvailable` / `CvMemoryGovernor`), benchmark-gated execution provider selection, optimized Lanczos math, and bounded preview textures are active in production.
 > Sister plan: `CV_RELIABILITY_UPGRADE_PLAN.md` covers the **entire** `cv/**` subsystem (all 34 files + consumers); shared infrastructure (CvRuntime, sampled decode, admission, telemetry, thermal) is specified there and referenced by F1/F3/F11/F13/F14 below.
 
 ---

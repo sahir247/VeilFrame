@@ -79,22 +79,24 @@ VeilFrame implements a dedicated **Composite Portrait Architecture**:
 
 ---
 
-## 4. Hardware Acceleration Guidelines
+## 4. Hardware Acceleration Guidelines (Zero-QNN Adaptive Architecture)
 
-### Qualcomm Snapdragon (HTP / GPU via Standalone QNN Plugin EP)
-- Snapdragon 8 Gen 2, 8 Gen 3, and 8 Gen Elite processors feature the Hexagon Tensor Processor (HTP).
-- **Execution Provider**: Standalone QNN Plugin EP (`libonnxruntime_providers_qnn.so` + backend libraries `libQnnHtp.so` and `libQnnGpu.so`).
-- **Precision**: FP16 / QDQ quantized on HTP; FP32 / FP16 on QNN GPU.
-- **Tile Sizing**: Constrain input tiles to **256×256** or **384×384** to remain inside HTP on-chip TCM (Tightly Coupled Memory).
+VeilFrame operates on a strict **Zero-QNN compliance** baseline (ADR 0006), eliminating proprietary vendor QNN SDK dependencies in favor of standard, stable ONNX Runtime execution providers with runtime benchmark gating:
 
-### Universal Android Hardware (NNAPI)
+### Universal Android Hardware Acceleration (NNAPI)
 - **Execution Provider**: `NNAPI Execution Provider` (`sessionOptions.addNnapi()`).
-- Delegates automatically to Vulkan GPU, MediaTek APU, Samsung NPU, or Google Tensor TPU.
-- Requires tile dimension capping (≤512×512) to avoid driver fallback to slow CPU emulation.
+- Delegates automatically to platform-supported NPU, APU, TPU, or GPU drivers on supported devices.
+- **Benchmark-Gated**: On first run per model, a synthetic benchmark probe evaluates NNAPI vs CPU/XNNPACK; the fastest measurable backend wins and is cached in device preferences.
+- Requires tile dimension capping (≤512×512) to avoid driver partitioning or CPU fallback overhead.
 
-### CPU / XNNPACK Fallback
+### Multi-Threaded CPU / XNNPACK Architecture
+- **Execution Provider**: CPU with XNNPACK acceleration (`sessionOptions.addXnnpack()`).
 - Constrain intra-op thread pool based on available CPU cores (`setIntraOpNumThreads`).
-- Never saturate all CPU cores simultaneously on mobile, preserving responsive Android UI scheduling and avoiding device thermal throttling.
+- Never saturate all CPU cores simultaneously on mobile, preserving responsive Android UI scheduling and preventing device thermal throttling.
+
+### Dynamic Memory Governance & Disk Streaming
+- Evaluates live `MemAvailable` at execution start to tune tile dimensions (512–2048 px) and worker concurrency.
+- Ultra-high-resolution images exceeding physical memory automatically switch to `StreamingPngWriter` band streaming directly to disk, avoiding out-of-memory faults.
 
 ---
 

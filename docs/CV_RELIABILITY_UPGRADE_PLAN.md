@@ -1,8 +1,12 @@
 # VeilFrame CV Subsystem — Reliability & Dependability Upgrade Plan (ALL cv/*)
 
+> **Implementation Status**: **EXECUTED & VERIFIED (v2.2.9)**
+> All Phase A (Ship blockers), Phase B (Hardening & leak prevention), and Phase C (Governance & Motion Lab integration) items were successfully implemented and verified under ADR 0006 and ADR 0007.
+>
 > Scope: **every file in `com.veilframe.app.cv.**`** (34 files, ~6,200 LOC, 15 packages) **plus all CV consumers**: `document/DocumentScannerController`, `document/DocumentSession`, `media/BackgroundRemoverController`, `media/ImageQualityController`, `qr/scanner/QrScanner`, `qr/decoder/WeChatQrDecoder`, `VeilFrameApplication`, `ui/views/DocumentQuadOverlayView`.
 > Method: full audit at `main@8f090a7` — every file inventoried, dependency graph resolved (wired vs dormant), leak/threading/init/lifecycle patterns grepped and read. Evidence cited per finding.
 > Companion: `UPSCALER_STABILITY_FIX_PLAN.md` (F-series) — shared infrastructure items are cross-referenced, not duplicated.
+
 
 ---
 

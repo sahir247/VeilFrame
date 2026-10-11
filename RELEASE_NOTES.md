@@ -2,44 +2,68 @@
 
 ## v2.2.9 — October 2026 (Stable)
 
-**Major Release: Material 3 Expressive UI v3.0, Motion Lab (Optical Flow), Document Scanner Adjust & Stabilization, AI Upscaler Streaming, and OpenCV 4.14.0 Native Engine.**
+**Major Release: Material 3 Expressive UI v3.0, Motion Lab (Optical Flow 2×/4× FPS), Video Studio Instant Preview & YUV420p, QR Code Studio EFQRCode Parity & Vector SVG, Document Scanner Adjust & Stabilization, AI Upscaler Streaming, and OpenCV 4.14.0 Native Engine.**
 
 ### New Features & Highlights
 
 1. **Material 3 Expressive UI ("Quiet Intensity") ([ADR 0005](docs/adr/0005-m3-expressive-design-system.md))**:
    - **Expressive Foundation:** Upgraded to Material Components 1.14.0 with root `Theme.Material3Expressive.DayNight.NoActionBar`.
-   - **Monochrome & Dynamic Colors:** Full surface-container ladders (Lowest to Highest) across light, dark, and AMOLED modes with 5 accent palettes (Monochrome, Forest Sage, Deep Ocean, Warm Amber, Cyber Violet).
+   - **Monochrome & Dynamic Colors:** Full surface-container ladders (Lowest to Highest) across light, dark, and true `#000000` AMOLED modes with elevation tint suppression and 5 accent palettes.
    - **Spring Motion Physics:** Real-world spring dynamics (`VfSprings v3.1` using immutable `SpringSpec` architecture) replacing overshoot interpolators; tactile press-bounce, completion flourish, and reduced-motion contract.
-   - **System Insets Contract:** Centralized `WorkspaceInsets` contract applying edge-to-edge padding across all 12 workspace roots, preventing toolbar and dock occlusion under system bars.
+   - **System Insets Contract:** Centralized `WorkspaceInsets` contract applying edge-to-edge padding across all 14 workspace roots, preventing toolbar and dock occlusion under system bars.
    - **Clipping Sweep:** Converted 126 fixed-height buttons and 22 rows to `wrap_content`, eliminating label clipping across the larger expressive typography scale.
+   - **Process Safety:** Active task cancellation warning dialogs preventing accidental exit during ongoing media export or forensic transformation.
 
-2. **Motion Lab (10th Native Workspace — Alpha)**:
-   - **Optical Flow Frame Synthesis:** New dedicated workspace wiring the `cv/motion` engine (`FlowEstimator`, `FrameSynthesizer`) for 2× and 4× FPS video frame interpolation.
-   - **Dual Estimation Algorithms:** DIS Optical Flow for fast mobile processing and Farnebäck Optical Flow for high-quality dense motion vectors.
+2. **Video Studio & Compressor Modernization**:
+   - **Sub-100ms Instant Preview:** Direct URI handoff to Media3 ExoPlayer eliminating intermediate disk copies and cache stalls.
+   - **Guaranteed YUV420p Compatibility:** Universal `-pix_fmt yuv420p` encoding across all export paths, guaranteeing playback compatibility across older hardware decoders and messaging apps.
+   - **Timeline Range Trimming & Platform Presets:** Dual-thumb scrubber with millisecond precision and byte-bounded targets (WhatsApp 16 MB, Discord 25 MB).
+
+3. **QR Code Studio (EFQRCode 7.0.3 Parity & Vector Export) ([ADR 0003](docs/adr/0003-efqrcode-parity-architecture-and-verification.md))**:
+   - **EFQRCode 7.0.3 Parity Normalization:** Canonical Geometry IR normalization (`effectiveDesignForMode()`) enforcing deterministic shape, quiet zone, and node order parity.
+   - **Vector SVG & Animated SVG Export:** Pure XML vector SVG export with module-level `<path>` and `<rect>` elements and animated GIF/SVG generation.
+   - **Decode-First Validation:** On-device camera frame and gallery decoding with automatic fallback gating.
+   - **Responsive 2×2 Action Grid:** Replaced crowded horizontal button stacks with a clean 2×2 action grid for Copy, Share, Save, and Scan actions.
+
+4. **Motion Lab (14th Native Workspace — Alpha) ([ADR 0007](docs/adr/0007-motion-lab-optical-flow-synthesis.md))**:
+   - **Optical Flow Frame Synthesis:** New dedicated workspace wiring the native OpenCV `cv/motion` engine (`FlowEstimator`, `FrameSynthesizer`) for 2× and 4× FPS video frame interpolation.
+   - **Dual Estimation Algorithms:** DIS Optical Flow for fast mobile processing and Farnebäck Optical Flow for high-density motion vectors.
    - **Memory & Storage Safety:** Flat pairwise Mat memory management, temporary frame scratch cleanup, and direct export to MediaStore (`Movies/VeilFrame`).
 
-3. **Document Scanner Hardening & Adjust Dialog**:
+5. **AI Context Bundler (`.aibundle` v1) Depth Limits**:
+   - **Explicit Max Depth Limits:** Added `--max-depth` CLI flag and interactive UI depth stepper/toggle in Android and Python desktop environments, bounding recursive traversal and preventing runaway token consumption.
+   - **Secret Redaction & Priority Knapsack:** Syntax-preserving entropy scans redacting API keys and lockfile outlining.
+
+6. **Offline Markdown Studio Multi-Format Export & PDF Theming**:
+   - **Unified "Save As" Menu:** Streamlined single-action menu for exporting to Markdown (`.md`), PDF (`.pdf`), and Microsoft Word (`.docx`).
+   - **Print & PDF Theming:** Dedicated `@media print` CSS rules formatting documents with clean Light and Dark print palettes, page breaks, and formula scaling.
+
+7. **Document Scanner Hardening & Adjust Dialog ([ADR 0008](docs/adr/0008-insets-contract-and-camera-stabilization.md))**:
    - **Real-Time QuadStabilizer:** Exponential Moving Average (EMA, α=0.4) corner smoothing with 48px tolerance and hysteresis, eliminating viewfinder corner strobing.
    - **Per-Page Image Adjust:** Interactive per-page adjustment dialog for Exposure (−2..+2 stops), Contrast (0.5..2×), and Saturation (0..2×) powered by `cv/color/ColorEngine`.
    - **CameraX Lifecycle Discipline:** Single-flight capture lock (`isCapturing`) and OOM-guarded bitmap decoding preventing camera executor race conditions.
    - **Progressive Export Sheet:** Redesigned document export bottom sheet with progressive disclosure ("More options ⇄ Fewer options").
 
-4. **Background Remover Gallery Export**:
-   - **Direct MediaStore Save:** Saves transparent PNG exports directly to the device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, fixing previous SAF handoff failures.
-   - **Persistent Mirror:** Synchronously mirrors exports to `filesDir/exports` for immediate Library visibility.
-
-5. **AI Image Upscaler Streaming & Memory Governor ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
+8. **AI Image Upscaler Streaming & Memory Governor ([ADR 0006](docs/adr/0006-cv-governance-dynamic-memory.md))**:
    - **Streaming Band Processing:** `StreamingPngWriter` and `UpscaleForegroundService` stream output bands directly to disk, enabling massive multi-megapixel upscaling without OOM crashes.
    - **Dynamic Memory Governor:** Allocates tile sizes and execution paths based on live `MemAvailable`, dynamically tuning performance across 6–16 GB devices.
+   - **Zero-QNN Standard Inference:** Stable NNAPI and multi-threaded CPU / XNNPACK adaptive inference with synthetic benchmark gating.
    - **Mathematical Resampling:** Precomputed Lanczos-3 weight kernels and bicubic fallbacks for zero-hallucination processing.
    - **Quantized Model Pipeline:** Production tool (`tools/model_pipeline/quantize_upscale_models.py`) with PSNR validation gates (FP16 $\ge$ 55 dB, INT8 $\ge$ 35 dB).
 
-6. **Unified Library Synchronization**:
-   - **Hybrid Indexing:** Merges MediaStore query results (`DATA LIKE '%/VeilFrame/%'`) with app-internal directory exports so all previous creations appear in the Library.
+9. **Background Remover Gallery Export**:
+   - **Direct MediaStore Save:** Saves transparent PNG exports directly to the device gallery (`Pictures/VeilFrame`) with Android 10+ `IS_PENDING` compliance, fixing previous SAF handoff failures.
+   - **Persistent Mirror:** Synchronously mirrors exports to `filesDir/exports` for immediate Library visibility.
 
-7. **OpenCV 4.14.0 SDK & Computer Vision Reliability**:
-   - **In-Tree Custom SDK:** Complete custom OpenCV 4.14.0 SDK with WeChatQRCode and native ABIs.
-   - **Phase B6 Cancellation Checkpoints:** 34 granular cancellation checkpoints across GrabCut, quality metrics, contour detection, and Lanczos loops for instant abort responsiveness.
+10. **Cryptographic Provenance & Neutral Audit State**:
+    - **Neutral Initial State:** Clean initial verification dashboard without pre-populated failure markers.
+    - **Ed25519-SHA512 Verification Card:** Instant validation of RFC 8785 JCS canonical JSON manifests and SHA-256 bitstream digests.
+
+11. **OpenCV 4.14.0 SDK & Computer Vision Reliability**:
+    - **In-Tree Custom SDK:** Complete custom OpenCV 4.14.0 SDK with WeChatQRCode and native ABIs (`arm64-v8a`, `x86_64`).
+    - **Phase B6 Cancellation Checkpoints:** 34 granular cancellation checkpoints across GrabCut, quality metrics, contour detection, and Lanczos loops for instant abort responsiveness.
+    - **Unified Library Synchronization:** Merges MediaStore query results (`DATA LIKE '%/VeilFrame/%'`) with app-internal directory exports.
+
 
 ### Downloads and installation
 

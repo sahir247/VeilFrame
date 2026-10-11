@@ -579,18 +579,18 @@ VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                   AI IMAGE UPSCALER & ADAPTIVE INFERENCE SUBSYSTEM (v2.2.7)                      │
+│                   AI IMAGE UPSCALER & ADAPTIVE INFERENCE SUBSYSTEM (v2.2.9)                      │
 ├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
 │        POINT 7 MODEL REGISTRY        │        ADAPTIVE EXECUTION & BENCHMARKING ENGINE           │
 │                                      │                                                           │
-│ • Real-ESRGAN General 2× (33.8 MB)   │ • Hardware-Aware Discovery (NNAPI, CPU/XNNPACK, QNN)      │
+│ • Real-ESRGAN General 2× (33.8 MB)   │ • Hardware-Aware Discovery (NNAPI, CPU/XNNPACK)           │
 │   Residual-in-Residual Dense Blocks  │ • Decoupled Dual-Domain Memory Budgeting (Java + Native)  │
 │ • Real-ESRGAN General 4× (33.8 MB)   │ • Progressive Worker Concurrency Search (Uncapped)       │
 │   Maximum photographic detail        │ • Pure Unpenalized Throughput & Scaling Efficiency        │
 │ • Real-ESRGAN Anime 4× (9.1 MB)      │ • Adaptive Thermal Ladder (8 -> 6 -> 4 -> 3 -> 2 -> 1)    │
-│   Crisp edges & vibrant illustration │ • Standalone Qualcomm QNN Plugin EP (HTP + GPU)           │
-│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Full-Coverage Diagnostic Probe (disable_cpu_ep_fallback)│
-│ • Bicubic Spline (Built-in)          │ • Persistent Profile Cache with Multi-Factor Confidence   │
+│   Crisp edges & vibrant illustration │ • Zero-QNN Standard Runtime (Zero Vendor Proprietary Libs)│
+│ • Lanczos 3-Lobe Sinc (Built-in)     │ • Benchmark-Gated EP Selection with Persistent Cache      │
+│ • Bicubic Spline (Built-in)          │ • Streaming Band Processing (StreamingPngWriter to Disk)  │
 │ • Nearest Neighbor (Built-in)        │ • Material 3 Expressive Motion System (Spring Physics)    │
 └──────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 ```
@@ -602,7 +602,7 @@ VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.
                                   │
                                   ▼
                       ModelExecutionCapabilities
-                    (QnnModelCapability: HTP vs GPU)
+                       (FP32 vs FP16 Precision)
                                   │
                                   ▼
                                 DEVICE
@@ -613,11 +613,11 @@ VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.
                                   ▼
                   Runtime / Backend Capability Discovery
                                   │
-          ┌───────────────────────┼────────────────────────┐
-          ▼                       ▼                        ▼
-        NNAPI               CPU / XNNPACK             QNN Plugin*
-          │                       │                        │
-          └───────────────────────┼────────────────────────┘
+                      ┌───────────┴───────────┐
+                      ▼                       ▼
+                    NNAPI               CPU / XNNPACK
+                      │                       │
+                      └───────────┬───────────┘
                                   ▼
                        Legal Candidate Profiles
                                   ▼
@@ -655,11 +655,11 @@ VeilFrame v2.2.7 introduces the on-device AI Image Upscaler (`com.veilframe.app.
                     (Exact Config ID + Confidence)
 ```
 
-### 2. Standalone Qualcomm QNN Plugin EP Architecture
-- **Decoupled Packaging:** Targets the official Qualcomm standalone Plugin EP artifact (`libonnxruntime_providers_qnn.so`) rather than requiring custom monolithic ORT builds.
-- **Backend Separation:** Supports both QNN HTP (Hexagon Tensor Processor, running FP16 math on supported SoCs or quantized QDQ graphs) and QNN GPU (native FP32/FP16 models).
-- **Public Java Plugin APIs:** Directly registers native libraries using `env.registerExecutionProviderLibrary()`, enumerates targets via `env.getEpDevices()`, and binds selected `OrtEpDevice` instances to `SessionOptions`.
-- **Diagnostic Full-Coverage Probe:** Sets `session.disable_cpu_ep_fallback = 1` during calibration compilation. Full coverage PASS yields optimal acceleration; FAIL triggers evaluation of fallback routes.
+### 2. Zero-QNN Architecture & Streaming Disk Sinks
+- **Zero-QNN Compliance (ADR 0006):** Eliminates all Qualcomm proprietary QNN SDK headers, binary plugins (`libonnxruntime_providers_qnn.so`), and vendor-locked libraries in favor of standard, stable ONNX Runtime execution providers.
+- **Benchmark-Gated Execution:** On first run per model, a synthetic benchmark probe evaluates available candidate backends (NNAPI vs multi-threaded CPU with XNNPACK); the measured fastest backend is cached in persistent preferences.
+- **Dynamic Memory Governor:** Evaluates live device `MemAvailable` at execution start to tune tile dimensions (512–2048 px) and worker thread concurrency across 6–16 GB device profiles.
+- **Streaming Band Processing (`StreamingPngWriter`):** For ultra-high-resolution images where the final canvas exceeds available RAM budgets, tiles are composed into horizontal bands and streamed directly to disk sinks, eliminating full-bitmap allocation crashes.
 
 ### 3. Progressive Worker Concurrency & Memory Safety
 - **No Artificial Ceilings:** Concurrency is bounded strictly by genuine hardware and safety boundaries:
@@ -753,7 +753,7 @@ VeilFrame v2.2.9 locks the architectural design for the Android application shel
                    ┌─────────────────────────┼─────────────────────────┐
                    ▼                         ▼                         ▼
              [   HOME   ]              [  TOOLS  ]               [  LIBRARY  ]
-         • Intent Launcher          • 13 Workspaces           • Recent Work
+         • Intent Launcher          • 14 Workspaces           • Recent Work
          • Quick Tools (≤6)         • Grouped Grid            • Scanner Sessions
          • Status / Privacy         • Search & Synonyms       • Completed Exports
                    │                         │                         │
@@ -763,20 +763,20 @@ VeilFrame v2.2.9 locks the architectural design for the Android application shel
                                   │   WORKSPACE ROUTE  │
                                   └──────────┬─────────┘
                                              │
-      ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┐
-      ▼                  ▼                   ▼                   ▼                  ▼
-[ IMAGE STUDIO ]  [ VIDEO STUDIO ]    [ QR STUDIO ]      [ DOC SCANNER ]     [ BG REMOVER ]
-(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • Before/After
-• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • 48dp Touch
-• Denoise/Enhance • Transcode Engine  • Cleanroom Parity • Page Manager      • Dual Pan/Zoom
-                                                         • Shared Editor     • Alpha Masks
+      ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┬──────────────────┐
+      ▼                  ▼                   ▼                   ▼                  ▼                  ▼
+[ IMAGE STUDIO ]  [ VIDEO STUDIO ]    [ QR STUDIO ]      [ DOC SCANNER ]     [ BG REMOVER ]     [ MOTION LAB ]
+(Unchanged UI)    (Unchanged UI)      (Unchanged UI)     • Entry             • Before/After     • DIS / Farnebäck
+• Smart Crop      • Motion Engine     • 11 Art Styles    • Live Camera       • 48dp Touch       • 2× / 4× FPS
+• Denoise/Enhance • Transcode Engine  • EF Parity        • Page Manager      • Dual Pan/Zoom    • Flat Pairwise Mat
+                                                         • Shared Editor     • Alpha Masks      • MediaStore Out
                                                          • PDF/Img Export
 ```
 
 ### 1. Architectural Invariants
 1. **No Compose Rewrite**: All visual components leverage ViewBinding, XML layouts, and Material Components (M3). Existing production studio controllers (`ImageStudioController`, `VideoStudioController`, `QR Studio`) remain intact without disruptive refactoring.
 2. **`WorkspaceRoute` vs `ToolMode` Decoupling**: User-facing navigation routes (`WorkspaceRoute`) are cleanly decoupled from the legacy `ToolMode` batch-execution state machine.
-3. **Tri-Destination Shell**: Navigation is organized around `Home` (intent-first launcher), `Tools` (13-workspace catalogue grouped under Create & Edit, Privacy, Analyze, and Developer with synonym search), and `Library` (recents, resumable multi-page scanner sessions, and export management).
+3. **Tri-Destination Shell**: Navigation is organized around `Home` (intent-first launcher), `Tools` (14-workspace catalogue grouped under Create & Edit, Privacy, Analyze, and Developer with synonym search), and `Library` (recents, resumable multi-page scanner sessions, and export management).
 4. **Window Size Classes**: Adaptive layout adapts to `Compact` (bottom navigation) and `Medium`/`Expanded` (vertical navigation rail) via Android Window Size Classes, eliminating fragile device-name branching.
 5. **Shared Workflows**: Reusable `SharedSourcePickerSheet` (Camera, Photo Picker, Files) and shared export pipeline (PDF single/separate, paper sizes, raster qualities).
 6. **Isolated CV Contracts**: The UI consumes high-level Kotlin contracts (`DocumentDetectionResult`, `SegmentationResult`, `QualityScore`), insulating UI components from underlying OpenCV/NDK updates.
