@@ -10,6 +10,8 @@ class RembgModelDownloadManagerTest {
     fun testOriginAllowlist() {
         assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx"))
         assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://objects.githubusercontent.com/github-production-release-asset-2e65be/model.onnx"))
+        assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://release-assets.githubusercontent.com/123456/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx"))
+        assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://raw.githubusercontent.com/user/repo/main/model.onnx"))
         assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://huggingface.co/model.onnx"))
         assertTrue(RembgModelDownloadManager.isAllowedModelUrl("https://hf.co/model.onnx"))
 
@@ -17,6 +19,10 @@ class RembgModelDownloadManagerTest {
         assertFalse(RembgModelDownloadManager.isAllowedModelUrl("http://github.com/insecure.onnx"))
         assertFalse(RembgModelDownloadManager.isAllowedModelUrl("https://malicious-site.com/model.onnx"))
         assertFalse(RembgModelDownloadManager.isAllowedModelUrl("file:///android_asset/model.onnx"))
+        assertFalse(RembgModelDownloadManager.isAllowedModelUrl("https://github.com.attacker.example/model.onnx"))
+        assertFalse(RembgModelDownloadManager.isAllowedModelUrl("https://192.168.1.1/model.onnx"))
+        assertFalse(RembgModelDownloadManager.isAllowedModelUrl("https://github.com:8443/model.onnx"))
+        assertFalse(RembgModelDownloadManager.isAllowedModelUrl("https://user:pass@github.com/model.onnx"))
     }
 
     @Test

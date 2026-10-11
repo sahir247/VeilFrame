@@ -1806,7 +1806,7 @@ class MainActivity : AppCompatActivity() {
             }
             else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
         }
-        com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next)
+        com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, next, applyImmediately = true)
         // Toolbar toggle: immediate recreate (not inside settings panel)
         com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
         recreate()
@@ -1840,7 +1840,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.rbThemeAmoled -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
-            com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode)
+            com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = false)
         }
 
         // 2. Dynamic color toggle with live palette chip disabling
@@ -1885,6 +1885,11 @@ class MainActivity : AppCompatActivity() {
                     R.id.chipPaletteCyberViolet -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET
                     else -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
                 }
+                if (panelBinding.switchDynamicColor.isChecked) {
+                    panelBinding.switchDynamicColor.isChecked = false
+                    com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, false)
+                    updatePaletteChipsEnabled(false)
+                }
                 com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
             }
         }
@@ -1903,7 +1908,7 @@ class MainActivity : AppCompatActivity() {
                 else -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT
             }
             com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
-            com.veilframe.app.settings.ThemeSettingsManager.applyActivityTheme(this)
+            com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
         }
 
         // 5. Hardware diagnostics live telemetry
@@ -1945,6 +1950,8 @@ class MainActivity : AppCompatActivity() {
         // Apply any pending theme/palette/typography changes as a single recreate()
         // AFTER the close animation (~300ms), so the panel is fully dismissed first.
         if (com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()) {
+            val mode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
+            com.veilframe.app.settings.ThemeSettingsManager.applyNightMode(mode)
             binding.rootCoordinator.postDelayed({ recreate() }, 320L)
         }
     }
@@ -1992,10 +1999,12 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_MOTION_LAB_URI = "key_motion_lab_uri"
         private const val KEY_MARKDOWN_URI = "key_markdown_uri"
         private const val KEY_MARKDOWN_FILE_PATH = "key_markdown_file_path"
+        private const val KEY_SETTINGS_OPEN = "key_settings_open"
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_SETTINGS_OPEN, binding.containerSettings.visibility == View.VISIBLE)
         outState.putString(KEY_SCREEN_STATE, navigationController.currentScreen.name)
         outState.putString(KEY_PREVIOUS_SCREEN_STATE, navigationController.previousScreen.name)
         outState.putString(KEY_TOOL_MODE, toolSessionManager.currentToolMode.name)
@@ -2037,88 +2046,99 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restoreInstanceState(savedInstanceState: Bundle) {
-        val screenStateName = savedInstanceState.getString(KEY_SCREEN_STATE)
-        val targetScreen = screenStateName?.let { runCatching { ScreenState.valueOf(it) }.getOrNull() } ?: ScreenState.HOME
-        val toolModeName = savedInstanceState.getString(KEY_TOOL_MODE)
-        val toolMode = toolModeName?.let { runCatching { ToolMode.valueOf(it) }.getOrNull() } ?: ToolMode.VIDEO_CLEANER
-        toolSessionManager.currentToolMode = toolMode
+        navigationController.isRestoringState = true
+        try {
+            val screenStateName = savedInstanceState.getString(KEY_SCREEN_STATE)
+            val targetScreen = screenStateName?.let { runCatching { ScreenState.valueOf(it) }.getOrNull() } ?: ScreenState.HOME
+            val toolModeName = savedInstanceState.getString(KEY_TOOL_MODE)
+            val toolMode = toolModeName?.let { runCatching { ToolMode.valueOf(it) }.getOrNull() } ?: ToolMode.VIDEO_CLEANER
+            toolSessionManager.currentToolMode = toolMode
 
-        // Restore active Tool URI if present
-        val toolUriStr = savedInstanceState.getString(KEY_SELECTED_FILE_URI)
-        val isFolder = savedInstanceState.getBoolean(KEY_IS_FOLDER_SELECTED, false)
-        if (toolUriStr != null) {
-            val uri = Uri.parse(toolUriStr)
-            if (isFolder) {
-                handleFolderSelected(uri)
-            } else {
-                handleSingleFileSelected(uri)
-            }
-        }
-
-        // Restore Media Studio items if present
-        savedInstanceState.getStringArrayList(KEY_STUDIO_IMAGE_URIS)?.let { uriStrings ->
-            val uris = uriStrings.map { Uri.parse(it) }
-            if (uris.isNotEmpty() && ::imageStudioController.isInitialized) {
-                imageStudioController.handleImagesSelected(uris)
-            }
-        }
-        savedInstanceState.getStringArrayList(KEY_STUDIO_VIDEO_URIS)?.let { uriStrings ->
-            val uris = uriStrings.map { Uri.parse(it) }
-            if (uris.isNotEmpty() && ::videoStudioController.isInitialized) {
-                videoStudioController.handleVideosSelected(uris)
-            }
-        }
-        savedInstanceState.getString(KEY_UPSCALER_URI)?.let { uriStr ->
-            if (targetScreen == ScreenState.IMAGE_UPSCALER) {
-                workspaceHost.getOrInflateImageUpscaler()
-            }
-            if (::imageUpscalerController.isInitialized) {
-                imageUpscalerController.handleImageSelected(Uri.parse(uriStr))
-            }
-        }
-        savedInstanceState.getString(KEY_MOTION_LAB_URI)?.let { uriStr ->
-            if (targetScreen == ScreenState.MOTION_LAB) {
-                workspaceHost.getOrInflateMotionLab()
-            }
-            if (::motionLabController.isInitialized) {
-                motionLabController.setSource(Uri.parse(uriStr))
-            }
-        }
-
-        // Navigate back to the active screen
-        when (targetScreen) {
-            ScreenState.HOME -> navigationController.showHomeScreen()
-            ScreenState.TOOLS -> navigationController.showToolsScreen()
-            ScreenState.LIBRARY -> navigationController.showLibraryScreen()
-            ScreenState.TOOL -> {
-                toolSessionManager.configureToolUI(toolMode)
-                toolSessionManager.restoreToolState(toolSessionManager.currentState)
-                navigationController.showToolScreen()
-            }
-            ScreenState.IMAGE_STUDIO -> openImageStudio()
-            ScreenState.VIDEO_STUDIO -> openVideoStudio()
-            ScreenState.QR_STUDIO -> openQrStudio()
-            ScreenState.IMAGE_UPSCALER -> openImageUpscaler()
-            ScreenState.DOCUMENT_SCANNER_ENTRY,
-            ScreenState.DOCUMENT_SCANNER_CAMERA,
-            ScreenState.DOCUMENT_SCANNER_PAGES,
-            ScreenState.DOCUMENT_SCANNER_EDITOR,
-            ScreenState.DOCUMENT_SCANNER_EXPORT -> openDocumentScanner()
-            ScreenState.BACKGROUND_REMOVER -> openBackgroundRemover()
-            ScreenState.IMAGE_QUALITY -> openImageQuality()
-            ScreenState.MOTION_LAB -> openMotionLab()
-            ScreenState.PROVENANCE -> openProvenance()
-            ScreenState.MARKDOWN_VIEWER -> {
-                val mdUriStr = savedInstanceState.getString(KEY_MARKDOWN_URI)
-                val mdFilePath = savedInstanceState.getString(KEY_MARKDOWN_FILE_PATH)
-                if (mdUriStr != null) {
-                    openMarkdownViewer(Uri.parse(mdUriStr))
-                } else if (mdFilePath != null) {
-                    openMarkdownViewer(File(mdFilePath))
+            // Restore active Tool URI if present
+            val toolUriStr = savedInstanceState.getString(KEY_SELECTED_FILE_URI)
+            val isFolder = savedInstanceState.getBoolean(KEY_IS_FOLDER_SELECTED, false)
+            if (toolUriStr != null) {
+                val uri = Uri.parse(toolUriStr)
+                if (isFolder) {
+                    handleFolderSelected(uri)
                 } else {
-                    navigationController.showMarkdownViewerScreen()
+                    handleSingleFileSelected(uri)
                 }
             }
+
+            // Restore Media Studio items if present
+            savedInstanceState.getStringArrayList(KEY_STUDIO_IMAGE_URIS)?.let { uriStrings ->
+                val uris = uriStrings.map { Uri.parse(it) }
+                if (uris.isNotEmpty() && ::imageStudioController.isInitialized) {
+                    imageStudioController.handleImagesSelected(uris)
+                }
+            }
+            savedInstanceState.getStringArrayList(KEY_STUDIO_VIDEO_URIS)?.let { uriStrings ->
+                val uris = uriStrings.map { Uri.parse(it) }
+                if (uris.isNotEmpty() && ::videoStudioController.isInitialized) {
+                    videoStudioController.handleVideosSelected(uris)
+                }
+            }
+            savedInstanceState.getString(KEY_UPSCALER_URI)?.let { uriStr ->
+                if (targetScreen == ScreenState.IMAGE_UPSCALER) {
+                    workspaceHost.getOrInflateImageUpscaler()
+                }
+                if (::imageUpscalerController.isInitialized) {
+                    imageUpscalerController.handleImageSelected(Uri.parse(uriStr))
+                }
+            }
+            savedInstanceState.getString(KEY_MOTION_LAB_URI)?.let { uriStr ->
+                if (targetScreen == ScreenState.MOTION_LAB) {
+                    workspaceHost.getOrInflateMotionLab()
+                }
+                if (::motionLabController.isInitialized) {
+                    motionLabController.setSource(Uri.parse(uriStr))
+                }
+            }
+
+            // Navigate back to the active screen
+            when (targetScreen) {
+                ScreenState.HOME -> navigationController.showHomeScreen()
+                ScreenState.TOOLS -> navigationController.showToolsScreen()
+                ScreenState.LIBRARY -> navigationController.showLibraryScreen()
+                ScreenState.TOOL -> {
+                    toolSessionManager.configureToolUI(toolMode)
+                    toolSessionManager.restoreToolState(toolSessionManager.currentState)
+                    navigationController.showToolScreen()
+                }
+                ScreenState.IMAGE_STUDIO -> openImageStudio()
+                ScreenState.VIDEO_STUDIO -> openVideoStudio()
+                ScreenState.QR_STUDIO -> openQrStudio()
+                ScreenState.IMAGE_UPSCALER -> openImageUpscaler()
+                ScreenState.DOCUMENT_SCANNER_ENTRY,
+                ScreenState.DOCUMENT_SCANNER_CAMERA,
+                ScreenState.DOCUMENT_SCANNER_PAGES,
+                ScreenState.DOCUMENT_SCANNER_EDITOR,
+                ScreenState.DOCUMENT_SCANNER_EXPORT -> openDocumentScanner()
+                ScreenState.BACKGROUND_REMOVER -> openBackgroundRemover()
+                ScreenState.IMAGE_QUALITY -> openImageQuality()
+                ScreenState.MOTION_LAB -> openMotionLab()
+                ScreenState.PROVENANCE -> openProvenance()
+                ScreenState.MARKDOWN_VIEWER -> {
+                    val mdUriStr = savedInstanceState.getString(KEY_MARKDOWN_URI)
+                    val mdFilePath = savedInstanceState.getString(KEY_MARKDOWN_FILE_PATH)
+                    if (mdUriStr != null) {
+                        openMarkdownViewer(Uri.parse(mdUriStr))
+                    } else if (mdFilePath != null) {
+                        openMarkdownViewer(File(mdFilePath))
+                    } else {
+                        navigationController.showMarkdownViewerScreen()
+                    }
+                }
+            }
+
+            if (savedInstanceState.getBoolean(KEY_SETTINGS_OPEN, false)) {
+                binding.rootCoordinator.post {
+                    openSettingsOverlay()
+                }
+            }
+        } finally {
+            navigationController.isRestoringState = false
         }
     }
 }

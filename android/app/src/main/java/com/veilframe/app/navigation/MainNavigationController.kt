@@ -28,6 +28,7 @@ class MainNavigationController(
         private set
 
     private var isSyncingBottomNav = false
+    var isRestoringState: Boolean = false
 
     fun init() {
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
@@ -229,19 +230,24 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.HOME
 
-        binding.toolbarHome.visibility = View.VISIBLE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(true)
         syncBottomNavSelection(R.id.nav_home)
 
-        if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE && outgoingToolView != binding.layoutToolsCatalogue.scrollToolsCatalogue && outgoingToolView != binding.layoutLibrary.scrollLibrary) {
+        if (outgoingToolView != null && outgoingToolView.visibility == View.VISIBLE &&
+            outgoingToolView != binding.layoutToolsCatalogue.scrollToolsCatalogue &&
+            outgoingToolView != binding.layoutLibrary.scrollLibrary &&
+            !isRestoringState
+        ) {
             com.veilframe.app.ui.motion.NavigationMotionController.hideTool(
                 homeView = binding.scrollHome,
-                toolView = outgoingToolView
+                toolView = outgoingToolView,
+                toolbarHome = binding.toolbarHome,
+                bottomNav = binding.bottomNavigation
             ) {
                 hideAllToolViewsExcept(null)
+                setAdaptiveNavigationVisibility(true)
                 if (previousScreen == ScreenState.QR_STUDIO) {
                     val qrFrag = activity.supportFragmentManager.findFragmentById(binding.fragmentQrStudio.id)
                     if (qrFrag != null) {
@@ -250,6 +256,8 @@ class MainNavigationController(
                 }
             }
         } else {
+            binding.toolbarHome.visibility = View.VISIBLE
+            setAdaptiveNavigationVisibility(true)
             binding.scrollHome.visibility = View.VISIBLE
             binding.scrollHome.alpha = 1.0f
             binding.scrollHome.translationX = 0f
@@ -311,6 +319,34 @@ class MainNavigationController(
         onLibraryScreenEntered?.invoke()
     }
 
+    private fun transitionToTool(
+        targetView: View,
+        wasHome: Boolean,
+        onPrepare: () -> Unit = {}
+    ) {
+        if (wasHome && binding.scrollHome.visibility == View.VISIBLE && !isRestoringState) {
+            hideAllToolViewsExcept(targetView)
+            onPrepare()
+            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
+                homeView = binding.scrollHome,
+                toolView = targetView,
+                toolbarHome = binding.toolbarHome,
+                bottomNav = binding.bottomNavigation
+            ) {
+                setAdaptiveNavigationVisibility(false)
+            }
+        } else {
+            binding.toolbarHome.visibility = View.GONE
+            setAdaptiveNavigationVisibility(false)
+            binding.scrollHome.visibility = View.GONE
+            targetView.visibility = View.VISIBLE
+            targetView.alpha = 1.0f
+            targetView.translationX = 0f
+            hideAllToolViewsExcept(targetView)
+            onPrepare()
+        }
+    }
+
     fun showToolScreen() {
         onPauseVideoPlayback()
         if (currentScreen == ScreenState.TOOL) {
@@ -320,25 +356,11 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.TOOL
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.VISIBLE
         binding.cardCleanerActionDock.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE
-        setAdaptiveNavigationVisibility(false)
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.scrollTool)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.scrollTool
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.scrollTool.visibility = View.VISIBLE
-            binding.scrollTool.alpha = 1.0f
-            binding.scrollTool.translationX = 0f
-            hideAllToolViewsExcept(binding.scrollTool)
-        }
+        transitionToTool(binding.scrollTool, wasHome)
     }
 
     fun showImageStudioScreen() {
@@ -350,25 +372,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_STUDIO
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
-        binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutImageStudio.root)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.layoutImageStudio.root
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.layoutImageStudio.root.visibility = View.VISIBLE
-            binding.layoutImageStudio.root.alpha = 1.0f
-            binding.layoutImageStudio.root.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutImageStudio.root)
+        transitionToTool(binding.layoutImageStudio.root, wasHome) {
+            binding.layoutImageStudio.scrollImageStudio.visibility = View.VISIBLE
         }
     }
 
@@ -381,25 +390,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.VIDEO_STUDIO
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
-        binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutVideoStudio.root)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.layoutVideoStudio.root
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.layoutVideoStudio.root.visibility = View.VISIBLE
-            binding.layoutVideoStudio.root.alpha = 1.0f
-            binding.layoutVideoStudio.root.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutVideoStudio.root)
+        transitionToTool(binding.layoutVideoStudio.root, wasHome) {
+            binding.layoutVideoStudio.scrollVideoStudio.visibility = View.VISIBLE
         }
     }
 
@@ -414,25 +410,11 @@ class MainNavigationController(
         val wasHome = (currentScreen == ScreenState.HOME || currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY)
         currentScreen = ScreenState.MARKDOWN_VIEWER
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutMarkdownViewer.layoutMarkdownRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.layoutMarkdownViewer.layoutMarkdownRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.layoutMarkdownViewer.layoutMarkdownRoot.visibility = View.VISIBLE
-            binding.layoutMarkdownViewer.layoutMarkdownRoot.alpha = 1.0f
-            binding.layoutMarkdownViewer.layoutMarkdownRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutMarkdownViewer.layoutMarkdownRoot)
-        }
+        transitionToTool(binding.layoutMarkdownViewer.layoutMarkdownRoot, wasHome)
     }
 
     fun showImageUpscalerScreen() {
@@ -444,27 +426,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_UPSCALER
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
         val upscalerRoot = workspaceHost.activate(SecondaryWorkspace.IMAGE_UPSCALER)
-
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(upscalerRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = upscalerRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            upscalerRoot.visibility = View.VISIBLE
-            upscalerRoot.alpha = 1.0f
-            upscalerRoot.translationX = 0f
-            hideAllToolViewsExcept(upscalerRoot)
-        }
+        transitionToTool(upscalerRoot, wasHome)
     }
 
     fun showQrStudioScreen() {
@@ -476,25 +443,11 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.QR_STUDIO
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.fragmentQrStudio)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.fragmentQrStudio
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.fragmentQrStudio.visibility = View.VISIBLE
-            binding.fragmentQrStudio.alpha = 1.0f
-            binding.fragmentQrStudio.translationX = 0f
-            hideAllToolViewsExcept(binding.fragmentQrStudio)
-        }
+        transitionToTool(binding.fragmentQrStudio, wasHome)
     }
 
     fun showDocumentScannerScreen(state: ScreenState = ScreenState.DOCUMENT_SCANNER_ENTRY) {
@@ -506,27 +459,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = state
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
         val docRoot = workspaceHost.activate(SecondaryWorkspace.DOCUMENT_SCANNER)
-
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(docRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = docRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            docRoot.visibility = View.VISIBLE
-            docRoot.alpha = 1.0f
-            docRoot.translationX = 0f
-            hideAllToolViewsExcept(docRoot)
-        }
+        transitionToTool(docRoot, wasHome)
     }
 
     fun showBackgroundRemoverScreen() {
@@ -538,27 +476,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.BACKGROUND_REMOVER
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
         val bgRoot = workspaceHost.activate(SecondaryWorkspace.BACKGROUND_REMOVER)
-
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(bgRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = bgRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            bgRoot.visibility = View.VISIBLE
-            bgRoot.alpha = 1.0f
-            bgRoot.translationX = 0f
-            hideAllToolViewsExcept(bgRoot)
-        }
+        transitionToTool(bgRoot, wasHome)
     }
 
     fun showMotionLabScreen() {
@@ -570,27 +493,12 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.MOTION_LAB
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
         val motionRoot = workspaceHost.activate(SecondaryWorkspace.MOTION_LAB)
-
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(motionRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = motionRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            motionRoot.visibility = View.VISIBLE
-            motionRoot.alpha = 1.0f
-            motionRoot.translationX = 0f
-            hideAllToolViewsExcept(motionRoot)
-        }
+        transitionToTool(motionRoot, wasHome)
     }
 
     fun showImageQualityScreen() {
@@ -602,25 +510,11 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.IMAGE_QUALITY
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(binding.layoutImageQuality.layoutImageQualityRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = binding.layoutImageQuality.layoutImageQualityRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            binding.layoutImageQuality.layoutImageQualityRoot.visibility = View.VISIBLE
-            binding.layoutImageQuality.layoutImageQualityRoot.alpha = 1.0f
-            binding.layoutImageQuality.layoutImageQualityRoot.translationX = 0f
-            hideAllToolViewsExcept(binding.layoutImageQuality.layoutImageQualityRoot)
-        }
+        transitionToTool(binding.layoutImageQuality.layoutImageQualityRoot, wasHome)
     }
 
     fun showProvenanceScreen() {
@@ -632,26 +526,11 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.PROVENANCE
 
-        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.GONE
         binding.cardCleanerActionDock.visibility = View.GONE
         binding.bottomActionDock.visibility = View.GONE
-        setAdaptiveNavigationVisibility(false)
 
         val provRoot = workspaceHost.activate(SecondaryWorkspace.PROVENANCE)
-
-        if (wasHome && binding.scrollHome.visibility == View.VISIBLE) {
-            hideAllToolViewsExcept(provRoot)
-            com.veilframe.app.ui.motion.NavigationMotionController.showTool(
-                homeView = binding.scrollHome,
-                toolView = provRoot
-            )
-        } else {
-            binding.scrollHome.visibility = View.GONE
-            provRoot.visibility = View.VISIBLE
-            provRoot.alpha = 1.0f
-            provRoot.translationX = 0f
-            hideAllToolViewsExcept(provRoot)
-        }
+        transitionToTool(provRoot, wasHome)
     }
 }

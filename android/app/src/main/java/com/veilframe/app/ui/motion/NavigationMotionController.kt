@@ -33,11 +33,15 @@ object NavigationMotionController {
     var nextOriginView: View? = null
 
     /**
-     * Navigates from Home screen to a Tool container.
+     * Navigates from Home screen to a Tool container with buttery smooth M3 expressive transition.
+     * Keeps home chrome (toolbarHome and bottomNav) stable and gracefully fades them out
+     * without instantaneous height collapse or shutter jump.
      */
     fun showTool(
         homeView: View,
         toolView: View,
+        toolbarHome: View? = null,
+        bottomNav: View? = null,
         onComplete: (() -> Unit)? = null
     ) {
         val context = toolView.context
@@ -46,41 +50,74 @@ object NavigationMotionController {
 
         if (ExpressiveMotion.isReducedMotion(context)) {
             homeView.isVisible = false
+            toolbarHome?.isVisible = false
+            bottomNav?.isVisible = false
             toolView.isVisible = true
             toolView.alpha = 1f
             toolView.translationX = 0f
+            toolView.translationZ = 0f
             onComplete?.invoke()
             return
         }
 
-        // Hardware-accelerated directional slide + crossfade transition:
-        // Provides instant 60/120fps response and eliminates container-transform ghost freezing
-
         val density = context.resources.displayMetrics.density
-        val offsetPx = SLIDE_OFFSET_DP * density
+        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
+        val slideOffset = (screenWidth * 0.28f).coerceIn(80f * density, 180f * density)
 
+        // Elevate incoming tool view above home chrome during the transition
+        toolView.translationZ = 16f * density
         toolView.isVisible = true
         toolView.alpha = 0f
-        toolView.translationX = offsetPx
+        toolView.translationX = slideOffset
 
         homeView.animate().cancel()
         toolView.animate().cancel()
+        toolbarHome?.animate()?.cancel()
+        bottomNav?.animate()?.cancel()
 
-        // Home slides slightly left and fades
+        // Home view glides slightly left and fades
         homeView.animate()
             .alpha(0f)
-            .translationX(-offsetPx)
+            .translationX(-slideOffset * 0.35f)
             .setDuration(MotionSpec.NORMAL)
             .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     homeView.isVisible = false
                     homeView.translationX = 0f
+                    homeView.alpha = 1f
                 }
             })
             .start()
 
-        // Tool slides in from right and settles
+        // Home chrome fades out gracefully without layout jump
+        toolbarHome?.animate()
+            ?.alpha(0f)
+            ?.setDuration(180L)
+            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+            ?.setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    toolbarHome.isVisible = false
+                    toolbarHome.alpha = 1f
+                }
+            })
+            ?.start()
+
+        bottomNav?.animate()
+            ?.alpha(0f)
+            ?.translationY(bottomNav.height.toFloat().takeIf { it > 0 } ?: (80f * density))
+            ?.setDuration(200L)
+            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+            ?.setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    bottomNav.isVisible = false
+                    bottomNav.alpha = 1f
+                    bottomNav.translationY = 0f
+                }
+            })
+            ?.start()
+
+        // Tool slides in smoothly from right and settles into place
         toolView.animate()
             .alpha(1f)
             .translationX(0f)
@@ -88,6 +125,7 @@ object NavigationMotionController {
             .setInterpolator(MotionSpec.EMPHASIZED)
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
+                    toolView.translationZ = 0f
                     onComplete?.invoke()
                 }
             })
@@ -148,11 +186,14 @@ object NavigationMotionController {
     }
 
     /**
-     * Navigates from a Tool container back to Home.
+     * Navigates from a Tool container back to Home with buttery smooth M3 expressive transition.
+     * Restores home chrome without sudden jumping.
      */
     fun hideTool(
         homeView: View,
         toolView: View,
+        toolbarHome: View? = null,
+        bottomNav: View? = null,
         onComplete: (() -> Unit)? = null
     ) {
         nextOriginView = null
@@ -162,35 +203,59 @@ object NavigationMotionController {
             homeView.isVisible = true
             homeView.alpha = 1f
             homeView.translationX = 0f
+            toolbarHome?.isVisible = true
+            toolbarHome?.alpha = 1f
+            bottomNav?.isVisible = true
+            bottomNav?.alpha = 1f
+            bottomNav?.translationY = 0f
             onComplete?.invoke()
             return
         }
 
         val density = context.resources.displayMetrics.density
-        val offsetPx = SLIDE_OFFSET_DP * density
+        val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
+        val slideOffset = (screenWidth * 0.28f).coerceIn(80f * density, 180f * density)
 
+        // Prepare home view and chrome in advance without layout snap
         homeView.isVisible = true
         homeView.alpha = 0f
-        homeView.translationX = -offsetPx
+        homeView.translationX = -slideOffset * 0.35f
+
+        if (toolbarHome != null) {
+            toolbarHome.isVisible = true
+            toolbarHome.alpha = 0f
+        }
+
+        if (bottomNav != null) {
+            bottomNav.isVisible = true
+            bottomNav.alpha = 0f
+            bottomNav.translationY = bottomNav.height.toFloat().takeIf { it > 0 } ?: (80f * density)
+        }
+
+        toolView.translationZ = 16f * density
 
         homeView.animate().cancel()
         toolView.animate().cancel()
+        toolbarHome?.animate()?.cancel()
+        bottomNav?.animate()?.cancel()
 
-        // Tool slides out to the right
+        // Tool slides out gracefully to the right
         toolView.animate()
             .alpha(0f)
-            .translationX(offsetPx)
-            .setDuration(MotionSpec.NORMAL)
+            .translationX(slideOffset)
+            .setDuration(240L)
             .setInterpolator(MotionSpec.DECELERATE_SMOOTH)
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     toolView.isVisible = false
                     toolView.translationX = 0f
+                    toolView.translationZ = 0f
+                    toolView.alpha = 1f
                 }
             })
             .start()
 
-        // Home returns from left
+        // Home smoothly returns from left
         homeView.animate()
             .alpha(1f)
             .translationX(0f)
@@ -202,6 +267,20 @@ object NavigationMotionController {
                 }
             })
             .start()
+
+        // Home chrome returns smoothly into place
+        toolbarHome?.animate()
+            ?.alpha(1f)
+            ?.setDuration(240L)
+            ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+            ?.start()
+
+        bottomNav?.animate()
+            ?.alpha(1f)
+            ?.translationY(0f)
+            ?.setDuration(MotionSpec.NORMAL)
+            ?.setInterpolator(MotionSpec.EMPHASIZED)
+            ?.start()
     }
 
     /**

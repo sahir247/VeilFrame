@@ -27,20 +27,48 @@ class RembgModelDownloadManager(
         private const val CONNECT_TIMEOUT_MS = 20_000
         private const val READ_TIMEOUT_MS = 60_000
 
+        private val allowedExactHosts = setOf(
+            "github.com",
+            "githubusercontent.com",
+            "huggingface.co",
+            "hf.co"
+        )
+
+        private val allowedHostSuffixes = setOf(
+            ".github.com",
+            ".githubusercontent.com",
+            ".huggingface.co",
+            ".hf.co"
+        )
+
         private fun isAllowedHost(host: String): Boolean {
-            val h = host.lowercase(java.util.Locale.ROOT)
-            return h == "github.com" || h.endsWith(".github.com") ||
-                h == "objects.githubusercontent.com" || h.endsWith(".objects.githubusercontent.com") ||
-                h == "huggingface.co" || h.endsWith(".huggingface.co") ||
-                h == "hf.co" || h.endsWith(".hf.co")
+            val normalized = host
+                .trimEnd('.')
+                .lowercase(java.util.Locale.ROOT)
+
+            return normalized in allowedExactHosts ||
+                allowedHostSuffixes.any { normalized.endsWith(it) }
         }
 
         fun isAllowedModelUrl(urlString: String): Boolean {
-            val url = try { URL(urlString) } catch (_: Exception) { return false }
-            if (!url.protocol.equals("https", ignoreCase = true)) return false
-            if (url.port != -1 && url.port != 443) return false
-            if (url.userInfo != null) return false
-            return isAllowedHost(url.host)
+            val uri = try {
+                java.net.URI(urlString).parseServerAuthority()
+            } catch (_: Exception) {
+                return false
+            }
+
+            if (!uri.scheme.equals("https", ignoreCase = true)) return false
+            if (uri.rawUserInfo != null) return false
+            if (uri.port != -1 && uri.port != 443) return false
+
+            val host = uri.host ?: return false
+
+            // Reject IP literals; model downloads should use approved DNS hosts.
+            if (host.contains(':') ||
+                host.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))
+            ) return false
+
+            return isAllowedHost(host)
         }
     }
 
@@ -120,6 +148,7 @@ class RembgModelDownloadManager(
                 val status = conn.responseCode
                 if (status == HttpURLConnection.HTTP_MOVED_TEMP ||
                     status == HttpURLConnection.HTTP_MOVED_PERM ||
+                    status == HttpURLConnection.HTTP_SEE_OTHER ||
                     status == 307 || status == 308
                 ) {
                     val location = conn.getHeaderField("Location")
@@ -129,7 +158,20 @@ class RembgModelDownloadManager(
                     activeConnection = null
 
                     if (!isAllowedModelUrl(resolved)) {
-                        throw SecurityException("Redirect destination violates model origin policy: $resolved")
+                        val rejectedHost = try {
+                            java.net.URI(resolved).host ?: "<invalid-host>"
+                        } catch (_: Exception) {
+                            "<invalid-url>"
+                        }
+
+                        Log.e(
+                            TAG,
+                            "Blocked model redirect: fromHost=${url.host}, toHost=$rejectedHost"
+                        )
+
+                        throw SecurityException(
+                            "Model redirect blocked: unapproved host $rejectedHost"
+                        )
                     }
                     currentUrl = resolved
                     redirectCount++

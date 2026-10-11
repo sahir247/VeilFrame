@@ -122,18 +122,42 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Called post-setContentView to apply custom typography to the view tree.
+     * Resolves the concrete Typeface for the currently active typography preference,
+     * using bundled fonts shipped in res/font/ with safe fallbacks.
+     */
+    fun getTypeface(context: Context): Typeface {
+        val typo = getTypographyStyle(context)
+        return when (typo) {
+            TypographyStyle.MONOSPACE -> {
+                try {
+                    androidx.core.content.res.ResourcesCompat.getFont(context, R.font.font_mono) ?: Typeface.MONOSPACE
+                } catch (_: Exception) {
+                    Typeface.MONOSPACE
+                }
+            }
+            TypographyStyle.SERIF -> {
+                try {
+                    androidx.core.content.res.ResourcesCompat.getFont(context, R.font.font_serif) ?: Typeface.SERIF
+                } catch (_: Exception) {
+                    Typeface.SERIF
+                }
+            }
+            TypographyStyle.DEFAULT -> {
+                try {
+                    androidx.core.content.res.ResourcesCompat.getFont(context, R.font.font_sans) ?: Typeface.DEFAULT
+                } catch (_: Exception) {
+                    Typeface.DEFAULT
+                }
+            }
+        }
+    }
+
+    /**
+     * Called post-setContentView or during live font changes to apply typography to the entire view tree.
      */
     fun applyTypography(activity: Activity) {
-        val typo = getTypographyStyle(activity)
-        if (typo != TypographyStyle.DEFAULT) {
-            val tf = when (typo) {
-                TypographyStyle.MONOSPACE -> Typeface.MONOSPACE
-                TypographyStyle.SERIF -> Typeface.SERIF
-                else -> Typeface.DEFAULT
-            }
-            applyTypefaceRecursively(activity.window.decorView, tf)
-        }
+        val tf = getTypeface(activity)
+        applyTypefaceRecursively(activity.window.decorView, tf)
     }
 
     fun getThemeMode(context: Context): ThemeMode {
@@ -146,12 +170,16 @@ object ThemeSettingsManager {
     }
 
     /**
-     * Persists the theme mode and applies night mode immediately (safe without recreate).
-     * Sets [pendingRecreate] so the caller can recreate once the settings panel is dismissed.
+     * Persists the theme mode.
+     * When [applyImmediately] is false (e.g. inside settings panel), recreation is deferred
+     * until the settings panel is dismissed via Done/back, preventing abrupt activity destruction.
+     * When [applyImmediately] is true (e.g. toolbar quick-toggle), night mode applies immediately.
      */
-    fun setThemeMode(activity: Activity, mode: ThemeMode) {
+    fun setThemeMode(activity: Activity, mode: ThemeMode, applyImmediately: Boolean = false) {
         getPrefs(activity).edit().putString(KEY_THEME_MODE, mode.name).apply()
-        applyNightMode(mode)
+        if (applyImmediately) {
+            applyNightMode(mode)
+        }
         pendingRecreate = true
     }
 

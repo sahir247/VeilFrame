@@ -355,12 +355,14 @@
             app:icon="@drawable/ic_expand_more"
             app:iconGravity="textStart" />
 
-        <!-- 7. Action Button (expressive XL primary) -->
+        <!-- 7. Action Button (balanced primary) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnExportExecute"
-            style="@style/Widget.VeilFrame.Button.Execute"
+            style="@style/Widget.VeilFrame.Button.Primary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
             android:text="Export Document"
             app:icon="@drawable/ic_action_save"
             app:iconGravity="textStart" />
