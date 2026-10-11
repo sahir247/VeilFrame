@@ -3,6 +3,7 @@ package com.veilframe.app.navigation
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import com.veilframe.app.MainActivity
 import com.veilframe.app.R
 import com.veilframe.app.databinding.ActivityMainBinding
 import com.veilframe.app.workspace.SecondaryWorkspace
@@ -34,7 +35,7 @@ class MainNavigationController(
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.containerSettings.visibility == View.VISIBLE) {
-                    com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
+                    (activity as? MainActivity)?.closeSettingsOverlay() ?: com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
                         binding.containerSettings,
                         binding.scrimSettings
                     )

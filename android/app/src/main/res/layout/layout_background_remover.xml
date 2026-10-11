@@ -5,7 +5,7 @@
     android:id="@+id/layoutBackgroundRemoverRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/vf_bg_dark"
+    android:background="?android:attr/colorBackground"
     android:visibility="gone">
 
     <LinearLayout
@@ -18,13 +18,13 @@
             android:id="@+id/toolbarBgRemover"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/vf_surface"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/vf_text_primary"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="Background Remover"
-            app:titleTextColor="@color/vf_text_primary"
+            app:titleTextColor="?attr/colorOnSurface"
             app:subtitle="On-Device Neural Matting"
-            app:subtitleTextColor="@color/vf_text_secondary">
+            app:subtitleTextColor="?attr/colorOnSurfaceVariant">
 
             <!-- Model Manager Action Button -->
             <com.google.android.material.button.MaterialButton
@@ -36,7 +36,7 @@
                 android:layout_marginEnd="4dp"
                 android:contentDescription="AI Model Manager"
                 app:icon="@drawable/ic_system_update"
-                app:iconTint="@color/vf_text_primary" />
+                app:iconTint="?attr/colorOnSurface" />
 
             <!-- Reset Comparison Zoom/Pan -->
             <com.google.android.material.button.MaterialButton
@@ -70,99 +70,107 @@
             android:layout_weight="1"
             android:padding="16dp">
 
-            <!-- Empty State Hero (Cel-Android layout + VeilFrame M3 Expressive tokens) -->
-            <LinearLayout
+            <!-- Empty State Hero (Scrollable on short displays) -->
+            <androidx.core.widget.NestedScrollView
                 android:id="@+id/containerBgEmptyState"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:fillViewport="true">
 
-                <!-- Value Proposition Badges -->
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginBottom="20dp">
+                    android:orientation="vertical"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp">
+
+                    <!-- Value Proposition Badges -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginBottom="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_badge_pass"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:layout_marginEnd="8dp"
+                            android:text="On-Device AI"
+                            android:textColor="@color/vf_accent_green"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_badge_neutral"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:layout_marginEnd="8dp"
+                            android:text="Zero Cloud"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_badge_neutral"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:text="100% Private"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:src="@drawable/ic_crop"
+                        app:tint="@color/vf_primary"
+                        android:contentDescription="Select Image" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_pass"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp"
-                        android:layout_marginEnd="8dp"
-                        android:text="On-Device AI"
-                        android:textColor="@color/vf_accent_green"
-                        android:textSize="11sp"
+                        android:layout_marginTop="16dp"
+                        android:text="Remove Backgrounds in One Tap"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="20sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_neutral"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp"
-                        android:layout_marginEnd="8dp"
-                        android:text="Zero Cloud"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:layout_marginTop="8dp"
+                        android:text="Private, fast, and high-precision subject matting with SOTA ONNX models."
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="13sp"
+                        android:gravity="center"
+                        android:maxWidth="300dp" />
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBgPickImage"
+                        style="@style/Widget.VeilFrame.Button.Primary"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_neutral"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp"
-                        android:text="100% Private"
-                        android:textColor="@color/vf_text_primary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:layout_marginTop="24dp"
+                        android:text="Choose Photo"
+                        app:icon="@drawable/ic_tab_image" />
                 </LinearLayout>
-
-                <ImageView
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:src="@drawable/ic_crop"
-                    app:tint="@color/vf_primary"
-                    android:contentDescription="Select Image" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="Remove Backgrounds in One Tap"
-                    android:textColor="@color/vf_text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Private, fast, and high-precision subject matting with SOTA ONNX models."
-                    android:textColor="@color/vf_text_secondary"
-                    android:textSize="13sp"
-                    android:gravity="center"
-                    android:maxWidth="300dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnBgPickImage"
-                    style="@style/Widget.VeilFrame.Button.Primary"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
-                    android:text="Choose Photo"
-                    app:icon="@drawable/ic_tab_image" />
-            </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
 
             <!-- Interactive Before/After Split Comparison View -->
             <com.veilframe.app.ui.views.BeforeAfterSplitView

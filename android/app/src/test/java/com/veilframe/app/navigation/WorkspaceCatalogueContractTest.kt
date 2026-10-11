@@ -108,4 +108,59 @@ class WorkspaceCatalogueContractTest {
             )
         }
     }
+
+    @Test
+    fun `rowDev2 cards in layout_tools_catalogue declare symmetric weights and margins preventing column collapse`() {
+        val layoutFile = File("src/main/res/layout/layout_tools_catalogue.xml")
+        val altLayoutFile = File("android/app/src/main/res/layout/layout_tools_catalogue.xml")
+        val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
+        assertTrue("layout_tools_catalogue.xml must exist", targetFile.exists())
+
+        val xmlContent = targetFile.readText()
+
+        // cardToolProvenance must use 0dp width, weight 1, and marginEnd 5dp
+        val provIndex = xmlContent.indexOf("id=\"@+id/cardToolProvenance\"")
+        assertTrue("cardToolProvenance must be found", provIndex != -1)
+        val provBlock = xmlContent.substring(provIndex, xmlContent.indexOf("</com.google.android.material.card.MaterialCardView>", provIndex))
+        assertTrue("cardToolProvenance must have layout_width=0dp", provBlock.contains("android:layout_width=\"0dp\""))
+        assertTrue("cardToolProvenance must have layout_weight=1", provBlock.contains("android:layout_weight=\"1\""))
+        assertTrue("cardToolProvenance must have layout_marginEnd=5dp", provBlock.contains("android:layout_marginEnd=\"5dp\""))
+
+        // cardToolMotionLab must use 0dp width, weight 1, and marginStart 5dp
+        val motionIndex = xmlContent.indexOf("id=\"@+id/cardToolMotionLab\"")
+        assertTrue("cardToolMotionLab must be found", motionIndex != -1)
+        val motionBlock = xmlContent.substring(motionIndex, xmlContent.indexOf("</com.google.android.material.card.MaterialCardView>", motionIndex))
+        assertTrue("cardToolMotionLab must have layout_width=0dp", motionBlock.contains("android:layout_width=\"0dp\""))
+        assertTrue("cardToolMotionLab must have layout_weight=1", motionBlock.contains("android:layout_weight=\"1\""))
+        assertTrue("cardToolMotionLab must have layout_marginStart=5dp", motionBlock.contains("android:layout_marginStart=\"5dp\""))
+    }
+
+    @Test
+    fun `settings panel scroll container allocates flexible weight preventing height overflow`() {
+        val layoutFile = File("src/main/res/layout/layout_settings_panel.xml")
+        val altLayoutFile = File("android/app/src/main/res/layout/layout_settings_panel.xml")
+        val targetFile = if (layoutFile.exists()) layoutFile else altLayoutFile
+        assertTrue("layout_settings_panel.xml must exist", targetFile.exists())
+
+        val xmlContent = targetFile.readText()
+        val scrollIndex = xmlContent.indexOf("id=\"@+id/scrollSettings\"")
+        assertTrue("scrollSettings must be found", scrollIndex != -1)
+        val scrollTag = xmlContent.substring(scrollIndex, xmlContent.indexOf(">", scrollIndex))
+        assertTrue("scrollSettings must have layout_height=0dp", scrollTag.contains("android:layout_height=\"0dp\""))
+        assertTrue("scrollSettings must have layout_weight=1", scrollTag.contains("android:layout_weight=\"1\""))
+    }
+
+    @Test
+    fun `main navigation routes system back through closeSettingsOverlay to apply pending theme changes`() {
+        val navFile = File("src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val altNavFile = File("android/app/src/main/java/com/veilframe/app/navigation/MainNavigationController.kt")
+        val targetFile = if (navFile.exists()) navFile else altNavFile
+        assertTrue("MainNavigationController.kt must exist", targetFile.exists())
+
+        val content = targetFile.readText()
+        assertTrue(
+            "MainNavigationController must invoke closeSettingsOverlay() on back when settings are visible",
+            content.contains("closeSettingsOverlay()")
+        )
+    }
 }

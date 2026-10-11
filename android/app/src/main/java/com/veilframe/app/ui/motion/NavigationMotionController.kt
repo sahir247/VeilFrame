@@ -60,6 +60,10 @@ object NavigationMotionController {
             return
         }
 
+        if (origin != null && tryContainerTransform(homeView, toolView, origin, toolbarHome, bottomNav, onComplete)) {
+            return
+        }
+
         val density = context.resources.displayMetrics.density
         val screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
         val slideOffset = (screenWidth * 0.28f).coerceIn(80f * density, 180f * density)
@@ -146,6 +150,8 @@ object NavigationMotionController {
         homeView: View,
         toolView: View,
         origin: View,
+        toolbarHome: View? = null,
+        bottomNav: View? = null,
         onComplete: (() -> Unit)?
     ): Boolean {
         return try {
@@ -158,20 +164,27 @@ object NavigationMotionController {
                 fadeMode = com.google.android.material.transition.MaterialContainerTransform.FADE_MODE_THROUGH
                 isElevationShadowEnabled = false
                 startContainerColor = com.google.android.material.color.MaterialColors.getColor(
-                    origin, com.google.android.material.R.attr.colorSurfaceContainer
+                    origin, com.google.android.material.R.attr.colorSurfaceContainer,
+                    com.google.android.material.color.MaterialColors.getColor(origin, android.R.attr.colorBackground)
                 )
                 endContainerColor = com.google.android.material.color.MaterialColors.getColor(
                     toolView, android.R.attr.colorBackground
                 )
                 scrimColor = android.graphics.Color.argb(96, 0, 0, 0)
+                duration = MotionSpec.NORMAL
+                interpolator = MotionSpec.EMPHASIZED
                 addListener(object : androidx.transition.TransitionListenerAdapter() {
                     override fun onTransitionEnd(transition: androidx.transition.Transition) {
                         homeView.isVisible = false
+                        toolbarHome?.isVisible = false
+                        bottomNav?.isVisible = false
                         onComplete?.invoke()
                     }
                 })
             }
 
+            toolbarHome?.isVisible = false
+            bottomNav?.isVisible = false
             toolView.isVisible = true
             androidx.transition.TransitionManager.beginDelayedTransition(parent, transform)
             true
@@ -185,6 +198,8 @@ object NavigationMotionController {
             toolView.isVisible = false
             toolView.alpha = 1f
             toolView.translationX = 0f
+            toolbarHome?.isVisible = true
+            bottomNav?.isVisible = true
             false
         }
     }

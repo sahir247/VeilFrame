@@ -1205,8 +1205,10 @@
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardToolProvenance"
                     style="@style/Widget.Material3.CardView.Filled"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="5dp"
                     android:clickable="true"
                     android:focusable="true"
                     app:cardCornerRadius="16dp"
@@ -1216,72 +1218,73 @@
 
                     <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
                         android:padding="12dp">
 
-                        <ImageView
-                            android:layout_width="28dp"
-                            android:layout_height="28dp"
-                            android:layout_gravity="center_vertical"
-                            android:layout_marginEnd="12dp"
-                            android:contentDescription="Provenance &amp; Verify"
-                            android:src="@drawable/ic_check_circle"
-                            app:tint="@color/vf_primary" />
-
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
+                            <ImageView
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:contentDescription="Provenance &amp; Verify"
+                                android:src="@drawable/ic_check_circle"
+                                app:tint="@color/vf_primary" />
 
-                                <TextView
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="Provenance &amp; Verify"
-                                    android:textColor="@color/vf_text_primary"
-                                    android:textSize="13sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:background="@color/vf_surface_variant"
-                                    android:paddingStart="5dp"
-                                    android:paddingEnd="5dp"
-                                    android:paddingTop="2dp"
-                                    android:paddingBottom="2dp"
-                                    android:text="Stable"
-                                    android:textColor="@color/vf_secondary"
-                                    android:textSize="11sp"
-                                    android:textStyle="bold" />
-                            </LinearLayout>
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_weight="1" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="3dp"
-                                android:text="Ed25519 digital signature validation, SHA-256 integrity, audit manifests"
-                                android:textAppearance="?attr/textAppearanceBodySmall"
-                                android:textColor="?attr/colorOnSurfaceVariant" />
+                                android:background="@color/vf_surface_variant"
+                                android:paddingStart="5dp"
+                                android:paddingEnd="5dp"
+                                android:paddingTop="2dp"
+                                android:paddingBottom="2dp"
+                                android:text="Stable"
+                                android:textColor="@color/vf_secondary"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Provenance &amp; Verify"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="Ed25519 digital signature validation, SHA-256 integrity, audit manifests"
+                            android:textColor="@color/vf_text_secondary"
+                            android:textSize="11sp"
+                            android:maxLines="3"
+                            android:ellipsize="end" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-<com.google.android.material.card.MaterialCardView
+                <!-- 14. Motion Lab -->
+                <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardToolMotionLab"
                     style="@style/Widget.Material3.CardView.Filled"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginEnd="5dp"
+                    android:layout_marginStart="5dp"
                     android:clickable="true"
                     android:focusable="true"
                     app:cardCornerRadius="16dp"

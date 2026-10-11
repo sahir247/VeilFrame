@@ -1942,7 +1942,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun closeSettingsOverlay() {
+    internal fun closeSettingsOverlay() {
         com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
             settingsContainer = binding.containerSettings,
             scrimView = binding.scrimSettings
