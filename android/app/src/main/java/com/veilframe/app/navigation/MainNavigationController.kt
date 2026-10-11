@@ -32,7 +32,7 @@ class MainNavigationController(
     var isRestoringState: Boolean = false
 
     fun init() {
-        activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
+        val backCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.containerSettings.visibility == View.VISIBLE) {
                     (activity as? MainActivity)?.closeSettingsOverlay() ?: com.veilframe.app.ui.motion.NavigationMotionController.closeSettings(
@@ -41,6 +41,25 @@ class MainNavigationController(
                     )
                     return
                 }
+
+                val mainAct = activity as? MainActivity
+                if (currentScreen != ScreenState.HOME && mainAct?.hasActiveProcessing() == true) {
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                        .setTitle("Leave Workspace?")
+                        .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
+                        .setPositiveButton("Cancel & Leave") { _, _ ->
+                            mainAct.cancelAllActiveProcessing()
+                            performBackNavigation()
+                        }
+                        .setNegativeButton("Stay", null)
+                        .show()
+                    return
+                }
+
+                performBackNavigation()
+            }
+
+            private fun performBackNavigation() {
                 if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
                     if (onMarkdownBackPressed()) {
                         return
@@ -66,10 +85,24 @@ class MainNavigationController(
                     isEnabled = true
                 }
             }
-        })
+        }
+        activity.onBackPressedDispatcher.addCallback(activity, backCallback)
 
         binding.btnBackToHome.setOnClickListener {
-            showHomeScreen()
+            val mainAct = activity as? MainActivity
+            if (currentScreen != ScreenState.HOME && mainAct?.hasActiveProcessing() == true) {
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                    .setTitle("Leave Workspace?")
+                    .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
+                    .setPositiveButton("Cancel & Leave") { _, _ ->
+                        mainAct.cancelAllActiveProcessing()
+                        showHomeScreen()
+                    }
+                    .setNegativeButton("Stay", null)
+                    .show()
+            } else {
+                showHomeScreen()
+            }
         }
 
         binding.bottomNavigation.setOnItemSelectedListener { item ->

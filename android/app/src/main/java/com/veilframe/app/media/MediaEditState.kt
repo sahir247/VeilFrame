@@ -293,5 +293,6 @@ data class VideoOutputConfig(
     var audioBitrateKbps: Int? = null,
     var outputMode: VideoOutputMode = VideoOutputMode.VIDEO,
     var outputFileName: String = "",
-    var whatsappStatusResolution: com.veilframe.app.media.whatsapp.WhatsappStatusResolution = com.veilframe.app.media.whatsapp.WhatsappStatusResolution.HD_720P
+    var whatsappStatusResolution: com.veilframe.app.media.whatsapp.WhatsappStatusResolution = com.veilframe.app.media.whatsapp.WhatsappStatusResolution.HD_720P,
+    var pixelFormat: String = "yuv420p"
 )

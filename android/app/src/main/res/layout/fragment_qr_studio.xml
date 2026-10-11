@@ -30,7 +30,7 @@
             app:title="QR Studio"
             app:titleCentered="false"
             app:contentInsetStartWithNavigation="0dp"
-            app:titleTextAppearance="?attr/textAppearanceTitleLarge"
+            app:titleTextAppearance="?attr/textAppearanceTitleMedium"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:layout_scrollFlags="scroll|enterAlways" />
 

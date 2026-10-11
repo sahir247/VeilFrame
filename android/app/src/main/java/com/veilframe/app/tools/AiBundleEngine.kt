@@ -24,7 +24,8 @@ object AiBundleEngine {
         val outputFormat: String = "md",
         val maskSecrets: Boolean = true,
         val excludeTests: Boolean = false,
-        val compressManifests: Boolean = false
+        val compressManifests: Boolean = false,
+        val maxDepth: Int? = null
     )
 
     data class BundleResult(
@@ -70,7 +71,7 @@ object AiBundleEngine {
 
         val sections = mutableListOf<String>()
 
-        fun walkDoc(doc: DocumentFile, currentPath: String) {
+        fun walkDoc(doc: DocumentFile, currentPath: String, currentDepth: Int) {
             val children = doc.listFiles()
             for (child in children) {
                 val childName = child.name ?: continue
@@ -79,8 +80,11 @@ object AiBundleEngine {
                 val relativePath = if (currentPath.isEmpty()) childName else "$currentPath/$childName"
 
                 if (child.isDirectory) {
+                    if (config.maxDepth != null && currentDepth >= config.maxDepth) {
+                        continue
+                    }
                     if (childName.lowercase(Locale.US) !in IGNORED_DIRECTORIES) {
-                        walkDoc(child, relativePath)
+                        walkDoc(child, relativePath, currentDepth + 1)
                     }
                 } else if (child.isFile) {
                     totalFilesSeen++
@@ -107,7 +111,7 @@ object AiBundleEngine {
         }
 
         if (rootDoc != null) {
-            walkDoc(rootDoc, "")
+            walkDoc(rootDoc, "", 0)
         }
 
         val timeStamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())

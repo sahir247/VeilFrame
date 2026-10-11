@@ -352,3 +352,140 @@ mark.vf-search-highlight.active {
   font-size: 48px;
   margin-bottom: 12px;
 }
+
+/* ==========================================================================
+   Print & PDF Export Media Queries
+   Enforces strict color reproduction, contrast preservation, and wrapping.
+   ========================================================================== */
+@media print {
+  html, body {
+    background-color: var(--vf-bg) !important;
+    color: var(--vf-fg) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #reading-progress-container,
+  .code-copy-btn,
+  .mermaid-actions,
+  #empty-state {
+    display: none !important;
+  }
+
+  #viewer-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* Dark Theme Print Overrides */
+  body.theme-dark {
+    background-color: #0d1117 !important;
+    color: #e6edf3 !important;
+  }
+
+  body.theme-dark .markdown-body {
+    color: #e6edf3 !important;
+    background-color: #0d1117 !important;
+  }
+
+  body.theme-dark table,
+  body.theme-dark .markdown-body table {
+    background-color: #0d1117 !important;
+    color: #e6edf3 !important;
+    border-collapse: collapse !important;
+    border-color: #30363d !important;
+  }
+
+  body.theme-dark tr,
+  body.theme-dark .markdown-body tr {
+    background-color: #0d1117 !important;
+    border-top: 1px solid #30363d !important;
+  }
+
+  body.theme-dark tr:nth-child(2n),
+  body.theme-dark .markdown-body tr:nth-child(2n) {
+    background-color: #161b22 !important;
+  }
+
+  body.theme-dark th,
+  body.theme-dark td,
+  body.theme-dark .markdown-body th,
+  body.theme-dark .markdown-body td {
+    color: #e6edf3 !important;
+    border: 1px solid #30363d !important;
+    background-color: inherit !important;
+  }
+
+  body.theme-dark pre,
+  body.theme-dark .code-block-wrapper,
+  body.theme-dark .markdown-body pre,
+  body.theme-dark .markdown-body code {
+    background-color: #161b22 !important;
+    color: #e6edf3 !important;
+    border-color: #30363d !important;
+  }
+
+  /* Light Theme Print Overrides */
+  body.theme-light {
+    background-color: #ffffff !important;
+    color: #1f2328 !important;
+  }
+
+  body.theme-light .markdown-body {
+    color: #1f2328 !important;
+    background-color: #ffffff !important;
+  }
+
+  body.theme-light table,
+  body.theme-light .markdown-body table {
+    background-color: #ffffff !important;
+    color: #1f2328 !important;
+    border-collapse: collapse !important;
+    border-color: #d0d7de !important;
+  }
+
+  body.theme-light tr,
+  body.theme-light .markdown-body tr {
+    background-color: #ffffff !important;
+    border-top: 1px solid #d0d7de !important;
+  }
+
+  body.theme-light tr:nth-child(2n),
+  body.theme-light .markdown-body tr:nth-child(2n) {
+    background-color: #f6f8fa !important;
+  }
+
+  body.theme-light th,
+  body.theme-light td,
+  body.theme-light .markdown-body th,
+  body.theme-light .markdown-body td {
+    color: #1f2328 !important;
+    border: 1px solid #d0d7de !important;
+    background-color: inherit !important;
+  }
+
+  /* Code Block Wrapping - Prevent left/right clipping */
+  pre, code, .code-block-wrapper pre {
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
+  }
+
+  .code-block-wrapper {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .table-wrapper {
+    overflow: visible !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  img, .mermaid-container, .front-matter-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    max-width: 100% !important;
+  }
+}

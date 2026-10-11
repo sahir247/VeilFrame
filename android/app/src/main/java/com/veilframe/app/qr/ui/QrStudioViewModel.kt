@@ -1395,7 +1395,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped) {
+                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
@@ -1746,7 +1746,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped) {
+                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
@@ -1841,7 +1841,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped) {
+                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
                         saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report
@@ -2044,7 +2044,7 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
                 return@launchExportJob
             }
             try {
-                if (!report.isScanReady && !report.validationSkipped) {
+                if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
                         saveResult = "Share rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
                         scanabilityReport = report

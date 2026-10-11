@@ -105,6 +105,34 @@ class BundleOptionsWidget(QWidget):
 
         flay.addLayout(row1)
 
+        # Row 1b: Traversal Depth
+        row_depth = QHBoxLayout()
+        row_depth.setSpacing(12)
+
+        lbl_depth = QLabel("Folder Traversal Depth:")
+        lbl_depth.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 700;")
+        row_depth.addWidget(lbl_depth)
+
+        self.chk_full_depth = QCheckBox("Full Depth (Recursive All)")
+        self.chk_full_depth.setChecked(True)
+        self.chk_full_depth.setStyleSheet("color: #ffffff; font-size: 11px;")
+        self.chk_full_depth.toggled.connect(self._on_depth_toggled)
+        row_depth.addWidget(self.chk_full_depth)
+
+        self.spin_custom_depth = QSpinBox()
+        self.spin_custom_depth.setRange(1, 100)
+        self.spin_custom_depth.setValue(3)
+        self.spin_custom_depth.setEnabled(False)
+        self.spin_custom_depth.setStyleSheet(
+            "background: #262626; color: #ffffff; border: 1px solid #444444; "
+            "padding: 4px 8px; border-radius: 4px; font-size: 11px;"
+        )
+        self.spin_custom_depth.valueChanged.connect(lambda: self.optionsChanged.emit())
+        row_depth.addWidget(self.spin_custom_depth)
+
+        row_depth.addStretch()
+        flay.addLayout(row_depth)
+
         # Row 2: Filtering Checkboxes Grid
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
@@ -161,6 +189,10 @@ class BundleOptionsWidget(QWidget):
             self.spin_custom_tokens.hide()
         self.optionsChanged.emit()
 
+    def _on_depth_toggled(self, checked: bool) -> None:
+        self.spin_custom_depth.setEnabled(not checked)
+        self.optionsChanged.emit()
+
     def get_config(self) -> BundleConfig:
         """Construct a configured BundleConfig object from current UI selections."""
         # 1. Budget
@@ -191,6 +223,8 @@ class BundleOptionsWidget(QWidget):
         }
         fmt = format_map.get(f_idx, BundleFormat.AIBUNDLE)
 
+        max_depth = None if self.chk_full_depth.isChecked() else self.spin_custom_depth.value()
+
         return BundleConfig(
             target_tokens=target_tokens,
             format=fmt,
@@ -202,4 +236,5 @@ class BundleOptionsWidget(QWidget):
             compress_context=self.chk_compress_data.isChecked(),
             include_tree=self.chk_tree.isChecked(),
             include_relationships=self.chk_relationships.isChecked(),
+            max_depth=max_depth,
         )

@@ -14,6 +14,7 @@ import com.veilframe.app.media.VideoStudioController
 import com.veilframe.app.storage.SafStorageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -39,13 +40,30 @@ class ToolExecutionController(
     private val getVideoStudioController: () -> VideoStudioController?
 ) {
 
+    private var executionJob: Job? = null
+
+    val isExecuting: Boolean
+        get() = executionJob?.isActive == true || sessionManager.currentState.jobState in listOf(
+            JobState.PREPARING,
+            JobState.SCANNING,
+            JobState.PROCESSING,
+            JobState.FINALIZING
+        )
+
+    fun cancelExecution() {
+        executionJob?.cancel()
+        executionJob = null
+        val state = sessionManager.currentState
+        sessionManager.updateJobState(JobState.CANCELLED, "Processing cancelled by user.")
+        onLog("[USER] Execution cancelled by user.")
+        binding.progressIndicator.isIndeterminate = false
+        sessionManager.updatePrimaryActionDock(state)
+    }
+
     fun executeSelectedMode() {
         val state = sessionManager.currentState
         if (state.jobState in listOf(JobState.PREPARING, JobState.SCANNING, JobState.PROCESSING, JobState.FINALIZING)) {
-            sessionManager.updateJobState(JobState.CANCELLED, "Processing cancelled by user.")
-            onLog("[USER] Execution cancelled by user.")
-            binding.progressIndicator.isIndeterminate = false
-            sessionManager.updatePrimaryActionDock(state)
+            cancelExecution()
             return
         }
 
@@ -76,7 +94,7 @@ class ToolExecutionController(
         binding.progressIndicator.isIndeterminate = true
         binding.tvProgressDetails.text = ""
 
-        scope.launch {
+        executionJob = scope.launch {
             when (sessionManager.currentToolMode) {
                 ToolMode.AI_BUNDLE -> runAiBundle(uri)
                 ToolMode.VIDEO_CLEANER -> runVideoSanitization(uri)
@@ -116,12 +134,19 @@ class ToolExecutionController(
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val outputFile = File(activity.cacheDir, "AIBundle_$timeStamp.$formatKey")
 
+        val maxDepth = if (binding.switchBundleFullDepth.isChecked) {
+            null
+        } else {
+            binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
+        }
+
         val bundleConfig = AiBundleEngine.BundleConfig(
             tokenBudget = tokenBudget,
             outputFormat = formatKey,
             maskSecrets = binding.switchOption1.isChecked,
             excludeTests = binding.switchOption2.isChecked,
-            compressManifests = binding.switchOption3.isChecked
+            compressManifests = binding.switchOption3.isChecked,
+            maxDepth = maxDepth
         )
 
         val bundleResult = withContext(Dispatchers.IO) {

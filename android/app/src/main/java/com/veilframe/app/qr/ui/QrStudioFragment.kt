@@ -404,7 +404,6 @@ class QrGenerateTabFragment : Fragment() {
             val pager = parentFragment?.view?.findViewById<ViewPager2>(R.id.qr_pager)
                 ?: requireActivity().findViewById<ViewPager2>(R.id.qr_pager)
             pager?.currentItem = 1
-            Toast.makeText(requireContext(), "Camera scanner active — test your QR code", Toast.LENGTH_SHORT).show()
         }
 
         val headerAdvanced = view.findViewById<View>(R.id.qr_header_advanced_settings)

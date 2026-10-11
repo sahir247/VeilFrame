@@ -1530,4 +1530,15 @@ class DocumentScannerController(
             null
         }
     }
+
+    val isBusyProcessing: Boolean
+        get() = isProcessing.get() || scannerJob?.isActive == true || activeAnalysisJob?.isActive == true
+
+    fun cancelProcessing() {
+        scannerJob?.cancel()
+        scannerJob = null
+        activeAnalysisJob?.cancel()
+        activeAnalysisJob = null
+        isProcessing.set(false)
+    }
 }

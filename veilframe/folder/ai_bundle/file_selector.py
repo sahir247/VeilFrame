@@ -81,6 +81,13 @@ class FileSelector:
                 excluded.append((f, "Script files disabled in bundle settings"))
                 continue
 
+            if self.config.max_depth is not None:
+                parts = norm_rel.split("/")
+                file_depth = len(parts) - 1
+                if file_depth > self.config.max_depth:
+                    excluded.append((f, f"Directory depth {file_depth} exceeds max depth limit {self.config.max_depth}"))
+                    continue
+
             eligible.append(f)
 
         # 2. Second Pass: Greedy selection under token budget

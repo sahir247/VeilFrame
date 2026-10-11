@@ -77,6 +77,7 @@ def add_folder_subparsers(subparsers: argparse._SubParsersAction) -> None:
     p_ai.add_argument("--no-docs", action="store_true", help="Exclude documentation files from bundle")
     p_ai.add_argument("--no-configs", action="store_true", help="Exclude configuration files from bundle")
     p_ai.add_argument("--no-redact", action="store_true", help="Disable automatic credential/secret redaction")
+    p_ai.add_argument("--max-depth", type=int, default=None, help="Maximum directory recursion depth limit (default: unlimited)")
     p_ai.add_argument("--stdout", action="store_true", help="Print bundle content directly to stdout")
     p_ai.set_defaults(func=cmd_folder_ai)
 
@@ -248,6 +249,7 @@ def cmd_folder_ai(args: argparse.Namespace) -> None:
         include_documentation=not args.no_docs,
         include_configs=not args.no_configs,
         redact_secrets=not args.no_redact,
+        max_depth=getattr(args, "max_depth", None),
     )
 
     scan_cfg = ScanConfig.from_profile(ScanProfile.AI_READY)

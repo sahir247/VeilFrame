@@ -133,7 +133,7 @@
                         android:singleLine="true"
                         android:maxLines="1"
                         android:ellipsize="end"
-                        android:text="Document Camera"
+                        android:text="Camera"
                         app:iconGravity="textStart"
                         app:icon="@drawable/ic_camera" />
 
@@ -146,7 +146,7 @@
                         android:singleLine="true"
                         android:maxLines="1"
                         android:ellipsize="end"
-                        android:text="Import Photos"
+                        android:text="Import"
                         app:iconGravity="textStart"
                         app:icon="@drawable/ic_tab_image" />
                 </LinearLayout>
@@ -180,7 +180,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="top|end"
-                        android:background="@color/vf_surface"
+                        android:background="?attr/colorSurfaceContainer"
                         android:paddingStart="10dp"
                         android:paddingEnd="10dp"
                         android:paddingTop="5dp"
@@ -351,7 +351,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="28dp"
             app:cardElevation="8dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
 

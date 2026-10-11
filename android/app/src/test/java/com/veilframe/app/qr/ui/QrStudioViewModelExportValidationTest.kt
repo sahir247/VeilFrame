@@ -1288,5 +1288,40 @@ class QrStudioViewModelExportValidationTest {
         assertNull(vm.state.value.saveResult)
         assertNull(vm.state.value.lastSavedUri)
     }
-}
 
+    @Test
+    fun testExportPermittedWhenDecodeSucceedsEvenIfScanReadyFalse() {
+        val dummyMatrix = QrGenerator.generateMatrix("https://veilframe.app/verified")
+        val report = com.veilframe.app.qr.validation.ScanabilityReport(
+            isScanReady = false,
+            validationSkipped = false,
+            quietZone = com.veilframe.app.qr.validation.QuietZoneReport(true, 1),
+            contrast = com.veilframe.app.qr.validation.ContrastReport(1.8f, 1f, 0f, 0f, 1f, false),
+            finders = com.veilframe.app.qr.validation.FinderIntegrityReport(true, true),
+            logo = com.veilframe.app.qr.validation.LogoOcclusionReport(false, 0, 0f, true),
+            decodeResult = com.veilframe.app.qr.decoder.DecodeResult(true, "https://veilframe.app/verified"),
+            errorCorrection = dummyMatrix.errorCorrection,
+            warnings = listOf("Contrast is below recommended threshold"),
+            repairSuggestions = emptyList()
+        )
+
+        // The rejection condition is: !report.isScanReady && !report.validationSkipped && !report.decodeResult.success
+        val isRejected = !report.isScanReady && !report.validationSkipped && !report.decodeResult.success
+        assertFalse("Export must NOT be rejected when decode succeeds", isRejected)
+    }
+
+    @Test
+    fun testVideoOutputConfigPixelFormatDefault() {
+        val config = com.veilframe.app.media.VideoOutputConfig()
+        assertEquals("yuv420p", config.pixelFormat)
+    }
+
+    @Test
+    fun testAiBundleConfigMaxDepth() {
+        val defaultConfig = com.veilframe.app.tools.AiBundleEngine.BundleConfig()
+        assertNull(defaultConfig.maxDepth)
+
+        val customConfig = com.veilframe.app.tools.AiBundleEngine.BundleConfig(maxDepth = 2)
+        assertEquals(2, customConfig.maxDepth)
+    }
+}

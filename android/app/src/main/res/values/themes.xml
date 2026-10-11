@@ -144,6 +144,8 @@
         <item name="colorOnSurfaceVariant">@color/vf_text_secondary</item>
         <item name="colorOutlineVariant">#2C2C32</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="elevationOverlayColor">@android:color/transparent</item>
     </style>
 
     <!-- ============ PALETTE OVERLAYS (light; night variants in values-night) ============ -->

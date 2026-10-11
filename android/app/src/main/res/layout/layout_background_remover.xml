@@ -50,17 +50,6 @@
                 android:contentDescription="Reset comparison"
                 app:icon="@drawable/ic_reset" />
 
-            <!-- Save Action Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnBgSavePng"
-                style="@style/Widget.VeilFrame.Button.Action"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginEnd="16dp"
-                android:text="Save"
-                app:icon="@drawable/ic_action_save"
-                app:iconSize="18dp" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <!-- Preview Area Frame -->
@@ -187,7 +176,7 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:visibility="gone"
-                app:cardBackgroundColor="@color/vf_surface"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="10dp"
                 app:strokeWidth="1dp"
@@ -254,7 +243,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    app:cardBackgroundColor="@color/vf_surface"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
                     app:cardCornerRadius="16dp"
                     app:strokeColor="@color/vf_surface_stroke"
                     app:strokeWidth="1dp">
@@ -331,7 +320,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    app:cardBackgroundColor="@color/vf_surface"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
                     app:cardCornerRadius="16dp"
                     app:strokeColor="@color/vf_surface_stroke"
                     app:strokeWidth="1dp">
@@ -577,8 +566,18 @@
                     style="@style/Widget.VeilFrame.Button.Primary"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
                     android:text="Remove Background"
                     app:icon="@drawable/ic_crop"
+                    app:iconSize="18dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnBgSavePng"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Save"
+                    app:icon="@drawable/ic_action_save"
                     app:iconSize="18dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -167,6 +167,7 @@ object VideoProcessor {
                     customCropPercent = editState.customCropPercent,
                     fps = editState.fps,
                     targetSizeMb = targetSizeMb,
+                    pixelFormat = outputConfig.pixelFormat,
                     isGifMode = isGifMode,
                     bitrateReductionFactor = reduction,
                     onStatistics = onStatistics,
@@ -223,6 +224,7 @@ object VideoProcessor {
             customCropPercent = editState.customCropPercent,
             fps = editState.fps,
             targetSizeMb = targetSizeMb,
+            pixelFormat = outputConfig.pixelFormat,
             isGifMode = isGifMode,
             bitrateReductionFactor = 1.0,
             onStatistics = onStatistics,
@@ -273,6 +275,7 @@ object VideoProcessor {
         customCropPercent: Int = 0,
         fps: Int?,
         targetSizeMb: Double?,
+        pixelFormat: String = "yuv420p",
         isGifMode: Boolean = false,
         bitrateReductionFactor: Double = 1.0,
         onStatistics: ((encodedMs: Long) -> Unit)? = null,
@@ -566,6 +569,11 @@ object VideoProcessor {
                             }
                             cmd.add(presetArg)
                         }
+                    }
+
+                    if (pixelFormat.equals("yuv420p", ignoreCase = true)) {
+                        cmd.add("-pix_fmt")
+                        cmd.add("yuv420p")
                     }
                 }
             }

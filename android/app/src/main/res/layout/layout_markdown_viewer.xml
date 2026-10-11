@@ -17,7 +17,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/vf_surface"
+        android:background="?attr/colorSurface"
         android:paddingStart="4dp"
         android:paddingEnd="4dp"
         android:elevation="3dp">
@@ -80,7 +80,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/vf_surface_variant"
+        android:background="?attr/colorSurfaceContainer"
         android:paddingStart="8dp"
         android:paddingEnd="8dp">
 
@@ -122,31 +122,19 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
-        <!-- Save (In-place Overwrite) -->
+        <!-- Single Save As Action (Popping MD, PDF, DOCX) -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnMarkdownSave"
+            android:id="@+id/btnMarkdownSaveAs"
             style="@style/Widget.VeilFrame.Button.Action"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
-            android:text="Save"
+            android:text="Save As"
             app:icon="@drawable/ic_action_save"
             app:iconSize="14dp"
-            android:visibility="gone" />
-
-        <!-- Save As (Export New Document) -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnMarkdownSaveAs"
-            style="@style/Widget.VeilFrame.Button.Quiet"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="Save As"
-            android:textColor="@color/vf_text_secondary"
-            android:visibility="gone" />
+            android:visibility="visible" />
 
     </LinearLayout>
 
@@ -157,7 +145,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/vf_surface_variant"
+        android:background="?attr/colorSurfaceContainer"
         android:paddingStart="12dp"
         android:paddingEnd="8dp"
         android:visibility="gone">

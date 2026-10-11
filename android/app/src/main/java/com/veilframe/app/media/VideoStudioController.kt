@@ -340,6 +340,18 @@ class VideoStudioController(
             }
         }
 
+        // Pixel format chips (YUV420p vs Auto)
+        binding.chipGroupVidPixFmt.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isNotEmpty()) {
+                val chip = binding.chipGroupVidPixFmt.findViewById<Chip>(checkedIds[0])
+                outputConfig.pixelFormat = when (chip?.id) {
+                    R.id.chipVidPixFmtAuto -> "auto"
+                    else -> "yuv420p"
+                }
+                floatingDockController.onEditApplied()
+            }
+        }
+
         // In-place resolution chips
         binding.chipGroupVidResolution.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isNotEmpty()) {
@@ -566,12 +578,6 @@ class VideoStudioController(
 
                 val size = queryFileSize(uri)
                 val cacheFile = File(activity.cacheDir, "studio_vid_${System.currentTimeMillis()}_$displayName")
-                try {
-                    copyUriToFile(uri, cacheFile)
-                } catch (e: Exception) {
-                    Log.w("VeilFrame.VideoStudio", "Failed copying video: ${e.message}")
-                    continue
-                }
 
                 var duration = 0L
                 var width = 0
@@ -580,7 +586,7 @@ class VideoStudioController(
 
                 try {
                     val retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(cacheFile.absolutePath)
+                    retriever.setDataSource(activity, uri)
                     val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     if (durStr != null) duration = durStr.toLong()
                     val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
@@ -598,6 +604,17 @@ class VideoStudioController(
                     retriever.release()
                 } catch (e: Exception) {
                     Log.w("VeilFrame.VideoStudio", "MediaMetadataRetriever error: ${e.message}")
+                }
+
+                // Asynchronously copy URI to cache file for background encoding needs
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                            copyUriToFile(uri, cacheFile)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("VeilFrame.VideoStudio", "Async copyUriToFile error: ${e.message}")
+                    }
                 }
 
                 if (duration <= 0L) duration = 1000L
@@ -722,7 +739,7 @@ class VideoStudioController(
             binding.playerBufferingBar.visibility = View.GONE
             Log.w("VeilFrame.VideoStudio", "MediaPlayer error: what=$what extra=$extra")
         }
-        playerController.setDataSource(Uri.fromFile(item.file))
+        playerController.setDataSource(item.uri)
 
         applyAspectRatioPreview()
         applyColorProfile(editState.colorProfile)
@@ -930,6 +947,12 @@ class VideoStudioController(
             binding.chipGroupVidSpeedPreset.getChildAt(i).isEnabled = isInteractive
         }
         binding.chipGroupVidSpeedPreset.alpha = alpha
+
+        // 3b. Pixel color format chips
+        for (i in 0 until binding.chipGroupVidPixFmt.childCount) {
+            binding.chipGroupVidPixFmt.getChildAt(i).isEnabled = isInteractive
+        }
+        binding.chipGroupVidPixFmt.alpha = alpha
 
         // 4. Quality slider & label
         binding.sliderVidQuality.isEnabled = isInteractive
@@ -1311,6 +1334,10 @@ class VideoStudioController(
                         binding.tvVidProgressStatus.text = "Encoding [${idx + 1}/$total]: ${item.displayName}…"
                     }
 
+                    if (!item.file.exists() || item.file.length() == 0L) {
+                        copyUriToFile(item.uri, item.file)
+                    }
+
                     val result = MediaProcessor.video.process(
                         srcFile = item.file,
                         outFile = outFile,
@@ -1408,6 +1435,21 @@ class VideoStudioController(
         }
     }
 
+    val isProcessing: Boolean
+        get() = compressionJob?.isActive == true
+
+    fun cancelProcessing() {
+        compressionJob?.cancel()
+        compressionJob = null
+        if (activeFFmpegSessionId >= 0L) {
+            FFmpegKit.cancel(activeFFmpegSessionId)
+            activeFFmpegSessionId = -1L
+        }
+        binding.layoutVidProgress.visibility = View.GONE
+        binding.btnVidExecute.text = "Compress"
+        syncFloatingDockState()
+    }
+
     fun clear() {
         activeGeneration++
         loadToken.incrementAndGet()
@@ -1415,12 +1457,7 @@ class VideoStudioController(
         selectedMediaList.clear()
         currentMediaIndex = 0
         lastResultFile = null
-        compressionJob?.cancel()
-        compressionJob = null
-        if (activeFFmpegSessionId >= 0L) {
-            FFmpegKit.cancel(activeFFmpegSessionId)
-            activeFFmpegSessionId = -1L
-        }
+        cancelProcessing()
 
         playerController.clearMedia()
         binding.videoTextureView.visibility = View.GONE

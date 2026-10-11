@@ -101,7 +101,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -280,7 +280,7 @@
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:cardBackgroundColor="@color/vf_surface_variant"
+                        app:cardBackgroundColor="?attr/colorSurfaceVariant"
                         app:cardCornerRadius="8dp"
                         app:strokeWidth="0dp">
 
@@ -352,7 +352,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -828,7 +828,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -956,7 +956,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -1288,6 +1288,40 @@
                         android:text="Fast (Quick Export)" />
                 </com.google.android.material.chip.ChipGroup>
 
+                <!-- Pixel Color Format (YUV420p vs Auto) -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="PIXEL COLOR FORMAT"
+                    android:textColor="@color/vf_text_muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.06"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupVidPixFmt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidPixFmtYuv420p"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="YUV420p (Max Compatibility)"
+                        android:checked="true" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipVidPixFmtAuto"
+                        style="@style/Widget.Material3.Chip.Filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto (Source Format)" />
+                </com.google.android.material.chip.ChipGroup>
+
                 <!-- Quality / Compression Slider -->
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -1431,7 +1465,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="@color/vf_surface_variant"
+                    app:cardBackgroundColor="?attr/colorSurfaceVariant"
                     app:cardCornerRadius="8dp"
                     app:strokeWidth="0dp">
 
@@ -1584,7 +1618,7 @@
         android:layout_marginBottom="24dp"
         app:cardCornerRadius="28dp"
         app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/vf_surface"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
         app:strokeColor="@color/vf_surface_stroke"
         app:strokeWidth="1dp"
         android:visibility="gone">

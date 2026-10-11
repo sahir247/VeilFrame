@@ -53,7 +53,8 @@ class BundleConfig:
     include_excluded_list: bool = True
     include_security_warnings: bool = True
 
-    # 6. Manual Overrides
+    # 6. Manual Overrides & Depth Ceilings
+    max_depth: Optional[int] = None  # None = full depth / unlimited; int = max directory recursion depth
     pinned_files: Set[str] = field(default_factory=set)    # Relative paths always included
     excluded_files: Set[str] = field(default_factory=set)  # Relative paths always excluded
 
@@ -61,6 +62,7 @@ class BundleConfig:
         return {
             "target_tokens": self.target_tokens,
             "max_single_file_tokens": self.max_single_file_tokens,
+            "max_depth": self.max_depth,
             "format": self.format.value,
             "include_tests": self.include_tests,
             "include_documentation": self.include_documentation,

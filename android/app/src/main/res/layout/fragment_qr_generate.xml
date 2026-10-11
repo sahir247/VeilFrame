@@ -1685,7 +1685,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_gradient_clear_btn"
-                        style="@style/Widget.VeilFrame.Button.Action"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:singleLine="true"
@@ -3154,7 +3154,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/qr_resample_backdrop_img_remove_btn"
-                            style="@style/Widget.VeilFrame.Button.Action"
+                            style="@style/Widget.VeilFrame.Button.Quiet"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:paddingHorizontal="8dp"
@@ -3377,7 +3377,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_backdrop_image_remove_btn"
-                        style="@style/Widget.VeilFrame.Button.Action"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:singleLine="true"
@@ -3662,7 +3662,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_btn_clear_animation"
-                        style="@style/Widget.VeilFrame.Button.Action"
+                        style="@style/Widget.VeilFrame.Button.Quiet"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:singleLine="true"
@@ -3801,65 +3801,79 @@
 
                 <View android:layout_height="8dp" android:layout_width="match_parent" />
 
-                <!-- Save / Share Row (Material 3 Expressive Action Row) -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+                <!-- Save / Share Grid (2x2 Material 3 Expressive Action Grid) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/qr_save_btn"
-                style="@style/Widget.VeilFrame.Button.Primary"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:paddingHorizontal="4dp"
-                app:iconPadding="4dp"
-                android:text="PNG"
-                app:icon="@drawable/ic_action_save" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/qr_save_svg_btn"
-                style="@style/Widget.VeilFrame.Button.Action"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:paddingHorizontal="4dp"
-                app:iconPadding="4dp"
-                android:text="SVG" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_save_btn"
+                            style="@style/Widget.VeilFrame.Button.Primary"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="4dp"
+                            app:iconPadding="4dp"
+                            android:text="PNG"
+                            app:icon="@drawable/ic_action_save" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/qr_save_jpeg_btn"
-                style="@style/Widget.VeilFrame.Button.Action"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="4dp"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:paddingHorizontal="4dp"
-                app:iconPadding="4dp"
-                android:text="JPEG" />
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_save_svg_btn"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="4dp"
+                            app:iconPadding="4dp"
+                            android:text="SVG" />
+                    </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/qr_share_btn"
-                style="@style/Widget.VeilFrame.Button.Utility"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:paddingHorizontal="4dp"
-                app:iconPadding="4dp"
-                android:text="Share"
-                app:icon="@drawable/ic_action_share" />
-        </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_save_jpeg_btn"
+                            style="@style/Widget.VeilFrame.Button.Action"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="4dp"
+                            app:iconPadding="4dp"
+                            android:text="JPEG" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/qr_share_btn"
+                            style="@style/Widget.VeilFrame.Button.Utility"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="4dp"
+                            app:iconPadding="4dp"
+                            android:text="Share"
+                            app:icon="@drawable/ic_action_share" />
+                    </LinearLayout>
+                </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -5,7 +5,7 @@
     android:id="@+id/layoutProvenanceRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/vf_bg_dark"
+    android:background="?android:attr/colorBackground"
     android:visibility="gone">
 
     <LinearLayout
@@ -18,7 +18,7 @@
             android:id="@+id/toolbarProvenance"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/vf_surface"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationIconTint="@color/vf_text_primary"
             app:title="Provenance &amp; Verify"
@@ -45,6 +45,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     app:cardCornerRadius="16dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
                     app:strokeWidth="1dp"
                     app:strokeColor="@color/vf_surface_stroke">
 
@@ -91,6 +92,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     app:cardCornerRadius="16dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
                     app:strokeWidth="1dp"
                     app:strokeColor="@color/vf_surface_stroke">
 
@@ -121,6 +123,7 @@
                                 style="@style/Widget.VeilFrame.Button.Quiet"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:enabled="false"
                                 android:text="Copy"
                                 app:icon="@drawable/ic_action_copy"
                                 app:iconSize="14dp" />
@@ -132,8 +135,56 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:fontFamily="monospace"
-                            android:text="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                            android:text="—"
                             android:textColor="@color/vf_text_primary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Ed25519 Signature & Manifest Card -->
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Material3.CardView.Filled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="@color/vf_surface_stroke">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ED25519 MANIFEST AUDIT"
+                            android:textColor="@color/vf_secondary"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.08" />
+
+                        <TextView
+                            android:id="@+id/tvProvenanceEd25519Status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="No manifest audited"
+                            android:textColor="@color/vf_text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvProvenanceEd25519Details"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:fontFamily="monospace"
+                            android:text="Awaiting artifact inspection"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="12sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -144,6 +195,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="16dp"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer"
                     app:strokeWidth="1dp"
                     app:strokeColor="@color/vf_surface_stroke">
 
@@ -158,8 +210,8 @@
                             android:id="@+id/ivProvenanceStatusIcon"
                             android:layout_width="32dp"
                             android:layout_height="32dp"
-                            android:src="@drawable/ic_check_circle"
-                            app:tint="@color/vf_accent_green"
+                            android:src="@drawable/ic_info_outline"
+                            app:tint="?attr/colorOnSurfaceVariant"
                             android:contentDescription="Status" />
 
                         <LinearLayout
@@ -173,7 +225,7 @@
                                 android:id="@+id/tvProvenanceStatusTitle"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Cryptographic Integrity Intact"
+                                android:text="Awaiting Artifact Selection"
                                 android:textColor="@color/vf_text_primary"
                                 android:textSize="14sp"
                                 android:textStyle="bold" />
@@ -183,7 +235,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Hardware-backed audit hash verified against local record"
+                                android:text="Select an artifact below to compute SHA-256 checksum and audit Ed25519 manifest signature"
                                 android:textAppearance="?attr/textAppearanceBodySmall"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -199,6 +251,7 @@
             android:layout_height="wrap_content"
             app:cardCornerRadius="0dp"
             app:cardElevation="4dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:strokeWidth="1dp"
             app:strokeColor="@color/vf_surface_stroke">
 

@@ -676,7 +676,7 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onOpenMarkdownFileRequest = {
-                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+                markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain"))
             },
             onSaveAsMarkdownRequest = { suggestedName, content ->
                 pendingMarkdownSaveContent = content
@@ -956,8 +956,8 @@ class MainActivity : AppCompatActivity() {
         binding.layoutToolsCatalogue.cardToolFolderAnalyzer.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolFolderAnalyzer; openTool(ToolMode.FOLDER_SCANNER) }
         binding.layoutToolsCatalogue.cardToolAiBundler.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolAiBundler; openTool(ToolMode.AI_BUNDLE) }
         binding.layoutToolsCatalogue.cardToolMarkdownStudio.setOnClickListener {
-            navigationController.showMarkdownViewerScreen()
-            markdownViewerController.createNewDocument()
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolMarkdownStudio
+            showMarkdownStudioEntryDialog()
         }
         binding.layoutToolsCatalogue.cardToolProvenance.setOnClickListener { com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.layoutToolsCatalogue.cardToolProvenance; openProvenance() }
 
@@ -978,6 +978,18 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnRepairApp.setOnClickListener {
             appUpdateManager.repairApp()
+        }
+
+        // What's New Collapsible Header
+        binding.layoutWhatsNewHeader.setOnClickListener {
+            val isCurrentlyVisible = binding.cardWhatsNew.visibility == View.VISIBLE
+            if (isCurrentlyVisible) {
+                binding.cardWhatsNew.visibility = View.GONE
+                binding.ivWhatsNewChevron.animate().rotation(0f).setDuration(200).start()
+            } else {
+                binding.cardWhatsNew.visibility = View.VISIBLE
+                binding.ivWhatsNewChevron.animate().rotation(180f).setDuration(200).start()
+            }
         }
 
         // External Links
@@ -1001,21 +1013,10 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        // Markdown Viewer Dashboard Card (Open Existing or Create New from Zero)
+        // Markdown Viewer Dashboard Card (Open Existing or Create Blank)
         binding.cardToolMarkdownViewer.setOnClickListener {
-            val options = arrayOf<CharSequence>("Open Markdown File...", "Create New Markdown (From Zero)")
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Markdown Viewer & Editor")
-                .setItems(options) { _, which ->
-                    if (which == 0) {
-                        markdownPickerLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
-                    } else {
-                        navigationController.showMarkdownViewerScreen()
-                        markdownViewerController.createNewDocument()
-                    }
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            com.veilframe.app.ui.motion.NavigationMotionController.nextOriginView = binding.cardToolMarkdownViewer
+            showMarkdownStudioEntryDialog()
         }
 
         // Result Card Direct Actions
@@ -1840,7 +1841,12 @@ class MainActivity : AppCompatActivity() {
                 R.id.rbThemeAmoled -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
-            com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = false)
+            val currentMode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
+            if (mode != currentMode) {
+                com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = true)
+                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
+                recreate()
+            }
         }
 
         // 2. Dynamic color toggle with live palette chip disabling
@@ -1862,8 +1868,12 @@ class MainActivity : AppCompatActivity() {
         updatePaletteChipsEnabled(dynamicInitial)
 
         panelBinding.switchDynamicColor.setOnCheckedChangeListener { _, isChecked ->
-            com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
-            updatePaletteChipsEnabled(isChecked)
+            val currentDynamic = com.veilframe.app.settings.ThemeSettingsManager.isDynamicColorEnabled(this)
+            if (isChecked != currentDynamic) {
+                com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
+                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
+                recreate()
+            }
         }
 
         // 3. Custom accent palette
@@ -1885,12 +1895,15 @@ class MainActivity : AppCompatActivity() {
                     R.id.chipPaletteCyberViolet -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.VIOLET
                     else -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
                 }
-                if (panelBinding.switchDynamicColor.isChecked) {
-                    panelBinding.switchDynamicColor.isChecked = false
-                    com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, false)
-                    updatePaletteChipsEnabled(false)
+                val currentPalette = com.veilframe.app.settings.ThemeSettingsManager.getAccentPalette(this)
+                if (palette != currentPalette || panelBinding.switchDynamicColor.isChecked) {
+                    if (panelBinding.switchDynamicColor.isChecked) {
+                        com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, false)
+                    }
+                    com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
+                    com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
+                    recreate()
                 }
-                com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
             }
         }
 
@@ -1907,8 +1920,13 @@ class MainActivity : AppCompatActivity() {
                 R.id.rbTypoSerif -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF
                 else -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT
             }
-            com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
-            com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
+            val currentTypo = com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)
+            if (typo != currentTypo) {
+                com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
+                com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
+                com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
+                recreate()
+            }
         }
 
         // 5. Hardware diagnostics live telemetry
@@ -1924,7 +1942,6 @@ class MainActivity : AppCompatActivity() {
 
         // 6. Close and dismissal bindings
         panelBinding.btnSettingsClose.setOnClickListener { closeSettingsOverlay() }
-        panelBinding.btnSettingsDone.setOnClickListener { closeSettingsOverlay() }
         binding.scrimSettings.setOnClickListener { closeSettingsOverlay() }
 
         // 7. Left-to-right swipe-to-dismiss gesture
@@ -1963,6 +1980,22 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             Toast.makeText(this, "Could not open browser", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun showMarkdownStudioEntryDialog() {
+        val options = arrayOf<CharSequence>("Open Existing Document", "Create Blank Document")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Markdown Studio")
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    markdownPickerLauncher.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain"))
+                } else {
+                    navigationController.showMarkdownViewerScreen()
+                    markdownViewerController.createNewDocument()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showAboutDialog() {
@@ -2139,6 +2172,33 @@ class MainActivity : AppCompatActivity() {
             }
         } finally {
             navigationController.isRestoringState = false
+        }
+    }
+
+    fun hasActiveProcessing(): Boolean {
+        if (::videoStudioController.isInitialized && videoStudioController.isProcessing) return true
+        if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) return true
+        if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) return true
+        if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) return true
+        if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) return true
+        return false
+    }
+
+    fun cancelAllActiveProcessing() {
+        if (::videoStudioController.isInitialized && videoStudioController.isProcessing) {
+            videoStudioController.cancelProcessing()
+        }
+        if (::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing) {
+            imageUpscalerController.cancelProcessing()
+        }
+        if (::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing) {
+            backgroundRemoverController.cancelProcessing()
+        }
+        if (::docScannerController.isInitialized && docScannerController.isBusyProcessing) {
+            docScannerController.cancelProcessing()
+        }
+        if (::toolExecutionController.isInitialized && toolExecutionController.isExecuting) {
+            toolExecutionController.cancelExecution()
         }
     }
 }

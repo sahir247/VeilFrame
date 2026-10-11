@@ -892,6 +892,13 @@ class ImageUpscalerController(
         onLog("[UPSCALER] Memory degrade offered (lanczos=$canLanczos)")
     }
 
+    val isProcessing: Boolean
+        get() = inferenceJob?.isActive == true || downloadJob?.isActive == true
+
+    fun cancelProcessing() {
+        cancelActiveOperations()
+    }
+
     private fun cancelActiveOperations() {
         inferenceJob?.cancel()
         inferenceJob = null

@@ -224,12 +224,8 @@ class MarkdownViewerController(
             showOverflowMenu(view)
         }
 
-        binding.btnMarkdownSave.setOnClickListener {
-            saveCurrentDocument()
-        }
-
         binding.btnMarkdownSaveAs.setOnClickListener {
-            saveAsDocument()
+            showExportAsDialog()
         }
     }
 
@@ -255,7 +251,6 @@ class MarkdownViewerController(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (state.isEditMode) {
                     state.isModified = true
-                    binding.btnMarkdownSave.visibility = View.VISIBLE
                     binding.btnMarkdownSaveAs.visibility = View.VISIBLE
                 }
             }
@@ -317,14 +312,7 @@ class MarkdownViewerController(
         binding.wvMarkdown.visibility = View.VISIBLE
         binding.layoutMarkdownEditor.visibility = View.GONE
         binding.layoutMarkdownError.visibility = View.GONE
-
-        if (state.isModified) {
-            binding.btnMarkdownSave.visibility = View.VISIBLE
-            binding.btnMarkdownSaveAs.visibility = View.VISIBLE
-        } else {
-            binding.btnMarkdownSave.visibility = View.GONE
-            binding.btnMarkdownSaveAs.visibility = View.GONE
-        }
+        binding.btnMarkdownSaveAs.visibility = View.VISIBLE
     }
 
     fun switchToWriteMode() {
@@ -336,7 +324,6 @@ class MarkdownViewerController(
         binding.etMarkdownSource.setText(state.rawMarkdown)
         binding.etMarkdownSource.setSelection(binding.etMarkdownSource.text.length)
 
-        binding.btnMarkdownSave.visibility = View.VISIBLE
         binding.btnMarkdownSaveAs.visibility = View.VISIBLE
     }
 
@@ -368,7 +355,6 @@ class MarkdownViewerController(
             try {
                 localFile.writeText(content, Charsets.UTF_8)
                 state.isModified = false
-                binding.btnMarkdownSave.visibility = View.GONE
                 Toast.makeText(activity, "Saved ${localFile.name}", Toast.LENGTH_SHORT).show()
                 return
             } catch (e: Exception) {
@@ -385,7 +371,6 @@ class MarkdownViewerController(
                     out.flush()
                 }
                 state.isModified = false
-                binding.btnMarkdownSave.visibility = View.GONE
                 Toast.makeText(activity, "Saved document", Toast.LENGTH_SHORT).show()
                 return
             } catch (e: Exception) {
@@ -421,7 +406,6 @@ class MarkdownViewerController(
         state.documentTitle = newName
         state.isModified = false
         binding.tvMarkdownTitle.text = newName
-        binding.btnMarkdownSave.visibility = View.GONE
         Toast.makeText(activity, "Saved as $newName", Toast.LENGTH_SHORT).show()
     }
 
@@ -853,15 +837,51 @@ class MarkdownViewerController(
         }
     }
 
-    private fun showExportAsDialog() {
-        val options = arrayOf("PDF Document (Print Rendered)", "Word Document (.docx)")
+    fun showExportAsDialog() {
+        val options = arrayOf(
+            "Markdown Document (.md)",
+            "PDF Document (.pdf)",
+            "Word Document (.docx)"
+        )
         AlertDialog.Builder(activity)
-            .setTitle("Export as...")
+            .setTitle("Save / Export Document")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> exportRenderedToPdf()
-                    1 -> exportToDocx()
+                    0 -> saveAsDocument()
+                    1 -> showPdfThemeDialog()
+                    2 -> exportToDocx()
                 }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showPdfThemeDialog() {
+        val themeOptions = arrayOf(
+            "Dark Theme PDF",
+            "Light Theme (White Background) PDF"
+        )
+        val defaultChoice = if (state.theme == MarkdownTheme.DARK) 0 else 1
+        AlertDialog.Builder(activity)
+            .setTitle("Select PDF Appearance")
+            .setSingleChoiceItems(themeOptions, defaultChoice) { dialog, which ->
+                dialog.dismiss()
+                val targetTheme = if (which == 0) MarkdownTheme.DARK else MarkdownTheme.LIGHT
+                val previousTheme = state.theme
+
+                // Temporarily switch theme for PDF print
+                setTheme(targetTheme)
+
+                // Allow brief delay for WebView styles to reflow before printing
+                mainHandler.postDelayed({
+                    exportRenderedToPdf()
+                    // Restore original viewing theme if it differed
+                    if (previousTheme != targetTheme) {
+                        mainHandler.postDelayed({
+                            setTheme(previousTheme)
+                        }, 1200L)
+                    }
+                }, 350L)
             }
             .setNegativeButton("Cancel", null)
             .show()

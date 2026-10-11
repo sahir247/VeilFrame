@@ -104,6 +104,33 @@ class ToolSessionManager(
             }
         }
 
+        binding.switchBundleFullDepth.setOnCheckedChangeListener { _, isChecked ->
+            currentState.bundleFullDepth = isChecked
+            binding.btnBundleDepthDecrement.isEnabled = !isChecked
+            binding.btnBundleDepthIncrement.isEnabled = !isChecked
+            binding.etBundleCustomDepth.isEnabled = !isChecked
+            binding.layoutBundleCustomDepthRow.alpha = if (isChecked) 0.5f else 1.0f
+            updatePrivacySummaryUI()
+        }
+        binding.btnBundleDepthDecrement.setOnClickListener {
+            val curr = binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
+            if (curr > 1) {
+                val newVal = curr - 1
+                binding.etBundleCustomDepth.setText(newVal.toString())
+                currentState.bundleCustomDepth = newVal
+                updatePrivacySummaryUI()
+            }
+        }
+        binding.btnBundleDepthIncrement.setOnClickListener {
+            val curr = binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
+            if (curr < 100) {
+                val newVal = curr + 1
+                binding.etBundleCustomDepth.setText(newVal.toString())
+                currentState.bundleCustomDepth = newVal
+                updatePrivacySummaryUI()
+            }
+        }
+
         ExpressiveMotion.applyTouchBounce(binding.btnPickFolder)
         ExpressiveMotion.applyTouchBounce(binding.btnPickFile)
         ExpressiveMotion.applyTouchBounce(binding.btnChangeTarget)
@@ -124,16 +151,24 @@ class ToolSessionManager(
         state.switch3Checked = binding.switchOption3.isChecked
         state.sliderValue = binding.sliderToolIntensity.value
         state.consoleLogs = binding.tvConsoleLog.text.toString()
+        if (currentToolMode == ToolMode.AI_BUNDLE) {
+            state.bundleFullDepth = binding.switchBundleFullDepth.isChecked
+            state.bundleCustomDepth = binding.etBundleCustomDepth.text.toString().toIntOrNull() ?: 3
+        }
 
         val prefs = activity.getSharedPreferences("veilframe_tool_prefs", Context.MODE_PRIVATE)
-        prefs.edit()
+        val editor = prefs.edit()
             .putInt("${currentToolMode.name}_primary", state.primaryOptionIndex)
             .putInt("${currentToolMode.name}_format", state.formatOptionIndex)
             .putBoolean("${currentToolMode.name}_switch1", state.switch1Checked)
             .putBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
             .putBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
             .putFloat("${currentToolMode.name}_slider", state.sliderValue)
-            .apply()
+        if (currentToolMode == ToolMode.AI_BUNDLE) {
+            editor.putBoolean("AI_BUNDLE_full_depth", state.bundleFullDepth)
+            editor.putInt("AI_BUNDLE_custom_depth", state.bundleCustomDepth)
+        }
+        editor.apply()
     }
 
     fun restoreToolState(state: ToolSessionState) {
@@ -145,6 +180,16 @@ class ToolSessionManager(
             state.switch2Checked = prefs.getBoolean("${currentToolMode.name}_switch2", state.switch2Checked)
             state.switch3Checked = prefs.getBoolean("${currentToolMode.name}_switch3", state.switch3Checked)
             state.sliderValue = prefs.getFloat("${currentToolMode.name}_slider", state.sliderValue)
+        }
+        if (currentToolMode == ToolMode.AI_BUNDLE) {
+            state.bundleFullDepth = prefs.getBoolean("AI_BUNDLE_full_depth", state.bundleFullDepth)
+            state.bundleCustomDepth = prefs.getInt("AI_BUNDLE_custom_depth", state.bundleCustomDepth)
+            binding.switchBundleFullDepth.isChecked = state.bundleFullDepth
+            binding.etBundleCustomDepth.setText(state.bundleCustomDepth.toString())
+            binding.btnBundleDepthDecrement.isEnabled = !state.bundleFullDepth
+            binding.btnBundleDepthIncrement.isEnabled = !state.bundleFullDepth
+            binding.etBundleCustomDepth.isEnabled = !state.bundleFullDepth
+            binding.layoutBundleCustomDepthRow.alpha = if (state.bundleFullDepth) 0.5f else 1.0f
         }
 
         // Restore Target Card (Empty vs Mounted state)
@@ -226,6 +271,7 @@ class ToolSessionManager(
 
     fun configureToolUI(mode: ToolMode) {
         currentToolMode = mode
+        binding.layoutBundleDepthControl.visibility = if (mode == ToolMode.AI_BUNDLE) View.VISIBLE else View.GONE
         when (mode) {
             ToolMode.AI_BUNDLE -> {
                 binding.layoutToolSlider.visibility = View.GONE

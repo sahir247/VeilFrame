@@ -50,5 +50,7 @@ data class ToolSessionState(
     var progressDetailsText: String = "",
     var lastGeneratedFile: File? = null,
     var consoleLogs: String = "[SYS] Ready for execution.",
-    var sliderValue: Float = 95f
+    var sliderValue: Float = 95f,
+    var bundleFullDepth: Boolean = true,
+    var bundleCustomDepth: Int = 3
 )

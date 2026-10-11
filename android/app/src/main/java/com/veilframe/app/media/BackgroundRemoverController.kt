@@ -31,6 +31,7 @@ import com.veilframe.app.ui.motion.VeilFrameInteraction
 import com.veilframe.app.ui.views.BeforeAfterSplitView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -56,6 +57,7 @@ class BackgroundRemoverController(
     private val onExportPngRequest: (File) -> Unit,
     private val onNavigateBack: () -> Unit
 ) {
+    private var processingJob: Job? = null
     private var sourceBytes: ByteArray? = null
     private var sourceBitmap: Bitmap? = null
     private var resultBitmap: Bitmap? = null
@@ -241,7 +243,7 @@ class BackgroundRemoverController(
         val h = srcBmp?.height ?: 1024
         val estimate = CvRuntime.estimateBytes(w, h, 4)
 
-        scope.launch {
+        processingJob = scope.launch {
             val job = CvRuntime.engine.submit(
                 name = "background-removal",
                 priority = CvPriority.INTERACTIVE,
@@ -657,5 +659,14 @@ class BackgroundRemoverController(
             val displayCutout = resultBitmap ?: sourceBitmap
             binding.splitViewBgCompare.setBitmaps(sourceBitmap, displayCutout)
         }
+    }
+
+    val isProcessing: Boolean
+        get() = processingJob?.isActive == true || binding.cardBgProcessingOverlay.visibility == View.VISIBLE
+
+    fun cancelProcessing() {
+        processingJob?.cancel()
+        processingJob = null
+        binding.cardBgProcessingOverlay.visibility = View.GONE
     }
 }

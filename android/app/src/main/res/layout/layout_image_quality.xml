@@ -5,7 +5,7 @@
     android:id="@+id/layoutImageQualityRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/vf_bg_dark"
+    android:background="?android:attr/colorBackground"
     android:visibility="gone">
 
     <LinearLayout
@@ -13,29 +13,61 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- Top App Bar -->
+        <!-- Top App Bar with Flex Weight Header -->
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbarImageQuality"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/vf_surface"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationIconTint="@color/vf_text_primary"
-            app:title="Image Quality"
-            app:titleTextColor="@color/vf_text_primary"
-            app:subtitle="Clarity, Noise &amp; Exposure Analysis"
-            app:subtitleTextColor="@color/vf_text_secondary">
+            app:contentInsetStartWithNavigation="0dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnQualityExportReport"
-                style="@style/Widget.VeilFrame.Button.Action"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginEnd="16dp"
-                android:text="Share Report"
-                app:icon="@drawable/ic_action_share"
-                app:iconSize="18dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingEnd="12dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvQualityTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Image Quality"
+                        android:textColor="@color/vf_text_primary"
+                        android:textSize="17sp"
+                        android:textStyle="bold"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+
+                    <TextView
+                        android:id="@+id/tvQualitySubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clarity, Noise &amp; Exposure Analysis"
+                        android:textColor="@color/vf_text_secondary"
+                        android:textSize="11sp"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnQualityExportReport"
+                    style="@style/Widget.VeilFrame.Button.Action"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Share Report"
+                    app:icon="@drawable/ic_action_share"
+                    app:iconSize="18dp" />
+            </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
 
         <androidx.core.widget.NestedScrollView

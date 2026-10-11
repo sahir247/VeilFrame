@@ -101,7 +101,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -280,7 +280,7 @@
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:cardBackgroundColor="@color/vf_surface_variant"
+                        app:cardBackgroundColor="?attr/colorSurfaceVariant"
                         app:cardCornerRadius="8dp"
                         app:strokeWidth="0dp">
 
@@ -352,7 +352,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -695,7 +695,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -814,7 +814,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/vf_surface"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
             app:cardCornerRadius="12dp"
             app:strokeColor="@color/vf_surface_stroke"
             app:strokeWidth="1dp">
@@ -1111,7 +1111,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
-                    app:cardBackgroundColor="@color/vf_surface_variant"
+                    app:cardBackgroundColor="?attr/colorSurfaceVariant"
                     app:cardCornerRadius="8dp"
                     app:strokeWidth="0dp">
 
