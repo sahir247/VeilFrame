@@ -240,13 +240,20 @@ class MainNavigationController(
             outgoingToolView != binding.layoutLibrary.scrollLibrary &&
             !isRestoringState
         ) {
+            val navView = if (activity.resources.configuration.screenWidthDp >= 600) {
+                binding.navigationRail
+            } else {
+                binding.bottomNavigation
+            }
             com.veilframe.app.ui.motion.NavigationMotionController.hideTool(
                 homeView = binding.scrollHome,
                 toolView = outgoingToolView,
                 toolbarHome = binding.toolbarHome,
-                bottomNav = binding.bottomNavigation
+                bottomNav = navView
             ) {
                 hideAllToolViewsExcept(null)
+                binding.toolbarHome.visibility = View.VISIBLE
+                binding.toolbarHome.alpha = 1f
                 setAdaptiveNavigationVisibility(true)
                 if (previousScreen == ScreenState.QR_STUDIO) {
                     val qrFrag = activity.supportFragmentManager.findFragmentById(binding.fragmentQrStudio.id)
@@ -327,11 +334,16 @@ class MainNavigationController(
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE && !isRestoringState) {
             hideAllToolViewsExcept(targetView)
             onPrepare()
+            val navView = if (activity.resources.configuration.screenWidthDp >= 600) {
+                binding.navigationRail
+            } else {
+                binding.bottomNavigation
+            }
             com.veilframe.app.ui.motion.NavigationMotionController.showTool(
                 homeView = binding.scrollHome,
                 toolView = targetView,
                 toolbarHome = binding.toolbarHome,
-                bottomNav = binding.bottomNavigation
+                bottomNav = navView
             ) {
                 setAdaptiveNavigationVisibility(false)
             }

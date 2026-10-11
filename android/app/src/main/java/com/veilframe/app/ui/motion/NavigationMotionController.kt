@@ -71,9 +71,13 @@ object NavigationMotionController {
         toolView.translationX = slideOffset
 
         homeView.animate().cancel()
+        homeView.animate().setListener(null)
         toolView.animate().cancel()
+        toolView.animate().setListener(null)
         toolbarHome?.animate()?.cancel()
+        toolbarHome?.animate()?.setListener(null)
         bottomNav?.animate()?.cancel()
+        bottomNav?.animate()?.setListener(null)
 
         // Home view glides slightly left and fades
         homeView.animate()
@@ -235,9 +239,13 @@ object NavigationMotionController {
         toolView.translationZ = 16f * density
 
         homeView.animate().cancel()
+        homeView.animate().setListener(null)
         toolView.animate().cancel()
+        toolView.animate().setListener(null)
         toolbarHome?.animate()?.cancel()
+        toolbarHome?.animate()?.setListener(null)
         bottomNav?.animate()?.cancel()
+        bottomNav?.animate()?.setListener(null)
 
         // Tool slides out gracefully to the right
         toolView.animate()
@@ -263,6 +271,11 @@ object NavigationMotionController {
             .setInterpolator(MotionSpec.EMPHASIZED)
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
+                    toolbarHome?.isVisible = true
+                    toolbarHome?.alpha = 1f
+                    bottomNav?.isVisible = true
+                    bottomNav?.alpha = 1f
+                    bottomNav?.translationY = 0f
                     onComplete?.invoke()
                 }
             })
@@ -273,6 +286,12 @@ object NavigationMotionController {
             ?.alpha(1f)
             ?.setDuration(240L)
             ?.setInterpolator(MotionSpec.DECELERATE_SMOOTH)
+            ?.setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    toolbarHome.isVisible = true
+                    toolbarHome.alpha = 1f
+                }
+            })
             ?.start()
 
         bottomNav?.animate()
@@ -280,6 +299,13 @@ object NavigationMotionController {
             ?.translationY(0f)
             ?.setDuration(MotionSpec.NORMAL)
             ?.setInterpolator(MotionSpec.EMPHASIZED)
+            ?.setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    bottomNav.isVisible = true
+                    bottomNav.alpha = 1f
+                    bottomNav.translationY = 0f
+                }
+            })
             ?.start()
     }
 
