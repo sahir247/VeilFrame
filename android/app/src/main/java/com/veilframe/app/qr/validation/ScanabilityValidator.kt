@@ -191,24 +191,22 @@ object ScanabilityValidator {
         // 4. Logo Occlusion & Hard Function Protection
         val logoReport = analyzeLogoOcclusion(geometry, matrix, design)
 
-        // 5. Decode Validation (Primary: WeChatQRCode — the engine users scan with;
-        //    Fallback: ML Kit -> multi-pass ZXing & multi-resolution)
-        val decoder = resolveDecoder()
-        var decodeResult = try {
-            decoder.decode(bitmap)
-        } catch (e: Throwable) {
-            DecodeResult(success = false, error = e.message, decoderId = decoder.id)
+        // 5. Decode Validation (Primary: WeChatQRCode -> Google ML Kit -> multi-pass ZXing & multi-resolution)
+        val decoderChain = buildList {
+            primaryDecoder?.let { add(it) }
+            if (wechatDecoder.isAvailable && !contains(wechatDecoder)) add(wechatDecoder)
+            if (!contains(mlKitDecoder)) add(mlKitDecoder)
+            if (!contains(zxingDecoder)) add(zxingDecoder)
         }
 
-        // If primary decoder didn't match expected content, fall back to ZXing directly
-        if ((!decodeResult.success || decodeResult.text != expectedContent) && decoder != zxingDecoder) {
-            val zxResult = try {
-                zxingDecoder.decode(bitmap)
-            } catch (ze: Throwable) {
-                DecodeResult(success = false, error = ze.message, decoderId = "ZXing-Fallback")
-            }
-            if (zxResult.success && zxResult.text == expectedContent) {
-                decodeResult = zxResult
+        var decodeResult = DecodeResult(success = false, error = "No decoders available")
+        for (dec in decoderChain) {
+            try {
+                val res = dec.decode(bitmap)
+                decodeResult = res
+                if (res.success && res.text == expectedContent) break
+            } catch (t: Throwable) {
+                decodeResult = DecodeResult(success = false, error = t.message, decoderId = dec.id)
             }
         }
 
@@ -221,13 +219,11 @@ object ScanabilityValidator {
             } catch (_: Throwable) { null }
             if (downscaled != null) {
                 try {
-                    val zxScaled = zxingDecoder.decode(downscaled)
-                    if (zxScaled.success && zxScaled.text == expectedContent) {
-                        decodeResult = zxScaled
-                    } else {
-                        val mlScaled = resolveDecoder().decode(downscaled)
-                        if (mlScaled.success && mlScaled.text == expectedContent) {
-                            decodeResult = mlScaled
+                    for (dec in decoderChain) {
+                        val scaledRes = dec.decode(downscaled)
+                        if (scaledRes.success && scaledRes.text == expectedContent) {
+                            decodeResult = scaledRes
+                            break
                         }
                     }
                 } catch (_: Throwable) {

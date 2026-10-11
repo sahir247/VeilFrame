@@ -224,7 +224,7 @@ object AnimatedQrGenerator {
         val imgSource = if (hasAnimatedImg) {
             baseDesign.imageSource.copy(
                 source = com.veilframe.app.qr.model.ImageSource.Memory(sourceFrame.bitmap),
-                overrideAnimatedFrames = baseDesign.imageSource.animatedFrames
+                overrideAnimatedFrames = null
             )
         } else {
             baseDesign.imageSource

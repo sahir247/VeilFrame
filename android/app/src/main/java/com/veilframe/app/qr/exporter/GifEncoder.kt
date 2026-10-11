@@ -125,11 +125,20 @@ class GifEncoder {
     private fun writeLogicalScreenDescriptor(os: OutputStream, w: Int, h: Int) {
         writeShortLE(os, w)
         writeShortLE(os, h)
-        // Packed byte: No global color table (using local color table per frame for max color fidelity)
-        // 0x70 = Color resolution (8 bits)
-        os.write(0x70)
+        // Packed byte: 0xF7 = Global Color Table Present (1), Color Res = 8 (111), Not Sorted (0), Table Size = 256 (111)
+        // Providing a valid Global Color Table ensures standard Android/Chromium decoders do not fail or render blank.
+        os.write(0xF7)
         os.write(0x00) // Background color index
         os.write(0x00) // Pixel aspect ratio
+        // Global color table: 256 * 3 bytes (standard grayscale fallback palette)
+        val gct = ByteArray(256 * 3)
+        for (i in 0 until 256) {
+            val byteVal = i.toByte()
+            gct[i * 3 + 0] = byteVal
+            gct[i * 3 + 1] = byteVal
+            gct[i * 3 + 2] = byteVal
+        }
+        os.write(gct)
     }
 
     private fun writeNetscapeLoopExtension(os: OutputStream, loops: Int) {
