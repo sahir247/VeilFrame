@@ -117,6 +117,83 @@
                 android:text="High-Res Images" />
         </com.google.android.material.chip.ChipGroup>
 
+        <!-- Image File Format Selection -->
+        <TextView
+            android:id="@+id/tvExportImageFormatHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Image format"
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupImageFormat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:singleSelection="true"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipImageFormatJpeg"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="JPEG (.jpg)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipImageFormatPng"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PNG (Lossless)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipImageFormatWebp"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WEBP" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <!-- Packaging Selection for Multi-Page Images -->
+        <TextView
+            android:id="@+id/tvExportPackagingHeader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Packaging"
+            android:textAppearance="?attr/textAppearanceTitleSmallEmphasized"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="6dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipGroupExportPackaging"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:singleSelection="true"
+            android:layout_marginBottom="14dp">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipPackageIndividual"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Individual Images" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipPackageZip"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ZIP Archive (.zip)" />
+        </com.google.android.material.chip.ChipGroup>
+
         <!-- 3. Paper Size Selection -->
         <TextView
             android:id="@+id/tvExportPaperHeader"
@@ -321,12 +398,19 @@
             android:layout_marginBottom="24dp">
 
             <com.google.android.material.chip.Chip
-                android:id="@+id/chipQualityHigh"
+                android:id="@+id/chipQualityOriginal"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:checked="true"
-                android:text="High (Lossless 95%)" />
+                android:text="Original (100%)" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipQualityHigh"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="High (95%)" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipQualityBalanced"

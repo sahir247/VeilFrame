@@ -90,8 +90,19 @@ class DocumentExportEngineTest {
 
     @Test
     fun `test export quality compression levels`() {
+        assertEquals(100, DocumentExportEngine.ExportQuality.ORIGINAL.jpegQuality)
         assertEquals(95, DocumentExportEngine.ExportQuality.HIGH.jpegQuality)
         assertEquals(80, DocumentExportEngine.ExportQuality.MEDIUM.jpegQuality)
         assertEquals(60, DocumentExportEngine.ExportQuality.LOW.jpegQuality)
+    }
+
+    @Test
+    fun `test export image formats and extensions`() {
+        assertEquals("jpg", DocumentExportEngine.ImageFormat.JPEG.extension)
+        assertEquals("png", DocumentExportEngine.ImageFormat.PNG.extension)
+        assertEquals("webp", DocumentExportEngine.ImageFormat.WEBP.extension)
+        assertEquals("image/jpeg", DocumentExportEngine.ImageFormat.JPEG.mimeType)
+        assertEquals("image/png", DocumentExportEngine.ImageFormat.PNG.mimeType)
+        assertEquals("image/webp", DocumentExportEngine.ImageFormat.WEBP.mimeType)
     }
 }

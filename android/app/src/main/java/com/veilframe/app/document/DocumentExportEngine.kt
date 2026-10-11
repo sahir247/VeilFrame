@@ -28,7 +28,19 @@ object DocumentExportEngine {
     enum class OutputFormat(val displayName: String, val extension: String, val mimeType: String) {
         SINGLE_PDF("Single PDF Document", "pdf", "application/pdf"),
         SEPARATE_PDFS("Separate PDFs (ZIP Archive)", "zip", "application/zip"),
+        IMAGES("Individual Images", "jpg", "image/*"),
         IMAGES_ZIP("Image Sequence (ZIP Archive)", "zip", "application/zip")
+    }
+
+    enum class ImageFormat(
+        val displayName: String,
+        val extension: String,
+        val mimeType: String,
+        val compressFormat: Bitmap.CompressFormat
+    ) {
+        JPEG("JPEG", "jpg", "image/jpeg", Bitmap.CompressFormat.JPEG),
+        PNG("PNG", "png", "image/png", Bitmap.CompressFormat.PNG),
+        WEBP("WEBP", "webp", "image/webp", if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP)
     }
 
     enum class PaperSize(val displayName: String, val widthPt: Int, val heightPt: Int) {
@@ -61,6 +73,7 @@ object DocumentExportEngine {
     }
 
     enum class ExportQuality(val displayName: String, val jpegQuality: Int) {
+        ORIGINAL("Original Quality (100%)", 100),
         HIGH("High (Lossless / 95%)", 95),
         MEDIUM("Medium (Balanced / 80%)", 80),
         LOW("Low (Compact / 60%)", 60)
@@ -68,15 +81,18 @@ object DocumentExportEngine {
 
     data class ExportOptions(
         val format: OutputFormat = OutputFormat.SINGLE_PDF,
+        val imageFormat: ImageFormat = ImageFormat.JPEG,
+        val isZipArchive: Boolean = false,
         val paperSize: PaperSize = PaperSize.A4,
         val orientation: Orientation = Orientation.AUTO,
         val fit: PageFit = PageFit.FIT_PAGE,
         val margin: Margin = Margin.NORMAL,
-        val quality: ExportQuality = ExportQuality.HIGH
+        val quality: ExportQuality = ExportQuality.ORIGINAL
     )
 
     data class ExportResult(
         val file: File,
+        val files: List<File> = listOf(file),
         val pageCount: Int,
         val mimeType: String
     )
@@ -89,21 +105,32 @@ object DocumentExportEngine {
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
         val timestamp = System.currentTimeMillis()
 
-        return when (options.format) {
+        val effectiveFormat = if (options.format == OutputFormat.IMAGES && options.isZipArchive) {
+            OutputFormat.IMAGES_ZIP
+        } else {
+            options.format
+        }
+
+        return when (effectiveFormat) {
             OutputFormat.SINGLE_PDF -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_$timestamp.pdf")
                 createSinglePdf(context, session, options, outFile)
-                ExportResult(outFile, session.pageCount, options.format.mimeType)
+                ExportResult(outFile, listOf(outFile), session.pageCount, options.format.mimeType)
             }
             OutputFormat.SEPARATE_PDFS -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_Separate_PDFs_$timestamp.zip")
                 createSeparatePdfsZip(context, session, options, outFile)
-                ExportResult(outFile, session.pageCount, options.format.mimeType)
+                ExportResult(outFile, listOf(outFile), session.pageCount, options.format.mimeType)
             }
             OutputFormat.IMAGES_ZIP -> {
                 val outFile = File(exportDir, "${sanitizeFileName(session.title)}_Images_$timestamp.zip")
                 createImagesZip(context, session, options, outFile)
-                ExportResult(outFile, session.pageCount, options.format.mimeType)
+                ExportResult(outFile, listOf(outFile), session.pageCount, "application/zip")
+            }
+            OutputFormat.IMAGES -> {
+                val outFiles = createIndividualImages(context, session, options, exportDir, timestamp)
+                val primary = outFiles.firstOrNull() ?: File(exportDir, "empty.${options.imageFormat.extension}")
+                ExportResult(primary, outFiles, session.pageCount, options.imageFormat.mimeType)
             }
         }
     }
@@ -133,14 +160,16 @@ object DocumentExportEngine {
                 } finally {
                     pdfDoc.close()
                 }
-                ExportResult(outFile, 1, "application/pdf")
+                ExportResult(outFile, listOf(outFile), 1, "application/pdf")
             }
-            OutputFormat.IMAGES_ZIP -> {
-                val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.jpg")
+            OutputFormat.IMAGES, OutputFormat.IMAGES_ZIP -> {
+                val ext = options.imageFormat.extension
+                val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
+                val outFile = File(exportDir, "${sanitizeFileName(title)}_page_${pageIndex + 1}_$timestamp.$ext")
                 FileOutputStream(outFile).use { fos ->
-                    bmp.compress(Bitmap.CompressFormat.JPEG, options.quality.jpegQuality, fos)
+                    bmp.compress(options.imageFormat.compressFormat, quality, fos)
                 }
-                ExportResult(outFile, 1, "image/jpeg")
+                ExportResult(outFile, listOf(outFile), 1, options.imageFormat.mimeType)
             }
         }
     }
@@ -209,18 +238,44 @@ object DocumentExportEngine {
         options: ExportOptions,
         outFile: File
     ) {
+        val ext = options.imageFormat.extension
+        val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
+
         ZipOutputStream(FileOutputStream(outFile)).use { zos ->
             for ((index, page) in session.pages.withIndex()) {
                 val bmp = page.getDisplayBitmap(context) ?: continue
                 val baos = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, options.quality.jpegQuality, baos)
+                bmp.compress(options.imageFormat.compressFormat, quality, baos)
 
-                val entryName = "Page_${index + 1}.jpg"
+                val entryName = "Page_${index + 1}.$ext"
                 zos.putNextEntry(ZipEntry(entryName))
                 zos.write(baos.toByteArray())
                 zos.closeEntry()
             }
         }
+    }
+
+    private fun createIndividualImages(
+        context: Context,
+        session: DocumentSession,
+        options: ExportOptions,
+        exportDir: File,
+        timestamp: Long
+    ): List<File> {
+        val files = mutableListOf<File>()
+        val baseTitle = sanitizeFileName(session.title)
+        val ext = options.imageFormat.extension
+        val quality = if (options.imageFormat == ImageFormat.PNG) 100 else options.quality.jpegQuality
+
+        for ((index, page) in session.pages.withIndex()) {
+            val bmp = page.getDisplayBitmap(context) ?: continue
+            val outFile = File(exportDir, "${baseTitle}_page_${index + 1}_$timestamp.$ext")
+            FileOutputStream(outFile).use { fos ->
+                bmp.compress(options.imageFormat.compressFormat, quality, fos)
+            }
+            files.add(outFile)
+        }
+        return files
     }
 
     private fun resolvePageDimensions(bitmap: Bitmap, options: ExportOptions): Pair<Int, Int> {

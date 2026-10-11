@@ -1,6 +1,7 @@
 package com.veilframe.app.document
 
 import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -10,6 +11,9 @@ import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -572,11 +576,9 @@ class DocumentScannerController(
         }
 
         val rotation = imageProxy.imageInfo.rotationDegrees
-        val width = imageProxy.width
-        val height = imageProxy.height
         val currentFrameId = frameIdCounter++
 
-        val frameBitmap = try {
+        val rawBitmap = try {
             imageProxy.toBitmap()
         } catch (_: Throwable) {
             null
@@ -584,10 +586,26 @@ class DocumentScannerController(
             imageProxy.close()
         }
 
-        if (frameBitmap == null) {
+        if (rawBitmap == null) {
             isProcessing.set(false)
             return
         }
+
+        val frameBitmap = if (rotation != 0) {
+            try {
+                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+                val rotated = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                rawBitmap.recycle()
+                rotated
+            } catch (_: Throwable) {
+                rawBitmap
+            }
+        } else {
+            rawBitmap
+        }
+
+        val width = frameBitmap.width
+        val height = frameBitmap.height
 
         val currentSession = viewfinderSessionId.get()
 
@@ -1109,10 +1127,22 @@ class DocumentScannerController(
         sheetBinding.chipScopeAllPages.text = "All Pages (${session.pageCount})"
         sheetBinding.chipScopeCurrentPage.text = "Page ${session.activePageIndex + 1} Only"
 
+        // Expressive export UX: format-dependent visibility
+        val imageOptionsViews = listOf(
+            sheetBinding.tvExportImageFormatHeader, sheetBinding.chipGroupImageFormat,
+            sheetBinding.tvExportPackagingHeader, sheetBinding.chipGroupExportPackaging
+        )
+        val updateFormatViews = {
+            val isImages = sheetBinding.chipFormatImages.isChecked
+            imageOptionsViews.forEach { v -> v.visibility = if (isImages) View.VISIBLE else View.GONE }
+        }
+        sheetBinding.chipGroupExportFormat.setOnCheckedStateChangeListener { _, _ ->
+            updateFormatViews()
+        }
+        updateFormatViews()
+
         // Progressive disclosure (expressive export UX): paper / orientation /
-        // fitting+margins / compression collapse behind "More options". All chip
-        // ids and defaults are untouched — the export click listener reads the
-        // same checked states whether the section is visible or not.
+        // fitting+margins / compression collapse behind "More options".
         val advancedExportViews = listOf(
             sheetBinding.tvExportPaperHeader, sheetBinding.hsvExportPaper,
             sheetBinding.tvExportOrientationHeader, sheetBinding.chipGroupExportOrientation,
@@ -1132,10 +1162,18 @@ class DocumentScannerController(
         sheetBinding.btnExportExecute.setOnClickListener {
             dialog.dismiss()
 
-            // Resolve Format
+            // Resolve Image Format & Packaging
+            val imageFormat = when {
+                sheetBinding.chipImageFormatPng.isChecked -> DocumentExportEngine.ImageFormat.PNG
+                sheetBinding.chipImageFormatWebp.isChecked -> DocumentExportEngine.ImageFormat.WEBP
+                else -> DocumentExportEngine.ImageFormat.JPEG
+            }
+            val isZip = sheetBinding.chipPackageZip.isChecked
+
+            // Resolve Output Format
             val format = when {
                 sheetBinding.chipFormatSeparatePdfs.isChecked -> DocumentExportEngine.OutputFormat.SEPARATE_PDFS
-                sheetBinding.chipFormatImages.isChecked -> DocumentExportEngine.OutputFormat.IMAGES_ZIP
+                sheetBinding.chipFormatImages.isChecked -> if (isZip) DocumentExportEngine.OutputFormat.IMAGES_ZIP else DocumentExportEngine.OutputFormat.IMAGES
                 else -> DocumentExportEngine.OutputFormat.SINGLE_PDF
             }
 
@@ -1170,17 +1208,20 @@ class DocumentScannerController(
                 else -> DocumentExportEngine.Margin.NORMAL
             }
 
-            // Resolve Quality
+            // Resolve Quality: Default to ORIGINAL (100%)
             val quality = when {
                 sheetBinding.chipQualityCompact.isChecked -> DocumentExportEngine.ExportQuality.LOW
                 sheetBinding.chipQualityBalanced.isChecked -> DocumentExportEngine.ExportQuality.MEDIUM
-                else -> DocumentExportEngine.ExportQuality.HIGH
+                sheetBinding.chipQualityHigh.isChecked -> DocumentExportEngine.ExportQuality.HIGH
+                else -> DocumentExportEngine.ExportQuality.ORIGINAL
             }
 
             val isCurrentPageOnly = sheetBinding.chipScopeCurrentPage.isChecked
 
             val options = DocumentExportEngine.ExportOptions(
                 format = format,
+                imageFormat = imageFormat,
+                isZipArchive = isZip,
                 paperSize = paperSize,
                 orientation = orientation,
                 fit = fit,
@@ -1208,13 +1249,62 @@ class DocumentScannerController(
                 }
 
                 withContext(Dispatchers.Main) {
-                    onExportFileRequest(result.file, result.mimeType)
+                    if (result.files.size > 1 && options.format == DocumentExportEngine.OutputFormat.IMAGES && !options.isZipArchive) {
+                        // User exported multiple images as individual images (not ZIP)
+                        scope.launch(Dispatchers.IO) {
+                            var savedCount = 0
+                            for (imgFile in result.files) {
+                                val savedUri = saveImageToMediaStore(activity, imgFile, options.imageFormat.mimeType)
+                                if (savedUri != null) savedCount++
+                            }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    activity,
+                                    "Saved $savedCount images to Pictures/VeilFrame",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    } else {
+                        onExportFileRequest(result.file, result.mimeType)
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(activity, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+
+    private fun saveImageToMediaStore(context: android.content.Context, file: File, mimeType: String): Uri? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val cv = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VeilFrame")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv) ?: return null
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    file.inputStream().use { input -> input.copyTo(out) }
+                }
+                cv.clear()
+                cv.put(MediaStore.Images.Media.IS_PENDING, 0)
+                context.contentResolver.update(uri, cv, null, null)
+                uri
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "VeilFrame")
+                dir.mkdirs()
+                val dest = File(dir, file.name)
+                file.copyTo(dest, overwrite = true)
+                Uri.fromFile(dest)
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("VeilFrame.DocScanner", "Failed to save image to MediaStore", e)
+            null
         }
     }
 
