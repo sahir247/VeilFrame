@@ -1301,21 +1301,4 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Floating Action Button for Auto-Detect PII -->
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/fabAutoPii"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="88dp"
-        android:text="Auto-Detect PII"
-        app:icon="@drawable/ic_visibility"
-        app:iconTint="@color/vf_primary"
-        android:textColor="@color/vf_text_primary"
-        app:backgroundTint="@color/vf_surface"
-        app:strokeColor="@color/vf_surface_stroke"
-        app:strokeWidth="1dp"
-        android:visibility="gone" />
-
 </FrameLayout>

@@ -31,6 +31,7 @@ import java.util.UUID
 class VeilFrameProcessingService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var currentExecutionJob: kotlinx.coroutines.Job? = null
     private lateinit var mediaBackend: AndroidMediaBackend
 
     companion object {
@@ -129,7 +130,7 @@ class VeilFrameProcessingService : Service() {
         val notification = buildForegroundNotification("Processing media with VeilFrame...")
 
         // Android 15 (API 35+) mediaProcessing FGS type compliance
-        try {
+        val promotionSuccess = try {
             if (Build.VERSION.SDK_INT >= 35) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -145,8 +146,27 @@ class VeilFrameProcessingService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            true
         } catch (e: Exception) {
-            android.util.Log.w("VeilFrameProcessing", "startForeground failed: ${e.message}")
+            android.util.Log.e("VeilFrameProcessing", "startForeground failed: ${e.message}", e)
+            false
+        }
+
+        if (!promotionSuccess) {
+            // Fail closed: do NOT begin background processing if foreground promotion fails
+            synchronized(this) {
+                activeJob = ProcessingJob(
+                    id = jobId,
+                    type = jobType,
+                    inputUri = inputUri,
+                    outputUri = outputUri,
+                    state = JobState.FAILED,
+                    errorMessage = "Foreground service promotion failed",
+                    startedAt = System.currentTimeMillis()
+                )
+            }
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         val current = activeJob
@@ -163,9 +183,11 @@ class VeilFrameProcessingService : Service() {
             state = JobState.RUNNING,
             startedAt = System.currentTimeMillis()
         )
-        activeJob = job
+        synchronized(this) {
+            activeJob = job
+        }
 
-        serviceScope.launch {
+        currentExecutionJob = serviceScope.launch {
             try {
                 val effectiveInPath = if (inputUri.scheme == "content") {
                     try {
@@ -189,16 +211,28 @@ class VeilFrameProcessingService : Service() {
 
                 if (effectiveInPath.isNotEmpty() && effectiveOutPath.isNotEmpty()) {
                     val ok = mediaBackend.cleanVideo(effectiveInPath, effectiveOutPath)
-                    if (ok) {
-                        activeJob = activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
-                    } else {
-                        activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing failed in native media backend")
+                    synchronized(this@VeilFrameProcessingService) {
+                        if (activeJob?.id == jobId) {
+                            activeJob = if (ok) {
+                                activeJob?.copy(state = JobState.COMPLETED, progressPercent = 100)
+                            } else {
+                                activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing failed in native media backend")
+                            }
+                        }
                     }
                 } else {
-                    activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Invalid input or output path")
+                    synchronized(this@VeilFrameProcessingService) {
+                        if (activeJob?.id == jobId) {
+                            activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Invalid input or output path")
+                        }
+                    }
                 }
             } catch (e: Exception) {
-                activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
+                synchronized(this@VeilFrameProcessingService) {
+                    if (activeJob?.id == jobId) {
+                        activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
+                    }
+                }
             } finally {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -210,13 +244,19 @@ class VeilFrameProcessingService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         super.onTimeout(startId, fgsType)
-        activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing timed out by Android system")
+        currentExecutionJob?.cancel()
+        synchronized(this) {
+            if (activeJob?.state == JobState.RUNNING) {
+                activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing timed out by Android system")
+            }
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        currentExecutionJob?.cancel()
         serviceScope.cancel()
         if (activeJob?.state == JobState.RUNNING) {
             activeJob = activeJob?.copy(state = JobState.CANCELLED)

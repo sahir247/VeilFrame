@@ -247,7 +247,6 @@ class ImageStudioController(
         binding.toolExif.setOnClickListener { dialogController.showExifDialog(binding.toolExif) }
         binding.toolText.setOnClickListener { dialogController.showTextWatermarkDialog(binding.toolText) }
         binding.toolPiiRedact.setOnClickListener { runAutoPiiRedaction() }
-        binding.fabAutoPii.setOnClickListener { runAutoPiiRedaction() }
 
         // Execute / cancel compression
         binding.btnImgExecute.setOnClickListener { handleExecute() }
@@ -294,7 +293,6 @@ class ImageStudioController(
             binding.toolExif,
             binding.toolText,
             binding.toolPiiRedact,
-            binding.fabAutoPii,
             binding.btnImgExecute,
             binding.btnFloatingExecute,
             binding.btnFloatingShare,
@@ -433,7 +431,6 @@ class ImageStudioController(
                 binding.toolText.alpha = 1.0f
                 binding.toolPiiRedact.isEnabled = true
                 binding.toolPiiRedact.alpha = 1.0f
-                binding.fabAutoPii.visibility = View.VISIBLE
                 binding.btnImgExecute.isEnabled = true
                 binding.btnImgExecute.alpha = 1.0f
                 binding.btnFloatingExecute.isEnabled = true
@@ -1018,7 +1015,6 @@ class ImageStudioController(
         binding.toolText.alpha = 0.5f
         binding.toolPiiRedact.isEnabled = false
         binding.toolPiiRedact.alpha = 0.5f
-        binding.fabAutoPii.visibility = View.GONE
         binding.tvImgSummaryPii.visibility = View.GONE
 
         binding.imgFileThumb.setImageDrawable(null)
