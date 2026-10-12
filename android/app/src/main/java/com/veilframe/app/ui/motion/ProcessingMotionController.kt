@@ -114,7 +114,12 @@ object ProcessingMotionController {
         targetView: View,
         onSettled: (() -> Unit)? = null
     ) {
-        ExpressiveMotion.performConfirmationHaptic(targetView, HapticFeedbackConstants.CONFIRM)
+        val haptic = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            HapticFeedbackConstants.CONFIRM
+        } else {
+            HapticFeedbackConstants.KEYBOARD_TAP
+        }
+        ExpressiveMotion.performConfirmationHaptic(targetView, haptic)
 
         targetView.animate().cancel()
         targetView.scaleX = 0.98f

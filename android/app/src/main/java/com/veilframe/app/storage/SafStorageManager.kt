@@ -164,6 +164,11 @@ class SafStorageManager(private val context: Context) {
         destDir.deleteRecursively()
         destDir.mkdirs()
 
+        val freeBytes = destDir.usableSpace
+        if (freeBytes > 0 && freeBytes < 25L * 1024 * 1024) {
+            throw java.io.IOException("Insufficient internal storage (< 25MB available) to materialize SAF target.")
+        }
+
         if (!isFolder) {
             val fileName = getDisplayName(targetUri)
             val destFile = File(destDir, fileName)

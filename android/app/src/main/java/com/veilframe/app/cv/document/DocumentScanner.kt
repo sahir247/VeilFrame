@@ -221,7 +221,8 @@ object DocumentScanner {
     }
 
     /**
-     * Suspend non-blocking version of corner detection for coroutines.
+     * Suspend version of corner detection for coroutines.
+     * Reuses the canonical non-blocking [findCorners] pipeline directly.
      */
     suspend fun findCornersAsync(
         source: Mat,
@@ -230,34 +231,14 @@ object DocumentScanner {
         segmentationService: com.veilframe.app.cv.segmentation.DocumentSegmentationService? = null,
         isCaptureMode: Boolean = false,
         context: com.veilframe.app.cv.core.CvContext? = null,
-    ): List<org.opencv.core.Point> {
-        if (segmentationService != null && segmentationService.isModelAvailable) {
-            val segResult = try {
-                segmentationService.runSegmentation(source)
-            } catch (_: Throwable) {
-                null
-            }
-            if (segResult != null) {
-                val neuralCorners = com.veilframe.app.cv.geometry.QuadDetector.detectFromSegmentation(
-                    segmentation = segResult.segmentation,
-                    originalWidth = source.cols(),
-                    originalHeight = source.rows(),
-                    isCaptureMode = isCaptureMode
-                )
-                if (neuralCorners != null && neuralCorners.size == 4) {
-                    return neuralCorners
-                }
-            }
-        }
-
-        val detection = com.veilframe.app.cv.geometry.QuadDetector.detectWithBuffers(
-            source = source,
-            blurredMat = blurredMat,
-            edgesMat = edgesMat,
-            context = context,
-        )
-        return detection?.corners ?: emptyList()
-    }
+    ): List<org.opencv.core.Point> = findCorners(
+        source = source,
+        blurredMat = blurredMat,
+        edgesMat = edgesMat,
+        segmentationService = segmentationService,
+        isCaptureMode = isCaptureMode,
+        context = context,
+    )
 
     /**
      * Warps [source] by perspective transformation based on [corners].

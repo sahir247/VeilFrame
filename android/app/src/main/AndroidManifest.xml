@@ -124,7 +124,7 @@
         <service
             android:name=".upscale.UpscaleForegroundService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="mediaProcessing|dataSync" />
 
         <!-- Loads the OpenCV native library before Application.onCreate (CV-2 fix) -->
         <provider
