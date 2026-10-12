@@ -63,7 +63,8 @@ object ThemeSettingsManager {
     }
 
     enum class TypographyStyle(val displayName: String, val familyName: String) {
-        DEFAULT("System Sans", "sans-serif"),
+        SYSTEM("System Font", "sans-serif"),
+        DEFAULT("Modern Sans", "sans-serif"),
         MONOSPACE("Forensic Terminal", "monospace"),
         SERIF("Editorial Serif", "serif")
     }
@@ -105,8 +106,8 @@ object ThemeSettingsManager {
             }
         }
 
-        // Layer AMOLED overlay directly when night mode is active (true AMOLED #000000 by default)
-        if (isNightModeActive(activity)) {
+        // Layer AMOLED overlay only when explicitly chosen and in night mode
+        if (isAmoledActive(activity)) {
             activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
         }
 
@@ -124,6 +125,7 @@ object ThemeSettingsManager {
     fun getTypeface(context: Context): Typeface {
         val typo = getTypographyStyle(context)
         return when (typo) {
+            TypographyStyle.SYSTEM -> Typeface.DEFAULT
             TypographyStyle.MONOSPACE -> {
                 try {
                     androidx.core.content.res.ResourcesCompat.getFont(context, R.font.font_mono) ?: Typeface.MONOSPACE
@@ -238,7 +240,8 @@ object ThemeSettingsManager {
     }
 
     fun isAmoledActive(context: Context): Boolean {
-        return isNightModeActive(context)
+        val mode = getThemeMode(context)
+        return mode == ThemeMode.AMOLED && isNightModeActive(context)
     }
 
     private fun isNightModeActive(context: Context): Boolean {

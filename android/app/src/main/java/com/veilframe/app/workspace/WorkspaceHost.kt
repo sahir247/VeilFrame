@@ -97,7 +97,7 @@ class WorkspaceHost(
             view.visibility = View.GONE
             val b = LayoutImageUpscalerBinding.bind(view)
             imageUpscalerBinding = b
-            applyInsetsToScrolledAppbar(b.root)
+            applyInsetsToDefault(b.root)
             onImageUpscalerInflated?.invoke(b)
         }
         return imageUpscalerBinding!!
@@ -205,7 +205,7 @@ class WorkspaceHost(
             navBarRight = navBarRight
         )
         // Apply to any already inflated secondary workspaces
-        imageUpscalerBinding?.root?.let { applyInsetsToScrolledAppbar(it) }
+        imageUpscalerBinding?.root?.let { applyInsetsToDefault(it) }
         docScannerBinding?.root?.let { applyInsetsToDefault(it) }
         backgroundRemoverBinding?.root?.let { applyInsetsToDefault(it) }
         motionLabBinding?.root?.let { applyInsetsToDefault(it) }

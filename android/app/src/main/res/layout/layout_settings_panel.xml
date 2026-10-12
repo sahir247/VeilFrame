@@ -101,7 +101,16 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="6dp"
-                    android:text="Dark (AMOLED)\nPure #000000 true black for battery savings"
+                    android:text="Dark\nCharcoal matte dark theme"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/rbThemeAmoled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="6dp"
+                    android:text="AMOLED Dark\nPure #000000 true black for OLED battery savings"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
             </RadioGroup>
@@ -226,11 +235,20 @@
                 android:layout_marginTop="6dp">
 
                 <RadioButton
+                    android:id="@+id/rbTypoSystem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="4dp"
+                    android:text="System Font (Android OS Default)"
+                    android:textColor="@color/vf_text_primary"
+                    android:textSize="13sp" />
+
+                <RadioButton
                     android:id="@+id/rbTypoSans"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingVertical="4dp"
-                    android:text="Modern Sans-Serif (Default)"
+                    android:text="Modern Sans (Plus Jakarta Sans)"
                     android:textColor="@color/vf_text_primary"
                     android:textSize="13sp" />
 

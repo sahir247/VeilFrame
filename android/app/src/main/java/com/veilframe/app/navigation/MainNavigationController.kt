@@ -42,100 +42,34 @@ class MainNavigationController(
                     return
                 }
 
-                val mainAct = activity as? MainActivity
-                if (currentScreen != ScreenState.HOME && mainAct?.hasActiveProcessing() == true) {
-                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                        .setTitle("Leave Workspace?")
-                        .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
-                        .setPositiveButton("Cancel & Leave") { _, _ ->
-                            mainAct.cancelAllActiveProcessing()
-                            performBackNavigation()
-                        }
-                        .setNegativeButton("Stay", null)
-                        .show()
-                    return
-                }
-
                 performBackNavigation()
-            }
-
-            private fun performBackNavigation() {
-                val mainAct = activity as? MainActivity
-                val isBusy = mainAct?.hasActiveProcessing() == true
-                if (isBusy && currentScreen != ScreenState.HOME && currentScreen != ScreenState.TOOLS && currentScreen != ScreenState.LIBRARY) {
-                    com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                        .setTitle("Leave Workspace?")
-                        .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
-                        .setPositiveButton("Cancel & Leave") { _, _ ->
-                            mainAct?.cancelAllActiveProcessing()
-                            doActualBackNavigation()
-                        }
-                        .setNegativeButton("Stay", null)
-                        .show()
-                    return
-                }
-                doActualBackNavigation()
-            }
-
-            private fun doActualBackNavigation() {
-                if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
-                    if (onMarkdownBackPressed()) {
-                        return
-                    }
-                    if (previousScreen == ScreenState.TOOL) {
-                        showToolScreen()
-                    } else {
-                        showHomeScreen()
-                    }
-                } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
-                    showHomeScreen()
-                } else if (currentScreen != ScreenState.HOME) {
-                    if (previousScreen == ScreenState.TOOLS) {
-                        showToolsScreen()
-                    } else if (previousScreen == ScreenState.LIBRARY) {
-                        showLibraryScreen()
-                    } else {
-                        showHomeScreen()
-                    }
-                } else {
-                    isEnabled = false
-                    activity.onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
-                }
             }
         }
         activity.onBackPressedDispatcher.addCallback(activity, backCallback)
 
         binding.btnBackToHome.setOnClickListener {
-            val mainAct = activity as? MainActivity
-            if (currentScreen != ScreenState.HOME && mainAct?.hasActiveProcessing() == true) {
-                com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                    .setTitle("Leave Workspace?")
-                    .setMessage("Active processing is currently running. If you leave now, the current job will be cancelled.")
-                    .setPositiveButton("Cancel & Leave") { _, _ ->
-                        mainAct.cancelAllActiveProcessing()
-                        showHomeScreen()
-                    }
-                    .setNegativeButton("Stay", null)
-                    .show()
-            } else {
-                showHomeScreen()
-            }
+            performBackNavigation { showHomeScreen() }
         }
 
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (isSyncingBottomNav) return@setOnItemSelectedListener true
             when (item.itemId) {
                 R.id.nav_home -> {
-                    if (currentScreen != ScreenState.HOME) showHomeScreen()
+                    if (currentScreen != ScreenState.HOME) {
+                        performBackNavigation { showHomeScreen() }
+                    }
                     true
                 }
                 R.id.nav_tools -> {
-                    if (currentScreen != ScreenState.TOOLS) showToolsScreen()
+                    if (currentScreen != ScreenState.TOOLS) {
+                        performBackNavigation { showToolsScreen() }
+                    }
                     true
                 }
                 R.id.nav_library -> {
-                    if (currentScreen != ScreenState.LIBRARY) showLibraryScreen()
+                    if (currentScreen != ScreenState.LIBRARY) {
+                        performBackNavigation { showLibraryScreen() }
+                    }
                     true
                 }
                 else -> false
@@ -146,19 +80,72 @@ class MainNavigationController(
             if (isSyncingBottomNav) return@setOnItemSelectedListener true
             when (item.itemId) {
                 R.id.nav_home -> {
-                    if (currentScreen != ScreenState.HOME) showHomeScreen()
+                    if (currentScreen != ScreenState.HOME) {
+                        performBackNavigation { showHomeScreen() }
+                    }
                     true
                 }
                 R.id.nav_tools -> {
-                    if (currentScreen != ScreenState.TOOLS) showToolsScreen()
+                    if (currentScreen != ScreenState.TOOLS) {
+                        performBackNavigation { showToolsScreen() }
+                    }
                     true
                 }
                 R.id.nav_library -> {
-                    if (currentScreen != ScreenState.LIBRARY) showLibraryScreen()
+                    if (currentScreen != ScreenState.LIBRARY) {
+                        performBackNavigation { showLibraryScreen() }
+                    }
                     true
                 }
                 else -> false
             }
+        }
+    }
+
+    fun performBackNavigation(onProceed: () -> Unit = { doActualBackNavigation() }) {
+        val mainAct = activity as? MainActivity
+        val isBusy = mainAct?.hasActiveProcessing() == true
+        if (isBusy && currentScreen != ScreenState.HOME && currentScreen != ScreenState.TOOLS && currentScreen != ScreenState.LIBRARY) {
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                .setTitle("Active Task Running")
+                .setMessage("A task is currently running in this workspace. How would you like to proceed?")
+                .setPositiveButton("Run in Background") { _, _ ->
+                    // Task continues in foreground service; user returns to destination
+                    onProceed()
+                }
+                .setNeutralButton("Cancel & Leave") { _, _ ->
+                    mainAct?.cancelAllActiveProcessing()
+                    onProceed()
+                }
+                .setNegativeButton("Stay", null)
+                .show()
+            return
+        }
+        onProceed()
+    }
+
+    private fun doActualBackNavigation() {
+        if (currentScreen == ScreenState.MARKDOWN_VIEWER) {
+            if (onMarkdownBackPressed()) {
+                return
+            }
+            if (previousScreen == ScreenState.TOOL) {
+                showToolScreen()
+            } else {
+                showHomeScreen()
+            }
+        } else if (currentScreen == ScreenState.TOOLS || currentScreen == ScreenState.LIBRARY) {
+            showHomeScreen()
+        } else if (currentScreen != ScreenState.HOME) {
+            if (previousScreen == ScreenState.TOOLS) {
+                showToolsScreen()
+            } else if (previousScreen == ScreenState.LIBRARY) {
+                showLibraryScreen()
+            } else {
+                showHomeScreen()
+            }
+        } else {
+            activity.finish()
         }
     }
 
@@ -389,6 +376,9 @@ class MainNavigationController(
         onPrepare: () -> Unit = {}
     ) {
         val isStandardTool = (targetView == binding.scrollTool)
+        if (!isStandardTool) {
+            binding.appBarLayout.visibility = View.GONE
+        }
         if (wasHome && binding.scrollHome.visibility == View.VISIBLE && !isRestoringState) {
             hideAllToolViewsExcept(targetView)
             onPrepare()
@@ -404,7 +394,9 @@ class MainNavigationController(
                 bottomNav = navView
             ) {
                 setAdaptiveNavigationVisibility(false)
-                binding.appBarLayout.visibility = if (isStandardTool) View.VISIBLE else View.GONE
+                if (isStandardTool) {
+                    binding.appBarLayout.visibility = View.VISIBLE
+                }
             }
         } else {
             binding.appBarLayout.visibility = if (isStandardTool) View.VISIBLE else View.GONE
@@ -428,6 +420,7 @@ class MainNavigationController(
         previousScreen = currentScreen
         currentScreen = ScreenState.TOOL
 
+        binding.toolbarHome.visibility = View.GONE
         binding.toolbarTool.visibility = View.VISIBLE
         binding.cardCleanerActionDock.visibility = View.VISIBLE
         binding.bottomActionDock.visibility = View.VISIBLE

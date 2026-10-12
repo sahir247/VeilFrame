@@ -1,5 +1,6 @@
 package com.veilframe.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -424,10 +425,7 @@ class MainActivity : AppCompatActivity() {
             listOf(
                 binding.scrollTool,
                 binding.layoutToolsCatalogue.root,
-                binding.layoutLibrary.root,
-                binding.layoutImageStudio.root,
-                binding.layoutVideoStudio.root,
-                binding.layoutMarkdownViewer.root
+                binding.layoutLibrary.root
             ).forEach { root ->
                 com.veilframe.app.ui.insets.WorkspaceInsets.apply(
                     root = root,
@@ -443,6 +441,9 @@ class MainActivity : AppCompatActivity() {
             // 2. Full-screen / custom-toolbar workspaces spanning full window:
             //    Apply DEFAULT (padTop = true, padBottom = true) additively to initial padding.
             listOf(
+                binding.layoutImageStudio.root,
+                binding.layoutVideoStudio.root,
+                binding.layoutMarkdownViewer.root,
                 binding.layoutImageQuality.root,
                 binding.fragmentQrStudio
             ).forEach { root ->
@@ -483,6 +484,14 @@ class MainActivity : AppCompatActivity() {
             restoreInstanceState(savedInstanceState)
         } else {
             navigationController.showHomeScreen()
+            if (pendingSeamlessSettingsRestore) {
+                val scrollY = pendingSeamlessSettingsScrollY
+                pendingSeamlessSettingsRestore = false
+                pendingSeamlessSettingsScrollY = 0
+                binding.rootCoordinator.post {
+                    openSettingsOverlay(animate = false, restoreScrollY = scrollY)
+                }
+            }
         }
 
         // Asynchronous, non-blocking update check on launch
@@ -674,10 +683,12 @@ class MainActivity : AppCompatActivity() {
             activity = this,
             binding = binding.layoutMarkdownViewer,
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOL) {
-                    navigationController.showToolScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOL) {
+                        navigationController.showToolScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             },
             onOpenMarkdownFileRequest = {
@@ -715,7 +726,11 @@ class MainActivity : AppCompatActivity() {
             onShareFileRequest = { file, mime ->
                 shareStudioFile(file, mime)
             },
-            onNavigateHome = { navigationController.showHomeScreen() },
+            onNavigateHome = {
+                navigationController.performBackNavigation {
+                    navigationController.showHomeScreen()
+                }
+            },
             onOpenModelManager = {
                 workspaceHost.getOrInflateImageUpscaler()
                 imageUpscalerController.showModelManagerDialog()
@@ -739,7 +754,11 @@ class MainActivity : AppCompatActivity() {
             onShareFileRequest = { file, mime ->
                 shareStudioFile(file, mime)
             },
-            onNavigateHome = { navigationController.showHomeScreen() }
+            onNavigateHome = {
+                navigationController.performBackNavigation {
+                    navigationController.showHomeScreen()
+                }
+            }
         )
 
         imageStudioController.initWorkspace()
@@ -759,10 +778,12 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent.createChooser(sendIntent, "Share Quality Report"))
             },
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOLS) {
+                        navigationController.showToolsScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             }
         ).apply { init() }
@@ -772,7 +793,11 @@ class MainActivity : AppCompatActivity() {
         imageUpscalerController = ImageUpscalerController(
             activity = this,
             upscalerBinding = upscalerBinding,
-            onBackRequested = { navigationController.showHomeScreen() },
+            onBackRequested = {
+                navigationController.performBackNavigation {
+                    navigationController.showHomeScreen()
+                }
+            },
             onPickImageRequested = { imgUpscalerPickerLauncher.launch("image/*") },
             onLog = { msg -> consoleLogController.log(msg) }
         ).apply {
@@ -794,10 +819,12 @@ class MainActivity : AppCompatActivity() {
                 docScannerExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOLS) {
+                        navigationController.showToolsScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             }
         ).apply { init() }
@@ -810,10 +837,12 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onPickVideoRequest = { motionLabPickerLauncher.launch(arrayOf("video/*")) },
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOLS) {
+                        navigationController.showToolsScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             }
         )
@@ -831,10 +860,12 @@ class MainActivity : AppCompatActivity() {
                 bgRemoverExportLauncher.launch(file.name to mime)
             },
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOLS) {
+                        navigationController.showToolsScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             }
         ).apply { init() }
@@ -848,10 +879,12 @@ class MainActivity : AppCompatActivity() {
             scope = lifecycleScope,
             onPickFileRequest = { provenancePickerLauncher.launch(arrayOf("*/*")) },
             onNavigateBack = {
-                if (navigationController.previousScreen == ScreenState.TOOLS) {
-                    navigationController.showToolsScreen()
-                } else {
-                    navigationController.showHomeScreen()
+                navigationController.performBackNavigation {
+                    if (navigationController.previousScreen == ScreenState.TOOLS) {
+                        navigationController.showToolsScreen()
+                    } else {
+                        navigationController.showHomeScreen()
+                    }
                 }
             }
         ).apply { init() }
@@ -1659,17 +1692,49 @@ class MainActivity : AppCompatActivity() {
     private fun scheduleBackClearWork() {
         backClearTimerJob?.cancel()
         backClearTimerJob = null
-        // Immediately release heavy video/audio resources upon returning to Home to prevent phantom frame retention
-        if (::videoStudioController.isInitialized) {
+        // If a task is executing in background via foreground service, avoid tearing down active processing
+        val isVideoProcessing = ::videoStudioController.isInitialized && videoStudioController.isProcessing
+        val isUpscalerProcessing = ::imageUpscalerController.isInitialized && imageUpscalerController.isProcessing
+        val isDocScannerProcessing = ::docScannerController.isInitialized && docScannerController.isBusyProcessing
+        val isBgRemoverProcessing = ::backgroundRemoverController.isInitialized && backgroundRemoverController.isProcessing
+
+        if (::videoStudioController.isInitialized && !isVideoProcessing) {
             videoStudioController.clear()
         }
-        if (::videoPlayerController.isInitialized) {
+        if (::videoPlayerController.isInitialized && !isVideoProcessing) {
             videoPlayerController.clearMedia()
         }
         if (::imageStudioController.isInitialized) {
             imageStudioController.clear()
         }
+        if (::imageUpscalerController.isInitialized && !isUpscalerProcessing) {
+            imageUpscalerController.release()
+        }
+        if (::docScannerController.isInitialized && !isDocScannerProcessing) {
+            docScannerController.closeCameraViewfinder()
+        }
+        if (::backgroundRemoverController.isInitialized && !isBgRemoverProcessing) {
+            backgroundRemoverController.cleanup()
+        }
+        if (::motionLabController.isInitialized) {
+            motionLabController.reset()
+        }
+        if (::provenanceController.isInitialized) {
+            provenanceController.reset()
+        }
+        if (::markdownViewerController.isInitialized) {
+            markdownViewerController.clear()
+        }
+        if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing) {
+            workspaceHost.onDestroy()
+        }
         toolSessionManager.clearCurrentTool()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                File(cacheDir, "temp_drafts").deleteRecursively()
+                File(cacheDir, "temp_renders").deleteRecursively()
+            } catch (_: Exception) {}
+        }
         consoleLogController.log("[SESSION] Cleared inactive media studio resources on Home.")
     }
 
@@ -1824,9 +1889,8 @@ class MainActivity : AppCompatActivity() {
         recreate()
     }
 
-    private fun openSettingsOverlay() {
+    private fun openSettingsOverlay(animate: Boolean = true, restoreScrollY: Int? = null) {
         if (isFinishing || isDestroyed) return
-        // Reset so only changes made in THIS session trigger a recreate on close
         com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
         val panelBinding = binding.layoutSettingsPanel
 
@@ -1841,19 +1905,21 @@ class MainActivity : AppCompatActivity() {
         when (com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)) {
             com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM -> panelBinding.rbThemeSystem.isChecked = true
             com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT -> panelBinding.rbThemeLight.isChecked = true
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK,
-            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> panelBinding.rbThemeDark.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK -> panelBinding.rbThemeDark.isChecked = true
+            com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED -> panelBinding.rbThemeAmoled.isChecked = true
         }
 
         panelBinding.rgThemeMode.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
                 R.id.rbThemeLight -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.LIGHT
                 R.id.rbThemeDark -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.DARK
+                R.id.rbThemeAmoled -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.AMOLED
                 else -> com.veilframe.app.settings.ThemeSettingsManager.ThemeMode.SYSTEM
             }
             val currentMode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
             if (mode != currentMode) {
-                com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = false)
+                com.veilframe.app.settings.ThemeSettingsManager.setThemeMode(this, mode, applyImmediately = true)
+                seamlessRecreateSettings()
             }
         }
 
@@ -1880,6 +1946,7 @@ class MainActivity : AppCompatActivity() {
             if (isChecked != currentDynamic) {
                 com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, isChecked)
                 updatePaletteChipsEnabled(isChecked)
+                seamlessRecreateSettings()
             }
         }
 
@@ -1903,19 +1970,20 @@ class MainActivity : AppCompatActivity() {
                     else -> com.veilframe.app.settings.ThemeSettingsManager.AccentPalette.MONOCHROME
                 }
                 val currentPalette = com.veilframe.app.settings.ThemeSettingsManager.getAccentPalette(this)
-                if (palette != currentPalette || panelBinding.switchDynamicColor.isChecked) {
-                    if (panelBinding.switchDynamicColor.isChecked) {
+                val dynamicWasChecked = panelBinding.switchDynamicColor.isChecked
+                if (palette != currentPalette || dynamicWasChecked) {
+                    if (dynamicWasChecked) {
                         com.veilframe.app.settings.ThemeSettingsManager.setDynamicColorEnabled(this, false)
-                        panelBinding.switchDynamicColor.isChecked = false
-                        updatePaletteChipsEnabled(false)
                     }
                     com.veilframe.app.settings.ThemeSettingsManager.setAccentPalette(this, palette)
+                    seamlessRecreateSettings()
                 }
             }
         }
 
         // 4. Typography style
         when (com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)) {
+            com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SYSTEM -> panelBinding.rbTypoSystem.isChecked = true
             com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT -> panelBinding.rbTypoSans.isChecked = true
             com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE -> panelBinding.rbTypoMonospace.isChecked = true
             com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF -> panelBinding.rbTypoSerif.isChecked = true
@@ -1923,6 +1991,7 @@ class MainActivity : AppCompatActivity() {
 
         panelBinding.rgTypography.setOnCheckedChangeListener { _, checkedId ->
             val typo = when (checkedId) {
+                R.id.rbTypoSystem -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SYSTEM
                 R.id.rbTypoMonospace -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.MONOSPACE
                 R.id.rbTypoSerif -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.SERIF
                 else -> com.veilframe.app.settings.ThemeSettingsManager.TypographyStyle.DEFAULT
@@ -1930,6 +1999,7 @@ class MainActivity : AppCompatActivity() {
             val currentTypo = com.veilframe.app.settings.ThemeSettingsManager.getTypographyStyle(this)
             if (typo != currentTypo) {
                 com.veilframe.app.settings.ThemeSettingsManager.setTypographyStyle(this, typo)
+                com.veilframe.app.settings.ThemeSettingsManager.applyTypography(this)
             }
         }
 
@@ -1970,11 +2040,39 @@ class MainActivity : AppCompatActivity() {
             closeSettingsOverlay()
         }
 
-        // 8. Open slide-over animation with M3 Expressive physics
-        com.veilframe.app.ui.motion.NavigationMotionController.openSettings(
-            settingsContainer = binding.containerSettings,
-            scrimView = binding.scrimSettings
-        )
+        if (restoreScrollY != null && restoreScrollY > 0) {
+            panelBinding.scrollSettings.post {
+                panelBinding.scrollSettings.scrollY = restoreScrollY
+            }
+        }
+
+        // 8. Open slide-over animation or instant restore
+        if (animate) {
+            com.veilframe.app.ui.motion.NavigationMotionController.openSettings(
+                settingsContainer = binding.containerSettings,
+                scrimView = binding.scrimSettings
+            )
+        } else {
+            binding.containerSettings.visibility = View.VISIBLE
+            binding.containerSettings.translationX = 0f
+            binding.containerSettings.alpha = 1f
+            binding.scrimSettings.visibility = View.VISIBLE
+            binding.scrimSettings.alpha = 1f
+        }
+    }
+
+    private fun seamlessRecreateSettings() {
+        val panelBinding = binding.layoutSettingsPanel
+        pendingSeamlessSettingsRestore = true
+        pendingSeamlessSettingsScrollY = panelBinding.scrollSettings.scrollY
+        if (Build.VERSION.SDK_INT >= 34) {
+            overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
+            overrideActivityTransition(Activity.OVERRIDE_TRANSITION_CLOSE, 0, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+        recreate()
     }
 
     internal fun closeSettingsOverlay() {
@@ -1982,13 +2080,7 @@ class MainActivity : AppCompatActivity() {
             settingsContainer = binding.containerSettings,
             scrimView = binding.scrimSettings
         )
-        // Apply any pending theme/palette/typography changes as a single recreate()
-        // AFTER the close animation (~300ms), so the panel is fully dismissed first.
-        if (com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()) {
-            val mode = com.veilframe.app.settings.ThemeSettingsManager.getThemeMode(this)
-            com.veilframe.app.settings.ThemeSettingsManager.applyNightMode(mode)
-            binding.rootCoordinator.postDelayed({ recreate() }, 320L)
-        }
+        com.veilframe.app.settings.ThemeSettingsManager.consumePendingRecreate()
     }
 
     private fun openWebUrl(url: String) {
@@ -2051,11 +2143,15 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_MARKDOWN_URI = "key_markdown_uri"
         private const val KEY_MARKDOWN_FILE_PATH = "key_markdown_file_path"
         private const val KEY_SETTINGS_OPEN = "key_settings_open"
+        private const val KEY_SETTINGS_SCROLL_Y = "key_settings_scroll_y"
+        private var pendingSeamlessSettingsRestore: Boolean = false
+        private var pendingSeamlessSettingsScrollY: Int = 0
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putBoolean(KEY_SETTINGS_OPEN, binding.containerSettings.visibility == View.VISIBLE)
+        outState.putBoolean(KEY_SETTINGS_OPEN, binding.containerSettings.visibility == View.VISIBLE || pendingSeamlessSettingsRestore)
+        outState.putInt(KEY_SETTINGS_SCROLL_Y, if (pendingSeamlessSettingsRestore) pendingSeamlessSettingsScrollY else binding.layoutSettingsPanel.scrollSettings.scrollY)
         outState.putString(KEY_SCREEN_STATE, navigationController.currentScreen.name)
         outState.putString(KEY_PREVIOUS_SCREEN_STATE, navigationController.previousScreen.name)
         outState.putString(KEY_TOOL_MODE, toolSessionManager.currentToolMode.name)
@@ -2183,9 +2279,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            if (savedInstanceState.getBoolean(KEY_SETTINGS_OPEN, false)) {
+            if (savedInstanceState.getBoolean(KEY_SETTINGS_OPEN, false) || pendingSeamlessSettingsRestore) {
+                val scrollY = if (pendingSeamlessSettingsRestore) pendingSeamlessSettingsScrollY else savedInstanceState.getInt(KEY_SETTINGS_SCROLL_Y, 0)
+                pendingSeamlessSettingsRestore = false
+                pendingSeamlessSettingsScrollY = 0
                 binding.rootCoordinator.post {
-                    openSettingsOverlay()
+                    openSettingsOverlay(animate = false, restoreScrollY = scrollY)
                 }
             }
         } finally {

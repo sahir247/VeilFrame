@@ -15,179 +15,184 @@
         android:background="?attr/colorSurface"
         app:elevation="2dp">
 
-        <!-- Home Screen Header Bar -->
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbarHome"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:visibility="visible"
-            app:contentInsetStart="0dp"
-            app:contentInsetEnd="0dp">
+            android:layout_height="wrap_content">
 
-            <LinearLayout
+            <!-- Home Screen Header Bar -->
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbarHome"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:id="@+id/imgBrandLogo"
-                    android:layout_width="32dp"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="12dp"
-                    android:src="@drawable/ic_veilframe_brand"
-                    android:contentDescription="VeilFrame Brand Logo" />
+                android:layout_height="56dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:visibility="visible"
+                app:contentInsetStart="0dp"
+                app:contentInsetEnd="0dp">
 
                 <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/imgBrandLogo"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="12dp"
+                        android:src="@drawable/ic_veilframe_brand"
+                        android:contentDescription="VeilFrame Brand Logo" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="VeilFrame"
+                            android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone"
+                            android:text="Privacy Forensics &amp; AI Bundler"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
 
                     <TextView
+                        android:id="@+id/tvVersionBadge"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="VeilFrame"
-                        android:textAppearance="?attr/textAppearanceTitleMediumEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:visibility="gone"
-                        android:text="Privacy Forensics &amp; AI Bundler"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvVersionBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_badge_pill"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="4dp"
-                    android:text="v2.2.9"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnToggleTheme"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
-                    android:contentDescription="Toggle Light/Dark Theme"
-                    app:icon="@drawable/ic_theme_toggle"
-                    app:iconTint="@color/vf_primary" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSettings"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:contentDescription="Appearance and Customization Settings"
-                    app:icon="@drawable/ic_settings"
-                    app:iconTint="@color/vf_primary" />
-            </LinearLayout>
-        </com.google.android.material.appbar.MaterialToolbar>
-
-        <!-- Dedicated Tool Header Bar (Back Navigation + Tool Title) -->
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbarTool"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="16dp"
-            android:visibility="gone"
-            app:contentInsetStart="0dp"
-            app:contentInsetEnd="0dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <com.google.android.material.button.MaterialButton
-        android:ellipsize="end"
-        android:singleLine="true"
-        android:maxLines="1"
-                    android:id="@+id/btnBackToHome"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="Back to Home Dashboard"
-                    app:icon="@drawable/ic_arrow_back"
-                    app:iconTint="@color/vf_primary" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/tvToolTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="AI Bundle"
-                        android:textAppearance="?attr/textAppearanceTitleLargeEmphasized"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/tvToolSubtitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Package source code for LLM analysis"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:background="@drawable/bg_badge_pill"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="v2.2.9"
                         android:textColor="?attr/colorOnSurfaceVariant"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleTheme"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:contentDescription="Toggle Light/Dark Theme"
+                        app:icon="@drawable/ic_theme_toggle"
+                        app:iconTint="@color/vf_primary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSettings"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="Appearance and Customization Settings"
+                        app:icon="@drawable/ic_settings"
+                        app:iconTint="@color/vf_primary" />
                 </LinearLayout>
+            </com.google.android.material.appbar.MaterialToolbar>
 
-                <TextView
-                    android:id="@+id/tvToolStatusBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_badge_pill"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="4dp"
-                    android:text="READY"
-                    android:textColor="@color/vf_accent_green"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+            <!-- Dedicated Tool Header Bar (Back Navigation + Tool Title) -->
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbarTool"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="16dp"
+                android:visibility="gone"
+                app:contentInsetStart="0dp"
+                app:contentInsetEnd="0dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnToolToggleTheme"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:contentDescription="Toggle Light/Dark Theme"
-                    app:icon="@drawable/ic_theme_toggle"
-                    app:iconTint="@color/vf_primary" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnToolSettings"
-                    style="@style/Widget.VeilFrame.IconButton.Toolbar"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:contentDescription="Appearance and Customization Settings"
-                    app:icon="@drawable/ic_settings"
-                    app:iconTint="@color/vf_primary" />
-            </LinearLayout>
-        </com.google.android.material.appbar.MaterialToolbar>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBackToHome"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:maxLines="1"
+                        android:contentDescription="Back to Home Dashboard"
+                        app:icon="@drawable/ic_arrow_back"
+                        app:iconTint="@color/vf_primary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvToolTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AI Bundle"
+                            android:textAppearance="?attr/textAppearanceTitleLargeEmphasized"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/tvToolSubtitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Package source code for LLM analysis"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:maxLines="1"
+                            android:ellipsize="end" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvToolStatusBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge_pill"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:text="READY"
+                        android:textColor="@color/vf_accent_green"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToolToggleTheme"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="Toggle Light/Dark Theme"
+                        app:icon="@drawable/ic_theme_toggle"
+                        app:iconTint="@color/vf_primary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToolSettings"
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="Appearance and Customization Settings"
+                        app:icon="@drawable/ic_settings"
+                        app:iconTint="@color/vf_primary" />
+                </LinearLayout>
+            </com.google.android.material.appbar.MaterialToolbar>
+        </FrameLayout>
     </com.google.android.material.appbar.AppBarLayout>
 
     <!-- ================================================================= -->
@@ -795,7 +800,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="FOLDER SCANNER"
+                            android:text="Folder Scanner"
                             android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -855,7 +860,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="AI BUNDLE"
+                            android:text="AI Bundle"
                             android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -915,7 +920,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="MARKDOWN VIEWER"
+                            android:text="Markdown Viewer"
                             android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -1055,7 +1060,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="3dp"
-                            android:text="Installed: v2.2.7 • Local Engine"
+                            android:text="Installed: v2.2.9 • Local Engine"
                             android:textAppearance="?attr/textAppearanceBodySmall"
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>

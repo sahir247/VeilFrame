@@ -174,9 +174,9 @@ class WorkspaceHostTest {
         assertTrue("Motion Lab should receive top insets", motionRoot.paddingTop >= 64)
 
         val upscalerRoot = host.getOrInflateImageUpscaler().root
-        // SCROLLED_APPBAR contract keeps padTop = false
-        assertEquals("Scrolled appbar should not add top padding", 0, upscalerRoot.paddingTop)
-        assertTrue("Scrolled appbar should add bottom padding", upscalerRoot.paddingBottom >= 48)
+        // DEFAULT contract applies padTop = true to prevent header status bar clipping
+        assertTrue("Image Upscaler should receive top insets to prevent header clipping", upscalerRoot.paddingTop >= 64)
+        assertTrue("Image Upscaler should add bottom padding", upscalerRoot.paddingBottom >= 48)
     }
 
     @Test

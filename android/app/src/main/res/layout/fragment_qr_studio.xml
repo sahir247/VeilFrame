@@ -25,22 +25,56 @@
             android:id="@+id/qr_toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            app:title="QR Studio"
-            app:titleCentered="false"
-            app:contentInsetStartWithNavigation="0dp"
-            app:titleTextAppearance="?attr/textAppearanceTitleMedium"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:layout_scrollFlags="scroll|enterAlways" />
+            app:navigationIconTint="?attr/colorOnSurface"
+            app:contentInsetStartWithNavigation="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingEnd="12dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvQrTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="QR Code Studio"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="17sp"
+                        android:textStyle="bold"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+
+                    <TextView
+                        android:id="@+id/tvQrSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Artistic Vector &amp; Offline Scanner"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="11sp"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.appbar.MaterialToolbar>
 
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/qr_tabs"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             app:tabMode="fixed"
             app:tabGravity="fill"
-            app:tabIndicatorHeight="3dp"
+            app:tabIndicatorHeight="2.5dp"
             app:tabIndicatorAnimationMode="elastic"
             app:tabIndicatorFullWidth="false" />
     </com.google.android.material.appbar.AppBarLayout>
