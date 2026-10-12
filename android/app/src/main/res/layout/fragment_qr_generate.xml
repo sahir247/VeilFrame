@@ -1410,31 +1410,26 @@
                     android:stepSize="0.05"
                     android:value="1.0" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_timing_color_btn"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:minWidth="0dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="4dp"
+                    android:text="Timing Color" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/qr_timing_color_btn"
-                        style="@style/Widget.VeilFrame.Button.Utility"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:paddingHorizontal="4dp"
-                        android:text="Timing Color" />
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/qr_timing_only_white_switch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="White Background Only" />
-                </LinearLayout>
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/qr_timing_only_white_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="White Background Only" />
 
                 <!-- Alignment Pattern Shape, Size, Color, OnlyWhite -->
                 <TextView
@@ -1469,31 +1464,26 @@
                     android:stepSize="0.05"
                     android:value="1.0" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_align_color_btn"
+                    style="@style/Widget.VeilFrame.Button.Utility"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:minWidth="0dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:paddingHorizontal="4dp"
+                    android:text="Align Color" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/qr_align_color_btn"
-                        style="@style/Widget.VeilFrame.Button.Utility"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:paddingHorizontal="4dp"
-                        android:text="Align Color" />
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/qr_align_only_white_switch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="White Background Only" />
-                </LinearLayout>
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/qr_align_only_white_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="White Background Only" />
 
                 <!-- Quiet Zone Slider -->
                 <TextView
@@ -2214,6 +2204,9 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
@@ -2225,9 +2218,13 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
+                            app:iconPadding="2dp"
                             app:icon="@drawable/ic_reset"
                             android:text="Randomize" />
                     </LinearLayout>
@@ -3146,6 +3143,9 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:paddingHorizontal="4dp"
                             android:singleLine="true"
                             android:ellipsize="end"
@@ -3154,13 +3154,21 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/qr_resample_backdrop_img_remove_btn"
-                            style="@style/Widget.VeilFrame.Button.Quiet"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:paddingHorizontal="8dp"
-                            android:singleLine="true"
-                            android:ellipsize="end"
-                            android:text="Clear" />
+                            style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:padding="0dp"
+                            android:contentDescription="Clear"
+                            app:icon="@drawable/ic_action_clear"
+                            app:iconGravity="textStart"
+                            app:iconPadding="0dp"
+                            app:iconTint="@color/vf_text_secondary" />
                     </LinearLayout>
 
                     <TextView
@@ -3357,6 +3365,9 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
@@ -3369,6 +3380,9 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
@@ -3377,13 +3391,21 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_backdrop_image_remove_btn"
-                        style="@style/Widget.VeilFrame.Button.Quiet"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:paddingHorizontal="8dp"
-                        android:text="Clear" />
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        android:contentDescription="Clear"
+                        app:icon="@drawable/ic_action_clear"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconTint="@color/vf_text_secondary" />
                 </LinearLayout>
 
                 <TextView
@@ -3641,6 +3663,9 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
@@ -3654,6 +3679,9 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginEnd="4dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
                         android:singleLine="true"
                         android:ellipsize="end"
                         android:paddingHorizontal="4dp"
@@ -3662,13 +3690,21 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/qr_btn_clear_animation"
-                        style="@style/Widget.VeilFrame.Button.Quiet"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:paddingHorizontal="8dp"
-                        android:text="Clear" />
+                        style="@style/Widget.VeilFrame.IconButton.Toolbar"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        android:contentDescription="Clear"
+                        app:icon="@drawable/ic_action_clear"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconTint="@color/vf_text_secondary" />
                 </LinearLayout>
 
                 <View android:layout_height="8dp" android:layout_width="match_parent" />
@@ -3819,10 +3855,13 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:singleLine="true"
                             android:ellipsize="end"
                             android:paddingHorizontal="4dp"
-                            app:iconPadding="4dp"
+                            app:iconPadding="2dp"
                             android:text="PNG"
                             app:icon="@drawable/ic_action_save" />
 
@@ -3833,10 +3872,13 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginStart="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:singleLine="true"
                             android:ellipsize="end"
                             android:paddingHorizontal="4dp"
-                            app:iconPadding="4dp"
+                            app:iconPadding="2dp"
                             android:text="SVG" />
                     </LinearLayout>
 
@@ -3853,10 +3895,13 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:singleLine="true"
                             android:ellipsize="end"
                             android:paddingHorizontal="4dp"
-                            app:iconPadding="4dp"
+                            app:iconPadding="2dp"
                             android:text="JPEG" />
 
                         <com.google.android.material.button.MaterialButton
@@ -3866,10 +3911,13 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginStart="4dp"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:minWidth="0dp"
                             android:singleLine="true"
                             android:ellipsize="end"
                             android:paddingHorizontal="4dp"
-                            app:iconPadding="4dp"
+                            app:iconPadding="2dp"
                             android:text="Share"
                             app:icon="@drawable/ic_action_share" />
                     </LinearLayout>

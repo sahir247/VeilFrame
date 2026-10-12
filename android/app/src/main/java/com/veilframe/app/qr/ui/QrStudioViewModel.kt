@@ -1397,10 +1397,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
+                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
                         scanabilityReport = report
                     )
-                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.JPEG, 95)
@@ -1748,10 +1747,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
+                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
                         scanabilityReport = report
                     )
-                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.saveBitmapTyped(getApplication(), bmp, Bitmap.CompressFormat.PNG, 100)
@@ -1843,10 +1841,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
-                        saveResult = "Export rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
+                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Exported anyway.",
                         scanabilityReport = report
                     )
-                    return@launchExportJob
                 }
                 val exportResult = withContext(Dispatchers.IO) {
                     QrExporter.savePdfTyped(getApplication(), bmp)
@@ -2046,10 +2043,9 @@ class QrStudioViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (!report.isScanReady && !report.validationSkipped && !report.decodeResult.success) {
                     _state.value = _state.value.copy(
-                        saveResult = "Share rejected: full-resolution verification failed (${report.warnings.firstOrNull() ?: "Unreadable"}). Preview scale may differ from export scale; adjust contrast or run Auto-Repair.",
+                        repairNotice = "Warning: Verification unconfirmed (${report.warnings.firstOrNull() ?: "Low contrast"}). Sharing anyway.",
                         scanabilityReport = report
                     )
-                    return@launchExportJob
                 }
                 QrExporter.share(getApplication(), bmp)
             } finally {

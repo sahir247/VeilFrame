@@ -12,6 +12,8 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -560,6 +562,7 @@ class QrGenerateTabFragment : Fragment() {
         val resampleSeedBtn = view.findViewById<MaterialButton>(R.id.qr_resample_seed_btn)
 
         val cardBgControls     = view.findViewById<MaterialCardView>(R.id.card_bg_image_controls)
+        val cardBackdropControls = view.findViewById<View>(R.id.card_backdrop_controls)
         val removeBgBtn        = view.findViewById<MaterialButton>(R.id.qr_remove_bg_btn)
         val bgOpacitySlider    = view.findViewById<Slider>(R.id.qr_bg_opacity_slider)
         val bgOpacityLabel     = view.findViewById<TextView>(R.id.qr_bg_opacity_label)
@@ -2001,10 +2004,10 @@ class QrGenerateTabFragment : Fragment() {
 
                     previewProgress?.visibility = if (state.isRenderingPreview) View.VISIBLE else View.GONE
 
-                    // Export buttons enabled/disabled state: content must be non-blank, verified scanable, and not actively busy
+                    // Export buttons enabled/disabled state: content must be non-blank and not actively busy
                     val hasContent = state.content.isNotBlank()
                     val isValidating = state.scanabilityReport == null && hasContent && state.errorMessage == null
-                    val canExport = hasContent && !state.isRenderingPreview && !state.isExporting && isScanValid
+                    val canExport = hasContent && !state.isRenderingPreview && !state.isExporting
                     val hasAnimationSource = state.animatedFrames.size > 1 || state.logoAnimatedFrames.size > 1
 
                     // State-aware 3-stage export discoverability: Validating… → Ready → Needs adjustment
@@ -2105,6 +2108,7 @@ class QrGenerateTabFragment : Fragment() {
 
                     val hasStyleControls = showD25 || showLine || showDsj || showRandomRect || showBubble || showFunction || showStyleFunction || showConnectedOrganic || showImageFill || showPhotoRequired
                     cardStyleSettings?.visibility = if (hasStyleControls) View.VISIBLE else View.GONE
+                    cardBackdropControls?.visibility = if (state.style == QrStyle.BASIC) View.GONE else View.VISIBLE
 
                     // Dynamic Background Image Card
                     if (state.backgroundImage != null) {
@@ -2341,6 +2345,11 @@ class QrScanTabFragment : Fragment() {
     private var guidanceText: TextView? = null
     private var torchBtn: FloatingActionButton? = null
     private var isTorchOn: Boolean = false
+    private var containerZoomControls: View? = null
+    private var btnZoom1x: TextView? = null
+    private var btnZoom2x: TextView? = null
+    private var btnZoom3x: TextView? = null
+    private var scaleGestureDetector: ScaleGestureDetector? = null
 
     private var resultCard: MaterialCardView? = null
     private var resultType: TextView? = null
@@ -2457,6 +2466,10 @@ class QrScanTabFragment : Fragment() {
         scanOverlay               = view.findViewById(R.id.qr_scan_overlay)
         guidanceText              = view.findViewById(R.id.qr_scan_guidance_text)
         torchBtn                  = view.findViewById(R.id.qr_torch_btn)
+        containerZoomControls     = view.findViewById(R.id.container_qr_zoom_controls)
+        btnZoom1x                 = view.findViewById(R.id.btn_qr_zoom_1x)
+        btnZoom2x                 = view.findViewById(R.id.btn_qr_zoom_2x)
+        btnZoom3x                 = view.findViewById(R.id.btn_qr_zoom_3x)
 
         resultCard                = view.findViewById(R.id.qr_result_card)
         resultType                = view.findViewById(R.id.qr_result_type)
@@ -2479,6 +2492,29 @@ class QrScanTabFragment : Fragment() {
 
         torchBtn?.setOnClickListener {
             toggleTorch()
+        }
+
+        btnZoom1x?.setOnClickListener { setCameraZoom(1.0f) }
+        btnZoom2x?.setOnClickListener { setCameraZoom(2.0f) }
+        btnZoom3x?.setOnClickListener { setCameraZoom(3.0f) }
+
+        scaleGestureDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val cam = activeCamera ?: return false
+                val zoomState = cam.cameraInfo.zoomState.value ?: return false
+                val nextZoom = (zoomState.zoomRatio * detector.scaleFactor).coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+                cam.cameraControl.setZoomRatio(nextZoom)
+                updateZoomButtonsUi(nextZoom)
+                return true
+            }
+        })
+
+        previewView?.setOnTouchListener { v, event ->
+            scaleGestureDetector?.onTouchEvent(event)
+            if (event.action == MotionEvent.ACTION_UP && scaleGestureDetector?.isInProgress != true) {
+                v.performClick()
+            }
+            true
         }
 
         togglePwdBtn?.setOnClickListener {
@@ -2538,6 +2574,7 @@ class QrScanTabFragment : Fragment() {
         scanOverlay?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
         guidanceText?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
         torchBtn?.visibility = if (isCameraReady && activeCamera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.GONE
+        containerZoomControls?.visibility = if (isCameraReady) View.VISIBLE else View.GONE
         resultCard?.visibility = if (isResult) View.VISIBLE else View.GONE
         containerPermissionDenied?.visibility = if (isPerm) View.VISIBLE else View.GONE
         containerCameraError?.visibility = if (isError) View.VISIBLE else View.GONE
@@ -2565,6 +2602,22 @@ class QrScanTabFragment : Fragment() {
             cam.cameraControl.enableTorch(on)
             torchBtn?.setImageResource(if (on) R.drawable.ic_flash_on else R.drawable.ic_flash_off)
         }
+    }
+
+    private fun setCameraZoom(ratio: Float) {
+        val cam = activeCamera ?: return
+        val zoomState = cam.cameraInfo.zoomState.value ?: return
+        val target = ratio.coerceIn(zoomState.minZoomRatio, zoomState.maxZoomRatio)
+        cam.cameraControl.setZoomRatio(target)
+        updateZoomButtonsUi(target)
+    }
+
+    private fun updateZoomButtonsUi(zoomRatio: Float) {
+        val activeColor = 0xFFFFFFFF.toInt()
+        val inactiveColor = 0xB3FFFFFF.toInt()
+        btnZoom1x?.setTextColor(if (Math.abs(zoomRatio - 1.0f) < 0.35f) activeColor else inactiveColor)
+        btnZoom2x?.setTextColor(if (Math.abs(zoomRatio - 2.0f) < 0.45f) activeColor else inactiveColor)
+        btnZoom3x?.setTextColor(if (zoomRatio >= 2.65f) activeColor else inactiveColor)
     }
 
     private fun checkPermissionState() {
@@ -2689,7 +2742,8 @@ class QrScanTabFragment : Fragment() {
         currentScannedAction = action
         isPasswordMasked = true
 
-        resultType?.text = "Detected: ${action::class.simpleName ?: "QR Code"}"
+        val typeName = if (action is QrAction.Raw) "Text / QR Data" else (action::class.simpleName ?: "QR Code")
+        resultType?.text = "Detected: $typeName"
         resultText?.text = formatActionSummary(action, isPasswordMasked)
         resultActionBtn?.text = formatActionCta(action)
 

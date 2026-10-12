@@ -1157,10 +1157,11 @@ object QrExporter {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newUri(context.contentResolver, "Share QR Code", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             val chooser = Intent.createChooser(intent, "Share QR Code").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(chooser)
         } catch (_: Throwable) {

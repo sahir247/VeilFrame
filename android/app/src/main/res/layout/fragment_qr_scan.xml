@@ -23,7 +23,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal|bottom"
-        android:layout_marginBottom="116dp"
+        android:layout_marginBottom="140dp"
         android:background="@drawable/bg_pill_accent"
         android:backgroundTint="#99000000"
         android:paddingHorizontal="16dp"
@@ -32,6 +32,60 @@
         android:textColor="#FFFFFF"
         android:textAppearance="?attr/textAppearanceBodySmall"
         android:visibility="gone" />
+
+    <!-- Camera Zoom Presets Bar -->
+    <LinearLayout
+        android:id="@+id/container_qr_zoom_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="88dp"
+        android:background="@drawable/bg_pill_accent"
+        android:backgroundTint="#99000000"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_1x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="1x"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_2x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="2x"
+            android:textColor="#B3FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:id="@+id/btn_qr_zoom_3x"
+            android:layout_width="44dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="3x"
+            android:textColor="#B3FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
 
     <!-- Torch / Flashlight Toggle Button -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
