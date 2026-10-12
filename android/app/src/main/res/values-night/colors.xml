@@ -5,19 +5,19 @@
   ~ All legacy vf_* names retained for code/layout compatibility.
 -->
 <resources>
-    <!-- Base Surfaces -->
-    <color name="vf_bg_dark">#121214</color>
-    <color name="vf_background">#121214</color>
-    <color name="vf_surface">#1C1C20</color>
-    <color name="vf_surface_variant">#27272A</color>
-    <color name="vf_surface_stroke">#3F3F46</color>
+    <!-- Base Surfaces (True AMOLED Dark #000000) -->
+    <color name="vf_bg_dark">#000000</color>
+    <color name="vf_background">#000000</color>
+    <color name="vf_surface">#000000</color>
+    <color name="vf_surface_variant">#161618</color>
+    <color name="vf_surface_stroke">#27272A</color>
 
-    <!-- Expressive surface-container ladder (NEW) -->
-    <color name="vf_container_lowest">#0E0E10</color>
-    <color name="vf_container_low">#16161A</color>
-    <color name="vf_container">#1C1C20</color>
-    <color name="vf_container_high">#242428</color>
-    <color name="vf_container_highest">#2C2C32</color>
+    <!-- Expressive surface-container ladder (AMOLED #000000) -->
+    <color name="vf_container_lowest">#000000</color>
+    <color name="vf_container_low">#000000</color>
+    <color name="vf_container">#000000</color>
+    <color name="vf_container_high">#18181B</color>
+    <color name="vf_container_highest">#242428</color>
 
     <!-- Monochrome Core (Luminous matte platinum & deep contrast) -->
     <color name="vf_primary">#E4E4E7</color>

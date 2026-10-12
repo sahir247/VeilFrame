@@ -105,13 +105,9 @@ object ThemeSettingsManager {
             }
         }
 
-        // Layer Dark mode or AMOLED overlay on top if active to enforce clean separation
+        // Layer AMOLED overlay directly when night mode is active (true AMOLED #000000 by default)
         if (isNightModeActive(activity)) {
-            if (mode == ThemeMode.AMOLED) {
-                activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
-            } else if (mode == ThemeMode.DARK || mode == ThemeMode.SYSTEM) {
-                activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Dark, true)
-            }
+            activity.theme.applyStyle(R.style.ThemeOverlay_VeilFrame_Amoled, true)
         }
 
         // Apply typography
@@ -242,7 +238,6 @@ object ThemeSettingsManager {
     }
 
     fun isAmoledActive(context: Context): Boolean {
-        if (getThemeMode(context) != ThemeMode.AMOLED) return false
         return isNightModeActive(context)
     }
 
