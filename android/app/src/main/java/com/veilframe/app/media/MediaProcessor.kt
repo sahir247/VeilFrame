@@ -5,6 +5,7 @@ import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.arthenica.ffmpegkit.Statistics
+import com.veilframe.app.cv.core.CvRuntime
 import com.veilframe.app.media.compression.ImageCompressionEngine
 import java.io.File
 import java.util.Locale
@@ -311,6 +312,8 @@ object VideoProcessor {
             val vfFilters = mutableListOf<String>()
 
             if (isStabilized) {
+                // Fail clearly if the native CV runtime is unavailable before using CV-backed stabilization.
+                CvRuntime.requireAvailable()
                 val clampedZoom = stabilizationMarginPercent.coerceIn(0, 20)
                 val filter = com.veilframe.app.cv.motion.VideoStabilizerEngine.generateFfmpegDeshakeFilter(clampedZoom)
                 vfFilters.add(filter)
