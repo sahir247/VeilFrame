@@ -201,7 +201,7 @@ class VeilFrameProcessingService : Service() {
                 activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = e.message)
             } finally {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
+                stopSelf()
             }
         }
 
@@ -212,7 +212,7 @@ class VeilFrameProcessingService : Service() {
         super.onTimeout(startId, fgsType)
         activeJob = activeJob?.copy(state = JobState.FAILED, errorMessage = "Processing timed out by Android system")
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf(startId)
+        stopSelf()
     }
 
     override fun onDestroy() {

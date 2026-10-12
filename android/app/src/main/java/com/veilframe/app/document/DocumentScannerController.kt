@@ -143,11 +143,26 @@ class DocumentScannerController(
     private var canUseFocusDistance = false
     @Volatile
     private var lastFocusDistanceDiopters: Float? = null
+    private var isThermalRegistered = false
+
+    private fun registerThermalGovernor() {
+        if (!isThermalRegistered) {
+            com.veilframe.app.runtime.ThermalGovernor.register(activity)
+            isThermalRegistered = true
+        }
+    }
+
+    private fun unregisterThermalGovernor() {
+        if (isThermalRegistered) {
+            com.veilframe.app.runtime.ThermalGovernor.unregister()
+            isThermalRegistered = false
+        }
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     fun init() {
         // B4: thermal awareness for the sustained viewfinder pipeline.
-        com.veilframe.app.runtime.ThermalGovernor.register(activity)
+        registerThermalGovernor()
 
         binding.toolbarDocScanner.setNavigationOnClickListener {
             onNavigateBack()
@@ -310,6 +325,7 @@ class DocumentScannerController(
     // =========================================================================
 
     fun openCameraViewfinder() {
+        registerThermalGovernor()
         viewfinderSessionId.incrementAndGet()
         binding.containerDocMainFlow.visibility = View.GONE
         binding.containerDocCamera.visibility = View.VISIBLE
@@ -344,7 +360,7 @@ class DocumentScannerController(
 
     fun release() {
         closeCameraViewfinder()
-        com.veilframe.app.runtime.ThermalGovernor.unregister()
+        unregisterThermalGovernor()
     }
 
     @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)

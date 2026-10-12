@@ -329,9 +329,13 @@ class MainActivity : AppCompatActivity() {
         val file = pendingExportFile
         if (destUri != null && file != null) {
             lifecycleScope.launch(Dispatchers.IO) {
-                safStorageManager.copyFileToUri(file, destUri)
+                val ok = safStorageManager.copyFileToUri(file, destUri)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "PDF saved to storage", Toast.LENGTH_LONG).show()
+                    if (ok) {
+                        Toast.makeText(this@MainActivity, "PDF saved to storage", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Failed to save PDF to storage", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -354,9 +358,13 @@ class MainActivity : AppCompatActivity() {
         val file = pendingExportFile
         if (destUri != null && file != null) {
             lifecycleScope.launch(Dispatchers.IO) {
-                safStorageManager.copyFileToUri(file, destUri)
+                val ok = safStorageManager.copyFileToUri(file, destUri)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
+                    if (ok) {
+                        Toast.makeText(this@MainActivity, "PNG cutout saved to storage", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Failed to save PNG cutout to storage", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -1278,7 +1286,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var lastNavClickTime = 0L
+    private fun canNavigate(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastNavClickTime < 500L) return false
+        lastNavClickTime = now
+        return true
+    }
+
     private fun openTool(toolMode: ToolMode) {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1292,6 +1309,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openImageStudio() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1305,6 +1323,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openVideoStudio() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1318,6 +1337,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openImageUpscaler() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1331,6 +1351,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openQrStudio() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1348,6 +1369,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openMarkdownViewer(uri: Uri, title: String? = null) {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1360,6 +1382,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openMarkdownViewer(file: File, title: String? = null) {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1372,6 +1395,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openDocumentScanner() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1384,6 +1408,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openBackgroundRemover() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1395,6 +1420,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openMotionLab() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1406,6 +1432,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openImageQuality() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1417,6 +1444,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openProvenance() {
+        if (!canNavigate()) return
         backClearTimerJob?.cancel()
         backClearTimerJob = null
         pauseVideoPlayback()
@@ -1810,7 +1838,7 @@ class MainActivity : AppCompatActivity() {
             markdownViewerController.clear()
         }
         if (!isUpscalerProcessing && !isDocScannerProcessing && !isBgRemoverProcessing) {
-            workspaceHost.onDestroy()
+            workspaceHost.pause()
         }
         toolSessionManager.clearCurrentTool()
         lifecycleScope.launch(Dispatchers.IO) {

@@ -93,12 +93,18 @@ class WorkspaceHost(
     fun getOrInflateImageUpscaler(): LayoutImageUpscalerBinding {
         if (imageUpscalerBinding == null) {
             val stub = binding.stubImageUpscaler
-            val view = stub.inflate()
-            view.visibility = View.GONE
-            val b = LayoutImageUpscalerBinding.bind(view)
-            imageUpscalerBinding = b
-            applyInsetsToDefault(b.root)
-            onImageUpscalerInflated?.invoke(b)
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.scrollImageUpscaler)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutImageUpscalerBinding.bind(view)
+                imageUpscalerBinding = b
+                applyInsetsToDefault(b.root)
+                onImageUpscalerInflated?.invoke(b)
+            }
         }
         return imageUpscalerBinding!!
     }
@@ -107,12 +113,18 @@ class WorkspaceHost(
     fun getOrInflateDocScanner(): LayoutDocumentScannerBinding {
         if (docScannerBinding == null) {
             val stub = binding.stubDocumentScanner
-            val view = stub.inflate()
-            view.visibility = View.GONE
-            val b = LayoutDocumentScannerBinding.bind(view)
-            docScannerBinding = b
-            applyInsetsToDefault(b.root)
-            onDocScannerInflated?.invoke(b)
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutDocumentScannerRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutDocumentScannerBinding.bind(view)
+                docScannerBinding = b
+                applyInsetsToDefault(b.root)
+                onDocScannerInflated?.invoke(b)
+            }
         }
         return docScannerBinding!!
     }
@@ -121,12 +133,18 @@ class WorkspaceHost(
     fun getOrInflateBackgroundRemover(): LayoutBackgroundRemoverBinding {
         if (backgroundRemoverBinding == null) {
             val stub = binding.stubBackgroundRemover
-            val view = stub.inflate()
-            view.visibility = View.GONE
-            val b = LayoutBackgroundRemoverBinding.bind(view)
-            backgroundRemoverBinding = b
-            applyInsetsToDefault(b.root)
-            onBackgroundRemoverInflated?.invoke(b)
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutBackgroundRemoverRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutBackgroundRemoverBinding.bind(view)
+                backgroundRemoverBinding = b
+                applyInsetsToDefault(b.root)
+                onBackgroundRemoverInflated?.invoke(b)
+            }
         }
         return backgroundRemoverBinding!!
     }
@@ -135,12 +153,18 @@ class WorkspaceHost(
     fun getOrInflateMotionLab(): LayoutMotionLabBinding {
         if (motionLabBinding == null) {
             val stub = binding.stubMotionLab
-            val view = stub.inflate()
-            view.visibility = View.GONE
-            val b = LayoutMotionLabBinding.bind(view)
-            motionLabBinding = b
-            applyInsetsToDefault(b.root)
-            onMotionLabInflated?.invoke(b)
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutMotionLabRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutMotionLabBinding.bind(view)
+                motionLabBinding = b
+                applyInsetsToDefault(b.root)
+                onMotionLabInflated?.invoke(b)
+            }
         }
         return motionLabBinding!!
     }
@@ -149,12 +173,18 @@ class WorkspaceHost(
     fun getOrInflateProvenance(): LayoutProvenanceBinding {
         if (provenanceBinding == null) {
             val stub = binding.stubProvenance
-            val view = stub.inflate()
-            view.visibility = View.GONE
-            val b = LayoutProvenanceBinding.bind(view)
-            provenanceBinding = b
-            applyInsetsToDefault(b.root)
-            onProvenanceInflated?.invoke(b)
+            val view = if (stub.parent != null) {
+                stub.inflate()
+            } else {
+                binding.root.findViewById<View>(com.veilframe.app.R.id.layoutProvenanceRoot)
+            }
+            if (view != null) {
+                view.visibility = View.GONE
+                val b = LayoutProvenanceBinding.bind(view)
+                provenanceBinding = b
+                applyInsetsToDefault(b.root)
+                onProvenanceInflated?.invoke(b)
+            }
         }
         return provenanceBinding!!
     }

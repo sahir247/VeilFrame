@@ -83,6 +83,7 @@ class ImageStudioController(
     var lastResultFile: File? = null
         private set
     private var compressionJob: Job? = null
+    private var piiJob: Job? = null
     private var activeGeneration: Long = 0L
     private lateinit var floatingDockController: FloatingDockStateController
 
@@ -451,6 +452,8 @@ class ImageStudioController(
     fun selectMediaIndex(index: Int) {
         if (index !in selectedMediaList.indices) return
         activeGeneration++
+        piiJob?.cancel()
+        piiJob = null
         compressionJob?.cancel()
         compressionJob = null
         lastResultFile = null
@@ -727,12 +730,16 @@ class ImageStudioController(
         binding.layoutImgProgress.visibility = View.VISIBLE
         binding.tvImgProgressStatus.text = "Scanning for PII (Faces, Plates, Signatures, Cards, QR)..."
 
-        scope.launch(Dispatchers.Default) {
+        val gen = activeGeneration
+        piiJob?.cancel()
+        piiJob = scope.launch(Dispatchers.Default) {
             val engine = getOrInitPiiEngine()
-            if (engine == null) {
+            if (engine == null || activeGeneration != gen) {
                 withContext(Dispatchers.Main) {
                     binding.layoutImgProgress.visibility = View.GONE
-                    Toast.makeText(activity, "PII ONNX Engine unavailable", Toast.LENGTH_LONG).show()
+                    if (activeGeneration == gen) {
+                        Toast.makeText(activity, "PII ONNX Engine unavailable", Toast.LENGTH_LONG).show()
+                    }
                 }
                 return@launch
             }
@@ -747,6 +754,7 @@ class ImageStudioController(
                 )
 
                 withContext(Dispatchers.Main) {
+                    if (activeGeneration != gen) return@withContext
                     binding.layoutImgProgress.visibility = View.GONE
 
                     if (detections.isEmpty()) {
@@ -796,6 +804,8 @@ class ImageStudioController(
     }
 
     fun release() {
+        piiJob?.cancel()
+        piiJob = null
         compressionJob?.cancel()
         compressionJob = null
         try {
@@ -982,6 +992,8 @@ class ImageStudioController(
         currentResultPreviewBitmap?.recycle()
         currentResultPreviewBitmap = null
         lastResultFile = null
+        piiJob?.cancel()
+        piiJob = null
         compressionJob?.cancel()
         compressionJob = null
 
@@ -1101,9 +1113,11 @@ class ImageStudioController(
     }
 
     val isProcessing: Boolean
-        get() = compressionJob?.isActive == true
+        get() = compressionJob?.isActive == true || piiJob?.isActive == true
 
     fun cancelProcessing() {
+        piiJob?.cancel()
+        piiJob = null
         compressionJob?.cancel()
         compressionJob = null
     }
